@@ -508,8 +508,8 @@ fun IosListRow(
                     )
                 }
             }
-            .padding(horizontal = 16.dp)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier),
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.let { it(); Spacer(Modifier.width(12.dp)) }
