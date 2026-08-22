@@ -35,6 +35,9 @@ import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.lyric.LyricManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,8 @@ class PlayerViewModel @Inject constructor(
 
     private val _songDetail = MutableStateFlow<Resource<Tracks>>(Resource.Loading)
     val songDetail: StateFlow<Resource<Tracks>> = _songDetail
+
+    private var intelligenceJob: Job? = null
 
 
     var mediaMetadata: MediaMetadata? = null
@@ -193,10 +198,31 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun intelligenceList(id: String, playlistId: String, startSongId: String) {
-        viewModelScope.launch {
+        startIntelligenceMode(id, playlistId, startSongId)
+    }
+
+    fun startIntelligenceMode(id: String, playlistId: String, startSongId: String) {
+        intelligenceJob?.cancel()
+        intelligenceJob = viewModelScope.launch {
+            _songDetail.value = Resource.Loading
             _intelligenceList.value = Resource.Loading
-            _intelligenceList.value = repository.getIntelligenceList(id, playlistId, startSongId)
+
+            // Fetch the seed song before publishing the list result so the UI can build one
+            // complete queue instead of reacting to two independently completing requests.
+            val songDetailResult = repository.getSongDetail(startSongId)
+            currentCoroutineContext().ensureActive()
+            _songDetail.value = songDetailResult
+
+            val intelligenceListResult =
+                repository.getIntelligenceList(id, playlistId, startSongId)
+            currentCoroutineContext().ensureActive()
+            _intelligenceList.value = intelligenceListResult
         }
+    }
+
+    fun consumeIntelligencePlayback() {
+        _intelligenceList.value = Resource.Loading
+        _songDetail.value = Resource.Loading
     }
 
     fun getSongDetail(id:String){

@@ -110,6 +110,50 @@ fun HomeScreen(
     val isRefreshing by remember { mutableStateOf(false) }
     val device = rememberDeviceInfo()
     val glassColors = LocalGlassColors.current
+    val playerConnection = LocalPlayerConnection.current
+    val intelligenceList by playerViewModel.intelligenceList.collectAsState()
+    val intelligenceFirstSong by playerViewModel.songDetail.collectAsState()
+
+    // Consume the one-shot intelligence-mode result at screen scope. A block item can leave and
+    // re-enter LazyColumn composition while the screen remains alive, so it must not own playback.
+    LaunchedEffect(intelligenceList, intelligenceFirstSong, playerConnection) {
+        val connection = playerConnection ?: return@LaunchedEffect
+        val songs = when (val result = intelligenceList) {
+            is Resource.Success -> result.data.data
+            is Resource.Error,
+            Resource.Loading -> return@LaunchedEffect
+        }
+
+        val firstSong = when (val result = intelligenceFirstSong) {
+            is Resource.Success -> result.data.songs.firstOrNull()
+            is Resource.Error -> null
+            Resource.Loading -> return@LaunchedEffect
+        }
+
+        val items = songs.mapNotNull { song ->
+            runCatching { song.toMediaMetadata().toMediaItem() }.getOrNull()
+        }.toMutableList()
+        firstSong?.let { song ->
+            runCatching { song.toMediaMetadata().toMediaItem() }
+                .getOrNull()
+                ?.let { item -> items.add(0, item) }
+        }
+
+        if (items.isNotEmpty()) {
+            Timber.tag("IntelligenceList").d("Playing ${songs.size} songs")
+            connection.playQueue(
+                ListQueue(
+                    id = "intelligence-${System.currentTimeMillis()}",
+                    title = "心动模式",
+                    items = items.map { it.mediaId to it },
+                    startIndex = 0,
+                    position = 0
+                )
+            )
+        }
+
+        playerViewModel.consumeIntelligencePlayback()
+    }
 
     // 滚动到顶部逻辑
     LaunchedEffect(scrollToTop) {
@@ -216,60 +260,6 @@ private fun HomeBlockItem(
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
     val recommendCardHeight = if (device.isTablet) RecommendCardHeightTablet else RecommendCardHeight
 
-    // Watch intelligence list for Success state to play the queue
-    val intelligenceList by playerViewModel.intelligenceList.collectAsState()
-    val intelligenceFirstSong by playerViewModel.songDetail.collectAsState()
-
-    LaunchedEffect(intelligenceFirstSong) {
-        when(val result= intelligenceFirstSong){
-            is Resource.Error -> {
-                Timber.tag("IntelligenceList").d("Error: ${result.message}")
-            }
-            Resource.Loading -> {
-                Timber.tag("IntelligenceList").d("Loading")
-            }
-            is Resource.Success -> {
-                Timber.tag("IntelligenceList").d("Success: ${result.data}")
-
-            }
-        }
-
-    }
-
-    // Watch for Success state and play the queue
-    LaunchedEffect(intelligenceList) {
-        if (intelligenceList is Resource.Success) {
-            val songs = (intelligenceList as Resource.Success).data.data
-            val items = try{
-                 songs.map {
-                    it.toMediaMetadata().toMediaItem()
-                }.toMutableList()
-            } catch (e: Exception){
-                mutableListOf()
-            }
-
-
-            if (intelligenceFirstSong is Resource.Success) {
-                (intelligenceFirstSong as Resource.Success).data.songs.firstOrNull()
-                    ?.toMediaMetadata()?.toMediaItem()?.let {
-                    items.add(0, it)
-                }
-            }
-
-            Timber.tag("IntelligenceList").d("Playing ${songs.size} songs")
-
-            playerConnection.playQueue(
-                ListQueue(
-                    id = "intelligence-${System.currentTimeMillis()}",
-                    title = "心动模式",
-                    items = items.map { it.mediaId to it },
-                    startIndex = 0,
-                    position = 0
-                )
-            )
-        }
-    }
-
     // 解析逻辑缓存，只要 block 不变，就不会重新解析 JSON
     val blockData = remember(block) {
         Timber.tag("Block").d(block.positionCode)
@@ -294,14 +284,6 @@ private fun HomeBlockItem(
                 title = getGreeting(),
                 resources = resources
             ) { resource ->
-
-                if (resource.resourceType == "star" && intelligenceFirstSong !is Resource.Success) {
-                    resource.extInfo.songId?.let { songId ->
-                        Timber.tag("IntelligenceList").d("Getting song detail for $songId")
-                        playerViewModel.getSongDetail(songId)
-                    }
-
-                }
                 RecommendCard(
                     cover = resource.coverImg,
                     title = resource.singleLineTitle?.trim()?.takeIf { it.isNotEmpty() }
@@ -319,7 +301,7 @@ private fun HomeBlockItem(
                         "star" -> {
                             val playlistId = resource.resourceId
                             resource.extInfo.songId?.let { songId ->
-                                playerViewModel.intelligenceList(songId, playlistId, songId)
+                                playerViewModel.startIntelligenceMode(songId, playlistId, songId)
                             }
 
                             // 心动模式，发了ids
