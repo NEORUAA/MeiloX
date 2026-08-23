@@ -129,6 +129,7 @@ private const val PopupMenuOvershootScale = 1.15f
 
 private class IosPopupPositionProvider(
     private val targetMenuHeightPx: Int,
+    private val forceBelowAnchor: Boolean,
     private val onDirectionResolved: (opensAbove: Boolean) -> Unit,
 ) : PopupPositionProvider {
     private var opensAbove: Boolean? = null
@@ -139,17 +140,23 @@ private class IosPopupPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
-        val resolvedDirection = opensAbove ?: run {
-            val roomBelow = windowSize.height - anchorBounds.bottom
-            val roomAbove = anchorBounds.top
-            (roomBelow < targetMenuHeightPx && roomAbove > roomBelow).also {
-                opensAbove = it
-                onDirectionResolved(it)
+        val resolvedDirection = if (forceBelowAnchor) {
+            false
+        } else {
+            opensAbove ?: run {
+                val roomBelow = windowSize.height - anchorBounds.bottom
+                val roomAbove = anchorBounds.top
+                (roomBelow < targetMenuHeightPx && roomAbove > roomBelow).also {
+                    opensAbove = it
+                    onDirectionResolved(it)
+                }
             }
         }
         val x = (anchorBounds.right - popupContentSize.width)
             .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
-        val y = if (resolvedDirection) {
+        val y = if (forceBelowAnchor) {
+            anchorBounds.bottom
+        } else if (resolvedDirection) {
             anchorBounds.bottom - popupContentSize.height
         } else {
             anchorBounds.top
@@ -710,6 +717,8 @@ fun IosPopupMenu(
     itemCount: Int,
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalGlassBackdrop.current,
+    keepAnchorVisible: Boolean = false,
+    forceBelowAnchor: Boolean = false,
     anchor: @Composable (onClick: () -> Unit) -> Unit,
     content: @Composable ColumnScope.(LayerBackdrop, close: () -> Unit) -> Unit,
 ) {
@@ -745,15 +754,15 @@ fun IosPopupMenu(
     Box(modifier.onSizeChanged { anchorSize = it }) {
         Box(
             Modifier
-                .graphicsLayer { alpha = if (expanded) 0f else 1f },
+                .graphicsLayer { alpha = if (expanded && !keepAnchorVisible) 0f else 1f },
         ) {
             anchor { onExpandedChange(!expanded) }
         }
         if (popupAlive && anchorSize != IntSize.Zero) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val targetMenuHeightPx = with(density) { (20.dp + 44.dp * itemCount).roundToPx() }
-            val positionProvider = remember(anchorSize, targetMenuHeightPx) {
-                IosPopupPositionProvider(targetMenuHeightPx) { resolved ->
+            val positionProvider = remember(anchorSize, targetMenuHeightPx, forceBelowAnchor) {
+                IosPopupPositionProvider(targetMenuHeightPx, forceBelowAnchor) { resolved ->
                     opensAbove = resolved
                 }
             }
@@ -1339,7 +1348,7 @@ fun IosSheetSurface(
                     backdrop = samplingBackdrop,
                     shape = { shape },
                     effects = {
-                        blur(if (isLight) 16.dp.toPx() else 8.dp.toPx())
+                        blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
                     },
                     highlight = { Highlight.Default.copy(alpha = if (isLight) 0.58f else 0.38f) },
                     shadow = { Shadow(radius = 48.dp, alpha = 0.25f) },

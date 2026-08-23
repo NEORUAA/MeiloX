@@ -375,6 +375,7 @@ fun GlassSurface(
     backdrop: Backdrop = LocalGlassBackdrop.current,
     shape: Shape = ContinuousRoundedRectangle(LocalGlassDimensions.current.regularCornerRadius),
     style: GlassSurfaceStyle = LocalGlassSurfaceStyle.current,
+    navigationSurfaceColor: Color? = null,
     emphasis: GlassEmphasis = GlassEmphasis.Regular,
     enabled: Boolean = true,
     refractionHeight: Dp = 12.dp,
@@ -406,7 +407,7 @@ fun GlassSurface(
         modifier.navigationGlassBackground(
             backdrop = backdrop,
             shape = { shape },
-            containerColor = colors.container,
+            containerColor = navigationSurfaceColor ?: surfaceColor,
             pressProgress = interactiveHighlight.pressProgress,
             layerBlock = dragScaleLayerBlock,
         )
@@ -503,6 +504,7 @@ fun GlassButton(
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalGlassBackdrop.current,
     style: GlassSurfaceStyle = LocalGlassSurfaceStyle.current,
+    navigationSurfaceColor: Color? = null,
     enabled: Boolean = true,
     emphasis: GlassEmphasis = GlassEmphasis.Regular,
     content: @Composable RowScope.() -> Unit,
@@ -511,6 +513,7 @@ fun GlassButton(
         modifier = modifier.height(LocalGlassDimensions.current.controlHeight),
         backdrop = backdrop,
         style = style,
+        navigationSurfaceColor = navigationSurfaceColor,
         shape = Capsule(),
         emphasis = emphasis,
         enabled = enabled,

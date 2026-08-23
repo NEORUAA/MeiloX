@@ -6,6 +6,7 @@
     <string name="track_action_delete">刪除此歌曲</string>
     <string name="track_action_copy_name">複製歌曲名稱</string>
     <string name="track_action_copy_id">複製歌曲 ID</string>
+    <string name="message_copy_content">複製內容</string>
     <string name="add_to_playlist_title">加入播放清單</string>
     <string name="create_playlist_title">新增播放清單</string>
     <string name="playlist_song_count">%1$d 首歌曲</string>
