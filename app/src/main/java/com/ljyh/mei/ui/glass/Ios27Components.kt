@@ -466,13 +466,23 @@ fun IosTextField(
     enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     val colors = LocalGlassColors.current
     Row(
         modifier
             .fillMaxWidth()
             .height(52.dp)
-            .drawBehind { drawLine(colors.separator, androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) }
+            .drawBehind {
+                val inset = 16.dp.toPx()
+                drawLine(
+                    colors.separator,
+                    androidx.compose.ui.geometry.Offset(inset, 0f),
+                    androidx.compose.ui.geometry.Offset(size.width - inset, 0f),
+                    1.dp.toPx(),
+                )
+            }
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -482,8 +492,11 @@ fun IosTextField(
             modifier = Modifier.weight(1f),
             enabled = enabled,
             textStyle = IosTypography.body.copy(color = colors.content),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.accent),
             singleLine = true,
             visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             decorationBox = { inner ->
                 if (value.isEmpty()) Text(placeholder, style = IosTypography.body, color = colors.tertiaryContent)
                 inner()

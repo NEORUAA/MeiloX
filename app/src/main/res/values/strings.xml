@@ -393,6 +393,16 @@
     <string name="netease_login">Sign in to NetEase Cloud Music</string>
     <string name="netease_login_detected">Signed in successfully</string>
     <string name="netease_login_waiting">Complete sign-in on the webpage</string>
+    <string name="netease_cookie_login">Use Cookie Login</string>
+    <string name="netease_cookie_login_placeholder">MUSIC_U value only</string>
+    <string name="netease_cookie_login_tip_title">Cookie contents</string>
+    <string name="netease_cookie_login_tip_value">• Paste only the value of the MUSIC_U field, for example: xxxxx.</string>
+    <string name="netease_cookie_login_tip_excluded">• Do not include cookie=, MUSIC_U=, semicolons, spaces, or other fields.</string>
+    <string name="netease_cookie_login_tip_get">• Sign in on the NetEase website, then find MUSIC_U in any request header in the browser developer tools and copy its value.</string>
+    <string name="netease_cookie_login_invalid_format">Paste the plain MUSIC_U value without a field name, semicolon, or spaces.</string>
+    <string name="netease_cookie_login_verification_failed">Could not verify this Cookie. Check its value and your network, then try again.</string>
+    <string name="netease_cookie_login_verifying">Verifying…</string>
+    <string name="netease_cookie_login_submit">Sign In</string>
     <string name="netease_logout">Sign out of NetEase Cloud Music</string>
     <string name="done">Done</string>
     <string name="account_home">Account</string>

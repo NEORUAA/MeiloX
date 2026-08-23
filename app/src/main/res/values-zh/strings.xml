@@ -392,6 +392,16 @@
     <string name="netease_login">登录网易云音乐</string>
     <string name="netease_login_detected">登录成功</string>
     <string name="netease_login_waiting">请在网页中完成登录</string>
+    <string name="netease_cookie_login">使用 Cookie 登录</string>
+    <string name="netease_cookie_login_placeholder">MUSIC_U 的纯值</string>
+    <string name="netease_cookie_login_tip_title">Cookie 内容</string>
+    <string name="netease_cookie_login_tip_value">• 只粘贴 MUSIC_U 字段的值，例如：xxxxx。</string>
+    <string name="netease_cookie_login_tip_excluded">• 不要包含 cookie=、MUSIC_U=、分号、空格或其它字段。</string>
+    <string name="netease_cookie_login_tip_get">• 登录网易云网页版后，在浏览器开发者工具的任意请求 Header 中找到 MUSIC_U，并复制它的值。</string>
+    <string name="netease_cookie_login_invalid_format">请只粘贴 MUSIC_U 的纯值，不要包含字段名、分号或空格。</string>
+    <string name="netease_cookie_login_verification_failed">无法验证此 Cookie，请检查内容与网络后重试。</string>
+    <string name="netease_cookie_login_verifying">正在验证…</string>
+    <string name="netease_cookie_login_submit">登录</string>
     <string name="netease_logout">退出网易云音乐</string>
     <string name="done">完成</string>
     <string name="account_home">账号主页</string>

@@ -392,6 +392,16 @@
     <string name="netease_login">登入網易雲音樂</string>
     <string name="netease_login_detected">登入成功</string>
     <string name="netease_login_waiting">請在網頁中完成登入</string>
+    <string name="netease_cookie_login">使用 Cookie 登入</string>
+    <string name="netease_cookie_login_placeholder">MUSIC_U 的純值</string>
+    <string name="netease_cookie_login_tip_title">Cookie 內容</string>
+    <string name="netease_cookie_login_tip_value">• 只貼上 MUSIC_U 欄位的值，例如：xxxxx。</string>
+    <string name="netease_cookie_login_tip_excluded">• 不要包含 cookie=、MUSIC_U=、分號、空格或其它欄位。</string>
+    <string name="netease_cookie_login_tip_get">• 登入網易雲網頁版後，在瀏覽器開發者工具的任意請求 Header 中找到 MUSIC_U，並複製它的值。</string>
+    <string name="netease_cookie_login_invalid_format">請只貼上 MUSIC_U 的純值，不要包含欄位名稱、分號或空格。</string>
+    <string name="netease_cookie_login_verification_failed">無法驗證此 Cookie，請檢查內容與網路後重試。</string>
+    <string name="netease_cookie_login_verifying">正在驗證…</string>
+    <string name="netease_cookie_login_submit">登入</string>
     <string name="netease_logout">登出網易雲音樂</string>
     <string name="done">完成</string>
     <string name="account_home">帳號主頁</string>
