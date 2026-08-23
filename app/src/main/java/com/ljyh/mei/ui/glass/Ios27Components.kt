@@ -118,6 +118,7 @@ private val LocalIosPopupMenuInteractive = staticCompositionLocalOf { true }
  *  visible menu is offset back onto the anchor edge, so its position and physics are unchanged. */
 private val PopupMenuOvershootMarginStart = 64.dp
 private val PopupMenuOvershootMarginVertical = 32.dp
+private val PopupMenuWidth = 238.dp
 
 /** The stable shell is larger than the resting menu so the spring overshoot (up to 1.12x)
  *  fits inside the shell's constraints and actually renders. */
@@ -126,7 +127,8 @@ private const val PopupMenuOvershootScale = 1.15f
 private class IosPopupPositionProvider(
     private val targetMenuHeightPx: Int,
     private val forceBelowAnchor: Boolean,
-    private val anchorOvershootHorizontalPx: Int,
+    private val visualHostWidthPx: Int,
+    private val visualHostHeightPx: Int,
     private val anchorOvershootVerticalPx: Int,
     private val onDirectionResolved: (opensAbove: Boolean) -> Unit,
 ) : PopupPositionProvider {
@@ -150,27 +152,25 @@ private class IosPopupPositionProvider(
                 }
             }
         }
-        // Constrain against the pre-expansion host dimensions. The extra anchor-side room is
-        // deliberately outside that visual host; constraining against the expanded bounds
-        // would move the whole menu left/up when the popup is close to a screen edge.
-        val visualHostWidth = (popupContentSize.width - anchorOvershootHorizontalPx).coerceAtLeast(0)
-        val visualHostHeight = (popupContentSize.height - anchorOvershootVerticalPx).coerceAtLeast(0)
-        val x = (anchorBounds.right - visualHostWidth)
-            .coerceIn(0, (windowSize.width - visualHostWidth).coerceAtLeast(0))
+        // Use the intended visual host dimensions instead of popupContentSize. On narrow
+        // devices Android may constrain the expanded Popup content to the window width; using
+        // that constrained size would make the visible menu drift toward the right.
+        val x = (anchorBounds.right - visualHostWidthPx)
+            .coerceIn(0, (windowSize.width - visualHostWidthPx).coerceAtLeast(0))
         // The forced-below variant is used by message bubbles. Its popup host contains the
         // vertical overshoot margin plus the 15% spring shell, so positioning the host at
         // `anchorBounds.bottom` would leave the menu beside the bubble. Offset the host by the
         // exact distance from its top edge to the resting menu top instead.
         val menuTopInHost = (
-            popupContentSize.height - anchorOvershootVerticalPx - targetMenuHeightPx
+            visualHostHeightPx - targetMenuHeightPx
         ).coerceAtLeast(0)
         val visualY = if (forceBelowAnchor) {
             anchorBounds.bottom - menuTopInHost
         } else if (resolvedDirection) {
-            anchorBounds.bottom - visualHostHeight
+            anchorBounds.bottom - visualHostHeightPx
         } else {
             anchorBounds.top
-        }.coerceIn(0, (windowSize.height - visualHostHeight).coerceAtLeast(0))
+        }.coerceIn(0, (windowSize.height - visualHostHeightPx).coerceAtLeast(0))
         val y = if (forceBelowAnchor || resolvedDirection) {
             visualY
         } else {
@@ -652,7 +652,7 @@ fun IosContextMenu(
     ).coerceIn(0f, 1f)
     val collapsedWidth = with(density) { collapsedSize.width.toDp() }
     val collapsedHeight = with(density) { collapsedSize.height.toDp() }
-    val menuWidth = 238.dp
+    val menuWidth = PopupMenuWidth
     val menuHeight = 20.dp + 44.dp * itemCount
     val width = lerpDp(collapsedWidth, menuWidth, geometryProgress)
     val height = lerpDp(collapsedHeight, menuHeight, geometryProgress)
@@ -811,24 +811,30 @@ fun IosPopupMenu(
         if (popupAlive && anchorSize != IntSize.Zero) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val targetMenuHeightPx = with(density) { (20.dp + 44.dp * itemCount).roundToPx() }
-            val anchorOvershootHorizontalPx = with(density) {
-                PopupMenuOvershootMarginStart.roundToPx()
+            val visualHostWidthPx = with(density) {
+                (PopupMenuOvershootMarginStart + PopupMenuWidth * PopupMenuOvershootScale).roundToPx()
             }
-            val anchorOvershootVerticalPx = with(density) {
-                PopupMenuOvershootMarginVertical.roundToPx()
+            val visualHostHeightPx = with(density) {
+                (
+                    PopupMenuOvershootMarginVertical +
+                        (20.dp + 44.dp * itemCount) * PopupMenuOvershootScale
+                ).roundToPx()
             }
             val positionProvider = remember(
                 anchorSize,
                 targetMenuHeightPx,
                 forceBelowAnchor,
-                anchorOvershootHorizontalPx,
-                anchorOvershootVerticalPx,
+                visualHostWidthPx,
+                visualHostHeightPx,
             ) {
                 IosPopupPositionProvider(
                     targetMenuHeightPx = targetMenuHeightPx,
                     forceBelowAnchor = forceBelowAnchor,
-                    anchorOvershootHorizontalPx = anchorOvershootHorizontalPx,
-                    anchorOvershootVerticalPx = anchorOvershootVerticalPx,
+                    visualHostWidthPx = visualHostWidthPx,
+                    visualHostHeightPx = visualHostHeightPx,
+                    anchorOvershootVerticalPx = with(density) {
+                        PopupMenuOvershootMarginVertical.roundToPx()
+                    },
                 ) { resolved ->
                     opensAbove = resolved
                 }
@@ -887,6 +893,7 @@ fun <T> IosPopupButton(
         itemCount = items.size,
         modifier = modifier,
         backdrop = backdrop,
+        keepAnchorVisible = true,
         anchor = { openMenu ->
             Row(
                 Modifier
@@ -912,6 +919,7 @@ fun <T> IosPopupButton(
                     tint = if (enabled) LocalGlassColors.current.accent
                     else LocalGlassColors.current.secondaryContent,
                     modifier = Modifier.padding(start = 7.dp),
+                    weight = FontWeight.Bold
                 )
             }
         },
