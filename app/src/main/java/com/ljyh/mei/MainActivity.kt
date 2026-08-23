@@ -167,6 +167,7 @@ import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
+import com.ljyh.mei.ui.glass.rememberCrossWindowBackdrop
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import com.ljyh.mei.ui.screen.Index
 import com.ljyh.mei.ui.screen.Screen
@@ -433,7 +434,13 @@ class MainActivity : ComponentActivity() {
                 // bottom layer records the page after it has rendered. Controls
                 // then sample [bottomBackdrop] without sampling themselves.
                 val bottomBackdrop = rememberLayerBackdrop()
-                val bottomControlsBackdrop = rememberCombinedBackdrop(glassBackdrop, bottomBackdrop)
+                // Popups are hosted in a separate Android window. Wrap the recorded page layer
+                // before combining it so its sample coordinates use the popup's real screen
+                // position rather than the popup-local overshoot origin.
+                val bottomControlsBackdrop = rememberCombinedBackdrop(
+                    glassBackdrop,
+                    rememberCrossWindowBackdrop(bottomBackdrop),
+                )
                 CompositionLocalProvider(
                     LocalGlassBackdrop provides glassBackdrop,
                     LocalGlassColors provides glassColors,

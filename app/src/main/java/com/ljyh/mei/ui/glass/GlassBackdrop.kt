@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.unit.Density
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
@@ -105,7 +105,11 @@ class CrossWindowBackdrop(
         val glassCoordinates = coordinates ?: return
         if (!glassCoordinates.isAttached) return
         val sourceCoordinates = backdropSourcePositions[source]?.takeIf { it.isAttached } ?: return
-        val offset = glassCoordinates.positionInWindow() - sourceCoordinates.positionInWindow()
+        // Popup/Dialog owners have their own Compose window origin. `positionInWindow()` is
+        // therefore local to that owner on Android and makes a popup sample from its host
+        // overshoot area (typically near the top edge) instead of the pixels behind the menu.
+        // Screen coordinates are shared by both owners and include the real popup placement.
+        val offset = glassCoordinates.positionOnScreen() - sourceCoordinates.positionOnScreen()
         withTransform({
             translate(-offset.x, -offset.y)
         }) {

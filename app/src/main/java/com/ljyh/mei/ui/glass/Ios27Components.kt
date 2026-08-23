@@ -80,7 +80,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
-import androidx.compose.ui.util.lerp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.DialogProperties
@@ -92,8 +91,6 @@ import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
@@ -116,10 +113,9 @@ val IosModalSheetShape = ContinuousRoundedRectangle(
 
 private val LocalIosPopupMenuInteractive = staticCompositionLocalOf { true }
 
-/** Overflow room on the menu's growth sides so spring overshoot, velocity deformation,
- *  blur bleed and the drop shadow can draw past the resting bounds without being clipped
- *  by the popup window. The anchor-side corner stays flush with the window corner, so
- *  positioning math and the pinned trigger copy are unaffected. */
+/** Overflow room around the menu so spring overshoot, velocity deformation, blur bleed and the
+ *  drop shadow can draw past the resting bounds without being clipped by the popup host. The
+ *  visible menu is offset back onto the anchor edge, so its position and physics are unchanged. */
 private val PopupMenuOvershootMarginStart = 64.dp
 private val PopupMenuOvershootMarginVertical = 32.dp
 
@@ -130,6 +126,8 @@ private const val PopupMenuOvershootScale = 1.15f
 private class IosPopupPositionProvider(
     private val targetMenuHeightPx: Int,
     private val forceBelowAnchor: Boolean,
+    private val anchorOvershootHorizontalPx: Int,
+    private val anchorOvershootVerticalPx: Int,
     private val onDirectionResolved: (opensAbove: Boolean) -> Unit,
 ) : PopupPositionProvider {
     private var opensAbove: Boolean? = null
@@ -152,15 +150,32 @@ private class IosPopupPositionProvider(
                 }
             }
         }
-        val x = (anchorBounds.right - popupContentSize.width)
-            .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
-        val y = if (forceBelowAnchor) {
-            anchorBounds.bottom
+        // Constrain against the pre-expansion host dimensions. The extra anchor-side room is
+        // deliberately outside that visual host; constraining against the expanded bounds
+        // would move the whole menu left/up when the popup is close to a screen edge.
+        val visualHostWidth = (popupContentSize.width - anchorOvershootHorizontalPx).coerceAtLeast(0)
+        val visualHostHeight = (popupContentSize.height - anchorOvershootVerticalPx).coerceAtLeast(0)
+        val x = (anchorBounds.right - visualHostWidth)
+            .coerceIn(0, (windowSize.width - visualHostWidth).coerceAtLeast(0))
+        // The forced-below variant is used by message bubbles. Its popup host contains the
+        // vertical overshoot margin plus the 15% spring shell, so positioning the host at
+        // `anchorBounds.bottom` would leave the menu beside the bubble. Offset the host by the
+        // exact distance from its top edge to the resting menu top instead.
+        val menuTopInHost = (
+            popupContentSize.height - anchorOvershootVerticalPx - targetMenuHeightPx
+        ).coerceAtLeast(0)
+        val visualY = if (forceBelowAnchor) {
+            anchorBounds.bottom - menuTopInHost
         } else if (resolvedDirection) {
-            anchorBounds.bottom - popupContentSize.height
+            anchorBounds.bottom - visualHostHeight
         } else {
             anchorBounds.top
-        }.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0))
+        }.coerceIn(0, (windowSize.height - visualHostHeight).coerceAtLeast(0))
+        val y = if (forceBelowAnchor || resolvedDirection) {
+            visualY
+        } else {
+            visualY - anchorOvershootVerticalPx
+        }
         return IntOffset(x, y)
     }
 }
@@ -576,7 +591,7 @@ fun IosStepper(
 fun IosContextMenu(
     visible: Boolean,
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     animationProgress: Float = 1f,
     animationVelocity: Float = 0f,
     opensAbove: Boolean = false,
@@ -611,6 +626,7 @@ fun IosContextMenu(
     // Context menus render in a separate Popup window. Map their sampling coordinates back
     // to the source window so the menu refracts the content physically behind its position.
     val samplingBackdrop = rememberCrossWindowBackdrop(backdrop)
+    val isLight = !LocalGlassColors.current.isDark
     val elevatedBackground = LocalGlassColors.current.elevatedBackground
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
         transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
@@ -619,85 +635,81 @@ fun IosContextMenu(
             offset = interactiveHighlight.offset,
         )
     }
-    // Stable full-size shell: the hosting Popup window never resizes or moves during the
-    // animation, so a sibling pinned to a corner of this box (the trigger copy) cannot
-    // wobble with the spring physics or be clipped by an undersized window.
+    // Stable full-size host: keep overshoot margins on both the growth and anchor sides in the
+    // measured Popup bounds. The original visual host is nested inside it, so this only enlarges
+    // the RenderEffect backing area and does not move the visible menu.
+    val popupHostWidth = PopupMenuOvershootMarginStart * 2 + menuWidth * PopupMenuOvershootScale
+    val popupHostHeight = PopupMenuOvershootMarginVertical * 2 + menuHeight * PopupMenuOvershootScale
     Box(
         modifier
-            .padding(
-                start = PopupMenuOvershootMarginStart,
-                top = if (opensAbove) PopupMenuOvershootMarginVertical else 0.dp,
-                bottom = if (opensAbove) 0.dp else PopupMenuOvershootMarginVertical,
+            // Keep the transition RenderEffect on the stable Popup host.  A blur modifier
+            // creates a bounded graphics layer even with Unbounded edge treatment; placing it
+            // on the spring-sized menu would therefore expose that menu-sized rectangle while
+            // the menu is below its resting scale.
+            .blur(
+                (10.dp * (1f - progress)).coerceAtLeast(0.dp),
+                BlurredEdgeTreatment.Unbounded,
             )
-            .size(
-                width = menuWidth * PopupMenuOvershootScale,
-                height = menuHeight * PopupMenuOvershootScale,
-            ),
+            .graphicsLayer { alpha = progress }
+            .size(width = popupHostWidth, height = popupHostHeight),
     ) {
-        Column(
+        Box(
             Modifier
-                .align(if (opensAbove) Alignment.BottomEnd else Alignment.TopEnd)
-                // Whole-menu transition: alpha 0->1 and blur->0 while growing, reversed while
-                // shrinking. The tail reaches alpha 0 before the window is removed, so the
-                // collapse never pops out of existence.
-                // Unbounded: the default Rectangle edge treatment clips at the node bounds,
-                // which cut the elastic deformation flat during the animation.
-                .blur(
-                    (10.dp * (1f - progress)).coerceAtLeast(0.dp),
-                    BlurredEdgeTreatment.Unbounded,
-                )
-                .graphicsLayer { alpha = progress }
-                .size(width = width, height = height)
-                .navigationGlassBoxShadow(
-                    shape = { RoundedRectangle(radius) },
-                    alpha = GlassBoxShadowAlpha,
-                    layerBlock = menuLayerBlock,
-                )
-                .drawBackdrop(
-                    backdrop = samplingBackdrop,
-                    exportedBackdrop = childBackdrop,
-                    shape = { RoundedRectangle(radius) },
-                    effects = {
-                        vibrancy()
-                        blur(lerp(3.dp.toPx(), 16.dp.toPx(), progress))
-                        lens(
-                            refractionHeight = lerp(10.dp.toPx(), 18.dp.toPx(), progress) +
-                                2.dp.toPx() * pulse,
-                            refractionAmount = lerp(16.dp.toPx(), 26.dp.toPx(), progress) +
-                                4.dp.toPx() * pulse,
-                            depthEffect = pulse > 0.01f,
-                            chromaticAberration = true,
-                        )
-                    },
-                    highlight = {
-                        Highlight.Default.copy(alpha = progress * (0.46f + 0.18f * pulse))
-                    },
-                    shadow = {
-                        Shadow(
-                            radius = 15.dp,
-                            offset = androidx.compose.ui.unit.DpOffset(0.dp, 8.dp),
-                            color = Color.Black,
-                            alpha = 0.02f * GlassBoxShadowAlpha,
-                        )
-                    },
-                    innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.10f * progress) },
-                    layerBlock = menuLayerBlock,
-                    onDrawSurface = {
-                        drawRect(elevatedBackground.copy(alpha = 0.70f * progress))
-                    },
-                )
-                .then(interactiveHighlight.modifier)
-                .then(interactiveHighlight.gestureModifier)
-                .clip(ContinuousRoundedRectangle(radius))
-                .padding(10.dp)
-                .graphicsLayer {
-                    transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
-                    val contentScale = 0.92f + 0.08f * contentProgress
-                    scaleX = contentScale
-                    scaleY = contentScale
-                },
+                .align(if (opensAbove) Alignment.TopStart else Alignment.BottomStart)
+                .size(
+                    width = PopupMenuOvershootMarginStart + menuWidth * PopupMenuOvershootScale,
+                    height = PopupMenuOvershootMarginVertical + menuHeight * PopupMenuOvershootScale,
+                ),
         ) {
-            if (contentProgress > 0.001f) content(childBackdrop)
+            Column(
+                Modifier
+                    .align(if (opensAbove) Alignment.BottomEnd else Alignment.TopEnd)
+                    // Whole-menu transition: alpha 0->1 and blur->0 while growing, reversed while
+                    // shrinking. The tail reaches alpha 0 before the window is removed, so the
+                    // collapse never pops out of existence.
+                    .size(width = width, height = height)
+                    .navigationGlassBoxShadow(
+                        shape = { RoundedRectangle(radius) },
+                        alpha = GlassBoxShadowAlpha,
+                        layerBlock = menuLayerBlock,
+                    )
+                    .drawBackdrop(
+                        backdrop = samplingBackdrop,
+                        exportedBackdrop = childBackdrop,
+                        shape = { RoundedRectangle(radius) },
+                        effects = {
+                            blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
+                        },
+                        highlight = {
+                            Highlight.Default.copy(alpha = progress * (0.46f + 0.18f * pulse))
+                        },
+                        shadow = {
+                            Shadow(
+                                radius = 32.dp,
+                                offset = androidx.compose.ui.unit.DpOffset(0.dp, 10.dp),
+                                color = Color.Black,
+                                alpha = 0.4f * GlassBoxShadowAlpha,
+                            )
+                        },
+                        innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.10f * progress) },
+                        layerBlock = menuLayerBlock,
+                        onDrawSurface = {
+                            drawRect(elevatedBackground.copy(alpha = 0.70f * progress))
+                        },
+                    )
+                    .then(interactiveHighlight.modifier)
+                    .then(interactiveHighlight.gestureModifier)
+                    .clip(ContinuousRoundedRectangle(radius))
+                    .padding(10.dp)
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
+                        val contentScale = 0.92f + 0.08f * contentProgress
+                        scaleX = contentScale
+                        scaleY = contentScale
+                    },
+            ) {
+                if (contentProgress > 0.001f) content(childBackdrop)
+            }
         }
     }
 }
@@ -716,7 +728,7 @@ fun IosPopupMenu(
     onExpandedChange: (Boolean) -> Unit,
     itemCount: Int,
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     keepAnchorVisible: Boolean = false,
     forceBelowAnchor: Boolean = false,
     anchor: @Composable (onClick: () -> Unit) -> Unit,
@@ -761,8 +773,25 @@ fun IosPopupMenu(
         if (popupAlive && anchorSize != IntSize.Zero) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val targetMenuHeightPx = with(density) { (20.dp + 44.dp * itemCount).roundToPx() }
-            val positionProvider = remember(anchorSize, targetMenuHeightPx, forceBelowAnchor) {
-                IosPopupPositionProvider(targetMenuHeightPx, forceBelowAnchor) { resolved ->
+            val anchorOvershootHorizontalPx = with(density) {
+                PopupMenuOvershootMarginStart.roundToPx()
+            }
+            val anchorOvershootVerticalPx = with(density) {
+                PopupMenuOvershootMarginVertical.roundToPx()
+            }
+            val positionProvider = remember(
+                anchorSize,
+                targetMenuHeightPx,
+                forceBelowAnchor,
+                anchorOvershootHorizontalPx,
+                anchorOvershootVerticalPx,
+            ) {
+                IosPopupPositionProvider(
+                    targetMenuHeightPx = targetMenuHeightPx,
+                    forceBelowAnchor = forceBelowAnchor,
+                    anchorOvershootHorizontalPx = anchorOvershootHorizontalPx,
+                    anchorOvershootVerticalPx = anchorOvershootVerticalPx,
+                ) { resolved ->
                     opensAbove = resolved
                 }
             }
@@ -773,6 +802,7 @@ fun IosPopupMenu(
                     focusable = expanded,
                     dismissOnBackPress = expanded,
                     dismissOnClickOutside = expanded,
+                    clippingEnabled = false,
                 ),
             ) {
                 // The overshoot margin is invisible window area; treat taps there like
@@ -810,7 +840,7 @@ fun <T> IosPopupButton(
     label: @Composable (T) -> String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
 ) {
     var expanded by remember { mutableStateOf(false) }
     IosPopupMenu(
