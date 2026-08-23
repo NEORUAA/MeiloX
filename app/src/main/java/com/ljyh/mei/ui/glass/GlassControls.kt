@@ -359,7 +359,7 @@ fun GlassCard(
 @Composable
 fun GlassSheetSurface(
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     content: @Composable BoxScope.() -> Unit,
 ) = IosSheetSurface(modifier = modifier, backdrop = backdrop, content = content)
 

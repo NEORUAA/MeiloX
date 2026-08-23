@@ -111,6 +111,7 @@ fun AppleMusicPlayer(
     collapsedBackdrop: Backdrop,
     playerBackgroundBackdrop: LayerBackdrop,
     playerContentBackdrop: LayerBackdrop,
+    playerCoverBackdrop: LayerBackdrop,
     compactMiniPlayerProgress: State<Float>,
     miniPlayerVerticalOffset: () -> Dp,
 ) {
@@ -493,52 +494,58 @@ fun AppleMusicPlayer(
             }
         }
 
-        AnimatedContent(
-            targetState = mediaMetadata,
-            transitionSpec = {
-                (fadeIn(animationSpec = tween(durationMillis = 400)) +
-                        scaleIn(initialScale = 0.92f, animationSpec = tween(durationMillis = 400)))
-                    .togetherWith(
-                        fadeOut(animationSpec = tween(durationMillis = 400))
-                    )
-            },
-            label = "CoverTransition",
+        Box(
             modifier = Modifier
-                .graphicsLayer {
-                    alpha = state.revealProgress
-                    translationX = finalStart
-                    translationY = finalTop
-                    shadowElevation = mShadowElevation.toPx()
-                    shape = ContinuousRoundedRectangle(finalRadius)
-                    clip = true
-                }
-                .size(
-                    width = with(density) { finalSize.toDp() },
-                    height = with(density) { finalSize.toDp() }
-                )
-                .clickable {
-                    if (!state.isExpanded) {
-                        state.expandSoft()
-                    } else {
-                        showLyrics = !showLyrics
+                .layerBackdrop(playerCoverBackdrop)
+                .trackBackdropPosition(playerCoverBackdrop),
+        ) {
+            AnimatedContent(
+                targetState = mediaMetadata,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(durationMillis = 400)) +
+                            scaleIn(initialScale = 0.92f, animationSpec = tween(durationMillis = 400)))
+                        .togetherWith(
+                            fadeOut(animationSpec = tween(durationMillis = 400))
+                        )
+                },
+                label = "CoverTransition",
+                modifier = Modifier
+                    .graphicsLayer {
+                        alpha = state.revealProgress
+                        translationX = finalStart
+                        translationY = finalTop
+                        shadowElevation = mShadowElevation.toPx()
+                        shape = ContinuousRoundedRectangle(finalRadius)
+                        clip = true
                     }
+                    .size(
+                        width = with(density) { finalSize.toDp() },
+                        height = with(density) { finalSize.toDp() }
+                    )
+                    .clickable {
+                        if (!state.isExpanded) {
+                            state.expandSoft()
+                        } else {
+                            showLyrics = !showLyrics
+                        }
+                    }
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) { currentMetadata ->
+                if (currentMetadata != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(currentMetadata.coverUrl)
+                            .size(Size.ORIGINAL)
+                            .precision(Precision.EXACT)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
                 }
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) { currentMetadata ->
-            if (currentMetadata != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(currentMetadata.coverUrl)
-                        .size(Size.ORIGINAL)
-                        .precision(Precision.EXACT)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "Cover",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
             }
         }
     }

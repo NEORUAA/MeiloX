@@ -59,6 +59,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -921,7 +922,7 @@ fun IosAlertDialog(
     title: String,
     message: String? = null,
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalAlertBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     buttonLayout: IosAlertButtonLayout = IosAlertButtonLayout.SideBySide,
     buttons: List<IosAlertButtonSpec> = emptyList(),
     properties: DialogProperties = DialogProperties(
@@ -1015,7 +1016,7 @@ fun IosAlertDialog(
 @Composable
 fun IosAlertSurface(
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalAlertBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     title: String,
     message: String? = null,
     dimAmount: Float? = null,
@@ -1243,17 +1244,29 @@ fun IosModalSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     skipPartiallyExpanded: Boolean = true,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     contentWindowInsets: @Composable () -> WindowInsets = { WindowInsets.statusBars },
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val animationScope = rememberCoroutineScope()
+    val interactiveHighlight = remember(animationScope) {
+        InteractiveHighlight(animationScope = animationScope)
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded),
-        modifier = modifier,
+        modifier = modifier.graphicsLayer {
+            clip = false
+            applyGlassDragScale(
+                pressProgress = interactiveHighlight.pressProgress,
+                offset = interactiveHighlight.offset,
+            )
+        },
         containerColor = Color.Transparent,
         contentColor = LocalGlassColors.current.content,
-        shape = IosModalSheetShape,
+        // Keep the host unclipped so drag-scale overshoot reaches the outer outline;
+        // IosSheetSurface owns the visible rounded shape.
+        shape = RectangleShape,
         dragHandle = null,
         contentWindowInsets = contentWindowInsets,
     ) {
@@ -1261,6 +1274,8 @@ fun IosModalSheet(
             modifier = Modifier.fillMaxWidth(),
             backdrop = backdrop,
             shape = IosModalSheetShape,
+            interactiveHighlight = interactiveHighlight,
+            applyDragScale = false,
         ) {
             Column(
                 Modifier.fillMaxWidth().navigationBarsPadding(),
@@ -1286,12 +1301,28 @@ fun IosModalSheet(
 @Composable
 fun IosSheetSurface(
     modifier: Modifier = Modifier,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     shape: Shape = RoundedRectangle(38.dp),
+    interactiveHighlight: InteractiveHighlight? = null,
+    applyDragScale: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = LocalGlassColors.current
     val isLight = !colors.isDark
+    val animationScope = rememberCoroutineScope()
+    val activeInteractiveHighlight = interactiveHighlight ?: remember(animationScope) {
+        InteractiveHighlight(animationScope = animationScope)
+    }
+    val sheetLayerBlock: (GraphicsLayerScope.() -> Unit)? = if (applyDragScale) {
+        {
+            applyGlassDragScale(
+                pressProgress = activeInteractiveHighlight.pressProgress,
+                offset = activeInteractiveHighlight.offset,
+            )
+        }
+    } else {
+        null
+    }
     // Sheet surfaces render inside dialog windows (ModalBottomSheet); the shared backdrop
     // lives in the app window, so sample it with window-space coordinates. The library's
     // localPositionOf mapping cannot cross compose owners and silently sampled nothing.
@@ -1299,32 +1330,39 @@ fun IosSheetSurface(
     Box(
         modifier
             .fillMaxWidth()
-            .drawBackdrop(
-                backdrop = samplingBackdrop,
-                shape = { shape },
-                effects = {
-                    vibrancy()
-                    blur(16.dp.toPx())
-                    lens(20.dp.toPx(), 34.dp.toPx(), depthEffect = true)
-                },
-                highlight = { Highlight.Default.copy(alpha = if (isLight) 0.58f else 0.38f) },
-                shadow = { Shadow(radius = 48.dp, alpha = 0.25f) },
-                innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.12f) },
-                onDrawSurface = {
-                    drawRect(
-                        colors.elevatedBackground.copy(alpha = if (isLight) 0.72f else 0.54f),
-                    )
-                    drawRect(Color.White.copy(alpha = if (isLight) 0.12f else 0.04f))
-                },
-            ),
-        content = {
-            CompositionLocalProvider(
-                LocalContentColor provides colors.content,
-                LocalGlassContentColor provides colors.content,
-            ) {
-                content()
-            }
-        },
+                .navigationGlassBoxShadow(
+                    shape = { shape },
+                    alpha = GlassBoxShadowAlpha,
+                    layerBlock = sheetLayerBlock,
+                )
+                .drawBackdrop(
+                    backdrop = samplingBackdrop,
+                    shape = { shape },
+                    effects = {
+                        blur(if (isLight) 16.dp.toPx() else 8.dp.toPx())
+                    },
+                    highlight = { Highlight.Default.copy(alpha = if (isLight) 0.58f else 0.38f) },
+                    shadow = { Shadow(radius = 48.dp, alpha = 0.25f) },
+                    innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.12f) },
+                    layerBlock = sheetLayerBlock,
+                    onDrawSurface = {
+                        drawRect(
+                            colors.elevatedBackground.copy(alpha = if (isLight) 0.72f else 0.54f),
+                        )
+                        drawRect(Color.White.copy(alpha = if (isLight) 0.12f else 0.04f))
+                    },
+                )
+                .then(activeInteractiveHighlight.modifier)
+                .then(activeInteractiveHighlight.gestureModifier),
+            content = {
+                CompositionLocalProvider(
+                    LocalContentColor provides colors.content,
+                    LocalGlassContentColor provides colors.content,
+                    LocalGroupedListBackgroundAlpha provides SheetGroupedListBackgroundAlpha,
+                ) {
+                    content()
+                }
+            },
     )
 }
 
@@ -1334,7 +1372,7 @@ fun IosActionSheet(
     title: String,
     modifier: Modifier = Modifier,
     message: String? = null,
-    backdrop: Backdrop = LocalGlassBackdrop.current,
+    backdrop: Backdrop = LocalBlurBackdrop.current,
     shape: Shape = IosModalSheetShape,
     showHandle: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,

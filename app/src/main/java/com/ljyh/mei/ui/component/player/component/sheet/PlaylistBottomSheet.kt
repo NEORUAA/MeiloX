@@ -30,11 +30,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +64,8 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGlassDimensions
 import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.ui.glass.applyGlassDragScale
+import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.smallImage
@@ -195,18 +200,32 @@ fun PlaylistContent(
 fun PlaylistBottomSheet(onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val screenShape = IosModalSheetShape
+    val animationScope = rememberCoroutineScope()
+    val interactiveHighlight = remember(animationScope) {
+        InteractiveHighlight(animationScope = animationScope)
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        modifier = Modifier.graphicsLayer {
+            clip = false
+            applyGlassDragScale(
+                pressProgress = interactiveHighlight.pressProgress,
+                offset = interactiveHighlight.offset,
+            )
+        },
         containerColor = Color.Transparent,
         contentColor = LocalGlassColors.current.content,
-        shape = screenShape,
+        // Keep the host unclipped so the sheet's drag-scale overshoot reaches its outer outline.
+        shape = RectangleShape,
         dragHandle = null,
         contentWindowInsets = { WindowInsets.statusBars },
     ) {
         IosSheetSurface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f),
             shape = screenShape,
+            interactiveHighlight = interactiveHighlight,
+            applyDragScale = false,
         ) {
             Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                 Box(

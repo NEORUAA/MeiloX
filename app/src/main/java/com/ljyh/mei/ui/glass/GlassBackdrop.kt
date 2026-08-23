@@ -26,9 +26,9 @@ val LocalGlassBackdrop = staticCompositionLocalOf<Backdrop> {
     error("Glass controls must be hosted by GlassBackdropHost or GlassBackdropProvider")
 }
 
-/** Backdrop source reserved for full-screen dialog surfaces that sample the rendered page. */
-val LocalAlertBackdrop = staticCompositionLocalOf<Backdrop> {
-    error("Alert glass must be hosted by the app backdrop provider")
+/** Backdrop source reserved for modal surfaces that sample the rendered page. */
+val LocalBlurBackdrop = staticCompositionLocalOf<Backdrop> {
+    error("Blur glass must be hosted by the app backdrop provider")
 }
 
 @Composable
@@ -38,7 +38,7 @@ fun GlassBackdropProvider(
 ) {
     CompositionLocalProvider(
         LocalGlassBackdrop provides backdrop,
-        LocalAlertBackdrop provides backdrop,
+        LocalBlurBackdrop provides backdrop,
         content = content,
     )
 }
@@ -56,7 +56,7 @@ fun GlassBackdropHost(
     val backdrop = rememberLayerBackdrop()
     CompositionLocalProvider(
         LocalGlassBackdrop provides backdrop,
-        LocalAlertBackdrop provides backdrop,
+        LocalBlurBackdrop provides backdrop,
     ) {
         Box(modifier) {
             Box(

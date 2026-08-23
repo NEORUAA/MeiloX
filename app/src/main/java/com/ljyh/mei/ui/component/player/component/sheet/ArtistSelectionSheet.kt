@@ -14,15 +14,14 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.ui.glass.IosModalSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,13 +30,9 @@ fun ArtistSelectionSheet(
     onDismiss: () -> Unit,
     onArtistClick: (MediaMetadata.Artist) -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
-
-    ModalBottomSheet(
+    IosModalSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface
+        skipPartiallyExpanded = false,
     ) {
         Column(
             modifier = Modifier

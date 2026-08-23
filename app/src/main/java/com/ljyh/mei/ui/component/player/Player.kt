@@ -32,8 +32,10 @@ import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
+import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
+import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.rememberCrossWindowBackdrop
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
@@ -79,9 +81,13 @@ fun BottomSheetPlayer(
     // without ever touching the native GL Surface. Window-space wrappers keep both sources
     // stable when a Popup or ModalBottomSheet animates in another Compose owner.
     val playerContentBackdrop = rememberLayerBackdrop()
+    // The expanded cover is intentionally rendered above the player content. Record it in a
+    // separate source so sheets can sample it without changing that visual z-order.
+    val playerCoverBackdrop = rememberLayerBackdrop()
     val playerBackdrop = rememberCombinedBackdrop(
         rememberCrossWindowBackdrop(playerBackgroundBackdrop),
         rememberCrossWindowBackdrop(playerContentBackdrop),
+        rememberCrossWindowBackdrop(playerCoverBackdrop),
     )
 
     // 获取播放器样式
@@ -105,6 +111,7 @@ fun BottomSheetPlayer(
     CompositionLocalProvider(
         LocalPlayerBackdropFrame provides backdropFrame,
         LocalGlassBackdrop provides playerBackdrop,
+        LocalBlurBackdrop provides playerBackdrop,
     ) {
         when (playerStyle) {
             PlayerStyle.AppleMusic -> {
@@ -130,6 +137,7 @@ fun BottomSheetPlayer(
                         collapsedBackdrop = collapsedBackdrop,
                         playerBackgroundBackdrop = playerBackgroundBackdrop,
                         playerContentBackdrop = playerContentBackdrop,
+                        playerCoverBackdrop = playerCoverBackdrop,
                         compactMiniPlayerProgress = compactMiniPlayerProgress,
                         miniPlayerVerticalOffset = miniPlayerVerticalOffset,
                     )
@@ -155,7 +163,8 @@ fun BottomSheetPlayer(
     // 公共的弹窗处理层
     CompositionLocalProvider(
         LocalGlassBackdrop provides playerBackdrop,
-        LocalGroupedListBackgroundAlpha provides 0.55f,
+        LocalBlurBackdrop provides playerBackdrop,
+        LocalGroupedListBackgroundAlpha provides SheetGroupedListBackgroundAlpha,
     ) {
         CommonOverlayHandler(
             overlayHandler = overlayHandler,
