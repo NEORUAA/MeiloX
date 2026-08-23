@@ -140,6 +140,7 @@ fun rememberPlayerStateContainer(
 
     LaunchedEffect(container.mediaMetadata.value?.id) {
         container.mediaMetadata.value?.let { meta ->
+            playerViewModel.mediaMetadata = meta
             playerViewModel.getLike(meta.id)
         }
     }

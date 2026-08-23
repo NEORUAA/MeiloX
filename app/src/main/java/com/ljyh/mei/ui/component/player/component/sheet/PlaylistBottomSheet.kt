@@ -59,6 +59,8 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.ui.glass.IosModalSheetShape
 import com.ljyh.mei.ui.glass.IosSheetSurface
+import com.ljyh.mei.ui.glass.IosSheetTopToolbar
+import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGlassDimensions
@@ -109,23 +111,14 @@ fun PlaylistContent(
 
     Column(modifier) {
         if (showTitleBar) {
-            Box(
-                Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(R.string.queue_title, mediaItems.size),
-                    style = IosTypography.headline,
-                )
-                Box(
-                    Modifier.align(Alignment.CenterEnd).size(44.dp)
-                        .clip(ContinuousRoundedRectangle(50))
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    SfIcon("xmark.circle", stringResource(R.string.queue_close), size = 24.dp)
-                }
-            }
+            IosSheetTopToolbar(
+                title = stringResource(R.string.queue_title, mediaItems.size),
+                actions = {
+                    IosSheetTopToolbarButton(onClick = onDismiss) {
+                        SfIcon("xmark", stringResource(R.string.queue_close), size = 20.dp)
+                    }
+                },
+            )
         }
 
         if (mediaItems.isEmpty()) {

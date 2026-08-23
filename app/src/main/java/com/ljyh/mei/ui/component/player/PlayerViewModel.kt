@@ -134,8 +134,11 @@ class PlayerViewModel @Inject constructor(
         lyricManager.searchQQSong(keyword)
     }
 
-    fun selectQQSong(song: SearchResult.Request.Data.Body.ItemSong) {
-        lyricManager.selectQQSongForLyric(mediaMetadata ?: return, song)
+    fun selectQQSong(
+        metadata: MediaMetadata,
+        song: SearchResult.Request.Data.Body.ItemSong,
+    ) {
+        lyricManager.selectQQSongForLyric(metadata, song)
     }
 
     fun insertSong(song: QQSong) {

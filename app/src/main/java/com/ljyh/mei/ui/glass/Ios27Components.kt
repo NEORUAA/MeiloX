@@ -327,6 +327,44 @@ fun IosTopToolbar(
     }
 }
 
+/** Compact toolbar used inside modal sheets. Sheet actions intentionally do not sample the
+ * content behind the sheet; they use the same grouped-list tint/alpha with the shared highlight
+ * and drag physics instead. */
+@Composable
+fun IosSheetTopToolbar(
+    title: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    IosTopToolbar(
+        title = title,
+        modifier = modifier.offset(y = (-5).dp),
+        actions = actions,
+    )
+}
+
+@Composable
+fun IosSheetTopToolbarButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    val groupedListBackground = colors.elevatedBackground.copy(
+        alpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f),
+    )
+    GlassIconButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        navigationSurfaceColor = groupedListBackground,
+        navigationSurfaceAlphaMultiplier = 1f,
+        sampleBackdrop = false,
+        content = content,
+    )
+}
+
 /** Figma node 2517:14528. Floating bottom toolbar variants share the liquid capsule. */
 @Composable
 fun IosBottomToolbar(
@@ -1081,7 +1119,7 @@ fun IosAlertSurface(
         )
     }
     BoxWithConstraints(modifier) {
-        val alertWidth = (maxWidth * 0.8f).coerceIn(300.dp, 400.dp)
+        val alertWidth = (maxWidth * 0.8f).coerceIn(280.dp, 380.dp)
         Column(
             Modifier
                 .width(alertWidth)

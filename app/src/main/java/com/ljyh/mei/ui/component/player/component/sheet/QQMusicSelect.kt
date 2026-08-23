@@ -38,6 +38,9 @@ import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.glass.IosModalSheet
+import com.ljyh.mei.ui.glass.IosSheetTopToolbar
+import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
+import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.TimeUtils.formatSeconds
 import kotlin.math.abs
@@ -56,6 +59,14 @@ fun QQMusicSelectSheet(
         skipPartiallyExpanded = false,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            IosSheetTopToolbar(
+                title = "正在为这首歌寻找歌词",
+                actions = {
+                    IosSheetTopToolbarButton(onClick = onDismiss) {
+                        SfIcon("xmark", "关闭", size = 20.dp)
+                    }
+                },
+            )
             CurrentReferenceHeader(mediaMetadata.title, mediaMetadata.artists[0].name, mediaMetadata.duration)
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
             val result = searchNew
@@ -95,7 +106,7 @@ fun QQMusicSelectSheet(
                                 targetTitle = mediaMetadata.title,
                                 onClick = {
                                     Timber.tag("QQMusicSelect").d(song.toString())
-                                    viewmodel.selectQQSong(song)
+                                    viewmodel.selectQQSong(mediaMetadata, song)
                                     onDismiss()
                                 }
                             )
@@ -115,11 +126,6 @@ private fun CurrentReferenceHeader(title: String, artist: String, duration: Long
             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
             .padding(16.dp)
     ) {
-        Text(
-            text = "正在为这首歌寻找歌词:",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = title,

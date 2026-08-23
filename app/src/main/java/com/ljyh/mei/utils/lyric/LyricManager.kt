@@ -74,6 +74,9 @@ class LyricManager @Inject constructor(
     /** 当前歌词拉取协程 Job，切歌时 cancel */
     private var fetchJob: Job? = null
 
+    /** Current QQ lyric request, including manually selected songs. */
+    private var qqFetchJob: Job? = null
+
     /** 标记 QQ 源是否已终结（Success 或 Error），防止同一首歌多个 combine 触发重复处理 */
     private var qqFinalized = false
 
@@ -130,6 +133,7 @@ class LyricManager @Inject constructor(
 
         currentSongId = songId
         fetchJob?.cancel()
+        qqFetchJob?.cancel()
         qqFinalized = false
 
         // 重置所有源状态
@@ -337,7 +341,8 @@ class LyricManager @Inject constructor(
      * 写入 qqLyricResult。若返回 QRC 格式（qrcT ≠ 0），额外拉取 LRC 兜底。
      */
     fun fetchQQLyric(song: QQSong) {
-        scope.launch {
+        qqFetchJob?.cancel()
+        qqFetchJob = scope.launch {
             currentQQSong = song
             qqLyricResult.value = Resource.Loading
             try {
@@ -351,6 +356,8 @@ class LyricManager @Inject constructor(
                         fetchQQLyricLrc(song)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "QQ fetch error")
                 qqLyricResult.value = Resource.Error("QQ fetch failed")
@@ -376,6 +383,8 @@ class LyricManager @Inject constructor(
                 lrcFallbackContent = lrcContent
                 remergeLyrics()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.e(e, "QQ LRC fallback fetch error")
         }
@@ -587,6 +596,21 @@ class LyricManager @Inject constructor(
                 duration = song.interval
             )
             qqSongRepository.insertSong(qqSong)
+
+            // A manual selection is an explicit source switch. Cancel the automatic
+            // multi-source load and clear its results so NetEase/AM cannot win the
+            // merge again while the selected QQ lyric is being fetched.
+            currentSongId = metadata.id.toString()
+            lastMetadata = metadata
+            fetchJob?.cancel()
+            qqFetchJob?.cancel()
+            qqFinalized = false
+            netLyricResult.value = Resource.Loading
+            qqLyricResult.value = Resource.Loading
+            amLyricResult.value = Resource.Loading
+            lrcFallbackContent = null
+            _lyricData.value = createDefaultLyricData("歌词加载中", source = LyricSource.Loading)
+
             fetchQQLyric(qqSong)
         }
     }
@@ -596,6 +620,7 @@ class LyricManager @Inject constructor(
      */
     fun cancelAll() {
         fetchJob?.cancel()
+        qqFetchJob?.cancel()
         preloadJob?.cancel()
         currentSongId = null
     }

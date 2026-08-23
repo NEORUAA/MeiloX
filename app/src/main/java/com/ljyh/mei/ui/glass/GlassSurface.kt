@@ -48,6 +48,7 @@ import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -328,9 +329,11 @@ internal fun Modifier.navigationGlassBackground(
     backdrop: Backdrop,
     shape: () -> Shape,
     containerColor: Color,
+    containerAlphaMultiplier: Float = 1.25f,
     pressProgress: Float = 0f,
     pressProgressState: androidx.compose.runtime.State<Float>? = null,
     highlightAngle: Float = 90f,
+    sampleBackdrop: Boolean = true,
     layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
 ): Modifier = this
     .navigationGlassBoxShadow(shape, GlassBoxShadowAlpha, layerBlock)
@@ -338,14 +341,16 @@ internal fun Modifier.navigationGlassBackground(
         backdrop = backdrop,
         shape = shape,
         effects = {
-            vibrancy()
-            blur(2.dp.toPx())
-            lens(
-                refractionHeight = 10.dp.toPx(),
-                refractionAmount = 24.dp.toPx(),
-                depthEffect = true,
-                chromaticAberration = true,
-            )
+            if (sampleBackdrop) {
+                vibrancy()
+                blur(2.dp.toPx())
+                lens(
+                    refractionHeight = 10.dp.toPx(),
+                    refractionAmount = 24.dp.toPx(),
+                    depthEffect = true,
+                    chromaticAberration = true,
+                )
+            }
         },
         highlight = {
             val progress = pressProgressState?.value ?: pressProgress
@@ -365,7 +370,11 @@ internal fun Modifier.navigationGlassBackground(
         innerShadow = null,
         layerBlock = layerBlock,
         onDrawSurface = {
-            drawRect(containerColor.copy(alpha = containerColor.alpha * 1.25f))
+            drawRect(
+                containerColor.copy(
+                    alpha = containerColor.alpha * containerAlphaMultiplier.coerceAtLeast(0f),
+                ),
+            )
         },
     )
 
@@ -376,11 +385,13 @@ fun GlassSurface(
     shape: Shape = ContinuousRoundedRectangle(LocalGlassDimensions.current.regularCornerRadius),
     style: GlassSurfaceStyle = LocalGlassSurfaceStyle.current,
     navigationSurfaceColor: Color? = null,
+    navigationSurfaceAlphaMultiplier: Float = 1.25f,
     emphasis: GlassEmphasis = GlassEmphasis.Regular,
     enabled: Boolean = true,
     refractionHeight: Dp = 12.dp,
     refractionAmount: Dp = 24.dp,
     opticalHighlightBoost: Float = 0f,
+    sampleBackdrop: Boolean = true,
     exportedBackdrop: LayerBackdrop? = null,
     onClick: (() -> Unit)? = null,
     contentAlignment: Alignment = Alignment.Center,
@@ -403,28 +414,37 @@ fun GlassSurface(
             offset = interactiveHighlight.offset,
         )
     }
+    // Some controls (notably sheet headers) need the navigation tint/highlight and the shared
+    // drag physics without replaying or refracting the content behind them. Keep an empty
+    // canvas backdrop for that mode so the button remains a glass surface without lens/blur
+    // sampling of the player window.
+    val surfaceBackdrop = if (sampleBackdrop) backdrop else rememberCanvasBackdrop {}
     val surfaceModifier = if (style == GlassSurfaceStyle.Navigation) {
         modifier.navigationGlassBackground(
-            backdrop = backdrop,
+            backdrop = surfaceBackdrop,
             shape = { shape },
             containerColor = navigationSurfaceColor ?: surfaceColor,
+            containerAlphaMultiplier = navigationSurfaceAlphaMultiplier,
             pressProgress = interactiveHighlight.pressProgress,
+            sampleBackdrop = sampleBackdrop,
             layerBlock = dragScaleLayerBlock,
         )
     } else {
         modifier.drawBackdrop(
-            backdrop = backdrop,
+            backdrop = surfaceBackdrop,
             shape = { shape },
             effects = {
-                val progress = interactiveHighlight.pressProgress
-                vibrancy()
-                blur(2.dp.toPx())
-                lens(
-                    refractionHeight = refractionHeight.toPx(),
-                    refractionAmount = refractionAmount.toPx(),
-                    depthEffect = progress > 0.01f,
-                    chromaticAberration = true,
-                )
+                if (sampleBackdrop) {
+                    val progress = interactiveHighlight.pressProgress
+                    vibrancy()
+                    blur(2.dp.toPx())
+                    lens(
+                        refractionHeight = refractionHeight.toPx(),
+                        refractionAmount = refractionAmount.toPx(),
+                        depthEffect = progress > 0.01f,
+                        chromaticAberration = true,
+                    )
+                }
             },
             highlight = {
                 Highlight.Default.copy(
@@ -533,17 +553,23 @@ fun GlassIconButton(
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalGlassBackdrop.current,
     style: GlassSurfaceStyle = LocalGlassSurfaceStyle.current,
+    navigationSurfaceColor: Color? = null,
+    navigationSurfaceAlphaMultiplier: Float = 1.25f,
     enabled: Boolean = true,
     emphasis: GlassEmphasis = GlassEmphasis.Regular,
+    sampleBackdrop: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     GlassSurface(
         modifier = modifier.size(LocalGlassDimensions.current.iconButtonSize),
         backdrop = backdrop,
         style = style,
+        navigationSurfaceColor = navigationSurfaceColor,
+        navigationSurfaceAlphaMultiplier = navigationSurfaceAlphaMultiplier,
         shape = CircleShape,
         emphasis = emphasis,
         enabled = enabled,
+        sampleBackdrop = sampleBackdrop,
         onClick = onClick,
         content = content,
     )
