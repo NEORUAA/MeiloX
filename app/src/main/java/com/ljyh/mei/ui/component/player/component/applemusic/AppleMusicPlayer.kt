@@ -10,6 +10,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
@@ -153,6 +155,15 @@ fun AppleMusicPlayer(
         transitionSpec = { spring(stiffness = Spring.StiffnessLow) }
     ) { if (it) 1f else 0f }
 
+    val playbackCoverScale by animateFloatAsState(
+        targetValue = if (isPlaying) 1f else 0.9f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "AppleMusicCoverScale"
+    )
+
     val sheetProgress = state.progress
 
     val colorScheme = MaterialTheme.colorScheme
@@ -239,6 +250,12 @@ fun AppleMusicPlayer(
         val finalTop = lerp(miniAbsTop, targetTop, sheetProgress)
         val finalStart = lerp(miniStart, targetStart, sheetProgress)
         val finalRadius = lerp(miniRadius, targetRadius, sheetProgress)
+
+        // Apply playback scaling only to the expanded artwork. Keeping the mini-player
+        // and lyric header at full scale preserves their bounds, while center scaling
+        // keeps every responsive artwork size on its existing motion path.
+        val expandedCoverFraction = sheetProgress * (1f - lyricAnimFraction)
+        val finalCoverScale = lerp(1f, playbackCoverScale, expandedCoverFraction)
 
         val shadowAlpha = if (sheetProgress > 0.8f) (1f - lyricAnimFraction) else 0f
         var mShadowElevation = 16.dp * shadowAlpha
@@ -514,6 +531,9 @@ fun AppleMusicPlayer(
                         alpha = state.revealProgress
                         translationX = finalStart
                         translationY = finalTop
+                        scaleX = finalCoverScale
+                        scaleY = finalCoverScale
+                        transformOrigin = TransformOrigin.Center
                         shadowElevation = mShadowElevation.toPx()
                         shape = ContinuousRoundedRectangle(finalRadius)
                         clip = true
