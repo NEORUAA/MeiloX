@@ -185,6 +185,8 @@
     <string name="appearance_player">Player</string>
     <string name="appearance_player_style">Player style</string>
     <string name="appearance_player_classic">Classic</string>
+    <string name="appearance_keep_screen_on">Keep Screen On in Player</string>
+    <string name="appearance_keep_screen_on_description">Prevent the screen from turning off automatically while the player page is open.</string>
     <string name="appearance_original_cover">Load original artwork</string>
     <string name="appearance_original_cover_description">Requests full-resolution artwork when available.</string>
     <string name="appearance_song_cover">Song artwork shape</string>

@@ -184,6 +184,8 @@
     <string name="appearance_player">播放器</string>
     <string name="appearance_player_style">播放器样式</string>
     <string name="appearance_player_classic">经典</string>
+    <string name="appearance_keep_screen_on">播放页保持屏幕常亮</string>
+    <string name="appearance_keep_screen_on_description">打开播放器页面时，防止屏幕自动熄灭。</string>
     <string name="appearance_original_cover">加载原图封面</string>
     <string name="appearance_original_cover_description">可用时请求完整分辨率封面。</string>
     <string name="appearance_song_cover">歌曲封面形状</string>

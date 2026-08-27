@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -385,7 +386,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     "${index + 1}",
-                                    modifier = Modifier.width(24.dp),
+                                    modifier = Modifier.width(28.dp).offset(x = (-4).dp),
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
                                 )

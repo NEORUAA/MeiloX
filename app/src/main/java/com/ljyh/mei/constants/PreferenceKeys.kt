@@ -86,6 +86,7 @@ val MeshLowFreqVolumeKey = floatPreferencesKey("meshLowFreqVolume")
 val MeshSubdivisionKey = intPreferencesKey("meshSubdivision")
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
+val PlayerKeepScreenOnKey = booleanPreferencesKey("player.keepScreenOn")
 val PlaylistCoverStyleKey = stringPreferencesKey("playlistCoverStyle")
 val PlaylistTrackTableHeaderKey = booleanPreferencesKey("playlistTrackTableHeader")
 val TabletAnimationStyleKey = stringPreferencesKey("tabletAnimationStyle")

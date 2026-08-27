@@ -39,6 +39,7 @@ import com.ljyh.mei.constants.NormalLyricTextBoldKey
 import com.ljyh.mei.constants.NormalLyricTextSizeKey
 import com.ljyh.mei.constants.OriginalCoverKey
 import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
@@ -73,6 +74,7 @@ fun AppearanceSettings(
     val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val (playlistHeader, setPlaylistHeader) = rememberPreference(PlaylistTrackTableHeaderKey, false)
     val (playerStyle, setPlayerStyle) = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
+    val (keepScreenOn, setKeepScreenOn) = rememberPreference(PlayerKeepScreenOnKey, false)
     val (originalCover, setOriginalCover) = rememberPreference(OriginalCoverKey, false)
     val (coverStyle, setCoverStyle) = rememberEnumPreference(CoverStyleKey, CoverStyle.Square)
     val (progressStyle, setProgressStyle) = rememberEnumPreference(ProgressBarStyleKey, ProgressBarStyle.LINEAR)
@@ -129,6 +131,13 @@ fun AppearanceSettings(
                 AppearanceChoice(
                     R.string.appearance_player_style, "music.note.house", playerStyle, PlayerStyle.entries,
                     { if (it == PlayerStyle.AppleMusic) "Apple Music" else stringResource(R.string.appearance_player_classic) }, setPlayerStyle,
+                )
+                AppearanceToggle(
+                    R.string.appearance_keep_screen_on,
+                    R.string.appearance_keep_screen_on_description,
+                    "sun.max",
+                    keepScreenOn,
+                    setKeepScreenOn,
                 )
                 AppearanceToggle(R.string.appearance_original_cover, R.string.appearance_original_cover_description, "photo", originalCover, setOriginalCover)
                 AppearanceChoice(

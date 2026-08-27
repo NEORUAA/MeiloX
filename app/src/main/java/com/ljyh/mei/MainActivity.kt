@@ -9,6 +9,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.WindowManager
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -125,6 +126,7 @@ import com.ljyh.mei.constants.CloudMusicTabEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.LastSelectedTabKey
+import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
@@ -266,6 +268,7 @@ class MainActivity : ComponentActivity() {
             val downloadsTabEnabled by rememberPreference(DownloadsTabEnabledKey, defaultValue = false)
             val cloudMusicTabEnabled by rememberPreference(CloudMusicTabEnabledKey, defaultValue = false)
             val listeningHistoryTabEnabled by rememberPreference(ListeningHistoryTabEnabledKey, defaultValue = false)
+            val keepScreenOnInPlayer by rememberPreference(PlayerKeepScreenOnKey, false)
             val navigationTabOrder by rememberPreference(
                 NavigationTabOrderKey,
                 Index.DefaultOrder.joinToString(",", transform = Index::name),
@@ -550,6 +553,11 @@ class MainActivity : ComponentActivity() {
                         // retain the previous appearance while the bottom sheet settles.
                         windowInsetsController.isAppearanceLightStatusBars =
                             !isPlayerPage && !effectiveDark
+                        if (isPlayerPage && keepScreenOnInPlayer) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
                         // Keep the navigation bar transparent instead of applying the platform
                         // contrast scrim.
                         window.navigationBarColor = transparent
