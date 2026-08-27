@@ -158,12 +158,11 @@ class MusicService : MediaLibraryService(),
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
         baseMediaSourceFactory = DefaultMediaSourceFactory(createDataSourceFactory())
             .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()) // 应用自定义错误策略
-        preloadManager = DefaultPreloadManager.Builder(
+        val preloadManagerBuilder = DefaultPreloadManager.Builder(
             this,
             preloadStrategy
         )
             .setMediaSourceFactory(baseMediaSourceFactory) // 告诉管理器用什么去下载
-            .build()
 
         val playerMediaSourceFactory = object : MediaSource.Factory {
             // 必须实现的方法，委托给 baseMediaSourceFactory
@@ -219,6 +218,12 @@ class MusicService : MediaLibraryService(),
             .setSeekBackIncrementMs(5000)
             .setSeekForwardIncrementMs(5000)
             .build()
+            .also { builtPlayer ->
+                // PreloadMediaSource must be prepared on the same looper that consumes it.
+                preloadManager = preloadManagerBuilder
+                    .setPreloadLooper(builtPlayer.playbackLooper)
+                    .build()
+            }
             .apply {
                 //添加监听器
                 addListener(this@MusicService)
