@@ -31,6 +31,39 @@ License, Version 2.0:
 https://github.com/ljyh223/Mei
 License: https://www.apache.org/licenses/LICENSE-2.0
 
+Android Camera Samples
+----------------------
+The camera lifecycle and ImageAnalysis structure used by the PC QR login
+scanner is adapted from the CameraX QR Scanner sample:
+https://github.com/android/camera-samples/tree/main/samples/camerax-qrscanner
+
+Copyright 2026 The Android Open Source Project. It is licensed under the
+Apache License, Version 2.0. The Apache license text is available at:
+https://www.apache.org/licenses/LICENSE-2.0
+
+NetEase login security runtimes
+-------------------------------
+The private PC QR-login compatibility path contains minimized device and
+WatchMan bytecode (`netease-device-sdk.dex`), the official device-ID bytecode
+(`netease-device-id-sdk.dex`), plus the ARM64 native runtimes
+(`libnesdk.so`, `libnetmobsec-4.4.7.so`, `libnetdev-1.0.0.so`, and
+`libAegisSDK.so`) and the URS login/captcha bytecode, key data, and native
+runtimes (`netease-urs-*.dex`, `key_*.dat`, `app_sign_private.dat`,
+`device_info_public.dat`, `error_log_public.dat`,
+`netease_official_signing_certificate.der`, `libursandroidunity.so`, and
+`libnedat.so`) extracted from the official NetEase Cloud Music Android app
+version 9.5.70. These files are
+proprietary NetEase components; no open-source or redistribution license was
+found. They are included only for private interoperability testing and must be
+removed or separately licensed before public distribution.
+
+Bouncy Castle
+-------------
+The URS compatibility path uses Bouncy Castle Provider `bcprov-jdk18on`
+version 1.85.2. Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc.
+It is distributed under the Bouncy Castle License:
+https://www.bouncycastle.org/license.html
+
 MeloX
 -----
 MeloX is the product/reference baseline for the migration. MeloX application

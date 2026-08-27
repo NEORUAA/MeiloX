@@ -43,23 +43,20 @@ fun encryptWeAPI(
     )
 }
 
-fun decryptEApi(
-    data: ByteArray
-): String {
-
-    return AES.decryptAesEcb(
+fun decryptEApiBytes(data: ByteArray): ByteArray =
+    AES.decryptAesEcb(
         data = data,
         key = eapiKey.toByteArray(),
         padding = Padding.PKCS7Padding
-    ).decodeToString()
-}
+    )
+
+fun decryptEApi(data: ByteArray): String = decryptEApiBytes(data).decodeToString()
 
 fun encryptEApi(
     url: String,
     data: String
 ): EApi {
-    Timber.tag("Eapi").d( "data: $data")
-    Timber.tag("Eapi").d("url: $url")
+    Timber.tag("Eapi").d("Encrypt path=%s payloadBytes=%d", url, data.toByteArray().size)
     val message = "nobody" + url + "use" + data + "md5forencrypt"
     val digest: String = message.toByteArray().md5().hex
     return EApi(

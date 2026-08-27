@@ -49,6 +49,9 @@ import androidx.lifecycle.ViewModel
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.NeteaseCsrfKey
+import com.ljyh.mei.constants.NeteaseMusicAKey
+import com.ljyh.mei.constants.NeteaseRefreshTokenKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.UserNicknameKey
@@ -77,81 +80,75 @@ import javax.inject.Inject
 @Composable
 fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    var detected by remember { mutableStateOf(false) }
-    var showCookieLoginSheet by remember { mutableStateOf(false) }
-    val cookieManager = remember { CookieManager.getInstance() }
+    var showMobileLoginSheet by remember { mutableStateOf(true) }
     val bottomPadding = LocalPlayerAwareWindowInsets.current
         .asPaddingValues()
         .calculateBottomPadding()
 
-    LaunchedEffect(webView) {
-        while (webView != null && !detected) {
-            val cookieHeader = cookieManager.getCookie("https://music.163.com").orEmpty()
-            val musicU = cookieHeader.split(';')
-                .map(String::trim)
-                .firstOrNull { it.startsWith("MUSIC_U=") }
-                ?.substringAfter('=')
-                ?.takeIf(String::isNotBlank)
-            if (musicU != null) {
-                viewModel.completeLogin(musicU)
-                detected = true
+    IosPinnedListPage(
+        title = stringResource(R.string.netease_login),
+        subtitle = stringResource(R.string.netease_mobile_login_page_subtitle),
+        showsLargeTitle = false,
+        bottomPadding = bottomPadding,
+        onNavigateBack = navController::navigateUp,
+    ) {
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                SfIcon("iphone", null, size = 56.dp)
+                Text(
+                    text = stringResource(R.string.netease_mobile_login_page_tip),
+                    style = IosTypography.body,
+                    color = LocalGlassColors.current.secondaryContent,
+                )
+                GlassButton(
+                    onClick = { showMobileLoginSheet = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = GlassSurfaceStyle.Standard,
+                    emphasis = GlassEmphasis.Prominent,
+                ) {
+                    Text(
+                        stringResource(R.string.netease_mobile_login),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
-            delay(500)
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        IosPinnedListPage(
-            title = stringResource(R.string.netease_login),
-            subtitle = if (detected) stringResource(R.string.netease_login_detected)
-            else stringResource(R.string.netease_login_waiting),
-            showsLargeTitle = false,
-            horizontalContentPadding = 0.dp,
-            bottomPadding = bottomPadding,
-            onNavigateBack = navController::navigateUp,
-            actions = {
-                if (detected) {
-                    GlassButton(
-                        onClick = navController::navigateUp,
-                        style = GlassSurfaceStyle.Standard,
-                        emphasis = GlassEmphasis.Prominent,
-                    ) {
-                        Text(stringResource(R.string.done))
-                    }
-                }
-            },
-        ) {
-            item(key = "netease-login-webview") {
-                AndroidView(
-                    factory = { currentContext ->
-                        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-                        WebView(currentContext).apply {
-                            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.userAgentString = settings.userAgentString + " Mei/1.0"
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, true)
-                            webViewClient = WebViewClient()
-                            loadUrl("https://music.163.com/#/login")
-                            webView = this
-                        }
-                    },
-                    modifier = Modifier.fillParentMaxSize(),
-                )
-            }
-        }
+    if (showMobileLoginSheet) {
+        NeteaseMobileLoginSheet(
+            onDismiss = { showMobileLoginSheet = false },
+            onSubmitPassword = viewModel::loginWithMobilePassword,
+            onRequestSmsCode = viewModel::requestMobileSmsCode,
+            onSubmitSms = viewModel::loginWithMobileSms,
+            onLoginSuccess = navController::navigateUp,
+        )
+    }
+}
 
-        if (!detected && !showCookieLoginSheet) {
+/*
+ * The legacy Cookie form is intentionally kept private for source compatibility with
+ * earlier builds, but the application login flow no longer exposes it.
+ */
+@Composable
+private fun LegacyNeteaseCookieLoginEntry(
+    showCookieLoginSheet: Boolean,
+    onShowCookieLoginSheet: () -> Unit,
+) {
+    if (!showCookieLoginSheet) {
             GlassButton(
-                onClick = { showCookieLoginSheet = true },
+                onClick = onShowCookieLoginSheet,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .padding(
                         start = 18.dp,
                         end = 18.dp,
-                        bottom = bottomPadding + 12.dp,
+                        bottom = 12.dp,
                     )
                     .fillMaxWidth(),
                 style = GlassSurfaceStyle.Standard,
@@ -164,29 +161,6 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                 )
             }
         }
-    }
-
-    if (showCookieLoginSheet) {
-        NeteaseCookieLoginSheet(
-            onDismiss = { showCookieLoginSheet = false },
-            onSubmit = viewModel::loginWithCookie,
-            onLoginSuccess = {
-                showCookieLoginSheet = false
-                detected = true
-            },
-        )
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            webView?.apply {
-                stopLoading()
-                webViewClient = WebViewClient()
-                destroy()
-            }
-            webView = null
-        }
-    }
 }
 
 @Composable
@@ -351,8 +325,37 @@ class NeteaseLoginViewModel @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
     private val repository: MeloXRepository,
 ) : ViewModel() {
+    suspend fun loginWithMobilePassword(
+        phone: String,
+        countryCode: String,
+        password: String,
+    ) {
+        repository.loginWithMobilePassword(phone, countryCode, password)
+    }
+
+    suspend fun requestMobileSmsCode(
+        activity: android.app.Activity,
+        phone: String,
+        countryCode: String,
+    ) {
+        repository.requestMobileSmsCode(activity, phone, countryCode)
+    }
+
+    suspend fun loginWithMobileSms(
+        phone: String,
+        countryCode: String,
+        code: String,
+    ) {
+        repository.loginWithMobileSms(phone, countryCode, code)
+    }
+
     suspend fun completeLogin(musicU: String) {
-        context.dataStore.edit { it[CookieKey] = musicU }
+        context.dataStore.edit {
+            it[CookieKey] = musicU
+            it.remove(NeteaseCsrfKey)
+            it.remove(NeteaseMusicAKey)
+            it.remove(NeteaseRefreshTokenKey)
+        }
         runCatching { repository.accountProfile() }.getOrNull()?.let { profile ->
             context.dataStore.edit { preferences ->
                 preferences[UserIdKey] = profile.id.toString()
@@ -387,6 +390,9 @@ class NeteaseLoginViewModel @Inject constructor(
 
         context.dataStore.edit { preferences ->
             preferences[CookieKey] = musicU
+            preferences.remove(NeteaseCsrfKey)
+            preferences.remove(NeteaseMusicAKey)
+            preferences.remove(NeteaseRefreshTokenKey)
             preferences[UserIdKey] = profile.id.toString()
             preferences[UserNicknameKey] = profile.nickname
             if (profile.avatarUrl == null) preferences.remove(UserAvatarUrlKey)
@@ -401,6 +407,9 @@ fun logoutNetease(context: android.content.Context) {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             context.dataStore.edit { preferences ->
                 preferences.remove(CookieKey)
+                preferences.remove(NeteaseCsrfKey)
+                preferences.remove(NeteaseMusicAKey)
+                preferences.remove(NeteaseRefreshTokenKey)
                 preferences.remove(UserIdKey)
                 preferences.remove(UserNicknameKey)
                 preferences.remove(UserAvatarUrlKey)

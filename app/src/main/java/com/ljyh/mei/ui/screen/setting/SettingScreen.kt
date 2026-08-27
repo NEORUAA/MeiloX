@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.NeteaseRefreshTokenKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.IosGroupedList
@@ -37,6 +38,7 @@ fun SettingScreen(
     val navController = LocalNavController.current
     val context = LocalContext.current
     val (cookie) = rememberPreference(CookieKey, "")
+    val (refreshToken) = rememberPreference(NeteaseRefreshTokenKey, "")
     val (userNickname) = rememberPreference(UserNicknameKey, "")
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
@@ -47,7 +49,7 @@ fun SettingScreen(
         item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
         item {
             IosGroupedList {
-                if (cookie.isBlank()) {
+                if (cookie.isBlank() || refreshToken.isBlank()) {
                     SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
                         Screen.NeteaseLogin.navigate(navController)
                     }
@@ -58,6 +60,9 @@ fun SettingScreen(
                         false,
                     ) {
                         Screen.AccountHome.navigate(navController)
+                    }
+                    SettingsEntry(stringResource(R.string.pc_qr_login), "viewfinder") {
+                        Screen.PcQrLogin.navigate(navController)
                     }
                     SettingsEntry(stringResource(R.string.netease_logout), "rectangle.portrait.and.arrow.forward") {
                         logoutNetease(context)

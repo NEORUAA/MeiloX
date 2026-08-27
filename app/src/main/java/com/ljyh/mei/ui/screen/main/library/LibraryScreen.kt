@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.NeteaseRefreshTokenKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.UserNicknameKey
@@ -50,6 +51,7 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
     val (_, setUserAvatarUrl) = rememberPreference(UserAvatarUrlKey, "")
     val (userPhoto, setUserPhoto) = rememberPreference(UserPhotoKey, "")
     val cookie by rememberPreference(CookieKey, defaultValue = "")
+    val refreshToken by rememberPreference(NeteaseRefreshTokenKey, defaultValue = "")
 
     // State
     var showPhotoPicker by remember { mutableStateOf(false) }
@@ -77,8 +79,8 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
     }
 
     // --- 数据同步逻辑 ---
-    LaunchedEffect(userId) {
-        if (userId.isNotEmpty()) {
+    LaunchedEffect(userId, refreshToken) {
+        if (userId.isNotEmpty() && refreshToken.isNotEmpty()) {
             viewModel.syncUserPlaylists(userId)
             viewModel.getPhotoAlbum(userId)
             viewModel.getAlbumList()
@@ -93,8 +95,10 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
             }
         }
     }
-    LaunchedEffect(cookie, account) {
-        if (cookie.isNotEmpty() && account !is Resource.Success) viewModel.getUserAccount()
+    LaunchedEffect(cookie, refreshToken, account) {
+        if (cookie.isNotEmpty() && refreshToken.isNotEmpty() && account !is Resource.Success) {
+            viewModel.getUserAccount()
+        }
     }
     LaunchedEffect(account) {
         (account as? Resource.Success)

@@ -6,6 +6,7 @@ import com.google.gson.JsonElement
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.constants.AndroidUserAgent
 import com.ljyh.mei.data.network.QQMusicUApiService
+import com.ljyh.mei.data.network.NeteaseSecurityDns
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
@@ -48,6 +49,9 @@ object RetrofitModule {
 
             // 日志拦截器
             addInterceptor(HttpLoggingInterceptor().apply {
+                redactHeader("Cookie")
+                redactHeader("X-Music-U")
+                redactQueryParams("ydDeviceToken")
                 level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
             })
 
@@ -172,6 +176,17 @@ object RetrofitModule {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(200, TimeUnit.SECONDS)
         .writeTimeout(200, TimeUnit.SECONDS)
+        .addInterceptor(NetworkLogInterceptor())
+        .build()
+
+    @Provides
+    @Singleton
+    @Named("NeteaseSecurityClient")
+    fun provideNeteaseSecurityClient(): OkHttpClient = OkHttpClient.Builder()
+        .dns(NeteaseSecurityDns)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
         .addInterceptor(NetworkLogInterceptor())
         .build()
 

@@ -1,5 +1,7 @@
 package com.ljyh.mei.di
 
+import android.os.Build
+import android.util.Log
 import com.google.common.reflect.TypeToken
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -7,10 +9,16 @@ import com.google.gson.JsonObject
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.DeviceIdKey
+import com.ljyh.mei.constants.NeteaseCsrfKey
+import com.ljyh.mei.constants.NeteaseMusicAKey
+import com.ljyh.mei.constants.NeteaseRefreshTokenKey
+import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.constants.checkToken
+import com.ljyh.mei.data.network.NeteaseLoginSecurity
+import com.ljyh.mei.data.network.NeteaseAegisSecurity
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.encrypt.createRandomKey
-import com.ljyh.mei.utils.encrypt.decryptEApi
+import com.ljyh.mei.utils.encrypt.decryptEApiBytes
 import com.ljyh.mei.utils.encrypt.encryptEApi
 import com.ljyh.mei.utils.encrypt.encryptWeAPI
 import com.ljyh.mei.utils.get
@@ -18,13 +26,18 @@ import com.ljyh.mei.utils.getDeviceId
 import com.ljyh.mei.utils.netease.ChineseIpUtils
 import com.ljyh.mei.utils.netease.NeteaseUtils.getWNMCID
 import okhttp3.FormBody
+import okhttp3.Cookie
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import timber.log.Timber
 import java.io.IOException
+import java.io.ByteArrayInputStream
+import java.util.zip.GZIPInputStream
 import kotlin.apply
 
 class NeteaseInterceptor : Interceptor {
@@ -41,6 +54,9 @@ class NeteaseInterceptor : Interceptor {
     private val cachedNmtid: String by lazy { createRandomKey(16) }
     private val fakeIP :String by lazy { ChineseIpUtils.generateRandomChineseIP() }
     private val cachedWnmcid: String by lazy { getWNMCID() } // 只计算一次保持会话一致性
+    private val cachedAndroidCsrf: String by lazy {
+        java.util.UUID.randomUUID().toString().replace("-", "")
+    }
 
     private val EAPI_CONFIG = mapOf(
         "os" to "pc",
@@ -57,17 +73,21 @@ class NeteaseInterceptor : Interceptor {
     // =========================================================================
     //  配置 B：普通 Android 模式 (用于 weapi/api - 保持手机端正常行为)
     // =========================================================================
-    private val ANDROID_CONFIG = mapOf(
-        "os" to "android",
-        "osver" to "14",
-        "appver" to "8.20.20.231215173437",
-        "channel" to "xiaomi",
-        "versioncode" to "6006066",
-        "mobilename" to "Mi+A3",
-        "buildver" to System.currentTimeMillis().toString().take(10),
-        "resolution" to "2268x1080",
-        "ua" to "NeteaseMusic/9.4.32.251222163637" // 或者你之前的 Android UA
-    )
+    private val ANDROID_CONFIG by lazy {
+        val metrics = AppContext.instance.resources.displayMetrics
+        mapOf(
+            "os" to "android",
+            "osver" to Build.VERSION.RELEASE,
+            "appver" to "9.5.70",
+            "channel" to "xiaomi",
+            "versioncode" to "9005070",
+            "mobilename" to Build.MODEL.replace(" ", "+"),
+            "buildver" to "260818213343",
+            "resolution" to "${metrics.widthPixels}x${metrics.heightPixels}",
+            "ua" to "NeteaseMusic/9.5.70.260818213343(9005070);Dalvik/2.1.0 " +
+                "(Linux; U; Android ${Build.VERSION.RELEASE}; ${Build.MODEL} Build/${Build.ID})",
+        )
+    }
 
     // 公用常量
     private val CONST_NMDI = "Q1NKTQkBDAAMIEF4coQMHcb6TLA7AAAAciOiJ%2F%2FOO4VQ7m%2FLvLJ1pD9CIsJP5mfzI4SusB%2BaNScGLpThEYBcPxGzj0pL5hLdZ7LqB2UVULdYgc0%3D"
@@ -78,25 +98,77 @@ class NeteaseInterceptor : Interceptor {
         val originalRequest = chain.request()
         val url = originalRequest.url.toString()
         val cryptoMode = originalRequest.header(CRYPTO_MODE_HEADER) ?: determineCryptoMethod(url)
+        val suppliedAntiCheatToken =
+            originalRequest.header(ANTI_CHEAT_TOKEN_HEADER)?.takeIf(String::isNotBlank)
+        val ydDeviceToken = originalRequest.header(YD_DEVICE_TOKEN_HEADER)?.takeIf(String::isNotBlank)
+        val loginChainId = originalRequest.header(LOGIN_CHAIN_ID_HEADER)?.takeIf(String::isNotBlank)
+        val nmcid = originalRequest.header(NMCID_HEADER)?.takeIf(String::isNotBlank)
+        val nmdi = originalRequest.header(NMDI_HEADER)?.takeIf(String::isNotBlank)
+        val nmtid = originalRequest.header(NMTID_HEADER)?.takeIf(String::isNotBlank)
+        val withoutAccount = originalRequest.header(WITHOUT_ACCOUNT_HEADER) == "true"
         val builder = originalRequest.newBuilder()
             .removeHeader(CRYPTO_MODE_HEADER)
             .removeHeader(CHECK_TOKEN_HEADER)
+            .removeHeader(ANTI_CHEAT_TOKEN_HEADER)
+            .removeHeader(YD_DEVICE_TOKEN_HEADER)
+            .removeHeader(LOGIN_CHAIN_ID_HEADER)
+            .removeHeader(NMCID_HEADER)
+            .removeHeader(NMDI_HEADER)
+            .removeHeader(NMTID_HEADER)
+            .removeHeader(WITHOUT_ACCOUNT_HEADER)
 
-        if (cryptoMode == "eapi" && "/api/" in originalRequest.url.encodedPath) {
+        if (cryptoMode in setOf("eapi", "xeapi") && "/api/" in originalRequest.url.encodedPath) {
             builder.url(
                 originalRequest.url.newBuilder()
-                    .encodedPath(originalRequest.url.encodedPath.replaceFirst("/api/", "/eapi/"))
+                    .encodedPath(
+                        originalRequest.url.encodedPath.replaceFirst(
+                            "/api/",
+                            if (cryptoMode == "xeapi") "/xeapi/" else "/eapi/",
+                        ),
+                    )
                     .build()
             )
         }
 
-        val config = if (cryptoMode == "eapi") EAPI_CONFIG else ANDROID_CONFIG
+        val storedMusicU = AppContext.instance.dataStore[CookieKey].orEmpty()
+        val hasMobileSession = storedMusicU.isNotBlank() &&
+            !AppContext.instance.dataStore[NeteaseRefreshTokenKey].isNullOrBlank()
+        val usesAndroidEapiIdentity = usesOfficialAndroidIdentity(
+            cryptoMode = cryptoMode,
+            encodedPath = originalRequest.url.encodedPath,
+            hasMobileSession = hasMobileSession,
+        )
+        val usesXeapiIdentity = cryptoMode == "xeapi"
+        val config = if (cryptoMode == "eapi" && !usesAndroidEapiIdentity) {
+            EAPI_CONFIG
+        } else {
+            ANDROID_CONFIG
+        }
 
         val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
-        val musicU = AppContext.instance.dataStore[CookieKey] ?: ""
+        val storedSDeviceId = AppContext.instance.dataStore[SDeviceIdKey].orEmpty()
+        val sDeviceId = if (usesXeapiIdentity) deviceId else storedSDeviceId
+        val musicU = if (withoutAccount || !hasMobileSession) {
+            ""
+        } else {
+            storedMusicU
+        }
+        val musicA = if (withoutAccount || !hasMobileSession) {
+            ""
+        } else {
+            AppContext.instance.dataStore[NeteaseMusicAKey].orEmpty()
+        }
         val rawBody = getBodyString(originalRequest.body)
         val requiresCheckToken = originalRequest.header(CHECK_TOKEN_HEADER) == "true" ||
             rawBody.contains("\"checkToken\"")
+        val antiCheatToken = suppliedAntiCheatToken ?: extractCheckToken(rawBody) ?: checkToken
+        val csrfToken = when {
+            !usesAndroidEapiIdentity -> CONST_CSRF
+            withoutAccount || !hasMobileSession -> cachedAndroidCsrf
+            else -> AppContext.instance.dataStore[NeteaseCsrfKey]
+                ?.takeIf(String::isNotBlank)
+                ?: cachedAndroidCsrf
+        }
         val requestId = "${System.currentTimeMillis()}_${(Math.random() * 1000).toInt().toString().padStart(4, '0')}"
 
         val cookieMap = buildMap {
@@ -112,21 +184,40 @@ class NeteaseInterceptor : Interceptor {
 
             // 固定字段
             put("deviceId", deviceId)
-            put("sDeviceId", deviceId) // 部分接口需要这个
+            sDeviceId.takeIf(String::isNotBlank)?.let { put("sDeviceId", it) }
+            put("brand", Build.BRAND)
+            put("packageType", "release")
             put("ntes_kaola_ad", "1")
-            put("_ntes_nuid", cachedNuid)
-            put("WNMCID", cachedWnmcid)
-            put("URS_APPID", CONST_URS_APPID)
-            put("WEVNSM", "1.0.0")
-            put("__csrf", CONST_CSRF)
-            put("NMDI", CONST_NMDI)
-            put("NMTID", cachedNmtid)
+            if (!usesXeapiIdentity) {
+                put("_ntes_nuid", cachedNuid)
+                put("WNMCID", cachedWnmcid)
+                put("WEVNSM", "1.0.0")
+            }
+            put("__csrf", csrfToken)
+
+            if (usesAndroidEapiIdentity) {
+                nmcid?.let { put("NMCID", it) }
+                put("EVNSM", "1.0.0")
+                nmdi?.let { put("NMDI", it) }
+                nmtid?.let { put("NMTID", it) }
+                if (usesXeapiIdentity) {
+                    put("URS_APPID", CONST_URS_APPID)
+                    put("minors_mode_age_range", "0")
+                    put("screenType", "normal")
+                }
+            }
+
+            if (!usesAndroidEapiIdentity) {
+                put("URS_APPID", CONST_URS_APPID)
+                put("NMDI", CONST_NMDI)
+                put("NMTID", cachedNmtid)
+            }
 
             if (musicU.isNotEmpty()) {
                 put("MUSIC_U", musicU)
             }
-            if (requiresCheckToken) {
-                put("X-antiCheatToken", checkToken)
+            if (musicA.isNotEmpty()) {
+                put("MUSIC_A", musicA)
             }
         }
 
@@ -139,11 +230,12 @@ class NeteaseInterceptor : Interceptor {
             mobilename = config["mobilename"]!!,
             buildver = config["buildver"]!!,
             resolution = config["resolution"]!!,
-            __csrf = CONST_CSRF,
+            __csrf = csrfToken,
             channel = config["channel"]!!,
             requestId = requestId
         ).apply {
             if (musicU.isNotEmpty()) this.MUSIC_U = musicU
+            if (musicA.isNotEmpty()) this.MUSIC_A = musicA
         }
         val useEApiHeaderCookie = cryptoMode == "eapi" &&
             originalRequest.url.encodedPath in setOf(
@@ -153,7 +245,7 @@ class NeteaseInterceptor : Interceptor {
         builder.addHeader(
             "Cookie",
             if (useEApiHeaderCookie) {
-                buildEApiCookieString(neteaseHeader, requiresCheckToken)
+                buildEApiCookieString(neteaseHeader)
             } else {
                 buildCookieString(cookieMap)
             },
@@ -173,8 +265,29 @@ class NeteaseInterceptor : Interceptor {
             builder.addHeader("Referer", "https://music.163.com")
         }
 
-        builder.addHeader("X-Real-IP", fakeIP)
-        builder.addHeader("X-Forwarded-For", fakeIP)
+        if (usesAndroidEapiIdentity) {
+            loginChainId?.let { builder.header("x-login-chain-id", it) }
+            if (requiresCheckToken) builder.header("X-antiCheatToken", antiCheatToken)
+            builder.header("x-appver", config["appver"]!!)
+            builder.header("x-buildver", config["buildver"]!!)
+            builder.header("x-deviceId", deviceId)
+            sDeviceId.takeIf(String::isNotBlank)?.let { builder.header("x-sDeviceId", it) }
+            builder.header("x-os", config["os"]!!)
+            builder.header("x-osver", config["osver"]!!)
+            musicU.takeIf(String::isNotBlank)?.let { builder.header("x-music-u", it) }
+            builder.header("x-mam-custommark", if (cryptoMode == "xeapi") "cronet" else "okhttp")
+            builder.header("X-Client-Enc-State", "ENCRYPTED")
+            if (cryptoMode == "xeapi") {
+                builder.header("X-AEAPI", "true")
+                builder.header("mconfig-info", XEAPI_MCONFIG_INFO)
+            } else {
+                builder.header("x-channel", config["channel"]!!)
+                builder.header("x-mobilename", config["mobilename"]!!.replace("+", " "))
+            }
+        } else {
+            builder.addHeader("X-Real-IP", fakeIP)
+            builder.addHeader("X-Forwarded-For", fakeIP)
+        }
 
         handleRequestEncryption(
             builder = builder,
@@ -182,10 +295,24 @@ class NeteaseInterceptor : Interceptor {
             cryptoMode = cryptoMode,
             url = url,
             headerObj = neteaseHeader,
+            usesAndroidEapiIdentity = usesAndroidEapiIdentity,
             requiresCheckToken = requiresCheckToken,
+            antiCheatToken = antiCheatToken,
+            ydDeviceToken = ydDeviceToken,
+            deviceId = deviceId,
+            sDeviceId = sDeviceId,
         )
 
         val response = chain.proceed(builder.build())
+        NeteaseAegisSecurity.acceptSession(
+            sessionId = response.header(AEGIS_SESSION_ID_HEADER),
+            sessionKey = response.header(AEGIS_SESSION_KEY_HEADER),
+        )
+        Cookie.parseAll(response.request.url, response.headers)
+            .firstOrNull { it.name.equals("NMTID", ignoreCase = true) }
+            ?.value
+            ?.takeIf(String::isNotBlank)
+            ?.let { NeteaseLoginSecurity.acceptServerTrackId(it) }
         return handleResponseDecryption(response, cryptoMode)
     }
 
@@ -197,13 +324,8 @@ class NeteaseInterceptor : Interceptor {
 
     private fun buildEApiCookieString(
         headerObj: NeteaseHeader,
-        requiresCheckToken: Boolean,
     ): String {
-        val headerJson = gson.toJsonTree(headerObj).asJsonObject.apply {
-            if (requiresCheckToken) {
-                addProperty("X-antiCheatToken", checkToken)
-            }
-        }
+        val headerJson = gson.toJsonTree(headerObj).asJsonObject
         return headerJson.entrySet()
             .sortedBy { it.key }
             .joinToString("; ") { (key, value) ->
@@ -223,7 +345,12 @@ class NeteaseInterceptor : Interceptor {
         cryptoMode: String,
         url: String,
         headerObj: NeteaseHeader,
+        usesAndroidEapiIdentity: Boolean,
         requiresCheckToken: Boolean,
+        antiCheatToken: String,
+        ydDeviceToken: String?,
+        deviceId: String,
+        sDeviceId: String,
     ) {
         val rawBody = getBodyString(originalRequest.body)
 
@@ -248,20 +375,58 @@ class NeteaseInterceptor : Interceptor {
                         mutableMapOf()
                     }
 
-                val headerJson = gson.toJsonTree(headerObj).asJsonObject
-                if (requiresCheckToken) {
-                    headerJson.addProperty("X-antiCheatToken", checkToken)
+                bodyMap["header"] = if (usesAndroidEapiIdentity) {
+                    "{}"
+                } else {
+                    gson.toJsonTree(headerObj).asJsonObject
                 }
-                bodyMap["header"] = headerJson
                 bodyMap["e_r"] = false
 
                 val newBodyJson = gson.toJson(bodyMap)
-                val apiPath = url
-                    .replace("https://interface.music.163.com", "")
+                val apiPath = originalRequest.url.encodedPath
                     .replaceFirst("/eapi/", "/api/")
 
                 val encryptedData = encryptEApi(apiPath, newBodyJson)
-                builder.post(FormBody.Builder().add("params", encryptedData.params).build())
+                builder.post(
+                    FormBody.Builder()
+                        .add("params", encryptedData.params)
+                        .apply {
+                            ydDeviceToken?.takeIf(String::isNotBlank)?.let {
+                                add("ydDeviceToken", it)
+                            }
+                        }
+                        .build(),
+                )
+            }
+            "xeapi" -> {
+                val formBody = FormBody.Builder().apply {
+                    if (rawBody.isNotEmpty()) {
+                        val body = gson.fromJson(rawBody, JsonObject::class.java)
+                        body.entrySet().forEach { (key, value) ->
+                            add(
+                                key,
+                                if (value.isJsonPrimitive) value.asString else gson.toJson(value),
+                            )
+                        }
+                    }
+                    ydDeviceToken?.takeIf(String::isNotBlank)?.let {
+                        add("ydDeviceToken", it)
+                    }
+                }.build()
+                val envelope = linkedMapOf<String, Any>(
+                    "content" to getBodyString(formBody),
+                    "queryString" to buildXeapiQueryString(originalRequest),
+                )
+                val encrypted = NeteaseAegisSecurity.encryptActive(gson.toJson(envelope))
+                if (usesAndroidEapiIdentity) {
+                    Log.i(
+                        NeteaseLoginSecurity.TAG,
+                        "XEAPI request ready innerBytes=${getBodyString(formBody).toByteArray().size} " +
+                            "ydDeviceToken=${ydDeviceToken?.length ?: 0} " +
+                            "deviceId=${deviceId.length} sDeviceId=${sDeviceId.length}",
+                    )
+                }
+                builder.post(encrypted.toRequestBody(XEAPI_FORM_MEDIA_TYPE))
             }
             "weapi" -> {
                 val encryptedData = encryptWeAPI(rawBody)
@@ -287,7 +452,7 @@ class NeteaseInterceptor : Interceptor {
 
 
     private fun handleResponseDecryption(response: Response, cryptoMode: String): Response {
-        if (cryptoMode == "eapi" && response.isSuccessful) {
+        if (cryptoMode in setOf("eapi", "xeapi") && response.isSuccessful) {
             val body = response.body
             val contentType = body.contentType()
             val encryptedBytes = body.bytes()
@@ -299,8 +464,18 @@ class NeteaseInterceptor : Interceptor {
                 return response.newBuilder().body(encryptedBytes.toResponseBody(contentType)).build()
             }
             return runCatching {
-                Timber.tag("Decrypted Response").d("eapi")
-                decryptEApi(encryptedBytes).toResponseBody(contentType)
+                Timber.tag("Decrypted Response").d(cryptoMode)
+                val decrypted = decryptEApiBytes(encryptedBytes)
+                val decoded = if (
+                    decrypted.size >= 2 &&
+                    decrypted[0] == GZIP_MAGIC_FIRST &&
+                    decrypted[1] == GZIP_MAGIC_SECOND
+                ) {
+                    GZIPInputStream(ByteArrayInputStream(decrypted)).use { it.readBytes() }
+                } else {
+                    decrypted
+                }
+                decoded.toResponseBody(contentType)
             }.fold(
                 onSuccess = { response.newBuilder().body(it).build() },
                 onFailure = { error ->
@@ -323,9 +498,24 @@ class NeteaseInterceptor : Interceptor {
         }
     }
 
+    private fun buildXeapiQueryString(request: Request): String {
+        val encodedQuery = request.url.encodedQuery.orEmpty()
+        if ("e_r" in request.url.queryParameterNames) return encodedQuery
+        return if (encodedQuery.isBlank()) "e_r=true" else "$encodedQuery&e_r=true"
+    }
+
+    private fun extractCheckToken(rawBody: String): String? = runCatching {
+        gson.fromJson(rawBody, JsonObject::class.java)
+            .get("checkToken")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.takeIf(String::isNotBlank)
+    }.getOrNull()
+
     private fun determineCryptoMethod(url: String): String {
         return when {
             url.contains("/weapi/") -> "weapi"
+            url.contains("/xeapi/") -> "xeapi"
             url.contains("/eapi/") -> "eapi"
             else -> "api"
         }
@@ -334,5 +524,36 @@ class NeteaseInterceptor : Interceptor {
     private companion object {
         const val CRYPTO_MODE_HEADER = "X-Netease-Crypto"
         const val CHECK_TOKEN_HEADER = "X-Netease-Check-Token"
+        const val ANTI_CHEAT_TOKEN_HEADER = "X-Netease-Anti-Cheat-Token"
+        const val YD_DEVICE_TOKEN_HEADER = "X-Netease-Yd-Device-Token"
+        const val LOGIN_CHAIN_ID_HEADER = "X-Netease-Login-Chain-Id"
+        const val NMCID_HEADER = "X-Netease-NMCID"
+        const val NMDI_HEADER = "X-Netease-NMDI"
+        const val NMTID_HEADER = "X-Netease-NMTID"
+        const val WITHOUT_ACCOUNT_HEADER = "X-Netease-Without-Account"
+        const val AEGIS_SESSION_ID_HEADER = "x-encr-ssid"
+        const val AEGIS_SESSION_KEY_HEADER = "x-encr-sskey"
+        val XEAPI_FORM_MEDIA_TYPE =
+            "application/x-www-form-urlencoded;charset=utf-8".toMediaType()
+        val GZIP_MAGIC_FIRST = 0x1F.toByte()
+        val GZIP_MAGIC_SECOND = 0x8B.toByte()
+        const val XEAPI_MCONFIG_INFO =
+            "{\"IuRPVVmc3WWul9fT\":{\"version\":\"118190080\",\"appver\":\"9.5.70\"}," +
+                "\"tPJJnts2H31BZXmp\":{\"version\":\"5388288\",\"appver\":\"4.78.0\"}," +
+                "\"c0Ve6C0uNl2Am0Rl\":{\"version\":\"276480\",\"appver\":\"1.4.30\"}," +
+                "\"zr4bw6pKFDIZScpo\":{\"version\":\"3772416\",\"appver\":\"2.40.0\"}}"
     }
 }
+
+internal fun usesOfficialAndroidIdentity(
+    cryptoMode: String,
+    encodedPath: String,
+    hasMobileSession: Boolean = false,
+): Boolean =
+    cryptoMode == "xeapi" || (
+        cryptoMode == "eapi" && (hasMobileSession ||
+            encodedPath.endsWith("/login/qrcode/server/login") ||
+                encodedPath.endsWith("/middle/device-info/get") ||
+                encodedPath.endsWith("/bsr/sk/get")
+            )
+        )

@@ -1,13 +1,14 @@
 package com.ljyh.mei.utils.log
 
 import okhttp3.Interceptor
+import okhttp3.HttpUrl
 import okhttp3.Response
 import timber.log.Timber
 
 class NetworkLogInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val url = request.url.toString()
+        val url = request.url.toSafeLogUrl()
 
         try {
             val response = chain.proceed(request)
@@ -24,3 +25,8 @@ class NetworkLogInterceptor : Interceptor {
         }
     }
 }
+
+internal fun HttpUrl.toSafeLogUrl(): String = newBuilder()
+    .query(null)
+    .build()
+    .toString()

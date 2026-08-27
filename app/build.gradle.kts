@@ -16,8 +16,12 @@ plugins {
 android {
     namespace = "com.ljyh.mei"
     compileSdk = 37
+    ndkVersion = "27.1.12297006"
+    useLibrary("android.test.mock")
     defaultConfig {
-        applicationId = "com.neoruaa.meilox"
+        applicationId = providers.gradleProperty("mei.applicationId")
+            .orElse("com.neoruaa.meilox")
+            .get()
         minSdk = 33
         targetSdk = 37
         versionCode = 7
@@ -26,6 +30,12 @@ android {
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "arm64-v8a"
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -47,6 +57,11 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
@@ -70,6 +85,7 @@ kotlin {
 dependencies {
 
     implementation(libs.androidx.core.ktx)
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -80,6 +96,10 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.navigation.runtime.ktx)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.miuix.navigation3.ui.android)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.media3)
