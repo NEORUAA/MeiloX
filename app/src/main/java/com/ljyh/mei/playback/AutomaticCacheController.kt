@@ -41,7 +41,7 @@ class AutomaticCacheController @Inject constructor(
             DownloadQuality.valueOf(context.dataStore[AutoCacheQualityKey] ?: DownloadQuality.EXHIGH.name)
         }.getOrDefault(DownloadQuality.EXHIGH)
         val result = repository.getSongUrlV1(listOf(songId), quality.toMusicQuality())
-        val source = (result as? Resource.Success)?.data?.data?.firstOrNull { it.url != null }
+        val source = (result as? Resource.Success)?.data?.fullSourceFor(songId)
         if (source?.url == null) {
             Timber.w("Automatic cache could not resolve source for %s", songId)
             return
@@ -64,7 +64,7 @@ class AutomaticCacheController @Inject constructor(
                     songCover = metadata.artworkUri?.toString().orEmpty(),
                     duration = metadata.durationMs ?: 0,
                     fileType = source.encodeType,
-                    quality = quality.text,
+                    quality = source.level,
                 ),
             ),
             playlistName = context.getString(R.string.automatic_cache),

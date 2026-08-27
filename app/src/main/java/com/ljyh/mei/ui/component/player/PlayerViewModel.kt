@@ -253,7 +253,7 @@ class PlayerViewModel @Inject constructor(
             )
 
             if (result is Resource.Success) {
-                val songData = result.data.data.firstOrNull()
+                val songData = result.data.fullSourceFor(metadata.id.toString())
                 val url = songData?.url
                 if (url != null) {
                     val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
@@ -271,7 +271,7 @@ class PlayerViewModel @Inject constructor(
                                 songCover = metadata.coverUrl,
                                 duration = metadata.duration,
                                 fileType = songData.encodeType,
-                                quality = quality.text,
+                                quality = songData.level,
                             )
                         ),
                         playlistName = "单曲下载",

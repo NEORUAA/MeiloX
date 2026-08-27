@@ -445,6 +445,17 @@ class MusicService : MediaLibraryService(),
         preloadManager.invalidate()
     }
 
+    /** Clears sources tied to the previous quality while keeping the player playlist intact. */
+    fun resetPlaybackSourcesForQualityChange() {
+        if (::autoMixController.isInitialized) {
+            autoMixController.resetForQualityChange()
+        }
+        if (::preloadManager.isInitialized) {
+            // BasePreloadManager requires all lifecycle calls on its construction thread.
+            preloadManager.reset()
+        }
+    }
+
 
     private fun openAudioEffectSession() {
         if (isAudioEffectSessionOpened) return
@@ -585,6 +596,9 @@ class MusicService : MediaLibraryService(),
 
         return ResolvingDataSource.Factory(getCacheDataSourceFactory(context)) { dataSpec ->
             val mediaId = dataSpec.key ?: error("No media key")
+            val quality = context.dataStore[MusicQualityKey]
+                ?.let(::normalizePlaybackQuality)
+                ?: MusicQuality.EXHIGH.text
             val localFilePath = runBlocking {
                 val song = songRepository.getSong(mediaId).firstOrNull()
                     ?: songRepository.getSong("local_$mediaId").firstOrNull()
@@ -594,18 +608,26 @@ class MusicService : MediaLibraryService(),
                 val file = File(localFilePath)
                 if (file.exists()) {
                     Timber.tag("ResolvingDataSource").d("Using local file for mediaId: $mediaId, filePath: ${file.path}")
-                    return@Factory dataSpec.withUri(Uri.fromFile(file))
+                    return@Factory dataSpec.buildUpon()
+                        .setUri(Uri.fromFile(file))
+                        .setKey(null)
+                        .build()
                 }
             }
-            if (isContentFullyCached(simpleCache, mediaId)) {
+            val cacheKey = playbackCacheKey(mediaId, quality)
+            if (isContentFullyCached(simpleCache, cacheKey)) {
                 Timber.tag("ResolvingDataSource").d("Fully cached on disk: $mediaId")
-                return@Factory dataSpec
+                return@Factory dataSpec.buildUpon()
+                    .setKey(cacheKey)
+                    .build()
             }
 
             runBlocking {
-                val quality = context.dataStore[MusicQualityKey]?.lowercase(getDefault()) ?: MusicQuality.EXHIGH.text
-                val uri = mediaUriProvider.resolveMediaUri(mediaId, quality)
-                dataSpec.withUri(uri)
+                val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality)
+                dataSpec.buildUpon()
+                    .setUri(resolved.uri)
+                    .setKey(playbackCacheKey(mediaId, resolved.actualQuality))
+                    .build()
             }
         }
     }

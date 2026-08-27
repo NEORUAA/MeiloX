@@ -45,6 +45,7 @@ import com.ljyh.mei.data.model.weapi.Comment
 import com.ljyh.mei.data.model.weapi.Like
 import com.ljyh.mei.data.model.weapi.LikeResult
 import retrofit2.http.Body
+import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Path
 
@@ -117,6 +118,7 @@ interface ApiService {
     ): SearchSuggest
 
 
+    @Headers("X-Netease-Crypto: eapi")
     @POST("/api/song/enhance/player/url/v1")
     suspend fun getSongUrlV1(@Body body: GetSongUrlV1): SongUrl
 

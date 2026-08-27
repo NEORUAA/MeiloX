@@ -34,11 +34,14 @@ import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.reportException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -85,6 +88,8 @@ class PlayerConnection(
     val canSkipNext = MutableStateFlow(true)
 
     val error = MutableStateFlow<PlaybackException?>(null)
+
+    private var qualityChangeJob: Job? = null
 
     init {
         player.addListener(this)
@@ -152,12 +157,20 @@ class PlayerConnection(
     }
 
     fun changeQuality(quality: MusicQuality) {
-        scope.launch {
+        qualityChangeJob?.cancel()
+        qualityChangeJob = scope.launch {
             service.dataStore.edit { it[MusicQualityKey] = quality.name }
+            currentCoroutineContext().ensureActive()
+
             val index = player.currentMediaItemIndex
             val current = player.currentMediaItem ?: return@launch
+            if (index !in 0 until player.mediaItemCount) return@launch
             val position = player.currentPosition
             val shouldPlay = player.playWhenReady
+
+            // Keep the playlist intact, but force every source that may have been
+            // prepared at the previous quality to be discarded.
+            service.resetPlaybackSourcesForQualityChange()
             player.removeMediaItem(index)
             player.addMediaItem(index, current)
             player.seekTo(index, position)
@@ -313,6 +326,8 @@ class PlayerConnection(
     }
 
     fun dispose() {
+        qualityChangeJob?.cancel()
+        qualityChangeJob = null
         player.removeListener(this)
     }
 }

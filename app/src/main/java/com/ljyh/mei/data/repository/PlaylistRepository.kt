@@ -25,6 +25,8 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
+import com.ljyh.mei.playback.playbackQualityFallbacks
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -59,14 +61,46 @@ class PlaylistRepository(
 
     suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality): Resource<SongUrl> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.getSongUrlV1(
-                    GetSongUrlV1(
-                        ids = "[${ids.joinToString(",")}]",
-                        level = quality.text
-                    )
-                )
+            val requestedIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
+            if (requestedIds.isEmpty()) {
+                return@withContext Resource.Success(SongUrl(code = 200, data = emptyList()))
             }
+
+            val fullSourcesById = LinkedHashMap<String, SongUrl.Data>()
+            var responseCode = 200
+            for (attemptedQuality in playbackQualityFallbacks(quality.text)) {
+                val response = try {
+                    apiService.getSongUrlV1(
+                        GetSongUrlV1(
+                            ids = "[${requestedIds.joinToString(",")}]",
+                            level = attemptedQuality,
+                        )
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    // A transport/authentication failure is not a quality fallback signal.
+                    return@withContext Resource.Error(error.message ?: "Unable to resolve song URL")
+                }
+                if (response.code != 200) {
+                    return@withContext Resource.Error(
+                        "Song URL API returned code ${response.code}"
+                    )
+                }
+
+                responseCode = response.code
+                response.fullSourcesFor(requestedIds.toSet()).forEach { source ->
+                    fullSourcesById.putIfAbsent(source.id.toString(), source)
+                }
+                if (fullSourcesById.size == requestedIds.size) break
+            }
+
+            Resource.Success(
+                SongUrl(
+                    code = if (fullSourcesById.isNotEmpty()) 200 else responseCode,
+                    data = fullSourcesById.values.toList(),
+                )
+            )
         }
     }
 

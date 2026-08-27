@@ -63,6 +63,8 @@ class AutoMixController(
     private var analysisJob: Job? = null
     private var smartPlan: SmartAutoMixPlan? = null
     private var analyzedAttempt: Pair<String, String>? = null
+    @Volatile
+    private var sourceGeneration = 0L
     private val analyzer = BeatNetAutoMixAnalyzer(context.applicationContext)
     private var pausingPrimaryForHandoff = false
     private var monitorJob: Job? = null
@@ -129,6 +131,22 @@ class AutoMixController(
         analyzer.close()
     }
 
+    /** Drops secondary-deck state so it cannot reuse a source from the old quality. */
+    fun resetForQualityChange() {
+        sourceGeneration++
+        transitionJob?.cancel()
+        transitionJob = null
+        analysisJob?.cancel()
+        analysisJob = null
+        smartPlan = null
+        analyzedAttempt = null
+        isTransitioning = false
+        pausingPrimaryForHandoff = false
+        primary.volume = 1f
+        primary.playbackParameters = PlaybackParameters.DEFAULT
+        clearSecondary()
+    }
+
     private fun prepareNext() {
         if (!configuration.enabled || isTransitioning || primary.mediaItemCount < 2) {
             clearSecondary()
@@ -184,6 +202,7 @@ class AutoMixController(
         val incoming = primary.getMediaItemAt(preparedTargetIndex)
         val attempt = outgoing.mediaId to incoming.mediaId
         if (analyzedAttempt == attempt) return
+        val generation = sourceGeneration
         analyzedAttempt = attempt
         analysisJob = scope.launch(Dispatchers.Default) {
             try {
@@ -202,14 +221,20 @@ class AutoMixController(
                     tempoMatching = configuration.tempoMatching,
                     maximumTempoAdjustmentPercent = configuration.maximumTempoAdjustmentPercent,
                 )
-                if (preparedMediaId == incoming.mediaId && primary.currentMediaItem?.mediaId == outgoing.mediaId) {
+                if (
+                    generation == sourceGeneration &&
+                    preparedMediaId == incoming.mediaId &&
+                    primary.currentMediaItem?.mediaId == outgoing.mediaId
+                ) {
                     smartPlan = plan
                 }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 Timber.tag("AutoMix").w(error, "BeatNet analysis failed; using fixed crossfade")
             } finally {
-                analysisJob = null
+                if (generation == sourceGeneration) {
+                    analysisJob = null
+                }
             }
         }
     }

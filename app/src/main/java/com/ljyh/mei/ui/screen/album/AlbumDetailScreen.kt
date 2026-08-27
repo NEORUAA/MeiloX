@@ -148,27 +148,24 @@ fun AlbumDetailScreen(
         scope.launch {
             val songIds = tracks.map { it.id.toString() }
             val result = viewModel.resolveSongUrls(songIds, downloadQuality.toMusicQuality())
-            val urlMap = if (result is Resource.Success) {
-                result.data.data.associate { it.id.toString() to (it.url to it.encodeType) }
-            } else {
-                emptyMap()
-            }
+            val sourceMap = if (result is Resource.Success) {
+                result.data.fullSourcesFor(songIds.toSet()).associateBy { it.id.toString() }
+            } else emptyMap()
 
             val downloadInfos = tracks.mapNotNull { track ->
-                val (url, encodeType) = urlMap[track.id.toString()] ?: return@mapNotNull null
-                if (url != null) {
-                    SongDownloadInfo(
-                        songId = track.id.toString(),
-                        url = url,
-                        songTitle = track.title,
-                        songArtist = track.artists.map { it.name },
-                        songAlbum = track.album.title,
-                        songCover = track.coverUrl,
-                        duration = track.duration,
-                        fileType = encodeType,
-                        quality = downloadQuality.text,
-                    )
-                } else null
+                val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
+                val url = source.url ?: return@mapNotNull null
+                SongDownloadInfo(
+                    songId = track.id.toString(),
+                    url = url,
+                    songTitle = track.title,
+                    songArtist = track.artists.map { it.name },
+                    songAlbum = track.album.title,
+                    songCover = track.coverUrl,
+                    duration = track.duration,
+                    fileType = source.encodeType,
+                    quality = source.level,
+                )
             }
 
             if (downloadInfos.isEmpty()) {
