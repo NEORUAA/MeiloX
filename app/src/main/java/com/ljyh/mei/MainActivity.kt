@@ -83,6 +83,7 @@ import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.zIndex
 import androidx.datastore.preferences.core.edit
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -394,21 +395,6 @@ class MainActivity : ComponentActivity() {
                 AppAppearance.Light -> false
                 AppAppearance.Dark -> true
             }
-            SideEffect {
-                val transparent = android.graphics.Color.TRANSPARENT
-                enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(transparent, transparent) { effectiveDark },
-                    navigationBarStyle = SystemBarStyle.auto(transparent, transparent) { effectiveDark },
-                )
-                // Keep the navigation bar transparent instead of applying the platform contrast scrim.
-                window.navigationBarColor = transparent
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    window.isNavigationBarContrastEnforced = false
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    window.navigationBarDividerColor = transparent
-                }
-            }
             MusicTheme(
                 seedColor = if (dynamicTheme) targetThemeColor else Color(accentColorArgb.toInt()),
                 isDark = effectiveDark,
@@ -541,6 +527,35 @@ class MainActivity : ComponentActivity() {
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
                     )
+                    val windowInsetsController = remember {
+                        WindowInsetsControllerCompat(window, window.decorView)
+                    }
+                    val isPlayerPage = playerBottomSheetState.isExpanded ||
+                        playerBottomSheetState.progress >= 0.99f
+                    SideEffect {
+                        val transparent = android.graphics.Color.TRANSPARENT
+                        enableEdgeToEdge(
+                            statusBarStyle = if (isPlayerPage) {
+                                // The expanded player renders artwork behind the status bar;
+                                // keep its foreground white regardless of the app theme.
+                                SystemBarStyle.dark(transparent)
+                            } else {
+                                SystemBarStyle.auto(transparent, transparent) { effectiveDark }
+                            },
+                            navigationBarStyle = SystemBarStyle.auto(transparent, transparent) {
+                                effectiveDark
+                            },
+                        )
+                        // Keep this explicit because the API 35+ edge-to-edge implementation can
+                        // retain the previous appearance while the bottom sheet settles.
+                        windowInsetsController.isAppearanceLightStatusBars =
+                            !isPlayerPage && !effectiveDark
+                        // Keep the navigation bar transparent instead of applying the platform
+                        // contrast scrim.
+                        window.navigationBarColor = transparent
+                        window.isNavigationBarContrastEnforced = false
+                        window.navigationBarDividerColor = transparent
+                    }
                     val (query, onQueryChange) = rememberSaveable(stateSaver = TextFieldValue.Saver) {
                         mutableStateOf(TextFieldValue())
                     }
