@@ -8,6 +8,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -95,6 +97,8 @@ class CrossWindowBackdrop(
     private val source: LayerBackdrop,
 ) : Backdrop {
 
+    private val inverseLayerScope = GraphicsLayerBlockScope()
+
     override val isCoordinatesDependent: Boolean get() = true
 
     override fun DrawScope.drawBackdrop(
@@ -111,6 +115,24 @@ class CrossWindowBackdrop(
         // Screen coordinates are shared by both owners and include the real popup placement.
         val offset = glassCoordinates.positionOnScreen() - sourceCoordinates.positionOnScreen()
         withTransform({
+            if (layerBlock != null) {
+                // drawBackdrop applies layerBlock to the rendered glass surface. Mirror the
+                // LayerBackdrop behavior here so the sampled source stays screen-anchored while
+                // that surface is pressed and drag-scaled.
+                inverseLayerScope.reset(
+                    drawScope = density,
+                    size = Size(
+                        glassCoordinates.size.width.toFloat(),
+                        glassCoordinates.size.height.toFloat(),
+                    ),
+                )
+                layerBlock.invoke(inverseLayerScope)
+                scale(
+                    1f / inverseLayerScope.scaleX.coerceAtLeast(0.001f),
+                    1f / inverseLayerScope.scaleY.coerceAtLeast(0.001f),
+                    Offset.Zero,
+                )
+            }
             translate(-offset.x, -offset.y)
         }) {
             drawLayer(source.graphicsLayer)

@@ -162,7 +162,7 @@ private class NavigationGlassBoxShadowNode(
 
     private var sideLayer: GraphicsLayer? = null
     private var outlineLayer: GraphicsLayer? = null
-    private val layerScope = ShadowGraphicsLayerScope()
+    private val layerScope = GraphicsLayerBlockScope()
 
     private val sidePaint = Paint().apply {
         style = PaintingStyle.Fill
@@ -283,8 +283,8 @@ private class NavigationGlassBoxShadowNode(
     }
 }
 
-/** Small adapter that lets the shared GraphicsLayerScope block drive the external shadow layer. */
-private class ShadowGraphicsLayerScope : GraphicsLayerScope {
+/** Adapter used to evaluate a shared GraphicsLayerScope block outside a real graphics layer. */
+internal class GraphicsLayerBlockScope : GraphicsLayerScope {
     private var densityValue: Density = Density(1f)
 
     override val density: Float get() = densityValue.density
