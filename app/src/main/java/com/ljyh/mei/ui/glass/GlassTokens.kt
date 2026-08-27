@@ -38,6 +38,9 @@ data class GlassDimensions(
     val bottomBarHeight: Dp = 64.dp,
 )
 
+internal val GlassColors.segmentedControlBackground: Color
+    get() = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0x1F767680)
+
 /** Exact iOS/iPadOS 27 typography tokens exposed by the referenced Figma library. */
 object IosTypography {
     val fontFamily = FontFamily(Font(R.font.sf_pro, FontWeight.Normal))

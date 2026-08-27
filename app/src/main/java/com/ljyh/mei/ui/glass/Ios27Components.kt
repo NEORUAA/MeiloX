@@ -203,7 +203,7 @@ fun <T> IosScrollableTabRow(
                 modifier = Modifier
                     .background(
                         if (isSelected) colors.prominentContainer.copy(alpha = 1f)
-                        else colors.elevatedBackground,
+                        else colors.segmentedControlBackground,
                         Capsule(),
                     )
                     .clickable(

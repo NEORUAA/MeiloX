@@ -41,8 +41,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -61,6 +63,7 @@ import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.player.OverlayState
+import com.ljyh.mei.ui.glass.GlassSearchBar
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
@@ -162,6 +165,7 @@ fun LibraryMobileLayout(
 ) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
+    val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) hiltViewModel() else null
@@ -194,6 +198,31 @@ fun LibraryMobileLayout(
         selectedPage == LibraryPage.History
     val pageSpacing = if (usesGroupedLazyRows) 12.dp else 0.dp
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
+    var searchQuery by remember { mutableStateOf(TextFieldValue()) }
+    var searchActive by remember { mutableStateOf(false) }
+    val query = searchQuery.text.trim()
+    val isSearching = query.isNotEmpty()
+    val visibleLikedSongs = remember(likedSongs, query) {
+        likedSongs.filterIfSearching(query) { song ->
+            song.title.containsQuery(query) ||
+                song.album.title.containsQuery(query) ||
+                song.tns.containsQuery(query) ||
+                song.artists.any { artist ->
+                    artist.name.containsQuery(query) || artist.alias.orEmpty().any { it.containsQuery(query) }
+                }
+        }
+    }
+    val visibleCreatedPlaylists = remember(createdPlaylists, query) {
+        createdPlaylists.filterIfSearching(query) { it.matchesQuery(query) }
+    }
+    val visibleCollectedPlaylists = remember(collectedPlaylists, query) {
+        collectedPlaylists.filterIfSearching(query) { it.matchesQuery(query) }
+    }
+    val visibleAlbums = remember(albums, query) {
+        albums.filterIfSearching(query) { album ->
+            album.title.containsQuery(query) || album.artist.any { it.name.containsQuery(query) }
+        }
+    }
 
     IosPinnedPage(
         title = title,
@@ -223,6 +252,22 @@ fun LibraryMobileLayout(
                         .padding(bottom = pageSpacing),
                 )
             }
+            item(key = "library-search") {
+                GlassSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    active = searchActive,
+                    onActiveChange = { searchActive = it },
+                    onClose = {
+                        searchQuery = TextFieldValue()
+                        searchActive = false
+                    },
+                    placeholder = stringResource(R.string.search_bar_search),
+                    closeContentDescription = stringResource(R.string.cancel),
+                    onSearch = { focusManager.clearFocus() },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = pageSpacing),
+                )
+            }
             item(key = "library-pages") {
                 GlassSegmentedControl(
                     items = pages.map { it to stringResource(it.titleRes) },
@@ -243,7 +288,7 @@ fun LibraryMobileLayout(
                                 CircularProgressIndicator()
                             }
                         }
-                    } else if (likedSongs.isNotEmpty()) {
+                    } else if (visibleLikedSongs.isNotEmpty()) {
                         item(key = "liked-actions") {
                             IosGroupedList {
                                 IosListRow(
@@ -255,7 +300,7 @@ fun LibraryMobileLayout(
                                             ListQueue(
                                                 id = "library-liked",
                                                 title = likedTitle,
-                                                items = likedSongs.map { it.id.toString() to it.toMediaItem() },
+                                                items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
                                             ),
                                         )
                                     },
@@ -263,24 +308,26 @@ fun LibraryMobileLayout(
                                 IosListRow(
                                     title = stringResource(R.string.library_heart_mode),
                                     systemName = "heart.circle.fill",
-                                    onClick = { playerConnection?.fmStart(likedSongs.randomOrNull()?.id?.toString()) },
+                                    onClick = {
+                                        playerConnection?.fmStart(visibleLikedSongs.randomOrNull()?.id?.toString())
+                                    },
                                 )
                             }
                         }
                         items(
-                            likedSongs,
+                            visibleLikedSongs,
                             key = { "liked-${it.id}" },
                             contentType = { "liked-song" },
                         ) { song ->
                             LibrarySongRow(
                                 song = song,
                                 onClick = {
-                                    val index = likedSongs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+                                    val index = visibleLikedSongs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                                     playerConnection?.playQueue(
                                         ListQueue(
                                             id = "library-liked",
                                             title = likedTitle,
-                                            items = likedSongs.map { it.id.toString() to it.toMediaItem() },
+                                            items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
                                             startIndex = index,
                                         ),
                                     )
@@ -291,26 +338,42 @@ fun LibraryMobileLayout(
                             )
                         }
                     } else {
-                        item { EmptyState(stringResource(R.string.library_empty_songs), SfSymbol.MusicNote) }
+                        item {
+                            EmptyState(
+                                stringResource(
+                                    if (isSearching) R.string.no_search_results else R.string.library_empty_songs,
+                                ),
+                                SfSymbol.MusicNote,
+                            )
+                        }
                     }
                 }
 
                 LibraryPage.Playlists -> {
-                    item(key = "playlist-rank") {
-                        IosGroupedList {
-                            IosListRow(
-                                title = stringResource(R.string.account_listening_rank),
-                                systemName = "chart.bar.xaxis",
-                                showTopSeparator = false,
-                                onClick = {
-                                    Screen.AccountListeningRank.navigate(navController) { addPath(userId) }
-                                },
-                            )
+                    if (!isSearching) {
+                        item(key = "playlist-rank") {
+                            IosGroupedList {
+                                IosListRow(
+                                    title = stringResource(R.string.account_listening_rank),
+                                    systemName = "chart.bar.xaxis",
+                                    showTopSeparator = false,
+                                    onClick = {
+                                        Screen.AccountListeningRank.navigate(navController) { addPath(userId) }
+                                    },
+                                )
+                            }
                         }
                     }
-                    val playlists = createdPlaylists + collectedPlaylists
-                    if (playlists.isEmpty()) {
-                        item { EmptyState(stringResource(R.string.library_empty_collected), SfSymbol.MusicNoteList) }
+                    val playlists = visibleCreatedPlaylists + visibleCollectedPlaylists
+                    if (playlists.isEmpty() && (!isSearching || visibleAlbums.isEmpty())) {
+                        item {
+                            EmptyState(
+                                stringResource(
+                                    if (isSearching) R.string.no_search_results else R.string.library_empty_collected,
+                                ),
+                                SfSymbol.MusicNoteList,
+                            )
+                        }
                     } else {
                         items(
                             playlists,
@@ -325,23 +388,23 @@ fun LibraryMobileLayout(
                 LibraryPage.Podcasts -> {
                     podcastViewModel?.let { viewModel ->
                         podcastState?.let { state ->
-                            libraryPodcastItems(navController, state, viewModel)
+                            libraryPodcastItems(navController, state, viewModel, query)
                         }
                     }
                 }
 
-                LibraryPage.Downloads -> libraryDownloadItems(downloadTasks)
+                LibraryPage.Downloads -> libraryDownloadItems(downloadTasks, query)
 
                 LibraryPage.Cloud -> {
                     cloudState?.let { state ->
-                        libraryCloudItems(state, playerConnection)
+                        libraryCloudItems(state, playerConnection, query)
                     }
                 }
 
-                LibraryPage.History -> libraryHistoryItems(history, playerConnection)
+                LibraryPage.History -> libraryHistoryItems(history, playerConnection, query)
             }
 
-            if (selectedPage == LibraryPage.Playlists && albums.isNotEmpty()) {
+            if (selectedPage == LibraryPage.Playlists && visibleAlbums.isNotEmpty()) {
                 item {
                     Text(
                         stringResource(R.string.library_collected_albums),
@@ -350,7 +413,7 @@ fun LibraryMobileLayout(
                     )
                 }
                 items(
-                    albums,
+                    visibleAlbums,
                     key = { "album-${it.id}" },
                     contentType = { "album" },
                 ) { album ->
@@ -460,9 +523,18 @@ private fun LazyListScope.libraryPodcastItems(
     navController: com.ljyh.mei.ui.navigation.MeiNavigator,
     state: PodcastUiState,
     viewModel: PodcastViewModel,
+    query: String,
 ) {
-    val podcasts = state.categoryPodcasts.takeIf { state.selectedCategoryId != null }
-        ?: state.home?.personalized.orEmpty()
+    val podcasts = (
+        state.categoryPodcasts.takeIf { state.selectedCategoryId != null }
+            ?: state.home?.personalized.orEmpty()
+        ).filterIfSearching(query) { podcast ->
+        podcast.name.containsQuery(query) ||
+            podcast.host?.nickname.containsQuery(query) ||
+            podcast.category.containsQuery(query) ||
+            podcast.description.containsQuery(query) ||
+            podcast.recommendation.containsQuery(query)
+    }
     if (state.isLoading && state.home == null) {
         item(key = "library-podcast-loading") {
             Box(Modifier.fillMaxWidth()) {
@@ -472,7 +544,7 @@ private fun LazyListScope.libraryPodcastItems(
             }
         }
     }
-    state.home?.categories?.takeIf(List<*>::isNotEmpty)?.let { categories ->
+    state.home?.categories?.takeIf { it.isNotEmpty() && query.isEmpty() }?.let { categories ->
         item(key = "library-podcast-categories") {
             Box(
                 Modifier.fillMaxWidth().padding(
@@ -514,19 +586,32 @@ private fun LazyListScope.libraryPodcastItems(
         }
     } else if (!state.isLoading) {
         item(key = "library-podcast-empty") {
-            EmptyState(state.error ?: stringResource(R.string.library_empty_songs), SfSymbol.Microphone)
+            EmptyState(
+                if (query.isNotEmpty()) stringResource(R.string.no_search_results)
+                else state.error ?: stringResource(R.string.library_empty_songs),
+                SfSymbol.Microphone,
+            )
         }
     }
 }
 
-private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>) {
-    if (tasks.isEmpty()) {
+private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>, query: String) {
+    val visibleTasks = tasks.filterIfSearching(query) { task ->
+        task.songTitle.containsQuery(query) ||
+            task.songArtist.containsQuery(query) ||
+            task.songAlbum.containsQuery(query)
+    }
+    if (visibleTasks.isEmpty()) {
         item(key = "library-download-empty") {
-            EmptyState(stringResource(R.string.no_download_tasks, stringResource(R.string.download_filter_all)), SfSymbol.Download)
+            EmptyState(
+                if (query.isNotEmpty()) stringResource(R.string.no_search_results)
+                else stringResource(R.string.no_download_tasks, stringResource(R.string.download_filter_all)),
+                SfSymbol.Download,
+            )
         }
     } else {
         groupedLazyItems(
-            items = tasks,
+            items = visibleTasks,
             key = { "download-${it.songId}" },
             contentType = "download-task",
         ) { task, index ->
@@ -558,8 +643,13 @@ private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>) {
 private fun LazyListScope.libraryCloudItems(
     state: CloudMusicUiState,
     playerConnection: PlayerConnection?,
+    query: String,
 ) {
-    val songs = state.page?.songs.orEmpty()
+    val songs = state.page?.songs.orEmpty().filterIfSearching(query) { song ->
+        song.name.containsQuery(query) ||
+            song.artist.containsQuery(query) ||
+            song.album.containsQuery(query)
+    }
     when {
         state.isLoading && state.page == null -> item(key = "library-cloud-loading") {
             Box(Modifier.fillMaxWidth()) {
@@ -569,7 +659,11 @@ private fun LazyListScope.libraryCloudItems(
             }
         }
         songs.isEmpty() -> item(key = "library-cloud-empty") {
-            EmptyState(state.error ?: stringResource(R.string.library_empty_songs), SfSymbol.Cloud)
+            EmptyState(
+                if (query.isNotEmpty()) stringResource(R.string.no_search_results)
+                else state.error ?: stringResource(R.string.library_empty_songs),
+                SfSymbol.Cloud,
+            )
         }
         else -> groupedLazyItems(
             items = songs,
@@ -610,14 +704,25 @@ private fun LazyListScope.libraryCloudItems(
 private fun LazyListScope.libraryHistoryItems(
     history: List<HistoryItem>,
     playerConnection: PlayerConnection?,
+    query: String,
 ) {
-    if (history.isEmpty()) {
+    val visibleHistory = history.filterIfSearching(query) { item ->
+        item.song.title.containsQuery(query) ||
+            item.song.album.containsQuery(query) ||
+            item.song.artist.any { it.containsQuery(query) }
+    }
+    if (visibleHistory.isEmpty()) {
         item(key = "library-history-empty") {
-            EmptyState(stringResource(R.string.no_listening_history), SfSymbol.Clock)
+            EmptyState(
+                stringResource(
+                    if (query.isNotEmpty()) R.string.no_search_results else R.string.no_listening_history,
+                ),
+                SfSymbol.Clock,
+            )
         }
     } else {
         groupedLazyItems(
-            items = history,
+            items = visibleHistory,
             key = { "history-${it.historyId}" },
             contentType = "history-item",
         ) { item, index ->
@@ -639,7 +744,7 @@ private fun LazyListScope.libraryHistoryItems(
                         ListQueue(
                             id = "library-history",
                             title = "History",
-                            items = history.map { it.song.id to null },
+                            items = visibleHistory.map { it.song.id to null },
                             startIndex = index,
                         ),
                     )
@@ -648,6 +753,19 @@ private fun LazyListScope.libraryHistoryItems(
         }
     }
 }
+
+private inline fun <T> List<T>.filterIfSearching(
+    query: String,
+    predicate: (T) -> Boolean,
+): List<T> = if (query.isEmpty()) this else filter(predicate)
+
+private fun String?.containsQuery(query: String): Boolean =
+    this?.contains(query, ignoreCase = true) == true
+
+private fun Playlist.matchesQuery(query: String): Boolean =
+    title.containsQuery(query) ||
+        authorName.containsQuery(query) ||
+        description.containsQuery(query)
 
 @Composable
 private fun EmptyState(text: String, symbol: SfSymbol) {

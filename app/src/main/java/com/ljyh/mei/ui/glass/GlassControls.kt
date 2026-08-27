@@ -380,7 +380,7 @@ fun <T> GlassSegmentedControl(
     val scope = rememberCoroutineScope()
     val tabsBackdrop = rememberLayerBackdrop()
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
-    val trackColor = if (isLight) Color(0x1F767680) else Color.White.copy(alpha = 0.12f)
+    val trackColor = colors.segmentedControlBackground
 
     // Same three-layer structure as LiquidBottomTabs:
     // visible tabs -> invisible exported tabs with labels -> movable combined-backdrop lens.
