@@ -148,10 +148,15 @@ class MeloXRepository @Inject constructor(
     }
 
     suspend fun accountDetail(userId: Long): AccountDetail {
-        val response = request(
-            "/api/v1/user/detail/$userId",
-            mapOf("all" to true, "userId" to userId),
-        )
+        val response = try {
+            validate(weapi.post("/weapi/v1/user/detail/$userId"))
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            requestEapi(
+                "/api/w/v1/user/detail/$userId",
+                mapOf("all" to true, "userId" to userId),
+            )
+        }
         val profile = parseAccountProfile(response.objectOrNull("profile"))
             ?: error("NetEase account details are unavailable")
         return AccountDetail(

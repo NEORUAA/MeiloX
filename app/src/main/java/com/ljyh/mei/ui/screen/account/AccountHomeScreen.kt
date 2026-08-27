@@ -134,14 +134,17 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
         },
     ) {
         state.profile?.let { profile ->
+            val displayedProfile = state.detail?.profile ?: profile
             item {
                 Box(Modifier.padding(top = 10.dp)) {
                     AccountHero(
-                        profile = profile,
+                        profile = displayedProfile,
                         detail = state.detail,
                         playlistCount = state.playlists.size,
                         onRankings = {
-                            Screen.AccountListeningRank.navigate(navController) { addPath(profile.id.toString()) }
+                            Screen.AccountListeningRank.navigate(navController) {
+                                addPath(displayedProfile.id.toString())
+                            }
                         },
                     )
                 }
