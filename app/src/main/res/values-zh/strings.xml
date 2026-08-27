@@ -149,6 +149,8 @@
     <string name="general_clipboard">剪贴板</string>
     <string name="general_recognize_clipboard">识别网易云链接</string>
     <string name="general_recognize_clipboard_description">启动后读取一次剪贴板，发现网易云歌曲或一起听邀请时会先询问是否打开。</string>
+    <string name="general_export_music_u">导出 MUSIC_U Cookie</string>
+    <string name="general_export_music_u_description">将当前登录账号的 MUSIC_U 值复制到剪贴板。</string>
     <string name="clipboard_song_title">发现网易云歌曲链接</string>
     <string name="clipboard_song_message">是否在 Mei 中打开剪贴板里的歌曲？</string>
     <string name="clipboard_listen_title">发现一起听邀请</string>

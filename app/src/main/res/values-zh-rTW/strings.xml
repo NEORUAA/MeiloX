@@ -149,6 +149,8 @@
     <string name="general_clipboard">剪貼簿</string>
     <string name="general_recognize_clipboard">辨識網易雲連結</string>
     <string name="general_recognize_clipboard_description">啟動後讀取一次剪貼簿，發現網易雲歌曲或一起聽邀請時會先詢問是否開啟。</string>
+    <string name="general_export_music_u">匯出 MUSIC_U Cookie</string>
+    <string name="general_export_music_u_description">將目前登入帳號的 MUSIC_U 值複製到剪貼簿。</string>
     <string name="clipboard_song_title">發現網易雲歌曲連結</string>
     <string name="clipboard_song_message">是否在 Mei 中開啟剪貼簿裡的歌曲？</string>
     <string name="clipboard_listen_title">發現一起聽邀請</string>

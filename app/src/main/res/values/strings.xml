@@ -150,6 +150,8 @@
     <string name="general_clipboard">Clipboard</string>
     <string name="general_recognize_clipboard">Recognize NetEase links</string>
     <string name="general_recognize_clipboard_description">Reads the clipboard once after launch and asks before opening a NetEase song or Listen Together invitation.</string>
+    <string name="general_export_music_u">Export MUSIC_U Cookie</string>
+    <string name="general_export_music_u_description">Copy the MUSIC_U value for the current account to the clipboard.</string>
     <string name="clipboard_song_title">NetEase song link found</string>
     <string name="clipboard_song_message">Open the song from your clipboard in Mei?</string>
     <string name="clipboard_listen_title">Listen Together invitation found</string>

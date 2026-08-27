@@ -14,11 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
+import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassIconButton
@@ -31,13 +34,16 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.utils.setClipboard
 
 @Composable
 fun GeneralSettings() {
     val navController = LocalNavController.current
+    val context = LocalContext.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (appearance, setAppearance) = rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
     val (recognizeClipboard, setRecognizeClipboard) = rememberPreference(RecognizeClipboardLinksKey, false)
+    val (cookie) = rememberPreference(CookieKey, "")
 
     IosPinnedListPage(
         title = stringResource(R.string.general_settings),
@@ -69,6 +75,39 @@ fun GeneralSettings() {
         item {
             SettingsGroup(stringResource(R.string.general_clipboard)) {
                 GeneralToggle(R.string.general_recognize_clipboard, R.string.general_recognize_clipboard_description, "document.on.clipboard", recognizeClipboard, setRecognizeClipboard)
+            }
+        }
+        item {
+            SettingsGroup(stringResource(R.string.settings_account)) {
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(if (cookie.isNotBlank()) 1f else 0.38f),
+                    onClick = if (cookie.isNotBlank()) {
+                        { setClipboard(context, cookie, "MUSIC_U") }
+                    } else {
+                        null
+                    },
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SfIcon("document.on.clipboard", null, size = 21.dp)
+                        Column(
+                            Modifier.weight(1f).padding(horizontal = 13.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(stringResource(R.string.general_export_music_u))
+                            Text(
+                                stringResource(R.string.general_export_music_u_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        SfIcon("chevron.forward", null, size = 15.dp)
+                    }
+                }
             }
         }
     }
