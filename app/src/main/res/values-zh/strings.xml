@@ -321,7 +321,7 @@
     <string name="app_tab_music">音乐</string>
     <string name="app_tab_podcasts">播客</string>
     <string name="app_tab_explore">发现</string>
-    <string name="app_tab_library">音乐库</string>
+    <string name="app_tab_library">媒体库</string>
     <string name="app_tab_library_songs">收藏歌曲</string>
     <string name="app_tab_library_playlists">收藏歌单</string>
     <string name="app_tab_library_podcasts">订阅播客</string>

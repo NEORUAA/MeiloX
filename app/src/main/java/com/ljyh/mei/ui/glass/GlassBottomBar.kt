@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
@@ -94,7 +95,12 @@ private val LocalLiquidTabScale = staticCompositionLocalOf { { 1f } }
 /** Shared compact icon endpoint for the bottom navigation and its adjacent search control. */
 val CompactBottomControlIconSize = 22.dp
 
-private val ExpandedNavigationIconSize = 24.dp
+private val ExpandedNavigationIconSize = 30.dp
+private val NavigationLabelStyle = IosTypography.caption.copy(
+    fontSize = 10.sp,
+    lineHeight = 13.sp,
+    fontWeight = FontWeight.Bold,
+)
 private const val CompactIndicatorFadeStart = 0.74f
 private const val CompactIndicatorFadeEnd = 0.98f
 private const val CompactTabContentScaleFloor = 0.82f
@@ -380,7 +386,7 @@ fun <T> GlassBottomBar(
                 )
         }
         val expandedIndicatorVisibilityState = rememberUpdatedState(expandedIndicatorVisibility)
-        val expandedIconOffsetYPx = with(density) { (-9.5).dp.toPx() }
+        val expandedIconOffsetYPx = with(density) { (-8.3).dp.toPx() }
         val indicatorPositionLayerBlock: GraphicsLayerScope.() -> Unit = remember(
             compactState,
             offsetAnimation,
@@ -704,7 +710,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
                     item.contentDescription
                 },
                 tint = if (selected) colors.accent else colors.content,
-                size = 24.dp,
+                size = ExpandedNavigationIconSize,
                 weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 modifier = Modifier
                     .padding(top = 3.dp)
@@ -722,7 +728,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
             Text(
                 text = item.label,
                 color = colors.content,
-                style = IosTypography.caption,
+                style = NavigationLabelStyle,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
