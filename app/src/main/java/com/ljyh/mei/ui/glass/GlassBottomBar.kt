@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -40,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -74,6 +74,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlin.math.sin
 
@@ -95,11 +96,10 @@ private val LocalLiquidTabScale = staticCompositionLocalOf { { 1f } }
 /** Shared compact icon endpoint for the bottom navigation and its adjacent search control. */
 val CompactBottomControlIconSize = 22.dp
 
-private val ExpandedNavigationIconSize = 30.dp
+private val ExpandedNavigationIconSize = 28.dp
 private val NavigationLabelStyle = IosTypography.caption.copy(
     fontSize = 10.sp,
     lineHeight = 13.sp,
-    fontWeight = FontWeight.Bold,
 )
 private const val CompactIndicatorFadeStart = 0.74f
 private const val CompactIndicatorFadeEnd = 0.98f
@@ -316,7 +316,7 @@ fun <T> GlassBottomBar(
                     (1f - compactState.value).coerceAtLeast(CompactTabContentScaleFloor)
             }
         }
-        val selectedIconLateScaleProvider: () -> Float = remember(compactState) {
+        val selectedContentLateScaleProvider: () -> Float = remember(compactState) {
             {
                 // Keep the icon geometry continuous through p = 0.98; only the settled
                 // transparent indicator/source composition uses CompactIndicatorFadeEnd.
@@ -386,7 +386,6 @@ fun <T> GlassBottomBar(
                 )
         }
         val expandedIndicatorVisibilityState = rememberUpdatedState(expandedIndicatorVisibility)
-        val expandedIconOffsetYPx = with(density) { (-8.3).dp.toPx() }
         val indicatorPositionLayerBlock: GraphicsLayerScope.() -> Unit = remember(
             compactState,
             offsetAnimation,
@@ -554,11 +553,11 @@ fun <T> GlassBottomBar(
                             enabled = compact < 0.74f,
                             alpha = tabContentAlpha,
                             selectedColorFilter = selectedIconColorFilterState,
-                            hideSelectedIcon = true,
+                            hideSelectedItem = true,
                         )
                     }
-                    MorphingSelectedNavigationIcon(
-                        symbol = selectedItem.symbol,
+                    MorphingSelectedNavigationItem(
+                        item = selectedItem,
                         compactProgress = compactState,
                         fullWidthPx = fullWidthPx,
                         compactWidthPx = compactWidthPx,
@@ -566,8 +565,8 @@ fun <T> GlassBottomBar(
                         selectedIndex = selectedIndex,
                         isLtr = isLtr,
                         horizontalInsetPx = paddingPx,
-                        expandedIconOffsetYPx = expandedIconOffsetYPx,
-                        selectedIconLateScale = selectedIconLateScaleProvider,
+                        selectedContentLateScale = selectedContentLateScaleProvider,
+                        labelAlpha = tabContentAlpha,
                         selectedIconColorFilter = selectedIconColorFilterState,
                         contentColor = colors.content,
                     )
@@ -609,12 +608,11 @@ fun <T> GlassBottomBar(
                                 enabled = compact < 0.74f,
                                 alpha = tabContentAlpha,
                                 selectedColorFilter = selectedIconColorFilterState,
-                                iconOffsetY = 1.5.dp,
-                                hideSelectedIcon = true,
+                                hideSelectedItem = true,
                             )
                         }
-                        MorphingSelectedNavigationIcon(
-                            symbol = selectedItem.symbol,
+                        MorphingSelectedNavigationItem(
+                            item = selectedItem,
                             compactProgress = compactState,
                             fullWidthPx = fullWidthPx,
                             compactWidthPx = compactWidthPx,
@@ -622,8 +620,8 @@ fun <T> GlassBottomBar(
                             selectedIndex = selectedIndex,
                             isLtr = isLtr,
                             horizontalInsetPx = paddingPx,
-                            expandedIconOffsetYPx = expandedIconOffsetYPx,
-                            selectedIconLateScale = selectedIconLateScaleProvider,
+                            selectedContentLateScale = selectedContentLateScaleProvider,
+                            labelAlpha = tabContentAlpha,
                             selectedIconColorFilter = selectedIconColorFilterState,
                             contentColor = colors.content,
                         )
@@ -674,8 +672,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
     enabled: Boolean,
     alpha: () -> Float,
     selectedColorFilter: State<ColorFilter>,
-    iconOffsetY: Dp = 0.dp,
-    hideSelectedIcon: Boolean = false,
+    hideSelectedItem: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val scale = LocalLiquidTabScale.current
@@ -694,7 +691,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
                     onClick = { onSelected(item.key) },
                 )
                 .graphicsLayer {
-                    this.alpha = alpha()
+                    this.alpha = if (selected && hideSelectedItem) 0f else alpha()
                     val contentScale = scale()
                     scaleX = contentScale
                     scaleY = contentScale
@@ -702,55 +699,89 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            SfIcon(
-                symbol = item.symbol,
-                contentDescription = if (selected && hideSelectedIcon) {
-                    null
-                } else {
-                    item.contentDescription
-                },
-                tint = if (selected) colors.accent else colors.content,
-                size = ExpandedNavigationIconSize,
-                weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                modifier = Modifier
-                    .padding(top = 3.dp)
-                    .offset(y = iconOffsetY)
-                    .then(
-                        if (selected) {
-                            Modifier.graphicsLayer {
-                                if (hideSelectedIcon) this.alpha = 0f
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-            )
-            Text(
-                text = item.label,
-                color = colors.content,
-                style = NavigationLabelStyle,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(top = 1.dp, bottom = 4.dp)
-                    .then(
-                        if (selected) {
-                            Modifier.graphicsLayer {
-                                colorFilter = selectedColorFilter.value
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
+            NavigationTabContent(
+                item = item,
+                selected = selected,
+                selectedColorFilter = selectedColorFilter,
             )
         }
     }
 }
 
 @Composable
-private fun BoxScope.MorphingSelectedNavigationIcon(
-    symbol: SfSymbol,
+private fun <T> NavigationTabContent(
+    item: GlassTabItem<T>,
+    selected: Boolean,
+    selectedColorFilter: State<ColorFilter>? = null,
+    selectedIconTint: Color? = null,
+    labelAlpha: (() -> Float)? = null,
+) {
+    val colors = LocalGlassColors.current
+    val labelVisibility = labelAlpha?.invoke()?.coerceIn(0f, 1f) ?: 1f
+    SfIcon(
+        symbol = item.symbol,
+        contentDescription = item.contentDescription,
+        tint = if (selected) selectedIconTint ?: colors.accent else colors.content,
+        size = ExpandedNavigationIconSize,
+        weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        modifier = Modifier
+            .padding(top = 3.dp * labelVisibility)
+            .then(
+                if (selected && selectedColorFilter != null) {
+                    Modifier.graphicsLayer {
+                        colorFilter = selectedColorFilter.value
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    )
+    Text(
+        text = item.label,
+        color = colors.content,
+        style = NavigationLabelStyle,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .then(
+                if (labelAlpha != null) {
+                    Modifier.collapseVertically(labelVisibility)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(top = 1.dp, bottom = 4.dp)
+            .then(
+                if (labelAlpha != null || (selected && selectedColorFilter != null)) {
+                    Modifier.graphicsLayer {
+                        if (labelAlpha != null) {
+                            alpha = labelVisibility
+                        }
+                        if (selected) {
+                            selectedColorFilter?.let { colorFilter = it.value }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    )
+}
+
+private fun Modifier.collapseVertically(fraction: Float): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val height = (placeable.height * fraction.coerceIn(0f, 1f))
+        .roundToInt()
+        .coerceIn(constraints.minHeight, constraints.maxHeight)
+    layout(placeable.width, height) {
+        placeable.placeRelative(0, 0)
+    }
+}
+
+@Composable
+private fun <T> BoxScope.MorphingSelectedNavigationItem(
+    item: GlassTabItem<T>,
     compactProgress: State<Float>,
     fullWidthPx: Float,
     compactWidthPx: Float,
@@ -758,20 +789,27 @@ private fun BoxScope.MorphingSelectedNavigationIcon(
     selectedIndex: Int,
     isLtr: Boolean,
     horizontalInsetPx: Float,
-    expandedIconOffsetYPx: Float,
-    selectedIconLateScale: () -> Float,
+    selectedContentLateScale: () -> Float,
+    labelAlpha: () -> Float,
     selectedIconColorFilter: State<ColorFilter>,
     contentColor: Color,
 ) {
     val sharedTabScale = LocalLiquidTabScale.current
-    SfIcon(
-        symbol = symbol,
-        contentDescription = null,
-        tint = contentColor,
-        size = ExpandedNavigationIconSize,
-        weight = FontWeight.SemiBold,
+    val density = LocalDensity.current
+    val currentContentWidthPx = morphSurfaceWidthPx(
+        fullWidthPx,
+        compactWidthPx,
+        compactProgress.value.coerceIn(0f, 1f),
+    ) - 2f * horizontalInsetPx
+    val selectedTabWidth = with(density) {
+        (currentContentWidthPx / itemCount)
+            .coerceAtLeast(ExpandedNavigationIconSize.toPx())
+            .toDp()
+    }
+    Box(
         modifier = Modifier
             .align(Alignment.Center)
+            .fillMaxSize()
             .graphicsLayer {
                 val progress = compactProgress.value.coerceIn(0f, 1f)
                 val expandedContentWidth = fullWidthPx - 2f * horizontalInsetPx
@@ -791,14 +829,29 @@ private fun BoxScope.MorphingSelectedNavigationIcon(
                 val compactCenter = compactContentWidth / 2f
                 val targetCenter = lerp(expandedCenter, compactCenter, progress)
                 translationX = targetCenter - currentContentWidth / 2f
-                translationY = lerp(expandedIconOffsetYPx, 0f, progress)
-                // The shared tab scale owns press deformation and the <= 0.74 morph. Apply
-                // only the late compact correction here so the press scale is not duplicated.
-                val scale = sharedTabScale() * selectedIconLateScale()
+                // Scale the selected icon and label as one tab item. The shared tab scale owns
+                // press deformation and the <= 0.74 morph; the late correction only reconciles
+                // the expanded icon size with the compact control endpoint.
+                val scale = sharedTabScale() * selectedContentLateScale()
                 scaleX = scale
                 scaleY = scale
-                alpha = 1f
-                colorFilter = selectedIconColorFilter.value
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(selectedTabWidth)
+                .fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            NavigationTabContent(
+                item = item,
+                selected = true,
+                selectedColorFilter = selectedIconColorFilter,
+                selectedIconTint = contentColor,
+                labelAlpha = labelAlpha,
+            )
+        }
+    }
 }
