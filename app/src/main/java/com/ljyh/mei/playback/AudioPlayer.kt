@@ -5,7 +5,7 @@ import android.animation.Animator
 import android.animation.ValueAnimator
 import android.media.MediaPlayer
 import android.view.animation.LinearInterpolator
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.Player
 
 /**
  * 音频播放器（部分源码，淡入淡出部分）
@@ -19,9 +19,12 @@ import androidx.media3.exoplayer.ExoPlayer
  * @author Moriafly
  * @since 2021/07/26
  */
-class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
+class AudioPlayer(
+    private val player: Player,
+    private val shouldSuppressVolumeWrites: () -> Boolean = { false },
+): MediaPlayer() {
 
-    private var volume = 1F
+    private var volume = player.volume
 
     var volumeSmoothDuration: Long = 500L
         set(value) {
@@ -31,9 +34,11 @@ class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
         }
 
     private fun setExoPlayerVolume(volume: Float) {
-        exoPlayer.volume = volume
+        if (shouldSuppressVolumeWrites()) return
+        player.volume = volume
     }
 
+    private var pauseAnimationCancelled = false
 
     private val pauseSmoothValueAnimator = ValueAnimator.ofFloat(1F, 0F).apply {
         duration = volumeSmoothDuration
@@ -49,22 +54,29 @@ class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
         }
         addListener(object : Animator.AnimatorListener {
             override fun onAnimationStart(animation: Animator) {
-
+                pauseAnimationCancelled = false
             }
 
             override fun onAnimationEnd(animation: Animator) {
-                exoPlayer.volume = 0F
-                exoPlayer.pause()
+                if (!pauseAnimationCancelled) {
+                    setExoPlayerVolume(0F)
+                    if (!shouldSuppressVolumeWrites()) {
+                        player.pause()
+                    }
+                }
                 isPauseSmoothing = false
             }
 
             override fun onAnimationCancel(animation: Animator) {
+                pauseAnimationCancelled = true
                 isPauseSmoothing = false
             }
 
             override fun onAnimationRepeat(animation: Animator) { }
         })
     }
+
+    private var startAnimationCancelled = false
 
     private val startSmoothValueAnimator = ValueAnimator.ofFloat(0F, 1F).apply {
         duration = volumeSmoothDuration
@@ -80,15 +92,21 @@ class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
         }
         addListener(object : Animator.AnimatorListener {
             override fun onAnimationStart(animation: Animator) {
-                exoPlayer.playWhenReady = true
+                startAnimationCancelled = false
+                if (!shouldSuppressVolumeWrites()) {
+                    player.playWhenReady = true
+                }
             }
 
             override fun onAnimationEnd(animation: Animator) {
-                exoPlayer.volume = 1F
+                if (!startAnimationCancelled) {
+                    setExoPlayerVolume(1F)
+                }
                 isStartSmoothing = false
             }
 
             override fun onAnimationCancel(animation: Animator) {
+                startAnimationCancelled = true
                 isStartSmoothing = false
             }
 
@@ -111,18 +129,44 @@ class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
         if (isStartSmoothing) {
             return true
         }
-        return exoPlayer.isPlaying
+        return player.isPlaying
     }
 
     fun pauseSmooth() {
-        isPauseSmoothing = true
+        val currentVolume = player.volume
         startSmoothValueAnimator.cancel()
+        pauseSmoothValueAnimator.cancel()
+        pauseAnimationCancelled = false
+        val (start, target) = audioVolumeAnimationRange(currentVolume, 0F)
+        if (!audioVolumeAnimationNeeded(start, target)) {
+            setExoPlayerVolume(target)
+            if (!shouldSuppressVolumeWrites()) {
+                player.pause()
+            }
+            isPauseSmoothing = false
+            return
+        }
+        pauseSmoothValueAnimator.setFloatValues(start, target)
+        isPauseSmoothing = true
         pauseSmoothValueAnimator.start()
     }
 
     fun startSmooth() {
-        isStartSmoothing = true
+        val currentVolume = player.volume
         pauseSmoothValueAnimator.cancel()
+        startSmoothValueAnimator.cancel()
+        startAnimationCancelled = false
+        val (start, target) = audioVolumeAnimationRange(currentVolume, 1F)
+        if (!audioVolumeAnimationNeeded(start, target)) {
+            setExoPlayerVolume(target)
+            if (!shouldSuppressVolumeWrites()) {
+                player.playWhenReady = true
+            }
+            isStartSmoothing = false
+            return
+        }
+        startSmoothValueAnimator.setFloatValues(start, target)
+        isStartSmoothing = true
         startSmoothValueAnimator.start()
     }
 
@@ -132,13 +176,22 @@ class AudioPlayer(private val exoPlayer: ExoPlayer): MediaPlayer() {
             rightVolume * rightChannel
         )
 
+        volume = leftVolume
         setExoPlayerVolume(leftVolume)
     }
 
     override fun reset() {
         pauseSmoothValueAnimator.cancel()
         startSmoothValueAnimator.cancel()
+        isPauseSmoothing = false
+        isStartSmoothing = false
         super.reset()
     }
 
 }
+
+internal fun audioVolumeAnimationRange(currentVolume: Float, targetVolume: Float): Pair<Float, Float> =
+    currentVolume.coerceIn(0F, 1F) to targetVolume.coerceIn(0F, 1F)
+
+internal fun audioVolumeAnimationNeeded(startVolume: Float, targetVolume: Float): Boolean =
+    kotlin.math.abs(startVolume - targetVolume) > 0.001F
