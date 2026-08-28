@@ -24,3 +24,5 @@ tempapplemusic-like-lyrics/
 temp/
 /tools
 /app/release
+native-beatnet-experiment/build-android/
+native-beatnet-experiment/build-host/

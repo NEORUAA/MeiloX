@@ -48,6 +48,12 @@ android {
         buildConfig = true
         compose = true
     }
+    packaging {
+        // Direct-distribution APKs prioritize download size. Android extracts these
+        // entries at install time instead of mmap'ing them directly from the APK.
+        jniLibs.useLegacyPackaging = true
+        dex.useLegacyPackaging = true
+    }
 }
 
 configurations.all {

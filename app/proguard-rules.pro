@@ -21,12 +21,6 @@
     @com.google.gson.annotations.SerializedName <fields>;
 }
 
-# 保留类的所有构造函数
--keepclassmembers class * {
-    <init>(...);
-}
-
-
 -keep class * extends com.google.gson.TypeAdapter {
   <init>();
 }
@@ -79,17 +73,6 @@
 -keep public class * extends android.content.ContentProvider
 -keep public class * extends android.app.Application
 
-# Retrofit
--keep class retrofit2.** { *; }
--dontwarn retrofit2.**
--keepattributes Signature
--keepattributes Exceptions
-
-# Gson
--keep class com.google.gson.** { *; }
--keep class com.google.gson.stream.** { *; }
--dontwarn com.google.gson.**
-
 -keepclasseswithmembernames class * {
     native <methods>;
 }
@@ -130,11 +113,6 @@
 # OkHttp 相关规则
 -keep,allowshrinking class okhttp3.internal.publicsuffix.PublicSuffixDatabase { <init>(); }
 
-# Retrofit 相关规则
--keep,allowobfuscation interface *
--keep,allowobfuscation interface * extends *
--keep,allowobfuscation,allowshrinking class retrofit2.Response { <init>(); }
-
 # Ktor 相关规则
 -keep class io.ktor.client.engine.** implements io.ktor.client.HttpClientEngineContainer { <init>(); }
 
@@ -154,8 +132,9 @@
 -keepattributes AnnotationDefault,RuntimeVisibleAnnotations
 
 
-# 奇怪的问题，ArtistDetail需要免去r8混淆，但是其他类正常s com.google.common.reflect.** { *; }
--keep class com.ljyh.mei.data.model.api.** { *; }
+# ArtistDetail has a known reflection-sensitive payload shape. Keep only that
+# model family instead of every API model in the application.
+-keep class com.ljyh.mei.data.model.api.ArtistDetail** { *; }
 
-# ONNX Runtime's JNI and reflective Java API are required by minimized builds.
--keep class ai.onnxruntime.** { *; }
+# ONNX Runtime JNI resolves Java class names, but unused wrappers can still shrink.
+-keepnames class ai.onnxruntime.**

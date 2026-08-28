@@ -15,15 +15,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.capsule.ContinuousRoundedRectangle
-import com.ljyh.mei.R
-
-private val SfProFamily = FontFamily(Font(R.font.sf_pro, FontWeight.Normal))
+private val AppFontFamily = FontFamily.Default
 
 private val AppShapes = Shapes(
     extraSmall = ContinuousRoundedRectangle(2.dp),
@@ -35,27 +32,27 @@ private val AppShapes = Shapes(
 
 
 private val AppTypography = Typography(
-    displayLarge = TextStyle(fontFamily = SfProFamily, letterSpacing = 1.sp),
-    displayMedium = TextStyle(fontFamily = SfProFamily, letterSpacing = 1.sp),
-    displaySmall = TextStyle(fontFamily = SfProFamily, letterSpacing = 1.sp),
-    headlineLarge = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Bold, fontSize = 34.sp, lineHeight = 41.sp, letterSpacing = 1.sp),
-    headlineMedium = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = 1.sp),
-    headlineSmall = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp, letterSpacing = 1.sp),
-    titleLarge = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = 1.sp),
-    titleMedium = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
-    titleSmall = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 1.sp),
-    bodyLarge = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Normal, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
+    displayLarge = TextStyle(fontFamily = AppFontFamily, letterSpacing = 1.sp),
+    displayMedium = TextStyle(fontFamily = AppFontFamily, letterSpacing = 1.sp),
+    displaySmall = TextStyle(fontFamily = AppFontFamily, letterSpacing = 1.sp),
+    headlineLarge = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Bold, fontSize = 34.sp, lineHeight = 41.sp, letterSpacing = 1.sp),
+    headlineMedium = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = 1.sp),
+    headlineSmall = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp, letterSpacing = 1.sp),
+    titleLarge = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = 1.sp),
+    titleMedium = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
+    titleSmall = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 1.sp),
+    bodyLarge = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Normal, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
     bodyMedium = TextStyle(
-        fontFamily = SfProFamily,
+        fontFamily = AppFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 20.sp,
         letterSpacing = 1.sp,
     ),
-    bodySmall = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 1.sp),
-    labelLarge = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
-    labelMedium = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.sp),
-    labelSmall = TextStyle(fontFamily = SfProFamily, fontWeight = FontWeight.Medium, fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 1.sp),
+    bodySmall = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 1.sp),
+    labelLarge = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 1.sp),
+    labelMedium = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.sp),
+    labelSmall = TextStyle(fontFamily = AppFontFamily, fontWeight = FontWeight.Medium, fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 1.sp),
 )
 @Composable
 fun MusicTheme(
