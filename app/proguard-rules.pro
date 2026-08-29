@@ -136,5 +136,7 @@
 # model family instead of every API model in the application.
 -keep class com.ljyh.mei.data.model.api.ArtistDetail** { *; }
 
-# ONNX Runtime JNI resolves Java class names, but unused wrappers can still shrink.
--keepnames class ai.onnxruntime.**
+# JNI resolves this class and native method by their stable binary names.
+-keepclasseswithmembernames,includedescriptorclasses class com.ljyh.mei.playback.BeatNetNative {
+    native <methods>;
+}
