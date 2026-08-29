@@ -19,6 +19,7 @@ class SourceNotFoundException(message: String) : IOException(message)
 internal data class ResolvedMediaSource(
     val uri: Uri,
     val actualQuality: String,
+    val cacheKey: String?,
 )
 
 @Singleton
@@ -30,6 +31,7 @@ class MediaUriProvider @Inject constructor(
         val url: String,
         val expiresAtMs: Long,
         val actualQuality: String,
+        val cacheKey: String,
     )
 
     private val urlCache = ConcurrentHashMap<String, CachedUrl>()
@@ -43,11 +45,11 @@ class MediaUriProvider @Inject constructor(
             ?: songRepository.getSong("local_$mediaId").firstOrNull()?.path
         if (localPath != null) {
             if (localPath.startsWith("content://")) {
-                return ResolvedMediaSource(Uri.parse(localPath), requestedQuality)
+                return ResolvedMediaSource(Uri.parse(localPath), requestedQuality, cacheKey = null)
             }
             val file = File(localPath)
             if (file.exists()) {
-                return ResolvedMediaSource(Uri.fromFile(file), requestedQuality)
+                return ResolvedMediaSource(Uri.fromFile(file), requestedQuality, cacheKey = null)
             }
         }
 
@@ -58,7 +60,11 @@ class MediaUriProvider @Inject constructor(
             val cached = urlCache[cacheKey]
             if (cached != null) {
                 if (cached.expiresAtMs > now) {
-                    return ResolvedMediaSource(cached.url.toUri(), cached.actualQuality)
+                    return ResolvedMediaSource(
+                        uri = cached.url.toUri(),
+                        actualQuality = cached.actualQuality,
+                        cacheKey = cached.cacheKey,
+                    )
                 }
                 urlCache.remove(cacheKey, cached)
             }
@@ -92,6 +98,12 @@ class MediaUriProvider @Inject constructor(
                     sourceQuality = fullSource.level,
                     attemptedQuality = attemptedQuality,
                 )
+                val playbackCacheKey = playbackCacheKey(
+                    mediaId = mediaId,
+                    quality = actualQuality,
+                    sourceMd5 = fullSource.md5,
+                    sourceSize = fullSource.size.toLong(),
+                )
                 val cacheEntry = CachedUrl(
                     url = url,
                     expiresAtMs = expiresAt(
@@ -99,18 +111,31 @@ class MediaUriProvider @Inject constructor(
                         nowMs = now,
                     ),
                     actualQuality = actualQuality,
+                    cacheKey = playbackCacheKey,
                 )
                 // Cache the requested, attempted, and effective levels while retaining the
                 // effective level so disk bytes are never mislabeled as a higher quality.
                 urlCache["$mediaId:$requestedQuality"] = cacheEntry
                 urlCache[cacheKey] = cacheEntry
                 urlCache["$mediaId:$actualQuality"] = cacheEntry
-                return ResolvedMediaSource(url.toUri(), actualQuality)
+                return ResolvedMediaSource(
+                    uri = url.toUri(),
+                    actualQuality = actualQuality,
+                    cacheKey = playbackCacheKey,
+                )
             }
         }
 
         val message = "No playable full source for $mediaId at quality $requestedQuality"
         throw SourceNotFoundException(message)
+    }
+
+    /** Forces the next request for this song to obtain a fresh signed URL and source identity. */
+    fun invalidate(mediaId: String) {
+        val prefix = "${mediaId.trim()}:"
+        urlCache.keys
+            .filter { it.startsWith(prefix) }
+            .forEach(urlCache::remove)
     }
 
     private fun logSourceAttempt(

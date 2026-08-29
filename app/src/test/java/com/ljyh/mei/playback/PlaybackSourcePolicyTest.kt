@@ -1,5 +1,6 @@
 package com.ljyh.mei.playback
 
+import androidx.media3.common.PlaybackException
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.isFullSourceFor
 import org.junit.Assert.assertEquals
@@ -24,20 +25,54 @@ class PlaybackSourcePolicyTest {
     }
 
     @Test
-    fun cacheKeysNormalizeQualityAndSeparateVersions() {
+    fun cacheKeysNormalizeQualityAndSeparateSourceRevisions() {
         assertEquals(
-            playbackCacheKey("123", "EXHIGH"),
-            playbackCacheKey(" 123 ", "exhigh"),
+            playbackCacheKey("123", "EXHIGH", "ABCDEF", 10L),
+            playbackCacheKey(" 123 ", "exhigh", "abcdef", 10L),
         )
-        assertEquals("meilox-media-v2:123:exhigh", playbackCacheKey("123", "EXHIGH"))
-        assertFalse(playbackCacheKey("123", "exhigh") == "123")
-        assertFalse(playbackCacheKey("123", "exhigh") == playbackCacheKey("123", "lossless"))
+        assertEquals(
+            "meilox-media-v3:123:exhigh:abcdef",
+            playbackCacheKey("123", "EXHIGH", "ABCDEF", 10L),
+        )
+        assertEquals(
+            "meilox-media-v3:123:exhigh:size-1024",
+            playbackCacheKey("123", "exhigh", "", 1_024L),
+        )
+        assertFalse(playbackCacheKey("123", "exhigh", "a", 10L) == "123")
+        assertFalse(
+            playbackCacheKey("123", "exhigh", "a", 10L) ==
+                playbackCacheKey("123", "lossless", "a", 10L),
+        )
+        assertFalse(
+            playbackCacheKey("123", "exhigh", "a", 10L) ==
+                playbackCacheKey("123", "exhigh", "b", 10L),
+        )
+        assertTrue(
+            playbackCacheKey("123", "exhigh", "a", 10L)
+                .startsWith(playbackCacheKeyPrefix("123", "exhigh")),
+        )
+        assertTrue(
+            playbackCacheKey("123", "exhigh", "a", 10L)
+                .startsWith(playbackCacheKeyPrefix("123")),
+        )
     }
 
     @Test
     fun effectiveQualityUsesTheServerLevelWhenFallbackIsUsed() {
         assertEquals("lossless", effectivePlaybackQuality("LOSSLESS", "jymaster"))
         assertEquals("exhigh", effectivePlaybackQuality(null, "EXHIGH"))
+    }
+
+    @Test
+    fun outOfRangeReadRefreshesTheCurrentSource() {
+        assertTrue(
+            shouldRefreshPlaybackSource(
+                PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+            ),
+        )
+        assertFalse(
+            shouldRefreshPlaybackSource(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED),
+        )
     }
 
     @Test

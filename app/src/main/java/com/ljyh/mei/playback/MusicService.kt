@@ -70,11 +70,13 @@ import com.ljyh.mei.di.repository.SongRepository
 import com.ljyh.mei.extensions.currentMetadata
 import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.playback.CacheManager.getCacheDataSourceFactory
-import com.ljyh.mei.playback.CacheManager.isContentFullyCached
+import com.ljyh.mei.playback.CacheManager.findFullyCachedPlaybackKey
+import com.ljyh.mei.playback.CacheManager.removePlaybackEntries
 import com.ljyh.mei.utils.CoilBitmapLoader
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +89,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.io.File
@@ -128,6 +131,9 @@ class MusicService : MediaLibraryService(),
     lateinit var mediaUriProvider: MediaUriProvider
 
     private var errorCount = 0 // 记录连续错误的次数，防止死循环
+    private var sourceRecoveryJob: Job? = null
+    private var sourceRecoveryMediaId: String? = null
+    private var sourceRecoveryAttempts = 0
 
     private val binder = MusicBinder()
 
@@ -552,6 +558,7 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onDestroy() {
+        sourceRecoveryJob?.cancel()
         periodicSnapshotJob?.cancel()
         playbackSnapshotJob?.cancel()
         historyJob?.cancel()
@@ -608,11 +615,11 @@ class MusicService : MediaLibraryService(),
                         .build()
                 }
             }
-            val cacheKey = playbackCacheKey(mediaId, quality)
-            if (isContentFullyCached(simpleCache, cacheKey)) {
+            val fullyCachedKey = findFullyCachedPlaybackKey(simpleCache, mediaId, quality)
+            if (fullyCachedKey != null) {
                 Timber.tag("ResolvingDataSource").d("Fully cached on disk: $mediaId")
                 return@Factory dataSpec.buildUpon()
-                    .setKey(cacheKey)
+                    .setKey(fullyCachedKey)
                     .build()
             }
 
@@ -620,7 +627,7 @@ class MusicService : MediaLibraryService(),
                 val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality)
                 dataSpec.buildUpon()
                     .setUri(resolved.uri)
-                    .setKey(playbackCacheKey(mediaId, resolved.actualQuality))
+                    .setKey(resolved.cacheKey)
                     .build()
             }
         }
@@ -652,6 +659,13 @@ class MusicService : MediaLibraryService(),
     override fun onBind(intent: Intent?) = super.onBind(intent) ?: binder
     override fun onPlayerError(error: PlaybackException) {
         Timber.tag("MusicService").e( "Player Error: ${error.errorCodeName}, ${error.message}")
+
+        if (shouldRefreshPlaybackSource(error.errorCode)) {
+            if (!scheduleSourceRecovery()) {
+                Toast.makeText(context, "播放源刷新失败，请稍后重试", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
 
         val isSourceError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
                 error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
@@ -692,7 +706,59 @@ class MusicService : MediaLibraryService(),
         }
     }
 
+    private fun scheduleSourceRecovery(): Boolean {
+        val mediaItem = player.currentMediaItem ?: return false
+        val mediaId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return false
+        if (sourceRecoveryMediaId != mediaId) {
+            sourceRecoveryMediaId = mediaId
+            sourceRecoveryAttempts = 0
+        }
+        if (sourceRecoveryJob?.isActive == true) return true
+        if (sourceRecoveryAttempts >= MAX_SOURCE_RECOVERY_ATTEMPTS) return false
+
+        sourceRecoveryAttempts++
+        val recoveryPositionMs = player.currentPosition.coerceAtLeast(0L)
+        val resumePlayback = player.playWhenReady
+        sourceRecoveryJob = scope.launch {
+            try {
+                Timber.tag("MusicService").w(
+                    "Refreshing source after out-of-range read: id=%s position=%s attempt=%s",
+                    mediaId,
+                    recoveryPositionMs,
+                    sourceRecoveryAttempts,
+                )
+                mediaUriProvider.invalidate(mediaId)
+                resetPlaybackSourcesForQualityChange()
+                val removedEntries = withContext(Dispatchers.IO) {
+                    removePlaybackEntries(CacheManager.getSimpleCache(context), mediaId)
+                }
+                if (player.currentMediaItem?.mediaId != mediaId) return@launch
+
+                Timber.tag("MusicService").d(
+                    "Retrying refreshed source: id=%s removedCacheEntries=%s",
+                    mediaId,
+                    removedEntries,
+                )
+                player.seekTo(recoveryPositionMs)
+                player.prepare()
+                player.playWhenReady = resumePlayback
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.tag("MusicService").e(error, "Unable to refresh source for %s", mediaId)
+                Toast.makeText(context, "播放源刷新失败，请稍后重试", Toast.LENGTH_SHORT).show()
+            }
+        }
+        return true
+    }
+
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (mediaItem?.mediaId != sourceRecoveryMediaId) {
+            sourceRecoveryJob?.cancel()
+            sourceRecoveryJob = null
+            sourceRecoveryMediaId = mediaItem?.mediaId
+            sourceRecoveryAttempts = 0
+        }
         // 如果成功切歌，重置错误计数器
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
@@ -728,6 +794,7 @@ class MusicService : MediaLibraryService(),
         const val CHANNEL_ID = "music_channel_01"
         const val NOTIFICATION_ID = 888
         private const val PLAYBACK_SNAPSHOT_DEBOUNCE_MS = 500L
+        private const val MAX_SOURCE_RECOVERY_ATTEMPTS = 1
         private const val PLAYBACK_SNAPSHOT_INTERVAL_MS = 5_000L
         const val ACTION_TOGGLE_PLAYBACK = "com.ljyh.mei.action.TOGGLE_PLAYBACK"
         const val ACTION_PREVIOUS = "com.ljyh.mei.action.PREVIOUS"
