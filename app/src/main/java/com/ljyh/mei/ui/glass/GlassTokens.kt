@@ -4,11 +4,13 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ljyh.mei.R
 
 @Immutable
 data class GlassColors(
@@ -41,7 +43,7 @@ internal val GlassColors.segmentedControlBackground: Color
 
 /** Exact iOS/iPadOS 27 typography tokens exposed by the referenced Figma library. */
 object IosTypography {
-    val fontFamily = FontFamily.Default
+    val fontFamily = FontFamily(Font(R.font.sf_pro, FontWeight.Normal))
     val largeTitle = TextStyle(
         fontFamily = fontFamily,
         fontWeight = FontWeight.Bold,
