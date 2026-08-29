@@ -48,6 +48,18 @@ android {
         buildConfig = true
         compose = true
     }
+    packaging {
+        // Direct-distribution APKs prioritize download size. Android extracts these
+        // entries at install time instead of mmap'ing them directly from the APK.
+        jniLibs.useLegacyPackaging = true
+        dex.useLegacyPackaging = true
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 }
 
 configurations.all {
@@ -156,9 +168,6 @@ dependencies {
     implementation(libs.backdrop)
     implementation(libs.shapes)
     implementation(libs.capsule)
-    implementation(libs.onnxruntime.android)
-
-
 }
 
 //kotlin {

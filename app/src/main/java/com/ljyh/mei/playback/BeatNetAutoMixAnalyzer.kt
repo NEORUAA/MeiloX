@@ -1,8 +1,5 @@
 package com.ljyh.mei.playback
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.media.AudioFormat
 import android.media.MediaCodec
@@ -11,12 +8,9 @@ import android.media.MediaFormat
 import android.net.Uri
 import com.ljyh.mei.constants.UserAgent
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.FloatBuffer
 import java.util.LinkedHashMap
 import kotlin.math.PI
 import kotlin.math.abs
@@ -44,6 +38,15 @@ data class BeatNetPairAnalysis(
     val incoming: BeatNetTrackAnalysis,
 )
 
+internal object BeatNetNative {
+    init {
+        System.loadLibrary("beatnet_native")
+    }
+
+    @JvmStatic
+    external fun predict(features: FloatArray): FloatArray?
+}
+
 data class SmartAutoMixPlan(
     val outgoingStartMs: Long,
     val incomingStartMs: Long,
@@ -58,12 +61,9 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
     private data class CacheKey(val mediaId: String, val startMs: Long)
 
     private val featureExtractor = BeatNetFeatureExtractor()
-    private val modelMutex = Mutex()
     private val cache = object : LinkedHashMap<CacheKey, BeatNetTrackAnalysis>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CacheKey, BeatNetTrackAnalysis>?) = size > 8
     }
-    private val environment by lazy(OrtEnvironment::getEnvironment)
-    private var session: OrtSession? = null
 
     suspend fun analyzePair(
         outgoingId: String,
@@ -91,39 +91,21 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
         }
     }
 
-    private suspend fun predict(features: FloatArray): Array<FloatArray> = modelMutex.withLock {
-        val activeSession = session ?: createSession().also { session = it }
-        OnnxTensor.createTensor(
-            environment,
-            FloatBuffer.wrap(features),
-            longArrayOf(1, BeatNetFeatureExtractor.FRAME_COUNT.toLong(), BeatNetFeatureExtractor.FEATURE_COUNT.toLong()),
-        ).use { input ->
-            activeSession.run(mapOf("features" to input)).use { output ->
-                @Suppress("UNCHECKED_CAST")
-                val values = output[0].value as Array<Array<FloatArray>>
-                values[0]
-            }
+    private fun predict(features: FloatArray): Array<FloatArray> {
+        require(features.size == BeatNetFeatureExtractor.FRAME_COUNT * BeatNetFeatureExtractor.FEATURE_COUNT)
+        val flattened = checkNotNull(BeatNetNative.predict(features)) {
+            "Native BeatNet inference failed"
         }
-    }
-
-    private fun createSession(): OrtSession {
-        val model = context.assets.open("beatnet/beatnet_bda.onnx").use { it.readBytes() }
-        val options = OrtSession.SessionOptions().apply {
-            setInterOpNumThreads(1)
-            setIntraOpNumThreads(max(1, Runtime.getRuntime().availableProcessors() / 2))
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        check(flattened.size == BeatNetFeatureExtractor.FRAME_COUNT * 2) {
+            "Native BeatNet returned ${flattened.size} values"
         }
-        return try {
-            environment.createSession(model, options)
-        } finally {
-            options.close()
+        return Array(BeatNetFeatureExtractor.FRAME_COUNT) { frame ->
+            floatArrayOf(flattened[frame * 2], flattened[frame * 2 + 1])
         }
     }
 
     override fun close() {
         synchronized(cache) { cache.clear() }
-        session?.close()
-        session = null
     }
 
     companion object {
