@@ -63,6 +63,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -931,14 +932,34 @@ fun IosPopupMenu(
         }
     }
 
+    val anchorFadePaint = remember { Paint() }
+
     Box(modifier.onSizeChanged { anchorSize = it }) {
         Box(
             Modifier
-                .graphicsLayer {
-                    alpha = if (keepAnchorVisible) {
+                .drawWithContent {
+                    val alpha = if (keepAnchorVisible) {
                         1f
                     } else {
                         1f - menuAlpha.value.coerceIn(0f, 1f)
+                    }
+                    when {
+                        alpha <= 0f -> Unit
+                        alpha >= 1f -> drawContent()
+                        else -> {
+                            anchorFadePaint.alpha = alpha
+                            drawContext.canvas.saveLayer(
+                                androidx.compose.ui.geometry.Rect(
+                                    left = 0f,
+                                    top = 0f,
+                                    right = size.width,
+                                    bottom = size.height,
+                                ),
+                                anchorFadePaint,
+                            )
+                            drawContent()
+                            drawContext.canvas.restore()
+                        }
                     }
                 },
         ) {
