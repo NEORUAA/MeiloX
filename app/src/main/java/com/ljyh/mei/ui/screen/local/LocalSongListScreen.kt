@@ -44,7 +44,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +69,7 @@ import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.playlist.FinalPerfectCollage
 import com.ljyh.mei.ui.component.playlist.PlaylistBackground
+import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosTopToolbar
@@ -75,6 +78,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistTrackList
+import com.ljyh.mei.utils.setClipboard
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,6 +106,7 @@ fun LocalSongListScreen(
     val tracks: List<MediaMetadata> = remember(songs) {
         songs.map { it.toMediaMetadata() }
     }
+    var actionTrack by remember { mutableStateOf<MediaMetadata?>(null) }
     val coverUrl = remember(songs) {
         songs.firstOrNull { it.cover.isNotEmpty() }?.cover
     }
@@ -176,7 +181,7 @@ fun LocalSongListScreen(
                                     )
                                 }
                             },
-                            onMoreClick = {}
+                            onMoreClick = { actionTrack = it }
                         )
                     }
                 } else {
@@ -203,7 +208,7 @@ fun LocalSongListScreen(
                                 )
                             }
                         },
-                        onMoreClick = {},
+                        onMoreClick = { actionTrack = it },
                         contentPadding = PaddingValues(
                             bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues()
                                 .calculateBottomPadding()
@@ -211,6 +216,15 @@ fun LocalSongListScreen(
                     )
                 }
             }
+        }
+
+        actionTrack?.let { track ->
+            TrackActionMenu(
+                targetTrack = track,
+                onDismiss = { actionTrack = null },
+                onCopyId = { setClipboard(context, track.id.toString(), "id") },
+                onCopyName = { setClipboard(context, track.title, "name") },
+            )
         }
     }
 }

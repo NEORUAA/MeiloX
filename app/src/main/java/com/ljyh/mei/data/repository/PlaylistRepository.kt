@@ -3,6 +3,7 @@ package com.ljyh.mei.data.repository
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.model.AlbumDetail
+import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.api.BaseMessageResponse
@@ -12,11 +13,13 @@ import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
+import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.GetSongUrl
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SubscribePlaylist
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylist
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
@@ -44,6 +47,27 @@ class PlaylistRepository(
                     )
                 )
             }
+        }
+    }
+
+    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail): List<MediaMetadata> {
+        return withContext(Dispatchers.IO) {
+            val playlist = detail.playlist
+            val tracksById = playlist.tracks.associateBy { it.id }.toMutableMap()
+
+            playlist.trackIds
+                .map { it.id }
+                .filterNot(tracksById::containsKey)
+                .chunked(200)
+                .forEach { ids ->
+                    apiService.getSongDetail(GetSongDetails(ids.joinToString(",")))
+                        .songs
+                        .forEach { track -> tracksById[track.id] = track }
+                }
+
+            playlist.trackIds
+                .mapNotNull { trackId -> tracksById[trackId.id] }
+                .map { track -> track.toMediaMetadata() }
         }
     }
 

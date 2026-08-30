@@ -26,11 +26,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,7 +59,6 @@ import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
-import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.ui.glass.IosModalSheetShape
 import com.ljyh.mei.ui.glass.IosSheetSurface
 import com.ljyh.mei.ui.glass.IosSheetTopToolbar
@@ -74,6 +76,27 @@ import com.ljyh.mei.utils.smallImage
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+private data class QueueEntry(
+    val key: String,
+    val mediaItem: MediaItem,
+)
+
+private fun Player.queueEntries(): List<QueueEntry> {
+    val timeline = currentTimeline
+    return List(mediaItemCount) { index ->
+        val windowUid = if (index < timeline.windowCount) {
+            timeline.getWindow(index, Timeline.Window()).uid
+        } else {
+            null
+        }
+        QueueEntry(
+            key = windowUid?.let { "window:$it" }
+                ?: "fallback:${getMediaItemAt(index).mediaId}:$index",
+            mediaItem = getMediaItemAt(index),
+        )
+    }
+}
+
 @Composable
 fun PlaylistContent(
     onDismiss: () -> Unit,
@@ -88,21 +111,29 @@ fun PlaylistContent(
     )
     val lazyListState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
-    val mediaItems = remember {
-        mutableStateListOf<MediaItem>().apply { addAll(playerConnection.player.mediaItems) }
+    val queueEntries = remember {
+        mutableStateListOf<QueueEntry>().apply { addAll(playerConnection.player.queueEntries()) }
     }
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        mediaItems.move(from.index, to.index)
+        queueEntries.move(from.index, to.index)
         playerConnection.player.moveMediaItem(from.index, to.index)
         hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
     }
     val currentMediaItemIndex by playerConnection.currentMediaItemIndex.collectAsState()
+    var initialScrollPending by remember { mutableStateOf(true) }
+
+    LaunchedEffect(queueEntries.size, currentMediaItemIndex) {
+        if (initialScrollPending && currentMediaItemIndex in queueEntries.indices) {
+            lazyListState.scrollToItem(currentMediaItemIndex)
+            initialScrollPending = false
+        }
+    }
 
     DisposableEffect(playerConnection) {
         val listener = object : Player.Listener {
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-                mediaItems.clear()
-                mediaItems.addAll(playerConnection.player.mediaItems)
+                queueEntries.clear()
+                queueEntries.addAll(playerConnection.player.queueEntries())
             }
         }
         playerConnection.player.addListener(listener)
@@ -112,7 +143,7 @@ fun PlaylistContent(
     Column(modifier) {
         if (showTitleBar) {
             IosSheetTopToolbar(
-                title = stringResource(R.string.queue_title, mediaItems.size),
+                title = stringResource(R.string.queue_title, queueEntries.size),
                 actions = {
                     IosSheetTopToolbarButton(onClick = onDismiss) {
                         SfIcon("xmark", stringResource(R.string.queue_close), size = 20.dp)
@@ -121,7 +152,7 @@ fun PlaylistContent(
             )
         }
 
-        if (mediaItems.isEmpty()) {
+        if (queueEntries.isEmpty()) {
             Column(
                 Modifier.fillMaxWidth().weight(1f).padding(36.dp),
                 verticalArrangement = Arrangement.Center,
@@ -145,8 +176,9 @@ fun PlaylistContent(
                     .background(queueBackground),
                 state = lazyListState,
             ) {
-                itemsIndexed(mediaItems, key = { _, item -> item.mediaId }) { index, mediaItem ->
-                    ReorderableItem(reorderableLazyListState, key = mediaItem.mediaId) {
+                itemsIndexed(queueEntries, key = { _, entry -> entry.key }) { index, entry ->
+                    ReorderableItem(reorderableLazyListState, key = entry.key) {
+                        val mediaItem = entry.mediaItem
                         mediaItem.metadata?.let { metadata ->
                             PlaylistItem(
                                 modifier = Modifier.longPressDraggableHandle(
@@ -167,9 +199,8 @@ fun PlaylistContent(
                                     playerConnection.player.playWhenReady = true
                                 },
                                 onRemoveClick = {
-                                    if (mediaItems.size > 1) {
+                                    if (queueEntries.size > 1) {
                                         playerConnection.player.removeMediaItem(index)
-                                        mediaItems.removeAt(index)
                                     } else {
                                         Toast.makeText(
                                             context,
