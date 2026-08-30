@@ -48,6 +48,7 @@ fun AlbumArtistBottomSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val navigableArtists = artistList.filter { it.id > 0 }
 
     IosModalSheet(
         onDismissRequest = onDismissRequest,
@@ -113,10 +114,10 @@ fun AlbumArtistBottomSheet(
             Spacer(modifier = Modifier.height(8.dp))
 
             // --- 2. 歌手部分 ---
-            if (artistList.isNotEmpty()) {
+            if (navigableArtists.isNotEmpty()) {
                 SectionLabel(text = "歌手")
 
-                artistList.forEach { artist ->
+                navigableArtists.forEach { artist ->
                     ListItem(
                         headlineContent = { Text(artist.name) },
                         leadingContent = {

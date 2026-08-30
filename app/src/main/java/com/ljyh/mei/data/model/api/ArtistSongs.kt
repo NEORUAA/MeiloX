@@ -14,7 +14,7 @@ data class ArtistSong(
     @SerializedName("artist")
     val artist: Artist,
     @SerializedName("hotSongs")
-    val hotSongs: List<HotSong>,
+    val hotSongs: List<HotSong>?,
     @SerializedName("more")
     val more: Boolean,
     @SerializedName("code")
@@ -346,5 +346,4 @@ data class ArtistSong(
         }
     }
 }
-
 

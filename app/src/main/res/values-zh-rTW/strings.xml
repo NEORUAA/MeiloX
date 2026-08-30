@@ -1,6 +1,8 @@
 <resources>
     <string name="artist_follow">關注</string>
     <string name="artist_following">已關注</string>
+    <string name="artist_unavailable_title">無相關藝人</string>
+    <string name="artist_unavailable_description">暫時無法取得該藝人的詳細資訊。</string>
     <string name="track_action_add_playlist">加入播放清單</string>
     <string name="track_action_download">下載</string>
     <string name="track_action_delete">刪除此歌曲</string>

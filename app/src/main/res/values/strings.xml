@@ -1,6 +1,8 @@
 <resources>
     <string name="artist_follow">Follow</string>
     <string name="artist_following">Following</string>
+    <string name="artist_unavailable_title">Artist unavailable</string>
+    <string name="artist_unavailable_description">Details for this artist aren’t available right now.</string>
     <string name="track_action_add_playlist">Add to playlist</string>
     <string name="track_action_download">Download</string>
     <string name="track_action_delete">Remove this song</string>
