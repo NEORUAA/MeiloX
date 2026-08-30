@@ -39,6 +39,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
@@ -89,6 +90,7 @@ private fun aggregateDownloadTasks(tasks: List<DownloadTask>): DownloadTaskAggre
 @Composable
 fun DownloadManageScreen(
     @Suppress("UNUSED_PARAMETER") scrollBehavior: TopAppBarScrollBehavior,
+    isNavigationTab: Boolean = false,
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -105,13 +107,14 @@ fun DownloadManageScreen(
         title = stringResource(R.string.download_management),
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
-        onNavigateBack = navController::navigateUp,
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
             if (allTasks.isNotEmpty()) {
                 GlassIconButton({ DownloadManager.deleteAll(context) }) {
                     SfIcon("trash", stringResource(R.string.clear_downloads))
                 }
             }
+            if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) {
         item(key = "download-filters") {

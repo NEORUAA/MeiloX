@@ -10,13 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -51,6 +49,7 @@ import com.ljyh.mei.data.model.melox.Podcast
 import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
@@ -74,12 +73,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @Composable
 fun PodcastScreen(
     viewModel: PodcastViewModel = hiltViewModel(),
+    isNavigationTab: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current
     val bottomPadding = insets.asPaddingValues().calculateBottomPadding()
-    val topPadding = insets.asPaddingValues().calculateTopPadding()
     val cookie by rememberPreference(CookieKey, defaultValue = "")
     val isVisitor = cookie.isBlank()
     val listState = rememberLazyListState()
@@ -107,23 +106,19 @@ fun PodcastScreen(
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().background(pageBackground),
-        contentPadding = PaddingValues(
-            top = topPadding + 12.dp,
-            bottom = bottomPadding + 20.dp,
-        ),
+    IosPinnedListPage(
+        title = stringResource(R.string.podcasts),
+        bottomPadding = bottomPadding,
+        listState = listState,
+        horizontalContentPadding = 0.dp,
+        largeTitleHorizontalPadding = 16.dp,
         verticalArrangement = Arrangement.spacedBy(0.dp),
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        actions = {
+            if (isNavigationTab) GlobalProfileAvatarButton()
+        },
+        backgroundColor = pageBackground,
     ) {
-        item(key = "podcast-title") {
-            Text(
-                text = stringResource(R.string.podcasts),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 22.dp),
-            )
-        }
         item(key = "podcast-tabs") {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 22.dp)) {
                 GlassSegmentedControl(

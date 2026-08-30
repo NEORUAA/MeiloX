@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen.main.library
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -25,15 +26,21 @@ import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.constants.UserPhotoKey
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.model.toAlbum
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.screen.main.library.component.LibraryMobileLayout
 import com.ljyh.mei.ui.screen.main.library.component.PhotoPickerSheet
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.utils.rememberPreference
 
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
+fun LibraryScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
+    isNavigationTab: Boolean = false,
+) {
     val navController = LocalNavController.current
     val account by viewModel.account.collectAsState()
     val photoAlbum by viewModel.photoAlbum.collectAsState()
@@ -126,6 +133,7 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
         if (userId.isNotEmpty()) {
             LibraryMobileLayout(
                 userPhoto = userPhoto,
+                isNavigationTab = isNavigationTab,
                 selectedPage = selectedPage,
                 onPageSelect = { selectedPage = it },
                 createdPlaylists = createdPlaylists,
@@ -154,30 +162,45 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
             }
         } else {
             // 未登录逻辑
-            EmptyLoginState(navController)
+            EmptyLoginState(navController, isNavigationTab)
         }
     }
 }
 
 @Composable
-fun EmptyLoginState(navController: MeiNavigator) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun EmptyLoginState(
+    navController: MeiNavigator,
+    isNavigationTab: Boolean = false,
+) {
+    val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    IosPinnedListPage(
+        title = stringResource(com.ljyh.mei.R.string.app_tab_library),
+        bottomPadding = insets.calculateBottomPadding(),
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        actions = {
+            if (isNavigationTab) GlobalProfileAvatarButton()
+        },
     ) {
-        com.ljyh.mei.ui.glass.GlassCard(
-            modifier = Modifier.padding(24.dp),
-            onClick = { Screen.NeteaseLogin.navigate(navController) },
-        ) {
-            androidx.compose.foundation.layout.Column(
-                modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        item {
+            Box(
+                modifier = Modifier.fillParentMaxSize(),
+                contentAlignment = Alignment.Center,
             ) {
-                com.ljyh.mei.ui.glass.SfIcon("person.crop.circle", null, size = 42.dp)
-                Text(
-                    androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.library_sign_in),
-                    modifier = Modifier.padding(top = 12.dp),
-                )
+                com.ljyh.mei.ui.glass.GlassCard(
+                    modifier = Modifier.padding(24.dp),
+                    onClick = { Screen.NeteaseLogin.navigate(navController) },
+                ) {
+                    androidx.compose.foundation.layout.Column(
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        com.ljyh.mei.ui.glass.SfIcon("person.crop.circle", null, size = 42.dp)
+                        Text(
+                            stringResource(com.ljyh.mei.R.string.library_sign_in),
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                }
             }
         }
     }

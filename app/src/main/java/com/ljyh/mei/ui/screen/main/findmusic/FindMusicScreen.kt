@@ -67,6 +67,7 @@ fun FindMusicScreen(
     modifier: Modifier = Modifier,
     initialCategory: String? = null,
     titleOverride: String? = null,
+    isNavigationTab: Boolean = false,
 ) {
     val navController = LocalNavController.current
     val playlistState by viewModel.highQualityPlaylist.collectAsState()
@@ -89,7 +90,10 @@ fun FindMusicScreen(
         modifier = modifier,
         collapseProgress = collapseProgress,
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
-        actions = { GlobalProfileAvatarButton() },
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        actions = {
+            if (isNavigationTab) GlobalProfileAvatarButton()
+        },
     ) { contentPadding ->
         Box(Modifier.fillMaxSize()) {
             when (val state = playlistState) {

@@ -117,6 +117,7 @@ internal object SfSymbolCatalog {
         "line.diagonal" to 0x100AF0,
         "link.badge.plus" to 0x100955,
         "list.bullet" to 0x1002F2,
+        "line.3.horizontal" to 0x100307,
         "location" to 0x1002D1,
         "lock.display" to 0x100F11,
         "lock.iphone" to 0x100F14,

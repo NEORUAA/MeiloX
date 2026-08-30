@@ -121,6 +121,8 @@ import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryEnabledKey
+import com.ljyh.mei.constants.FindMusicTabEnabledKey
+import com.ljyh.mei.constants.LibraryTabEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
 import com.ljyh.mei.constants.DownloadsTabEnabledKey
 import com.ljyh.mei.constants.CloudMusicTabEnabledKey
@@ -266,6 +268,8 @@ class MainActivity : ComponentActivity() {
             val downloadsEnabled by rememberPreference(DownloadsEnabledKey, defaultValue = true)
             val cloudMusicEnabled by rememberPreference(CloudMusicEnabledKey, defaultValue = true)
             val listeningHistoryEnabled by rememberPreference(ListeningHistoryEnabledKey, defaultValue = true)
+            val findMusicTabEnabled by rememberPreference(FindMusicTabEnabledKey, defaultValue = true)
+            val libraryTabEnabled by rememberPreference(LibraryTabEnabledKey, defaultValue = true)
             val podcastsTabEnabled by rememberPreference(PodcastsTabEnabledKey, defaultValue = false)
             val downloadsTabEnabled by rememberPreference(DownloadsTabEnabledKey, defaultValue = false)
             val cloudMusicTabEnabled by rememberPreference(CloudMusicTabEnabledKey, defaultValue = false)
@@ -475,6 +479,8 @@ class MainActivity : ComponentActivity() {
                         downloadsEnabled,
                         cloudMusicEnabled,
                         listeningHistoryEnabled,
+                        findMusicTabEnabled,
+                        libraryTabEnabled,
                         podcastsTabEnabled,
                         downloadsTabEnabled,
                         cloudMusicTabEnabled,
@@ -483,9 +489,9 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val available = buildList {
                             add(Index.Home)
-                            add(Index.FindMusic)
+                            if (findMusicTabEnabled) add(Index.FindMusic)
                             if (podcastsEnabled && podcastsTabEnabled) add(Index.Podcasts)
-                            add(Index.Library)
+                            if (libraryTabEnabled) add(Index.Library)
                             if (downloadsEnabled && downloadsTabEnabled) add(Index.Downloads)
                             if (cloudMusicEnabled && cloudMusicTabEnabled) add(Index.Cloud)
                             if (listeningHistoryEnabled && listeningHistoryTabEnabled) add(Index.History)
@@ -818,6 +824,9 @@ class MainActivity : ComponentActivity() {
                                                     navigationEntry(
                                                         route = meiRoute.route,
                                                         scrollBehavior = entryTopAppBarScrollBehavior,
+                                                        isNavigationTab = navigationItems.any {
+                                                            it.route == meiRoute.route
+                                                        },
                                                     )
                                                 }
                                             }

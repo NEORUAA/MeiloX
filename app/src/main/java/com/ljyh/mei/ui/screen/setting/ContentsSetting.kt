@@ -23,17 +23,18 @@ import com.ljyh.mei.constants.CloudMusicEnabledKey
 import com.ljyh.mei.constants.CloudMusicTabEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
 import com.ljyh.mei.constants.DownloadsTabEnabledKey
+import com.ljyh.mei.constants.FindMusicTabEnabledKey
+import com.ljyh.mei.constants.LibraryTabEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
-import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassToggle
 import com.ljyh.mei.ui.glass.IosPinnedListPage
+import com.ljyh.mei.ui.glass.IosReorderableGroup
+import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
@@ -68,6 +69,8 @@ fun ContentsSetting(
     val (downloads, setDownloads) = rememberPreference(DownloadsEnabledKey, true)
     val (cloud, setCloud) = rememberPreference(CloudMusicEnabledKey, true)
     val (history, setHistory) = rememberPreference(ListeningHistoryEnabledKey, true)
+    val (findMusicTab, setFindMusicTab) = rememberPreference(FindMusicTabEnabledKey, true)
+    val (libraryTab, setLibraryTab) = rememberPreference(LibraryTabEnabledKey, true)
     val (podcastsTab, setPodcastsTab) = rememberPreference(PodcastsTabEnabledKey, false)
     val (downloadsTab, setDownloadsTab) = rememberPreference(DownloadsTabEnabledKey, false)
     val (cloudTab, setCloudTab) = rememberPreference(CloudMusicTabEnabledKey, false)
@@ -131,12 +134,37 @@ fun ContentsSetting(
         }
         item {
             SettingsGroup(stringResource(R.string.content_tab_bar)) {
+                listOf(
+                    Triple(Index.FindMusic, findMusicTab, setFindMusicTab),
+                    Triple(Index.Library, libraryTab, setLibraryTab),
+                ).forEach { (item, enabled, setEnabled) ->
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { setEnabled(!enabled) },
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            SfIcon(item.symbol, null)
+                            Text(stringResource(item.labelRes), modifier = Modifier.weight(1f))
+                            GlassToggle(checked = enabled, onCheckedChange = setEnabled)
+                        }
+                    }
+                }
                 contentFeatureSettings.forEach { setting ->
                     val moduleEnabled = enabledByFeature.getValue(setting.feature)
                     val enabled = tabEnabled(setting.feature)
+                    val navigationItem = when (setting.feature) {
+                        ContentFeature.Podcasts -> Index.Podcasts
+                        ContentFeature.Downloads -> Index.Downloads
+                        ContentFeature.CloudMusic -> Index.Cloud
+                        ContentFeature.ListeningHistory -> Index.History
+                    }
                     GlassCard(modifier = Modifier.fillMaxWidth(), onClick = if (moduleEnabled) ({ setTabEnabled(setting.feature, !enabled) }) else null) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SfIcon(setting.symbol, null)
+                            SfIcon(navigationItem.symbol, null)
                             Text(stringResource(setting.titleRes), modifier = Modifier.weight(1f))
                             GlassToggle(checked = enabled && moduleEnabled, onCheckedChange = { setTabEnabled(setting.feature, it) }, enabled = moduleEnabled)
                         }
@@ -154,31 +182,28 @@ fun ContentsSetting(
             it != Index.Home && it != Index.Settings && it != Index.Search
         }
         item {
-            SettingsGroup(stringResource(R.string.content_tab_order)) {
-                reorderable.forEachIndexed { visibleIndex, item ->
-                    val itemIndex = currentOrder.indexOf(item)
-                    GlassCard(Modifier.fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SfIcon(item.symbol, null)
-                            Text(stringResource(item.labelRes), modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-                            GlassButton(onClick = {
-                                if (itemIndex > 1) {
-                                    currentOrder[itemIndex] = currentOrder[itemIndex - 1].also { currentOrder[itemIndex - 1] = item }
-                                    setOrder(currentOrder.joinToString(",", transform = Index::name))
-                                }
-                            }, enabled = visibleIndex > 0, emphasis = GlassEmphasis.Regular) {
-                                SfIcon("chevron.up", stringResource(R.string.move_up), size = 16.dp, tint = LocalGlassColors.current.separator)
-                            }
-                            GlassButton(onClick = {
-                                if (itemIndex in 1 until currentOrder.lastIndex - 1) {
-                                    currentOrder[itemIndex] = currentOrder[itemIndex + 1].also { currentOrder[itemIndex + 1] = item }
-                                    setOrder(currentOrder.joinToString(",", transform = Index::name))
-                                }
-                            }, enabled = visibleIndex < reorderable.lastIndex, emphasis = GlassEmphasis.Regular, modifier = Modifier.padding(start = 6.dp)) {
-                                SfIcon("chevron.down", stringResource(R.string.move_down), size = 16.dp, tint = LocalGlassColors.current.separator)
-                            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsSectionTitle(stringResource(R.string.content_tab_order))
+                IosReorderableGroup(
+                    items = reorderable,
+                    onReorder = { reordered ->
+                        val reorderedIterator = reordered.iterator()
+                        val updatedOrder = currentOrder.map { item ->
+                            if (item in reorderable) reorderedIterator.next() else item
                         }
-                    }
+                        setOrder(updatedOrder.joinToString(",", transform = Index::name))
+                    },
+                    dragHandleContentDescription = stringResource(R.string.reorder_drag_handle),
+                    moveUpLabel = stringResource(R.string.move_up),
+                    moveDownLabel = stringResource(R.string.move_down),
+                ) { item ->
+                    SfIcon(item.symbol, null)
+                    Text(
+                        text = stringResource(item.labelRes),
+                        style = IosTypography.body,
+                        color = LocalGlassColors.current.content,
+                        modifier = Modifier.weight(1f).padding(start = 12.dp),
+                    )
                 }
             }
         }

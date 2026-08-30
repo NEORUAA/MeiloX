@@ -503,6 +503,7 @@
     <string name="content_tab_order">标签顺序</string>
     <string name="move_up">上移</string>
     <string name="move_down">下移</string>
+    <string name="reorder_drag_handle">拖动排序</string>
     <string name="load_failed_message">加载失败：%1$s</string>
     <string name="no_search_results">暂无搜索结果</string>
     <string name="library_sign_in">登录以同步音乐库</string>

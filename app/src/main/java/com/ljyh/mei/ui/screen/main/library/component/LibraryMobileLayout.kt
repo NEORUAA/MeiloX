@@ -169,6 +169,7 @@ private fun GroupedLazyListRow(
 @Composable
 fun LibraryMobileLayout(
     @Suppress("UNUSED_PARAMETER") userPhoto: String,
+    isNavigationTab: Boolean,
     selectedPage: LibraryPage,
     onPageSelect: (LibraryPage) -> Unit,
     createdPlaylists: List<Playlist>,
@@ -275,7 +276,10 @@ fun LibraryMobileLayout(
         title = title,
         bottomPadding = insets.calculateBottomPadding(),
         collapseProgress = collapseProgress,
-        actions = { GlobalProfileAvatarButton() },
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        actions = {
+            if (isNavigationTab) GlobalProfileAvatarButton()
+        },
     ) { contentPadding ->
         LazyColumn(
             state = listState,

@@ -24,6 +24,7 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosListRow
@@ -39,7 +40,10 @@ import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 
 @OptIn(UnstableApi::class)
 @Composable
-fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
+fun HistoryScreen(
+    viewModel: HistoryViewModel = hiltViewModel(),
+    isNavigationTab: Boolean = false,
+) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val state by viewModel.state.collectAsState()
@@ -48,7 +52,7 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
 
     IosPinnedListPage(
         title = stringResource(R.string.listening_history),
-        onNavigateBack = navController::navigateUp,
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
@@ -60,6 +64,7 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                     SfIcon("trash", stringResource(R.string.clear_history))
                 }
             }
+            if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) {
         when {

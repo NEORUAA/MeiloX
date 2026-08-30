@@ -317,11 +317,12 @@ fun NavGraphBuilder.navigationBuilder(
 fun navigationEntry(
     route: String,
     scrollBehavior: TopAppBarScrollBehavior,
+    isNavigationTab: Boolean = false,
 ) {
     when {
         route == Screen.Home.route -> HomeHubScreen()
-        route == Screen.Library.route -> LibraryScreen()
-        route == Screen.FindMusic.route -> FindMusicScreen()
+        route == Screen.Library.route -> LibraryScreen(isNavigationTab = isNavigationTab)
+        route == Screen.FindMusic.route -> FindMusicScreen(isNavigationTab = isNavigationTab)
         route.startsWith("${Screen.PlaylistCategory.route}/") -> {
             val arguments = route.substringAfter("${Screen.PlaylistCategory.route}/")
                 .split('/', limit = 2)
@@ -331,8 +332,8 @@ fun navigationEntry(
                 FindMusicScreen(initialCategory = category, titleOverride = title)
             }
         }
-        route == Screen.Podcasts.route -> PodcastScreen()
-        route == Screen.CloudMusic.route -> CloudMusicScreen()
+        route == Screen.Podcasts.route -> PodcastScreen(isNavigationTab = isNavigationTab)
+        route == Screen.CloudMusic.route -> CloudMusicScreen(isNavigationTab = isNavigationTab)
         route == Screen.Search.route -> SearchLandingScreen()
         route == Screen.PrivateMessages.route -> ConversationsScreen()
         route == Screen.MessageContacts.route -> MessageContactsScreen()
@@ -350,12 +351,15 @@ fun navigationEntry(
         route == Screen.EqualizerSettings.route -> EqualizerSettings()
         route == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
         route == Screen.StorageManagement.route -> StorageManagementScreen()
-        route == Screen.DownloadManage.route -> DownloadManageScreen(scrollBehavior)
+        route == Screen.DownloadManage.route -> DownloadManageScreen(
+            scrollBehavior = scrollBehavior,
+            isNavigationTab = isNavigationTab,
+        )
         route == Screen.LocalMusic.route -> LocalMusicScreen(scrollBehavior)
         route == Screen.EveryDay.route -> EveryDay()
         route == Screen.About.route -> AboutScreen()
         route == Screen.Log.route -> LogScreen()
-        route == Screen.History.route -> HistoryScreen()
+        route == Screen.History.route -> HistoryScreen(isNavigationTab = isNavigationTab)
         route.startsWith("${Screen.PrivateConversation.route}/") -> {
             route.substringAfter("${Screen.PrivateConversation.route}/").toLongOrNull()
                 ?.let { userId -> ConversationScreen(userId) }

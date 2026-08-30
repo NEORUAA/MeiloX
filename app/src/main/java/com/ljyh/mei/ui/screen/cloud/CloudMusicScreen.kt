@@ -43,6 +43,7 @@ import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
@@ -120,7 +121,10 @@ class CloudMusicViewModel @Inject constructor(
 }
 
 @Composable
-fun CloudMusicScreen(viewModel: CloudMusicViewModel = hiltViewModel()) {
+fun CloudMusicScreen(
+    viewModel: CloudMusicViewModel = hiltViewModel(),
+    isNavigationTab: Boolean = false,
+) {
     val state by viewModel.state.collectAsState()
     val playerConnection = LocalPlayerConnection.current
     val navController = LocalNavController.current
@@ -144,7 +148,7 @@ fun CloudMusicScreen(viewModel: CloudMusicViewModel = hiltViewModel()) {
         },
         bottomPadding = bottom,
         verticalArrangement = Arrangement.spacedBy(0.dp),
-        onNavigateBack = navController::navigateUp,
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
             GlassButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
                 SfIcon("arrow.up.circle.fill", stringResource(R.string.cloud_upload), size = 18.dp)
@@ -152,6 +156,7 @@ fun CloudMusicScreen(viewModel: CloudMusicViewModel = hiltViewModel()) {
             GlassButton(onClick = viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh), size = 18.dp)
             }
+            if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) {
         var hasPreviousContent = false
