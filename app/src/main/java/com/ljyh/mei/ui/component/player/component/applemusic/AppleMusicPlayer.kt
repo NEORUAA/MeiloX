@@ -167,9 +167,9 @@ fun AppleMusicPlayer(
     val sheetProgress = state.progress
 
     val colorScheme = MaterialTheme.colorScheme
-    val backgroundColor = remember(isDark, state.value, state.collapsedBound) {
-        if (isDark && state.value > state.collapsedBound) {
-            lerp(colorScheme.surfaceContainer, Color.Black, state.progress)
+    val backgroundColor = remember(isDark, sheetProgress, colorScheme) {
+        if (isDark && sheetProgress > 0f) {
+            lerp(colorScheme.surfaceContainer, Color.Black, sheetProgress)
         } else {
             colorScheme.surfaceContainer
         }

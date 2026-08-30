@@ -71,6 +71,7 @@ fun ClassicPlayer(
     // player. The background view is removed at the collapsed anchor, so it must reach zero
     // before that discrete composition change to avoid a final-frame flash in landscape mode.
     val playerBackgroundAlpha = state.revealProgress
+    val sheetProgress = state.progress
 
     LaunchedEffect(stateContainer.playerConnection.player) {
         val player = stateContainer.playerConnection.player as? ExoPlayer
@@ -81,9 +82,9 @@ fun ClassicPlayer(
 
     // 背景颜色计算
     val colorScheme = MaterialTheme.colorScheme
-    val backgroundColor = remember(isDark, state.value, state.collapsedBound) {
-        if (isDark && state.value > state.collapsedBound) {
-            lerp(colorScheme.surfaceContainer, Color.Black, state.progress)
+    val backgroundColor = remember(isDark, sheetProgress, colorScheme) {
+        if (isDark && sheetProgress > 0f) {
+            lerp(colorScheme.surfaceContainer, Color.Black, sheetProgress)
         } else {
             colorScheme.surfaceContainer
         }

@@ -58,6 +58,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -377,6 +378,7 @@ class MainActivity : ComponentActivity() {
 
             }
             var navigationBarVisible by remember { mutableStateOf(true) }
+            val searchActiveState = rememberUpdatedState(active)
             val nestedScrollConnection = remember {
                 object : NestedScrollConnection {
 
@@ -384,6 +386,12 @@ class MainActivity : ComponentActivity() {
                         available: Offset,
                         source: NestedScrollSource
                     ): Offset {
+                        val route = navController.currentRoute
+                        val handlesNavigationBar = !searchActiveState.value &&
+                            (route == null ||
+                                route in homeNavigationRoutes ||
+                                route == Screen.Search.route)
+                        if (!handlesNavigationBar) return Offset.Zero
 
                         if (available.y < -10f) {
                             // 向下滑
@@ -523,7 +531,12 @@ class MainActivity : ComponentActivity() {
                                 currentRoute == Screen.Search.route) &&
                                 !active
                     }
-                    val shouldCompactNavigationBar = shouldAllowNavigationBar && !navigationBarVisible
+                    // Route visibility must not reset the expanded/compact shape. This keeps a
+                    // MiniNav compact while it fades out, while navigationBarVisible remains the
+                    // only source that changes its shape.
+                    val shouldCompactNavigationBar = !navigationBarVisible
+                    val shouldCompactMiniPlayer =
+                        shouldAllowNavigationBar && !navigationBarVisible
 
 
 
@@ -543,6 +556,11 @@ class MainActivity : ComponentActivity() {
                         targetValue = if (shouldCompactNavigationBar) 1f else 0f,
                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                         label = "CompactBottomNavigation",
+                    )
+                    val compactMiniPlayerProgress = animateFloatAsState(
+                        targetValue = if (shouldCompactMiniPlayer) 1f else 0f,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        label = "CompactMiniPlayer",
                     )
                     val playerBottomSheetState = rememberBottomSheetState(
                         dismissedBound = 0.dp,
@@ -869,7 +887,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         AnimatedMiniPlayerLayer(
-                            compactProgress = compactNavigationProgress,
+                            compactProgress = compactMiniPlayerProgress,
                             state = playerBottomSheetState,
                             backdrop = bottomControlsBackdrop,
                         )

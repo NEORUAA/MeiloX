@@ -26,6 +26,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -236,7 +237,12 @@ class BottomSheetState(
     private val animatable: Animatable<Dp, AnimationVector1D>,
     private val onAnchorChanged: (Int) -> Unit,
     val collapsedBound: Dp,
+    relocatingCollapsedAnchor: Boolean = false,
 ) : DraggableState by draggableState {
+    // Moving an already-collapsed sheet to a new layout anchor must not mount the invisible
+    // expanded player. The sheet still follows the same animation through [value].
+    private var isRelocatingCollapsedAnchor by mutableStateOf(relocatingCollapsedAnchor)
+
     val dismissedBound: Dp
         get() = animatable.lowerBound!!
 
@@ -250,7 +256,7 @@ class BottomSheetState(
     }
 
     val isCollapsed by derivedStateOf {
-        value == collapsedBound
+        isRelocatingCollapsedAnchor || value == collapsedBound
     }
 
     val isExpanded by derivedStateOf {
@@ -258,12 +264,22 @@ class BottomSheetState(
     }
 
     val progress by derivedStateOf {
-        1f - (animatable.upperBound!! - animatable.value) / (animatable.upperBound!! - collapsedBound)
+        if (isRelocatingCollapsedAnchor) {
+            0f
+        } else {
+            1f -
+                (animatable.upperBound!! - animatable.value) /
+                (animatable.upperBound!! - collapsedBound)
+        }
     }
 
     /** Delays expanded-player artwork until the sheet has visibly left the mini-player. */
     val revealProgress by derivedStateOf {
         ((progress - 0.12f) / 0.28f).coerceIn(0f, 1f)
+    }
+
+    internal fun finishCollapsedAnchorRelocation() {
+        isRelocatingCollapsedAnchor = false
     }
 
     fun collapse(animationSpec: AnimationSpec<Dp>) {
@@ -425,11 +441,7 @@ fun rememberBottomSheetState(
         }
 
         animatable.updateBounds(dismissedBound.coerceAtMost(expandedBound), expandedBound)
-        coroutineScope.launch {
-            animatable.animateTo(initialValue, NavigationBarAnimationSpec)
-        }
-
-        BottomSheetState(
+        val state = BottomSheetState(
             draggableState = DraggableState { delta ->
                 coroutineScope.launch {
                     animatable.snapTo(animatable.value - with(density) { delta.toDp() })
@@ -439,7 +451,17 @@ fun rememberBottomSheetState(
             coroutineScope = coroutineScope,
             animatable = animatable,
             collapsedBound = collapsedBound,
+            relocatingCollapsedAnchor =
+                previousAnchor == collapsedAnchor && animatable.value != initialValue,
         )
+        coroutineScope.launch {
+            try {
+                animatable.animateTo(initialValue, NavigationBarAnimationSpec)
+            } finally {
+                state.finishCollapsedAnchorRelocation()
+            }
+        }
+        state
     }
 }
 // 在你的文件顶部或一个合适的位置定义这个枚举

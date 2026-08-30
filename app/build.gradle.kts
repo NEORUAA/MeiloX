@@ -20,8 +20,8 @@ android {
         applicationId = "com.neoruaa.meilox"
         minSdk = 33
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.54.3"
+        versionCode = 9
+        versionName = "1.54.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             //noinspection ChromeOsAbiSupport
