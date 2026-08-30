@@ -318,6 +318,8 @@ data class AccountSong(
     val album: String,
     val coverUrl: String?,
     val durationMs: Long,
+    val artistIds: List<Long> = emptyList(),
+    val albumId: Long = 0,
 )
 
 data class UserPlayRecord(

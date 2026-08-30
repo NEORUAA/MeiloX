@@ -61,6 +61,7 @@ import com.ljyh.mei.constants.NoAudioSourceKey
 import com.ljyh.mei.constants.RepeatModeKey
 import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.network.api.ApiService
@@ -117,6 +118,7 @@ class MusicService : MediaLibraryService(),
     private val serviceJob = SupervisorJob()
     var scope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var historyJob: Job? = null
+    private lateinit var playbackHistoryReporter: PlaybackHistoryReporter
     private var playbackSnapshotJob: Job? = null
     private var periodicSnapshotJob: Job? = null
     private lateinit var playbackPersistence: PlaybackPersistence
@@ -151,6 +153,9 @@ class MusicService : MediaLibraryService(),
     lateinit var historyRepository: HistoryRepository
 
     @Inject
+    lateinit var meloXRepository: MeloXRepository
+
+    @Inject
     lateinit var songRepository: SongRepository
     @Inject
     lateinit var listenTogetherStore: ListenTogetherStore
@@ -158,6 +163,7 @@ class MusicService : MediaLibraryService(),
     lateinit var automaticCacheController: AutomaticCacheController
     override fun onCreate() {
         super.onCreate()
+        playbackHistoryReporter = PlaybackHistoryReporter(scope, meloXRepository)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
         baseMediaSourceFactory = DefaultMediaSourceFactory(createDataSourceFactory())
             .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()) // 应用自定义错误策略
@@ -247,6 +253,23 @@ class MusicService : MediaLibraryService(),
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updatePreload()
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                    mediaItem?.let { item ->
+                        playbackHistoryReporter.finish(
+                            mediaId = item.mediaId,
+                            positionMs = player.duration.coerceAtLeast(0),
+                            completed = true,
+                        )
+                    }
+                } else {
+                    playbackHistoryReporter.finishIfChanged(
+                        mediaItem = mediaItem,
+                        completedPrevious = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+                    )
+                }
+                if (mediaItem != null && player.isPlaying) {
+                    playbackHistoryReporter.recordStart(mediaItem, player.currentPosition)
+                }
                 historyJob?.cancel()
                 if (mediaItem != null) {
                     historyJob = scope.launch {
@@ -316,6 +339,10 @@ class MusicService : MediaLibraryService(),
         periodicSnapshotJob = scope.launch {
             while (true) {
                 delay(PLAYBACK_SNAPSHOT_INTERVAL_MS)
+                playbackHistoryReporter.updatePosition(
+                    player.currentMediaItem?.mediaId,
+                    player.currentPosition,
+                )
                 persistPlaybackSnapshot()
             }
         }
@@ -491,6 +518,45 @@ class MusicService : MediaLibraryService(),
         }
     }
 
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        val mediaItem = player.currentMediaItem ?: return
+        if (isPlaying) {
+            playbackHistoryReporter.recordStart(mediaItem, player.currentPosition)
+        } else {
+            playbackHistoryReporter.updatePosition(mediaItem.mediaId, player.currentPosition)
+        }
+    }
+
+    override fun onPositionDiscontinuity(
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int,
+    ) {
+        val oldItem = oldPosition.mediaItem
+        val newItem = newPosition.mediaItem
+        if (oldItem?.mediaId != null && oldItem.mediaId != newItem?.mediaId) {
+            playbackHistoryReporter.finish(
+                mediaId = oldItem.mediaId,
+                positionMs = oldPosition.positionMs,
+                completed = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION,
+            )
+        } else {
+            playbackHistoryReporter.updatePosition(newItem?.mediaId, newPosition.positionMs)
+        }
+    }
+
+    override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState == Player.STATE_ENDED) {
+            player.currentMediaItem?.let { item ->
+                playbackHistoryReporter.finish(
+                    mediaId = item.mediaId,
+                    positionMs = player.duration.coerceAtLeast(0),
+                    completed = true,
+                )
+            }
+        }
+    }
+
     override fun onEvents(player: Player, events: Player.Events) {
         // Playback state changes only maintain the audio-effect session. They are not
         // playback intent and must not restart the 500ms volume animations.
@@ -517,6 +583,7 @@ class MusicService : MediaLibraryService(),
 
 
     private suspend fun recordHistory(mediaItem: MediaItem) {
+        if (mediaItem.localConfiguration?.tag.let { it as? MediaMetadata }?.isPodcast == true) return
         val metadata = mediaItem.mediaMetadata
         val artistList = metadata.extras?.getStringArrayList("artist_list")
             ?.filter { it.isNotBlank() }

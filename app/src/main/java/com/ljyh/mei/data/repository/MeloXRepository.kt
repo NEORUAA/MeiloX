@@ -48,9 +48,12 @@ import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
+import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.utils.dataStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -202,6 +205,55 @@ class MeloXRepository @Inject constructor(
         return response.array(if (allTime) "allData" else "weekData")
             .mapNotNull(::parseUserPlayRecord)
             .filter { it.song.id > 0 }
+    }
+
+    suspend fun recentSongs(limit: Int = 100): List<AccountSong> {
+        val response = request(
+            "/api/play-record/song/list",
+            mapOf("limit" to limit.coerceIn(1, 100)),
+        )
+        return response.objectOrNull("data")
+            ?.array("list")
+            .orEmpty()
+            .mapNotNull { item ->
+                parseAccountSong(item.objectValue()?.objectOrNull("data"))
+            }
+            .filter { it.id > 0 }
+            .distinctBy(AccountSong::id)
+    }
+
+    suspend fun recordRecentPlayback(songId: Long, sourceId: Long) {
+        if (!hasAuthenticatedAccount()) return
+        submitPlaybackLog(
+            action = "startplay",
+            fields = mapOf(
+                "id" to songId.toString(),
+                "type" to "song",
+                "mainsite" to "1",
+                "mainsiteWeb" to "1",
+                "content" to "id=${sourceId.coerceAtLeast(0)}",
+            ),
+        )
+    }
+
+    suspend fun recordPlaybackDuration(songId: Long, sourceId: Long, timeSeconds: Int) {
+        if (!hasAuthenticatedAccount()) return
+        submitPlaybackLog(
+            action = "play",
+            fields = mapOf(
+                "download" to 0,
+                "end" to "playend",
+                "id" to songId.toString(),
+                "sourceId" to sourceId.coerceAtLeast(0).toString(),
+                "time" to timeSeconds.coerceAtLeast(0).toString(),
+                "type" to "song",
+                "wifi" to 0,
+                "source" to "list",
+                "mainsite" to "1",
+                "mainsiteWeb" to "1",
+                "content" to "id=${sourceId.coerceAtLeast(0)}",
+            ),
+        )
     }
 
     suspend fun setPodcastSubscribed(id: Long, subscribed: Boolean) {
@@ -744,6 +796,27 @@ class MeloXRepository @Inject constructor(
     private suspend fun requestEapi(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
         validate(eapi.post(path.replaceFirst("/api/", "/eapi/"), body))
 
+    private suspend fun submitPlaybackLog(action: String, fields: Map<String, Any>) {
+        val logs = JSONArray().put(
+            JSONObject()
+                .put("action", action)
+                .put("json", JSONObject(fields)),
+        ).toString()
+        val response = eapi.post(
+            path = "https://clientlog.music.163.com/api/feedback/weblog",
+            body = mapOf("logs" to logs),
+            headers = mapOf(
+                "X-Netease-Crypto" to "eapi",
+                "X-Netease-Cookie-OS" to "osx",
+                "X-Netease-User-Agent" to "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)",
+            ),
+        )
+        validate(response)
+    }
+
+    private suspend fun hasAuthenticatedAccount(): Boolean =
+        !context.dataStore.data.first()[CookieKey].isNullOrBlank()
+
     private fun validate(response: JsonObject): JsonObject {
         val code = response.int("code") ?: 200
         check(code in 200..299) {
@@ -932,8 +1005,9 @@ private fun parseAccountPlaylist(element: JsonElement?): AccountPlaylist? {
 private fun parseAccountSong(value: JsonObject?): AccountSong? = value?.let {
     val id = it.long("id") ?: return null
     val album = it.objectOrNull("al") ?: it.objectOrNull("album")
-    val artists = it.array("ar").ifEmpty { it.array("artists") }
-        .mapNotNull { artist -> artist.takeIf(JsonElement::isJsonObject)?.asJsonObject?.string("name") }
+    val artistValues = it.array("ar").ifEmpty { it.array("artists") }
+        .mapNotNull(JsonElement::objectValue)
+    val artists = artistValues.mapNotNull { artist -> artist.string("name") }
     AccountSong(
         id = id,
         name = it.string("name") ?: "Unknown song",
@@ -941,6 +1015,8 @@ private fun parseAccountSong(value: JsonObject?): AccountSong? = value?.let {
         album = album?.string("name") ?: "Unknown album",
         coverUrl = album?.string("picUrl"),
         durationMs = it.long("dt") ?: it.long("duration") ?: 0,
+        artistIds = artistValues.mapNotNull { artist -> artist.long("id") },
+        albumId = album?.long("id") ?: 0,
     )
 }
 

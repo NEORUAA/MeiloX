@@ -23,7 +23,9 @@ data class MediaMetadata(
     val duration: Long,
     val album: Album,
     val explicit: Boolean = false,
-    val tns:String?=null
+    val tns:String?=null,
+    val isPodcast: Boolean = false,
+    val isLocal: Boolean = false,
 ) {
     data class Artist(
         val id: Long,
@@ -235,7 +237,8 @@ fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {
             MediaMetadata.Artist(id = name.hashCode().toLong().let { if (it < 0) -it else it }, name = name)
         },
         duration = duration * 1000,
-        album = MediaMetadata.Album(id = album.hashCode().toLong().let { if (it < 0) -it else it }, title = album)
+        album = MediaMetadata.Album(id = album.hashCode().toLong().let { if (it < 0) -it else it }, title = album),
+        isLocal = sourceType == com.ljyh.mei.data.model.room.SourceType.LOCAL,
     )
 }
 

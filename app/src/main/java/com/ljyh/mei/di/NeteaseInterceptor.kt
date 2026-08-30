@@ -78,9 +78,13 @@ class NeteaseInterceptor : Interceptor {
         val originalRequest = chain.request()
         val url = originalRequest.url.toString()
         val cryptoMode = originalRequest.header(CRYPTO_MODE_HEADER) ?: determineCryptoMethod(url)
+        val cookieOsOverride = originalRequest.header(COOKIE_OS_HEADER)
+        val userAgentOverride = originalRequest.header(USER_AGENT_HEADER)
         val builder = originalRequest.newBuilder()
             .removeHeader(CRYPTO_MODE_HEADER)
             .removeHeader(CHECK_TOKEN_HEADER)
+            .removeHeader(COOKIE_OS_HEADER)
+            .removeHeader(USER_AGENT_HEADER)
 
         if (cryptoMode == "eapi" && "/api/" in originalRequest.url.encodedPath) {
             builder.url(
@@ -91,6 +95,7 @@ class NeteaseInterceptor : Interceptor {
         }
 
         val config = if (cryptoMode == "eapi") EAPI_CONFIG else ANDROID_CONFIG
+        val requestOs = cookieOsOverride ?: config["os"]!!
 
         val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
         val musicU = AppContext.instance.dataStore[CookieKey] ?: ""
@@ -101,7 +106,7 @@ class NeteaseInterceptor : Interceptor {
 
         val cookieMap = buildMap {
             // 基础字段 (动态从 config 取)
-            put("os", config["os"]!!)
+            put("os", requestOs)
             put("appver", config["appver"]!!)
             put("osver", config["osver"]!!)
             put("channel", config["channel"]!!)
@@ -133,7 +138,7 @@ class NeteaseInterceptor : Interceptor {
         val neteaseHeader = NeteaseHeader(
             osver = config["osver"]!!,
             deviceId = deviceId,
-            os = config["os"]!!,
+            os = requestOs,
             appver = config["appver"]!!,
             versioncode = config["versioncode"]!!,
             mobilename = config["mobilename"]!!,
@@ -149,6 +154,7 @@ class NeteaseInterceptor : Interceptor {
             originalRequest.url.encodedPath in setOf(
                 "/api/playlist/subscribe",
                 "/api/playlist/unsubscribe",
+                "/api/feedback/weblog",
             )
         builder.addHeader(
             "Cookie",
@@ -163,7 +169,7 @@ class NeteaseInterceptor : Interceptor {
         // weapi: 永远使用 PC Web UA (Chrome/Edge)，这是 weapi 协议的特性
         // eapi: 使用 Config 中指定的 UA (PC Desktop)
         // api: 使用 Config 中指定的 UA (Android)
-        val userAgent = when (cryptoMode) {
+        val userAgent = userAgentOverride ?: when (cryptoMode) {
             "weapi" -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
             else -> config["ua"]!!
         }
@@ -256,9 +262,7 @@ class NeteaseInterceptor : Interceptor {
                 bodyMap["e_r"] = false
 
                 val newBodyJson = gson.toJson(bodyMap)
-                val apiPath = url
-                    .replace("https://interface.music.163.com", "")
-                    .replaceFirst("/eapi/", "/api/")
+                val apiPath = originalRequest.url.encodedPath.replaceFirst("/eapi/", "/api/")
 
                 val encryptedData = encryptEApi(apiPath, newBodyJson)
                 builder.post(FormBody.Builder().add("params", encryptedData.params).build())
@@ -334,5 +338,7 @@ class NeteaseInterceptor : Interceptor {
     private companion object {
         const val CRYPTO_MODE_HEADER = "X-Netease-Crypto"
         const val CHECK_TOKEN_HEADER = "X-Netease-Check-Token"
+        const val COOKIE_OS_HEADER = "X-Netease-Cookie-OS"
+        const val USER_AGENT_HEADER = "X-Netease-User-Agent"
     }
 }

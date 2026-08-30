@@ -57,7 +57,6 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
-import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.di.AppDatabase
@@ -85,6 +84,7 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.cloud.CloudMusicViewModel
 import com.ljyh.mei.ui.screen.cloud.CloudMusicUiState
 import com.ljyh.mei.ui.screen.history.HistoryViewModel
+import com.ljyh.mei.ui.screen.history.HistoryUiState
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
@@ -184,7 +184,10 @@ fun LibraryMobileLayout(
     val cloudViewModel: CloudMusicViewModel? = if (selectedPage == LibraryPage.Cloud) hiltViewModel() else null
     val cloudState = cloudViewModel?.state?.collectAsState()?.value
     val historyViewModel: HistoryViewModel? = if (selectedPage == LibraryPage.History) hiltViewModel() else null
-    val history = historyViewModel?.historyList?.collectAsState(initial = emptyList())?.value.orEmpty()
+    val historyState = historyViewModel?.state?.collectAsState()?.value ?: HistoryUiState()
+    LaunchedEffect(historyViewModel) {
+        historyViewModel?.refresh()
+    }
     val downloadTasks = if (selectedPage == LibraryPage.Downloads) {
         val context = LocalContext.current
         val dao = remember(context) { AppDatabase.getDatabase(context).downloadDao() }
@@ -423,7 +426,7 @@ fun LibraryMobileLayout(
                     }
                 }
 
-                LibraryPage.History -> libraryHistoryItems(history, playerConnection, query)
+                LibraryPage.History -> libraryHistoryItems(historyState, playerConnection, query)
             }
 
             if (selectedPage == LibraryPage.Playlists && visibleAlbums.isNotEmpty()) {
@@ -716,38 +719,51 @@ private fun LazyListScope.libraryCloudItems(
 }
 
 private fun LazyListScope.libraryHistoryItems(
-    history: List<HistoryItem>,
+    state: HistoryUiState,
     playerConnection: PlayerConnection?,
     query: String,
 ) {
-    val visibleHistory = history.filterIfSearching(query) { item ->
+    val visibleHistory = state.items.filterIfSearching(query) { item ->
         item.song.title.containsQuery(query) ||
-            item.song.album.containsQuery(query) ||
-            item.song.artist.any { it.containsQuery(query) }
+            item.song.album.title.containsQuery(query) ||
+            item.song.artists.any { it.name.containsQuery(query) }
     }
-    if (visibleHistory.isEmpty()) {
+    if (state.isRefreshing && state.items.isEmpty()) {
+        item(key = "library-history-loading") {
+            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+    } else if (visibleHistory.isEmpty()) {
         item(key = "library-history-empty") {
             EmptyState(
-                stringResource(
-                    if (query.isNotEmpty()) R.string.no_search_results else R.string.no_listening_history,
-                ),
-                SfSymbol.Clock,
+                text = when {
+                    query.isNotEmpty() -> stringResource(R.string.no_search_results)
+                    state.error != null -> stringResource(R.string.load_failed_message, state.error)
+                    else -> stringResource(R.string.no_listening_history)
+                },
+                symbol = SfSymbol.Clock,
+                description = if (query.isEmpty() && state.error == null) {
+                    stringResource(R.string.no_listening_history_description)
+                } else {
+                    null
+                },
             )
         }
     } else {
         groupedLazyItems(
             items = visibleHistory,
-            key = { "history-${it.historyId}" },
+            key = { it.key },
             contentType = "history-item",
         ) { item, index ->
             IosListRow(
                 title = item.song.title,
-                subtitle = item.song.artist.joinToString(" / "),
-                detail = DateUtils.getRelativeTimeSpanString(item.playedAt).toString(),
+                subtitle = item.song.artists.joinToString(" / ") { it.name },
+                detail = item.playedAt?.let { DateUtils.getRelativeTimeSpanString(it).toString() },
                 showTopSeparator = index > 0,
                 leading = {
                     AsyncImage(
-                        item.song.cover,
+                        item.song.coverUrl,
                         null,
                         Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)),
                         contentScale = ContentScale.Crop,
@@ -758,7 +774,7 @@ private fun LazyListScope.libraryHistoryItems(
                         ListQueue(
                             id = "library-history",
                             title = "History",
-                            items = visibleHistory.map { it.song.id to null },
+                            items = visibleHistory.map { it.song.id.toString() to null },
                             startIndex = index,
                         ),
                     )
@@ -782,7 +798,7 @@ private fun Playlist.matchesQuery(query: String): Boolean =
         description.containsQuery(query)
 
 @Composable
-private fun EmptyState(text: String, symbol: SfSymbol) {
+private fun EmptyState(text: String, symbol: SfSymbol, description: String? = null) {
     Column(
         Modifier.fillMaxWidth().padding(vertical = 52.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -794,5 +810,13 @@ private fun EmptyState(text: String, symbol: SfSymbol) {
             color = LocalGlassColors.current.secondaryContent,
             modifier = Modifier.padding(top = 10.dp),
         )
+        description?.let {
+            Text(
+                text = it,
+                style = IosTypography.caption,
+                color = LocalGlassColors.current.tertiaryContent,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
     }
 }

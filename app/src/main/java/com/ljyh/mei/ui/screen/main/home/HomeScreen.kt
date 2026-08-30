@@ -462,6 +462,7 @@ private fun HomePageResourceShow.Data.Block.DslData.BlockResource.Resource.toMus
             artists = listOf(MediaMetadata.Artist(0, subTitle)),
             duration = programData.get("duration")?.takeUnless { it.isJsonNull }?.asLong ?: 0L,
             album = MediaMetadata.Album(radioId, subTitle),
+            isPodcast = true,
         )
     }.onFailure { error ->
         Timber.tag("HomeMusicPodcast").e(error, "Unable to parse program %s", resourceId)

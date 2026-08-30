@@ -513,6 +513,7 @@ private fun PodcastProgram.asMediaMetadata() = MediaMetadata(
     artists = listOf(MediaMetadata.Artist(host?.id ?: 0, host?.nickname ?: radioName)),
     duration = durationMs,
     album = MediaMetadata.Album(radioId, radioName),
+    isPodcast = true,
 )
 
 @Composable

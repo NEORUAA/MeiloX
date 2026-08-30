@@ -519,6 +519,7 @@
     <string name="listening_history">最近播放</string>
     <string name="clear_history">清除歷史</string>
     <string name="no_listening_history">暫無播放記錄</string>
+    <string name="no_listening_history_description">網易雲音樂中的最近播放會顯示在這裡。</string>
     <string name="download_management">下載管理</string>
     <string name="clear_downloads">清除下載</string>
     <string name="download_filter_all">全部</string>

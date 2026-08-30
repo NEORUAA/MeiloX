@@ -519,6 +519,7 @@
     <string name="listening_history">最近播放</string>
     <string name="clear_history">清空历史</string>
     <string name="no_listening_history">暂无播放记录</string>
+    <string name="no_listening_history_description">网易云音乐中的最近播放会显示在这里。</string>
     <string name="download_management">下载管理</string>
     <string name="clear_downloads">清空下载</string>
     <string name="download_filter_all">全部</string>

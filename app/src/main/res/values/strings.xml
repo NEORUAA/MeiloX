@@ -520,6 +520,7 @@
     <string name="listening_history">Listening History</string>
     <string name="clear_history">Clear history</string>
     <string name="no_listening_history">No listening history</string>
+    <string name="no_listening_history_description">Recent songs from NetEase Music will appear here.</string>
     <string name="download_management">Downloads</string>
     <string name="clear_downloads">Clear downloads</string>
     <string name="download_filter_all">All</string>
