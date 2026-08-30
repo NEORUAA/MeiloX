@@ -502,7 +502,11 @@ fun IosTextField(
                 inner()
             },
         )
-        trailing?.invoke()
+        trailing?.let { trailingContent ->
+            CompositionLocalProvider(LocalGroupedListIconColor provides colors.content) {
+                trailingContent()
+            }
+        }
     }
 }
 
@@ -610,7 +614,11 @@ fun IosListRow(
             }
         }
         detail?.let { Text(it, style = IosTypography.subheadline, color = colors.secondaryContent) }
-        trailing?.invoke()
+        trailing?.let { trailingContent ->
+            CompositionLocalProvider(LocalGroupedListIconColor provides colors.content) {
+                trailingContent()
+            }
+        }
         if (onClick != null && trailing == null) {
             Spacer(Modifier.width(8.dp)); SfIcon("chevron.forward", null, size = 12.dp, tint = colors.separator)
         }
@@ -625,14 +633,15 @@ fun IosStepper(
     modifier: Modifier = Modifier,
     range: IntRange = Int.MIN_VALUE..Int.MAX_VALUE,
 ) {
-    val fill = if (LocalGlassColors.current.isDark) Color.White.copy(alpha = 0.12f) else Color(0x14747480)
+    val colors = LocalGlassColors.current
+    val fill = if (colors.isDark) Color.White.copy(alpha = 0.12f) else Color(0x14747480)
     Row(modifier.background(fill, Capsule()).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 46.dp, height = 32.dp).clickable(enabled = value > range.first) { onValueChange(value - 1) }, contentAlignment = Alignment.Center) {
-            SfIcon("minus", null, size = 17.dp)
+            SfIcon("minus", null, size = 17.dp, tint = colors.content)
         }
-        Box(Modifier.width(1.dp).height(22.dp).background(LocalGlassColors.current.separator))
+        Box(Modifier.width(1.dp).height(22.dp).background(colors.separator))
         Box(Modifier.size(width = 46.dp, height = 32.dp).clickable(enabled = value < range.last) { onValueChange(value + 1) }, contentAlignment = Alignment.Center) {
-            SfIcon("plus", null, size = 17.dp)
+            SfIcon("plus", null, size = 17.dp, tint = colors.content)
         }
     }
 }

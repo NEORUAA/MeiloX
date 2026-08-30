@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,8 +40,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import kotlin.math.floor
@@ -77,19 +74,14 @@ fun IosColorPicker(
     val previewColor = color.copy(alpha = 1f)
     val quickColors = listOf(0xFF34C759, 0xFFFFCC00, 0xFFFF8D28, 0xFFFF383C, 0xFFCB30E0, 0xFF0088FF, 0xFF6155F5, 0xFFFF2D55, 0xFFAC7F5E).map(::Color)
 
-    Dialog(
+    IosModalSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.20f)), contentAlignment = Alignment.BottomCenter) {
-            GlassSurface(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-                    .navigationBarsPadding(),
-                shape = ContinuousRoundedRectangle(topStart = 32.dp, topEnd = 32.dp, bottomStart = 58.dp, bottomEnd = 58.dp),
-            ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+        ) {
                 Box(Modifier.fillMaxWidth().height(44.dp)) {
                     SfIcon("eyedropper", null, Modifier.align(Alignment.CenterStart), size = 22.dp, tint = LocalGlassColors.current.secondaryContent)
                     Text(title, style = IosTypography.headline, modifier = Modifier.align(Alignment.Center))
@@ -187,8 +179,6 @@ fun IosColorPicker(
                         }
                     }
                 }
-                }
-            }
         }
     }
 }

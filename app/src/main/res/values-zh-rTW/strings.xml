@@ -179,6 +179,7 @@
     <string name="appearance_dynamic_theme_description">根據目前歌曲封面為介面著色。</string>
     <string name="appearance_accent_color">強調色</string>
     <string name="appearance_accent_dynamic">封面</string>
+    <string name="appearance_accent_default">預設</string>
     <string name="appearance_accent_custom">自訂</string>
     <string name="color_picker_grid">網格</string>
     <string name="color_picker_spectrum">光譜</string>

@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import com.ljyh.mei.constants.AccompanimentLyricTextSizeKey
 import com.ljyh.mei.constants.CoverStyle
 import com.ljyh.mei.constants.CoverStyleKey
 import com.ljyh.mei.constants.DebugKey
+import com.ljyh.mei.constants.DefaultAccentColorArgb
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.LyricTextSize
 import com.ljyh.mei.constants.MeshFlowSpeedKey
@@ -69,7 +71,8 @@ fun AppearanceSettings(
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (dynamicTheme, setDynamicTheme) = rememberPreference(DynamicThemeKey, true)
-    val (accentColorArgb, setAccentColorArgb) = rememberPreference(AccentColorKey, 0xFFFF3B30L)
+    val (accentColorArgb, setAccentColorArgb) = rememberPreference(AccentColorKey, DefaultAccentColorArgb)
+    val customAccent = accentColorArgb != DefaultAccentColorArgb
     var showColorPicker by remember { mutableStateOf(false) }
     val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val (playlistHeader, setPlaylistHeader) = rememberPreference(PlaylistTrackTableHeaderKey, false)
@@ -102,10 +105,19 @@ fun AppearanceSettings(
                 AppearanceChoice(
                     R.string.appearance_accent_color,
                     "paintpalette.fill",
-                    accentColorArgb,
-                    listOf(accentColorArgb),
-                    { stringResource(if (dynamicTheme) R.string.appearance_accent_dynamic else R.string.appearance_accent_custom) },
-                    { showColorPicker = true },
+                    customAccent,
+                    listOf(false, true),
+                    { isCustom ->
+                        stringResource(
+                            if (isCustom) R.string.appearance_accent_custom
+                            else R.string.appearance_accent_default,
+                        )
+                    },
+                    { isCustom ->
+                        if (isCustom) showColorPicker = true
+                        else setAccentColorArgb(DefaultAccentColorArgb)
+                    },
+                    enabled = !dynamicTheme,
                 )
             }
         }
@@ -189,7 +201,6 @@ fun AppearanceSettings(
         selectedColor = androidx.compose.ui.graphics.Color(accentColorArgb.toInt()),
         onColorSelected = { color ->
             setAccentColorArgb(color.toArgb().toLong() and 0xFFFFFFFFL)
-            setDynamicTheme(false)
         },
         onDismiss = { showColorPicker = false },
         title = stringResource(R.string.appearance_accent_color),
@@ -229,7 +240,10 @@ private fun <T> AppearanceChoice(
     enabled: Boolean = true,
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             SfIcon(systemName, null)
             Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
             IosPopupButton(

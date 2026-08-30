@@ -28,6 +28,7 @@ import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassToggle
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosPopupButton
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -105,7 +106,7 @@ fun GeneralSettings() {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        SfIcon("chevron.forward", null, size = 15.dp)
+                        SfIcon("chevron.forward", null, size = 15.dp, tint = LocalGlassColors.current.separator)
                     }
                 }
             }

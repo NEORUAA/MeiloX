@@ -41,6 +41,7 @@ val MusicQualityKey = stringPreferencesKey("musicQuality")
 
 val CoverStyleKey = stringPreferencesKey("coverStyle")
 val DynamicThemeKey = booleanPreferencesKey("dynamicTheme")
+const val DefaultAccentColorArgb = 0xFFFF3B30L
 val AccentColorKey = longPreferencesKey("accentColor")
 val PlayerActionKey = stringPreferencesKey("playerBottomAction")
 

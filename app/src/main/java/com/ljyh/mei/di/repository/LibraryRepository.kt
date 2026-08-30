@@ -4,14 +4,14 @@ import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
-import androidx.core.graphics.ColorUtils
-import androidx.palette.graphics.Palette
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.materialkolor.ktx.themeColorOrNull
 import com.ljyh.mei.data.model.room.AlbumEntity
 import com.ljyh.mei.data.model.room.AlbumWithArtists
 import com.ljyh.mei.data.model.room.ArtistEntity
@@ -42,16 +42,17 @@ class ColorRepository @Inject constructor(private val colorDao: ColorDao) {
 
     fun getFromMemory(url: String): Color? {
         if (url.isEmpty()) return null
-        return memoryCache[url]
+        return memoryCache[themeColorCacheKey(url)]
     }
 
     suspend fun getColorOrExtract(context: Context, url: String): Color = withContext(Dispatchers.IO) {
         if (url.isEmpty()) return@withContext Color.Black
-        memoryCache[url]?.let { return@withContext it }
-        val dbEntity = colorDao.getColor(url)
+        val cacheKey = themeColorCacheKey(url)
+        memoryCache[cacheKey]?.let { return@withContext it }
+        val dbEntity = colorDao.getColor(cacheKey)
         if (dbEntity != null) {
             val color = Color(dbEntity.color)
-            memoryCache[url] = color
+            memoryCache[cacheKey] = color
             return@withContext color
         }
         val loader = context.imageLoader
@@ -59,33 +60,24 @@ class ColorRepository @Inject constructor(private val colorDao: ColorDao) {
             .data(url).allowHardware(false).size(128).build()
         val result = loader.execute(request)
         val finalColor = if (result is SuccessResult) {
-            extractAndBoostColor(result.image.toBitmap())
+            extractMaterialThemeColor(result.image.toBitmap())
         } else Color.Black
-        memoryCache[url] = finalColor
-        colorDao.insertColor(CacheColor(url = url, color = finalColor.toArgb()))
+        memoryCache[cacheKey] = finalColor
+        colorDao.insertColor(CacheColor(url = cacheKey, color = finalColor.toArgb()))
         finalColor
     }
 
-    private fun extractAndBoostColor(bitmap: Bitmap): Color {
-        val palette = Palette.from(bitmap).generate()
-        val vibrant = palette.vibrantSwatch?.rgb?.let { Color(it) }
-        val dominant = palette.dominantSwatch?.rgb?.let { Color(it) }
-        val seed = vibrant ?: dominant ?: Color.Black
-        val hsl = FloatArray(3)
-        ColorUtils.colorToHSL(seed.toArgb(), hsl)
-        val isMonotone = hsl[1] < 0.1f || hsl[2] < 0.05f || hsl[2] > 0.95f
-        return if (isMonotone) Color(0xFF2E3192) else boostSaturation(seed, 1.4f)
-    }
+    private fun extractMaterialThemeColor(bitmap: Bitmap): Color =
+        bitmap.asImageBitmap().themeColorOrNull() ?: Color.Black
 
-    private fun boostSaturation(color: Color, multiplier: Float): Color {
-        val hsl = FloatArray(3)
-        ColorUtils.colorToHSL(color.toArgb(), hsl)
-        hsl[1] = (hsl[1] * multiplier).coerceIn(0f, 1f)
-        return Color(ColorUtils.HSLToColor(hsl))
-    }
+    private fun themeColorCacheKey(url: String): String = "$THEME_COLOR_CACHE_VERSION$url"
 
     fun getDbColor(url: String): Color? = colorDao.getColor(url)?.let { Color(it.color) }
     suspend fun insertColor(color: CacheColor) = colorDao.insertColor(color)
+
+    private companion object {
+        const val THEME_COLOR_CACHE_VERSION = "md3-v1:"
+    }
 }
 
 class QQSongRepository @Inject constructor(private val qqSongDao: com.ljyh.mei.di.dao.QQSongDao) {

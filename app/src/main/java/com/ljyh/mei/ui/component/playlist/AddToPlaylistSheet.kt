@@ -26,6 +26,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.IosModalSheet
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.smallImage
 
@@ -117,7 +118,7 @@ private fun PlaylistSelectionItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            SfIcon("chevron.forward", null, size = 18.dp)
+            SfIcon("chevron.forward", null, size = 18.dp, tint = LocalGlassColors.current.separator)
         }
     }
 }

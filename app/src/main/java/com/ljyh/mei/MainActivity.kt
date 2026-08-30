@@ -116,6 +116,7 @@ import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.AccentColorKey
+import com.ljyh.mei.constants.DefaultAccentColorArgb
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
@@ -197,6 +198,7 @@ import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Interceptor
@@ -256,7 +258,7 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(false)
             }
             val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
-            val accentColorArgb by rememberPreference(AccentColorKey, 0xFFFF3B30L)
+            val accentColorArgb by rememberPreference(AccentColorKey, DefaultAccentColorArgb)
             val appAppearance by rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
             val (lastSelectedTab, setLastSelectedTab) = rememberPreference(LastSelectedTabKey, Index.Home.name)
             val recognizeClipboardLinks by rememberPreference(RecognizeClipboardLinksKey, false)
@@ -335,31 +337,35 @@ class MainActivity : ComponentActivity() {
                     }
                     .build()
             }
-            var targetThemeColor by remember { mutableStateOf(Color.Black) }
+            var targetThemeColor by remember { mutableStateOf<Color?>(null) }
 
-            LaunchedEffect(playerConnection) {
+            LaunchedEffect(playerConnection, dynamicTheme) {
                 Timber.tag("MainActivity").d("playerConnection: $playerConnection")
+                if (!dynamicTheme) {
+                    targetThemeColor = null
+                    return@LaunchedEffect
+                }
                 val playerConnection = playerConnection ?: return@LaunchedEffect
                 val player = playerConnection.service.player
-                playerConnection.service.currentMediaMetadata.collect { song->
-                    if (dynamicTheme && song != null) {
-                        val context = this@MainActivity
-                        launch {
-                            Timber.tag("MainActivity").d("获取当前歌曲颜色: $song")
-                            val color = colorRepository.getColorOrExtract(context, song.coverUrl)
-                            targetThemeColor = color
-                        }
-                        Timber.tag("MainActivity").d("获取歌曲颜色: $targetThemeColor")
+                playerConnection.service.currentMediaMetadata.collectLatest { song ->
+                    if (song == null) {
+                        targetThemeColor = null
+                        return@collectLatest
+                    }
+                    val context = this@MainActivity
+                    Timber.tag("MainActivity").d("获取当前歌曲颜色: $song")
+                    val color = colorRepository.getColorOrExtract(context, song.coverUrl)
+                    targetThemeColor = color.takeUnless { it == Color.Black }
+                    Timber.tag("MainActivity").d("获取歌曲颜色: $targetThemeColor")
 
-                        val nextIndex = player.nextMediaItemIndex
-                        if (nextIndex != C.INDEX_UNSET) {
-                            val nextUrl = player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
-                            if (!nextUrl.isNullOrEmpty()) {
-                                Timber.tag("MainActivity").d("获取下一首歌曲颜色: $nextUrl")
-                                launch(Dispatchers.IO) {
-                                    colorRepository.getColorOrExtract(context, nextUrl)
-                                    preloadImage(context, nextUrl)
-                                }
+                    val nextIndex = player.nextMediaItemIndex
+                    if (nextIndex != C.INDEX_UNSET) {
+                        val nextUrl = player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
+                        if (!nextUrl.isNullOrEmpty()) {
+                            Timber.tag("MainActivity").d("获取下一首歌曲颜色: $nextUrl")
+                            launch(Dispatchers.IO) {
+                                colorRepository.getColorOrExtract(context, nextUrl)
+                                preloadImage(context, nextUrl)
                             }
                         }
                     }
@@ -398,13 +404,20 @@ class MainActivity : ComponentActivity() {
                 AppAppearance.Light -> false
                 AppAppearance.Dark -> true
             }
+            val defaultAccent = if (effectiveDark) Color(0xFFFF4245) else Color(DefaultAccentColorArgb.toInt())
+            val configuredAccent = if (accentColorArgb == DefaultAccentColorArgb) {
+                defaultAccent
+            } else {
+                Color(accentColorArgb.toInt())
+            }
+            val effectiveAccent = if (dynamicTheme) targetThemeColor ?: defaultAccent else configuredAccent
             MusicTheme(
-                seedColor = if (dynamicTheme) targetThemeColor else Color(accentColorArgb.toInt()),
+                seedColor = effectiveAccent,
                 isDark = effectiveDark,
             ) {
                 val glassColors = defaultGlassColors(
                     isDark = effectiveDark,
-                    accent = if (effectiveDark) Color(0xFFFF4245) else Color(0xFFFF3B30),
+                    accent = MaterialTheme.colorScheme.primary,
                 )
                 // The regular page backdrop is a static color, so avoid recording a full-screen
                 // layer just to replay the same pixels for every glass consumer.

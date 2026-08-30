@@ -601,6 +601,7 @@ private fun LibraryMediaRow(
     onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val colors = LocalGlassColors.current
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -616,24 +617,23 @@ private fun LibraryMediaRow(
             Text(
                 title,
                 style = IosTypography.body,
-                color = LocalGlassColors.current.content,
+                color = colors.content,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 subtitle,
                 style = IosTypography.caption,
-                color = LocalGlassColors.current.secondaryContent,
+                color = colors.secondaryContent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        trailing?.invoke() ?: SfIcon(
-            "chevron.forward",
-            null,
-            size = 12.dp,
-            tint = LocalGlassColors.current.tertiaryContent,
-        )
+        trailing?.let { trailingContent ->
+            CompositionLocalProvider(LocalGroupedListIconColor provides colors.content) {
+                trailingContent()
+            }
+        } ?: SfIcon("chevron.forward", null, size = 12.dp, tint = colors.separator)
     }
 }
 

@@ -47,6 +47,7 @@ import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.IosModalSheet
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -249,7 +250,7 @@ private fun ShareModeButton(systemName: String, labelRes: Int, onClick: () -> Un
     GlassButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         SfIcon(systemName, null, size = 21.dp)
         Text(stringResource(labelRes), modifier = Modifier.weight(1f).padding(start = 12.dp))
-        SfIcon("chevron.right", null, size = 15.dp)
+        SfIcon("chevron.right", null, size = 15.dp, tint = LocalGlassColors.current.separator)
     }
 }
 

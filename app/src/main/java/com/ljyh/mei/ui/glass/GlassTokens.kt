@@ -137,8 +137,7 @@ fun defaultGlassColors(
         } else {
             Color(0xFFF8F8FA).copy(alpha = 0.64f)
         },
-        prominentContainer = (if (isDark) Color(0xFFFF4245) else Color(0xFFFF3B30))
-            .copy(alpha = if (isDark) 0.76f else 0.84f),
+        prominentContainer = accent.copy(alpha = if (isDark) 0.76f else 0.84f),
         subtleStroke = if (isDark) {
             Color(0x2BFFFFFF)
         } else {

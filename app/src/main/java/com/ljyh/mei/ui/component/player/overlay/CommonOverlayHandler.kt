@@ -191,7 +191,7 @@ fun CommonOverlayHandler(
                                         "checkmark",
                                         contentDescription = null,
                                         size = 17.dp,
-                                        tint = LocalGlassColors.current.accent,
+                                        tint = LocalGlassColors.current.content,
                                     )
                                 }
                             } else {

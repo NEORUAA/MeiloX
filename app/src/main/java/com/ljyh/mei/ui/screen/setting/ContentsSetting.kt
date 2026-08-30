@@ -34,6 +34,7 @@ import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassToggle
 import com.ljyh.mei.ui.glass.IosPinnedListPage
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -165,14 +166,16 @@ fun ContentsSetting(
                                     currentOrder[itemIndex] = currentOrder[itemIndex - 1].also { currentOrder[itemIndex - 1] = item }
                                     setOrder(currentOrder.joinToString(",", transform = Index::name))
                                 }
-                            }, enabled = visibleIndex > 0, emphasis = GlassEmphasis.Regular) { SfIcon("chevron.up", stringResource(R.string.move_up), size = 16.dp) }
+                            }, enabled = visibleIndex > 0, emphasis = GlassEmphasis.Regular) {
+                                SfIcon("chevron.up", stringResource(R.string.move_up), size = 16.dp, tint = LocalGlassColors.current.separator)
+                            }
                             GlassButton(onClick = {
                                 if (itemIndex in 1 until currentOrder.lastIndex - 1) {
                                     currentOrder[itemIndex] = currentOrder[itemIndex + 1].also { currentOrder[itemIndex + 1] = item }
                                     setOrder(currentOrder.joinToString(",", transform = Index::name))
                                 }
                             }, enabled = visibleIndex < reorderable.lastIndex, emphasis = GlassEmphasis.Regular, modifier = Modifier.padding(start = 6.dp)) {
-                                SfIcon("chevron.down", stringResource(R.string.move_down), size = 16.dp)
+                                SfIcon("chevron.down", stringResource(R.string.move_down), size = 16.dp, tint = LocalGlassColors.current.separator)
                             }
                         }
                     }

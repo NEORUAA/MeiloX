@@ -180,6 +180,7 @@
     <string name="appearance_dynamic_theme_description">Tint the interface from the current artwork.</string>
     <string name="appearance_accent_color">Accent color</string>
     <string name="appearance_accent_dynamic">Artwork</string>
+    <string name="appearance_accent_default">Default</string>
     <string name="appearance_accent_custom">Custom</string>
     <string name="color_picker_grid">Grid</string>
     <string name="color_picker_spectrum">Spectrum</string>

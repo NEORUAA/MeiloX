@@ -83,8 +83,9 @@ fun GlassToggle(
     enabled: Boolean = true,
     backdrop: Backdrop = LocalGlassBackdrop.current,
 ) {
-    val light = !LocalGlassColors.current.isDark
-    val accent = if (light) Color(0xFF34C759) else Color(0xFF30D158)
+    val colors = LocalGlassColors.current
+    val light = !colors.isDark
+    val accent = colors.accent
     val track = if (light) Color(0xFF787878).copy(alpha = 0.20f)
     else Color(0xFF787880).copy(alpha = 0.36f)
     val density = LocalDensity.current
