@@ -22,7 +22,9 @@ import com.ljyh.mei.data.model.melox.PodcastCategory
 import com.ljyh.mei.data.model.melox.PodcastDetail
 import com.ljyh.mei.data.model.melox.PodcastHome
 import com.ljyh.mei.data.model.melox.PodcastHost
+import com.ljyh.mei.data.model.melox.PodcastPage
 import com.ljyh.mei.data.model.melox.PodcastProgram
+import com.ljyh.mei.data.model.melox.PodcastProgramPage
 import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.data.model.melox.PrivateMessage
 import com.ljyh.mei.data.model.melox.PrivateMessagePayload
@@ -94,28 +96,47 @@ class MeloXRepository @Inject constructor(
     suspend fun podcastDetail(id: Long, offset: Int = 0, limit: Int = 50): PodcastDetail =
         coroutineScope {
             val podcastResponse = async { request("/api/djradio/v2/get", mapOf("id" to id)) }
-            val programsResponse = async {
-                request(
-                    "/api/dj/program/byradio",
-                    mapOf("radioId" to id, "offset" to offset, "limit" to limit.coerceIn(1, 50), "asc" to false),
-                )
-            }
+            val programsResponse = async { podcastPrograms(id, offset, limit) }
             val podcast = parsePodcast(podcastResponse.await().objectOrNull("data"))
                 ?: error("Podcast $id was not returned by NetEase")
             val programs = programsResponse.await()
             PodcastDetail(
                 podcast = podcast,
-                programs = programs.array("programs").mapNotNull(::parseProgram),
-                hasMore = programs.boolean("more") ?: false,
-                totalCount = programs.int("count") ?: 0,
+                programs = programs.programs,
+                hasMore = programs.hasMore,
+                totalCount = programs.totalCount,
             )
         }
 
-    suspend fun subscribedPodcasts(offset: Int = 0, limit: Int = 50): List<Podcast> =
-        request(
+    suspend fun podcastPrograms(id: Long, offset: Int = 0, limit: Int = 50): PodcastProgramPage {
+        val response = request(
+            "/api/dj/program/byradio",
+            mapOf("radioId" to id, "offset" to offset, "limit" to limit.coerceIn(1, 50), "asc" to false),
+        )
+        val programs = response.array("programs").mapNotNull(::parseProgram)
+        val totalCount = response.int("count") ?: (offset + programs.size)
+        return PodcastProgramPage(
+            programs = programs,
+            hasMore = response.boolean("more") ?: (offset + programs.size < totalCount),
+            totalCount = totalCount,
+        )
+    }
+
+    suspend fun subscribedPodcasts(offset: Int = 0, limit: Int = 50): PodcastPage {
+        val response = request(
             "/api/djradio/get/subed",
             mapOf("offset" to offset, "limit" to limit.coerceIn(1, 100), "total" to true),
-        ).array("djRadios").mapNotNull(::parsePodcast)
+        )
+        val podcasts = response.array("djRadios").mapNotNull(::parsePodcast)
+        val totalCount = response.int("count") ?: response.int("total") ?: (offset + podcasts.size)
+        return PodcastPage(
+            podcasts = podcasts,
+            hasMore = response.boolean("hasMore")
+                ?: response.boolean("more")
+                ?: (offset + podcasts.size < totalCount),
+            totalCount = totalCount,
+        )
+    }
 
     suspend fun searchDiscovery(): SearchDiscovery {
         val response = requestEapi(

@@ -91,9 +91,17 @@
     <string name="podcast_for_you">為你推薦</string>
     <string name="podcast_category">分類 Podcast</string>
     <string name="podcast_featured">精選 Podcast</string>
+    <string name="podcast_discover">探索</string>
+    <string name="podcast_my_subscriptions">我的訂閱</string>
     <string name="podcast_subscribe">訂閱</string>
     <string name="podcast_subscribed">已訂閱</string>
     <string name="podcast_duration_minutes">%1$d 分鐘</string>
+    <string name="podcast_program_count">%1$d 集</string>
+    <string name="podcast_loading_more">正在載入更多 Podcast</string>
+    <string name="podcast_empty_subscriptions">還沒有訂閱 Podcast</string>
+    <string name="podcast_empty_subscriptions_description">開啟 Podcast 詳情後，點一下訂閱即可在這裡查看。</string>
+    <string name="podcast_subscriptions_sign_in">登入後查看訂閱</string>
+    <string name="podcast_subscriptions_sign_in_description">Podcast 訂閱將與網易雲音樂帳號同步。</string>
     <string name="cloud_music">雲端音樂</string>
     <string name="cloud_music_quota">已使用 %1$s，共 %2$s</string>
     <string name="load_failed">內容載入失敗</string>

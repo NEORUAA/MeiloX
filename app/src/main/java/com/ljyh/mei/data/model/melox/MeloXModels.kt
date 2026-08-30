@@ -52,6 +52,18 @@ data class PodcastHome(
     val personalized: List<Podcast>,
 )
 
+data class PodcastPage(
+    val podcasts: List<Podcast>,
+    val hasMore: Boolean,
+    val totalCount: Int,
+)
+
+data class PodcastProgramPage(
+    val programs: List<PodcastProgram>,
+    val hasMore: Boolean,
+    val totalCount: Int,
+)
+
 data class PodcastDetail(
     val podcast: Podcast,
     val programs: List<PodcastProgram>,

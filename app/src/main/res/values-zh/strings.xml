@@ -91,9 +91,17 @@
     <string name="podcast_for_you">为你推荐</string>
     <string name="podcast_category">分类播客</string>
     <string name="podcast_featured">精选播客</string>
+    <string name="podcast_discover">发现</string>
+    <string name="podcast_my_subscriptions">我的订阅</string>
     <string name="podcast_subscribe">订阅</string>
     <string name="podcast_subscribed">已订阅</string>
     <string name="podcast_duration_minutes">%1$d 分钟</string>
+    <string name="podcast_program_count">%1$d 期</string>
+    <string name="podcast_loading_more">正在加载更多播客</string>
+    <string name="podcast_empty_subscriptions">还没有订阅播客</string>
+    <string name="podcast_empty_subscriptions_description">打开播客详情后，轻点订阅即可在这里查看。</string>
+    <string name="podcast_subscriptions_sign_in">登录后查看订阅</string>
+    <string name="podcast_subscriptions_sign_in_description">播客订阅将与网易云音乐账号同步。</string>
     <string name="cloud_music">云盘</string>
     <string name="cloud_music_quota">已使用 %1$s，共 %2$s</string>
     <string name="load_failed">内容加载失败</string>

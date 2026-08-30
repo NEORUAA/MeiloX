@@ -41,7 +41,7 @@ fun Track(
     isTablet: Boolean = false,
     isPlaying: Boolean = false,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: (() -> Unit)?
 ) {
     Row(
         modifier = Modifier
@@ -125,16 +125,18 @@ fun Track(
         }
 
         // --- 5. 更多按钮 ---
-        IconButton(
-            onClick = onMoreClick,
-            modifier = Modifier.padding(start = 8.dp).size(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "更多",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+        onMoreClick?.let {
+            IconButton(
+                onClick = it,
+                modifier = Modifier.padding(start = 8.dp).size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "更多",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

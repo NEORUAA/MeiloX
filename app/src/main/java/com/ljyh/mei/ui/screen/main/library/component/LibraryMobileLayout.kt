@@ -27,12 +27,14 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,7 +70,6 @@ import com.ljyh.mei.ui.glass.GlassSegmentedControl
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosScrollableTabRow
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
@@ -87,6 +88,8 @@ import com.ljyh.mei.ui.screen.history.HistoryViewModel
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
+import com.ljyh.mei.ui.screen.podcast.PodcastPaginationFooter
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Adds rows directly to the parent lazy list while retaining the visual treatment of
@@ -99,6 +102,7 @@ internal fun <T> LazyListScope.groupedLazyItems(
     key: ((T) -> Any)? = null,
     contentType: Any? = "grouped-row",
     firstItemTopPadding: Dp = 0.dp,
+    horizontalPadding: Dp = 0.dp,
     itemContent: @Composable (item: T, index: Int) -> Unit,
 ) {
     itemsIndexed(
@@ -109,7 +113,11 @@ internal fun <T> LazyListScope.groupedLazyItems(
         GroupedLazyListRow(
             index = index,
             itemCount = items.size,
-            modifier = if (index == 0) Modifier.padding(top = firstItemTopPadding) else Modifier,
+            modifier = Modifier.padding(
+                start = horizontalPadding,
+                top = if (index == 0) firstItemTopPadding else 0.dp,
+                end = horizontalPadding,
+            ),
         ) {
             itemContent(item, index)
         }
@@ -170,6 +178,9 @@ fun LibraryMobileLayout(
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) hiltViewModel() else null
     val podcastState = podcastViewModel?.state?.collectAsState()?.value
+    LaunchedEffect(podcastViewModel) {
+        podcastViewModel?.ensureSubscriptionsLoaded()
+    }
     val cloudViewModel: CloudMusicViewModel? = if (selectedPage == LibraryPage.Cloud) hiltViewModel() else null
     val cloudState = cloudViewModel?.state?.collectAsState()?.value
     val historyViewModel: HistoryViewModel? = if (selectedPage == LibraryPage.History) hiltViewModel() else null
@@ -183,6 +194,17 @@ fun LibraryMobileLayout(
         emptyList()
     }
     val collapseDistance = with(LocalDensity.current) { 56.dp.toPx() }
+    LaunchedEffect(listState, selectedPage, podcastViewModel) {
+        if (selectedPage != LibraryPage.Podcasts || podcastViewModel == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            (layout.visibleItemsInfo.lastOrNull()?.index ?: -1) to layout.totalItemsCount
+        }.distinctUntilChanged().collect { (lastVisibleIndex, totalItemsCount) ->
+            if (totalItemsCount > 0 && lastVisibleIndex >= totalItemsCount - 1) {
+                podcastViewModel.loadMoreSubscriptions()
+            }
+        }
+    }
     val collapseProgress by remember(listState) {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) 1f
@@ -525,39 +547,19 @@ private fun LazyListScope.libraryPodcastItems(
     viewModel: PodcastViewModel,
     query: String,
 ) {
-    val podcasts = (
-        state.categoryPodcasts.takeIf { state.selectedCategoryId != null }
-            ?: state.home?.personalized.orEmpty()
-        ).filterIfSearching(query) { podcast ->
+    val podcasts = state.subscribedPodcasts.filterIfSearching(query) { podcast ->
         podcast.name.containsQuery(query) ||
             podcast.host?.nickname.containsQuery(query) ||
             podcast.category.containsQuery(query) ||
             podcast.description.containsQuery(query) ||
             podcast.recommendation.containsQuery(query)
     }
-    if (state.isLoading && state.home == null) {
+    if (!state.subscriptionsLoaded && state.subscriptionsError == null) {
         item(key = "library-podcast-loading") {
             Box(Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            }
-        }
-    }
-    state.home?.categories?.takeIf { it.isNotEmpty() && query.isEmpty() }?.let { categories ->
-        item(key = "library-podcast-categories") {
-            Box(
-                Modifier.fillMaxWidth().padding(
-                    bottom = if (podcasts.isNotEmpty() || !state.isLoading) 12.dp else 0.dp,
-                ),
-            ) {
-                IosScrollableTabRow(
-                    items = listOf<Long?>(null).map { it to stringResource(R.string.podcast_for_you) } +
-                        categories.map { it.id to it.name },
-                    selected = state.selectedCategoryId,
-                    onSelected = { id -> if (id == null) viewModel.refresh() else viewModel.selectCategory(id) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
     }
@@ -584,11 +586,23 @@ private fun LazyListScope.libraryPodcastItems(
                 },
             )
         }
-    } else if (!state.isLoading) {
+        if (query.isEmpty() && (
+                state.hasMoreSubscriptions || state.isLoadingMoreSubscriptions ||
+                    state.subscriptionsLoadMoreError != null
+                )
+        ) {
+            item(key = "library-podcast-pagination") {
+                PodcastPaginationFooter(
+                    failureMessage = state.subscriptionsLoadMoreError,
+                    onLoadMore = viewModel::loadMoreSubscriptions,
+                )
+            }
+        }
+    } else if (!state.isSubscriptionsLoading) {
         item(key = "library-podcast-empty") {
             EmptyState(
                 if (query.isNotEmpty()) stringResource(R.string.no_search_results)
-                else state.error ?: stringResource(R.string.library_empty_songs),
+                else state.subscriptionsError ?: stringResource(R.string.podcast_empty_subscriptions),
                 SfSymbol.Microphone,
             )
         }

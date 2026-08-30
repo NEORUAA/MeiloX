@@ -57,6 +57,7 @@ fun PlaylistHeader(
     onDownload: (() -> Unit)? = null,
     actionIcon: ImageVector,
     actionLabel: String,
+    metadata: String? = null,
 ) {
     val colors = LocalGlassColors.current
     val playlistCoverStyle by rememberEnumPreference(
@@ -101,7 +102,7 @@ fun PlaylistHeader(
         }
 
         Text(
-            text = buildPlaylistMetadata(count, playCount, subscribeCount),
+            text = metadata ?: buildPlaylistMetadata(count, playCount, subscribeCount),
             style = IosTypography.subheadline.copy(fontWeight = FontWeight.Medium),
             color = colors.secondaryContent,
             maxLines = 1,

@@ -300,6 +300,8 @@ data class HomePageResourceShow(
                         val extInfo: ExtInfo,
                         @SerializedName("resourceType")
                         val resourceType: String,
+                        @SerializedName("programDTO")
+                        val programDTO: String? = null,
                         @SerializedName("tagId")
                         val tagId: String,
                         @SerializedName("categoryId")

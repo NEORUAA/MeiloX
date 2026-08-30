@@ -92,9 +92,17 @@
     <string name="podcast_for_you">For You</string>
     <string name="podcast_category">Category</string>
     <string name="podcast_featured">Featured Podcasts</string>
+    <string name="podcast_discover">Discover</string>
+    <string name="podcast_my_subscriptions">My Subscriptions</string>
     <string name="podcast_subscribe">Subscribe</string>
     <string name="podcast_subscribed">Subscribed</string>
     <string name="podcast_duration_minutes">%1$d min</string>
+    <string name="podcast_program_count">%1$d episodes</string>
+    <string name="podcast_loading_more">Loading more podcasts</string>
+    <string name="podcast_empty_subscriptions">No subscribed podcasts</string>
+    <string name="podcast_empty_subscriptions_description">Open a podcast and tap Subscribe to keep it here.</string>
+    <string name="podcast_subscriptions_sign_in">Sign in to view subscriptions</string>
+    <string name="podcast_subscriptions_sign_in_description">Your podcast subscriptions are synced with NetEase Cloud Music.</string>
     <string name="cloud_music">Cloud Music</string>
     <string name="cloud_music_quota">%1$s of %2$s used</string>
     <string name="load_failed">Couldn’t load content</string>

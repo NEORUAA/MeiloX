@@ -23,7 +23,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -124,7 +124,7 @@ private fun CategorySelector(
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
-//        contentPadding = PaddingValues(horizontal = 16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(categories) { category ->
@@ -158,8 +158,8 @@ private fun PlaylistGrid(
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(start = 16.dp, top = topPadding, end = 16.dp, bottom = bottom),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = topPadding, bottom = bottom),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         state = listState,
     ) {
@@ -167,7 +167,9 @@ private fun PlaylistGrid(
             Text(
                 title,
                 style = IosTypography.largeTitle,
-                modifier = Modifier.offset(y = (-10).dp).padding(vertical = 6.dp),
+                modifier = Modifier
+                    .offset(y = (-10).dp)
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
             )
         }
         item(key = "discover-categories", span = { GridItemSpan(maxLineSpan) }) {
@@ -175,11 +177,20 @@ private fun PlaylistGrid(
         }
         playlists.firstOrNull()?.let { featured ->
             item(key = "featured-${featured.id}", span = { GridItemSpan(maxLineSpan) }) {
-                FeaturedPlaylistCard(featured, onPlaylistClick)
+                Box(Modifier.padding(horizontal = 16.dp)) {
+                    FeaturedPlaylistCard(featured, onPlaylistClick)
+                }
             }
         }
-        items(items = playlists.drop(1), key = { it.id }) { playlist ->
-            PlaylistCard(playlist, onPlaylistClick)
+        itemsIndexed(items = playlists.drop(1), key = { _, playlist -> playlist.id }) { index, playlist ->
+            PlaylistCard(
+                playlist = playlist,
+                onClick = onPlaylistClick,
+                modifier = Modifier.padding(
+                    start = if (index % 2 == 0) 16.dp else 6.dp,
+                    end = if (index % 2 == 0) 6.dp else 16.dp,
+                ),
+            )
         }
     }
 }
@@ -205,8 +216,12 @@ private fun FeaturedPlaylistCard(playlist: Playlists, onClick: (Long) -> Unit) {
 }
 
 @Composable
-private fun PlaylistCard(playlist: Playlists, onClick: (Long) -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable { onClick(playlist.id) }) {
+private fun PlaylistCard(
+    playlist: Playlists,
+    onClick: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth().clickable { onClick(playlist.id) }) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(ContinuousRoundedRectangle(16.dp))) {
             AsyncImage(playlist.coverImgUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             Row(

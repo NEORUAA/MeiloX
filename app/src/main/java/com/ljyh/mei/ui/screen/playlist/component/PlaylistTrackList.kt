@@ -292,7 +292,7 @@ fun LazyListScope.playlistTrackItems(
 }
 
 @Composable
-private fun PlaylistSurface(
+internal fun PlaylistSurface(
     isFirst: Boolean,
     isLast: Boolean,
     content: @Composable ColumnScope.() -> Unit,
