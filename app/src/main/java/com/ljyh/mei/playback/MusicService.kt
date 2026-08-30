@@ -594,12 +594,29 @@ class MusicService : MediaLibraryService(),
                 ?.filter(String::isNotBlank)
                 ?.takeIf(List<String>::isNotEmpty)
             ?: listOf("未知歌手")
-        val song = Song(
-            id = mediaItem.mediaId,
-            title = metadata.title?.toString() ?: "未知标题",
+        val storedSong = songRepository.getSong(mediaItem.mediaId).firstOrNull()
+        val title = metadata.title?.toString().orEmpty().ifBlank {
+            storedSong?.title ?: "未知标题"
+        }
+        val album = metadata.albumTitle?.toString().orEmpty().ifBlank {
+            storedSong?.album ?: "未知专辑"
+        }
+        val cover = metadata.artworkUri?.toString().orEmpty().ifBlank {
+            storedSong?.cover.orEmpty()
+        }
+        val song = storedSong?.copy(
+            title = title,
             artist = artistList,
-            album = metadata.albumTitle?.toString() ?: "未知专辑",
-            cover = metadata.artworkUri?.toString() ?: "",
+            album = album,
+            cover = cover,
+            duration = metadata.durationMs?.takeIf { it > 0 } ?: storedSong.duration,
+            updatedAt = System.currentTimeMillis(),
+        ) ?: Song(
+            id = mediaItem.mediaId,
+            title = title,
+            artist = artistList,
+            album = album,
+            cover = cover,
             duration = metadata.durationMs ?: 0,
         )
         historyRepository.addToHistory(song)

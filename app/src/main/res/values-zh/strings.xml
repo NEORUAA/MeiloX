@@ -533,6 +533,14 @@
     <string name="download_paused">已暂停</string>
     <string name="download_completed">完成</string>
     <string name="download_failed">失败</string>
+    <string name="download_file_unavailable">本地文件不可用</string>
+    <string name="download_play_next">下一首播放</string>
+    <string name="download_add_to_queue">添加到播放队列</string>
+    <string name="download_added_next">已添加到下一首播放</string>
+    <string name="download_added_to_queue">已添加到播放队列</string>
+    <string name="download_cancel">取消下载</string>
+    <string name="download_delete_local_file">删除本地文件</string>
+    <string name="download_delete_record">删除下载记录</string>
     <string name="pause">暂停</string>
     <string name="resume">恢复</string>
     <string name="playlist_table_title">标题</string>

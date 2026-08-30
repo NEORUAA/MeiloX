@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
 import android.text.format.DateUtils
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -58,16 +60,20 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Playlist
+import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.player.OverlayState
+import com.ljyh.mei.ui.component.player.PlayerViewModel
+import com.ljyh.mei.ui.glass.IosActionSheetContent
 import com.ljyh.mei.ui.glass.GlassSearchBar
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
+import com.ljyh.mei.ui.glass.IosModalSheet
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -85,11 +91,14 @@ import com.ljyh.mei.ui.screen.cloud.CloudMusicViewModel
 import com.ljyh.mei.ui.screen.cloud.CloudMusicUiState
 import com.ljyh.mei.ui.screen.history.HistoryViewModel
 import com.ljyh.mei.ui.screen.history.HistoryUiState
+import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
 import com.ljyh.mei.ui.screen.podcast.PodcastPaginationFooter
+import com.ljyh.mei.utils.DownloadManager
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /**
  * Adds rows directly to the parent lazy list while retaining the visual treatment of
@@ -172,9 +181,13 @@ fun LibraryMobileLayout(
     onAlbumClick: (String) -> Unit,
 ) {
     val navController = LocalNavController.current
+    val context = LocalContext.current
     val playerConnection = LocalPlayerConnection.current
+    val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
+    val playlistViewModel: PlaylistViewModel = hiltViewModel()
+    val playerViewModel: PlayerViewModel = hiltViewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) hiltViewModel() else null
     val podcastState = podcastViewModel?.state?.collectAsState()?.value
@@ -188,13 +201,17 @@ fun LibraryMobileLayout(
     LaunchedEffect(historyViewModel) {
         historyViewModel?.refresh()
     }
-    val downloadTasks = if (selectedPage == LibraryPage.Downloads) {
-        val context = LocalContext.current
+    val (downloadTasks, playableDownloadSongs) = if (selectedPage == LibraryPage.Downloads) {
         val dao = remember(context) { AppDatabase.getDatabase(context).downloadDao() }
         val tasksFlow = remember(dao) { dao.getAll() }
-        tasksFlow.collectAsState(initial = emptyList()).value
+        val songsFlow = remember(dao) { dao.getPlayableSongs() }
+        tasksFlow.collectAsState(initial = emptyList()).value to
+            songsFlow.collectAsState(initial = emptyList()).value
     } else {
-        emptyList()
+        emptyList<DownloadTask>() to emptyList()
+    }
+    val playableDownloadSongsById = remember(playableDownloadSongs) {
+        playableDownloadSongs.associateBy(Song::id)
     }
     val collapseDistance = with(LocalDensity.current) { 56.dp.toPx() }
     LaunchedEffect(listState, selectedPage, podcastViewModel) {
@@ -217,12 +234,17 @@ fun LibraryMobileLayout(
     val pages = LibraryPage.entries
     val title = stringResource(R.string.app_tab_library)
     val likedTitle = stringResource(R.string.app_tab_library_songs)
+    val downloadsTitle = stringResource(R.string.app_tab_library_downloads)
     val usesGroupedLazyRows = selectedPage == LibraryPage.Podcasts ||
         selectedPage == LibraryPage.Downloads ||
         selectedPage == LibraryPage.Cloud ||
         selectedPage == LibraryPage.History
     val pageSpacing = if (usesGroupedLazyRows) 12.dp else 0.dp
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
+    var selectedDownloadTaskId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectedPage) {
+        if (selectedPage != LibraryPage.Downloads) selectedDownloadTaskId = null
+    }
     var searchQuery by remember { mutableStateOf(TextFieldValue()) }
     var searchActive by remember { mutableStateOf(false) }
     val query = searchQuery.text.trim()
@@ -418,7 +440,14 @@ fun LibraryMobileLayout(
                     }
                 }
 
-                LibraryPage.Downloads -> libraryDownloadItems(downloadTasks, query)
+                LibraryPage.Downloads -> libraryDownloadItems(
+                    tasks = downloadTasks,
+                    query = query,
+                    title = downloadsTitle,
+                    playerConnection = playerConnection,
+                    playableSongs = playableDownloadSongsById,
+                    onMoreClick = { selectedDownloadTaskId = it.songId },
+                )
 
                 LibraryPage.Cloud -> {
                     cloudState?.let { state ->
@@ -457,7 +486,71 @@ fun LibraryMobileLayout(
         overlay = currentOverlay,
         onDismiss = { currentOverlay = OverlayState.None },
         onUpdateOverlay = { currentOverlay = it },
+        playlistViewModel = playlistViewModel,
+        playerViewModel = playerViewModel,
     )
+
+    downloadTasks.firstOrNull { it.songId == selectedDownloadTaskId }?.let { task ->
+        val localSong = playableDownloadSongsById[task.songId]
+        val metadata = remember(task, localSong) { task.toMediaMetadataOrNull(localSong) }
+        val hasLocalFile = localSong != null
+        DownloadTaskActionSheet(
+            task = task,
+            hasTrackMetadata = metadata != null,
+            hasLocalFile = hasLocalFile,
+            canPlay = hasLocalFile && metadata != null && playerConnection != null,
+            onDismiss = { selectedDownloadTaskId = null },
+            onPlay = {
+                selectedDownloadTaskId = null
+                playDownloadedTask(
+                    task = task,
+                    tasks = filterDownloadTasks(downloadTasks, query),
+                    title = downloadsTitle,
+                    playerConnection = playerConnection,
+                    playableSongs = playableDownloadSongsById,
+                )
+            },
+            onPlayNext = {
+                selectedDownloadTaskId = null
+                metadata?.toMediaItem()?.let { playerConnection?.playNext(it) }
+                Toast.makeText(context, R.string.download_added_next, Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                selectedDownloadTaskId = null
+                metadata?.toMediaItem()?.let { playerConnection?.addToQueue(it) }
+                Toast.makeText(context, R.string.download_added_to_queue, Toast.LENGTH_SHORT).show()
+            },
+            onAddToPlaylist = {
+                selectedDownloadTaskId = null
+                metadata?.let {
+                    playlistViewModel.getAllMePlaylist()
+                    currentOverlay = OverlayState.AddToPlaylist(it.id)
+                }
+            },
+            onPause = {
+                selectedDownloadTaskId = null
+                DownloadManager.pauseSong(context, task.songId)
+            },
+            onResume = {
+                selectedDownloadTaskId = null
+                scope.launch {
+                    DownloadManager.resumeSong(
+                        context = context,
+                        songId = task.songId,
+                        playlistName = context.getString(R.string.resumed_download),
+                    )
+                }
+            },
+            onRetry = {
+                selectedDownloadTaskId = null
+                metadata?.let { playerViewModel.downloadSong(it, context) }
+            },
+            onRemove = {
+                selectedDownloadTaskId = null
+                DownloadManager.deleteTask(context, task.songId)
+            },
+        )
+    }
 }
 
 @Composable
@@ -612,11 +705,19 @@ private fun LazyListScope.libraryPodcastItems(
     }
 }
 
-private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>, query: String) {
-    val visibleTasks = tasks.filterIfSearching(query) { task ->
-        task.songTitle.containsQuery(query) ||
-            task.songArtist.containsQuery(query) ||
-            task.songAlbum.containsQuery(query)
+private fun LazyListScope.libraryDownloadItems(
+    tasks: List<DownloadTask>,
+    query: String,
+    title: String,
+    playerConnection: PlayerConnection?,
+    playableSongs: Map<String, Song>,
+    onMoreClick: (DownloadTask) -> Unit,
+) {
+    val visibleTasks = filterDownloadTasks(tasks, query)
+    val playableTasks = visibleTasks.filter { task ->
+        task.status == DownloadStatus.COMPLETED &&
+            task.songId in playableSongs &&
+            task.toMediaMetadataOrNull(playableSongs[task.songId]) != null
     }
     if (visibleTasks.isEmpty()) {
         item(key = "library-download-empty") {
@@ -635,7 +736,10 @@ private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>, query:
             val detail = when (task.status) {
                 DownloadStatus.DOWNLOADING -> "${task.progress}%"
                 DownloadStatus.PAUSED -> stringResource(R.string.download_paused)
-                DownloadStatus.COMPLETED -> stringResource(R.string.download_completed)
+                DownloadStatus.COMPLETED -> stringResource(
+                    if (task.songId in playableSongs) R.string.download_completed
+                    else R.string.download_file_unavailable,
+                )
                 DownloadStatus.FAILED -> stringResource(R.string.download_failed)
                 DownloadStatus.PENDING -> stringResource(R.string.download_waiting)
             }
@@ -652,7 +756,221 @@ private fun LazyListScope.libraryDownloadItems(tasks: List<DownloadTask>, query:
                         contentScale = ContentScale.Crop,
                     )
                 },
+                onClick = if (task in playableTasks) {
+                    {
+                        playDownloadedTask(
+                            task = task,
+                            tasks = playableTasks,
+                            title = title,
+                            playerConnection = playerConnection,
+                            playableSongs = playableSongs,
+                        )
+                    }
+                } else {
+                    null
+                },
+                trailing = {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(ContinuousRoundedRectangle(22.dp))
+                            .clickable(
+                                interactionSource = null,
+                                indication = null,
+                                onClick = { onMoreClick(task) },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SfIcon(
+                            "ellipsis",
+                            stringResource(R.string.more_actions_title),
+                            size = 18.dp,
+                        )
+                    }
+                },
             )
+        }
+    }
+}
+
+private fun filterDownloadTasks(tasks: List<DownloadTask>, query: String): List<DownloadTask> =
+    tasks.filterIfSearching(query) { task ->
+        task.songTitle.containsQuery(query) ||
+            task.songArtist.containsQuery(query) ||
+            task.songAlbum.containsQuery(query)
+    }
+
+private fun playDownloadedTask(
+    task: DownloadTask,
+    tasks: List<DownloadTask>,
+    title: String,
+    playerConnection: PlayerConnection?,
+    playableSongs: Map<String, Song>,
+) {
+    val playable = tasks.mapNotNull { candidate ->
+        val localSong = playableSongs[candidate.songId] ?: return@mapNotNull null
+        candidate.toMediaMetadataOrNull(localSong)
+            ?.takeIf { candidate.status == DownloadStatus.COMPLETED }
+            ?.let { candidate to it }
+    }
+    val startIndex = playable.indexOfFirst { (candidate) -> candidate.songId == task.songId }
+    if (startIndex < 0) return
+    playerConnection?.playQueue(
+        ListQueue(
+            id = "library-downloads",
+            title = title,
+            items = playable.map { (candidate, metadata) ->
+                candidate.songId to metadata.toMediaItem()
+            },
+            startIndex = startIndex,
+        ),
+    )
+}
+
+private fun DownloadTask.toMediaMetadataOrNull(localSong: Song?): MediaMetadata? {
+    val id = songId.toLongOrNull() ?: return null
+    val artistNames = localSong?.artist.orEmpty().ifEmpty {
+        songArtist
+        .split(Regex("[/、,;]"))
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .ifEmpty { listOf(songArtist.ifBlank { "Unknown artist" }) }
+    }
+    val albumTitle = localSong?.album?.ifBlank { null } ?: songAlbum
+    return MediaMetadata(
+        id = id,
+        title = localSong?.title?.ifBlank { null } ?: songTitle.ifBlank { songId },
+        coverUrl = localSong?.cover?.ifBlank { null } ?: songCover,
+        artists = artistNames.map { name ->
+            MediaMetadata.Artist(name.hashCode().toUInt().toLong(), name)
+        },
+        duration = localSong?.duration ?: 0,
+        album = MediaMetadata.Album(
+            id = albumTitle.hashCode().toUInt().toLong(),
+            title = albumTitle,
+        ),
+    )
+}
+
+@Composable
+private fun DownloadTaskActionSheet(
+    task: DownloadTask,
+    hasTrackMetadata: Boolean,
+    hasLocalFile: Boolean,
+    canPlay: Boolean,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    IosModalSheet(onDismissRequest = onDismiss) {
+        IosActionSheetContent(
+            title = task.songTitle.ifBlank { task.songId },
+            message = task.songArtist.ifBlank { task.songAlbum },
+        ) {
+            when (task.status) {
+                DownloadStatus.COMPLETED -> {
+                    if (hasLocalFile && canPlay) {
+                        IosListRow(
+                            title = stringResource(R.string.player_play),
+                            systemName = "play.fill",
+                            showTopSeparator = false,
+                            onClick = onPlay,
+                        )
+                        IosListRow(
+                            title = stringResource(R.string.download_play_next),
+                            systemName = "text.line.first.and.arrowtriangle.forward",
+                            onClick = onPlayNext,
+                        )
+                        IosListRow(
+                            title = stringResource(R.string.download_add_to_queue),
+                            systemName = "text.badge.plus",
+                            onClick = onAddToQueue,
+                        )
+                    }
+                    if (hasLocalFile && hasTrackMetadata) {
+                        IosListRow(
+                            title = stringResource(R.string.track_action_add_playlist),
+                            systemName = "plus.circle",
+                            showTopSeparator = canPlay,
+                            onClick = onAddToPlaylist,
+                        )
+                    }
+                    if (hasLocalFile) {
+                        IosListRow(
+                            title = stringResource(R.string.download_delete_local_file),
+                            systemName = "trash",
+                            showTopSeparator = canPlay || hasTrackMetadata,
+                            onClick = onRemove,
+                        )
+                    } else {
+                        if (hasTrackMetadata) {
+                            IosListRow(
+                                title = stringResource(R.string.retry),
+                                systemName = "arrow.clockwise",
+                                showTopSeparator = false,
+                                onClick = onRetry,
+                            )
+                        }
+                        IosListRow(
+                            title = stringResource(R.string.download_delete_record),
+                            systemName = "trash",
+                            showTopSeparator = hasTrackMetadata,
+                            onClick = onRemove,
+                        )
+                    }
+                }
+
+                DownloadStatus.PENDING, DownloadStatus.DOWNLOADING -> {
+                    IosListRow(
+                        title = stringResource(R.string.pause),
+                        systemName = "pause.circle",
+                        showTopSeparator = false,
+                        onClick = onPause,
+                    )
+                    IosListRow(
+                        title = stringResource(R.string.download_cancel),
+                        systemName = "xmark.circle",
+                        onClick = onRemove,
+                    )
+                }
+
+                DownloadStatus.PAUSED -> {
+                    IosListRow(
+                        title = stringResource(R.string.resume),
+                        systemName = "arrow.clockwise",
+                        showTopSeparator = false,
+                        onClick = onResume,
+                    )
+                    IosListRow(
+                        title = stringResource(R.string.download_cancel),
+                        systemName = "xmark.circle",
+                        onClick = onRemove,
+                    )
+                }
+
+                DownloadStatus.FAILED -> {
+                    if (hasTrackMetadata) {
+                        IosListRow(
+                            title = stringResource(R.string.retry),
+                            systemName = "arrow.clockwise",
+                            showTopSeparator = false,
+                            onClick = onRetry,
+                        )
+                    }
+                    IosListRow(
+                        title = stringResource(R.string.download_delete_record),
+                        systemName = "trash",
+                        showTopSeparator = hasTrackMetadata,
+                        onClick = onRemove,
+                    )
+                }
+            }
         }
     }
 }

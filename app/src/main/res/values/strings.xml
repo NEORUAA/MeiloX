@@ -534,6 +534,14 @@
     <string name="download_paused">Paused</string>
     <string name="download_completed">Complete</string>
     <string name="download_failed">Failed</string>
+    <string name="download_file_unavailable">Local File Unavailable</string>
+    <string name="download_play_next">Play Next</string>
+    <string name="download_add_to_queue">Add to Play Queue</string>
+    <string name="download_added_next">Added to Play Next</string>
+    <string name="download_added_to_queue">Added to Play Queue</string>
+    <string name="download_cancel">Cancel Download</string>
+    <string name="download_delete_local_file">Delete Local File</string>
+    <string name="download_delete_record">Delete Download Record</string>
     <string name="pause">Pause</string>
     <string name="resume">Resume</string>
     <string name="playlist_table_title">Title</string>
