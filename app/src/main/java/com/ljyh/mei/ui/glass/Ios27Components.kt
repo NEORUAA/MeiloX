@@ -1,8 +1,10 @@
 package com.ljyh.mei.ui.glass
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,10 +42,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -79,7 +83,6 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.DialogProperties
@@ -102,6 +105,8 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 val IosModalSheetShape = ContinuousRoundedRectangle(
@@ -654,8 +659,11 @@ fun IosContextMenu(
     backdrop: Backdrop = LocalBlurBackdrop.current,
     animationProgress: Float = 1f,
     animationVelocity: Float = 0f,
+    transformOriginProgress: Float = animationProgress,
+    menuAlpha: Float = animationProgress,
+    contentAlpha: Float = animationProgress,
+    shadowAlpha: Float = animationProgress,
     opensAbove: Boolean = false,
-    collapsedSize: IntSize = IntSize(44, 44),
     itemCount: Int = 1,
     content: @Composable ColumnScope.(LayerBackdrop) -> Unit,
 ) {
@@ -664,24 +672,24 @@ fun IosContextMenu(
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
     }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val geometryProgress = animationProgress.coerceIn(-0.04f, 1.06f)
     val progress = animationProgress.coerceIn(0f, 1f)
     val normalizedVelocity = (animationVelocity / 18f).coerceIn(-1f, 1f)
     val pulse = max(
         sin(PI.toFloat() * progress),
         abs(normalizedVelocity) * 0.65f,
     ).coerceIn(0f, 1f)
-    val collapsedWidth = with(density) { collapsedSize.width.toDp() }
-    val collapsedHeight = with(density) { collapsedSize.height.toDp() }
     val menuWidth = PopupMenuWidth
     val menuHeight = 20.dp + 44.dp * itemCount
-    val width = lerpDp(collapsedWidth, menuWidth, geometryProgress)
-    val height = lerpDp(collapsedHeight, menuHeight, geometryProgress)
     val radius = 34.dp
-    // Content follows both directions continuously. Delaying it until 34% made the rows
-    // disappear near the beginning of close while the glass shell was still visibly shrinking.
-    val contentProgress = progress
+    val transitionScale = 0.24f + 0.76f * animationProgress
+    val startOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
+    val originProgress = transformOriginProgress.coerceIn(0f, 1f)
+    val transitionOrigin = TransformOrigin(
+        pivotFractionX = startOrigin.pivotFractionX +
+            (0.5f - startOrigin.pivotFractionX) * originProgress,
+        pivotFractionY = startOrigin.pivotFractionY +
+            (0.5f - startOrigin.pivotFractionY) * originProgress,
+    )
     val childBackdrop = rememberLayerBackdrop()
     // Context menus render in a separate Popup window. Map their sampling coordinates back
     // to the source window so the menu refracts the content physically behind its position.
@@ -689,10 +697,31 @@ fun IosContextMenu(
     val isLight = !LocalGlassColors.current.isDark
     val elevatedBackground = LocalGlassColors.current.elevatedBackground
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
-        transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
+        transformOrigin = startOrigin
         applyGlassDragScale(
             pressProgress = interactiveHighlight.pressProgress,
             offset = interactiveHighlight.offset,
+        )
+        val dragScaleX = scaleX
+        val dragScaleY = scaleY
+        val dragTranslationX = translationX
+        val dragTranslationY = translationY
+        val startPivotX = startOrigin.pivotFractionX * size.width
+        val startPivotY = startOrigin.pivotFractionY * size.height
+        val transitionPivotX = transitionOrigin.pivotFractionX * size.width
+        val transitionPivotY = transitionOrigin.pivotFractionY * size.height
+
+        // Fold the nested transition and drag transforms into the layer passed to drawBackdrop.
+        // LayerBackdrop applies the inverse of this complete transform while sampling, so the
+        // page-sized source remains stationary as the visible menu grows, collapses, or deforms.
+        transformOrigin = transitionOrigin
+        scaleX = transitionScale * dragScaleX
+        scaleY = transitionScale * dragScaleY
+        translationX = transitionScale * (
+            dragTranslationX + (1f - dragScaleX) * (startPivotX - transitionPivotX)
+        )
+        translationY = transitionScale * (
+            dragTranslationY + (1f - dragScaleY) * (startPivotY - transitionPivotY)
         )
     }
     // Stable full-size host: keep overshoot margins on both the growth and anchor sides in the
@@ -707,10 +736,10 @@ fun IosContextMenu(
             // on the spring-sized menu would therefore expose that menu-sized rectangle while
             // the menu is below its resting scale.
             .blur(
-                (10.dp * (1f - progress)).coerceAtLeast(0.dp),
+                (8.dp * (1f - progress)).coerceAtLeast(0.dp),
                 BlurredEdgeTreatment.Unbounded,
             )
-            .graphicsLayer { alpha = progress }
+            .graphicsLayer { alpha = menuAlpha.coerceIn(0f, 1f) }
             .size(width = popupHostWidth, height = popupHostHeight),
     ) {
         Box(
@@ -721,54 +750,52 @@ fun IosContextMenu(
                     height = PopupMenuOvershootMarginVertical + menuHeight * PopupMenuOvershootScale,
                 ),
         ) {
-            Column(
+            Box(
                 Modifier
                     .align(if (opensAbove) Alignment.BottomEnd else Alignment.TopEnd)
-                    // Whole-menu transition: alpha 0->1 and blur->0 while growing, reversed while
-                    // shrinking. The tail reaches alpha 0 before the window is removed, so the
-                    // collapse never pops out of existence.
-                    .size(width = width, height = height)
+                    .size(width = menuWidth, height = menuHeight)
                     .navigationGlassBoxShadow(
                         shape = { RoundedRectangle(radius) },
-                        alpha = GlassBoxShadowAlpha,
+                        alpha = GlassBoxShadowAlpha * shadowAlpha.coerceIn(0f, 1f),
                         layerBlock = menuLayerBlock,
-                    )
-                    .drawBackdrop(
-                        backdrop = samplingBackdrop,
-                        exportedBackdrop = childBackdrop,
-                        shape = { RoundedRectangle(radius) },
-                        effects = {
-                            blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
-                        },
-                        highlight = {
-                            Highlight.Default.copy(alpha = progress * (0.46f + 0.18f * pulse))
-                        },
-                        shadow = {
-                            Shadow(
-                                radius = 32.dp,
-                                offset = androidx.compose.ui.unit.DpOffset(0.dp, 10.dp),
-                                color = Color.Black,
-                                alpha = 0.4f * GlassBoxShadowAlpha,
-                            )
-                        },
-                        innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.10f * progress) },
-                        layerBlock = menuLayerBlock,
-                        onDrawSurface = {
-                            drawRect(elevatedBackground.copy(alpha = 0.70f * progress))
-                        },
-                    )
-                    .then(interactiveHighlight.modifier)
-                    .then(interactiveHighlight.gestureModifier)
-                    .clip(ContinuousRoundedRectangle(radius))
-                    .padding(10.dp)
-                    .graphicsLayer {
-                        transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
-                        val contentScale = 0.92f + 0.08f * contentProgress
-                        scaleX = contentScale
-                        scaleY = contentScale
-                    },
+                    ),
             ) {
-                if (contentProgress > 0.001f) content(childBackdrop)
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .drawBackdrop(
+                            backdrop = samplingBackdrop,
+                            exportedBackdrop = childBackdrop,
+                            shape = { RoundedRectangle(radius) },
+                            effects = {
+                                blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = progress * (0.46f + 0.18f * pulse))
+                            },
+                            shadow = {
+                                Shadow(
+                                    radius = 32.dp,
+                                    offset = androidx.compose.ui.unit.DpOffset(0.dp, 10.dp),
+                                    color = Color.Black,
+                                    alpha = 0.4f * GlassBoxShadowAlpha *
+                                        shadowAlpha.coerceIn(0f, 1f),
+                                )
+                            },
+                            innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.10f * progress) },
+                            layerBlock = menuLayerBlock,
+                            onDrawSurface = {
+                                drawRect(elevatedBackground.copy(alpha = 0.70f * progress))
+                            },
+                        )
+                        .then(interactiveHighlight.modifier)
+                        .then(interactiveHighlight.gestureModifier)
+                        .clip(ContinuousRoundedRectangle(radius))
+                        .padding(10.dp)
+                        .graphicsLayer { alpha = contentAlpha.coerceIn(0f, 1f) },
+                ) {
+                    content(childBackdrop)
+                }
             }
         }
     }
@@ -798,27 +825,108 @@ fun IosPopupMenu(
     var popupAlive by remember { mutableStateOf(expanded) }
     var opensAbove by remember { mutableStateOf(false) }
     val progress = remember { Animatable(if (expanded) 1f else 0f) }
+    val transformOriginProgress = remember { Animatable(if (expanded) 1f else 0f) }
+    val menuAlpha = remember { Animatable(if (expanded) 1f else 0f) }
+    val shadowAlpha = remember { Animatable(if (expanded) 1f else 0f) }
+    var contentAlpha by remember { mutableFloatStateOf(if (expanded) 1f else 0f) }
+
+    LaunchedEffect(Unit) {
+        var previousFraction = progress.value
+        snapshotFlow { progress.value }
+            .collect { currentFraction ->
+                val isEntering = currentFraction >= previousFraction
+                previousFraction = currentFraction
+                contentAlpha = if (isEntering) {
+                    0.2f + 0.8f * currentFraction
+                } else if (currentFraction > 0.5f) {
+                    1f
+                } else {
+                    currentFraction * 2f
+                }
+            }
+    }
+
+    LaunchedEffect(Unit) {
+        var previousFraction = progress.value
+        var shadowVisible = progress.value >= 0.78f
+        var animationJob: Job? = null
+        snapshotFlow { progress.value }
+            .collect { currentFraction ->
+                val isEntering = currentFraction >= previousFraction
+                previousFraction = currentFraction
+                val newVisible = if (isEntering) {
+                    currentFraction >= 0.78f
+                } else {
+                    currentFraction >= 0.99f
+                }
+                if (newVisible != shadowVisible) {
+                    shadowVisible = newVisible
+                    animationJob?.cancel()
+                    animationJob = launch {
+                        if (newVisible) {
+                            shadowAlpha.animateTo(1f, tween(200))
+                        } else if (shadowAlpha.value >= 1f) {
+                            shadowAlpha.animateTo(0f, tween(50))
+                        } else {
+                            shadowAlpha.snapTo(0f)
+                        }
+                    }
+                }
+            }
+    }
 
     LaunchedEffect(expanded) {
         if (expanded) {
             popupAlive = true
-            progress.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.72f,
-                    stiffness = 260f,
-                    visibilityThreshold = 0.001f,
-                ),
-            )
+            coroutineScope {
+                launch {
+                    progress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = 0.78f,
+                            stiffness = 240f,
+                            visibilityThreshold = 0.0001f,
+                        ),
+                    )
+                }
+                launch {
+                    transformOriginProgress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = 0.78f,
+                            stiffness = 500f,
+                            visibilityThreshold = 0.0001f,
+                        ),
+                    )
+                }
+                launch { menuAlpha.animateTo(1f, tween(120)) }
+            }
         } else {
-            progress.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(
-                    dampingRatio = 0.74f,
-                    stiffness = 280f,
-                    visibilityThreshold = 0.001f,
-                ),
-            )
+            coroutineScope {
+                launch {
+                    progress.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = 0.78f,
+                            stiffness = 400f,
+                            visibilityThreshold = 0.0001f,
+                        ),
+                    )
+                }
+                launch {
+                    transformOriginProgress.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(
+                            durationMillis = 450,
+                            easing = CubicBezierEasing(0f, 0f, 0f, 1f),
+                        ),
+                    )
+                }
+                launch { menuAlpha.animateTo(0f, tween(400)) }
+            }
+            progress.snapTo(0f)
+            transformOriginProgress.snapTo(0f)
+            menuAlpha.snapTo(0f)
             popupAlive = false
         }
     }
@@ -826,7 +934,13 @@ fun IosPopupMenu(
     Box(modifier.onSizeChanged { anchorSize = it }) {
         Box(
             Modifier
-                .graphicsLayer { alpha = if (expanded && !keepAnchorVisible) 0f else 1f },
+                .graphicsLayer {
+                    alpha = if (keepAnchorVisible) {
+                        1f
+                    } else {
+                        1f - menuAlpha.value.coerceIn(0f, 1f)
+                    }
+                },
         ) {
             anchor { onExpandedChange(!expanded) }
         }
@@ -885,8 +999,11 @@ fun IosPopupMenu(
                             backdrop = backdrop,
                             animationProgress = progress.value,
                             animationVelocity = progress.velocity,
+                            transformOriginProgress = transformOriginProgress.value,
+                            menuAlpha = menuAlpha.value,
+                            contentAlpha = contentAlpha,
+                            shadowAlpha = shadowAlpha.value,
                             opensAbove = opensAbove,
-                            collapsedSize = anchorSize,
                             itemCount = itemCount,
                         ) { childBackdrop ->
                             content(childBackdrop) { onExpandedChange(false) }
@@ -915,7 +1032,6 @@ fun <T> IosPopupButton(
         itemCount = items.size,
         modifier = modifier,
         backdrop = backdrop,
-        keepAnchorVisible = true,
         anchor = { openMenu ->
             Row(
                 Modifier
