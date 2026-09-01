@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +61,7 @@ fun LibraryScreen(
 
     // State
     var showPhotoPicker by remember { mutableStateOf(false) }
-    var selectedPage by remember { mutableStateOf(LibraryPage.Songs) }
+    var selectedPage by rememberSaveable { mutableStateOf(LibraryPage.Songs) }
     var subPlaylistCount by remember { mutableIntStateOf(0) }
 
     val likedPlaylistId = (networkPlaylists as? Resource.Success)?.data?.playlist?.firstOrNull()?.id

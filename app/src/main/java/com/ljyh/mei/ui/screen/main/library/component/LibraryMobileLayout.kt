@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -246,8 +247,10 @@ fun LibraryMobileLayout(
     LaunchedEffect(selectedPage) {
         if (selectedPage != LibraryPage.Downloads) selectedDownloadTaskId = null
     }
-    var searchQuery by remember { mutableStateOf(TextFieldValue()) }
-    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue())
+    }
+    var searchActive by rememberSaveable { mutableStateOf(false) }
     val query = searchQuery.text.trim()
     val isSearching = query.isNotEmpty()
     val visibleLikedSongs = remember(likedSongs, query) {
