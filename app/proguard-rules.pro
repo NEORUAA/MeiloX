@@ -90,6 +90,12 @@
 -keep class com.google.gson.stream.** { *; }
 -dontwarn com.google.gson.**
 
+# Playback snapshots are restored through Gson reflection. Keep the model fields and
+# their generic signatures so R8 cannot erase List element types in release builds.
+-keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
+-keep class com.ljyh.mei.playback.PlaybackItemSnapshot { *; }
+-keep class com.ljyh.mei.playback.PlaybackArtistSnapshot { *; }
+
 -keepclasseswithmembernames class * {
     native <methods>;
 }

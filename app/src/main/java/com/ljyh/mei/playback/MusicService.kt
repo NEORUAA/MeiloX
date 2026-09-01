@@ -82,6 +82,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -424,8 +425,10 @@ class MusicService : MediaLibraryService(),
             queueTitle = queueTitle,
             isFmMode = queueManager.isFmMode,
         )
-        runCatching { playbackPersistence.save(snapshot) }
-            .onFailure { Timber.tag("MusicService").w(it, "Unable to save playback snapshot") }
+        withContext(NonCancellable) {
+            runCatching { playbackPersistence.save(snapshot) }
+                .onFailure { Timber.tag("MusicService").w(it, "Unable to save playback snapshot") }
+        }
     }
 
     private fun persistPlaybackSnapshotBlocking() {
