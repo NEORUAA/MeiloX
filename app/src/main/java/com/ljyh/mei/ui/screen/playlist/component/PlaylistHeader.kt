@@ -16,13 +16,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
@@ -167,7 +170,14 @@ private fun PlaylistCover(
             .fillMaxWidth(0.68f)
             .widthIn(max = 300.dp)
             .aspectRatio(1f)
-            .shadow(18.dp, shape)
+            .dropShadow(
+                shape = shape,
+                shadow = Shadow(
+                    radius = 18.dp,
+                    color = Color.Black.copy(alpha = 0.16f),
+                    offset = DpOffset.Zero,
+                ),
+            )
             .clip(shape),
     ) {
         when (style) {
