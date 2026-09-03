@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -48,7 +49,7 @@ import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -408,86 +409,125 @@ fun GlassSurface(
         GlassEmphasis.Regular -> colors.container
         GlassEmphasis.Prominent -> colors.prominentContainer
     }
-    val dragScaleLayerBlock: GraphicsLayerScope.() -> Unit = {
-        applyGlassDragScale(
-            pressProgress = interactiveHighlight.pressProgress,
-            offset = interactiveHighlight.offset,
-        )
+    val pressProgressState = remember(interactiveHighlight) {
+        derivedStateOf { interactiveHighlight.pressProgress }
+    }
+    val shapeProvider = remember(shape) { { shape } }
+    val dragScaleLayerBlock: GraphicsLayerScope.() -> Unit = remember(interactiveHighlight) {
+        {
+            applyGlassDragScale(
+                pressProgress = interactiveHighlight.pressProgress,
+                offset = interactiveHighlight.offset,
+            )
+        }
     }
     // Some controls (notably sheet headers) need the navigation tint/highlight and the shared
     // drag physics without replaying or refracting the content behind them. Keep an empty
-    // canvas backdrop for that mode so the button remains a glass surface without lens/blur
+    // backdrop for that mode so the button remains a glass surface without lens/blur
     // sampling of the player window.
-    val surfaceBackdrop = if (sampleBackdrop) backdrop else rememberCanvasBackdrop {}
-    val surfaceModifier = if (style == GlassSurfaceStyle.Navigation) {
-        modifier.navigationGlassBackground(
-            backdrop = surfaceBackdrop,
-            shape = { shape },
-            containerColor = navigationSurfaceColor ?: surfaceColor,
-            containerAlphaMultiplier = navigationSurfaceAlphaMultiplier,
-            pressProgress = interactiveHighlight.pressProgress,
-            sampleBackdrop = sampleBackdrop,
-            layerBlock = dragScaleLayerBlock,
-        )
+    val surfaceBackdrop = if (sampleBackdrop) backdrop else emptyBackdrop()
+    val glassModifier = if (style == GlassSurfaceStyle.Navigation) {
+        val containerColor = navigationSurfaceColor ?: surfaceColor
+        remember(
+            surfaceBackdrop,
+            shapeProvider,
+            containerColor,
+            navigationSurfaceAlphaMultiplier,
+            pressProgressState,
+            sampleBackdrop,
+            dragScaleLayerBlock,
+        ) {
+            Modifier.navigationGlassBackground(
+                backdrop = surfaceBackdrop,
+                shape = shapeProvider,
+                containerColor = containerColor,
+                containerAlphaMultiplier = navigationSurfaceAlphaMultiplier,
+                pressProgressState = pressProgressState,
+                sampleBackdrop = sampleBackdrop,
+                layerBlock = dragScaleLayerBlock,
+            )
+        }
     } else {
-        modifier.drawBackdrop(
-            backdrop = surfaceBackdrop,
-            shape = { shape },
-            effects = {
-                if (sampleBackdrop) {
-                    val progress = interactiveHighlight.pressProgress
-                    vibrancy()
-                    blur(2.dp.toPx())
-                    lens(
-                        refractionHeight = refractionHeight.toPx(),
-                        refractionAmount = refractionAmount.toPx(),
-                        depthEffect = progress > 0.01f,
-                        chromaticAberration = true,
+        remember(
+            surfaceBackdrop,
+            shapeProvider,
+            refractionHeight,
+            refractionAmount,
+            isLight,
+            brightness,
+            opticalHighlightBoost,
+            enabled,
+            exportedBackdrop,
+            emphasis,
+            colors.prominentContainer,
+            surfaceColor,
+            sampleBackdrop,
+            dragScaleLayerBlock,
+        ) {
+            Modifier.drawBackdrop(
+                backdrop = surfaceBackdrop,
+                shape = shapeProvider,
+                effects = {
+                    if (sampleBackdrop) {
+                        val progress = interactiveHighlight.pressProgress
+                        vibrancy()
+                        blur(2.dp.toPx())
+                        lens(
+                            refractionHeight = refractionHeight.toPx(),
+                            refractionAmount = refractionAmount.toPx(),
+                            depthEffect = progress > 0.01f,
+                            chromaticAberration = true,
+                        )
+                    }
+                },
+                highlight = {
+                    Highlight.Default.copy(
+                        alpha = ((if (isLight) 0.48f else 0.32f) + brightness * 0.18f +
+                            opticalHighlightBoost + 0.30f * interactiveHighlight.pressProgress)
+                            .coerceAtMost(1f),
                     )
-                }
-            },
-            highlight = {
-                Highlight.Default.copy(
-                    alpha = ((if (isLight) 0.48f else 0.32f) + brightness * 0.18f +
-                        opticalHighlightBoost + 0.30f * interactiveHighlight.pressProgress)
-                        .coerceAtMost(1f),
-                )
-            },
-            shadow = {
-                Shadow(
-                    radius = 24.dp,
-                    color = Color.Black.copy(alpha = 0.1f),
-                    alpha = (0.08f + 0.22f * interactiveHighlight.pressProgress) *
-                        if (enabled) 1f else 0.35f,
-                )
-            },
-            innerShadow = {
-                InnerShadow(
-                    radius = 4.dp + 8.dp * interactiveHighlight.pressProgress,
-                    color = Color.Black.copy(alpha = 0.15f),
-                    alpha = 0.1f + 0.3f * interactiveHighlight.pressProgress,
-                )
-            },
-            layerBlock = dragScaleLayerBlock,
-            exportedBackdrop = exportedBackdrop,
-            onDrawSurface = {
-                drawRect(
-                    Color.White.copy(
-                        alpha = (if (isLight) 0.16f else 0.06f) + brightness * 0.18f,
-                    ),
-                    blendMode = BlendMode.Screen,
-                )
-                if (emphasis == GlassEmphasis.Prominent) {
+                },
+                shadow = {
+                    Shadow(
+                        radius = 24.dp,
+                        color = Color.Black.copy(alpha = 0.1f),
+                        alpha = (0.08f + 0.22f * interactiveHighlight.pressProgress) *
+                            if (enabled) 1f else 0.35f,
+                    )
+                },
+                innerShadow = {
+                    InnerShadow(
+                        radius = 4.dp + 8.dp * interactiveHighlight.pressProgress,
+                        color = Color.Black.copy(alpha = 0.15f),
+                        alpha = 0.1f + 0.3f * interactiveHighlight.pressProgress,
+                    )
+                },
+                layerBlock = dragScaleLayerBlock,
+                exportedBackdrop = exportedBackdrop,
+                onDrawSurface = {
                     drawRect(
-                        colors.prominentContainer.copy(alpha = 1f),
-                        alpha = 0.22f,
-                        blendMode = BlendMode.Hue,
+                        Color.White.copy(
+                            alpha = (if (isLight) 0.16f else 0.06f) + brightness * 0.18f,
+                        ),
+                        blendMode = BlendMode.Screen,
                     )
-                }
-                drawRect(surfaceColor.copy(alpha = surfaceColor.alpha * if (enabled) 1f else 0.8f))
-            },
-        )
+                    if (emphasis == GlassEmphasis.Prominent) {
+                        drawRect(
+                            colors.prominentContainer.copy(alpha = 1f),
+                            alpha = 0.22f,
+                            blendMode = BlendMode.Hue,
+                        )
+                    }
+                    drawRect(
+                        surfaceColor.copy(
+                            alpha = surfaceColor.alpha * if (enabled) 1f else 0.8f,
+                        ),
+                    )
+                },
+            )
+        }
     }
+    val surfaceModifier = modifier.then(glassModifier)
 
     Box(
         modifier = surfaceModifier

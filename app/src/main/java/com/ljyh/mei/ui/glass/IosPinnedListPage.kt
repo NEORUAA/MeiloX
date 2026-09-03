@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
@@ -50,19 +49,10 @@ import com.kyant.backdrop.isRuntimeShaderSupported
 import com.ljyh.mei.R
 
 private val HorizontalProgressiveBlurShader = progressiveBlurPassShader(isVertical = false)
-private val VerticalProgressiveBlurShader = progressiveBlurPassShader(isVertical = true)
-
-private const val TopBarTintShader = """
-uniform shader content;
-uniform float2 size;
-layout(color) uniform half4 tint;
-uniform float tintIntensity;
-
-half4 main(float2 coord) {
-    float mask = smoothstep(size.y, size.y * 0.42, coord.y);
-    return mix(content.eval(coord), tint, tintIntensity * mask);
-}
-"""
+private val VerticalProgressiveBlurShader = progressiveBlurPassShader(
+    isVertical = true,
+    appliesTint = true,
+)
 
 /**
  * AndroidX progressive blur uses two separable Gaussian passes and evaluates the blur radius at
@@ -70,7 +60,10 @@ half4 main(float2 coord) {
  *
  * Source: https://android.googlesource.com/platform/frameworks/support/+/7e1430f6c57df22b6ceeaa66ff4e18b53a67edd9
  */
-private fun progressiveBlurPassShader(isVertical: Boolean): String {
+private fun progressiveBlurPassShader(
+    isVertical: Boolean,
+    appliesTint: Boolean = false,
+): String {
     val pairedOffset =
         if (isVertical) "vec2(0.0, i + weightH / weight)"
         else "vec2(i + weightH / weight, 0.0)"
@@ -81,6 +74,23 @@ private fun progressiveBlurPassShader(isVertical: Boolean): String {
         } else {
             "return step(bounds.x, sampleCoord.x) * (1.0 - step(bounds.z, sampleCoord.x));"
         }
+    val tintUniforms = if (appliesTint) {
+        """
+        layout(color) uniform half4 tint;
+        uniform float tintIntensity;
+        """.trimIndent()
+    } else {
+        ""
+    }
+    val output = if (appliesTint) {
+        """
+            half4 blurred = half4(blur(coord, blurRadius * intensity));
+            float tintMask = smoothstep(crop.w, crop.w * 0.42, coord.y);
+            return mix(blurred, tint, tintIntensity * tintMask);
+        """.trimIndent()
+    } else {
+        "return half4(blur(coord, blurRadius * intensity));"
+    }
 
     return """
         uniform shader content;
@@ -91,11 +101,8 @@ private fun progressiveBlurPassShader(isVertical: Boolean): String {
         uniform float endIntensity;
         uniform float2 startPoint;
         uniform float2 endPoint;
+        $tintUniforms
         const float maxRadius = 150.0;
-
-        float gaussian(float x, float sigma) {
-            return exp(-(x * x) / (2.0 * sigma * sigma));
-        }
 
         float inBoundsOnMovedAxis(vec2 sampleCoord, float4 bounds) {
             $boundsCheck
@@ -108,12 +115,20 @@ private fun progressiveBlurPassShader(isVertical: Boolean): String {
             float sigma = max(radius / 2.0, 1.0);
             float weightSum = 1.0;
             vec4 result = content.eval(coord);
+            float inverseSigmaSquared = 1.0 / (sigma * sigma);
+            float weightRatio = exp(-0.5 * inverseSigmaSquared);
+            float weightRatioStep = exp(-inverseSigmaSquared);
+            float currentWeight = 1.0;
 
             for (float i = 1.0; i < maxRadius; i += 2.0) {
                 if (i >= r) { break; }
 
-                float weightL = gaussian(i, sigma);
-                float weightH = gaussian(i + 1.0, sigma);
+                currentWeight *= weightRatio;
+                weightRatio *= weightRatioStep;
+                float weightL = currentWeight;
+                currentWeight *= weightRatio;
+                weightRatio *= weightRatioStep;
+                float weightH = currentWeight;
                 float weight = weightL + weightH;
                 vec2 offset = $pairedOffset;
 
@@ -133,7 +148,7 @@ private fun progressiveBlurPassShader(isVertical: Boolean): String {
             }
 
             float oddMask = mod(r, 2.0) * (1.0 - step(maxRadius, r));
-            float oddWeight = gaussian(r, sigma) * oddMask;
+            float oddWeight = currentWeight * weightRatio * oddMask;
             vec2 tailOffset = $oddOffset;
 
             vec2 oddCoord1 = coord - tailOffset;
@@ -158,12 +173,16 @@ private fun progressiveBlurPassShader(isVertical: Boolean): String {
             float2 ba = endPoint - startPoint;
             float fraction = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0001), 0.0, 1.0);
             float intensity = mix(startIntensity, endIntensity, fraction);
-            return half4(blur(coord, blurRadius * intensity));
+            $output
         }
     """.trimIndent()
 }
 
-private fun BackdropEffectScope.topBarProgressiveBlur(maxRadius: Float) {
+private fun BackdropEffectScope.topBarProgressiveBlur(
+    maxRadius: Float,
+    tint: Color,
+    tintIntensity: Float,
+) {
     if (maxRadius <= 0f) return
     if (!isRuntimeShaderSupported()) {
         blur(maxRadius)
@@ -173,7 +192,7 @@ private fun BackdropEffectScope.topBarProgressiveBlur(maxRadius: Float) {
     val resolvedRadius = maxRadius.coerceAtMost(150f)
     val gradientStartY = size.height * 0.42f
 
-    fun applyPass(key: String, shader: String) {
+    fun applyPass(key: String, shader: String, appliesTint: Boolean = false) {
         runtimeShaderEffect(key, shader, "content") {
             setFloatUniform("blurRadius", resolvedRadius)
             setFloatUniform("crop", 0f, 0f, size.width, size.height)
@@ -182,11 +201,19 @@ private fun BackdropEffectScope.topBarProgressiveBlur(maxRadius: Float) {
             setFloatUniform("endIntensity", 0f)
             setFloatUniform("startPoint", 0f, gradientStartY)
             setFloatUniform("endPoint", 0f, size.height)
+            if (appliesTint) {
+                setColorUniform("tint", tint)
+                setFloatUniform("tintIntensity", tintIntensity)
+            }
         }
     }
 
     applyPass("IosTopBarProgressiveBlurHorizontal", HorizontalProgressiveBlurShader)
-    applyPass("IosTopBarProgressiveBlurVertical", VerticalProgressiveBlurShader)
+    applyPass(
+        key = "IosTopBarProgressiveBlurVerticalTint",
+        shader = VerticalProgressiveBlurShader,
+        appliesTint = true,
+    )
 }
 
 @Composable
@@ -319,8 +346,6 @@ fun IosPinnedPage(
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val pageBackdrop = rememberLayerBackdrop()
-    val parentBackdrop = LocalGlassBackdrop.current
-    val topBarBackdrop = rememberCombinedBackdrop(parentBackdrop, pageBackdrop)
     val colors = LocalGlassColors.current
     val pageBackground = backgroundColor ?: colors.groupedBackground
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -356,16 +381,15 @@ fun IosPinnedPage(
                         backdrop = pageBackdrop,
                         shape = { RectangleShape },
                         effects = {
-                            topBarProgressiveBlur(10.dp.toPx())
-                            runtimeShaderEffect("IosTopBarTint", TopBarTintShader, "content") {
-                                setFloatUniform("size", size.width, size.height)
-                                setColorUniform("tint", pageBackground)
-                                setFloatUniform("tintIntensity", 0.78f)
-                            }
+                            topBarProgressiveBlur(
+                                maxRadius = 10.dp.toPx(),
+                                tint = pageBackground,
+                                tintIntensity = 0.78f,
+                            )
                         },
                     ),
             )
-            CompositionLocalProvider(LocalGlassBackdrop provides topBarBackdrop) {
+            CompositionLocalProvider(LocalGlassBackdrop provides pageBackdrop) {
                 IosTopToolbar(
                     title = title,
                     subtitle = subtitle,

@@ -33,6 +33,7 @@ import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -55,7 +56,12 @@ fun FluidBackground(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val bass by audioVisualizerManager.bassValue.collectAsState()
+    val samplingActive = alpha > 0.01f
+    val bass by produceState(0f, audioVisualizerManager, samplingActive) {
+        if (samplingActive) {
+            audioVisualizerManager.bassValue.collect { value = it }
+        }
+    }
 
     val (flowSpeed) = rememberPreference(MeshFlowSpeedKey, defaultValue = 0.25f)
     val (renderScale) = rememberPreference(MeshRenderScaleKey, defaultValue = 0.75f)
@@ -113,31 +119,31 @@ fun FluidBackground(
 
     // 2. 组装当前需要传递给 View 的所有状态
     val shouldAnimate = !meshPlaying || isPlaying
+    val shouldRender = samplingActive && shouldAnimate
     val pixelCopyHandler = remember { Handler(Looper.getMainLooper()) }
+    val captureBuffers = remember { arrayOfNulls<Bitmap>(3) }
+    val captureState = remember { IntArray(3) }
 
     // Configuration changes are infrequent compared with sheet/bass recompositions. Apply
     // renderer settings from their state boundary instead of queueing GL work from every
     // AndroidView update pass.
-    LaunchedEffect(meshView, flowSpeed, renderScale, subdivision, staticMode, shouldAnimate) {
+    LaunchedEffect(meshView, flowSpeed, renderScale, subdivision, staticMode, shouldRender) {
         val view = meshView ?: return@LaunchedEffect
         view.setFlowSpeed(flowSpeed)
         view.setRenderScale(renderScale)
         view.setSubdivision(subdivision)
         view.setStaticMode(staticMode)
-        view.setPlaying(shouldAnimate)
+        view.setPlaying(shouldRender)
     }
 
     // SurfaceView is not part of Compose's graphics-layer recording. Copy a small live frame
     // instead; glass blurs it heavily, so this resolution preserves the visual result without
     // reading a full-screen buffer every frame. Static mode captures through the mesh fade-in
     // and then stops, while animated mode keeps the sample moving at roughly 15 fps.
-    LaunchedEffect(meshView, backdropFrame, albumBitmap, staticMode, shouldAnimate) {
+    LaunchedEffect(meshView, backdropFrame, albumBitmap, staticMode, shouldAnimate, samplingActive) {
+        if (!samplingActive) return@LaunchedEffect
         val view = meshView ?: return@LaunchedEffect
         val target = backdropFrame ?: return@LaunchedEffect
-        var buffers = emptyArray<Bitmap>()
-        var bufferWidth = 0
-        var bufferHeight = 0
-        var bufferIndex = 0
         var attempts = 0
         val continuous = !staticMode && shouldAnimate
 
@@ -155,17 +161,21 @@ fun FluidBackground(
                 )
                 val width = (sourceWidth * scale).roundToInt().coerceAtLeast(1)
                 val height = (sourceHeight * scale).roundToInt().coerceAtLeast(1)
-                if (buffers.isEmpty() || width != bufferWidth || height != bufferHeight) {
-                    bufferWidth = width
-                    bufferHeight = height
-                    buffers = Array(3) {
-                        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                if (captureBuffers[0] == null ||
+                    width != captureState[0] ||
+                    height != captureState[1]
+                ) {
+                    captureState[0] = width
+                    captureState[1] = height
+                    captureBuffers.indices.forEach { index ->
+                        captureBuffers[index] =
+                            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     }
-                    bufferIndex = 0
+                    captureState[2] = 0
                 }
 
-                val bitmap = buffers[bufferIndex]
-                bufferIndex = (bufferIndex + 1) % buffers.size
+                val bitmap = captureBuffers[captureState[2]] ?: return@LaunchedEffect
+                captureState[2] = (captureState[2] + 1) % captureBuffers.size
                 if (copySurfaceFrame(view, bitmap, pixelCopyHandler)) {
                     target.value = bitmap.asImageBitmap()
                 }
@@ -196,7 +206,7 @@ fun FluidBackground(
                     setRenderScale(renderScale)
                     setSubdivision(subdivision)
                     setStaticMode(staticMode)
-                    setPlaying(shouldAnimate)
+                    setPlaying(shouldRender)
                     setPreserveEGLContextOnPause(true)
                 }
             },
