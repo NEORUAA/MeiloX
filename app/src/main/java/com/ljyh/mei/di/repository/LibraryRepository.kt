@@ -100,13 +100,13 @@ class HistoryRepository @Inject constructor(
     private val historyDao: HistoryDao,
     private val songDao: SongDao
 ) {
-    suspend fun addToHistory(song: Song) {
+    suspend fun addToHistory(song: Song, playedAt: Long = System.currentTimeMillis()) {
         try {
-            historyDao.addSongToHistory(song)
+            historyDao.addSongToHistory(song, playedAt)
         } catch (e: Exception) {
             if (e is SQLiteConstraintException) {
                 songDao.insertSongs(listOf(song))
-                historyDao.insertHistory(PlaybackHistory(songId = song.id, playedAt = System.currentTimeMillis()))
+                historyDao.insertHistory(PlaybackHistory(songId = song.id, playedAt = playedAt))
             } else throw e
         }
     }

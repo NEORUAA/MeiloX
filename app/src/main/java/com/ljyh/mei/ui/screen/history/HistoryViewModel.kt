@@ -45,7 +45,6 @@ class HistoryViewModel @Inject constructor(
 
     private var localEntries: List<ListeningHistoryEntry> = emptyList()
     private var remoteEntries: List<ListeningHistoryEntry>? = null
-    private var remoteRequestStartedAt: Long? = null
     private var loadedCookie: String? = null
     private var refreshJob: Job? = null
 
@@ -66,22 +65,18 @@ class HistoryViewModel @Inject constructor(
             if (cookie.isEmpty()) {
                 loadedCookie = null
                 remoteEntries = null
-                remoteRequestStartedAt = null
                 _state.value = _state.value.copy(isRefreshing = false, error = null)
                 publish()
                 return@launch
             }
             if (loadedCookie != null && loadedCookie != cookie) {
                 remoteEntries = null
-                remoteRequestStartedAt = null
             }
             _state.value = _state.value.copy(isRefreshing = true, error = null)
-            val requestStartedAt = System.currentTimeMillis()
             try {
                 val songs = remoteRepository.recentSongs()
                 loadedCookie = cookie
                 remoteEntries = songs.map(AccountSong::toListeningHistoryEntry)
-                remoteRequestStartedAt = remoteRequestStartedAt ?: requestStartedAt
                 _state.value = _state.value.copy(isRefreshing = false, error = null)
                 publish()
             } catch (error: CancellationException) {
@@ -102,7 +97,7 @@ class HistoryViewModel @Inject constructor(
 
     private fun publish() {
         _state.value = _state.value.copy(
-            items = mergeHistoryEntries(remoteEntries, localEntries, remoteRequestStartedAt),
+            items = mergeHistoryEntries(remoteEntries, localEntries),
             canClearLocalHistory = remoteEntries == null && localEntries.isNotEmpty(),
         )
     }
@@ -111,22 +106,45 @@ class HistoryViewModel @Inject constructor(
 internal fun mergeHistoryEntries(
     remote: List<ListeningHistoryEntry>?,
     local: List<ListeningHistoryEntry>,
-    remoteRequestStartedAt: Long?,
 ): List<ListeningHistoryEntry> {
-    val deduplicatedLocal = local.distinctBy { it.song.id }
-    if (remote == null) return deduplicatedLocal
+    data class Candidate(
+        val entry: ListeningHistoryEntry,
+        val firstIndex: Int,
+    )
 
-    val deduplicatedRemote = remote.distinctBy { it.song.id }
-    val (optimistic, olderLocal) = if (remoteRequestStartedAt == null) {
-        emptyList<ListeningHistoryEntry>() to deduplicatedLocal
-    } else {
-        deduplicatedLocal.partition { (it.playedAt ?: Long.MIN_VALUE) >= remoteRequestStartedAt }
+    val candidates = buildList {
+        addAll(local)
+        remote?.let(::addAll)
     }
-    val optimisticIds = optimistic.mapTo(mutableSetOf()) { it.song.id }
-    val remainingRemote = deduplicatedRemote.filterNot { it.song.id in optimisticIds }
-    val representedIds = remainingRemote.mapTo(optimisticIds) { it.song.id }
-    val fallback = olderLocal.filterNot { it.song.id in representedIds }
-    return optimistic + remainingRemote + fallback
+    val selected = LinkedHashMap<Long, Candidate>()
+    candidates.forEachIndexed { index, entry ->
+        val existing = selected[entry.song.id]
+        if (existing == null || entry.playedAt.isNewerThan(existing.entry.playedAt)) {
+            selected[entry.song.id] = Candidate(
+                entry = entry,
+                firstIndex = existing?.firstIndex ?: index,
+            )
+        }
+    }
+    return selected.values
+        .sortedWith { left, right ->
+            when {
+                left.entry.playedAt == null && right.entry.playedAt == null ->
+                    left.firstIndex.compareTo(right.firstIndex)
+                left.entry.playedAt == null -> 1
+                right.entry.playedAt == null -> -1
+                left.entry.playedAt != right.entry.playedAt ->
+                    right.entry.playedAt.compareTo(left.entry.playedAt)
+                else -> left.firstIndex.compareTo(right.firstIndex)
+            }
+        }
+        .map(Candidate::entry)
+}
+
+private fun Long?.isNewerThan(other: Long?): Boolean = when {
+    this == null -> false
+    other == null -> true
+    else -> this > other
 }
 
 private fun List<HistoryItem>.toListeningHistoryEntries(): List<ListeningHistoryEntry> = map { item ->
@@ -155,5 +173,5 @@ private fun AccountSong.toListeningHistoryEntry(): ListeningHistoryEntry = Liste
             title = album,
         ),
     ),
-    playedAt = null,
+    playedAt = playedAt,
 )

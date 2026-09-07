@@ -320,6 +320,7 @@ data class AccountSong(
     val durationMs: Long,
     val artistIds: List<Long> = emptyList(),
     val albumId: Long = 0,
+    val playedAt: Long? = null,
 )
 
 data class UserPlayRecord(

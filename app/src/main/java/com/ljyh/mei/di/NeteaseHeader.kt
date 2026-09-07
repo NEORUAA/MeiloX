@@ -6,7 +6,7 @@ data class NeteaseHeader(
     val os: String,
     val appver: String,
     val versioncode: String,     // 关键：必须是高版本号
-    val mobilename: String,      // 关键：手机型号
+    val mobilename: String? = null, // Optional for client-specific profiles
     val buildver: String,
     val resolution: String,
     val __csrf: String = "",

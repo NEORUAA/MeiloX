@@ -4,10 +4,12 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
-import com.google.gson.JsonArray
+import android.util.Log
+import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.melox.ListenTogetherCommand
@@ -49,7 +51,15 @@ import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.DebugKey
+import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
+import com.ljyh.mei.di.NETEASE_EAPI_PROFILE_HEADER
+import com.ljyh.mei.di.PLAYBACK_HISTORY_PROFILE
+import com.ljyh.mei.di.PlaybackResponseBodyException
+import com.ljyh.mei.di.readBoundedPlaybackResponseBody
 import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.utils.log.logPlaybackHistory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,15 +69,39 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import okio.BufferedSink
 import okio.source
-import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 import dagger.hilt.android.qualifiers.ApplicationContext
+
+internal const val PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT =
+    "https://interface.music.163.com/eapi/feedback/weblog"
+
+data class PlaybackLogResponse(
+    val httpAccepted: Boolean,
+    val code: Int?,
+    val message: String?,
+    val httpStatus: Int? = null,
+    val exceptionType: String? = null,
+    val failureReason: String? = null,
+    val endpoint: String? = null,
+) {
+    val businessAccepted: Boolean
+        get() = httpAccepted && code?.let { it in 200..299 } == true
+}
+
+data class PlaybackScrobbleResult(
+    val start: PlaybackLogResponse,
+    val play: PlaybackLogResponse,
+) {
+    val accepted: Boolean
+        get() = start.businessAccepted && play.businessAccepted
+}
 
 @Singleton
 class MeloXRepository @Inject constructor(
@@ -215,45 +249,57 @@ class MeloXRepository @Inject constructor(
         return response.objectOrNull("data")
             ?.array("list")
             .orEmpty()
-            .mapNotNull { item ->
-                parseAccountSong(item.objectValue()?.objectOrNull("data"))
-            }
+            .mapNotNull(::parseRecentHistorySong)
             .filter { it.id > 0 }
-            .distinctBy(AccountSong::id)
+            .deduplicateRecentSongs()
     }
 
-    suspend fun recordRecentPlayback(songId: Long, sourceId: Long) {
-        if (!hasAuthenticatedAccount()) return
-        submitPlaybackLog(
-            action = "startplay",
-            fields = mapOf(
-                "id" to songId.toString(),
-                "type" to "song",
-                "mainsite" to "1",
-                "mainsiteWeb" to "1",
-                "content" to "id=${sourceId.coerceAtLeast(0)}",
-            ),
-        )
+    suspend fun recordPlaybackStart(
+        songId: Long,
+        sourceId: Long,
+        source: String,
+    ): PlaybackScrobbleResult? {
+        if (songId <= 0L) return null
+        val preferences = context.dataStore.data.first()
+        if (preferences[CookieKey].isNullOrBlank()) return null
+        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
+
+        return submitPlaybackHistoryStart(
+            songId = songId,
+            sourceId = sourceId,
+            source = source,
+        ) { action, fields ->
+            submitPlaybackHistoryLog(eapi, action, fields).also { response ->
+                logPlaybackHistoryDebug(action, fields, response, debugEnabled)
+            }
+        }
     }
 
-    suspend fun recordPlaybackDuration(songId: Long, sourceId: Long, timeSeconds: Int) {
-        if (!hasAuthenticatedAccount()) return
-        submitPlaybackLog(
-            action = "play",
-            fields = mapOf(
-                "download" to 0,
-                "end" to "playend",
-                "id" to songId.toString(),
-                "sourceId" to sourceId.coerceAtLeast(0).toString(),
-                "time" to timeSeconds.coerceAtLeast(0).toString(),
-                "type" to "song",
-                "wifi" to 0,
-                "source" to "list",
-                "mainsite" to "1",
-                "mainsiteWeb" to "1",
-                "content" to "id=${sourceId.coerceAtLeast(0)}",
-            ),
-        )
+    private fun logPlaybackHistoryDebug(
+        action: String,
+        fields: Map<String, Any>,
+        response: PlaybackLogResponse,
+        debugEnabled: Boolean,
+    ) {
+        if (!debugEnabled) return
+        try {
+            logPlaybackHistory(
+                Log.DEBUG,
+                "PlaybackHistory action=%s params=id:%s sourceId:%s source:%s " +
+                    "sourcetype:%s time:%s result=%s",
+                action,
+                fields["id"],
+                fields["sourceId"],
+                fields["source"],
+                fields["sourcetype"],
+                fields["time"],
+                response.diagnosticSummary(),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Diagnostics must not change the playback-history result.
+        }
     }
 
     suspend fun setPodcastSubscribed(id: Long, subscribed: Boolean) {
@@ -796,27 +842,6 @@ class MeloXRepository @Inject constructor(
     private suspend fun requestEapi(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
         validate(eapi.post(path.replaceFirst("/api/", "/eapi/"), body))
 
-    private suspend fun submitPlaybackLog(action: String, fields: Map<String, Any>) {
-        val logs = JSONArray().put(
-            JSONObject()
-                .put("action", action)
-                .put("json", JSONObject(fields)),
-        ).toString()
-        val response = eapi.post(
-            path = "https://clientlog.music.163.com/api/feedback/weblog",
-            body = mapOf("logs" to logs),
-            headers = mapOf(
-                "X-Netease-Crypto" to "eapi",
-                "X-Netease-Cookie-OS" to "osx",
-                "X-Netease-User-Agent" to "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)",
-            ),
-        )
-        validate(response)
-    }
-
-    private suspend fun hasAuthenticatedAccount(): Boolean =
-        !context.dataStore.data.first()[CookieKey].isNullOrBlank()
-
     private fun validate(response: JsonObject): JsonObject {
         val code = response.int("code") ?: 200
         check(code in 200..299) {
@@ -824,7 +849,298 @@ class MeloXRepository @Inject constructor(
         }
         return response
     }
+
 }
+
+internal data class PlaybackBodyParseResult(
+    val code: Int?,
+    val message: String?,
+    val exceptionType: String? = null,
+    val failureReason: String? = null,
+)
+
+internal suspend fun submitPlaybackHistoryLog(
+    service: MeloXDirectService,
+    action: String,
+    fields: Map<String, Any>,
+): PlaybackLogResponse {
+    val endpoint = PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+    val response = try {
+        val logs = Gson().toJson(
+            listOf(
+                mapOf(
+                    "action" to action,
+                    "json" to fields,
+                ),
+            ),
+        )
+        service.postPlaybackRaw(
+            path = PLAYBACK_HISTORY_PATH,
+            body = mapOf("logs" to logs),
+            headers = mapOf(
+                "X-Netease-Crypto" to "eapi",
+                NETEASE_EAPI_PROFILE_HEADER to PLAYBACK_HISTORY_PROFILE,
+            ),
+        )
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        return playbackTransportFailure(endpoint, error)
+    }
+
+    val parsed = readPlaybackHistoryBody(
+        body = response.body() ?: response.errorBody(),
+        httpStatus = response.code(),
+    )
+    val statusReason = "HTTP status ${response.code()}"
+    val failureReason = when {
+        parsed.failureReason != null && !response.isSuccessful ->
+            "$statusReason; ${parsed.failureReason}"
+        parsed.failureReason != null -> parsed.failureReason
+        !response.isSuccessful -> statusReason
+        else -> null
+    }
+    return PlaybackLogResponse(
+        httpAccepted = response.isSuccessful,
+        httpStatus = response.code(),
+        code = parsed.code,
+        message = parsed.message,
+        exceptionType = parsed.exceptionType
+            ?: response.takeUnless { it.isSuccessful }?.let { "HttpStatus" },
+        failureReason = failureReason,
+        endpoint = endpoint,
+    )
+}
+
+internal suspend fun submitPlaybackHistoryStart(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+    submit: suspend (String, Map<String, Any>) -> PlaybackLogResponse,
+): PlaybackScrobbleResult {
+    require(songId > 0L) { "songId must be positive" }
+    val knownSource = source.takeIf { it in PLAYBACK_SOURCES }
+    val hasReliableSource = sourceId > 0L && knownSource != null
+    val safeSourceId = if (hasReliableSource) sourceId else songId
+    val safeSource = knownSource.takeIf { hasReliableSource } ?: "track"
+    val startResponse = submit(
+        "startplay",
+        mapOf(
+            "id" to songId.toString(),
+            "type" to "song",
+            "sourceId" to safeSourceId.toString(),
+            "source" to safeSource,
+            "sourcetype" to safeSource,
+            "mainsite" to "1",
+            "mainsiteWeb" to "1",
+            "content" to "id=$safeSourceId",
+        ),
+    )
+    val playResponse = submit(
+        "play",
+        mapOf(
+            "download" to 0,
+            "end" to "playend",
+            "id" to songId.toString(),
+            "sourceId" to safeSourceId.toString(),
+            "source" to safeSource,
+            "sourcetype" to safeSource,
+            "time" to "0",
+            "type" to "song",
+            "wifi" to 0,
+            "mainsite" to "1",
+            "mainsiteWeb" to "1",
+            "content" to "id=$safeSourceId",
+        ),
+    )
+    return PlaybackScrobbleResult(startResponse, playResponse)
+}
+
+internal fun parsePlaybackHistoryBody(body: String?): PlaybackBodyParseResult {
+    if (body.isNullOrBlank()) {
+        return PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = "EmptyResponseBody",
+            failureReason = "response body is empty",
+        )
+    }
+    if (body.length > MAX_PLAYBACK_HISTORY_RESPONSE_BYTES) {
+        return playbackBodyTooLarge()
+    }
+    val response = try {
+        JsonParser.parseString(body).asJsonObject
+    } catch (error: Exception) {
+        return PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = playbackExceptionType(error),
+            failureReason = "response JSON parse failed: " +
+                (sanitizePlaybackDiagnosticText(error.message) ?: "invalid JSON"),
+        )
+    }
+    return PlaybackBodyParseResult(
+        code = response.int("code"),
+        message = sanitizePlaybackDiagnosticText(
+            response.string("message") ?: response.string("msg"),
+        ),
+    )
+}
+
+private fun readPlaybackHistoryBody(
+    body: ResponseBody?,
+    httpStatus: Int,
+): PlaybackBodyParseResult {
+    if (body == null) return parsePlaybackHistoryBody(null)
+    return try {
+        readBoundedPlaybackResponseBody(body, httpStatus)
+            .toString(Charsets.UTF_8)
+            .let(::parsePlaybackHistoryBody)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: PlaybackResponseBodyException) {
+        val causeReason = error.cause?.let(::playbackExceptionReason)
+        PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = error.cause?.let(::playbackExceptionType) ?: error.failureKind,
+            failureReason = if (causeReason != null && causeReason != "no message") {
+                "${error.failureReason}: $causeReason"
+            } else {
+                error.failureReason
+            },
+        )
+    } catch (error: Exception) {
+        PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = playbackExceptionType(error),
+            failureReason = "response body read failed: ${playbackExceptionReason(error)}",
+        )
+    }
+}
+
+private fun playbackTransportFailure(endpoint: String, error: Throwable): PlaybackLogResponse {
+    val responseBodyError = error as? PlaybackResponseBodyException
+    val root = responseBodyError?.cause?.let(::playbackRootCause)
+        ?: playbackRootCause(error)
+    val httpStatus = responseBodyError?.httpStatus
+    val causeReason = responseBodyError?.cause?.let(::playbackExceptionReason)
+    return PlaybackLogResponse(
+        httpAccepted = httpStatus?.let { it in 200..299 } == true,
+        httpStatus = httpStatus,
+        code = null,
+        message = null,
+        exceptionType = responseBodyError?.cause?.let(::playbackExceptionType)
+            ?: responseBodyError?.failureKind
+            ?: playbackExceptionType(root),
+        failureReason = if (responseBodyError != null &&
+            causeReason != null &&
+            causeReason != "no message"
+        ) {
+            "${responseBodyError.failureReason}: $causeReason"
+        } else {
+            responseBodyError?.failureReason
+                ?: sanitizePlaybackDiagnosticText(root.message)
+        },
+        endpoint = endpoint,
+    )
+}
+
+private fun playbackBodyTooLarge() = PlaybackBodyParseResult(
+    code = null,
+    message = null,
+    exceptionType = "ResponseBodyTooLarge",
+    failureReason = "response body exceeds ${MAX_PLAYBACK_HISTORY_RESPONSE_BYTES} bytes",
+)
+
+internal fun PlaybackLogResponse.diagnosticSummary(): String = buildString {
+    append("httpAccepted=").append(httpAccepted)
+    append(" httpStatus=").append(httpStatus ?: "null")
+    append(" businessCode=").append(code ?: "null")
+    append(" exceptionType=").append(exceptionType ?: "none")
+    sanitizePlaybackDiagnosticText(message)?.let { append(" businessMessage=").append(it) }
+    val reason = sanitizePlaybackDiagnosticText(failureReason)
+        ?: if (httpAccepted && !businessAccepted) "business response rejected" else "none"
+    append(" reason=").append(reason)
+    if (endpoint == PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT) {
+        append(" endpoint=").append(endpoint)
+    } else {
+        sanitizePlaybackDiagnosticText(endpoint)?.let { append(" endpoint=").append(it) }
+    }
+}
+
+internal fun PlaybackScrobbleResult.failureSummary(): String =
+    "startplay={${start.diagnosticSummary()}} play={${play.diagnosticSummary()}}"
+
+internal fun sanitizePlaybackDiagnosticText(value: String?): String? {
+    if (value.isNullOrBlank()) return null
+    var text = value.trim()
+    text = PLAYBACK_AUTHORIZATION_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_COOKIE_HEADER_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_SENSITIVE_VALUE_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_QUERY_SENSITIVE_PATTERN.replace(text) {
+        "${it.groupValues[1]}<redacted>"
+    }
+    text = PLAYBACK_URL_CREDENTIAL_PATTERN.replace(text) {
+        "${it.groupValues[1]}<redacted>@"
+    }
+    text = text.replace(Regex("[\\r\\n\\t]+"), " ").trim()
+    if (text.contains('{') || text.contains('[')) {
+        text = text.substringBefore('{').substringBefore('[').trim()
+            .let { prefix -> if (prefix.isEmpty()) "<redacted>" else "$prefix <redacted>" }
+    }
+    return text.take(MAX_PLAYBACK_DIAGNOSTIC_LENGTH).trimEnd().ifEmpty { null }
+}
+
+internal fun playbackRootCause(error: Throwable): Throwable {
+    var root = error
+    var depth = 0
+    while (depth < MAX_PLAYBACK_CAUSE_DEPTH) {
+        val cause = root.cause ?: break
+        if (cause === root) break
+        root = cause
+        depth++
+    }
+    return root
+}
+
+internal fun playbackExceptionType(error: Throwable): String =
+    playbackRootCause(error)::class.simpleName ?: "Exception"
+
+internal fun playbackExceptionReason(error: Throwable): String =
+    sanitizePlaybackDiagnosticText(playbackRootCause(error).message) ?: "no message"
+
+private const val PLAYBACK_HISTORY_PATH = "/api/feedback/weblog"
+private const val MAX_PLAYBACK_DIAGNOSTIC_LENGTH = 240
+private const val MAX_PLAYBACK_CAUSE_DEPTH = 8
+private val PLAYBACK_SOURCES = setOf("list", "album", "artist", "track")
+private val PLAYBACK_AUTHORIZATION_PATTERN = Regex(
+    "(?i)(?<![?&])([\"']?authorization[\"']?)\\s*[:=]\\s*" +
+        "(?:[A-Za-z][A-Za-z0-9_-]*\\s+)?" +
+        "(\"[^\"]*\"|'[^']*'|[^\\s,;}&\\]]+)",
+)
+private val PLAYBACK_COOKIE_HEADER_PATTERN = Regex(
+    "(?i)(?<![?&])([\"']?(?:cookie|set-cookie)[\"']?)\\s*[:=]\\s*" +
+        "(\"[^\"]*\"|'[^']*'|[^\\r\\n]+)",
+)
+private val PLAYBACK_SENSITIVE_VALUE_PATTERN = Regex(
+    "(?i)([\"']?(?:authorization|cookie|set-cookie|music[_-]?u|music[_-]?a|csrf|__csrf|" +
+        "check[_-]?token|x-anticheattoken|token|password|passwd|secret|" +
+        "logs?|payload|body|header|stack(?:trace)?)[\"']?)" +
+        "\\s*[:=]\\s*(?:bearer\\s+)?(\"[^\"]*\"|'[^']*'|[^\\s,;}&\\]]+)",
+)
+private val PLAYBACK_QUERY_SENSITIVE_PATTERN = Regex(
+    "(?i)([?&](?:cookie|music[_-]?u|music[_-]?a|authorization|csrf|__csrf|" +
+        "check[_-]?token|x-anticheattoken|token|password|passwd|secret)=)[^&\\s]+",
+)
+private val PLAYBACK_URL_CREDENTIAL_PATTERN = Regex("(?i)(https?://)[^/@\\s:]+:[^/@\\s]+@")
 
 private data class CloudUploadFile(
     val uri: Uri,
@@ -1001,6 +1317,36 @@ private fun parseAccountPlaylist(element: JsonElement?): AccountPlaylist? {
         creatorName = creator?.string("nickname"),
     )
 }
+
+internal fun parseRecentHistorySong(element: JsonElement?): AccountSong? {
+    val item = element?.objectValue() ?: return null
+    val song = parseAccountSong(item.objectOrNull("data")) ?: return null
+    return song.copy(playedAt = normalizeCloudPlayTime(item.long("playTime")))
+}
+
+internal fun normalizeCloudPlayTime(value: Long?): Long? {
+    if (value == null || value <= 0L) return null
+    return if (value < CLOUD_MILLIS_TIMESTAMP_THRESHOLD) value * 1_000L else value
+}
+
+private fun List<AccountSong>.deduplicateRecentSongs(): List<AccountSong> {
+    val unique = LinkedHashMap<Long, AccountSong>()
+    for (song in this) {
+        val existing = unique[song.id]
+        if (existing == null || song.playedAt.isAfter(existing.playedAt)) {
+            unique[song.id] = song
+        }
+    }
+    return unique.values.toList()
+}
+
+private fun Long?.isAfter(other: Long?): Boolean = when {
+    this == null -> false
+    other == null -> true
+    else -> this > other
+}
+
+private const val CLOUD_MILLIS_TIMESTAMP_THRESHOLD = 100_000_000_000L
 
 private fun parseAccountSong(value: JsonObject?): AccountSong? = value?.let {
     val id = it.long("id") ?: return null

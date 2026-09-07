@@ -1,104 +1,95 @@
 package com.ljyh.mei.playback
 
-import androidx.media3.common.MediaItem
-import com.ljyh.mei.data.model.metadata
+import android.util.Log
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.data.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+import com.ljyh.mei.data.repository.failureSummary
+import com.ljyh.mei.data.repository.playbackExceptionReason
+import com.ljyh.mei.data.repository.playbackExceptionType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import timber.log.Timber
+import com.ljyh.mei.utils.log.logPlaybackHistory
 
 /** Serializes NetEase playback history events without blocking local playback. */
 class PlaybackHistoryReporter(
-    private val scope: CoroutineScope,
     private val repository: MeloXRepository,
 ) {
-    private data class ActivePlayback(
-        val mediaId: String,
-        val songId: Long,
-        val sourceId: Long,
-        val durationMs: Long,
-        var positionMs: Long,
-    )
-
-    private var active: ActivePlayback? = null
+    private val reporterJob = SupervisorJob()
+    private val scope = CoroutineScope(reporterJob + Dispatchers.IO)
+    private val lock = Any()
     private var submissionJob: Job? = null
+    private var closed = false
 
-    fun recordStart(mediaItem: MediaItem, positionMs: Long = 0) {
-        val target = mediaItem.toReportTarget(positionMs) ?: return
-        if (active?.mediaId == target.mediaId) {
-            active?.positionMs = positionMs.coerceAtLeast(0)
-            return
-        }
-        finishActive()
-        active = target
-        enqueue("start songId=${target.songId}") {
-            repository.recordRecentPlayback(target.songId, target.sourceId)
-        }
-    }
-
-    fun updatePosition(mediaId: String?, positionMs: Long) {
-        active?.takeIf { it.mediaId == mediaId }?.positionMs = positionMs.coerceAtLeast(0)
-    }
-
-    fun finish(mediaId: String?, positionMs: Long, completed: Boolean = false) {
-        val current = active ?: return
-        if (mediaId != null && current.mediaId != mediaId) return
-        current.positionMs = positionMs.coerceAtLeast(0)
-        finishActive(completed)
-    }
-
-    fun finishIfChanged(mediaItem: MediaItem?, completedPrevious: Boolean = false) {
-        val current = active ?: return
-        if (mediaItem?.mediaId != current.mediaId) finishActive(completedPrevious)
-    }
-
-    private fun finishActive(completed: Boolean = false) {
-        val current = active ?: return
-        active = null
-        val recordedMs = if (completed && current.durationMs > 0) {
-            current.durationMs
-        } else if (current.durationMs > 0) {
-            current.positionMs.coerceAtMost(current.durationMs)
-        } else {
-            current.positionMs
-        }
-        val timeSeconds = (recordedMs / 1_000L).coerceAtLeast(0).toInt()
-        enqueue("duration songId=${current.songId} time=$timeSeconds") {
-            repository.recordPlaybackDuration(current.songId, current.sourceId, timeSeconds)
-        }
-    }
-
-    private fun enqueue(operation: String, block: suspend () -> Unit) {
-        val previous = submissionJob
-        submissionJob = scope.launch {
-            previous?.join()
-            try {
-                block()
-                Timber.tag(TAG).d("Playback history report succeeded: %s", operation)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Timber.tag(TAG).w(error, "Playback history report failed: %s", operation)
+    internal fun recordStart(
+        songId: Long,
+        source: PlaybackHistorySource,
+    ) {
+        if (songId <= 0L || source.sourceId <= 0L) return
+        enqueue(
+            "startplay->play",
+        ) {
+            val result = repository.recordPlaybackStart(
+                songId = songId,
+                sourceId = source.sourceId,
+                source = source.source,
+            )
+            if (result?.accepted == true) {
+                logPlaybackHistory(Log.INFO, "Playback history weblog accepted")
+            } else {
+                logPlaybackHistory(
+                    Log.WARN,
+                    "Playback history weblog was not accepted: %s",
+                    result?.failureSummary()
+                        ?: "startplay={not attempted} play={not attempted}",
+                )
             }
         }
     }
 
-    private fun MediaItem.toReportTarget(positionMs: Long): ActivePlayback? {
-        val metadata = metadata ?: return null
-        if (metadata.isPodcast || metadata.isLocal) return null
-        val songId = mediaId.toLongOrNull()?.takeIf { it > 0 } ?: return null
-        return ActivePlayback(
-            mediaId = mediaId,
-            songId = songId,
-            sourceId = metadata.album.id.coerceAtLeast(0),
-            durationMs = metadata.duration.coerceAtLeast(0),
-            positionMs = positionMs.coerceAtLeast(0),
-        )
+    /** Starts a non-blocking drain and rejects all future events. */
+    fun close() {
+        val pending = synchronized(lock) {
+            if (closed) return
+            closed = true
+            submissionJob
+        }
+        if (pending == null) {
+            reporterJob.cancel()
+            return
+        }
+
+        scope.launch {
+            pending.join()
+            reporterJob.cancel()
+        }
     }
 
-    private companion object {
-        const val TAG = "PlaybackHistory"
+    private fun enqueue(operation: String, block: suspend () -> Unit) {
+        synchronized(lock) {
+            if (closed) return
+            val previous = submissionJob
+            submissionJob = scope.launch {
+                previous?.join()
+                try {
+                    block()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    logPlaybackHistory(
+                        Log.WARN,
+                        "Playback history request failed endpoint=%s action=%s " +
+                            "exceptionType=%s reason=%s",
+                        PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT,
+                        operation,
+                        playbackExceptionType(error),
+                        playbackExceptionReason(error),
+                    )
+                }
+            }
+        }
     }
 }
