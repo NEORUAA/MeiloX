@@ -260,9 +260,7 @@ class MeloXRepository @Inject constructor(
         source: String,
     ): PlaybackScrobbleResult? {
         if (songId <= 0L) return null
-        val preferences = context.dataStore.data.first()
-        if (preferences[CookieKey].isNullOrBlank()) return null
-        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
+        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
 
         return submitPlaybackHistoryStart(
             songId = songId,
@@ -273,6 +271,31 @@ class MeloXRepository @Inject constructor(
                 logPlaybackHistoryDebug(action, fields, response, debugEnabled)
             }
         }
+    }
+
+    suspend fun recordPlaybackDuration(
+        songId: Long,
+        sourceId: Long,
+        source: String,
+        timeSeconds: Long,
+    ): PlaybackLogResponse? {
+        if (songId <= 0L) return null
+        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
+        val fields = playbackHistoryPlayFields(
+            songId = songId,
+            sourceId = sourceId,
+            source = source,
+            timeSeconds = timeSeconds,
+        )
+        return submitPlaybackHistoryLog(eapi, "play", fields).also { response ->
+            logPlaybackHistoryDebug("play", fields, response, debugEnabled)
+        }
+    }
+
+    private suspend fun authenticatedPlaybackHistoryDebugEnabled(): Boolean? {
+        val preferences = context.dataStore.data.first()
+        if (preferences[CookieKey].isNullOrBlank()) return null
+        return BuildConfig.DEBUG || preferences[DebugKey] == true
     }
 
     private fun logPlaybackHistoryDebug(
@@ -919,41 +942,49 @@ internal suspend fun submitPlaybackHistoryStart(
     submit: suspend (String, Map<String, Any>) -> PlaybackLogResponse,
 ): PlaybackScrobbleResult {
     require(songId > 0L) { "songId must be positive" }
+    val startResponse = submit(
+        "startplay",
+        playbackHistoryBaseFields(songId, sourceId, source),
+    )
+    val playResponse = submit(
+        "play",
+        playbackHistoryPlayFields(songId, sourceId, source, timeSeconds = 0L),
+    )
+    return PlaybackScrobbleResult(startResponse, playResponse)
+}
+
+internal fun playbackHistoryPlayFields(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+    timeSeconds: Long,
+): Map<String, Any> = playbackHistoryBaseFields(songId, sourceId, source) + mapOf(
+    "download" to 0,
+    "end" to "playend",
+    "time" to timeSeconds.coerceAtLeast(0L).toString(),
+    "wifi" to 0,
+)
+
+private fun playbackHistoryBaseFields(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+): Map<String, Any> {
+    require(songId > 0L) { "songId must be positive" }
     val knownSource = source.takeIf { it in PLAYBACK_SOURCES }
     val hasReliableSource = sourceId > 0L && knownSource != null
     val safeSourceId = if (hasReliableSource) sourceId else songId
     val safeSource = knownSource.takeIf { hasReliableSource } ?: "track"
-    val startResponse = submit(
-        "startplay",
-        mapOf(
-            "id" to songId.toString(),
-            "type" to "song",
-            "sourceId" to safeSourceId.toString(),
-            "source" to safeSource,
-            "sourcetype" to safeSource,
-            "mainsite" to "1",
-            "mainsiteWeb" to "1",
-            "content" to "id=$safeSourceId",
-        ),
+    return mapOf(
+        "id" to songId.toString(),
+        "type" to "song",
+        "sourceId" to safeSourceId.toString(),
+        "source" to safeSource,
+        "sourcetype" to safeSource,
+        "mainsite" to "1",
+        "mainsiteWeb" to "1",
+        "content" to "id=$safeSourceId",
     )
-    val playResponse = submit(
-        "play",
-        mapOf(
-            "download" to 0,
-            "end" to "playend",
-            "id" to songId.toString(),
-            "sourceId" to safeSourceId.toString(),
-            "source" to safeSource,
-            "sourcetype" to safeSource,
-            "time" to "0",
-            "type" to "song",
-            "wifi" to 0,
-            "mainsite" to "1",
-            "mainsiteWeb" to "1",
-            "content" to "id=$safeSourceId",
-        ),
-    )
-    return PlaybackScrobbleResult(startResponse, playResponse)
 }
 
 internal fun parsePlaybackHistoryBody(body: String?): PlaybackBodyParseResult {

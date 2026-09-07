@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.ui.text.toLowerCase
 import androidx.core.net.toUri
@@ -117,7 +118,7 @@ class MusicService : MediaLibraryService(),
     var scope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var automaticCacheJob: Job? = null
     private lateinit var playbackHistoryReporter: PlaybackHistoryReporter
-    private val playbackHistorySession = PlaybackHistoryStartSession()
+    private val playbackHistorySession = PlaybackHistorySession()
     private var playbackSnapshotJob: Job? = null
     private var periodicSnapshotJob: Job? = null
     private lateinit var playbackPersistence: PlaybackPersistence
@@ -253,10 +254,6 @@ class MusicService : MediaLibraryService(),
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updatePreload()
-                playbackHistorySession.onMediaItemTransition(
-                    mediaId = mediaItem?.mediaId,
-                    reason = reason,
-                )
                 automaticCacheJob?.cancel()
                 if (mediaItem != null) {
                     automaticCacheJob = scope.launch {
@@ -504,7 +501,9 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        playbackHistorySession.onPlaybackStateChanged(playbackState)
+        if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+            recordPlaybackDuration(playbackHistorySession.finish(SystemClock.elapsedRealtime()))
+        }
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
@@ -523,13 +522,15 @@ class MusicService : MediaLibraryService(),
             )
         ) {
             val mediaItem = player.currentMediaItem
-            val start = playbackHistorySession.recordStartIfNeeded(
+            val update = playbackHistorySession.update(
                 mediaId = mediaItem?.mediaId,
                 isPlaying = player.isPlaying,
-                nowMs = System.currentTimeMillis(),
+                wallClockMs = System.currentTimeMillis(),
+                realtimeMs = SystemClock.elapsedRealtime(),
             )
-            if (start != null && mediaItem != null) {
-                recordPlaybackStart(mediaItem, start)
+            recordPlaybackDuration(update.completed)
+            if (update.startedAtMs != null && mediaItem != null) {
+                recordPlaybackStart(mediaItem, update.startedAtMs)
             }
         }
         if (events.containsAny(EVENT_TIMELINE_CHANGED, EVENT_POSITION_DISCONTINUITY)) {
@@ -611,7 +612,15 @@ class MusicService : MediaLibraryService(),
 
         val songId = mediaItem.playbackHistorySongIdOrNull() ?: return
         val source = resolvePlaybackHistorySource(songId) ?: return
-        playbackHistoryReporter.recordStart(songId, source)
+        playbackHistoryReporter.recordStart(mediaItem.mediaId, songId, source)
+    }
+
+    private fun recordPlaybackDuration(completed: CompletedPlaybackHistorySession?) {
+        completed ?: return
+        playbackHistoryReporter.recordDuration(
+            mediaId = completed.mediaId,
+            playedDurationMs = completed.playedDurationMs,
+        )
     }
 
 
@@ -639,6 +648,7 @@ class MusicService : MediaLibraryService(),
         playbackSnapshotJob?.cancel()
         automaticCacheJob?.cancel()
         if (::playbackHistoryReporter.isInitialized) {
+            recordPlaybackDuration(playbackHistorySession.finish(SystemClock.elapsedRealtime()))
             playbackHistoryReporter.close()
         }
         persistPlaybackSnapshotBlocking()
@@ -832,6 +842,13 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        recordPlaybackDuration(
+            playbackHistorySession.onMediaItemTransition(
+                mediaId = mediaItem?.mediaId,
+                reason = reason,
+                realtimeMs = SystemClock.elapsedRealtime(),
+            ),
+        )
         if (mediaItem?.mediaId != sourceRecoveryMediaId) {
             sourceRecoveryJob?.cancel()
             sourceRecoveryJob = null

@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+import com.ljyh.mei.data.repository.playbackHistoryPlayFields
 import com.ljyh.mei.data.repository.submitPlaybackHistoryLog
 import com.ljyh.mei.data.repository.submitPlaybackHistoryStart
 import kotlinx.coroutines.CancellationException
@@ -103,6 +104,33 @@ class PlaybackHistoryTransportTest {
         assertEquals("id=123456", playFields["content"].asString)
         assertEquals("/api/feedback/weblog", transport.requests[0].url.encodedPath)
         assertEquals("/api/feedback/weblog", transport.requests[1].url.encodedPath)
+    }
+
+    @Test
+    fun durationUpdateReusesPlayPayloadWithFinalActualPlayingTime() = runBlocking {
+        val transport = MemoryTransport(
+            outcomes = listOf(TransportOutcome.Reply(200, "{\"code\":200}")),
+        )
+        val fields = playbackHistoryPlayFields(
+            songId = 123456L,
+            sourceId = 789L,
+            source = "album",
+            timeSeconds = 37L,
+        )
+
+        val response = submitPlaybackHistoryLog(
+            service = serviceWith(transport),
+            action = "play",
+            fields = fields,
+        )
+
+        assertTrue(response.businessAccepted)
+        assertEquals(1, transport.requests.size)
+        val payload = playbackPayload(transport.requests.single())
+        assertEquals("play", payload["action"].asString)
+        assertEquals("37", payload["json"].asJsonObject["time"].asString)
+        assertEquals("playend", payload["json"].asJsonObject["end"].asString)
+        assertEquals("/api/feedback/weblog", transport.requests.single().url.encodedPath)
     }
 
     @Test

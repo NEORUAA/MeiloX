@@ -90,6 +90,12 @@
 -keep class com.google.gson.stream.** { *; }
 -dontwarn com.google.gson.**
 
+# NeteaseHeader is serialized reflectively into the EAPI body and Cookie header.
+# Keep only its wire fields while allowing the class and the rest of the app to be optimized.
+-keepclassmembers,allowoptimization class com.ljyh.mei.di.NeteaseHeader {
+    java.lang.String *;
+}
+
 # Playback snapshots are restored through Gson reflection. Keep the model fields and
 # their generic signatures so R8 cannot erase List element types in release builds.
 -keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
