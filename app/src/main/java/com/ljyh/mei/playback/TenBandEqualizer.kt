@@ -115,12 +115,22 @@ private data class BiquadCoefficients(
 class TenBandEqualizerProcessor(
     private val state: EqualizerConfigurationState,
 ) : BaseAudioProcessor() {
+    private companion object {
+        const val BYPASS_EPSILON = 0.0001f
+        const val BAND_COUNT = 10
+    }
+
     private var sampleRate = 0
     private var channelCount = 0
     private var encoding = C.ENCODING_INVALID
     private var appliedConfiguration: EqualizerConfiguration? = null
+    private var bypassed = true
     private var preampMultiplier = 1f
-    private var coefficients = List(EqualizerBand.entries.size) { BiquadCoefficients.Passthrough }
+    private val b0 = FloatArray(BAND_COUNT)
+    private val b1 = FloatArray(BAND_COUNT)
+    private val b2 = FloatArray(BAND_COUNT)
+    private val a1 = FloatArray(BAND_COUNT)
+    private val a2 = FloatArray(BAND_COUNT)
     private var firstDelays = FloatArray(0)
     private var secondDelays = FloatArray(0)
     private var channelCursor = 0
@@ -136,13 +146,23 @@ class TenBandEqualizerProcessor(
         secondDelays = FloatArray(channelCount * EqualizerBand.entries.size)
         channelCursor = 0
         appliedConfiguration = null
+        bypassed = true
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        // Media3 can queue EMPTY_BUFFER before any PCM arrives. The base processor
+        // initially uses that same buffer, so a bulk copy would copy it into itself.
+        if (!inputBuffer.hasRemaining()) return
+
         val output = replaceOutputBuffer(inputBuffer.remaining()).order(ByteOrder.nativeOrder())
         inputBuffer.order(ByteOrder.nativeOrder())
         refreshConfiguration()
+        if (bypassed) {
+            output.put(inputBuffer)
+            output.flip()
+            return
+        }
         when (encoding) {
             C.ENCODING_PCM_FLOAT -> while (inputBuffer.remaining() >= Float.SIZE_BYTES) {
                 output.putFloat(process(inputBuffer.float, channelCursor))
@@ -169,6 +189,8 @@ class TenBandEqualizerProcessor(
         channelCount = 0
         encoding = C.ENCODING_INVALID
         appliedConfiguration = null
+        bypassed = true
+        preampMultiplier = 1f
         firstDelays = FloatArray(0)
         secondDelays = FloatArray(0)
         channelCursor = 0
@@ -178,26 +200,51 @@ class TenBandEqualizerProcessor(
         val configuration = state.snapshot()
         if (configuration == appliedConfiguration) return
         appliedConfiguration = configuration
-        preampMultiplier = if (configuration.enabled) 10f.pow(configuration.preamp / 20f) else 1f
-        coefficients = EqualizerBand.entries.mapIndexed { index, band ->
-            BiquadCoefficients.peaking(
-                band.centerFrequency,
-                if (configuration.enabled) configuration.gains.getOrElse(index) { 0f } else 0f,
-                sampleRate,
-            )
+        var configurationBypassed = !configuration.enabled || abs(configuration.preamp) < BYPASS_EPSILON
+        var band = 0
+        while (configuration.enabled && band < BAND_COUNT && configurationBypassed) {
+            if (abs(configuration.gains.getOrElse(band) { 0f }) >= BYPASS_EPSILON) {
+                configurationBypassed = false
+            }
+            band++
         }
+
+        bypassed = configurationBypassed
+        preampMultiplier = if (bypassed) 1f else 10f.pow(configuration.preamp / 20f)
+
+        band = 0
+        while (band < BAND_COUNT) {
+            val coefficient = if (bypassed) {
+                BiquadCoefficients.Passthrough
+            } else {
+                BiquadCoefficients.peaking(
+                    EqualizerBand.entries[band].centerFrequency,
+                    configuration.gains.getOrElse(band) { 0f },
+                    sampleRate,
+                )
+            }
+            b0[band] = coefficient.b0
+            b1[band] = coefficient.b1
+            b2[band] = coefficient.b2
+            a1[band] = coefficient.a1
+            a2[band] = coefficient.a2
+            band++
+        }
+
         firstDelays.fill(0f)
         secondDelays.fill(0f)
     }
 
     private fun process(input: Float, channel: Int): Float {
         var sample = input * preampMultiplier
-        coefficients.forEachIndexed { band, coefficient ->
+        var band = 0
+        while (band < BAND_COUNT) {
             val delayIndex = band * channelCount + channel
-            val output = coefficient.b0 * sample + firstDelays[delayIndex]
-            firstDelays[delayIndex] = coefficient.b1 * sample - coefficient.a1 * output + secondDelays[delayIndex]
-            secondDelays[delayIndex] = coefficient.b2 * sample - coefficient.a2 * output
+            val output = b0[band] * sample + firstDelays[delayIndex]
+            firstDelays[delayIndex] = b1[band] * sample - a1[band] * output + secondDelays[delayIndex]
+            secondDelays[delayIndex] = b2[band] * sample - a2[band] * output
             sample = output
+            band++
         }
         return sample
     }

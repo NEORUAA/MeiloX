@@ -26,6 +26,7 @@ import com.ljyh.mei.constants.MeshSubdivisionKey
 import com.ljyh.mei.ui.component.player.LocalPlayerBackdropFrame
 import com.ljyh.mei.ui.component.player.component.mesh.AlbumTextureProcessor
 import com.ljyh.mei.ui.component.player.component.mesh.MeshBackgroundView
+import com.ljyh.mei.ui.component.utils.rememberLifecycleStarted
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import com.ljyh.mei.utils.audio.AudioVisualizerManager
 import com.ljyh.mei.utils.rememberPreference
@@ -56,9 +57,11 @@ fun FluidBackground(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val samplingActive = alpha > 0.01f
-    val bass by produceState(0f, audioVisualizerManager, samplingActive) {
-        if (samplingActive) {
+    val lifecycleStarted by rememberLifecycleStarted()
+    val backgroundVisible = alpha > 0.01f
+    val backgroundActive = lifecycleStarted && backgroundVisible
+    val bass by produceState(0f, audioVisualizerManager, backgroundActive) {
+        if (backgroundActive) {
             audioVisualizerManager.bassValue.collect { value = it }
         }
     }
@@ -69,6 +72,10 @@ fun FluidBackground(
     val (meshPlaying) = rememberPreference(MeshPlayingKey, defaultValue = true)
     val (volumeScale) = rememberPreference(MeshLowFreqVolumeKey, defaultValue = 0.1f)
     val (subdivision) = rememberPreference(MeshSubdivisionKey, defaultValue = 50)
+
+    LaunchedEffect(audioVisualizerManager, backgroundActive) {
+        audioVisualizerManager.setCaptureEnabled(backgroundActive)
+    }
 
     // 1. 将图片加载逻辑独立出来，只负责把 Bitmap 提取出来
     // 使用 produceState 是处理这种“异步数据转同步状态”的最佳实践
@@ -119,7 +126,6 @@ fun FluidBackground(
 
     // 2. 组装当前需要传递给 View 的所有状态
     val shouldAnimate = !meshPlaying || isPlaying
-    val shouldRender = samplingActive && shouldAnimate
     val pixelCopyHandler = remember { Handler(Looper.getMainLooper()) }
     val captureBuffers = remember { arrayOfNulls<Bitmap>(3) }
     val captureState = remember { IntArray(3) }
@@ -127,21 +133,29 @@ fun FluidBackground(
     // Configuration changes are infrequent compared with sheet/bass recompositions. Apply
     // renderer settings from their state boundary instead of queueing GL work from every
     // AndroidView update pass.
-    LaunchedEffect(meshView, flowSpeed, renderScale, subdivision, staticMode, shouldRender) {
+    LaunchedEffect(meshView, flowSpeed, renderScale, subdivision, staticMode, shouldAnimate) {
         val view = meshView ?: return@LaunchedEffect
         view.setFlowSpeed(flowSpeed)
         view.setRenderScale(renderScale)
         view.setSubdivision(subdivision)
         view.setStaticMode(staticMode)
-        view.setPlaying(shouldRender)
+        view.setPlaying(shouldAnimate)
+    }
+
+    LaunchedEffect(meshView, lifecycleStarted) {
+        meshView?.setHostStarted(lifecycleStarted)
+    }
+
+    LaunchedEffect(meshView, backgroundActive) {
+        meshView?.setRenderingRequested(backgroundActive)
     }
 
     // SurfaceView is not part of Compose's graphics-layer recording. Copy a small live frame
     // instead; glass blurs it heavily, so this resolution preserves the visual result without
     // reading a full-screen buffer every frame. Static mode captures through the mesh fade-in
     // and then stops, while animated mode keeps the sample moving at roughly 15 fps.
-    LaunchedEffect(meshView, backdropFrame, albumBitmap, staticMode, shouldAnimate, samplingActive) {
-        if (!samplingActive) return@LaunchedEffect
+    LaunchedEffect(meshView, backdropFrame, albumBitmap, staticMode, shouldAnimate, backgroundActive) {
+        if (!backgroundActive) return@LaunchedEffect
         val view = meshView ?: return@LaunchedEffect
         val target = backdropFrame ?: return@LaunchedEffect
         var attempts = 0
@@ -206,8 +220,10 @@ fun FluidBackground(
                     setRenderScale(renderScale)
                     setSubdivision(subdivision)
                     setStaticMode(staticMode)
-                    setPlaying(shouldRender)
+                    setPlaying(shouldAnimate)
                     setPreserveEGLContextOnPause(true)
+                    setHostStarted(lifecycleStarted)
+                    setRenderingRequested(backgroundActive)
                 }
             },
             update = { view ->

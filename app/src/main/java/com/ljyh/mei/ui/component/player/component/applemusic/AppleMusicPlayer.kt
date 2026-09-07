@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -262,6 +263,11 @@ fun AppleMusicPlayer(
 
         val coverUrl = mediaMetadata?.coverUrl
         val audioVisualizerManager = remember { AudioVisualizerManager(context) }
+        DisposableEffect(audioVisualizerManager) {
+            onDispose {
+                audioVisualizerManager.release()
+            }
+        }
         LaunchedEffect(stateContainer.playerConnection.player) {
             val player = stateContainer.playerConnection.player as? ExoPlayer
             player?.audioSessionId?.let(audioVisualizerManager::attachToPlayer)

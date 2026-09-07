@@ -14,6 +14,8 @@ import kotlin.math.pow
 class AudioVisualizerManager(private val context: Context) {
 
     private var visualizer: Visualizer? = null
+    @Volatile
+    private var captureEnabled = false
     
     // EMA Smoothing factor (from SPlayer spec)
     private val smoothingFactor = 0.28f
@@ -55,14 +57,32 @@ class AudioVisualizerManager(private val context: Context) {
                     false,
                     true
                 )
-                enabled = true
+                enabled = captureEnabled
             }
         } catch (e: Exception) {
             Log.e("AudioVisualizer", "Error initializing Visualizer: \${e.message}")
         }
     }
 
+    fun setCaptureEnabled(enabled: Boolean) {
+        if (captureEnabled == enabled) return
+        captureEnabled = enabled
+        if (!enabled) {
+            _bassValue.value = 0f
+        }
+
+        val currentVisualizer = visualizer ?: return
+        try {
+            currentVisualizer.enabled = enabled
+        } catch (_: IllegalStateException) {
+            // Visualizer may be released concurrently while the host lifecycle changes.
+        } catch (_: SecurityException) {
+            // Audio capture permission or platform policy can change while paused.
+        }
+    }
+
     private fun processFftData(fft: ByteArray) {
+        if (!captureEnabled) return
         if (fft.size < 4) return // Not enough data for 3 bins
         
         // SPlayer pulls from the first 3 low-frequency bins.
@@ -98,9 +118,21 @@ class AudioVisualizerManager(private val context: Context) {
     }
 
     fun release() {
-        visualizer?.apply {
-            enabled = false
-            release()
+        visualizer?.let { currentVisualizer ->
+            try {
+                currentVisualizer.enabled = false
+            } catch (_: IllegalStateException) {
+                // The platform can invalidate a Visualizer before release is called.
+            } catch (_: SecurityException) {
+                // Keep lifecycle cleanup safe when capture permission is revoked.
+            }
+            try {
+                currentVisualizer.release()
+            } catch (_: IllegalStateException) {
+                // The platform can invalidate a Visualizer before release is called.
+            } catch (_: SecurityException) {
+                // Keep lifecycle cleanup safe when capture permission is revoked.
+            }
         }
         visualizer = null
         _bassValue.value = 0f

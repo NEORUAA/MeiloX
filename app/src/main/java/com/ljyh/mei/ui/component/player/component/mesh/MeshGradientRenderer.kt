@@ -26,6 +26,34 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
     private var mainProgram: Int = 0
     private var quadProgram: Int = 0
 
+    private var mainAPos = 0
+    private var mainAColor = 0
+    private var mainAUv = 0
+    private var mainUTexture = 0
+    private var mainUTime = 0
+    private var mainUVolume = 0
+    private var mainUAspect = 0
+    private var quadAPos = 0
+    private var quadATexCoord = 0
+    private var quadUTexture = 0
+    private var quadUAlpha = 0
+
+    private val quadBuffer: FloatBuffer = ByteBuffer
+        .allocateDirect(16 * Float.SIZE_BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+        .apply {
+            put(
+                floatArrayOf(
+                    -1f, -1f, 0f, 0f,
+                    1f, -1f, 1f, 0f,
+                    -1f, 1f, 0f, 1f,
+                    1f, 1f, 1f, 1f,
+                ),
+            )
+            position(0)
+        }
+
     private var fbo: Int = 0
     private var fboTexture: Int = 0
 
@@ -91,6 +119,7 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
             createProgram(ShaderSource.MESH_VERTEX_SHADER, ShaderSource.MESH_FRAGMENT_SHADER)
         quadProgram =
             createProgram(ShaderSource.QUAD_VERTEX_SHADER, ShaderSource.QUAD_FRAGMENT_SHADER)
+        cacheShaderLocations()
 
         synchronized(this) {
             // A recreated surface means every previous GL object is gone. Drop the stale
@@ -281,38 +310,29 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
 
         GLES30.glUseProgram(mainProgram)
 
-        val aPos = GLES30.glGetAttribLocation(mainProgram, "a_pos")
-        val aColor = GLES30.glGetAttribLocation(mainProgram, "a_color")
-        val aUv = GLES30.glGetAttribLocation(mainProgram, "a_uv")
-
-        val uTexture = GLES30.glGetUniformLocation(mainProgram, "u_texture")
-        val uTime = GLES30.glGetUniformLocation(mainProgram, "u_time")
-        val uVolume = GLES30.glGetUniformLocation(mainProgram, "u_volume")
-        val uAspect = GLES30.glGetUniformLocation(mainProgram, "u_aspect")
-
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, state.textureId)
-        GLES30.glUniform1i(uTexture, 0)
-        GLES30.glUniform1f(uTime, time)
-        GLES30.glUniform1f(uVolume, volume)
+        GLES30.glUniform1i(mainUTexture, 0)
+        GLES30.glUniform1f(mainUTime, time)
+        GLES30.glUniform1f(mainUVolume, volume)
         GLES30.glUniform1f(
-            uAspect,
+            mainUAspect,
             if (scaledHeight > 0) scaledWidth.toFloat() / scaledHeight else 1f
         )
 
         vertexBuffer.position(0)
         val strideBytes = 7 * 4
 
-        GLES30.glEnableVertexAttribArray(aPos)
-        GLES30.glVertexAttribPointer(aPos, 2, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
+        GLES30.glEnableVertexAttribArray(mainAPos)
+        GLES30.glVertexAttribPointer(mainAPos, 2, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
 
         vertexBuffer.position(2)
-        GLES30.glEnableVertexAttribArray(aColor)
-        GLES30.glVertexAttribPointer(aColor, 3, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
+        GLES30.glEnableVertexAttribArray(mainAColor)
+        GLES30.glVertexAttribPointer(mainAColor, 3, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
 
         vertexBuffer.position(5)
-        GLES30.glEnableVertexAttribArray(aUv)
-        GLES30.glVertexAttribPointer(aUv, 2, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
+        GLES30.glEnableVertexAttribArray(mainAUv)
+        GLES30.glVertexAttribPointer(mainAUv, 2, GLES30.GL_FLOAT, false, strideBytes, vertexBuffer)
 
         GLES30.glDrawElements(
             GLES30.GL_TRIANGLES,
@@ -321,51 +341,50 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
             indexBuffer
         )
 
-        GLES30.glDisableVertexAttribArray(aPos)
-        GLES30.glDisableVertexAttribArray(aColor)
-        GLES30.glDisableVertexAttribArray(aUv)
+        GLES30.glDisableVertexAttribArray(mainAPos)
+        GLES30.glDisableVertexAttribArray(mainAColor)
+        GLES30.glDisableVertexAttribArray(mainAUv)
     }
 
     private fun drawQuad(textureId: Int, alpha: Float) {
         GLES30.glUseProgram(quadProgram)
 
-        val aPos = GLES30.glGetAttribLocation(quadProgram, "a_pos")
-        val aTexCoord = GLES30.glGetAttribLocation(quadProgram, "a_texCoord")
-        val uTexture = GLES30.glGetUniformLocation(quadProgram, "u_texture")
-        val uAlpha = GLES30.glGetUniformLocation(quadProgram, "u_alpha")
-
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
-        GLES30.glUniform1i(uTexture, 0)
-        GLES30.glUniform1f(uAlpha, alpha)
+        GLES30.glUniform1i(quadUTexture, 0)
+        GLES30.glUniform1f(quadUAlpha, alpha)
 
-        drawFullScreenQuad(aPos, aTexCoord)
+        drawFullScreenQuad()
     }
 
-    private fun drawFullScreenQuad(aPos: Int, aTexCoord: Int) {
-        val quadData = floatArrayOf(
-            -1f, -1f, 0f, 0f,
-            1f, -1f, 1f, 0f,
-            -1f, 1f, 0f, 1f,
-            1f, 1f, 1f, 1f
-        )
-        val buffer = ByteBuffer.allocateDirect(quadData.size * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-        buffer.put(quadData).position(0)
+    private fun drawFullScreenQuad() {
+        GLES30.glEnableVertexAttribArray(quadAPos)
+        quadBuffer.position(0)
+        GLES30.glVertexAttribPointer(quadAPos, 2, GLES30.GL_FLOAT, false, 16, quadBuffer)
 
-        GLES30.glEnableVertexAttribArray(aPos)
-        buffer.position(0)
-        GLES30.glVertexAttribPointer(aPos, 2, GLES30.GL_FLOAT, false, 16, buffer)
-
-        GLES30.glEnableVertexAttribArray(aTexCoord)
-        buffer.position(2)
-        GLES30.glVertexAttribPointer(aTexCoord, 2, GLES30.GL_FLOAT, false, 16, buffer)
+        GLES30.glEnableVertexAttribArray(quadATexCoord)
+        quadBuffer.position(2)
+        GLES30.glVertexAttribPointer(quadATexCoord, 2, GLES30.GL_FLOAT, false, 16, quadBuffer)
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
 
-        GLES30.glDisableVertexAttribArray(aPos)
-        GLES30.glDisableVertexAttribArray(aTexCoord)
+        GLES30.glDisableVertexAttribArray(quadAPos)
+        GLES30.glDisableVertexAttribArray(quadATexCoord)
+    }
+
+    private fun cacheShaderLocations() {
+        mainAPos = GLES30.glGetAttribLocation(mainProgram, "a_pos")
+        mainAColor = GLES30.glGetAttribLocation(mainProgram, "a_color")
+        mainAUv = GLES30.glGetAttribLocation(mainProgram, "a_uv")
+        mainUTexture = GLES30.glGetUniformLocation(mainProgram, "u_texture")
+        mainUTime = GLES30.glGetUniformLocation(mainProgram, "u_time")
+        mainUVolume = GLES30.glGetUniformLocation(mainProgram, "u_volume")
+        mainUAspect = GLES30.glGetUniformLocation(mainProgram, "u_aspect")
+
+        quadAPos = GLES30.glGetAttribLocation(quadProgram, "a_pos")
+        quadATexCoord = GLES30.glGetAttribLocation(quadProgram, "a_texCoord")
+        quadUTexture = GLES30.glGetUniformLocation(quadProgram, "u_texture")
+        quadUAlpha = GLES30.glGetUniformLocation(quadProgram, "u_alpha")
     }
 
     private fun createFbo(width: Int, height: Int) {
@@ -482,16 +501,40 @@ class MeshBackgroundView(context: Context) : GLSurfaceView(context) {
     private var lastSubdivision = renderer.subdivision
     private var lastStaticMode = false
     private var lastPlaying = true
+    private var renderingRequested = true
+    private var hostStarted = true
 
     init {
         setEGLContextClientVersion(3)
         setEGLConfigChooser(8, 8, 8, 8, 0, 0)
         setRenderer(renderer)
-        renderMode = RENDERMODE_CONTINUOUSLY
+        applyRenderMode()
     }
 
     fun setAlbum(bitmap: Bitmap) {
         queueEvent { renderer.setAlbum(bitmap) }
+        requestRender()
+    }
+
+    fun setRenderingRequested(active: Boolean) {
+        if (renderingRequested == active) return
+        renderingRequested = active
+        if (!hostStarted) return
+        applyRenderMode()
+        if (active) requestRender()
+    }
+
+    fun setHostStarted(started: Boolean) {
+        if (hostStarted == started) return
+        hostStarted = started
+        if (started) {
+            onResume()
+            applyRenderMode()
+            requestRender()
+        } else {
+            renderMode = RENDERMODE_WHEN_DIRTY
+            onPause()
+        }
     }
 
     fun updateVolume(v: Float) {
@@ -527,6 +570,15 @@ class MeshBackgroundView(context: Context) : GLSurfaceView(context) {
         if (lastPlaying == playing) return
         lastPlaying = playing
         renderer.setPlaying(playing)
+    }
+
+    private fun applyRenderMode() {
+        if (!hostStarted) return
+        renderMode = if (renderingRequested) {
+            RENDERMODE_CONTINUOUSLY
+        } else {
+            RENDERMODE_WHEN_DIRTY
+        }
     }
 
     override fun onDetachedFromWindow() {
