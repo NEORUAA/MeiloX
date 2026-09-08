@@ -59,6 +59,8 @@ import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.playback.playbackOrderIndices
+import com.ljyh.mei.playback.queueEntryId
 import com.ljyh.mei.ui.glass.IosModalSheetShape
 import com.ljyh.mei.ui.glass.IosSheetSurface
 import com.ljyh.mei.ui.glass.IosSheetTopToolbar
@@ -79,20 +81,22 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 private data class QueueEntry(
     val key: String,
     val mediaItem: MediaItem,
+    val rawIndex: Int,
 )
 
 private fun Player.queueEntries(): List<QueueEntry> {
     val timeline = currentTimeline
-    return List(mediaItemCount) { index ->
+    return playbackOrderIndices().map { index ->
         val windowUid = if (index < timeline.windowCount) {
             timeline.getWindow(index, Timeline.Window()).uid
         } else {
             null
         }
         QueueEntry(
-            key = windowUid?.let { "window:$it" }
+            key = getMediaItemAt(index).queueEntryId ?: windowUid?.let { "window:$it" }
                 ?: "fallback:${getMediaItemAt(index).mediaId}:$index",
             mediaItem = getMediaItemAt(index),
+            rawIndex = index,
         )
     }
 }
@@ -111,27 +115,44 @@ fun PlaylistContent(
     )
     val lazyListState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
-    val queueEntries = remember {
+    val queueEntries = remember(playerConnection) {
         mutableStateListOf<QueueEntry>().apply { addAll(playerConnection.player.queueEntries()) }
     }
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        queueEntries.move(from.index, to.index)
-        playerConnection.player.moveMediaItem(from.index, to.index)
+        val player = playerConnection.player
+        val entries = player.queueEntries().toMutableList()
+        val fromIndex = entries.indexOfFirst { it.key == from.key }
+        val toIndex = entries.indexOfFirst { it.key == to.key }
+        if (fromIndex >= 0 && toIndex >= 0) {
+            val rawFrom = entries[fromIndex].rawIndex
+            val rawTo = entries[toIndex].rawIndex
+            entries.add(toIndex, entries.removeAt(fromIndex))
+            if (player.shuffleModeEnabled) {
+                player.setPlaybackOrder(entries.map { it.rawIndex }, userEdit = true)
+            } else {
+                player.moveMediaItem(rawFrom, rawTo)
+            }
+            queueEntries.clear()
+            queueEntries.addAll(player.queueEntries())
+        }
         hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
     }
     val currentMediaItemIndex by playerConnection.currentMediaItemIndex.collectAsState()
+    val currentQueueIndex = queueEntries.indexOfFirst { it.rawIndex == currentMediaItemIndex }
     var initialScrollPending by remember { mutableStateOf(true) }
 
-    LaunchedEffect(queueEntries.size, currentMediaItemIndex) {
-        if (initialScrollPending && currentMediaItemIndex in queueEntries.indices) {
-            lazyListState.scrollToItem(currentMediaItemIndex)
+    LaunchedEffect(queueEntries.size, currentQueueIndex) {
+        if (initialScrollPending && currentQueueIndex in queueEntries.indices) {
+            lazyListState.scrollToItem(currentQueueIndex)
             initialScrollPending = false
         }
     }
 
     DisposableEffect(playerConnection) {
         val listener = object : Player.Listener {
-            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (!events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_MEDIA_ITEM_TRANSITION)) return
                 queueEntries.clear()
                 queueEntries.addAll(playerConnection.player.queueEntries())
             }
@@ -179,7 +200,16 @@ fun PlaylistContent(
                 itemsIndexed(queueEntries, key = { _, entry -> entry.key }) { index, entry ->
                     ReorderableItem(reorderableLazyListState, key = entry.key) {
                         val mediaItem = entry.mediaItem
-                        mediaItem.metadata?.let { metadata ->
+                        val display = mediaItem.mediaMetadata
+                        val metadata = mediaItem.metadata ?: MediaMetadata(
+                            id = mediaItem.mediaId.toLongOrNull() ?: 0L,
+                            title = display.title?.toString().orEmpty(),
+                            coverUrl = display.artworkUri?.toString().orEmpty(),
+                            artists = emptyList(),
+                            duration = 0L,
+                            album = MediaMetadata.Album(0L, display.albumTitle?.toString().orEmpty()),
+                        )
+                        run {
                             PlaylistItem(
                                 modifier = Modifier.longPressDraggableHandle(
                                     onDragStarted = {
@@ -193,14 +223,14 @@ fun PlaylistContent(
                                 ),
                                 metadata = metadata,
                                 showTopSeparator = index != 0,
-                                isCurrentPlaying = index == currentMediaItemIndex,
+                                isCurrentPlaying = entry.rawIndex == currentMediaItemIndex,
                                 onItemClick = {
-                                    playerConnection.player.seekToDefaultPosition(index)
-                                    playerConnection.player.playWhenReady = true
+                                    playerConnection.service.queueManager.seekToQueueEntry(entry.key)
                                 },
                                 onRemoveClick = {
                                     if (queueEntries.size > 1) {
-                                        playerConnection.player.removeMediaItem(index)
+                                        playerConnection.player.queueEntries().firstOrNull { it.key == entry.key }
+                                            ?.let { playerConnection.player.removeMediaItem(it.rawIndex) }
                                     } else {
                                         Toast.makeText(
                                             context,

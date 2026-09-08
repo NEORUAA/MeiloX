@@ -4,6 +4,8 @@ import androidx.media3.common.MediaItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+data class PlaylistQueueSource(val playlistId: Long, val alg: String = "")
+
 /**
  * 列表队列实现
  * 用于处理静态的歌曲ID列表
@@ -14,6 +16,7 @@ class ListQueue(
     private val items: List<Pair<String, MediaItem?>>, // 改为 private val，外部不应修改
     val startIndex: Int = 0,
     val position: Int = 0,
+    override val playlistSource: PlaylistQueueSource? = null,
 ) : Queue {
 
     override val totalCount: Int = items.size

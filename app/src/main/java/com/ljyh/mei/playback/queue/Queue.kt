@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
  * 支持完整的歌单管理、分页加载、错误处理和状态管理
  */
 interface Queue {
+    val playlistSource: PlaylistQueueSource? get() = null
+
     /** 队列唯一标识 */
     val id: String
     

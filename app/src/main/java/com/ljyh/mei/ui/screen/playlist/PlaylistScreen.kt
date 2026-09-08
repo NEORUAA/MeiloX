@@ -166,7 +166,7 @@ fun PlaylistScreen(
     }
 
     // 6. 提取构建播放队列的逻辑 (避免重复代码)
-    fun buildListQueue(startTrackId: Long? = null): ListQueue? {
+    fun buildListQueue(startTrackId: Long? = null, randomStart: Boolean = false): ListQueue? {
         val detail = playlistDetail
         if (detail is Resource.Success) {
             val playlist = detail.data.playlist
@@ -187,10 +187,15 @@ fun PlaylistScreen(
                 id = "playlist_${uiData.id}",
                 title = uiData.title,
                 items = allPairs,
-                startIndex = startTrackId
-                    ?.let { trackId -> allPairs.indexOfFirst { it.first == trackId.toString() } }
-                    ?.takeIf { it >= 0 }
-                    ?: 0
+                playlistSource = com.ljyh.mei.playback.queue.PlaylistQueueSource(uiData.id),
+                startIndex = if (randomStart && allPairs.isNotEmpty()) {
+                    allPairs.indices.random()
+                } else {
+                    startTrackId
+                        ?.let { trackId -> allPairs.indexOfFirst { it.first == trackId.toString() } }
+                        ?.takeIf { it >= 0 }
+                        ?: 0
+                },
             )
         }
         return null
@@ -348,6 +353,11 @@ fun PlaylistScreen(
             onPlayAll = {
                 buildListQueue()?.let { queue ->
                     playerConnection.playQueue(queue)
+                }
+            },
+            onShufflePlay = {
+                buildListQueue(randomStart = true)?.let { queue ->
+                    playerConnection.playQueue(queue, shuffle = true)
                 }
             },
 

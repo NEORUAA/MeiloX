@@ -308,6 +308,8 @@
     <string name="equalizer_band_8k">8 kHz</string>
     <string name="equalizer_band_16k">16 kHz</string>
     <string name="playback_behavior">播放行为</string>
+    <string name="cloud_shuffle">云端随机</string>
+    <string name="cloud_shuffle_description">优先使用云端随机，失败时自动使用本地随机；关闭后仅使用本地随机。</string>
     <string name="loop_playback">循环播放</string>
     <string name="skip_unavailable">无音频源时播放下一首</string>
     <string name="previous_behavior">播放超过 3 秒时上一首按钮从头播放</string>

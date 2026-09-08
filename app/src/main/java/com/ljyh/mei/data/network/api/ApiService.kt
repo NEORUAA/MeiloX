@@ -50,6 +50,12 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 interface ApiService {
+    @Headers("X-Netease-Crypto: eapi")
+    @POST("/api/playlist/random/list/get")
+    suspend fun getRandomPlaylist(
+        @Body body: com.ljyh.mei.data.model.api.GetRandomPlaylist,
+    ): com.ljyh.mei.data.model.api.RandomPlaylistResponse
+
     /*
     * 获取歌单详情
     * */

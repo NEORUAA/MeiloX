@@ -55,6 +55,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.IsShuffleModeKey
+import com.ljyh.mei.constants.CloudShuffleEnabledKey
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.MusicQualityKey
 import com.ljyh.mei.constants.NoAudioSourceKey
@@ -87,6 +88,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
@@ -288,7 +291,20 @@ class MusicService : MediaLibraryService(),
             }
         })
 
-        queueManager = PlaybackQueueManager(player, apiService, weApiService, scope)
+        queueManager = PlaybackQueueManager(player, apiService, weApiService, scope) {
+            listenTogetherStore.state.value.room == null
+        }
+        scope.launch {
+            context.dataStore.data
+                .map { it[CloudShuffleEnabledKey] ?: true }
+                .distinctUntilChanged()
+                .collect { queueManager.setCloudShuffleEnabled(it) }
+        }
+        scope.launch {
+            listenTogetherStore.state.collect { state ->
+                if (state.room != null) queueManager.cancelServerShuffle()
+            }
+        }
         playbackPersistence = PlaybackPersistence(this)
         autoMixController = AutoMixController(
             context = this,
@@ -361,7 +377,10 @@ class MusicService : MediaLibraryService(),
                     Player.REPEAT_MODE_OFF,
                     Player.REPEAT_MODE_ALL,
                 )
+                snapshot.shuffleOrder?.takeIf { it.isPlaybackPermutation(restoredItems.size) }
+                    ?.let { player.setPlaybackOrder(it) }
                 player.shuffleModeEnabled = snapshot.shuffleModeEnabled && !snapshot.isFmMode
+                queueManager.restorePlaylistSource(snapshot.playlistSource)
                 player.prepare()
                 player.playWhenReady = snapshot.playWhenReady
                 Timber.tag("MusicService").d(
@@ -403,6 +422,7 @@ class MusicService : MediaLibraryService(),
             player = player,
             queueTitle = queueTitle,
             isFmMode = queueManager.isFmMode,
+            playlistSource = queueManager.playlistSource,
         )
         withContext(NonCancellable) {
             runCatching { playbackPersistence.save(snapshot) }
@@ -412,7 +432,7 @@ class MusicService : MediaLibraryService(),
 
     private fun persistPlaybackSnapshotBlocking() {
         if (isRestoringPlayback || !::playbackPersistence.isInitialized) return
-        val snapshot = playbackPersistence.capture(player, queueTitle, queueManager.isFmMode)
+        val snapshot = playbackPersistence.capture(player, queueTitle, queueManager.isFmMode, queueManager.playlistSource)
         runCatching {
             runBlocking(Dispatchers.IO) { playbackPersistence.save(snapshot) }
         }.onFailure { Timber.tag("MusicService").w(it, "Unable to save final playback snapshot") }

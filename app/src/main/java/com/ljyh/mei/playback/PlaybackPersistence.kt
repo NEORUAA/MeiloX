@@ -15,11 +15,12 @@ import com.ljyh.mei.data.model.PLACEHOLDER_URI
 import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
 data class PlaybackSnapshot(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val savedAtEpochMs: Long = System.currentTimeMillis(),
     val items: List<PlaybackItemSnapshot> = emptyList(),
     val currentIndex: Int = 0,
@@ -29,6 +30,8 @@ data class PlaybackSnapshot(
     val playWhenReady: Boolean = false,
     val queueTitle: String? = null,
     val sourceType: String = SOURCE_QUEUE,
+    val shuffleOrder: List<Int>? = null,
+    val playlistSource: PlaylistQueueSource? = null,
 ) {
     val isFmMode: Boolean
         get() = sourceType == SOURCE_PERSONAL_FM
@@ -68,6 +71,7 @@ class PlaybackPersistence(
         player: Player,
         queueTitle: String?,
         isFmMode: Boolean,
+        playlistSource: PlaylistQueueSource? = null,
     ): PlaybackSnapshot {
         val items = buildList(player.mediaItemCount) {
             repeat(player.mediaItemCount) { index ->
@@ -85,6 +89,8 @@ class PlaybackPersistence(
             shuffleModeEnabled = player.shuffleModeEnabled,
             playWhenReady = player.playWhenReady,
             queueTitle = queueTitle,
+            shuffleOrder = player.playbackOrderIndices(true),
+            playlistSource = if (isFmMode) null else playlistSource,
             sourceType = if (isFmMode) {
                 PlaybackSnapshot.SOURCE_PERSONAL_FM
             } else {
@@ -103,7 +109,7 @@ class PlaybackPersistence(
         val encoded = context.dataStore.data.first()[PlaybackSnapshotKey] ?: return null
         return runCatching {
             gson.fromJson(encoded, PlaybackSnapshot::class.java)
-                ?.takeIf { it.schemaVersion == 1 }
+                ?.takeIf { it.schemaVersion in 1..2 }
         }.onFailure { error ->
             Timber.tag(TAG).w(error, "Discarding an invalid playback snapshot")
         }.getOrNull()

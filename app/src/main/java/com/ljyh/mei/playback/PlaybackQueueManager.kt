@@ -5,14 +5,19 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.data.model.PLACEHOLDER_URI
 import com.ljyh.mei.data.model.createPlaceholder
+import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.data.model.api.GetRandomPlaylist
+import com.ljyh.mei.data.model.api.RandomPlaylistData
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.Queue
+import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,11 +29,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
+@OptIn(UnstableApi::class)
 class PlaybackQueueManager(
     private val player: Player,
     private val apiService: ApiService,
     private val weApiService: WeApiService,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val serverShuffleAllowed: () -> Boolean = { true },
 ) : Player.Listener {
 
     private val TAG = "QueueManager"
@@ -37,6 +44,13 @@ class PlaybackQueueManager(
     private var activeQueueBuildJob: Job? = null
     private var queueBuildGeneration = 0L
     private var activeFmGeneration: Long? = null
+    var playlistSource: PlaylistQueueSource? = null
+        private set
+    private var serverShuffleJob: Job? = null
+    private var serverShuffleGeneration = 0L
+    private var serverShuffleRequested = false
+    private var cloudShuffleEnabled: Boolean? = null
+    private var queueSelectionJob: Job? = null
 
     private val _isShuffleModeEnabled = MutableStateFlow(false)
     var isFmMode = false
@@ -45,6 +59,167 @@ class PlaybackQueueManager(
 
     init {
         player.addListener(this)
+        (player as? StableDeckPlayer)?.onQueueEdited = { replaced ->
+            cancelServerShuffle()
+            queueSelectionJob?.cancel()
+            if (replaced) playlistSource = null
+        }
+        (player as? StableDeckPlayer)?.onSeekRequested = { queueSelectionJob?.cancel() }
+    }
+
+    fun seekToQueueEntry(entryId: String) {
+        queueSelectionJob?.cancel()
+        queueSelectionJob = scope.launch(Dispatchers.Main) {
+            val index = (0 until player.mediaItemCount).firstOrNull {
+                player.getMediaItemAt(it).queueEntryId == entryId
+            } ?: return@launch
+            val item = player.getMediaItemAt(index)
+            val hydrated = hydrateQueueItem(item.mediaId to item) ?: return@launch
+            currentCoroutineContext().ensureActive()
+            val latestIndex = (0 until player.mediaItemCount).firstOrNull {
+                player.getMediaItemAt(it).queueEntryId == entryId
+            } ?: return@launch
+            val stablePlayer = player as? StableDeckPlayer ?: return@launch
+            stablePlayer.withInternalQueueUpdate {
+                if (needsMetadataHydration(player.getMediaItemAt(latestIndex))) {
+                    player.replaceMediaItem(latestIndex, hydrated)
+                }
+                player.seekToDefaultPosition(latestIndex)
+                if (player.playbackState == Player.STATE_IDLE) player.prepare()
+                player.playWhenReady = true
+            }
+        }
+    }
+
+    fun cancelServerShuffle() {
+        serverShuffleGeneration++
+        serverShuffleJob?.cancel()
+        serverShuffleJob = null
+        serverShuffleRequested = true
+    }
+
+    fun restorePlaylistSource(source: PlaylistQueueSource?) {
+        cancelServerShuffle()
+        playlistSource = source?.takeIf { it.playlistId > 0 }
+    }
+
+    fun setCloudShuffleEnabled(enabled: Boolean) {
+        val previous = cloudShuffleEnabled
+        if (previous == enabled) return
+        cloudShuffleEnabled = enabled
+        if (previous == null) {
+            // Initial preference delivery must not reshuffle a restored snapshot.
+            if (enabled) requestServerShuffle()
+            return
+        }
+        cancelServerShuffle()
+        if (enabled) {
+            serverShuffleRequested = false
+            requestServerShuffle()
+        } else if (player.shuffleModeEnabled && !isFmMode && serverShuffleAllowed()) {
+            val order = player.playbackOrderIndices()
+            val currentPosition = order.indexOf(player.currentMediaItemIndex)
+            if (currentPosition >= 0) {
+                (player as? StableDeckPlayer)?.setPlaybackOrder(
+                    order.take(currentPosition + 1) + order.drop(currentPosition + 1).shuffled(),
+                )
+            }
+        }
+    }
+
+    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+        if (!shuffleModeEnabled) {
+            cancelServerShuffle()
+            serverShuffleRequested = false
+        } else {
+            requestServerShuffle()
+        }
+    }
+
+    override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+        checkAndLoadMetadata()
+    }
+
+    private fun requestServerShuffle() {
+        val source = playlistSource ?: return
+        val stablePlayer = player as? StableDeckPlayer ?: return
+        val seedId = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+        if (cloudShuffleEnabled != true || serverShuffleRequested || isFmMode || !player.shuffleModeEnabled ||
+            !serverShuffleAllowed() || source.playlistId <= 0 || seedId <= 0
+        ) return
+        serverShuffleRequested = true
+        val generation = ++serverShuffleGeneration
+        serverShuffleJob = scope.launch(Dispatchers.Main) {
+            try {
+                val data = fetchCloudShuffleOrNull {
+                    apiService.getRandomPlaylist(GetRandomPlaylist(source.playlistId, seedId, source.alg))
+                }
+                currentCoroutineContext().ensureActive()
+                if (generation != serverShuffleGeneration || playlistSource != source ||
+                    cloudShuffleEnabled != true || !player.shuffleModeEnabled || isFmMode || !serverShuffleAllowed()
+                ) return@launch
+                if (data == null) {
+                    Log.w(TAG, "Cloud shuffle failed; continuing the existing local shuffle")
+                    return@launch
+                }
+                stablePlayer.withInternalQueueUpdate { applyServerShuffle(stablePlayer, data) }
+                checkAndLoadMetadata()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.w(TAG, "Server shuffle unavailable; keeping the local playback order", error)
+            } finally {
+                if (generation == serverShuffleGeneration) serverShuffleJob = null
+            }
+        }
+    }
+
+    private fun applyServerShuffle(stablePlayer: StableDeckPlayer, data: RandomPlaylistData) {
+        val songIds = data.songIds.orEmpty().map { it.id.toString() }.distinct()
+            .filter { (it.toLongOrNull() ?: 0) > 0 }
+        if (songIds.isEmpty() || player.mediaItemCount == 0) return
+        val previousOrder = player.playbackOrderIndices()
+        val currentPosition = previousOrder.indexOf(player.currentMediaItemIndex)
+        if (currentPosition < 0) return
+        val protectedIds = previousOrder.take(currentPosition + 1)
+            .mapNotNull { player.getMediaItemAt(it).queueEntryId }.toSet()
+        val protectedOrder = previousOrder.take(currentPosition + 1)
+            .mapNotNull { player.getMediaItemAt(it).queueEntryId }
+        val unavailableIds = data.privileges.orEmpty().filter { it.isUnavailable }
+            .map { it.id.toString() }.toSet()
+        val tracks = data.songData.orEmpty().associateBy { it.id.toString() }
+        val resolvedTracks = tracks.mapValues { (_, track) -> runCatching { track.toMediaItem() }.getOrNull() }
+
+        // Keep the current/history prefix, but do not introduce known unavailable tracks.
+        for (index in player.mediaItemCount - 1 downTo 0) {
+            val item = player.getMediaItemAt(index)
+            if (item.mediaId in unavailableIds && item.queueEntryId !in protectedIds &&
+                item.metadata?.isLocal != true
+            ) player.removeMediaItem(index)
+        }
+        val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (needsMetadataHydration(item)) {
+                resolvedTracks[item.mediaId]?.let { player.replaceMediaItem(index, it) }
+            }
+        }
+        val additions = songIds.filter { it !in existingIds && it !in unavailableIds }.map { id ->
+            resolvedTracks[id] ?: createPlaceholder(id)
+        }
+        if (additions.isNotEmpty()) player.addMediaItems(additions)
+
+        val entries = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        val indexByKey = entries.indices.associateBy { entries[it].queueEntryId }
+        val prefix = protectedOrder.mapNotNull { indexByKey[it] }
+        val pending = entries.indices.filter { entries[it].queueEntryId !in protectedIds }
+        val bySong = pending.groupBy { entries[it].mediaId }
+        val ordered = songIds.flatMap { bySong[it].orEmpty() }.toMutableList()
+        val included = ordered.toSet()
+        pending.filterNot { it in included }.shuffled().forEach { index ->
+            ordered.add(kotlin.random.Random.nextInt(ordered.size + 1), index)
+        }
+        stablePlayer.setPlaybackOrder(prefix + ordered)
     }
 
     fun startFmMode(seedItem: MediaItem) {
@@ -192,6 +367,8 @@ class PlaybackQueueManager(
         startInShuffleMode: Boolean = false,
         playWhenReady: Boolean = true,
     ) {
+        cancelServerShuffle()
+        queueSelectionJob?.cancel()
         activeQueueBuildJob?.cancel()
         val generation = ++queueBuildGeneration
         activeQueueBuildJob = scope.launch(Dispatchers.Main) {
@@ -245,17 +422,23 @@ class PlaybackQueueManager(
 
                 // 设置列表并直接跳转 此时 shuffle 是 false，所以 status.mediaItemIndex 绝对对应 list 里的第 N 个
                 player.setMediaItems(mediaItems, startIndex, status.position.toLong())
+                playlistSource = queue.playlistSource
+                serverShuffleRequested = false
 
                 player.repeatMode = Player.REPEAT_MODE_ALL
                 player.prepare()
 
                 // 如果需要，再开启随机 此时当前播放的歌曲已经定下来了，ExoPlayer 只会打乱"后面"的歌
                 if (startInShuffleMode) {
+                    (player as? StableDeckPlayer)?.setPlaybackOrder(
+                        listOf(startIndex) + mediaItems.indices.filter { it != startIndex }.shuffled(),
+                    )
                     player.shuffleModeEnabled = true
                     _isShuffleModeEnabled.value = true
                 }
 
                 player.playWhenReady = playWhenReady
+                if (startInShuffleMode) requestServerShuffle()
 
                 _queueState.value = QueueState.Playing(queue.title ?: "播放列表", allIds.size)
 
@@ -314,6 +497,12 @@ class PlaybackQueueManager(
             return
         }
         scope.launch(Dispatchers.Main) {
+            if (enabled && !player.shuffleModeEnabled && player.mediaItemCount > 0) {
+                val current = player.currentMediaItemIndex
+                (player as? StableDeckPlayer)?.setPlaybackOrder(
+                    listOf(current) + (0 until player.mediaItemCount).filter { it != current }.shuffled(),
+                )
+            }
             _isShuffleModeEnabled.value = enabled
             player.shuffleModeEnabled = enabled
         }
@@ -432,7 +621,10 @@ class PlaybackQueueManager(
      */
     fun addToQueue(items: List<MediaItem>) {
         scope.launch(Dispatchers.Main) {
+            val order = player.playbackOrderIndices(true)
+            val previousSize = player.mediaItemCount
             player.addMediaItems(items)
+            (player as? StableDeckPlayer)?.setPlaybackOrder(order + (previousSize until player.mediaItemCount))
 
             if (player.playbackState == Player.STATE_IDLE) {
                 player.prepare()
@@ -445,9 +637,14 @@ class PlaybackQueueManager(
      */
     fun playNext(items: List<MediaItem>) {
         scope.launch(Dispatchers.Main) {
+            val order = player.playbackOrderIndices(true)
+            val currentPosition = order.indexOf(player.currentMediaItemIndex)
             val insertIndex =
                 if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
             player.addMediaItems(insertIndex, items)
+            val remapped = order.map { if (it >= insertIndex) it + items.size else it }.toMutableList()
+            remapped.addAll(currentPosition + 1, (insertIndex until insertIndex + items.size).toList())
+            (player as? StableDeckPlayer)?.setPlaybackOrder(remapped)
 
             if (player.playbackState == Player.STATE_IDLE) {
                 player.prepare()
@@ -487,12 +684,17 @@ class PlaybackQueueManager(
 
     fun release() {
         cancelActiveQueueBuild()
+        (player as? StableDeckPlayer)?.onQueueEdited = null
+        (player as? StableDeckPlayer)?.onSeekRequested = null
         player.removeListener(this)
         loadingIds.clear()
         // 不要 cancel scope，因为它是由外部 Service 传进来的
     }
 
     private fun cancelActiveQueueBuild() {
+        cancelServerShuffle()
+        queueSelectionJob?.cancel()
+        playlistSource = null
         activeQueueBuildJob?.cancel()
         activeQueueBuildJob = null
         queueBuildGeneration++

@@ -134,9 +134,9 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue) {
+    fun playQueue(queue: ListQueue, shuffle: Boolean? = null) {
         // 判断当前 UI 上的模式是否是随机模式
-        val startInShuffle = repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode
+        val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         service.queueTitle = queue.title
         queueTitle.value = queue.title
         // 调用新的 playQueue 方法，传入随机意图
@@ -163,7 +163,7 @@ class PlayerConnection(
             currentCoroutineContext().ensureActive()
 
             val index = player.currentMediaItemIndex
-            val current = player.currentMediaItem ?: return@launch
+            if (player.currentMediaItem == null) return@launch
             if (index !in 0 until player.mediaItemCount) return@launch
             val position = player.currentPosition
             val shouldPlay = player.playWhenReady
@@ -171,8 +171,7 @@ class PlayerConnection(
             // Keep the playlist intact, but force every source that may have been
             // prepared at the previous quality to be discarded.
             service.resetPlaybackSourcesForQualityChange()
-            player.removeMediaItem(index)
-            player.addMediaItem(index, current)
+            player.refreshMediaItemSource(index)
             player.seekTo(index, position)
             player.prepare()
             player.playWhenReady = shouldPlay

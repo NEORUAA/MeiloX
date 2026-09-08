@@ -309,6 +309,8 @@
     <string name="equalizer_band_8k">8 kHz</string>
     <string name="equalizer_band_16k">16 kHz</string>
     <string name="playback_behavior">Playback Behavior</string>
+    <string name="cloud_shuffle">Cloud Shuffle</string>
+    <string name="cloud_shuffle_description">Prefer cloud shuffle and fall back to local shuffle if unavailable. Turn off to use local shuffle only.</string>
     <string name="loop_playback">Loop Playback</string>
     <string name="skip_unavailable">Skip Unavailable Tracks</string>
     <string name="previous_behavior">Previous Button Restarts After 3 Seconds</string>

@@ -61,6 +61,7 @@ fun PlaylistHeader(
     actionIcon: ImageVector,
     actionLabel: String,
     metadata: String? = null,
+    onShufflePlay: () -> Unit = onPlayAll,
 ) {
     val colors = LocalGlassColors.current
     val playlistCoverStyle by rememberEnumPreference(
@@ -118,7 +119,7 @@ fun PlaylistHeader(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GlassIconButton(onClick = onPlayAll, enabled = count > 0) {
+            GlassIconButton(onClick = onShufflePlay, enabled = count > 0) {
                 SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
             }
             GlassButton(
