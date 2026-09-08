@@ -27,6 +27,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -111,9 +113,11 @@ class AutoMixController(
     init {
         player.addListener(this)
         preferenceJob = scope.launch {
-            context.dataStore.data.collectLatest { preferences ->
+            context.dataStore.data.map { it.toAutoMixConfiguration() }.distinctUntilChanged().collectLatest { updated ->
                 val previous = configuration
-                configuration = preferences.toAutoMixConfiguration()
+                configuration = updated
+                monitorJob?.cancel()
+                monitorJob = null
                 if (!configuration.enabled) {
                     resetRetryState()
                     cancelTransition(prepareAfterCancel = false)
@@ -126,12 +130,14 @@ class AutoMixController(
                 } else {
                     prepareNext()
                 }
-            }
-        }
-        monitorJob = scope.launch {
-            while (isActive) {
-                monitorPosition()
-                delay(MONITOR_INTERVAL_MS)
+                if (configuration.enabled) {
+                    monitorJob = scope.launch {
+                        while (isActive) {
+                            monitorPosition()
+                            delay(autoMixMonitorInterval(player.duration - player.currentPosition, player.isPlaying, isTransitioning))
+                        }
+                    }
+                }
             }
         }
     }
@@ -243,6 +249,11 @@ class AutoMixController(
             if (!isTransitioning) clearStandby(resetRetry = true)
             return
         }
+        val remainingMs = player.duration - player.currentPosition
+        if (player.duration == C.TIME_UNSET || remainingMs > SMART_ANALYSIS_WINDOW_MS + 5_000L) {
+            if (preparedMediaId != null) clearStandby(resetRetry = true)
+            return
+        }
         val nextIndex = player.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET || nextIndex !in 0 until player.mediaItemCount) {
             clearStandby(resetRetry = true)
@@ -293,7 +304,9 @@ class AutoMixController(
         standby.setPauseAtEndOfMediaItems(false)
         standby.playWhenReady = false
         standby.volume = 0f
-        standby.playbackParameters = PlaybackParameters.DEFAULT
+        standby.playbackParameters = PlaybackParameters(
+            smartPlan?.takeIf { planMatchesTarget }?.incomingStartRate ?: 1f,
+        )
         standby.repeatMode = player.repeatMode
         standby.playlistMetadata = player.playlistMetadata
         standby.trackSelectionParameters = player.trackSelectionParameters
@@ -312,6 +325,7 @@ class AutoMixController(
         val duration = player.duration
         if (duration <= 0L || duration == C.TIME_UNSET) return
         val remaining = duration - player.currentPosition
+        if (remaining <= SMART_ANALYSIS_WINDOW_MS + 5_000L && preparedMediaId == null) prepareNext()
         if (configuration.mode == AutoMixMode.Smart && remaining <= SMART_ANALYSIS_WINDOW_MS) {
             ensureSmartPlan(duration)
         }
@@ -359,8 +373,12 @@ class AutoMixController(
                 ) {
                     analysisAccepted = true
                     smartPlan = plan
-                    if (plan != null && plan.incomingStartMs != preparedIncomingStartMs) {
-                        prepareNext(force = true)
+                    if (plan != null) {
+                        if (plan.incomingStartMs != preparedIncomingStartMs) {
+                            prepareNext(force = true)
+                        } else {
+                            updateTempo(player.standbyDeck, plan.incomingStartRate)
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -427,7 +445,9 @@ class AutoMixController(
         outgoing.volume = 1f
         outgoing.playbackParameters = PlaybackParameters.DEFAULT
         incoming.volume = 0f
-        incoming.playbackParameters = PlaybackParameters(transition.incomingStartRate)
+        if (incoming.playbackParameters.speed != transition.incomingStartRate) {
+            incoming.playbackParameters = PlaybackParameters(transition.incomingStartRate)
+        }
         incoming.playWhenReady = wantsPlayback
         transitionJob = scope.launch {
             while (isActive && activeTransition === transition) {
@@ -445,12 +465,8 @@ class AutoMixController(
                 val (outgoingGain, incomingGain) = autoMixGains(progress, transition.fadeCurve)
                 transition.outgoingDeck.volume = outgoingGain
                 transition.incomingDeck.volume = incomingGain
-                transition.outgoingDeck.playbackParameters = PlaybackParameters(
-                    autoMixTempoPlaybackRate(progress, 1f, transition.outgoingEndRate),
-                )
-                transition.incomingDeck.playbackParameters = PlaybackParameters(
-                    autoMixTempoPlaybackRate(progress, transition.incomingStartRate, 1f),
-                )
+                updateTempo(transition.outgoingDeck, autoMixTempoPlaybackRate(progress, 1f, transition.outgoingEndRate))
+                updateTempo(transition.incomingDeck, autoMixTempoPlaybackRate(progress, transition.incomingStartRate, 1f))
                 if (progress >= 1f || transition.outgoingDeck.playbackState == Player.STATE_ENDED) {
                     finishTransition(transition.wantsPlayback)
                     return@launch
@@ -512,6 +528,10 @@ class AutoMixController(
         if (isTransitioning) return
         preparationGeneration++
         val standby = player.standbyDeck
+        if (standby.mediaItemCount == 0 && standby.playbackState == Player.STATE_IDLE) {
+            clearPreparedState(resetRetry)
+            return
+        }
         standby.stop()
         standby.clearMediaItems()
         standby.playWhenReady = false
@@ -576,9 +596,14 @@ class AutoMixController(
     private fun Player.getMediaItemAtOrNull(index: Int): MediaItem? =
         if (index in 0 until mediaItemCount) getMediaItemAt(index) else null
 
+    private fun updateTempo(deck: ExoPlayer, speed: Float) {
+        if (deck.playbackParameters.speed != speed) {
+            deck.playbackParameters = PlaybackParameters(speed)
+        }
+    }
+
     companion object {
         private const val TAG = "AutoMix"
-        private const val MONITOR_INTERVAL_MS = 40L
         private const val ENVELOPE_INTERVAL_MS = 20L
         private const val SMART_ANALYSIS_WINDOW_MS = 60_000L
         private const val MAX_STANDBY_RETRY_ATTEMPTS = 1
@@ -694,6 +719,13 @@ internal fun autoMixGains(
 internal fun autoMixSmoothstep(value: Float): Float {
     val clamped = value.coerceIn(0f, 1f)
     return clamped * clamped * (3f - 2f * clamped)
+}
+
+internal fun autoMixMonitorInterval(remainingMs: Long, playing: Boolean, transitioning: Boolean): Long = when {
+    !playing || transitioning -> 1_000L
+    remainingMs > 65_000L -> 1_000L
+    remainingMs > 35_000L -> 250L
+    else -> 40L
 }
 
 internal fun shouldRetryAutoMixSecondary(attempts: Int, maxAttempts: Int): Boolean =

@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
 import androidx.media3.common.Player
@@ -17,7 +19,39 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
+
+private val Context.playbackProgressStore by preferencesDataStore(name = "playback_progress")
+private val ProgressKey = stringPreferencesKey("checkpoint")
+
+internal data class PlaybackCheckpoint(
+    val queueSavedAtEpochMs: Long,
+    val savedAtEpochMs: Long,
+    val currentIndex: Int,
+    val positionMs: Long,
+    val repeatMode: Int,
+    val shuffleModeEnabled: Boolean,
+    val playWhenReady: Boolean,
+)
+
+internal fun PlaybackSnapshot.withCheckpoint(checkpoint: PlaybackCheckpoint?): PlaybackSnapshot {
+    if (checkpoint == null || checkpoint.queueSavedAtEpochMs != savedAtEpochMs ||
+        checkpoint.currentIndex !in items.indices || checkpoint.positionMs < 0 ||
+        checkpoint.repeatMode !in Player.REPEAT_MODE_OFF..Player.REPEAT_MODE_ALL
+    ) return this
+    return copy(
+        savedAtEpochMs = checkpoint.savedAtEpochMs,
+        currentIndex = checkpoint.currentIndex,
+        positionMs = checkpoint.positionMs,
+        repeatMode = checkpoint.repeatMode,
+        shuffleModeEnabled = checkpoint.shuffleModeEnabled,
+        playWhenReady = checkpoint.playWhenReady,
+    )
+}
 
 data class PlaybackSnapshot(
     val schemaVersion: Int = 2,
@@ -67,17 +101,28 @@ class PlaybackPersistence(
     private val context: Context,
     private val gson: Gson = Gson(),
 ) {
+    private var cachedItems: List<PlaybackItemSnapshot>? = null
+    private var cachedOrder: List<Int>? = null
+    private var savedQueue: PlaybackSnapshot? = null
+    private var savedCheckpoint: PlaybackCheckpoint? = null
+    private val saveMutex = Mutex()
+
+    fun invalidateQueue() {
+        cachedItems = null
+        cachedOrder = null
+    }
+
     fun capture(
         player: Player,
         queueTitle: String?,
         isFmMode: Boolean,
         playlistSource: PlaylistQueueSource? = null,
     ): PlaybackSnapshot {
-        val items = buildList(player.mediaItemCount) {
+        val items = cachedItems ?: buildList(player.mediaItemCount) {
             repeat(player.mediaItemCount) { index ->
                 add(player.getMediaItemAt(index).toSnapshot())
             }
-        }
+        }.also { cachedItems = it }
         val currentIndex = player.currentMediaItemIndex
             .takeIf { it in items.indices }
             ?: 0
@@ -89,7 +134,7 @@ class PlaybackPersistence(
             shuffleModeEnabled = player.shuffleModeEnabled,
             playWhenReady = player.playWhenReady,
             queueTitle = queueTitle,
-            shuffleOrder = player.playbackOrderIndices(true),
+            shuffleOrder = cachedOrder ?: player.playbackOrderIndices(true).also { cachedOrder = it },
             playlistSource = if (isFmMode) null else playlistSource,
             sourceType = if (isFmMode) {
                 PlaybackSnapshot.SOURCE_PERSONAL_FM
@@ -100,8 +145,35 @@ class PlaybackPersistence(
     }
 
     suspend fun save(snapshot: PlaybackSnapshot) {
-        context.dataStore.edit { preferences ->
-            preferences[PlaybackSnapshotKey] = gson.toJson(snapshot)
+        withContext(Dispatchers.IO) {
+            saveMutex.withLock {
+                val previous = savedQueue
+                val sameQueue = previous != null && previous.items === snapshot.items &&
+                    previous.shuffleOrder === snapshot.shuffleOrder && previous.queueTitle == snapshot.queueTitle &&
+                    previous.sourceType == snapshot.sourceType && previous.playlistSource == snapshot.playlistSource
+                if (!sameQueue) {
+                    val queue = snapshot.copy(savedAtEpochMs = maxOf(snapshot.savedAtEpochMs, (previous?.savedAtEpochMs ?: 0L) + 1))
+                    val encoded = gson.toJson(queue)
+                    context.dataStore.edit { it[PlaybackSnapshotKey] = encoded }
+                    savedQueue = queue
+                }
+                val checkpoint = PlaybackCheckpoint(
+                    queueSavedAtEpochMs = checkNotNull(savedQueue).savedAtEpochMs,
+                    savedAtEpochMs = snapshot.savedAtEpochMs,
+                    currentIndex = snapshot.currentIndex,
+                    positionMs = snapshot.positionMs,
+                    repeatMode = snapshot.repeatMode,
+                    shuffleModeEnabled = snapshot.shuffleModeEnabled,
+                    playWhenReady = snapshot.playWhenReady,
+                )
+                val lastCheckpoint = savedCheckpoint
+                if (lastCheckpoint != null && checkpoint.copy(savedAtEpochMs = lastCheckpoint.savedAtEpochMs) == lastCheckpoint) {
+                    return@withLock
+                }
+                val encoded = gson.toJson(checkpoint)
+                context.playbackProgressStore.edit { it[ProgressKey] = encoded }
+                savedCheckpoint = checkpoint
+            }
         }
     }
 
@@ -110,6 +182,13 @@ class PlaybackPersistence(
         return runCatching {
             gson.fromJson(encoded, PlaybackSnapshot::class.java)
                 ?.takeIf { it.schemaVersion in 1..2 }
+                ?.let { snapshot ->
+                    val checkpoint = runCatching {
+                        context.playbackProgressStore.data.first()[ProgressKey]
+                            ?.let { gson.fromJson(it, PlaybackCheckpoint::class.java) }
+                    }.getOrNull()
+                    snapshot.withCheckpoint(checkpoint)
+                }
         }.onFailure { error ->
             Timber.tag(TAG).w(error, "Discarding an invalid playback snapshot")
         }.getOrNull()

@@ -9,6 +9,10 @@ import android.net.Uri
 import com.ljyh.mei.constants.UserAgent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.LinkedHashMap
@@ -61,6 +65,7 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
     private data class CacheKey(val mediaId: String, val startMs: Long)
 
     private val featureExtractor = BeatNetFeatureExtractor()
+    private val analysisMutex = Mutex()
     private val cache = object : LinkedHashMap<CacheKey, BeatNetTrackAnalysis>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CacheKey, BeatNetTrackAnalysis>?) = size > 8
     }
@@ -72,10 +77,12 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
         incomingId: String,
         incomingUri: Uri,
     ): BeatNetPairAnalysis = withContext(Dispatchers.Default) {
-        val outgoingStart = (outgoingDurationMs - WINDOW_DURATION_MS).coerceAtLeast(0)
-        val outgoing = analyze(outgoingId, outgoingUri, outgoingStart)
-        val incoming = analyze(incomingId, incomingUri, 0)
-        BeatNetPairAnalysis(outgoing, incoming)
+        analysisMutex.withLock {
+            val outgoingStart = (outgoingDurationMs - WINDOW_DURATION_MS).coerceAtLeast(0)
+            val outgoing = analyze(outgoingId, outgoingUri, outgoingStart)
+            val incoming = analyze(incomingId, incomingUri, 0)
+            BeatNetPairAnalysis(outgoing, incoming)
+        }
     }
 
     private suspend fun analyze(mediaId: String, uri: Uri, startMs: Long): BeatNetTrackAnalysis {
@@ -85,7 +92,9 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
             AndroidAudioDecoder(context).decode(uri, startMs, WINDOW_DURATION_MS)
         }
         val features = featureExtractor.extract(decoded.samples, decoded.sampleRate)
+        currentCoroutineContext().ensureActive()
         val activations = predict(features)
+        currentCoroutineContext().ensureActive()
         return BeatNetTemporalDecoder.decode(activations, startMs).also {
             synchronized(cache) { cache[key] = it }
         }
@@ -160,7 +169,7 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
 private data class DecodedAudio(val samples: FloatArray, val sampleRate: Int)
 
 private class AndroidAudioDecoder(private val context: Context) {
-    fun decode(uri: Uri, startMs: Long, durationMs: Long): DecodedAudio {
+    suspend fun decode(uri: Uri, startMs: Long, durationMs: Long): DecodedAudio {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
@@ -173,6 +182,8 @@ private class AndroidAudioDecoder(private val context: Context) {
                 extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
             } ?: error("No audio track is available for BeatNet analysis")
             val inputFormat = extractor.getTrackFormat(trackIndex)
+            // Analysis is background work, not a real-time playback decoder.
+            inputFormat.setInteger(MediaFormat.KEY_PRIORITY, 1)
             val mime = inputFormat.getString(MediaFormat.KEY_MIME) ?: error("Audio codec is unknown")
             extractor.selectTrack(trackIndex)
             val startUs = startMs * 1_000
@@ -192,6 +203,7 @@ private class AndroidAudioDecoder(private val context: Context) {
             var outputEnded = false
             val info = MediaCodec.BufferInfo()
             while (!outputEnded) {
+                currentCoroutineContext().ensureActive()
                 if (!inputEnded) {
                     val inputIndex = codec.dequeueInputBuffer(10_000)
                     if (inputIndex >= 0) {
@@ -257,8 +269,11 @@ private fun ByteBuffer.toMonoFloat(
 ): FloatArray {
     val bytesPerSample = when (encoding) {
         AudioFormat.ENCODING_PCM_FLOAT -> 4
+        AudioFormat.ENCODING_PCM_32BIT -> 4
+        AudioFormat.ENCODING_PCM_24BIT_PACKED -> 3
         AudioFormat.ENCODING_PCM_8BIT -> 1
-        else -> 2
+        AudioFormat.ENCODING_PCM_16BIT -> 2
+        else -> error("Unsupported analysis PCM encoding: $encoding")
     }
     val channelCount = channels.coerceAtLeast(1)
     val frameCount = info.size / (bytesPerSample * channelCount)
@@ -276,14 +291,23 @@ private fun ByteBuffer.toMonoFloat(
     return FloatArray(endFrames - skipFrames) {
         var sum = 0f
         repeat(channelCount) {
-            sum += when (encoding) {
-                AudioFormat.ENCODING_PCM_FLOAT -> source.float.coerceIn(-1f, 1f)
-                AudioFormat.ENCODING_PCM_8BIT -> (source.get().toInt() and 0xff).minus(128) / 128f
-                else -> source.short / 32768f
-            }
+            sum += source.readAnalysisPcmSample(encoding)
         }
         sum / channelCount
     }
+}
+
+internal fun ByteBuffer.readAnalysisPcmSample(encoding: Int): Float = when (encoding) {
+    AudioFormat.ENCODING_PCM_FLOAT -> float.let { if (it.isFinite()) it.coerceIn(-1f, 1f) else 0f }
+    AudioFormat.ENCODING_PCM_8BIT -> (get().toInt() and 0xff).minus(128) / 128f
+    AudioFormat.ENCODING_PCM_16BIT -> short / 32768f
+    AudioFormat.ENCODING_PCM_32BIT -> int / 2147483648f
+    AudioFormat.ENCODING_PCM_24BIT_PACKED -> {
+        val sample = (get().toInt() and 0xff) or
+            ((get().toInt() and 0xff) shl 8) or (get().toInt() shl 16)
+        sample / 8388608f
+    }
+    else -> error("Unsupported analysis PCM encoding: $encoding")
 }
 
 private fun MediaFormat.integerOrDefault(key: String, default: Int): Int =

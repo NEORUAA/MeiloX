@@ -252,6 +252,10 @@ class MusicService : MediaLibraryService(),
         player.addListener(sleepTimer)
         player.addListener(object : Player.Listener {
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (::playbackPersistence.isInitialized) {
+                    playbackPersistence.invalidateQueue()
+                    schedulePlaybackSnapshot()
+                }
                 updatePreload()
             }
 
@@ -750,7 +754,10 @@ class MusicService : MediaLibraryService(),
                 enableAudioTrackPlaybackParams: Boolean,
             ) = DefaultAudioSink.Builder(this@MusicService)
                 .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                // AutoMix continuously changes tempo. Sonic's parameter changes drain and
+                // restart the PCM processor chain, producing periodic gaps during overlap.
+                // Apply tempo at AudioTrack instead, keeping the EQ/PCM pipeline continuous.
+                .setEnableAudioOutputPlaybackParameters(true)
                 .setAudioProcessorChain(
                     DefaultAudioSink.DefaultAudioProcessorChain(
                         arrayOf(TenBandEqualizerProcessor(equalizerConfigurationState)),
