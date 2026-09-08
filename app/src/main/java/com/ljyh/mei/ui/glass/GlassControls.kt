@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.scale
@@ -279,7 +281,7 @@ fun GlassSlider(
                         alpha = animation.pressProgress,
                     )
                 },
-                shadow = { Shadow(radius = 4.dp, color = Color.Black.copy(alpha = 0.05f)) },
+                shadow = { Shadow(radius = 6.dp, color = Color.Black.copy(alpha = 0.15f)) },
                 innerShadow = {
                     InnerShadow(
                         radius = 4.dp * animation.pressProgress,
@@ -508,9 +510,8 @@ fun <T> GlassSegmentedControl(
                 },
                 onDrawSurface = {
                     val press = animation.pressProgress
-                    // The selected white pill and its label are already exported by
-                    // tabsBackdrop. A resting white overlay here would cover that sampled
-                    // label instead of refracting it, so only add a subtle pressed sheen.
+                    // The animated pill and stationary labels are exported by tabsBackdrop.
+                    // Keep this overlay translucent so the sampled text stays visible.
                     drawRect(Color.White.copy(alpha = 0.10f * press))
                 },
             )
@@ -529,12 +530,11 @@ fun <T> GlassSegmentedControl(
                 items = items,
                 selected = selected,
                 onSelected = onSelected,
-                selectedBackground = Color.Transparent,
             )
         }
 
-        // 2. Exact duplicate exported as a hidden sampling source. It includes the labels,
-        // so the lens carries and refracts the selected tab content just like the nav bar.
+        // 2. Keep labels stationary in the sampling source, but move the pill with the
+        // lens's animated position instead of snapping its background to the target tab.
         Row(
             Modifier
                 .fillMaxSize()
@@ -545,13 +545,22 @@ fun <T> GlassSegmentedControl(
                 .background(trackColor)
                 .then(hiddenGlassModifier)
                 .then(interactiveHighlight.modifier)
+                .drawBehind {
+                    val visualIndex = if (isLtr) animation.value else items.lastIndex - animation.value
+                    val pillHeight = 28.dp.toPx()
+                    drawRoundRect(
+                        color = if (isLight) Color.White else Color(0xFF636366),
+                        topLeft = Offset(trackPaddingPx + visualIndex * tabWidthPx, trackPaddingPx),
+                        size = Size(tabWidthPx.fastRoundToInt().toFloat(), pillHeight),
+                        cornerRadius = CornerRadius(pillHeight / 2f),
+                    )
+                }
                 .padding(2.dp),
         ) {
             SegmentedTabContent(
                 items = items,
                 selected = selected,
                 onSelected = onSelected,
-                selectedBackground = if (isLight) Color.White else Color(0xFF636366),
             )
         }
 
@@ -585,7 +594,6 @@ private fun <T> androidx.compose.foundation.layout.RowScope.SegmentedTabContent(
     items: List<Pair<T, String>>,
     selected: T,
     onSelected: (T) -> Unit,
-    selectedBackground: Color,
 ) {
     val colors = LocalGlassColors.current
     items.forEach { (key, label) ->
@@ -595,7 +603,6 @@ private fun <T> androidx.compose.foundation.layout.RowScope.SegmentedTabContent(
                 .weight(1f)
                 .fillMaxHeight()
                 .clip(Capsule())
-                .background(if (isSelected) selectedBackground else Color.Transparent)
                 .clickable(
                     interactionSource = null,
                     indication = null,
