@@ -26,6 +26,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
 
     fun init(context: Context) {
         mContext = context.applicationContext
+        if (Thread.getDefaultUncaughtExceptionHandler() === this) return
         // 获取系统默认的UncaughtException处理器
         mDefaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         // 设置该CrashHandler为程序的默认处理器
@@ -36,17 +37,20 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
      * 当 UncaughtException 发生时会转入该函数来处理
      */
     override fun uncaughtException(thread: Thread, ex: Throwable) {
-        if (!handleException(ex) && mDefaultHandler != null) {
-            // 如果用户没有处理则让系统默认的异常处理器来处理
-            mDefaultHandler?.uncaughtException(thread, ex)
-        } else {
-            // 等待一会，让Toast显示出来（如果做了UI提示的话），或者保证文件写入完成
-            try {
-                Thread.sleep(2000)
-            } catch (e: InterruptedException) {
-                Log.e(TAG, "error : ", e)
+        try {
+            handleException(ex)
+        } catch (loggingFailure: Throwable) {
+            // Log.println survives the release rules that strip Log.e calls.
+            Log.println(Log.ERROR, TAG, "Failed to save crash report: $loggingFailure")
+        } finally {
+            // Preserve the original exception in Android's fatal crash report.
+            val defaultHandler = mDefaultHandler
+            if (defaultHandler != null && defaultHandler !== this) {
+                defaultHandler.uncaughtException(thread, ex)
+            } else {
+                System.err.println("Uncaught exception in thread ${thread.name}")
+                ex.printStackTrace()
             }
-            // 退出程序
             Process.killProcess(Process.myPid())
             exitProcess(1)
         }
@@ -117,11 +121,6 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         val writer = StringWriter()
         val printWriter = PrintWriter(writer)
         ex.printStackTrace(printWriter)
-        var cause = ex.cause
-        while (cause != null) {
-            cause.printStackTrace(printWriter)
-            cause = cause.cause
-        }
         printWriter.close()
         val result = writer.toString()
         sb.append(result)
@@ -132,17 +131,14 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             val time = formatter.format(Date())
             val fileName = "crash-$time-$timestamp.log"
 
-            // 存储路径：/Android/data/<package-name>/files/crash_logs/
-            // 这种路径不需要申请运行时存储权限，且卸载应用后会自动删除，符合规范
+            // Store reports in the app's private files directory.
             val logDir = File(mContext.filesDir, LOG_DIR_NAME)
             if (!logDir.exists()) {
                 logDir.mkdirs()
             }
 
             val file = File(logDir, fileName)
-            val fos = FileOutputStream(file)
-            fos.write(sb.toString().toByteArray())
-            fos.close()
+            FileOutputStream(file).use { it.write(sb.toString().toByteArray()) }
 
             Log.e(TAG, "Crash log saved to: ${file.absolutePath}")
             return fileName
