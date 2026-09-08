@@ -556,4 +556,5 @@
     <string name="comment_sort_recommended">Recommended</string>
     <string name="comment_sort_hot">Popular</string>
     <string name="comment_sort_latest">Latest</string>
+    <string name="appearance_library_style">Library Style</string>
 </resources>

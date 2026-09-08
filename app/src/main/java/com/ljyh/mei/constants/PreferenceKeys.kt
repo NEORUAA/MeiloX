@@ -87,6 +87,8 @@ val MeshPlayingKey = booleanPreferencesKey("meshPlaying")
 val MeshLowFreqVolumeKey = floatPreferencesKey("meshLowFreqVolume")
 val MeshSubdivisionKey = intPreferencesKey("meshSubdivision")
 
+val LibraryStyleKey = stringPreferencesKey("libraryStyle")
+
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
 val PlayerKeepScreenOnKey = booleanPreferencesKey("player.keepScreenOn")
 val PlaylistCoverStyleKey = stringPreferencesKey("playlistCoverStyle")
@@ -120,6 +122,11 @@ enum class QqTimeout(val seconds: Int, val label: String) {
     Sec8(8, "8秒"),
     Sec10(10, "10秒"),
     Sec15(15, "15秒")
+}
+
+enum class LibraryStyle {
+    AppleMusic,
+    Default,
 }
 
 enum class PlayerStyle {

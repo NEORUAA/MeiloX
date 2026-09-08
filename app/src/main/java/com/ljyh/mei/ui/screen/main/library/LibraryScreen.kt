@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.ui.navigation.MeiNavigator
+import com.ljyh.mei.R
+import androidx.compose.ui.graphics.Color
+import com.ljyh.mei.constants.LibraryStyle
+import com.ljyh.mei.constants.LibraryStyleKey
+import com.ljyh.mei.utils.rememberEnumPreference
+import com.ljyh.mei.ui.glass.IosListRow
+import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserIdKey
@@ -41,7 +50,13 @@ import com.ljyh.mei.utils.rememberPreference
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
     isNavigationTab: Boolean = false,
+    category: LibraryPage? = null,
 ) {
+    val libraryStyle by rememberEnumPreference(LibraryStyleKey, LibraryStyle.Default)
+    if (category == null && libraryStyle == LibraryStyle.AppleMusic) {
+        LibraryCategoryList(isNavigationTab)
+        return
+    }
     val navController = LocalNavController.current
     val account by viewModel.account.collectAsState()
     val photoAlbum by viewModel.photoAlbum.collectAsState()
@@ -135,7 +150,8 @@ fun LibraryScreen(
             LibraryMobileLayout(
                 userPhoto = userPhoto,
                 isNavigationTab = isNavigationTab,
-                selectedPage = selectedPage,
+                selectedPage = category ?: selectedPage,
+                isCategoryPage = category != null,
                 onPageSelect = { selectedPage = it },
                 createdPlaylists = createdPlaylists,
                 collectedPlaylists = collectedPlaylists,
@@ -163,7 +179,7 @@ fun LibraryScreen(
             }
         } else {
             // 未登录逻辑
-            EmptyLoginState(navController, isNavigationTab)
+            EmptyLoginState(navController, isNavigationTab, category)
         }
     }
 }
@@ -172,10 +188,11 @@ fun LibraryScreen(
 fun EmptyLoginState(
     navController: MeiNavigator,
     isNavigationTab: Boolean = false,
+    category: LibraryPage? = null,
 ) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
-        title = stringResource(com.ljyh.mei.R.string.app_tab_library),
+        title = stringResource(category?.titleRes ?: R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
@@ -202,6 +219,36 @@ fun EmptyLoginState(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryCategoryList(isNavigationTab: Boolean) {
+    val navController = LocalNavController.current
+    val colors = LocalGlassColors.current
+    val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    IosPinnedListPage(
+        title = stringResource(R.string.app_tab_library),
+        bottomPadding = insets.calculateBottomPadding(),
+        horizontalContentPadding = 6.dp,
+        largeTitleHorizontalPadding = 14.dp,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        backgroundColor = if (colors.isDark) colors.groupedBackground else Color.White,
+        onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        actions = { if (isNavigationTab) GlobalProfileAvatarButton() },
+    ) {
+        LibraryPage.entries.forEachIndexed { index, page ->
+            item(key = "library-category:${page.name}") {
+                IosListRow(
+                    title = stringResource(page.titleRes),
+                    leading = { SfIcon(page.symbol, null, tint = colors.accent) },
+                    showTopSeparator = index > 0,
+                    onClick = {
+                        Screen.LibraryCategory.navigate(navController) { addPath(page.name) }
+                    },
+                )
             }
         }
     }

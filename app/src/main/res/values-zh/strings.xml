@@ -555,4 +555,5 @@
     <string name="comment_sort_recommended">推荐</string>
     <string name="comment_sort_hot">热度</string>
     <string name="comment_sort_latest">时间</string>
+    <string name="appearance_library_style">媒体库样式</string>
 </resources>

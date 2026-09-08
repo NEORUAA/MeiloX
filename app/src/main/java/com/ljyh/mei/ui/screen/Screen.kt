@@ -9,6 +9,7 @@ import com.ljyh.mei.ui.navigation.ContentFeature
 sealed class Screen(val route:String) {
     data object Home:Screen("home")
     data object Library:Screen("library")
+    data object LibraryCategory:Screen("library_category")
     data object FindMusic: Screen("find_music")
     data object PlaylistCategory: Screen("playlist_category")
     data object SearchResult:Screen("search_result")

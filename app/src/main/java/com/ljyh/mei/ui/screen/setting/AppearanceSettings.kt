@@ -41,6 +41,8 @@ import com.ljyh.mei.constants.NormalLyricTextBoldKey
 import com.ljyh.mei.constants.NormalLyricTextSizeKey
 import com.ljyh.mei.constants.OriginalCoverKey
 import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.LibraryStyle
+import com.ljyh.mei.constants.LibraryStyleKey
 import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.constants.PlaylistCoverStyle
@@ -76,6 +78,7 @@ fun AppearanceSettings(
     var showColorPicker by remember { mutableStateOf(false) }
     val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val (playlistHeader, setPlaylistHeader) = rememberPreference(PlaylistTrackTableHeaderKey, false)
+    val (libraryStyle, setLibraryStyle) = rememberEnumPreference(LibraryStyleKey, LibraryStyle.Default)
     val (playerStyle, setPlayerStyle) = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val (keepScreenOn, setKeepScreenOn) = rememberPreference(PlayerKeepScreenOnKey, false)
     val (originalCover, setOriginalCover) = rememberPreference(OriginalCoverKey, false)
@@ -118,6 +121,15 @@ fun AppearanceSettings(
                         else setAccentColorArgb(DefaultAccentColorArgb)
                     },
                     enabled = !dynamicTheme,
+                )
+            }
+        }
+        item {
+            SettingsGroup(stringResource(R.string.app_tab_library)) {
+                AppearanceChoice(
+                    R.string.appearance_library_style, "music.note.list", libraryStyle, LibraryStyle.entries,
+                    { if (it == LibraryStyle.AppleMusic) "Apple Music" else stringResource(R.string.appearance_accent_default) },
+                    setLibraryStyle,
                 )
             }
         }

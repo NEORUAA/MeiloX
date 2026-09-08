@@ -181,6 +181,7 @@ fun LibraryMobileLayout(
     userId: String,
     onPlaylistClick: (String) -> Unit,
     onAlbumClick: (String) -> Unit,
+    isCategoryPage: Boolean = false,
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -234,7 +235,7 @@ fun LibraryMobileLayout(
         }
     }
     val pages = LibraryPage.entries
-    val title = stringResource(R.string.app_tab_library)
+    val title = stringResource(if (isCategoryPage) selectedPage.titleRes else R.string.app_tab_library)
     val likedTitle = stringResource(R.string.app_tab_library_songs)
     val downloadsTitle = stringResource(R.string.app_tab_library_downloads)
     val usesGroupedLazyRows = selectedPage == LibraryPage.Podcasts ||
@@ -322,13 +323,15 @@ fun LibraryMobileLayout(
                     modifier = Modifier.fillMaxWidth().padding(bottom = pageSpacing),
                 )
             }
-            item(key = "library-pages") {
-                GlassSegmentedControl(
-                    items = pages.map { it to stringResource(it.titleRes) },
-                    selected = selectedPage,
-                    onSelected = onPageSelect,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = pageSpacing),
-                )
+            if (!isCategoryPage) {
+                item(key = "library-pages") {
+                    GlassSegmentedControl(
+                        items = pages.map { it to stringResource(it.titleRes) },
+                        selected = selectedPage,
+                        onSelected = onPageSelect,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = pageSpacing),
+                    )
+                }
             }
 
             when (selectedPage) {

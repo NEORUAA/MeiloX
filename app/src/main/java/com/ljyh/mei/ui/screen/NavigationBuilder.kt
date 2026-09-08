@@ -20,6 +20,7 @@ import com.ljyh.mei.ui.screen.history.HistoryScreen
 import com.ljyh.mei.ui.screen.local.LocalMusicScreen
 import com.ljyh.mei.ui.screen.local.LocalSongListScreen
 import com.ljyh.mei.ui.screen.main.home.HomeHubScreen
+import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.screen.main.library.LibraryScreen
 import com.ljyh.mei.ui.screen.playlist.EveryDay
 import com.ljyh.mei.ui.screen.playlist.PlaylistScreen
@@ -64,6 +65,15 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable(Screen.Library.route) {
         LibraryScreen()
+    }
+
+    composable(
+        route = "${Screen.LibraryCategory.route}/{page}",
+        arguments = listOf(navArgument("page") { type = NavType.StringType }),
+    ) { entry ->
+        LibraryPage.entries.firstOrNull { it.name == entry.arguments?.getString("page") }?.let {
+            LibraryScreen(category = it)
+        }
     }
 
     composable(Screen.FindMusic.route) {
@@ -322,6 +332,11 @@ fun navigationEntry(
     when {
         route == Screen.Home.route -> HomeHubScreen()
         route == Screen.Library.route -> LibraryScreen(isNavigationTab = isNavigationTab)
+        route.startsWith("${Screen.LibraryCategory.route}/") -> {
+            LibraryPage.entries.firstOrNull {
+                it.name == route.substringAfter("${Screen.LibraryCategory.route}/")
+            }?.let { LibraryScreen(category = it) }
+        }
         route == Screen.FindMusic.route -> FindMusicScreen(isNavigationTab = isNavigationTab)
         route.startsWith("${Screen.PlaylistCategory.route}/") -> {
             val arguments = route.substringAfter("${Screen.PlaylistCategory.route}/")

@@ -555,4 +555,5 @@
     <string name="comment_sort_recommended">推薦</string>
     <string name="comment_sort_hot">熱門</string>
     <string name="comment_sort_latest">最新</string>
+    <string name="appearance_library_style">媒體庫樣式</string>
 </resources>
