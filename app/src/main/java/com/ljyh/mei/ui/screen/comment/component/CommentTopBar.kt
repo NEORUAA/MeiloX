@@ -1,9 +1,9 @@
 package com.ljyh.mei.ui.screen.comment.component
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +15,8 @@ import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.api.CommentSortType
 import com.ljyh.mei.ui.glass.GlassIconButton
+import com.ljyh.mei.ui.glass.GlassButton
+import com.ljyh.mei.ui.glass.LocalGlassDimensions
 import com.ljyh.mei.ui.glass.IosContextMenu
 import com.ljyh.mei.ui.glass.IosMenuItem
 import com.ljyh.mei.ui.glass.IosPopupMenu
@@ -58,13 +60,16 @@ fun CommentSortAction(
         onExpandedChange = { expanded = it },
         itemCount = CommentSortType.entries.size,
         anchor = { onClick ->
-        TextButton(onClick = onClick) {
-            Text(
-                text = commentSortLabel(sortType),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+            GlassButton(
+                onClick = onClick,
+                modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize),
+            ) {
+                Text(
+                    text = commentSortLabel(sortType),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         },
     ) { childBackdrop, close ->
         CommentSortType.entries.forEach { type ->
@@ -78,7 +83,7 @@ fun CommentSortAction(
                 backdrop = childBackdrop,
             )
         }
-            }
+    }
 }
 
 @Composable

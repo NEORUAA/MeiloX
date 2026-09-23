@@ -343,6 +343,7 @@ fun IosPinnedPage(
     actions: @Composable RowScope.() -> Unit = {},
     collapseProgress: Float = 1f,
     backgroundColor: Color? = null,
+    topBarBlurProgress: Float = collapseProgress,
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val pageBackdrop = rememberLayerBackdrop()
@@ -375,7 +376,7 @@ fun IosPinnedPage(
                     .height(toolbarHeight + 34.dp)
                     .align(Alignment.TopCenter)
                     .graphicsLayer {
-                        alpha = collapseProgress.coerceIn(0f, 1f)
+                        alpha = topBarBlurProgress.coerceIn(0f, 1f)
                     }
                     .drawPlainBackdrop(
                         backdrop = pageBackdrop,
