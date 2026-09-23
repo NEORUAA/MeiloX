@@ -13,6 +13,10 @@ import androidx.media3.common.Player
  *
  * AudioPlayer (Part of the source code)
  * The android.media.MediaPlayer extensions for audio play.
+ *
+ * These fades observe playWhenReady changes; playback commands belong to the caller.
+ * Reissuing pause() after audio focus loss changes the reason to USER_REQUEST, which
+ * Media3 corrects back to AUDIO_FOCUS_LOSS and can trigger an endless callback loop.
  * It is very easy to use.
  *
  * @version 20210730
@@ -60,9 +64,6 @@ class AudioPlayer(
             override fun onAnimationEnd(animation: Animator) {
                 if (!pauseAnimationCancelled) {
                     setExoPlayerVolume(0F)
-                    if (!shouldSuppressVolumeWrites()) {
-                        player.pause()
-                    }
                 }
                 isPauseSmoothing = false
             }
@@ -93,9 +94,6 @@ class AudioPlayer(
         addListener(object : Animator.AnimatorListener {
             override fun onAnimationStart(animation: Animator) {
                 startAnimationCancelled = false
-                if (!shouldSuppressVolumeWrites()) {
-                    player.playWhenReady = true
-                }
             }
 
             override fun onAnimationEnd(animation: Animator) {
@@ -140,9 +138,6 @@ class AudioPlayer(
         val (start, target) = audioVolumeAnimationRange(currentVolume, 0F)
         if (!audioVolumeAnimationNeeded(start, target)) {
             setExoPlayerVolume(target)
-            if (!shouldSuppressVolumeWrites()) {
-                player.pause()
-            }
             isPauseSmoothing = false
             return
         }
@@ -159,9 +154,6 @@ class AudioPlayer(
         val (start, target) = audioVolumeAnimationRange(currentVolume, 1F)
         if (!audioVolumeAnimationNeeded(start, target)) {
             setExoPlayerVolume(target)
-            if (!shouldSuppressVolumeWrites()) {
-                player.playWhenReady = true
-            }
             isStartSmoothing = false
             return
         }
