@@ -69,7 +69,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -93,7 +92,6 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.utils.UnitUtils.toPx
-import com.ljyh.mei.utils.audio.AudioVisualizerManager
 import kotlin.math.min
 
 @OptIn(UnstableApi::class)
@@ -217,16 +215,6 @@ fun AppleMusicPlayer(
         val mShadowElevation = 16.dp * (1f - lyricAnimFraction)
 
         val coverUrl = mediaMetadata?.coverUrl
-        val audioVisualizerManager = remember { AudioVisualizerManager(context) }
-        DisposableEffect(audioVisualizerManager) {
-            onDispose {
-                audioVisualizerManager.release()
-            }
-        }
-        LaunchedEffect(stateContainer.playerConnection.player) {
-            val player = stateContainer.playerConnection.player as? ExoPlayer
-            player?.audioSessionId?.let(audioVisualizerManager::attachToPlayer)
-        }
         // --- 3. UI Structure ---
         BottomSheet(
             state = state,
@@ -249,7 +237,7 @@ fun AppleMusicPlayer(
             backgroundContent = {
                 FluidBackground(
                     imageUrl = coverUrl,
-                    audioVisualizerManager = audioVisualizerManager,
+                    beatMeter = stateContainer.playerConnection.service.beatMeter,
                     isPlaying = isPlaying,
                     alpha = 1f,
                     backdrop = playerBackgroundBackdrop,

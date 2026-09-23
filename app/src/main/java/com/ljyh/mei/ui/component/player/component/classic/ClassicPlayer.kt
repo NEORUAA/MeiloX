@@ -7,17 +7,14 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.ui.component.player.MiniPlayer
 import com.ljyh.mei.ui.component.player.component.FluidBackground
@@ -28,7 +25,6 @@ import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.glass.trackBackdropPosition
-import com.ljyh.mei.utils.audio.AudioVisualizerManager
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -56,16 +52,6 @@ fun ClassicPlayer(
     val isPlaying by stateContainer.isPlaying
     val sliderPosition by remember { derivedStateOf { stateContainer.sliderPosition } }
     val duration by remember { derivedStateOf { stateContainer.duration } }
-    val context = LocalContext.current
-    val audioVisualizerManager = remember { AudioVisualizerManager(context) }
-
-    LaunchedEffect(stateContainer.playerConnection.player) {
-        val player = stateContainer.playerConnection.player as? ExoPlayer
-        player?.audioSessionId?.let { sessionId ->
-            audioVisualizerManager.attachToPlayer(sessionId)
-        }
-    }
-
     BottomSheet(
         state = state,
         modifier = modifier,
@@ -85,7 +71,7 @@ fun ClassicPlayer(
         backgroundContent = {
             FluidBackground(
                 imageUrl = mediaMetadata?.coverUrl,
-                audioVisualizerManager = audioVisualizerManager,
+                beatMeter = stateContainer.playerConnection.service.beatMeter,
                 isPlaying = isPlaying,
                 alpha = 1f,
                 backdrop = playerBackgroundBackdrop,

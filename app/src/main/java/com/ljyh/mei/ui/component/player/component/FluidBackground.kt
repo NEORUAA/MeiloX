@@ -28,7 +28,8 @@ import com.ljyh.mei.ui.component.player.LocalPlayerBackdropFrame
 import com.ljyh.mei.ui.component.player.component.mesh.MeshBackgroundView
 import com.ljyh.mei.ui.component.utils.rememberLifecycleStarted
 import com.ljyh.mei.ui.glass.trackBackdropPosition
-import com.ljyh.mei.utils.audio.AudioVisualizerManager
+import com.ljyh.mei.playback.PlaybackBeatMeter
+import com.ljyh.mei.playback.PlaybackSpectrum
 import com.ljyh.mei.utils.rememberPreference
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -50,7 +51,7 @@ private const val StaticBackdropCaptureAttempts = 18
 @Composable
 fun FluidBackground(
     imageUrl: String?,
-    audioVisualizerManager: AudioVisualizerManager,
+    beatMeter: PlaybackBeatMeter,
     isPlaying: Boolean = true,
     alpha: Float = 1f,
     backdrop: LayerBackdrop,
@@ -75,24 +76,25 @@ fun FluidBackground(
     // Keep EGL and the album texture across openings without rendering hidden frames.
     // Start immediately on a new gesture, before the opening fade becomes noticeable.
     val backgroundActive = lifecycleStarted && backgroundVisible && sheetVisible
-    val audioReactive = backgroundActive && expanded
-    val bass by produceState(0f, audioVisualizerManager, audioReactive) {
-        value = 0f
-        if (audioReactive) {
-            audioVisualizerManager.bassValue.collect { value = it }
-        }
-    }
-
     val (flowSpeed) = rememberPreference(MeshFlowSpeedKey, defaultValue = 0.25f)
     val (renderScale) = rememberPreference(MeshRenderScaleKey, defaultValue = 0.75f)
     val (staticMode) = rememberPreference(MeshStaticModeKey, defaultValue = false)
     val (meshPlaying) = rememberPreference(MeshPlayingKey, defaultValue = true)
-    val (volumeScale) = rememberPreference(MeshLowFreqVolumeKey, defaultValue = 0.1f)
+    val (sensitivity) = rememberPreference(MeshLowFreqVolumeKey, defaultValue = 0.1f)
     val (subdivision) = rememberPreference(MeshSubdivisionKey, defaultValue = 50)
 
-    DisposableEffect(audioVisualizerManager, audioReactive) {
-        audioVisualizerManager.setCaptureEnabled(audioReactive)
-        onDispose { audioVisualizerManager.setCaptureEnabled(false) }
+    val audioReactive = backgroundActive && expanded && isPlaying && !staticMode && sensitivity > 0f
+    LaunchedEffect(meshView, beatMeter, audioReactive, sensitivity) {
+        val view = meshView ?: return@LaunchedEffect
+        // Update the native renderer directly: audio samples must not recompose the player.
+        // The existing sensitivity setting ranges from 0 to 0.5; visual limits stay bounded.
+        view.setAudioStrength(if (audioReactive) (sensitivity * 2f).coerceIn(0f, 1f) else 0f)
+        try {
+            if (audioReactive) beatMeter.spectrum.collect { view.updateSpectrum(it) }
+        } finally {
+            view.updateSpectrum(PlaybackSpectrum.Zero)
+            view.setAudioStrength(0f)
+        }
     }
 
     // 1. 将图片加载逻辑独立出来，只负责把 Bitmap 提取出来
@@ -119,7 +121,7 @@ fun FluidBackground(
     }
 
     // Push the album exactly once per bitmap change. Calling setAlbum from AndroidView's
-    // update block re-fires on every recomposition (sheet animation ~60Hz, bass ~10Hz),
+    // update block re-fires on every recomposition (including sheet animation),
     // and each call restarts the renderer's cross-fade with a new random mesh preset,
     // which is the visible flicker/dark-dip source.
     LaunchedEffect(meshView, albumBitmap) {
@@ -137,7 +139,7 @@ fun FluidBackground(
     val captureState = remember { IntArray(3) }
     val capturedFrameVersion = remember { longArrayOf(-1L) }
 
-    // Configuration changes are infrequent compared with sheet/bass recompositions. Apply
+    // Configuration changes are infrequent compared with sheet recompositions. Apply
     // renderer settings from their state boundary instead of queueing GL work from every
     // AndroidView update pass.
     LaunchedEffect(meshView, flowSpeed, renderScale, subdivision, staticMode, shouldAnimate) {
@@ -245,7 +247,6 @@ fun FluidBackground(
                 view.alpha = if (surfaceReady) backgroundOpacity *
                     (sheet?.state?.progress?.let(::playerBackgroundAlpha) ?: 1f) else 0f
 
-                view.updateVolume(bass * volumeScale)
             },
             onRelease = { view -> view.onSurfaceReadyChanged = null },
             modifier = Modifier.fillMaxSize(),

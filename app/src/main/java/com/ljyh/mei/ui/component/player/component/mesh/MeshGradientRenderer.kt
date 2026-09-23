@@ -11,11 +11,13 @@ import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import android.util.Log
 import timber.log.Timber
+import com.ljyh.mei.playback.PlaybackSpectrum
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.roundToInt
 
 private const val TAG = "MeshGradientRenderer"
@@ -39,7 +41,7 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
     private var mainAUv = 0
     private var mainUTexture = 0
     private var mainUTime = 0
-    private var mainUVolume = 0
+    private var mainUAudioResponse = 0
     private var mainUAspect = 0
     private var quadAPos = 0
     private var quadATexCoord = 0
@@ -79,7 +81,18 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
     private var isPlaying: Boolean = true
 
     @Volatile
-    var volume: Float = 0f
+    var spectrum: PlaybackSpectrum = PlaybackSpectrum.Zero
+
+    @Volatile
+    var audioStrength: Float = 0f
+
+    private var smoothedLow = 0f
+    private var smoothedMid = 0f
+    private var smoothedHigh = 0f
+    private var smoothedPulse = 0f
+    private var audioScale = 1f
+    private var audioContrast = 1f
+    private var audioSaturation = 1f
 
     @Volatile
     var flowSpeed: Float = 0.25f
@@ -205,6 +218,7 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
             accumulatedPlayingNanos += frameDelta
         }
         val time = accumulatedPlayingNanos / 1e9f * flowSpeed
+        updateAudioResponse(frameDelta / 1e9f)
 
         updateMeshStates(1f / 60f)
 
@@ -253,6 +267,31 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
             continuousRenderingNeeded = needed
             onRenderDemandChanged?.invoke(needed)
         }
+    }
+
+    private fun updateAudioResponse(seconds: Float) {
+        val strength = audioStrength
+        val target = spectrum
+        if (strength <= 0f) {
+            smoothedLow = 0f
+            smoothedMid = 0f
+            smoothedHigh = 0f
+            smoothedPulse = 0f
+        } else {
+            // Interpolate 30 Hz analysis at the actual rendering cadence, without another timer.
+            val blend = 1f - exp(-seconds.coerceIn(0f, .1f) / .06f)
+            smoothedLow += (target.low - smoothedLow) * blend
+            smoothedMid += (target.mid - smoothedMid) * blend
+            smoothedHigh += (target.high - smoothedHigh) * blend
+            val pulseBlend = 1f - exp(-seconds.coerceIn(0f, .1f) / .035f)
+            smoothedPulse += (target.pulse - smoothedPulse) * pulseBlend
+        }
+        val scaleBand = smoothedLow * .9f + smoothedMid * .1f
+        // Keep sustained loudness subtle; most of the travel belongs to individual bass rises.
+        // At 50% sensitivity this permits up to 1.66x zoom, without collapsing the UV range.
+        audioScale = 1f + (scaleBand * scaleBand * .04f + smoothedPulse * .62f) * strength
+        audioContrast = 1f + smoothedLow * .076f * strength
+        audioSaturation = 1f + smoothedHigh * .166f * strength
     }
 
     private fun processPendingAlbum() {
@@ -395,7 +434,7 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, state.textureId)
         GLES30.glUniform1i(mainUTexture, 0)
         GLES30.glUniform1f(mainUTime, time)
-        GLES30.glUniform1f(mainUVolume, volume)
+        GLES30.glUniform3f(mainUAudioResponse, audioScale, audioContrast, audioSaturation)
         GLES30.glUniform1f(
             mainUAspect,
             if (scaledHeight > 0) scaledWidth.toFloat() / scaledHeight else 1f
@@ -460,7 +499,7 @@ class MeshGradientRenderer : GLSurfaceView.Renderer {
         mainAUv = GLES30.glGetAttribLocation(mainProgram, "a_uv")
         mainUTexture = GLES30.glGetUniformLocation(mainProgram, "u_texture")
         mainUTime = GLES30.glGetUniformLocation(mainProgram, "u_time")
-        mainUVolume = GLES30.glGetUniformLocation(mainProgram, "u_volume")
+        mainUAudioResponse = GLES30.glGetUniformLocation(mainProgram, "u_audioResponse")
         mainUAspect = GLES30.glGetUniformLocation(mainProgram, "u_aspect")
 
         quadAPos = GLES30.glGetAttribLocation(quadProgram, "a_pos")
@@ -662,9 +701,14 @@ class MeshBackgroundView(context: Context) : GLSurfaceView(context) {
         }
     }
 
-    fun updateVolume(v: Float) {
-        if (renderer.volume == v) return
-        renderer.volume = v
+    fun updateSpectrum(value: PlaybackSpectrum) {
+        renderer.spectrum = value
+        // Active playback already renders continuously. No GL event or render request per sample.
+    }
+
+    fun setAudioStrength(value: Float) {
+        if (renderer.audioStrength == value) return
+        renderer.audioStrength = value
         if (renderingRequested && hostStarted) requestRender()
     }
 

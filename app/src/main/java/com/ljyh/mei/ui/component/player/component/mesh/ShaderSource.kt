@@ -37,7 +37,8 @@ in vec2 v_uv;
 
 uniform sampler2D u_texture;
 uniform float u_time;
-uniform float u_volume;
+// Precomputed once per frame: scale, contrast, saturation.
+uniform vec3 u_audioResponse;
 
 out vec4 fragColor;
 
@@ -52,25 +53,23 @@ vec2 rot(vec2 v, float angle) {
 }
 
 void main() {
-    float volumeEffect = u_volume * 2.0;
-    float timeVolume = u_time + u_volume;
-
     float dither = gradientNoise(gl_FragCoord.xy) / 255.0 - 0.5 / 255.0;
 
     vec2 centered = v_uv - vec2(0.2);
-    vec2 rotated = rot(centered, timeVolume * 2.0);
-    vec2 finalUV = rotated * max(0.001, 1.0 - volumeEffect) + vec2(0.5);
+    vec2 rotated = rot(centered, u_time * 2.0);
+    vec2 finalUV = rotated / u_audioResponse.x + vec2(0.5);
 
     vec4 result = texture(u_texture, finalUV);
 
-    float alphaVolume = max(0.5, 1.0 - u_volume * 0.5);
-    result.rgb *= v_color * alphaVolume;
-    result.a *= alphaVolume;
+    result.rgb *= v_color;
+    result.rgb = (result.rgb - vec3(0.5)) * u_audioResponse.y + vec3(0.5);
+    float luminance = dot(result.rgb, vec3(0.2126, 0.7152, 0.0722));
+    result.rgb = mix(vec3(luminance), result.rgb, u_audioResponse.z);
 
     result.rgb += vec3(dither);
 
     float dist = distance(v_uv, vec2(0.5));
-    float vignette = smoothstep(0.8, 0.3, dist);
+    float vignette = 1.0 - smoothstep(0.3, 0.8, dist);
     result.rgb *= 0.6 + vignette * 0.4;
 
     fragColor = result;

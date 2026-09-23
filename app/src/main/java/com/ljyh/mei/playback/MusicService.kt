@@ -38,6 +38,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
@@ -112,6 +113,7 @@ class MusicService : MediaLibraryService(),
     PlaybackStatsListener.Callback {
 
     lateinit var player: StableDeckPlayer
+    val beatMeter = PlaybackBeatMeter()
     private lateinit var audioPlayer: AudioPlayer
     private lateinit var systemLyricsBridge: SystemLyricsBridge
 
@@ -783,6 +785,9 @@ class MusicService : MediaLibraryService(),
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ) = DefaultAudioSink.Builder(this@MusicService)
+                .setAudioOutputProvider(
+                    beatMeter.wrap(AudioTrackAudioOutputProvider.Builder(this@MusicService).build()),
+                )
                 .setEnableFloatOutput(enableFloatOutput)
                 // AutoMix continuously changes tempo. Sonic's parameter changes drain and
                 // restart the PCM processor chain, producing periodic gaps during overlap.
