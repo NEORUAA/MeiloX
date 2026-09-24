@@ -125,6 +125,8 @@ class MusicService : MediaLibraryService(),
     private lateinit var mediaSession: MediaLibrarySession
 
     lateinit var sleepTimer: SleepTimer
+    lateinit var sleepTimerNotification: SleepTimerNotification
+        private set
     private val serviceJob = SupervisorJob()
     var scope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var automaticCacheJob: Job? = null
@@ -257,7 +259,8 @@ class MusicService : MediaLibraryService(),
             .build()
         player = StableDeckPlayer(firstDeck, secondDeck, playbackAudioAttributes)
         player.addListener(this)
-        sleepTimer = SleepTimer(scope, player)
+        sleepTimerNotification = SleepTimerNotification(this)
+        sleepTimer = SleepTimer(scope, player, onStateChanged = sleepTimerNotification::update)
         player.addListener(sleepTimer)
         player.addListener(object : Player.Listener {
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -366,6 +369,7 @@ class MusicService : MediaLibraryService(),
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_CANCEL_SLEEP_TIMER -> sleepTimer.clear()
             ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
             ACTION_PREVIOUS -> if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L)
             ACTION_NEXT -> if (player.hasNextMediaItem()) player.seekToNextMediaItem()
@@ -711,6 +715,7 @@ class MusicService : MediaLibraryService(),
         CacheManager.release()
         mediaSession.release()
         player.removeListener(this)
+        sleepTimer.clear()
         player.removeListener(sleepTimer)
         queueManager.release()
         preloadManager.release()
@@ -955,6 +960,7 @@ class MusicService : MediaLibraryService(),
         private const val MAX_SOURCE_RECOVERY_ATTEMPTS = 1
         private const val PLAYBACK_SNAPSHOT_INTERVAL_MS = 5_000L
         private const val AUTOMATIC_CACHE_DELAY_MS = 5_000L
+        const val ACTION_CANCEL_SLEEP_TIMER = "com.ljyh.mei.action.CANCEL_SLEEP_TIMER"
         const val ACTION_TOGGLE_PLAYBACK = "com.ljyh.mei.action.TOGGLE_PLAYBACK"
         const val ACTION_PREVIOUS = "com.ljyh.mei.action.PREVIOUS"
         const val ACTION_NEXT = "com.ljyh.mei.action.NEXT"

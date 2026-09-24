@@ -15,16 +15,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
+import com.ljyh.mei.playback.SleepTimerState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosModalSheet
 import com.ljyh.mei.ui.glass.IosMenuItem
+import com.ljyh.mei.ui.glass.IosModalSheet
 import com.ljyh.mei.ui.glass.IosPopupMenu
 import com.ljyh.mei.ui.glass.IosSheetTopToolbar
 import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
+import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.SortOrder
 
@@ -34,6 +36,7 @@ fun MoreActionsSheet(
     onActionClick: (MoreAction) -> Unit,
     viewModel: PlayerViewModel,
 ) {
+    val sleepTimer = LocalPlayerConnection.current?.service?.sleepTimer
     val sortOrder by viewModel.moreSortOrder.collectAsState()
     val moreActions by viewModel.sortedMoreActions.collectAsState()
     var showSortOptions by remember { mutableStateOf(false) }
@@ -97,6 +100,12 @@ fun MoreActionsSheet(
                             IosListRow(
                                 title = stringResource(action.labelRes),
                                 systemName = action.systemName,
+                                detail = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.isActive == true) {
+                                    stringResource(
+                                        if (sleepTimer.state == SleepTimerState.EndOfTrack) R.string.sleep_timer_track_short
+                                        else R.string.sleep_timer_running,
+                                    )
+                                } else null,
                                 showTopSeparator = index > 0,
                                 onClick = { onActionClick(action) },
                             )

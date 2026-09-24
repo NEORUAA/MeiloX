@@ -17,12 +17,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,13 +32,12 @@ import androidx.media3.common.util.UnstableApi
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlayerActionKey
 import com.ljyh.mei.playback.PlayMode
+import com.ljyh.mei.playback.SleepTimerState
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
 import com.ljyh.mei.utils.rememberPreference
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import timber.log.Timber
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -76,27 +72,8 @@ fun PlayerActionToolbar(
         PlayMode.fromInt(playModeValue) ?: PlayMode.REPEAT_MODE_ALL
     }
 
-    // 睡眠定时器逻辑
-    var sleepTimerTimeLeft by remember { mutableLongStateOf(0L) }
     val sleepTimer = playerConnection.service.sleepTimer
-    val sleepTimerEnabled = remember(sleepTimer.triggerTime, sleepTimer.pauseWhenSongEnd) {
-        sleepTimer.isActive
-    }
-
-    LaunchedEffect(sleepTimerEnabled) {
-        if (sleepTimerEnabled) {
-            while (isActive) {
-                sleepTimerTimeLeft = if (sleepTimer.pauseWhenSongEnd) {
-                    playerConnection.player.duration - playerConnection.player.currentPosition
-                } else {
-                    sleepTimer.triggerTime - System.currentTimeMillis()
-                }
-                delay(1000L)
-            }
-        }
-    }
-
-
+    val sleepTimerEnabled = sleepTimer.isActive
 
     Spacer(Modifier.height(16.dp))
 
@@ -154,11 +131,15 @@ fun PlayerActionToolbar(
                                     modifier = Modifier
                                         .clip(ContinuousRoundedRectangle(50))
                                         .background(Color.White.copy(alpha = 0.2f))
-                                        .clickable(onClick = sleepTimer::clear)
+                                        .clickable(onClick = onSleepTimerClick)
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = makeTimeString(sleepTimerTimeLeft),
+                                        text = if (sleepTimer.state == SleepTimerState.EndOfTrack) {
+                                            stringResource(com.ljyh.mei.R.string.sleep_timer_track_short)
+                                        } else {
+                                            makeTimeString(((sleepTimer.remainingMillis + 999L) / 1_000L) * 1_000L)
+                                        },
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
