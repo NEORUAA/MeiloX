@@ -83,6 +83,26 @@ The upstream runtime is distributed under the MIT License. Copyright
 (c) 2013-2022 Binaryify. The MIT license text is available at:
 https://opensource.org/licenses/MIT
 
+NCBL v3 protocol reference
+--------------------------
+The NCBL v3 wire format was independently implemented and cross-checked against
+`util/ncbl.js` in NeteaseCloudMusicApiEnhanced/api-enhanced at commit
+83ee2cda34a20f64c6d343f7dfe22aa6a1c84b3d. The referenced project is licensed
+under the MIT License, Copyright (c) 2013-2022 Binaryify:
+https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/83ee2cda34a20f64c6d343f7dfe22aa6a1c84b3d/LICENSE
+
+Zstd JNI
+--------
+The `com.github.luben:zstd-jni:1.5.7-20` Android archive and JVM runtime JAR
+provide Zstandard compression. The JNI bindings are Copyright (c) 2015-present
+Luben Karavelov and licensed under the BSD 2-Clause License. The bundled
+Zstandard native library is Copyright (c) 2016-present Facebook, Inc. and
+licensed under the BSD 3-Clause License:
+https://github.com/luben/zstd-jni/tree/v1.5.7-20
+https://github.com/luben/zstd-jni/blob/v1.5.7-20/src/main/native/LICENSE
+https://opensource.org/licenses/BSD-2-Clause
+https://opensource.org/licenses/BSD-3-Clause
+
 PV Tool
 -------
 PV Tool's text-PV templates and visual effects are Copyright (c) 2026

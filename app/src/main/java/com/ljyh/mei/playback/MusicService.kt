@@ -64,6 +64,8 @@ import com.ljyh.mei.constants.RepeatModeKey
 import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.data.network.netease.NcblSongInfo
+import com.ljyh.mei.data.network.netease.NeteaseClientLogClient
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
@@ -170,6 +172,9 @@ class MusicService : MediaLibraryService(),
     lateinit var meloXRepository: MeloXRepository
 
     @Inject
+    lateinit var neteaseClientLogClient: NeteaseClientLogClient
+
+    @Inject
     lateinit var songRepository: SongRepository
     @Inject
     lateinit var listenTogetherStore: ListenTogetherStore
@@ -178,7 +183,7 @@ class MusicService : MediaLibraryService(),
 
     override fun onCreate() {
         super.onCreate()
-        playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository)
+        playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
         baseMediaSourceFactory = DefaultMediaSourceFactory(createDataSourceFactory())
             .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()) // 应用自定义错误策略
@@ -670,7 +675,28 @@ class MusicService : MediaLibraryService(),
 
         val songId = mediaItem.playbackHistorySongIdOrNull() ?: return
         val source = resolvePlaybackHistorySource(songId) ?: return
-        playbackHistoryReporter.recordStart(mediaItem.mediaId, songId, source, startedAtMs)
+        val metadata = mediaItem.metadata
+        val artist = metadata?.artists
+            ?.map { it.name }
+            ?.filter(String::isNotBlank)
+            ?.joinToString(", ")
+            .orEmpty()
+            .ifBlank { mediaItem.mediaMetadata.artist?.toString().orEmpty() }
+        playbackHistoryReporter.recordStart(
+            mediaId = mediaItem.mediaId,
+            songId = songId,
+            source = source,
+            startedAtMs = startedAtMs,
+            song = NcblSongInfo(
+                id = songId,
+                name = metadata?.title.orEmpty().ifBlank {
+                    mediaItem.mediaMetadata.title?.toString().orEmpty()
+                },
+                artist = artist,
+                durationMs = metadata?.duration?.takeIf { it > 0L }
+                    ?: player.duration.takeIf { it > 0L && it != C.TIME_UNSET },
+            ),
+        )
     }
 
     private fun recordPlaybackDuration(completed: CompletedPlaybackHistorySession?) {

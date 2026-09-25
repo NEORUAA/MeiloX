@@ -11,6 +11,8 @@ import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.api.AudioMatchService
+import com.ljyh.mei.data.network.netease.DataStoreNcblSessionContextProvider
+import com.ljyh.mei.data.network.netease.NcblSessionContextProvider
 import com.ljyh.mei.utils.log.NetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
@@ -174,6 +176,25 @@ object RetrofitModule {
         .writeTimeout(200, TimeUnit.SECONDS)
         .addInterceptor(NetworkLogInterceptor())
         .build()
+
+    @Singleton
+    @Provides
+    @Named("NeteaseClientLog")
+    fun provideNeteaseClientLogClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .retryOnConnectionFailure(false)
+        .build()
+
+    @Singleton
+    @Provides
+    internal fun provideNcblSessionContextProvider(
+        provider: DataStoreNcblSessionContextProvider,
+    ): NcblSessionContextProvider = provider
 
 
     @Singleton
