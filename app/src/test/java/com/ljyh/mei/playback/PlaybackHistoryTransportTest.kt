@@ -32,6 +32,7 @@ import org.junit.Test
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
+import java.time.Instant
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
@@ -54,7 +55,7 @@ class PlaybackHistoryTransportTest {
                 songId = 123456L,
                 sourceId = 0L,
                 source = "unknown-source",
-                startedAtMs = 1_790_006_390_000L,
+                startedAtMs = 1_790_006_390_987L,
             ) { action, payload ->
                 synchronized(actions) {
                     actions += action
@@ -93,8 +94,8 @@ class PlaybackHistoryTransportTest {
         synchronized(actions) {
             assertEquals(listOf("startplay"), actions)
         }
-        assertEquals(1_790_006_390_000L, firstFields["startlogtime"].asLong)
-        assertEquals(1_790_006_390_000L, firstFields["logtime"].asLong)
+        assertEquals(1_790_006_390L, firstFields["startlogtime"].asLong)
+        assertEquals(1_790_006_390_987L, firstFields["logtime"].asLong)
         assertFalse(firstFields.has("end"))
         assertFalse(firstFields.has("time"))
         assertEquals("/api/feedback/weblog", transport.requests.single().url.encodedPath)
@@ -128,12 +129,48 @@ class PlaybackHistoryTransportTest {
         val json = payload["json"].asJsonObject
         assertEquals(37L, json["time"].asLong)
         assertTrue(json["time"].asJsonPrimitive.isNumber)
-        assertEquals(1_790_006_390_000L, json["startlogtime"].asLong)
+        assertEquals(1_790_006_390L, json["startlogtime"].asLong)
         assertEquals(1_790_006_427_000L, json["logtime"].asLong)
         assertTrue(json["startlogtime"].asJsonPrimitive.isNumber)
         assertTrue(json["logtime"].asJsonPrimitive.isNumber)
         assertEquals("playend", payload["json"].asJsonObject["end"].asString)
         assertEquals("/api/feedback/weblog", transport.requests.single().url.encodedPath)
+    }
+
+    @Test
+    fun playbackSpanningMidnightKeepsOriginalStartInEpochSeconds() = runBlocking {
+        val transport = MemoryTransport(
+            outcomes = List(2) { TransportOutcome.Reply(200, "{\"code\":200}") },
+        )
+        val service = serviceWith(transport)
+        val start = Instant.parse("2026-09-24T23:59:59.987+08:00")
+        val end = Instant.parse("2026-09-25T00:00:10.321+08:00")
+        submitPlaybackHistoryStart(123456L, 789L, "album", start.toEpochMilli()) { action, fields ->
+            submitPlaybackHistoryLog(service, action, fields)
+        }
+        submitPlaybackHistoryLog(
+            service,
+            "play",
+            playbackHistoryPlayFields(
+                songId = 123456L,
+                sourceId = 789L,
+                source = "album",
+                timeSeconds = 8L,
+                startedAtMs = start.toEpochMilli(),
+                endedAtMs = end.toEpochMilli(),
+                endReason = "ui",
+            ),
+        )
+
+        val payloads = transport.requests.map(::playbackPayload)
+        assertEquals(listOf("startplay", "play"), payloads.map { it["action"].asString })
+        // The native BI field uses seconds, unlike the car OpenAPI's startLogTime.
+        payloads.forEach {
+            assertEquals(start.epochSecond, it["json"].asJsonObject["startlogtime"].asLong)
+        }
+        val completion = payloads.last()["json"].asJsonObject
+        assertEquals(end.toEpochMilli(), completion["logtime"].asLong)
+        assertEquals(8L, completion["time"].asLong)
     }
 
     @Test

@@ -983,9 +983,9 @@ private fun playbackHistoryBaseFields(
     return mapOf(
         "id" to songId.toString(),
         "type" to "song",
-        // The official player pairs start/end logs with the original epoch-millisecond start.
-        // Capture event times before enqueueing so a delayed upload keeps its playback date.
-        "startlogtime" to startedAtMs,
+        // Native BI uses epoch seconds, unlike the car OpenAPI's millisecond startLogTime.
+        // Convert the captured start only; logtime keeps the event's epoch milliseconds.
+        "startlogtime" to startedAtMs / 1000L,
         "logtime" to loggedAtMs,
         "sourceId" to safeSourceId.toString(),
         "source" to safeSource,
