@@ -7,6 +7,7 @@ import java.lang.reflect.InvocationTargetException
 internal class HostCapabilityProbe(
     private val hostLoader: ClassLoader,
     private val report: (String) -> Unit,
+    private val onPlayable: (String) -> Unit = {},
 ) {
     fun run() {
         try {
@@ -85,6 +86,9 @@ internal class HostCapabilityProbe(
             ))?.optJSONArray("data")?.optJSONObject(0)
             val hasUrl = source?.optString("url").orEmpty().let { it.startsWith("https://") || it.startsWith("http://") }
             report("playback code=${source?.optInt("code", -1)} url_present=$hasUrl trial=${source?.isNull("freeTrialInfo") == false}")
+            if (hasUrl && source?.optInt("code") == 200 && source.isNull("freeTrialInfo")) {
+                onPlayable(source.getString("url"))
+            }
         }
         report("probe_complete session_unchanged=${isCurrentSession()}")
     }

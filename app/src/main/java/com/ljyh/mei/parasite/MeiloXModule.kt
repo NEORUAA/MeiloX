@@ -71,7 +71,11 @@ class MeiloXModule : XposedModule() {
                     // Tinker can replace the package loader during Application.attachBaseContext.
                     val runtimeLoader = activity.javaClass.classLoader ?: return
                     report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
-                    Thread({ HostCapabilityProbe(runtimeLoader, ::report).run() }, "MeiloX-host-probe").start()
+                    Thread({
+                        HostCapabilityProbe(runtimeLoader, ::report) { url ->
+                            if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url)
+                        }.run()
+                    }, "MeiloX-host-probe").start()
                 }
                 override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
                 override fun onActivityStarted(activity: Activity) = Unit

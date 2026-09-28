@@ -185,12 +185,43 @@ It does not replace the official launcher, main screen, or login screen yet.
 - LSPosed searches native libraries inside the APK, so legacy compressed JNI packaging failed.
   Uncompressed JNI packaging passes `zipalign -c -P 16 -v 4`; the existing BeatNet JNI loads in the host
   and rejects an invalid input shape as expected. This checks loading/binding, not inference quality.
-- Full storage APIs, dependency injection, background service hosting, notification routes,
-  and the real player remain unverified. The Context wrapper is a prototype, not the final app container.
+- Full storage APIs, dependency injection, and the production player remain unverified.
+  The Context wrapper is a prototype, not the final app container.
 
 The probe is disabled in normal debug/release builds. All screenshots, crash evidence,
 and accessibility dumps stay outside Git. Earlier failures remain documented; a successful
 retry does not erase their existence or establish broader device compatibility.
+
+### Background Audio Prototype
+
+The same opt-in build reserves the host's registered main-process
+`com.netease.cloudmusic.service.LocalMusicMatchService` for a module-owned diagnostic service.
+The platform `AppComponentFactory.instantiateService(ClassLoader, String, Intent)` receives
+a null Intent during creation; command validation belongs in `onStartCommand`, not the
+instantiation hook. An earlier Intent filter missed substitution and caused a foreground-service
+timeout. The corrected run instantiated the module service and entered foreground state.
+
+- A legitimate, non-trial URL from the authenticated host probe is kept only in memory.
+- Module Media3 runs under the host PID/UID, with its own platform MediaSession and notification.
+- The official player is paused for this test. The diagnostic service does not send listening reports.
+- In-app play/pause/stop, notification pause, notification return to the registered Activity,
+  background playback, and screen-off playback were exercised. Notification permission was
+  granted to the host during testing.
+- A Media3 `TeeAudioProcessor` passes audio through unchanged and measures PCM16 aggregates.
+  No PCM audio is recorded. The diagnostic sink explicitly uses PCM16; this is not a change
+  to the production player's quality, effects, or AutoMix pipeline.
+- Unit tests cover signed sample extrema, silence, accumulation, partial-sample rejection,
+  and preservation of the input buffer's position/limit.
+- An emulator media-play key also woke the official player and caused a focus interruption.
+  Module controls resumed correctly, but system media-key ownership remains an explicit
+  production takeover gate. Keeping both players available is not the final architecture.
+- The user cannot hear the AVD's external audio, including before these changes. Acceptance
+  uses decoded PCM, AudioTrack activity, progression, and end-of-stream evidence instead.
+  Actual external audibility and sound quality remain unverified; emulator/system audio settings
+  were not changed.
+
+This service proves component and audio hosting only. It does not replace `MusicService`,
+validate the production effects/visualizer, or establish listening-history settlement.
 
 ### Remaining Gates
 
@@ -213,7 +244,7 @@ retry does not erase their existence or establish broader device compatibility.
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
-| 2. API 102 runtime | In progress: loading, identity, Compose/resources, Activity recreation, and JNI loading passed | Background service/notification and complete container checks remain |
+| 2. API 102 runtime | In progress: loading, identity, Compose/resources, Activity recreation, JNI, and background-service prototype passed | Complete container checks and production component routing remain |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
 | 4. Core business migration | Not started | All core screens use host business transport |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |

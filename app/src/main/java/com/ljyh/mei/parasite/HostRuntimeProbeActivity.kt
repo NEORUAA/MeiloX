@@ -9,7 +9,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -55,6 +55,7 @@ class HostRuntimeProbeActivity : ComponentActivity() {
         setContent {
             MusicTheme(seedColor = Color(0xFFFA233B)) {
                 var count by rememberSaveable { mutableIntStateOf(0) }
+                val playback by HostRuntimeProbe.playbackState.collectAsState()
                 GlassBackdropHost(
                     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                     sampledContent = {
@@ -67,6 +68,7 @@ class HostRuntimeProbeActivity : ComponentActivity() {
                             Spacer(Modifier.height(24.dp))
                             Text("MeiloX", style = MaterialTheme.typography.headlineLarge)
                             Text(count.toString(), style = MaterialTheme.typography.bodyLarge)
+                            Text("${playback.positionMs / 1000}s", style = MaterialTheme.typography.bodyMedium)
                         }
                     },
                     overlayContent = {
@@ -75,12 +77,28 @@ class HostRuntimeProbeActivity : ComponentActivity() {
                                 SfIcon(SfSymbol.ChevronBack, contentDescription = "Back")
                             }
                         }
-                        Box(Modifier.align(Alignment.BottomCenter).systemBarsPadding().padding(bottom = 40.dp)) {
+                        Row(
+                            Modifier.align(Alignment.BottomCenter).systemBarsPadding().padding(bottom = 40.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
                             GlassIconButton(onClick = {
                                 count += 1
                                 HostRuntimeProbe.report("runtime_interaction count=$count")
                             }) {
                                 SfIcon(SfSymbol.ArrowClockwise, contentDescription = "Refresh")
+                            }
+                            GlassIconButton(enabled = playback.ready, onClick = {
+                                startForegroundService(HostRuntimeProbe.playbackIntent(
+                                    this@HostRuntimeProbeActivity,
+                                    if (playback.playing) HostRuntimeProbeService.PAUSE else HostRuntimeProbeService.PLAY,
+                                ))
+                            }) {
+                                SfIcon(if (playback.playing) SfSymbol.PauseFilled else SfSymbol.PlayFilled, contentDescription = "Play or pause")
+                            }
+                            GlassIconButton(enabled = playback.ready, onClick = {
+                                stopService(HostRuntimeProbe.playbackIntent(this@HostRuntimeProbeActivity, HostRuntimeProbeService.STOP))
+                            }) {
+                                SfIcon(SfSymbol.Close, contentDescription = "Stop")
                             }
                         }
                     },
