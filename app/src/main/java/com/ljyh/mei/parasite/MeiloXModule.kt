@@ -60,6 +60,9 @@ class MeiloXModule : XposedModule() {
             hostLoader.loadClass("kotlin.Unit") !== kotlin.Unit::class.java
         report("host_verified version=${info.versionName} isolated_kotlin=$isolated")
         if (!isolated) return
+        if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+            HostRuntimeProbe.install(this, application, moduleApplicationInfo, ::report)
+        }
         if (BuildConfig.PARASITE_HOST_PROBE) {
             application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityResumed(activity: Activity) {

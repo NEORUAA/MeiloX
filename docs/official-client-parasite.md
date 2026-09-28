@@ -167,6 +167,33 @@ Primary inventory sources are `ui/screen/Screen.kt`, `ui/navigation/MeloXNavigat
 
 ## Runtime Boundaries for the Next Stage
 
+### Activity and Resource Prototype
+
+The opt-in `-PparasiteRuntimeProbe=true` build substitutes only the registered
+`com.netease.cloudmusic.tv.test.TextMainActivity` through `Instrumentation.newActivity`.
+It does not replace the official launcher, main screen, or login screen yet.
+
+- Module Compose/AndroidX renders inside the TV process with the original Application retained.
+- A module-resource Context wrapper loads the existing logo, SF Pro font, SF Symbols, theme,
+  and glass controls. Screenshot and accessibility checks confirmed their rendering and interaction.
+- TV's AutoSize library initially shrank the UI. Its existing external-adaptation API now
+  excludes only the module Activity, restoring device density `3.0` without disabling host adaptation.
+- Portrait transition triggered Activity recreation successfully.
+- Background process termination after `STOPPED` exposed a saved-state classloader failure.
+  Assigning the module loader before `onCreate`/`onRestoreInstanceState` fixed Compose parcel restoration.
+  The interaction counter remained `1` after process recreation; no new crash appeared in the corrected run.
+- LSPosed searches native libraries inside the APK, so legacy compressed JNI packaging failed.
+  Uncompressed JNI packaging passes `zipalign -c -P 16 -v 4`; the existing BeatNet JNI loads in the host
+  and rejects an invalid input shape as expected. This checks loading/binding, not inference quality.
+- Full storage APIs, dependency injection, background service hosting, notification routes,
+  and the real player remain unverified. The Context wrapper is a prototype, not the final app container.
+
+The probe is disabled in normal debug/release builds. All screenshots, crash evidence,
+and accessibility dumps stay outside Git. Earlier failures remain documented; a successful
+retry does not erase their existence or establish broader device compatibility.
+
+### Remaining Gates
+
 - Pin package, version, and signing identity before installing host-specific hooks.
 - Use `compileOnly` for the API 102 library; register only modern module entry points.
 - Verify `getApiVersion()` in the actual injected process; metadata is insufficient.
@@ -186,7 +213,7 @@ Primary inventory sources are `ui/screen/Screen.kt`, `ui/navigation/MeloXNavigat
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
-| 2. API 102 runtime | In progress: module loading, identity guard, and Kotlin isolation passed | Injected UI and playback service operate inside the qualified host |
+| 2. API 102 runtime | In progress: loading, identity, Compose/resources, Activity recreation, and JNI loading passed | Background service/notification and complete container checks remain |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
 | 4. Core business migration | Not started | All core screens use host business transport |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
@@ -203,11 +230,13 @@ Use Android SDK `aapt2 dump badging`, `apksigner verify --print-certs`, and
 
 ```sh
 ./gradlew :app:testDebugUnitTest --tests 'com.ljyh.mei.parasite.*' :app:assembleDebug -PparasiteHostProbe=true
+./gradlew :app:assembleDebug -PparasiteHostProbe=true -PparasiteRuntimeProbe=true
 adb -s emulator-5554 shell getprop ro.product.cpu.abilist
 adb -s emulator-5554 shell getconf PAGE_SIZE
 adb -s emulator-5554 shell dumpsys package com.netease.cloudmusic.tv
 adb -s emulator-5554 shell am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.app.LoadingActivity
 adb -s emulator-5554 shell su -c 'am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.tv.activity.TvLoginActivity'
+adb -s emulator-5554 shell su -c 'am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.tv.test.TextMainActivity'
 adb -s emulator-5554 shell dumpsys media_session
 adb -s emulator-5554 logcat -d -b crash
 ```

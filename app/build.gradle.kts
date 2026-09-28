@@ -33,6 +33,7 @@ android {
 
     buildTypes {
         debug {
+            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", (providers.gradleProperty("parasiteRuntimeProbe").orNull == "true").toString())
             buildConfigField(
                 "boolean",
                 "PARASITE_HOST_PROBE",
@@ -40,6 +41,7 @@ android {
             )
         }
         release {
+            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", "false")
             buildConfigField("boolean", "PARASITE_HOST_PROBE", "false")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -59,9 +61,8 @@ android {
         compose = true
     }
     packaging {
-        // Direct-distribution APKs prioritize download size. Android extracts these
-        // entries at install time instead of mmap'ing them directly from the APK.
-        jniLibs.useLegacyPackaging = true
+        // LSPosed resolves module native libraries directly from the APK.
+        jniLibs.useLegacyPackaging = false
         dex.useLegacyPackaging = true
     }
     externalNativeBuild {
