@@ -185,8 +185,8 @@ It does not replace the official launcher, main screen, or login screen yet.
 - LSPosed searches native libraries inside the APK, so legacy compressed JNI packaging failed.
   Uncompressed JNI packaging passes `zipalign -c -P 16 -v 4`; the existing BeatNet JNI loads in the host
   and rejects an invalid input shape as expected. This checks loading/binding, not inference quality.
-- Full storage APIs, dependency injection, and the production player remain unverified.
-  The Context wrapper is a prototype, not the final app container.
+- Dependency injection and the production player remain unverified. The scoped Context
+  below is exercised by the prototype, not yet by every production feature.
 
 The probe is disabled in normal debug/release builds. All screenshots, crash evidence,
 and accessibility dumps stay outside Git. Earlier failures remain documented; a successful
@@ -212,6 +212,12 @@ timeout. The corrected run instantiated the module service and entered foregroun
   to the production player's quality, effects, or AutoMix pipeline.
 - Unit tests cover signed sample extrema, silence, accumulation, partial-sample rejection,
   and preservation of the input buffer's position/limit.
+- The PCM-instrumented sample reached `STATE_ENDED`: duration `329190 ms`, final position
+  `329198 ms`, `14515200` stereo frames at `44100 Hz`, `28662786` nonzero samples,
+  peak magnitude `32768`, normalized RMS `0.164523`. No seeking was used. This run included
+  pause/resume and the focus interruption below, then continued through the end while asleep.
+  The service/session were released at completion. AudioFlinger snapshots during playback
+  showed an active, unmuted track owned by the host with zero underruns.
 - An emulator media-play key also woke the official player and caused a focus interruption.
   Module controls resumed correctly, but system media-key ownership remains an explicit
   production takeover gate. Keeping both players available is not the final architecture.
@@ -222,6 +228,32 @@ timeout. The corrected run instantiated the module service and entered foregroun
 
 This service proves component and audio hosting only. It does not replace `MusicService`,
 validate the production effects/visualizer, or establish listening-history settlement.
+
+### Storage Container
+
+`ModuleContext` retains host package/component identity but supplies module resources,
+assets, classloader, and theme. Its application Context is module-owned, without replacing
+the official Application or pretending that it is a Hilt Application.
+
+- Files and SQLite databases live under the host data directory's `meilox_parasite` subtree.
+  Cache, code cache, no-backup, external files/cache/media, and OBB paths each use the same
+  namespace within their corresponding host directory. External file types remain children
+  of the module's external-files root.
+- SharedPreferences names use the `meilox_parasite_` prefix. File streams, listings,
+  deletion, SQLite opening/deletion, and derived configuration/display/device-protected
+  Contexts preserve module scoping. Automatic database/preference import is disabled.
+- Database absolute paths are accepted only inside module data/no-backup directories.
+  Unit tests reject traversal, invalid names, and misleading sibling-prefix paths.
+- The debug device probe wrote/read/removed disposable file, preference, and SQLite markers;
+  initialized the existing Room schema; and round-tripped a temporary Preferences DataStore.
+  Original host marker paths were unchanged. Probe content is not user/account data.
+- AVD checks passed for derived configuration/device-protected Contexts and available external
+  namespaces. Cold-start probes also passed. After background process termination, the Activity
+  restored counter `1`, density `3.0`, and the module logo/font/glass controls without a new crash.
+
+This is storage namespacing within one UID, not a security sandbox. Production downloads,
+file-provider sharing, work scheduling, runtime permissions, and all-feature persistence
+still need their own component/feature acceptance tests.
 
 ### Remaining Gates
 
@@ -244,7 +276,7 @@ validate the production effects/visualizer, or establish listening-history settl
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
-| 2. API 102 runtime | In progress: loading, identity, Compose/resources, Activity recreation, JNI, and background-service prototype passed | Complete container checks and production component routing remain |
+| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage/Room/DataStore, and background-service prototype passed | Module dependency graph and production component routing remain |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
 | 4. Core business migration | Not started | All core screens use host business transport |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
