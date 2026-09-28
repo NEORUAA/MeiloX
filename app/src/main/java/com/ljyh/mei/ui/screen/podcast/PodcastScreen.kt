@@ -48,7 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -81,7 +81,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun PodcastScreen(
-    viewModel: PodcastViewModel = hiltViewModel(),
+    viewModel: PodcastViewModel = viewModel(),
     isNavigationTab: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()
@@ -368,14 +368,14 @@ private fun PodcastRecommendationCard(
 @Composable
 fun PodcastDetailScreen(
     id: Long,
-    viewModel: PodcastDetailViewModel = hiltViewModel(),
+    viewModel: PodcastDetailViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val downloadViewModel: com.ljyh.mei.ui.screen.playlist.PlaylistViewModel = hiltViewModel()
+    val downloadViewModel: com.ljyh.mei.ui.screen.playlist.PlaylistViewModel = viewModel()
     val selection = rememberDetailSelection(id)
     val listState = rememberLazyListState()
     val detail = state.detail

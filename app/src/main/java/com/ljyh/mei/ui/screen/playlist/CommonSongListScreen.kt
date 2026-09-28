@@ -42,7 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.compose.LazyPagingItems
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
@@ -84,7 +84,7 @@ fun CommonSongListScreen(
     isPlaylistSearchActive: Boolean = false,
     onPlaylistSearchQueryChange: ((String) -> Unit)? = null,
     onPlaylistSearchActiveChange: (Boolean) -> Unit = {},
-    viewModel: PlaylistViewModel = hiltViewModel(),
+    viewModel: PlaylistViewModel = viewModel(),
     onShufflePlay: () -> Unit = onPlayAll,
     detailMenu: List<com.ljyh.mei.ui.glass.IosCascadingMenuItem>? = null,
     selectionMode: Boolean = false,

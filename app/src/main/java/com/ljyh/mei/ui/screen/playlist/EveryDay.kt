@@ -18,7 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -34,7 +34,7 @@ import com.ljyh.mei.ui.screen.playlist.matchesPlaylistSearch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EveryDay(
-    viewModel: PlaylistViewModel = hiltViewModel()
+    viewModel: PlaylistViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val everyDaySongs by viewModel.everyDay.collectAsState()

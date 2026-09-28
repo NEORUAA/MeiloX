@@ -22,7 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQuality
@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AlbumDetailScreen(
     id: Long,
-    viewModel: AlbumDetailViewModel = hiltViewModel(),
+    viewModel: AlbumDetailViewModel = viewModel(),
 ) {
     // 1. 请求初始数据
     LaunchedEffect(id) {

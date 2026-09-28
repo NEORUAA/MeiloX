@@ -57,7 +57,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -193,17 +193,17 @@ fun LibraryMobileLayout(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
-    val playlistViewModel: PlaylistViewModel = hiltViewModel()
-    val playerViewModel: PlayerViewModel = hiltViewModel()
+    val playlistViewModel: PlaylistViewModel = viewModel()
+    val playerViewModel: PlayerViewModel = viewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) hiltViewModel() else null
+    val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) viewModel() else null
     val podcastState = podcastViewModel?.state?.collectAsState()?.value
     LaunchedEffect(podcastViewModel) {
         podcastViewModel?.ensureSubscriptionsLoaded()
     }
-    val cloudViewModel: CloudMusicViewModel? = if (selectedPage == LibraryPage.Cloud) hiltViewModel() else null
+    val cloudViewModel: CloudMusicViewModel? = if (selectedPage == LibraryPage.Cloud) viewModel() else null
     val cloudState = cloudViewModel?.state?.collectAsState()?.value
-    val historyViewModel: HistoryViewModel? = if (selectedPage == LibraryPage.History) hiltViewModel() else null
+    val historyViewModel: HistoryViewModel? = if (selectedPage == LibraryPage.History) viewModel() else null
     val historyState = historyViewModel?.state?.collectAsState()?.value ?: HistoryUiState()
     LaunchedEffect(historyViewModel) {
         historyViewModel?.refresh()

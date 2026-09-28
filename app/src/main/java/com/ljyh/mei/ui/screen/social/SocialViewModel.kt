@@ -6,7 +6,6 @@ import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.data.model.melox.PrivateMessage
 import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.repository.MeloXRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -32,7 +31,6 @@ data class MessageContactsUiState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class ConversationsViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -51,7 +49,6 @@ class ConversationsViewModel @Inject constructor(
     }
 }
 
-@HiltViewModel
 class ConversationViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -82,7 +79,6 @@ class ConversationViewModel @Inject constructor(
     }
 }
 
-@HiltViewModel
 class MessageContactsViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {

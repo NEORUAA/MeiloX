@@ -43,7 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -63,7 +63,7 @@ import java.util.Locale
 /** MeloX Discover layout: large title, compact filter pills, one hero and a two-column grid. */
 @Composable
 fun FindMusicScreen(
-    viewModel: FindMusicViewModel = hiltViewModel(),
+    viewModel: FindMusicViewModel = viewModel(),
     modifier: Modifier = Modifier,
     initialCategory: String? = null,
     titleOverride: String? = null,

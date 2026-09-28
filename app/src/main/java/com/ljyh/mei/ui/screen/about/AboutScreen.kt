@@ -33,7 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.R
@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @Composable
-fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
+fun AboutScreen(viewModel: AboutViewModel = viewModel()) {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()

@@ -33,7 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
@@ -70,7 +70,7 @@ import com.ljyh.mei.utils.smallImage
 fun SearchResultScreen(
     query: String,
     type: Int,
-    viewModel: SearchViewModel = hiltViewModel(),
+    viewModel: SearchViewModel = viewModel(),
 ) {
     val searchState by viewModel.searchResult.collectAsState()
     val selectedType by viewModel.currentTab.collectAsState()

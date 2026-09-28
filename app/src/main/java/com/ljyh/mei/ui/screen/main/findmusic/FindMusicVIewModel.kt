@@ -3,7 +3,6 @@ package com.ljyh.mei.ui.screen.main.findmusic
 import androidx.lifecycle.ViewModel
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlaylistRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
 import kotlinx.coroutines.Job
@@ -12,7 +11,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class FindMusicViewModel @Inject constructor(
     private val repository: PlaylistRepository
 ) : ViewModel() {

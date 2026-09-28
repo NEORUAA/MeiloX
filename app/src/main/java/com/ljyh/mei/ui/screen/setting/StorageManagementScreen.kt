@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
@@ -49,8 +49,7 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -84,7 +83,6 @@ internal enum class StorageAction {
     AllCaches, NetworkCache, TemporaryFiles, RepairDownloads, ResetAutoCache, OptimizeDatabase, AllDownloads,
 }
 
-@HiltViewModel
 class StorageManagementViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase,
@@ -225,7 +223,7 @@ class StorageManagementViewModel @Inject constructor(
 }
 
 @Composable
-fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewModel()) {
+fun StorageManagementScreen(viewModel: StorageManagementViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val context = LocalContext.current

@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.ListenTogetherStore
@@ -44,7 +44,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 
 @Composable
-fun ListenTogetherScreen(store: ListenTogetherStore = hiltViewModel<ListenTogetherStoreHolder>().store) {
+fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherStoreHolder>().store) {
     val state by store.state.collectAsState()
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -144,7 +144,6 @@ fun ListenTogetherScreen(store: ListenTogetherStore = hiltViewModel<ListenTogeth
     }
 }
 
-@dagger.hilt.android.lifecycle.HiltViewModel
 class ListenTogetherStoreHolder @javax.inject.Inject constructor(
     val store: ListenTogetherStore,
 ) : androidx.lifecycle.ViewModel()

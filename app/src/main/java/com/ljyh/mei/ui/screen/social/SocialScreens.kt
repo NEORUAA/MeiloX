@@ -69,7 +69,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -108,7 +108,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
+fun ConversationsScreen(viewModel: ConversationsViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val currentUserId by rememberPreference(UserIdKey, "")
@@ -181,7 +181,7 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
 }
 
 @Composable
-fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel()) {
+fun MessageContactsScreen(viewModel: MessageContactsViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -269,7 +269,7 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
 }
 
 @Composable
-fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltViewModel()) {
+fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current

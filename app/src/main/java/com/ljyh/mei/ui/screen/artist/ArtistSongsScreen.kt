@@ -21,7 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.toMediaItem
@@ -41,7 +41,7 @@ import java.util.UUID
 @Composable
 fun ArtistSongsScreen(
     id: String,
-    viewModel: ArtistSongsViewModel = hiltViewModel(key = "artist-songs:$id"),
+    viewModel: ArtistSongsViewModel = viewModel(key = "artist-songs:$id"),
 ) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return

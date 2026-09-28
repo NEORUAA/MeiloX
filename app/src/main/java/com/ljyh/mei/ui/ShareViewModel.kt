@@ -6,13 +6,11 @@ import com.ljyh.mei.data.model.UserAccount
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ShareRepository
 import com.ljyh.mei.data.repository.UserRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class ShareViewModel @Inject constructor(
     private val repository: ShareRepository,
     private val userRepository: UserRepository,

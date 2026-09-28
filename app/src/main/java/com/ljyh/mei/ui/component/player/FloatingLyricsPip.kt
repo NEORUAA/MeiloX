@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.FloatingLyricsFontScaleKey
@@ -95,7 +95,7 @@ fun floatingLyricsPipParams(context: Context, isPlaying: Boolean): PictureInPict
 @Composable
 fun FloatingLyricsPipScreen(
     playerConnection: PlayerConnection,
-    viewModel: PlayerViewModel = hiltViewModel(),
+    viewModel: PlayerViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val metadata by playerConnection.mediaMetadata.collectAsState()

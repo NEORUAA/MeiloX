@@ -23,7 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.ljyh.mei.ui.local.LocalNavController
@@ -42,7 +42,7 @@ import timber.log.Timber
 @Composable
 fun CommentScreen(
     songId: String,
-    viewModel: CommentViewModel = hiltViewModel()
+    viewModel: CommentViewModel = viewModel()
 ) {
     val navController = LocalNavController.current
     val sortType by viewModel.sortType.collectAsState()

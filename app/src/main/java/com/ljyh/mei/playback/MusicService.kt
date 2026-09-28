@@ -81,7 +81,6 @@ import com.ljyh.mei.playback.CacheManager.removePlaybackEntries
 import com.ljyh.mei.utils.CoilBitmapLoader
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,7 +108,6 @@ import javax.inject.Inject
 
 
 @UnstableApi
-@AndroidEntryPoint
 class MusicService : MediaLibraryService(),
     Player.Listener,
     PlaybackStatsListener.Callback {
@@ -182,6 +180,7 @@ class MusicService : MediaLibraryService(),
     lateinit var automaticCacheController: AutomaticCacheController
 
     override fun onCreate() {
+        com.ljyh.mei.di.AppGraph.component.inject(this)
         super.onCreate()
         playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)

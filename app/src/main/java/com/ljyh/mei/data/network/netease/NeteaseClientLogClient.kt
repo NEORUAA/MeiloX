@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random

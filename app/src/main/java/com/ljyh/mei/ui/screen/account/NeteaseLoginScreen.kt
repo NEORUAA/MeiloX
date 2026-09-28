@@ -44,7 +44,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.datastore.preferences.core.edit
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.R
@@ -66,8 +66,7 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.dataStore
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -75,7 +74,7 @@ import javax.inject.Inject
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
+fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = viewModel()) {
     val navController = LocalNavController.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     var detected by remember { mutableStateOf(false) }
@@ -346,7 +345,6 @@ private fun NeteaseCookieLoginSheet(
     }
 }
 
-@HiltViewModel
 class NeteaseLoginViewModel @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
     private val repository: MeloXRepository,

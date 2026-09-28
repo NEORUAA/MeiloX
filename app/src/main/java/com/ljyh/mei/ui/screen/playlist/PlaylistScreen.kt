@@ -21,7 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.ljyh.mei.constants.DownloadPathKey
@@ -51,7 +51,7 @@ import timber.log.Timber
 @Composable
 fun PlaylistScreen(
     id: Long,
-    viewModel: PlaylistViewModel = hiltViewModel()
+    viewModel: PlaylistViewModel = viewModel()
 ) {
     // 1. 初始化数据请求
     LaunchedEffect(key1 = id) {

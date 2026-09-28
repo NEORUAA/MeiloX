@@ -6,7 +6,6 @@ import com.ljyh.mei.data.model.melox.Podcast
 import com.ljyh.mei.data.model.melox.PodcastDetail
 import com.ljyh.mei.data.model.melox.PodcastHome
 import com.ljyh.mei.data.repository.MeloXRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -43,7 +42,6 @@ data class PodcastDetailUiState(
     val isUpdatingSubscription: Boolean = false,
 )
 
-@HiltViewModel
 class PodcastViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -176,7 +174,6 @@ class PodcastViewModel @Inject constructor(
     }
 }
 
-@HiltViewModel
 class PodcastDetailViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {

@@ -11,8 +11,7 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.di.repository.HistoryRepository
 import com.ljyh.mei.utils.dataStore
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +33,6 @@ data class HistoryUiState(
     val canClearLocalHistory: Boolean = false,
 )
 
-@HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val localRepository: HistoryRepository,
     private val remoteRepository: MeloXRepository,

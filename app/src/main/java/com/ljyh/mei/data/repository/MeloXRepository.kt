@@ -77,7 +77,7 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 
 internal const val PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT =
     "https://interface.music.163.com/eapi/feedback/weblog"

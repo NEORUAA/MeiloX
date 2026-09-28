@@ -1,12 +1,12 @@
 package com.ljyh.mei.ui.screen.log
 
-import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import com.ljyh.mei.di.ApplicationContext
 import androidx.lifecycle.viewModelScope
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,10 +16,9 @@ import javax.inject.Inject
 
 
 
-@HiltViewModel
 class LogViewModel @Inject constructor(
-    application: Application
-) : AndroidViewModel(application) {
+    @ApplicationContext private val context: Context
+) : ViewModel() {
 
     // 日志文件列表
     private val _logFiles = MutableStateFlow<List<File>>(emptyList())
@@ -41,7 +40,6 @@ class LogViewModel @Inject constructor(
      */
     fun loadLogFiles() {
         viewModelScope.launch(Dispatchers.IO) {
-            val context = getApplication<Application>()
             val logDir = File(context.filesDir, "app_logs")
             val crashDir = File(context.filesDir, "crash_logs")
 
@@ -86,7 +84,6 @@ class LogViewModel @Inject constructor(
      */
     fun shareCurrentFile() {
         val file = currentSelectedFile ?: return
-        val context = getApplication<Application>()
 
         try {
             // 获取 FileProvider URI

@@ -51,8 +51,6 @@
   @com.google.gson.annotations.SerializedName <fields>;
 }
 
--keep,allowobfuscation,allowshrinking @dagger.hilt.EntryPoint class * { void (); }
--keep,allowobfuscation,allowshrinking @dagger.hilt.android.AndroidEntryPoint class * { <init>(); }
 -keep class * extends androidx.room.RoomDatabase { <init> (); }
 # Please add these rules to your existing keep rules in order to suppress warnings.
 # This is generated automatically by the Android Gradle plugin.
@@ -120,13 +118,6 @@
     public static *** d(...);
     public static *** e(...);
 }
-
-# Dagger Hilt 注解相关规则
--keep,allowobfuscation,allowshrinking @dagger.hilt.EntryPoint class * { <init>(); }
--keep,allowobfuscation,allowshrinking @dagger.hilt.android.EarlyEntryPoint class * { <init>(); }
--keep,allowobfuscation,allowshrinking @dagger.hilt.internal.ComponentEntryPoint class * { <init>(); }
--keep,allowobfuscation,allowshrinking @dagger.hilt.internal.GeneratedEntryPoint class * { <init>(); }
-
 
 # WorkManager 相关规则
 -keep,allowshrinking class * extends androidx.work.ListenableWorker { <init>(); }

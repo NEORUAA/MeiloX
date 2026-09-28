@@ -8,13 +8,11 @@ import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.MeloXRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class ArtistViewModel @Inject constructor(
     private val repository: ArtistRepository,
     private val meloXRepository: MeloXRepository,

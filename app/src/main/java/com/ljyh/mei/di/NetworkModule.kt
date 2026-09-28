@@ -16,8 +16,6 @@ import com.ljyh.mei.data.network.netease.NcblSessionContextProvider
 import com.ljyh.mei.utils.log.NetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -34,7 +32,6 @@ import javax.net.ssl.X509TrustManager
 
 
 @Module
-@InstallIn(SingletonComponent::class)
 object RetrofitModule {
 
     private const val APIDOMAIN = "https://interface.music.163.com"

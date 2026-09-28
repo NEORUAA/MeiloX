@@ -34,7 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.edit
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
@@ -67,8 +67,7 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.dataStore
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -85,7 +84,6 @@ data class AccountHomeState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class AccountHomeViewModel @Inject constructor(
     private val repository: MeloXRepository,
     @ApplicationContext private val context: Context,
@@ -119,7 +117,7 @@ class AccountHomeViewModel @Inject constructor(
 }
 
 @Composable
-fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
+fun AccountHomeScreen(viewModel: AccountHomeViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -286,7 +284,6 @@ data class ListeningRankState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class ListeningRankViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -315,7 +312,7 @@ class ListeningRankViewModel @Inject constructor(
 
 @OptIn(UnstableApi::class)
 @Composable
-fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltViewModel()) {
+fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current

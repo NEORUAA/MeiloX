@@ -6,7 +6,6 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ArtistRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -20,7 +19,6 @@ data class ArtistSongsState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class ArtistSongsViewModel @Inject constructor(
     private val repository: ArtistRepository,
 ) : ViewModel() {

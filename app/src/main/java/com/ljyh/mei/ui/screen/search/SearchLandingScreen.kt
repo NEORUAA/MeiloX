@@ -33,7 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
@@ -53,7 +53,6 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.rememberPreference
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -65,7 +64,6 @@ data class SearchDiscoveryState(
     val error: Boolean = false,
 )
 
-@HiltViewModel
 class SearchDiscoveryViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -117,7 +115,7 @@ private val searchCategories = listOf(
 )
 
 @Composable
-fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
+fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()

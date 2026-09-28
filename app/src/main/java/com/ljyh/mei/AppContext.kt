@@ -1,6 +1,7 @@
 package com.ljyh.mei
 
 import android.app.Application
+import android.content.Context
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -8,11 +9,9 @@ import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import dagger.hilt.android.HiltAndroidApp
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 
-@HiltAndroidApp
 class AppContext : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
@@ -21,7 +20,7 @@ class AppContext : Application(), SingletonImageLoader.Factory {
 
     companion object {
         @JvmStatic
-        lateinit var instance: AppContext
+        lateinit var instance: Context
 
     }
 
@@ -57,4 +56,3 @@ class AppContext : Application(), SingletonImageLoader.Factory {
             .build()
     }
 }
-

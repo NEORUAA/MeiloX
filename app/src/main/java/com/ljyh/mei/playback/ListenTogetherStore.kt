@@ -16,7 +16,7 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.utils.dataStore
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

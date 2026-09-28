@@ -14,14 +14,11 @@ import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.di.repository.SongRepository
 import dagger.Module
 import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
+import com.ljyh.mei.di.ApplicationContext
 import javax.inject.Singleton
 
 
 @Module
-@InstallIn(SingletonComponent::class)
 object AppModule {
     @Provides
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase =

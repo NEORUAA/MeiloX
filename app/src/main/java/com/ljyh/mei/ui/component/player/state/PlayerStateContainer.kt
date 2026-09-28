@@ -11,7 +11,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player.STATE_READY
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.DebugKey
@@ -100,7 +100,7 @@ class PlayerStateContainer(
 @Composable
 @UnstableApi
 fun rememberPlayerStateContainer(
-    playerViewModel: PlayerViewModel = hiltViewModel(),
+    playerViewModel: PlayerViewModel = viewModel(),
     playerConnection: PlayerConnection,
     progressUpdatesEnabled: Boolean = true,
 ): PlayerStateContainer {

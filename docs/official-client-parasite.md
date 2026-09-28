@@ -128,7 +128,7 @@ host components. Request success alone is not a replacement for those transition
 
 ## Feature and Request Migration Matrix
 
-Every row is required. At this checkpoint, no row has been migrated to a module.
+Every row is required. At this checkpoint, no feature row is fully migrated and accepted.
 Paths identify the current business operations, not a claim that the TV session accepts them.
 Existing request bodies, pagination, response models, and error behavior remain the baseline.
 
@@ -185,8 +185,8 @@ It does not replace the official launcher, main screen, or login screen yet.
 - LSPosed searches native libraries inside the APK, so legacy compressed JNI packaging failed.
   Uncompressed JNI packaging passes `zipalign -c -P 16 -v 4`; the existing BeatNet JNI loads in the host
   and rejects an invalid input shape as expected. This checks loading/binding, not inference quality.
-- Dependency injection and the production player remain unverified. The scoped Context
-  below is exercised by the prototype, not yet by every production feature.
+- The scoped Context and dependency graph below are exercised by the prototype, not yet
+  by every production feature. The production player still needs component adaptation.
 
 The probe is disabled in normal debug/release builds. All screenshots, crash evidence,
 and accessibility dumps stay outside Git. Earlier failures remain documented; a successful
@@ -255,6 +255,35 @@ This is storage namespacing within one UID, not a security sandbox. Production d
 file-provider sharing, work scheduling, runtime permissions, and all-feature persistence
 still need their own component/feature acceptance tests.
 
+### Module Dependency Graph
+
+- Removed the Hilt Gradle plugin, runtime/compiler dependencies, entry-point annotations,
+  generated-Application requirement, and obsolete keep rules. Plain Dagger `2.59.2` reuses
+  the existing database, repository, and network provider modules.
+- `AppGraph` owns one explicitly initialized component per module classloader/process.
+  Its application-qualified Context is the scoped `ModuleContext`, not the official Application.
+  The legacy `AppContext.instance` reference now holds that Context rather than requiring
+  a module Application instance. The official Application remains untouched.
+- All 29 existing ViewModels have explicit bindings. Compose uses the standard ViewModel
+  provider with the Activity's module factory; navigation-entry owners retain their own stores.
+  `MainActivity` and `MusicService` use explicit member injection. No screen or feature entry
+  was removed as part of this migration.
+- `LogViewModel` no longer requires `AndroidViewModel`/Application; it reads module-scoped
+  log directories. Its file-sharing component adaptation is still pending.
+- Three factory tests cover explicit registration, repeated creation, per-owner/per-key reuse,
+  clearing, and provider failure propagation. The complete debug suite passed: 241 tests,
+  zero failures or skips; debug assembly, diff checks, and 16 KB APK alignment passed.
+- On the AVD, the real About, Log, and Storage ViewModels were created inside the official
+  process. The factory reported all 29 bindings, the exact scoped Context, and successful
+  storage loading. After background process termination, the graph initialized again and
+  the Activity restored counter `1`; module rendering remained intact with no new crash.
+- APK inspection found the module Dagger component/factory and no defined Hilt classes.
+
+This changes dependency ownership, not NetEase transport. Existing network provider bodies
+remain pending the host bridge migration. The runtime probe deliberately creates only local
+ViewModels; enabling the complete frontend before replacing that transport is not acceptance.
+Full MainActivity/MusicService hosting and production navigation are still pending.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -262,7 +291,7 @@ still need their own component/feature acceptance tests.
 - Verify `getApiVersion()` in the actual injected process; metadata is insufficient.
 - Preserve host Application initialization and network/session services.
 - Isolate module Compose/Kotlin/AndroidX resources and types from host versions.
-- Replace application-dependent Hilt entry points with a module-owned dependency graph.
+- Keep the module-owned dependency graph independent of the official Application.
 - Prove Activity, media service, notification, resource, font, native library, and lifecycle handling before migrating all screens.
 - Do not assume a service listed only in the module manifest is available under the host UID.
 - Translate request parameters and host objects at a single boundary; retain coroutine cancellation and session-generation checks.
@@ -276,7 +305,7 @@ still need their own component/feature acceptance tests.
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
-| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage/Room/DataStore, and background-service prototype passed | Module dependency graph and production component routing remain |
+| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
 | 4. Core business migration | Not started | All core screens use host business transport |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |

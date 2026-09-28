@@ -29,6 +29,7 @@ internal object HostRuntimeProbe {
     fun install(module: XposedModule, application: Application, moduleInfo: ApplicationInfo, logger: (String) -> Unit) {
         report = logger
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
+        com.ljyh.mei.di.AppGraph.initialize(applicationContext)
         Thread({ ModuleStorageProbe.run(applicationContext, application, report) }, "MeiloX-storage-probe").start()
         module.hook(AppComponentFactory::class.java.getMethod("instantiateService", ClassLoader::class.java, String::class.java, Intent::class.java))
             .intercept { chain ->

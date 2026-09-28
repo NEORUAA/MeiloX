@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.api.SearchResult
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.SearchRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +17,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository
 ) : ViewModel() {

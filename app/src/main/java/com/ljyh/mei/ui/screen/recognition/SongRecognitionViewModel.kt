@@ -8,8 +8,7 @@ import com.ljyh.mei.data.repository.SongRecognitionRepository
 import com.ljyh.mei.recognition.NeteaseFingerprintGenerator
 import com.ljyh.mei.recognition.RecognitionDuration
 import com.ljyh.mei.recognition.SongRecognitionRecorder
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -34,7 +33,6 @@ data class SongRecognitionUiState(
     )
 }
 
-@HiltViewModel
 class SongRecognitionViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val repository: SongRecognitionRepository,

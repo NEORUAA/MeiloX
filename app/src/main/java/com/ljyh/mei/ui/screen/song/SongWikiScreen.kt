@@ -27,7 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
@@ -53,7 +53,6 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.NumberFormat
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,7 +66,6 @@ data class SongWikiUiState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class SongWikiViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -90,7 +88,7 @@ class SongWikiViewModel @Inject constructor(
 @Composable
 fun SongWikiScreen(
     songId: Long,
-    viewModel: SongWikiViewModel = hiltViewModel(),
+    viewModel: SongWikiViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current

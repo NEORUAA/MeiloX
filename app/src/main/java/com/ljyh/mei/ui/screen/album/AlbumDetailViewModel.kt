@@ -10,13 +10,11 @@ import com.ljyh.mei.data.model.room.ArtistEntity
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.repository.AlbumsRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class AlbumDetailViewModel @Inject constructor(
     private val repository: PlaylistRepository,
     private val albumsRepository: AlbumsRepository

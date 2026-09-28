@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
@@ -14,8 +14,8 @@ fun StandaloneTrackActionOverlay(
     overlay: OverlayState,
     onDismiss: () -> Unit,
     onUpdateOverlay: (OverlayState) -> Unit,
-    playlistViewModel: PlaylistViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel(),
+    playlistViewModel: PlaylistViewModel = viewModel(),
+    playerViewModel: PlayerViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val playlists by playlistViewModel.playlist.collectAsState()

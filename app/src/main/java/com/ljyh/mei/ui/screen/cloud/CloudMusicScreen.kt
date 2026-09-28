@@ -31,7 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
@@ -55,7 +55,6 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -70,7 +69,6 @@ data class CloudMusicUiState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class CloudMusicViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -122,7 +120,7 @@ class CloudMusicViewModel @Inject constructor(
 
 @Composable
 fun CloudMusicScreen(
-    viewModel: CloudMusicViewModel = hiltViewModel(),
+    viewModel: CloudMusicViewModel = viewModel(),
     isNavigationTab: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()

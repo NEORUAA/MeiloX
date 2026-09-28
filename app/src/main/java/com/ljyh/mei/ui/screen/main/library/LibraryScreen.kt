@@ -19,7 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.R
 import androidx.compose.ui.graphics.Color
@@ -48,7 +48,7 @@ import com.ljyh.mei.utils.rememberPreference
 
 @Composable
 fun LibraryScreen(
-    viewModel: LibraryViewModel = hiltViewModel(),
+    viewModel: LibraryViewModel = viewModel(),
     isNavigationTab: Boolean = false,
     category: LibraryPage? = null,
 ) {

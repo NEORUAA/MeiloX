@@ -204,7 +204,6 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -215,8 +214,10 @@ import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 
-@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    override val defaultViewModelProviderFactory: androidx.lifecycle.ViewModelProvider.Factory
+        get() = com.ljyh.mei.di.AppGraph.component.viewModelFactory()
 
     @Inject
     lateinit var database: AppDatabase
@@ -234,6 +235,7 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.S)
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.ljyh.mei.di.AppGraph.component.inject(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         CrashHandler.init(this)

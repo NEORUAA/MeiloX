@@ -11,7 +11,6 @@ import com.ljyh.mei.data.model.weapi.CommentX
 import com.ljyh.mei.data.model.weapi.FComment
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.CommentRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +18,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@HiltViewModel
 class CommentViewModel @Inject constructor(
     private val repository: CommentRepository
 ) : ViewModel() {

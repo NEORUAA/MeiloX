@@ -49,7 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.google.gson.Gson
@@ -94,8 +94,8 @@ import timber.log.Timber
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel(),
+    viewModel: HomeViewModel = viewModel(),
+    playerViewModel: PlayerViewModel = viewModel(),
 ) {
     val navController = LocalNavController.current
     val backStackEntry = navController.currentBackStackEntry

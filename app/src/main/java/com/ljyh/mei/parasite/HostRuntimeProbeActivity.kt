@@ -40,8 +40,17 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.theme.MusicTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ljyh.mei.di.AppGraph
+import com.ljyh.mei.ui.screen.about.AboutViewModel
+import com.ljyh.mei.ui.screen.log.LogViewModel
+import com.ljyh.mei.ui.screen.setting.StorageManagementViewModel
 
 class HostRuntimeProbeActivity : ComponentActivity() {
+    override val defaultViewModelProviderFactory: androidx.lifecycle.ViewModelProvider.Factory
+        get() = AppGraph.component.viewModelFactory()
+
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(HostRuntimeProbe.wrap(newBase))
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +63,9 @@ class HostRuntimeProbeActivity : ComponentActivity() {
         HostRuntimeProbe.report("runtime_activity_created restored=${savedInstanceState != null}")
         setContent {
             MusicTheme(seedColor = Color(0xFFFA233B)) {
+                val about: AboutViewModel = viewModel()
+                val logs: LogViewModel = viewModel()
+                val storage: StorageManagementViewModel = viewModel()
                 var count by rememberSaveable { mutableIntStateOf(0) }
                 val playback by HostRuntimeProbe.playbackState.collectAsState()
                 GlassBackdropHost(
@@ -104,6 +116,9 @@ class HostRuntimeProbeActivity : ComponentActivity() {
                     },
                 )
                 LaunchedEffect(Unit) {
+                    val storageState = storage.state.first { it.hasLoaded || it.error != null }
+                    val localModelsCreated = about.javaClass == AboutViewModel::class.java && logs.javaClass == LogViewModel::class.java
+                    HostRuntimeProbe.report("runtime_graph models=${AppGraph.component.viewModelFactory().registeredModels.size} scoped_context=${AppGraph.component.context() === applicationContext} local_viewmodels=$localModelsCreated storage_loaded=${storageState.hasLoaded} storage_error=${storageState.error != null}")
                     HostRuntimeProbe.report("runtime_composition_ready density=${resources.displayMetrics.density}")
                     withContext(Dispatchers.Default) {
                         try {

@@ -17,7 +17,6 @@ import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.repository.AlbumsRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,7 +26,6 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 
-@HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: UserRepository,
     private val localPlaylistRepository: LocalPlaylistRepository,

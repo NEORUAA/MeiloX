@@ -29,7 +29,6 @@ import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +47,6 @@ internal fun MediaMetadata.matchesPlaylistSearch(query: String): Boolean {
         }
 }
 
-@HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
     private val userRepository: UserRepository,

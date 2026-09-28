@@ -15,7 +15,7 @@ import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import java.io.File

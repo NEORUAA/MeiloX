@@ -32,7 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
@@ -53,7 +53,6 @@ import com.ljyh.mei.ui.glass.IosModalSheet
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,7 +67,6 @@ data class NeteaseShareUiState(
     val error: String? = null,
 )
 
-@HiltViewModel
 class NeteaseShareViewModel @Inject constructor(
     private val repository: MeloXRepository,
 ) : ViewModel() {
@@ -126,7 +124,7 @@ class NeteaseShareViewModel @Inject constructor(
 fun NeteaseShareSheet(
     metadata: MediaMetadata,
     onDismiss: () -> Unit,
-    viewModel: NeteaseShareViewModel = hiltViewModel(),
+    viewModel: NeteaseShareViewModel = viewModel(),
 ) {
     val resource = remember(metadata) {
         ShareResource(

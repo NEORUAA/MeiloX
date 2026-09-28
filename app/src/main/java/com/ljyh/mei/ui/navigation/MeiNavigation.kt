@@ -83,7 +83,7 @@ class MeiNavigator(
 }
 
 /**
- * Keeps Hilt ViewModels scoped to a NavDisplay entry, matching NavHost behavior.
+ * Keeps ViewModels scoped to a NavDisplay entry, matching NavHost behavior.
  */
 class MeiNavEntryViewModelStoreOwner(
     private val activity: androidx.activity.ComponentActivity,
