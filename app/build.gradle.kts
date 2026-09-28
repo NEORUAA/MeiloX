@@ -17,7 +17,7 @@ android {
     namespace = "com.ljyh.mei"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.neoruaa.meilox"
+        applicationId = "com.neoruaa.meilox.parasite"
         minSdk = 33
         targetSdk = 37
         versionCode = 11
@@ -32,7 +32,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField(
+                "boolean",
+                "PARASITE_HOST_PROBE",
+                (providers.gradleProperty("parasiteHostProbe").orNull == "true").toString(),
+            )
+        }
         release {
+            buildConfigField("boolean", "PARASITE_HOST_PROBE", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -82,6 +90,8 @@ kotlin {
 }
 
 dependencies {
+
+    compileOnly("io.github.libxposed:api:102.0.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

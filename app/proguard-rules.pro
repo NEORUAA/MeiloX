@@ -179,3 +179,4 @@
 -keep class com.hchen.superlyricapi.* { *; }
 # SuperLyricApi compiles this framework entry point against its compile-only stubs.
 -dontwarn android.os.ServiceManager
+-keep class com.ljyh.mei.parasite.MeiloXModule { public <init>(); }

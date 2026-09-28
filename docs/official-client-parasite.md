@@ -20,7 +20,7 @@ Inspection date: 2026-09-29.
 
 | Candidate | Package / version | Assessment |
 | --- | --- | --- |
-| TV | `com.netease.cloudmusic.tv` / `1.1.80` (`1001080`) | First candidate; arm64, traceable login and general request builder; runtime qualification pending |
+| TV | `com.netease.cloudmusic.tv` / `1.1.80` (`1001080`) | Selected for runtime prototyping; original login, session restoration, API 102 injection, and read-only business probes passed |
 | Watch | `com.netease.cloudmusic.watch` / `2.9.46` (`29046`) | Supplied APK has only `armeabi`; incompatible with the current arm64-only AVD |
 | Car | `com.netease.cloudmusic.iot` / `6.2.81` (`6002081`) | arm64, but also has a separate OAuth request/session path; fallback candidate |
 | Phone | `com.netease.cloudmusic` / `9.6.05` (`9006005`) | Existing extracted phone sources are `9.2.10`; require matching APK analysis before adaptation |
@@ -43,21 +43,51 @@ Use the supplied APK's DEX for runtime names and signatures.
 - Device: `emulator-5554`, `sdk_gphone16k_arm64`, Android API 37.
 - Supported ABI: `arm64-v8a`; page size: 16384 bytes.
 - Installed framework metadata: LSPosed `v2.2.0 (7854)`.
-- Actual libxposed runtime API detection remains part of the module load probe.
+- Injected module reported runtime API `102`, framework `LSPosed`, version `2.2.0`.
 - Official TV APK installation succeeded without replacing any existing package.
 - Cold launch reached `com.netease.cloudmusic.app.LoadingActivity` and then the official main screen.
 - Android displayed its page-size compatibility warning; the host continued in compatibility mode.
 - The original player loaded artwork and lyrics. MediaSession reported `PLAYING`, then `PAUSED` after the test pause command.
 - This is playback-state evidence, not a full-track, sound-quality, or premium-entitlement acceptance result.
-- The official login screen generated a QR code. User authorization, session restoration, and authenticated capability checks are pending.
-- The crash buffer was empty at the login checkpoint; this is not long-running stability proof.
+- The user completed official QR login. Force-stop/cold-start retained the authenticated session.
+- The official authentication predicates reported a user session, not an anonymous session; `nuser/account/get` matched the official session's user ID. No credentials were copied.
+- The first probe exposed a Tinker classloader mismatch and crashed in an uninitialized copy of the Session class. Using the resumed host Activity's classloader fixed the issue. The corrected probe also contains linkage/static-initializer failures so they do not escape its worker thread.
+- The corrected probe completed with the session unchanged. This is not long-running stability proof.
+
+### Authenticated Read-Only Probe
+
+The debug APK enables this probe only with `-PparasiteHostProbe=true`. Normal debug and
+release builds do not run it. It runs once after the official main Activity resumes;
+all business calls use the host's `network.f.c(...).k()` pipeline. Only named check
+results, business codes, and presence booleans are logged through the framework.
+
+| Operation | Result |
+| --- | --- |
+| `nuser/account/get` | Code 200; account matches the live session |
+| `user/playlist` | Code 200; playlist data present |
+| `v6/playlist/detail` | Code 200 |
+| `v1/cloud/get` | Code 200 |
+| `listen/together/status/get` | Code 200; no room created or invitation sent |
+| `djradio/category/get` | Code 200 |
+| `search/get` | Code 200 |
+| `v3/song/detail` | Code 200; song data present |
+| `song/lyric/v1` | Code 200; lyrics present |
+| `song/enhance/player/url/v1` | Code 200; per-song code 200, URL present, no trial info for the sampled song |
+
+This qualifies the host for the next runtime prototype. It does not establish every
+feature's parameter/permission coverage, premium quality access, uploads, full-track
+playback, or final listening-statistics acceptance. Those remain later-stage gates.
+
+The standalone and module packages coexist. The module has no launcher entry; the
+official APK has not been repackaged. Module scope contains only the TV package.
 
 Screenshots and the temporary accessibility dump stay outside Git. Do not preserve an active login QR in this document.
 
 ## Verified DEX Entry Points
 
 These names and method signatures were inspected using Android SDK `apkanalyzer dex code` on the exact TV APK above.
-They are static evidence until exercised through the host classloader.
+Login-controller entries remain static evidence; the session and request entries were
+exercised by the authenticated probe.
 
 | Responsibility | Runtime class / method | Adaptation requirement |
 | --- | --- | --- |
@@ -78,6 +108,18 @@ They are static evidence until exercised through the host classloader.
 
 For example, JADX's `C4399f.m13980b` is actually `network.f.b` in DEX.
 Do not install hooks against the generated `C...`, `m...`, or `p393tv` aliases.
+
+**Classloader requirement:** `onPackageReady().classLoader` is not the final TV business
+loader. Tinker replaces it during Application attachment. Resolve business classes
+through the live Activity's defining classloader after initialization. The initial
+loader contains duplicate, uninitialized Application/Session classes. Do not cache
+business class handles before this transition. Module and host Kotlin classes were
+confirmed distinct at runtime.
+
+The host's `core.b.d()` and `core.b.c()` expose authenticated/anonymous booleans
+without exporting credentials. The request base `network.v.e.f` provides `c()`
+for cancellation, `d(int)` for connect timeout, and `i0(int)` for read timeout;
+cancellation semantics still require dedicated integration tests.
 
 The extracted login implementation calls `login/anon/device`, `login/qrcode/unikey`,
 `login/qrcode/client/login`, and `nuser/account/get`. On successful authorization it also
@@ -143,16 +185,16 @@ Primary inventory sources are `ui/screen/Screen.kt`, `ui/navigation/MeloXNavigat
 
 | Stage | Status | Exit condition |
 | --- | --- | --- |
-| 1. Host and feature baseline | In progress: static inventory and original-app startup/QR checks passed | User login, session restoration, and authenticated capability checks pass |
-| 2. API 102 runtime | Not started | Injected UI and playback service operate inside the qualified host |
+| 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
+| 2. API 102 runtime | In progress: module loading, identity guard, and Kotlin isolation passed | Injected UI and playback service operate inside the qualified host |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
 | 4. Core business migration | Not started | All core screens use host business transport |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 
-A baseline documentation commit is a verified substep, not completion of stage 1.
-Do not advance to the broad frontend migration while host qualification is pending.
+Do not advance to the broad frontend migration until the Activity/resource/service
+prototype passes. Module loading alone does not complete stage 2.
 
 ## Reproduction Commands
 
@@ -160,6 +202,7 @@ Use Android SDK `aapt2 dump badging`, `apksigner verify --print-certs`, and
 `apkanalyzer dex code --class <runtime-class> <apk>` for artifact checks.
 
 ```sh
+./gradlew :app:testDebugUnitTest --tests 'com.ljyh.mei.parasite.*' :app:assembleDebug -PparasiteHostProbe=true
 adb -s emulator-5554 shell getprop ro.product.cpu.abilist
 adb -s emulator-5554 shell getconf PAGE_SIZE
 adb -s emulator-5554 shell dumpsys package com.netease.cloudmusic.tv
