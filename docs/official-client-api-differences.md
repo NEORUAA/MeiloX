@@ -98,6 +98,38 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   controlled pagination/bulk-failure tests. Full 792-episode loading is not accepted on
   the device yet, and retrying aggressively is not a qualification strategy.
 
+### API-006: Album Collection State Is Owned by the Official Account
+
+- Original assumption: `AlbumDetailViewModel` reads the module's `AlbumsRepository` table
+  to decide whether an album is collected and inserts/deletes rows after a generic
+  `Resource.Success`, even if the returned business code rejects the mutation.
+- Source-confirmed official contract: TV uses `tv-artist-page/album/get` with a `request`
+  parameter containing JSON `{ "albumId": "..." }`. Its `AlbumDetailVO` exposes `id`
+  and `collect`; the source declares only `id` for `album/sub` and `album/unsub`, without
+  a module Cookie, user ID, or `checkToken` parameter. This is a session/state-source
+  difference; the old `v1/album/{id}` read remains useful for MeiloX's richer song model.
+- Adaptation: pair the original album read with the TV collection-state read under the
+  same captured official session. Validate album identity and a present Boolean flag;
+  absent/error state is not interpreted as uncollected. Guest albums remain readable,
+  but collection writes require official authentication. Accept mutations only on
+  business code 200; serialize writes and defer refresh until an in-flight write settles.
+  Notify only the current account's Library after an accepted write, without using the
+  unscoped legacy album table as an account cache.
+- Source evidence: local TV `artist/albumlist/a/a`, `artist/albumlist/b/b`,
+  `artist/albumlist/bean/AlbumDetailVO`, and the shared resource-detail `RequestParam`.
+  These are interface/schema observations, not new reflection hook names. No decompiled
+  source or account response is included in this repository.
+- Validation: 15 album session tests, five repository tests, two transport tests, and a
+  Library invalidation test pass within the 420-test debug suite. They cover both flag
+  values, malformed/error responses, captured-session dispatch, stale publication,
+  business-code rollback, duplicate suppression, refresh ordering, and cancellation.
+  The AVD reads a matching album ID and present uncollected flag through the official
+  pipeline; refresh and background return preserve the original detail presentation.
+  See [the album checkpoint](official-client-parasite.md#session-owned-album-details).
+- Remaining: real collection changes, relogin, and account switches are user-coordinated
+  acceptance. Source and substitute tests do not establish live mutation acceptance;
+  canceling an old request cannot undo a server mutation already accepted.
+
 ## Runtime Boundary Notes
 
 These are integration differences, not server API semantics.

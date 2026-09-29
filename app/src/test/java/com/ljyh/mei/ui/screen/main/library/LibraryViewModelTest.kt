@@ -41,6 +41,7 @@ class LibraryViewModelTest {
     private fun song(id: Long) = MediaMetadata(id, "Song $id", "", emptyList(), 1000, MediaMetadata.Album(1, "Album"))
 
     private class FakeSource : AccountLibrarySource {
+        override val albumChanges = kotlinx.coroutines.flow.MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1)
         val cached = mutableMapOf<String, MutableStateFlow<List<AccountPlaylist>>>()
         val syncCalls = mutableListOf<String>()
         var sync: suspend (HostSessionStamp) -> Resource<Unit> = { Resource.Success(Unit) }
@@ -57,6 +58,26 @@ class LibraryViewModelTest {
         override suspend fun albums() = albums.invoke()
         override suspend fun photos(accountId: String) = photos.invoke(accountId)
         override suspend fun likedSongs(playlistId: String) = liked.invoke(playlistId)
+    }
+
+    @Test fun acceptedAlbumChangesRefreshOnlyTheirCurrentAccountLibrary() {
+        var albumRequests = 0
+        source.albums = { albumRequests++; Resource.Success(UserAlbumList(emptyList(), 0, false, 0, 200)) }
+        checkModel { model, _ ->
+            runCurrent()
+            val old = sessions.snapshot()
+            val before = albumRequests
+            source.albumChanges.emit(old)
+            runCurrent()
+            assertEquals(before + 1, albumRequests)
+            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            runCurrent()
+            val changed = albumRequests
+            source.albumChanges.emit(old)
+            runCurrent()
+            assertEquals(changed, albumRequests)
+            assertEquals("2", model.state.value.userId)
+        }
     }
 
     private fun checkModel(check: suspend TestScope.(LibraryViewModel, ViewModelStore) -> Unit) = runTest {

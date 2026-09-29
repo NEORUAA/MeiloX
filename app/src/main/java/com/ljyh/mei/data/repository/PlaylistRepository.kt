@@ -29,15 +29,23 @@ import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.playback.playbackQualityFallbacks
+import com.ljyh.mei.parasite.HostSessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+internal interface AlbumDetailSource {
+    suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail>
+    suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean>
+    suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse>
+    suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp? = null): Resource<SongUrl>
+}
 
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
     private val eApiService: EApiService
-) {
+) : AlbumDetailSource {
     suspend fun getPlaylistDetail(id: String): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -83,7 +91,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality): Resource<SongUrl> {
+    override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp?): Resource<SongUrl> {
         return withContext(Dispatchers.IO) {
             val requestedIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
             if (requestedIds.isEmpty()) {
@@ -98,7 +106,8 @@ class PlaylistRepository(
                         GetSongUrlV1(
                             ids = "[${requestedIds.joinToString(",")}]",
                             level = attemptedQuality,
-                        )
+                        ),
+                        expectedSession = session,
                     )
                 } catch (error: CancellationException) {
                     throw error
@@ -207,27 +216,15 @@ class PlaylistRepository(
     }
 
 
-    suspend fun subscribeAlbum(id: String): Resource<BaseResponse> {
+    override suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
-                apiService.subscribeAlbum(
-                    SubscribePlaylist(
-                        id = id,
-                    )
-                )
-            }
-        }
-    }
-
-
-    suspend fun unsubscribeAlbum(id: String): Resource<BaseResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.unsubscribeAlbum(
-                    SubscribePlaylist(
-                        id = id,
-                    )
-                )
+                check(session.identity.authenticated) { "Official login is required" }
+                val body = SubscribePlaylist(id = id)
+                val response = if (collected) apiService.subscribeAlbum(body, session)
+                    else apiService.unsubscribeAlbum(body, session)
+                check(response.code == 200) { "Album collection request failed (${response.code})" }
+                response
             }
         }
     }
@@ -247,13 +244,25 @@ class PlaylistRepository(
     }
 
 
-    suspend fun getAlbumDetail(id: String): Resource<AlbumDetail> {
+    override suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.getAlbumDetail(
-                    id = id
-                )
+                    id = id, expectedSession = session,
+                ).also { check(it.code == 200) { "Album request failed (${it.code})" } }
             }
+        }
+    }
+
+    override suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean> = withContext(Dispatchers.IO) {
+        safeApiCall {
+            if (!session.identity.authenticated) return@safeApiCall false
+            val request = com.google.gson.JsonObject().apply { addProperty("albumId", id) }
+            val response = apiService.getAlbumCollection(mapOf("request" to request.toString()), session)
+            check(response.code == 200) { "Album collection state failed (${response.code})" }
+            val album = checkNotNull(response.data) { "Missing official album collection state" }
+            check(album.id.toString() == id) { "Official album identity mismatch" }
+            checkNotNull(album.collected) { "Missing official album collection flag" }
         }
     }
 

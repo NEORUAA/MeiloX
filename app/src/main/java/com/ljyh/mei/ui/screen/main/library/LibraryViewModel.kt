@@ -67,6 +67,11 @@ class LibraryViewModel internal constructor(
         viewModelScope.launch {
             accounts.state.map { it.session }.distinctUntilChanged().collect { refresh() }
         }
+        viewModelScope.launch {
+            source.albumChanges.collect { stamp ->
+                if (state.value.session == stamp && runCatching { accounts.sessions.requireCurrent(stamp) }.isSuccess) refresh()
+            }
+        }
     }
 
     fun refresh() {

@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,64 +53,33 @@ fun AlbumDetailScreen(
     id: Long,
     viewModel: AlbumDetailViewModel = viewModel(),
 ) {
-    // 1. 请求初始数据
-    LaunchedEffect(id) {
-        viewModel.getAlbumDetail(id.toString())
-        viewModel.isSubscribe(id)
-    }
+    LaunchedEffect(id) { viewModel.getAlbumDetail(id.toString()) }
+    val state by viewModel.state.collectAsState()
+    key(id, state.session) { AlbumDetailContent(id, state, viewModel) }
+}
 
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: AlbumDetailViewModel) {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
-    val albumDetail by viewModel.albumDetail.collectAsState()
-    val subscribeState by viewModel.subscribeAlbum.collectAsState()
-    val unSubscribeState by viewModel.unSubscribeAlbum.collectAsState()
-    val isSubscribeState by viewModel.isSubscribe.collectAsState()
-
-
-    // 3. 本地收藏状态 (乐观更新核心)
-    var isSubscribed by remember { mutableStateOf(false) }
-
-    // 处理收藏失败的回滚逻辑
-    LaunchedEffect(subscribeState) {
-        if (subscribeState is Resource.Success) {
-            val detail = (albumDetail as? Resource.Success)?.data?.album
-            if (detail != null) viewModel.insertAlbum(
-                com.ljyh.mei.data.model.room.AlbumEntity(detail.id, detail.name, detail.picUrl, detail.publishTime, detail.size),
-                detail.artists.map { com.ljyh.mei.data.model.room.ArtistEntity(it.id.toLong(), it.name, it.picUrl) },
-            )
+    val albumDetail = state.detail
+    val isSubscribed = state.collected == true
+    LaunchedEffect(state.mutation) {
+        val result = state.mutation ?: return@LaunchedEffect
+        when (result) {
+            is Resource.Success -> if (!isSubscribed) Toast.makeText(context, "取消收藏成功", Toast.LENGTH_SHORT).show()
+            is Resource.Error -> Toast.makeText(context,
+                context.getString(com.ljyh.mei.R.string.load_failed_message, result.message), Toast.LENGTH_SHORT).show()
+            Resource.Loading -> Unit
         }
-        if (subscribeState is Resource.Error) {
-            isSubscribed = false // 回滚
-            Toast.makeText(context, "收藏失败: ${(subscribeState as Resource.Error).message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    LaunchedEffect(unSubscribeState) {
-        when(val result= unSubscribeState){
-            is Resource.Success->{
-                isSubscribed = false // 回滚
-                viewModel.deleteAlbum(id)
-                Toast.makeText(context, "取消收藏成功", Toast.LENGTH_SHORT).show()
-            }
-            is Resource.Error->{
-                isSubscribed = true // 回滚
-                Toast.makeText(context, "取消收藏失败: ${result.message}", Toast.LENGTH_SHORT).show()
-            }
-            else -> {}
-        }
-        if (unSubscribeState is Resource.Error) {
-
-        }
-    }
-
-    LaunchedEffect(isSubscribeState) {
-        isSubscribed=isSubscribeState
+        viewModel.consumeMutation(result)
     }
 
     // 4. 构建 UI 数据模型
-    val uiData = remember(albumDetail) {
+    val uiData = remember(albumDetail, isSubscribed) {
         if (albumDetail is Resource.Success) {
             val album = (albumDetail as Resource.Success).data.album
             val songs = (albumDetail as Resource.Success).data.songs
@@ -125,7 +95,7 @@ fun AlbumDetailScreen(
                 description = album.description,
                 tracks = songs.map { it.toMediaMetadata().copy(coverUrl = album.picUrl) },
                 playCount = -1,
-                isSubscribed = isSubscribeState
+                isSubscribed = isSubscribed
             )
         } else {
             UiPlaylist(
@@ -165,9 +135,16 @@ fun AlbumDetailScreen(
 
     // 5. 下载处理逻辑
     fun doDownload(tracks: List<MediaMetadata>, quality: MusicQuality = downloadQuality.toMusicQuality()) {
+        val owner = state.session ?: return
         scope.launch {
             val songIds = tracks.map { it.id.toString() }
-            val result = viewModel.resolveSongUrls(songIds, quality)
+            val result = try {
+                viewModel.resolveSongUrls(songIds, quality, owner, id.toString())
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
+                return@launch
+            }
             val sourceMap = if (result is Resource.Success) {
                 result.data.fullSourcesFor(songIds.toSet()).associateBy { it.id.toString() }
             } else emptyMap()
@@ -218,9 +195,7 @@ fun AlbumDetailScreen(
         com.ljyh.mei.R.string.track_quality_master,
     ).map { androidx.compose.ui.res.stringResource(it) }
     fun toggleSubscription() {
-        isSubscribed = !isSubscribed
-        if (isSubscribed) viewModel.subscribeAlbum(id.toString())
-        else viewModel.unSubscribeAlbum(id.toString())
+        viewModel.toggleCollection()
     }
     val detailMenu = listOf(
         com.ljyh.mei.ui.glass.IosCascadingMenuItem(
@@ -241,7 +216,7 @@ fun AlbumDetailScreen(
         ),
         com.ljyh.mei.ui.glass.IosCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_refresh), "arrow.clockwise",
-            onClick = { viewModel.getAlbumDetail(id.toString()); viewModel.isSubscribe(id) },
+            onClick = { viewModel.getAlbumDetail(id.toString()) },
         ),
     )
     androidx.compose.runtime.DisposableEffect(selectionMode, selectedIds, displayedUiData, downloadPath, downloadQuality) {
@@ -293,6 +268,8 @@ fun AlbumDetailScreen(
 
     // 6. 提取播放队列构建逻辑 (避免重复)
     fun buildListQueue(startIndex: Int = 0): ListQueue? {
+        val owner = state.session ?: return null
+        if (runCatching { viewModel.requireCurrent(owner, id.toString()) }.isFailure) return null
         val detail = albumDetail
         if (detail is Resource.Success) {
             val items = detail.data.songs.map { song ->

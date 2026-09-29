@@ -12,12 +12,17 @@ import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionStamp
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
 
 internal interface AccountLibrarySource {
+    val albumChanges: Flow<HostSessionStamp>
     fun playlists(accountId: String): Flow<List<AccountPlaylist>>
     suspend fun sync(stamp: HostSessionStamp): Resource<Unit>
     suspend fun albums(): Resource<UserAlbumList>
@@ -25,12 +30,20 @@ internal interface AccountLibrarySource {
     suspend fun likedSongs(playlistId: String): Resource<List<MediaMetadata>>
 }
 
+@Singleton
 class AccountLibraryRepository @Inject constructor(
     private val users: UserRepository,
     private val local: LocalPlaylistRepository,
     private val remote: PlaylistRepository,
     private val sessions: HostSessionBridge,
 ) : AccountLibrarySource {
+    private val changedAlbums = MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val albumChanges = changedAlbums.asSharedFlow()
+
+    fun invalidateAlbums(stamp: HostSessionStamp) {
+        sessions.withCurrent(stamp) { changedAlbums.tryEmit(stamp) }
+    }
+
     override fun playlists(accountId: String) = local.getAccountPlaylists(accountId)
 
     override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> = safeApiCall {
@@ -64,7 +77,7 @@ class AccountLibraryRepository @Inject constructor(
 
     override suspend fun albums(): Resource<UserAlbumList> {
         val stamp = sessions.snapshot()
-        return users.getAlbumList { sessions.requireCurrent(stamp) }
+        return users.getAlbumList(stamp) { sessions.requireCurrent(stamp) }
     }
     override suspend fun photos(accountId: String) = users.getPhotoAlbum(accountId)
 

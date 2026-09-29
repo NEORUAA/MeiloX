@@ -73,7 +73,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
         }
     }
 
-    suspend fun getAlbumList(validate: () -> Unit = {}): Resource<UserAlbumList> {
+    suspend fun getAlbumList(session: com.ljyh.mei.parasite.HostSessionStamp? = null, validate: () -> Unit = {}): Resource<UserAlbumList> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 val albums = linkedMapOf<Long, UserAlbumList.Data>()
@@ -82,7 +82,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
                 do {
                     currentCoroutineContext().ensureActive()
                     validate()
-                    page = apiService.getCollectAlbumList(GetAlbumList(limit = "100", offset = offset.toString()))
+                    page = apiService.getCollectAlbumList(GetAlbumList(limit = "100", offset = offset.toString()), session)
                     validate()
                     if (page.code != 200) throw IOException("Official album request failed (${page.code})")
                     val previousSize = albums.size

@@ -108,13 +108,23 @@ interface ApiService {
     suspend fun checkSongLike(@Body body: CheckSongLike): CheckSongLikeResult
 
     @POST("/api/album/sublist")
-    suspend fun getCollectAlbumList(@Body body: GetAlbumList): UserAlbumList
+    suspend fun getCollectAlbumList(
+        @Body body: GetAlbumList,
+        @Tag expectedSession: HostSessionStamp? = null,
+    ): UserAlbumList
 
     @POST("/api/v1/album/{id}")
     suspend fun getAlbumDetail(
         @Body body: Map<String, String> = emptyMap(),
-        @Path("id") id: String
+        @Path("id") id: String,
+        @Tag expectedSession: HostSessionStamp? = null,
     ): AlbumDetail
+
+    @POST("/api/tv-artist-page/album/get")
+    suspend fun getAlbumCollection(
+        @Body body: Map<String, String>,
+        @Tag expectedSession: HostSessionStamp,
+    ): com.ljyh.mei.data.model.api.AlbumCollectionResponse
 
     @POST("/api/search/get/")
     suspend fun search(
@@ -132,7 +142,10 @@ interface ApiService {
 
     @Headers("X-Netease-Crypto: eapi")
     @POST("/api/song/enhance/player/url/v1")
-    suspend fun getSongUrlV1(@Body body: GetSongUrlV1): SongUrl
+    suspend fun getSongUrlV1(
+        @Body body: GetSongUrlV1,
+        @Tag expectedSession: HostSessionStamp? = null,
+    ): SongUrl
 
     @POST("/api/song/enhance/player/url")
     suspend fun getSongUrl(@Body body: GetSongUrl): SongUrl
@@ -152,10 +165,16 @@ interface ApiService {
 
 
     @POST("/api/album/sub")
-    suspend fun subscribeAlbum(@Body body: SubscribePlaylist): BaseResponse
+    suspend fun subscribeAlbum(
+        @Body body: SubscribePlaylist,
+        @Tag expectedSession: HostSessionStamp? = null,
+    ): BaseResponse
 
     @POST("/api/album/unsub")
-    suspend fun unsubscribeAlbum(@Body body: SubscribePlaylist): BaseResponse
+    suspend fun unsubscribeAlbum(
+        @Body body: SubscribePlaylist,
+        @Tag expectedSession: HostSessionStamp? = null,
+    ): BaseResponse
 
     @POST("/api/playlist/remove")
     suspend fun deletePlaylist(@Body body: DeletePlaylist): BaseMessageResponse

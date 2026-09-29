@@ -850,6 +850,48 @@ pre-existing placeholder handler; the original control is retained and its imple
 belongs to the remaining artist/mutation work. Album/playlist/account ownership, remaining
 core pages, production routing, and final release regression are still outstanding.
 
+### Session-Owned Album Details
+
+- The original album page, cover, song list, search, multi-selection, glass menus, and
+  mini player remain unchanged. Album details and the official TV collection flag are
+  read under one captured session; the unscoped legacy album table no longer determines
+  the detail page's account state. Missing collection state is an explicit load failure,
+  not a fabricated uncollected flag. See API-006 in
+  [the API difference ledger](official-client-api-differences.md#api-006-album-collection-state-is-owned-by-the-official-account).
+- Session invalidation clears presentation synchronously. Page/account replacement and
+  disposal reject late results. Guest reads remain available; writes require official
+  authentication. Collection mutations are serialized, checked for business code 200,
+  and rolled back on rejection. Refresh waits for an active write to settle. Accepted
+  writes notify only the current account's Library; observer failure cannot undo an
+  already accepted write in the detail presentation.
+- Song URL requests made by this page preserve the captured session across quality
+  fallbacks and validate page ownership before returning. This does not qualify the
+  downstream download database, worker, or full playback pipeline.
+
+Verification on 2026-09-29:
+
+- `:app:testDebugUnitTest :app:assembleDebug -PparasiteAppProbe=true` passed 420 tests in
+  59 suites, with no failures, errors, or skips. The 23 new tests cover the TV request
+  contract, true/false/missing state, business failures, guest writes, reauthorization,
+  obsolete album/account results, concurrent refresh, duplicate writes, disposal,
+  Library invalidation, and session tags rejected before dispatch without serialization.
+- The installed debug app probe cold-started successfully in the verified TV process.
+  A real album displayed its original cover and ten songs with an identity-checked
+  official uncollected flag. Multi-selection selected a row and system Back exited it;
+  in-page search filtered the songs and closing search restored the list. Refresh and
+  background/resume retained the album presentation. System Back returned to search.
+- Native screenshots show the actual cover blurred behind the original menu while menu
+  text stays sharp. The original mini player remains visible and paused. Screenshots
+  and device output remain outside Git. `git diff --check`, 16 KB APK alignment, and
+  debug assembly passed; the tested process had no crash-buffer entries.
+
+This is an album read/session and controlled-mutation increment, not full stage 4
+acceptance. No real collection/uncollection, logout, account switch, download, social
+send, or audio/network-setting change was performed. Live mutation acceptance remains
+pending; canceling an old request cannot reverse a server-side write. Shared song-menu
+playlist actions, playlist/artist/account migration, downloads, production routing,
+the recording/PiP host decision, and release regression remain outstanding.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -874,7 +916,7 @@ core pages, production routing, and final release regression are still outstandi
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, and search discovery/results/paging passed | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, and album detail reads passed; album mutations have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

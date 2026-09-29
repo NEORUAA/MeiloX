@@ -185,6 +185,49 @@ class HostCallFactoryTest {
         assertEquals(0, backend.executions.get())
     }
 
+    @Test fun albumReadCollectionWritesAndUrlsKeepTheirOwnerOutOfBusinessParameters() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        service.getAlbumDetail(id = "10", expectedSession = owner)
+        assertEquals("v1/album/10", backend.path)
+        assertTrue(backend.parameters.isEmpty())
+        service.getAlbumCollection(mapOf("request" to "{\"albumId\":\"10\"}"), owner)
+        assertEquals("tv-artist-page/album/get", backend.path)
+        assertEquals(mapOf("request" to "{\"albumId\":\"10\"}"), backend.parameters)
+        service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner)
+        assertEquals("album/sub", backend.path)
+        assertEquals(mapOf("id" to "10"), backend.parameters)
+        service.unsubscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner)
+        assertEquals("album/unsub", backend.path)
+        assertEquals(mapOf("id" to "10"), backend.parameters)
+        service.getSongUrlV1(com.ljyh.mei.data.model.api.GetSongUrlV1("[1]", "standard"), owner)
+        assertEquals("song/enhance/player/url/v1", backend.path)
+        assertEquals(mapOf("ids" to "[1]", "level" to "standard", "encodeType" to "flac"), backend.parameters)
+        service.getCollectAlbumList(com.ljyh.mei.data.model.api.GetAlbumList(), owner)
+        assertEquals("album/sublist", backend.path)
+        assertFalse(backend.parameters.containsKey("expectedSession"))
+    }
+
+    @Test fun obsoleteAlbumOwnerCannotDispatchReadsWritesOrUrlRequests() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        bridge.sessions.invalidate()
+        val calls: List<suspend () -> Any> = listOf(
+            { service.getAlbumDetail(id = "10", expectedSession = owner) },
+            { service.getAlbumCollection(mapOf("request" to "{}"), owner) },
+            { service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
+            { service.unsubscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
+            { service.getSongUrlV1(com.ljyh.mei.data.model.api.GetSongUrlV1("[1]", "standard"), owner) },
+            { service.getCollectAlbumList(com.ljyh.mei.data.model.api.GetAlbumList(), owner) },
+        )
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        assertEquals(0, backend.executions.get())
+    }
+
     @Test fun expectedSessionTagsRemainBoundAcrossQueuedExecutionAndClone() {
         val backend = Backend()
         val bridge = bridge(backend)
