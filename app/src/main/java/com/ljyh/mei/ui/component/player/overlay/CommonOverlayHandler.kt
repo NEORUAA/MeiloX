@@ -20,8 +20,6 @@ import com.ljyh.mei.ui.component.player.component.sheet.QQMusicSelectSheet
 import com.ljyh.mei.ui.component.player.component.sheet.SleepTimerSheet
 import com.ljyh.mei.ui.component.player.component.sheet.SongInfoSheet
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
-import com.ljyh.mei.ui.component.playlist.AddToPlaylistSheet
-import com.ljyh.mei.ui.component.playlist.CreatePlaylistSheet
 import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
@@ -111,25 +109,14 @@ fun CommonOverlayHandler(
             )
         }
 
-        is OverlayState.AddToPlaylist -> {
-            AddToPlaylistSheet(
-                playlists = stateContainer.myPlaylist.value,
-                onDismiss = { overlayHandler.dismiss() },
-                onSelectPlaylist = { selectedPlaylist ->
-                    overlayHandler.addSongToPlaylist(selectedPlaylist, overlay.mediaId)
-                },
-                onCreateNewPlaylist = {
-                    overlayHandler.showCreatePlaylist()
-                }
-            )
-        }
-
-        OverlayState.CreatePlaylist -> {
-            CreatePlaylistSheet(
-                onDismiss = { overlayHandler.dismiss() },
-                onConfirm = { name, privacy ->
-                    overlayHandler.createPlaylist(name, privacy)
-                }
+        is OverlayState.AddToPlaylist, OverlayState.CreatePlaylist -> {
+            com.ljyh.mei.ui.screen.playlist.component.PlaylistActionOverlay(
+                overlay = overlay,
+                isCreator = false,
+                playlistId = 0L,
+                onDismiss = overlayHandler::dismiss,
+                onUpdateOverlay = { if (it == OverlayState.CreatePlaylist) overlayHandler.showCreatePlaylist() },
+                viewModel = overlayHandler.playlistViewModel,
             )
         }
 

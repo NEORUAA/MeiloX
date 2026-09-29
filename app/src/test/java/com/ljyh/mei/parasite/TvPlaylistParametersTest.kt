@@ -20,11 +20,20 @@ class TvPlaylistParametersTest {
     }
 
     @Test fun rejectsCallerSecurityOverridesWithoutInvokingHost() {
-        listOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe").forEach { path ->
+        listOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe", "v1/playlist/manipulate/tracks", "playlist/create").forEach { path ->
             assertThrows(IllegalArgumentException::class.java) {
                 tvPlaylistRequestParameters(path, mapOf("CheckToken" to "test")) { error("Must not generate") }
             }
         }
+    }
+
+    @Test fun creationAndTrackChangesGenerateSecurityParametersInsideTheHost() {
+        var generated = 0
+        listOf("playlist/create", "v1/playlist/manipulate/tracks").forEach { path ->
+            val adapted = tvPlaylistRequestParameters(path, mapOf("name" to "Test")) { generated++; "test-only" }
+            assertEquals(mapOf("name" to "Test", "checkToken" to "test-only"), adapted)
+        }
+        assertEquals(2, generated)
     }
 
     @Test fun preservesTheOfficialDisabledSecurityResult() {

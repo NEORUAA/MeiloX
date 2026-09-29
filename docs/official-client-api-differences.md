@@ -180,8 +180,58 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
 - Evidence: controlled tests cover sparse initial data, reversed/duplicate/extra rows,
   empty intermediate pages, complete search beyond 400 IDs, partial search retry, owner
   changes, and cancellation. On-device qualification is recorded in the migration log.
-- Remaining: the shared playlist picker, create/delete/edit actions, daily recommendations,
-  legacy like-table updates, and downstream downloads have not completed account migration.
+- Follow-up: the shared playlist picker and guarded write implementation are recorded in
+  API-009/API-010. Real write acceptance, daily recommendations, legacy like-table updates,
+  and downstream downloads remain incomplete.
+
+### API-009: Playlist Track Writes Use Business Codes, Not Cached Counts
+
+- Recorded: 2026-09-29.
+- Original implementation: `playlist/manipulate/tracks` sends `imme=true`; a successful
+  add is inferred by comparing response `count` with a locally cached playlist count.
+  Duplicate handling also requires one exact localized message. The player and song
+  lists maintain separate, unscoped picker caches limited to an initial 100 playlists.
+- Official TV evidence: local `com.netease.cloudmusic.app.f0.b` sends `op=add`, `pid`,
+  a JSON string array in `trackIds`, `reverse=true`, and the official security helper's
+  `checkToken` to `v1/playlist/manipulate/tracks`. It treats code 200 as accepted and
+  code 502 as already present, without comparing counts or requiring message text.
+  It separately reads optional `offlineIds` as a JSON array.
+- Adaptation: preserve the official add parameters and generate security fields only in
+  the host backend. Deduplicate and validate input IDs; carry the captured session on
+  every write. Optional count metadata is not a success oracle. Code 502 has a distinct
+  duplicate outcome; code 200 with offline IDs produces a partial-result notice, not an
+  unqualified all-songs-added notice. This defensive notice does not establish the exact
+  server meaning or completeness of every offline-ID response.
+- Integration: both original picker surfaces now use the account-membership Library
+  cache and its full-pagination refresh. Only playlists created by the current account
+  are selectable. Guest writes, stale picker owners, duplicate clicks, and late mutation
+  callbacks are rejected. Accepted writes request a same-owner Library refresh; refresh
+  failure cannot turn an accepted server write into a failed write or trigger a retry.
+- Remaining: the `op=del` supplemental call uses the same route without add-only reverse
+  ordering. No corresponding TV delete-song caller was found in the inspected source.
+  Controlled tests cover it, but live add/duplicate/remove acceptance remains pending.
+  Cancellation prevents obsolete publication; it cannot undo a server-accepted write.
+
+### API-010: Playlist Creation Returns a Nested Playlist Identity
+
+- Recorded: 2026-09-29.
+- Official TV evidence: local `com.netease.cloudmusic.i0.f.a` sends `name`, numeric-text
+  `privacy`, `type`, and the official `checkToken` to `playlist/create`. On code 200 it
+  reads the nested `playlist` object. Codes 507 and 400 have separate failure paths.
+- Adaptation: host-generated security only; retain privacy 0/10 and the original type
+  choices. Require business acceptance and a positive created-playlist ID; a nested ID
+  is sufficient, while conflicting nested/top-level IDs are rejected. Missing optional
+  top-level ID or an error response without a playlist must not crash the decoder.
+  Both original creation sheets use the same captured-session write path and feedback.
+- Supplemental deletion: `playlist/remove` with JSON `ids` is retained from MeiloX,
+  now with a mandatory owner tag and checked business code. No equivalent TV caller was
+  found in the inspected source, so it is not documented as a verified official TV
+  contract. The ViewModel rejects foreign, missing, and liked-playlist targets and does
+  not remove local rows on failure. No new deletion UI is introduced.
+- Evidence: source inspection plus parameter, decoder, ownership, cancellation, and
+  failure tests. Live create/delete and returned-state reconciliation are pending user
+  authorization to operate only on a temporary private test playlist. No user playlist
+  or account response is copied into this ledger.
 
 ## Runtime Boundary Notes
 

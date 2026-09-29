@@ -157,11 +157,11 @@ interface ApiService {
     @POST("/api/radio/like")
     suspend fun like(@Body body: Like): LikeResult
 
-    @POST("/api/playlist/manipulate/tracks")
-    suspend fun manipulateTracks(@Body body: ManipulateTrack): ManipulateTrackResult
+    @POST("/api/v1/playlist/manipulate/tracks")
+    suspend fun manipulateTracks(@Body body: ManipulateTrack, @Tag expectedSession: HostSessionStamp): ManipulateTrackResult
 
     @POST("/api/playlist/create")
-    suspend fun createPlaylist(@Body body: CreatePlaylist): CreatePlaylistResult
+    suspend fun createPlaylist(@Body body: CreatePlaylist, @Tag expectedSession: HostSessionStamp): CreatePlaylistResult
 
 
 
@@ -178,7 +178,7 @@ interface ApiService {
     ): BaseResponse
 
     @POST("/api/playlist/remove")
-    suspend fun deletePlaylist(@Body body: DeletePlaylist): BaseMessageResponse
+    suspend fun deletePlaylist(@Body body: DeletePlaylist, @Tag expectedSession: HostSessionStamp): BaseMessageResponse
 
 
     @POST("/api/artist/head/info/get")

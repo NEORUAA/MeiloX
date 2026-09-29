@@ -130,6 +130,7 @@ class PlaybackResponseSafetyTest {
                 path: String,
                 body: Map<String, @JvmSuppressWildcards Any>,
                 headers: Map<String, String>,
+                expectedSession: com.ljyh.mei.parasite.HostSessionStamp?,
             ): JsonObject = error("unused")
 
             override suspend fun postPlaybackRaw(
@@ -145,6 +146,7 @@ class PlaybackResponseSafetyTest {
                 path: String,
                 body: Map<String, @JvmSuppressWildcards Any>,
                 headers: Map<String, String>,
+                expectedSession: com.ljyh.mei.parasite.HostSessionStamp?,
             ): JsonObject = error("unused")
 
             override suspend fun postPlaybackRaw(

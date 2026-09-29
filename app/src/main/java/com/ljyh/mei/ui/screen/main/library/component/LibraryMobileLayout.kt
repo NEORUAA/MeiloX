@@ -544,7 +544,6 @@ fun LibraryMobileLayout(
             onAddToPlaylist = {
                 selectedDownloadTaskId = null
                 metadata?.let {
-                    playlistViewModel.getAllMePlaylist()
                     currentOverlay = OverlayState.AddToPlaylist(it.id)
                 }
             },

@@ -950,6 +950,73 @@ updates, and downstream download work still require account isolation and accept
 Real collection/account-change tests, full playback/reporting, production routing, the
 recording/PiP host decision, and release regression remain gates.
 
+### Shared Playlist Actions and Picker
+
+- The original Library/song-list and expanded-player picker/creation sheets now share
+  the same PlaylistViewModel path. The player's duplicated global playlist cache,
+  preference-owned user ID lookup for the picker, and first-100-only refresh are removed.
+  Account-membership reads are filtered to created playlists, preserve full pagination,
+  and show a retry state without replacing the original sheet composition.
+- Every add/remove/create/delete call captures the official session and sends its tag
+  through Retrofit. Invalidation clears picker/results synchronously, cancels obsolete
+  work, and closes an obsolete sheet. Duplicate writes in a ViewModel are serialized;
+  delayed callbacks cannot mutate another account or a replacement detail page. Accepted
+  writes refresh only their captured account's Library. Failed writes never delete
+  shared local rows; a refresh failure cannot cause an accepted write to be retried.
+- Add and creation parameters follow the inspected TV callers, including host-generated
+  security parameters. Duplicate results no longer depend on stale counts or localized
+  message matching. Creation checks a positive, consistent returned playlist identity.
+  Supplemental remove-song/playlist-delete contracts still require live acceptance.
+  See API-009 and API-010 in [the difference ledger](official-client-api-differences.md).
+- The existing create-sheet privacy control exposed a pre-existing shared GlassToggle
+  defect: one touch reached both the switch and its clickable parent, and remembered
+  gesture callbacks captured old values. Consuming switch gestures, current-state
+  callbacks, and animation-identity pointer keys repair that behavior without changing
+  the glass geometry, shaders, animation, or page architecture. Other drag/highlight
+  users retain the non-consuming default. Switch accessibility state follows the
+  controlled value; canceled and disabled gestures must not commit a change.
+
+Verification on 2026-09-29:
+
+- Debug assembly and 473 unit tests in 64 suites pass, including 20 new tests for picker
+  ownership/full-list snapshots, cached failure/retry, cancellation, repeated clicks,
+  guest and foreign targets, delayed callbacks, business codes, identity validation,
+  host parameters, and captured-session transport. A full `--rerun-tasks` unit-test
+  rebuild also passes. It exposed two old playback test doubles missing the existing
+  session argument; their signatures now match the production service.
+- The host Library menu opened the unchanged picker with the current account's created
+  playlist and cover/count. The unchanged creation sheet opened above the IME; entering
+  a draft did not submit a request. After the switch repair, direct on/off taps and a
+  parent-row tap keep the icon, privacy caption, and switch value consistent. Cancel
+  restores Library with the mini player still paused.
+- The expanded player's original More menu opens the same account-owned picker and
+  creation sheet. The sheet retains the player backdrop, fits above the IME, and Cancel
+  restores the paused player; Back returns to Library. The Library track menu blurs the
+  underlying text. Device screenshots remain outside Git.
+- An initial Compose-rule instrumentation attempt could not initialize Espresso on
+  API 37 (`InputManager.getInstance` is missing). The focused switch tests instead use
+  ActivityScenario and actual Android MotionEvent dispatch, with bounded waits for
+  recomposition; all three pass without patching framework methods or skipping assertions.
+  They cover repeated taps and updated callbacks, canceled/disabled input, final drag
+  position, external state updates, and preventing duplicate parent clicks.
+- The connected-test runner removed the module APK during cleanup, which also removed
+  its LSPosed enable/scope records. Reinstalled the tested debug APK and restored only
+  MeiloX Parasite's enabled state and static TV scope through the manager. After a cold
+  host restart, injection and the existing official session were intact. Future focused
+  device runs should install the test APK and invoke instrumentation directly to avoid
+  this cleanup, or explicitly restore the module before host verification. Other modules
+  and official application data were not changed.
+- `zipalign -c -P 16 4` and `git diff --check` pass. The restarted host process has no
+  entries in its crash buffer during this regression. These checks do not qualify real
+  server writes, device-wide audio, or release obfuscation.
+
+This checkpoint is not live write acceptance. No existing user playlist is modified;
+permission to create and clean up a temporary private test playlist is pending. Real
+create/add/duplicate/remove/delete, canceled writes already accepted by the server,
+account switches, daily recommendations, legacy like-table ownership, and downstream
+download/playback work remain unqualified. The host capability and production-routing
+gates are unchanged.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -974,7 +1041,7 @@ recording/PiP host decision, and release regression remain gates.
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, album detail reads, and playlist detail/paging/search passed; collection mutations have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, and shared picker reads passed; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

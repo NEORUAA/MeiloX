@@ -284,6 +284,31 @@ class HostCallFactoryTest {
         assertEquals(0, backend.executions.get())
     }
 
+    @Test fun playlistMutationsUseOfficialParametersWithoutSerializingOwners() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val api = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        api.manipulateTracks(com.ljyh.mei.data.model.api.ManipulateTrack("add", "10", "1,2"), owner)
+        assertEquals("v1/playlist/manipulate/tracks", backend.path)
+        assertEquals(mapOf("op" to "add", "pid" to "10", "trackIds" to "[\"1\",\"2\"]", "reverse" to "true"), backend.parameters)
+        api.createPlaylist(com.ljyh.mei.data.model.api.CreatePlaylist("Test", "10"), owner)
+        assertEquals("playlist/create", backend.path)
+        assertEquals(mapOf("name" to "Test", "privacy" to "10", "type" to "NORMAL"), backend.parameters)
+        api.deletePlaylist(com.ljyh.mei.data.model.api.DeletePlaylist("[10]"), owner)
+        assertEquals("playlist/remove", backend.path)
+        assertEquals(mapOf("ids" to "[10]"), backend.parameters)
+        val before = backend.executions.get()
+        bridge.sessions.invalidate()
+        val calls: List<suspend () -> Any> = listOf(
+            { api.manipulateTracks(com.ljyh.mei.data.model.api.ManipulateTrack("del", "10", "1"), owner) },
+            { api.createPlaylist(com.ljyh.mei.data.model.api.CreatePlaylist("Test", "10"), owner) },
+            { api.deletePlaylist(com.ljyh.mei.data.model.api.DeletePlaylist("[10]"), owner) },
+        )
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        assertEquals(before, backend.executions.get())
+    }
+
     @Test fun queuedCancellationDeliversExactlyOneFailure() {
         val backend = Backend()
         var queued: Runnable? = null

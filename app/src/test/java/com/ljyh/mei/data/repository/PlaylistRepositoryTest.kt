@@ -77,4 +77,55 @@ class PlaylistRepositoryTest {
         assertTrue(runCatching { source.getPlaylistTrackDetails(listOf("1"), owner) }.exceptionOrNull() is CancellationException)
         assertTrue(runCatching { source.subscribePlaylist("10", owner) }.exceptionOrNull() is CancellationException)
     }
+
+    @Test fun creationRequiresBusinessAcceptanceAndAnUnambiguousPlaylistId() = runBlocking {
+        val fixtures = listOf(
+            """{"code":200,"playlist":{"id":30}}""" to true,
+            """{"code":200,"id":30}""" to true,
+            """{"code":200,"playlist":{"id":30},"id":31}""" to false,
+            """{"code":200}""" to false,
+            """{"code":507,"message":"Limit"}""" to false,
+        )
+        fixtures.forEach { (json, accepted) ->
+            val source = repository { name, args ->
+                assertEquals("createPlaylist", name)
+                assertEquals(owner, args[1])
+                val body = args[0] as com.ljyh.mei.data.model.api.CreatePlaylist
+                assertEquals("10", body.privacy)
+                assertEquals("NORMAL", body.type)
+                Gson().fromJson(json, com.ljyh.mei.data.model.api.CreatePlaylistResult::class.java)
+            }
+            assertEquals(accepted, source.createPlaylist("Test", true, "NORMAL", owner) is Resource.Success)
+        }
+    }
+
+    @Test fun playlistMutationsKeepOwnerAndValidateBeforeDispatch() = runBlocking {
+        var dispatched = 0
+        val source = repository { name, args ->
+            dispatched++
+            assertEquals(owner, args[1])
+            if (name == "manipulateTracks") {
+                val body = args[0] as com.ljyh.mei.data.model.api.ManipulateTrack
+                assertEquals("[\"1\",\"2\"]", body.trackIds)
+                assertEquals(true, body.reverse)
+                com.ljyh.mei.data.model.api.ManipulateTrackResult(502)
+            } else com.ljyh.mei.data.model.api.BaseMessageResponse(500, "Rejected", "Rejected", "")
+        }
+        assertEquals(502, (source.manipulateTrack("add", "10", "1, 2,1", owner) as Resource.Success).data.code)
+        assertTrue(source.deletePlaylist("10", owner) is Resource.Error)
+        assertTrue(source.manipulateTrack("add", "10", "1,,2", owner) is Resource.Error)
+        assertTrue(source.manipulateTrack("other", "10", "1", owner) is Resource.Error)
+        val guest = owner.copy(identity = HostSessionIdentity(0, false, true))
+        assertTrue(source.manipulateTrack("add", "10", "1", guest) is Resource.Error)
+        assertTrue(source.createPlaylist("Test", true, "NORMAL", guest) is Resource.Error)
+        assertTrue(source.deletePlaylist("10", guest) is Resource.Error)
+        assertEquals(2, dispatched)
+    }
+
+    @Test fun mutationCancellationPropagates() = runBlocking {
+        val source = repository { _, _ -> throw CancellationException() }
+        assertTrue(runCatching { source.manipulateTrack("add", "10", "1", owner) }.exceptionOrNull() is CancellationException)
+        assertTrue(runCatching { source.createPlaylist("Test", true, "NORMAL", owner) }.exceptionOrNull() is CancellationException)
+        assertTrue(runCatching { source.deletePlaylist("10", owner) }.exceptionOrNull() is CancellationException)
+    }
 }

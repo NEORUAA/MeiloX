@@ -127,8 +127,9 @@ internal fun tvPlaylistRequestParameters(
     parameters: Map<String, String>,
     token: () -> String,
 ): Map<String, String> {
-    if (path !in setOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe")) return parameters
+    val needsToken = path in setOf("multi/terminal/playlist/subscribe", "v1/playlist/manipulate/tracks", "playlist/create")
+    if (!needsToken && path != "multi/terminal/playlist/unsubscribe") return parameters
     require(parameters.keys.none { it.equals("checkToken", ignoreCase = true) }) { "Playlist security parameters belong to the host" }
     // The official generator may return empty when its security service is disabled.
-    return if (path.endsWith("/subscribe")) parameters + ("checkToken" to token()) else parameters
+    return if (needsToken) parameters + ("checkToken" to token()) else parameters
 }

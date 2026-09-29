@@ -11,7 +11,6 @@ import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.repository.AccountLibrarySource
 import com.ljyh.mei.data.repository.PlaylistPageSource
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.di.dao.LikeDao
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.repository.LikeRepository
@@ -82,9 +81,8 @@ class PlaylistSessionTest {
             val eapi = unused<EApiService>()
             val weapi = unused<WeApiService>()
             val remote = PlaylistRepository(api, weapi, eapi)
-            val users = UserRepository(api, eapi, weapi)
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
-            val model = PlaylistViewModel(source, remote, users, LikeRepository(unused<LikeDao>()), local, api, sessions,
+            val model = PlaylistViewModel(source, remote, remote, LikeRepository(unused<LikeDao>()), local, api, sessions,
                 object : AccountLibrarySource {
                     override val albumChanges = emptyFlow<HostSessionStamp>()
                     override fun playlists(accountId: String) = emptyFlow<List<com.ljyh.mei.data.model.room.AccountPlaylist>>()

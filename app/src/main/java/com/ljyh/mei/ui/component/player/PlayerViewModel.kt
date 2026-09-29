@@ -13,18 +13,13 @@ import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.Tracks
-import com.ljyh.mei.data.model.UserPlaylist
-import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.Intelligence
 import com.ljyh.mei.data.model.qq.u.SearchResult
-import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.data.repository.UserRepository
-import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.QQSongRepository
@@ -54,8 +49,6 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
-    private val userRepository: UserRepository,
-    private val localPlaylistRepository: LocalPlaylistRepository,
     private val playlistRepository: PlaylistRepository,
     private val likeRepository: LikeRepository,
     private val colorRepository: ColorRepository,
@@ -66,12 +59,6 @@ class PlayerViewModel @Inject constructor(
 
     private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
     val like: StateFlow<Resource<Boolean>> = _like
-
-    private val _networkPlaylistsState = MutableStateFlow<Resource<UserPlaylist>>(Resource.Loading)
-    val networkPlaylistsState: StateFlow<Resource<UserPlaylist>> = _networkPlaylistsState
-
-    private val _createPlaylist = MutableStateFlow<Resource<CreatePlaylistResult>>(Resource.Loading)
-    val createPlaylist: StateFlow<Resource<CreatePlaylistResult>> = _createPlaylist
 
 
     private val _intelligenceList = MutableStateFlow<Resource<Intelligence>>(Resource.Loading)
@@ -87,21 +74,6 @@ class PlayerViewModel @Inject constructor(
     var mediaMetadata: MediaMetadata? = null
 
     val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
-
-    val localPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000L),
-            initialValue = emptyList()
-        )
-
-    val myPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
-        .map { it.filter { p -> p.author == userId } }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000L),
-            initialValue = emptyList()
-        )
 
     // 获取点赞状态
     fun getLike(id: Long) {
@@ -157,46 +129,6 @@ class PlayerViewModel @Inject constructor(
     }
 
 
-
-    fun syncUserPlaylists(uid: String, limit: Int = 100) {
-        viewModelScope.launch {
-            _networkPlaylistsState.value = Resource.Loading
-            when (val networkResult = userRepository.getUserPlaylist(uid, limit)) {
-                is Resource.Success -> {
-                    val playlistsToInsert = networkResult.data.playlist.map {
-                        Playlist(
-                            id = it.id.toString(),
-                            title = it.name,
-                            cover = it.coverImgUrl,
-                            author = it.creator.userId.toString(),
-                            authorName = it.creator.nickname,
-                            authorAvatar = it.creator.avatarUrl,
-                            count = it.trackCount
-                        )
-                    }
-                    localPlaylistRepository.insertPlaylists(playlistsToInsert)
-                    _networkPlaylistsState.value = networkResult
-                }
-
-                is Resource.Error -> {
-                    _networkPlaylistsState.value = networkResult
-                }
-
-                Resource.Loading -> {}
-            }
-        }
-    }
-
-    fun createPlaylist(
-        name: String,
-        privacy: Boolean = false, // 0 普通歌单, 10 隐私歌单
-        type: String = "NORMAL" // 默认 NORMAL, VIDEO 视频歌单, SHARED 共享歌单
-    ) {
-        viewModelScope.launch {
-            _createPlaylist.value = Resource.Loading
-            _createPlaylist.value = playlistRepository.createPlaylist(name, privacy, type)
-        }
-    }
 
     fun intelligenceList(id: String, playlistId: String, startSongId: String) {
         startIntelligenceMode(id, playlistId, startSongId)

@@ -18,7 +18,6 @@ import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.qq.u.SearchResult
-import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.ui.component.player.PlayerViewModel
@@ -72,12 +71,6 @@ class PlayerStateContainer(
     lateinit var isLiked: State<Boolean>
         internal set
 
-    lateinit var allPlaylist: State<List<Playlist>>
-        internal set
-
-    lateinit var myPlaylist: State<List<Playlist>>
-        internal set
-
     lateinit var canSkipPrevious: State<Boolean>
         internal set
 
@@ -122,8 +115,6 @@ fun rememberPlayerStateContainer(
     container.lyricResult = playerViewModel.lyric.collectAsState()
     container.qqLyricSearch = playerViewModel.searchResult.collectAsState()
     container.checkSongLike = playerViewModel.like.collectAsState()
-    container.allPlaylist = playerViewModel.localPlaylists.collectAsState()
-    container.myPlaylist = playerViewModel.myPlaylists.collectAsState()
 
     container.isLiked = remember {
         derivedStateOf {

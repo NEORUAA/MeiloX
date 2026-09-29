@@ -21,7 +21,7 @@ import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.data.repository.UserRepository
+import com.ljyh.mei.data.repository.PlaylistMutationSource
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionStamp
@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -49,10 +50,17 @@ internal fun MediaMetadata.matchesPlaylistSearch(query: String): Boolean {
         }
 }
 
+data class PlaylistPickerState(
+    val owner: HostSessionStamp? = null,
+    val playlists: List<Playlist> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
 class PlaylistViewModel internal constructor(
     private val pageSource: com.ljyh.mei.data.repository.PlaylistPageSource,
+    private val mutations: PlaylistMutationSource,
     private val repository: PlaylistRepository,
-    private val userRepository: UserRepository,
     private val likeRepository: LikeRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
     val apiService: ApiService,
@@ -60,10 +68,10 @@ class PlaylistViewModel internal constructor(
     private val library: com.ljyh.mei.data.repository.AccountLibrarySource,
 ) : ViewModel() {
     @Inject constructor(
-        repository: PlaylistRepository, userRepository: UserRepository, likeRepository: LikeRepository,
+        repository: PlaylistRepository, likeRepository: LikeRepository,
         localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository, apiService: ApiService,
         sessions: HostSessionBridge, library: com.ljyh.mei.data.repository.AccountLibraryRepository,
-    ) : this(repository, repository, userRepository, likeRepository, localPlaylistRepository, apiService, sessions, library)
+    ) : this(repository, repository, repository, likeRepository, localPlaylistRepository, apiService, sessions, library)
     val userId: String get() = runCatching { sessions.snapshot().identity.takeIf { it.authenticated }?.userId?.toString().orEmpty() }.getOrDefault("")
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
@@ -88,8 +96,15 @@ class PlaylistViewModel internal constructor(
     val manipulateTracks: StateFlow<Resource<ManipulateTrackResult>> = _manipulateTracks
 
 
-    private val _playlist = MutableStateFlow<List<Playlist>>(emptyList())
-    val playlist: StateFlow<List<Playlist>> = _playlist
+    private val _actionSession = MutableStateFlow(runCatching { sessions.snapshot() }.getOrNull())
+    val actionSession = _actionSession.asStateFlow()
+    private val _picker = MutableStateFlow(PlaylistPickerState())
+    val picker = _picker.asStateFlow()
+    private var pickerJob: Job? = null
+    private var pickerVersion = 0L
+    private var mutationJob: Job? = null
+    private var actionVersion = 0L
+    private var mutationRunning = false
 
 
     private val _everyDay = MutableStateFlow<Resource<EveryDaySongs>>(Resource.Loading)
@@ -113,6 +128,7 @@ class PlaylistViewModel internal constructor(
     private val invalidation = sessions.onInvalidated { revision ->
         synchronized(detailLock) {
             if ((_detailSession.value?.generation ?: -1) < revision) clearDetail()
+            if ((_actionSession.value?.generation ?: -1) < revision) clearActions()
         }
     }
 
@@ -125,9 +141,30 @@ class PlaylistViewModel internal constructor(
                     collectionJob?.cancel()
                     synchronized(detailLock) { clearDetail() }
                 } else if (_detailSession.value != stamp) requestedId?.let(::getPlaylistDetail)
+                if (_actionSession.value != stamp) {
+                    pickerJob?.cancel()
+                    mutationJob?.cancel()
+                    synchronized(detailLock) {
+                        clearActions()
+                        _actionSession.value = stamp
+                    }
+                }
             }
         }
     }
+
+    private fun clearActions() {
+        actionVersion++
+        pickerVersion++
+        mutationRunning = false
+        _actionSession.value = null
+        _picker.value = PlaylistPickerState()
+        _manipulateTracks.value = Resource.Loading
+        _createPlaylist.value = Resource.Loading
+        _deletePlaylist.value = Resource.Loading
+    }
+
+    fun captureActionSession(): HostSessionStamp? = runCatching { sessions.snapshot() }.getOrNull()
 
     private fun clearDetail() {
         detailVersion++
@@ -220,63 +257,140 @@ class PlaylistViewModel internal constructor(
     fun addSongToPlaylist(
         pid: String,
         trackIds: String,
-        previousTrackCount: Int = 0,
+        owner: HostSessionStamp,
         onComplete: (PlaylistTrackAddOutcome) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            _manipulateTracks.value = Resource.Loading
-            val result = repository.manipulateTrack("add", pid, trackIds)
-            _manipulateTracks.value = result
-            onComplete(result.toPlaylistTrackAddOutcome(previousTrackCount))
-        }
+        runMutation(owner, _manipulateTracks,
+            validate = {
+                check(_picker.value.owner == owner && _picker.value.playlists.any { it.id == pid }) { "Playlist selection changed" }
+            },
+            request = { mutations.manipulateTrack("add", pid, trackIds, owner) },
+            accepted = { it.code == 200 },
+            onComplete = { onComplete(it.toPlaylistTrackAddOutcome()) },
+        )
     }
 
 
     fun deleteSongFromPlaylist(
         pid: String,
         trackIds: String,
+        owner: HostSessionStamp,
         onComplete: (Boolean) -> Unit = {}
     ) {
-        viewModelScope.launch {
-            _manipulateTracks.value = Resource.Loading
-            val result = repository.manipulateTrack("del", pid, trackIds)
-            _manipulateTracks.value = result
-            onComplete(result is Resource.Success && result.data.code == 200)
-        }
+        val detail = _playlistDetail.value
+        runMutation(owner, _manipulateTracks,
+            validate = {
+                requireDetail(owner, detail)
+                val playlist = (detail as Resource.Success).data.playlist
+                check(playlist.Id.toString() == pid && playlist.creator.userId == owner.identity.userId) { "Playlist is not owned by this account" }
+            },
+            request = { mutations.manipulateTrack("del", pid, trackIds, owner) },
+            accepted = { it.code == 200 },
+            onComplete = { result ->
+                if (_playlistDetail.value === detail) {
+                    onComplete(result is Resource.Success && result.data.code == 200)
+                }
+            },
+        )
     }
 
     fun markTrackRemoved(trackId: Long) {
         _removedTrackIds.value = _removedTrackIds.value + trackId
     }
-    fun getAllMePlaylist(){
-        viewModelScope.launch {
-            _playlist.value = localPlaylistRepository.getPlaylistByAuthor(userId)
-            if (userId.isNotEmpty()) {
-                when (val result = userRepository.getUserPlaylist(userId, 100)) {
+    fun getAllMePlaylist(owner: HostSessionStamp) {
+        val version = runCatching { sessions.withCurrent(owner) {
+            synchronized(detailLock) {
+                pickerVersion++
+                _picker.value = PlaylistPickerState(owner, loading = owner.identity.authenticated,
+                    error = if (owner.identity.authenticated) null else "Official login is required")
+                pickerVersion
+            }
+        } }.getOrNull() ?: return
+        pickerJob?.cancel()
+        if (!owner.identity.authenticated) return
+        pickerJob = viewModelScope.launch {
+            fun publish(update: (PlaylistPickerState) -> PlaylistPickerState) = sessions.withCurrent(owner) {
+                synchronized(detailLock) { if (pickerVersion == version) _picker.value = update(_picker.value) }
+            }
+            try {
+                val accountId = owner.identity.userId.toString()
+                val cached = library.playlists(accountId).first().map { it.playlist }.filter { it.author == accountId }
+                currentCoroutineContext().ensureActive()
+                publish { it.copy(playlists = cached) }
+                when (val result = library.sync(owner)) {
                     is Resource.Success -> {
-                        val existingPlaylists = localPlaylistRepository.getPlaylistByAuthor(userId)
-                        val existingMap = existingPlaylists.associateBy { it.id }
-                        val playlistsToInsert = result.data.playlist.map {
-                            val existing = existingMap[it.id.toString()]
-                            Playlist(
-                                id = it.id.toString(),
-                                title = it.name,
-                                cover = it.coverImgUrl,
-                                author = it.creator.userId.toString(),
-                                authorName = it.creator.nickname,
-                                authorAvatar = it.creator.avatarUrl,
-                                count = it.trackCount,
-                                playCount = it.playCount,
-                                lastPlayTime = existing?.lastPlayTime ?: 0L,
-                                localPlayCount = existing?.localPlayCount ?: 0
-                            )
-                        }
-                        localPlaylistRepository.insertPlaylists(playlistsToInsert)
-                        _playlist.value = localPlaylistRepository.getPlaylistByAuthor(userId)
+                        val fresh = library.playlists(accountId).first().map { it.playlist }.filter { it.author == accountId }
+                        currentCoroutineContext().ensureActive()
+                        publish { it.copy(playlists = fresh, loading = false) }
                     }
-                    is Resource.Error -> {}
-                    Resource.Loading -> {}
+                    is Resource.Error -> publish { it.copy(loading = false, error = result.message) }
+                    Resource.Loading -> error("Unexpected pending playlist response")
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { publish { it.copy(loading = false, error = error.message ?: "Playlist loading failed") } }
+            }
+        }
+    }
+
+    fun stopPlaylistPicker() {
+        synchronized(detailLock) { pickerVersion++ }
+        pickerJob?.cancel()
+    }
+
+    private fun <T> runMutation(
+        owner: HostSessionStamp,
+        output: MutableStateFlow<Resource<T>>,
+        validate: () -> Unit = {},
+        request: suspend () -> Resource<T>,
+        accepted: (T) -> Boolean,
+        onComplete: (Resource<T>) -> Unit,
+    ) {
+        val version = runCatching { sessions.withCurrent(owner) {
+            synchronized(detailLock) {
+                if (_actionSession.value != owner || mutationRunning) null else {
+                    mutationRunning = true
+                    output.value = Resource.Loading
+                    actionVersion
+                }
+            }
+        } }.getOrNull() ?: return
+        mutationJob = viewModelScope.launch {
+            try {
+                val result = try {
+                    sessions.requireCurrent(owner)
+                    check(owner.identity.authenticated) { "Official login is required" }
+                    validate()
+                    request()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: HostSessionChangedException) {
+                    throw error
+                } catch (error: Exception) {
+                    Resource.Error(error.message ?: "Playlist operation failed")
+                }
+                currentCoroutineContext().ensureActive()
+                val published = sessions.withCurrent(owner) {
+                    synchronized(detailLock) {
+                        (actionVersion == version).also { current ->
+                            if (current) {
+                                output.value = result
+                                onComplete(result)
+                            }
+                        }
+                    }
+                }
+                if (published && result is Resource.Success && accepted(result.data)) {
+                    viewModelScope.launch { runCatching { library.sync(owner) } }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
+            } finally {
+                synchronized(detailLock) { if (actionVersion == version) mutationRunning = false }
             }
         }
     }
@@ -294,13 +408,16 @@ class PlaylistViewModel internal constructor(
      */
     fun createPlaylist(
         name: String,
-        privacy: Boolean =  false, // 0 普通歌单, 10 隐私歌单
-        type: String = "NORMAL" // 默认 NORMAL, VIDEO 视频歌单, SHARED 共享歌单
+        privacy: Boolean,
+        owner: HostSessionStamp,
+        type: String = "NORMAL",
+        onComplete: (Boolean) -> Unit = {},
     ) {
-        viewModelScope.launch {
-            _createPlaylist.value = Resource.Loading
-            _createPlaylist.value = repository.createPlaylist(name, privacy, type)
-        }
+        runMutation(owner, _createPlaylist,
+            request = { mutations.createPlaylist(name, privacy, type, owner) },
+            accepted = { it.code == 200 },
+            onComplete = { onComplete(it is Resource.Success && it.data.code == 200) },
+        )
     }
 
     /*
@@ -378,11 +495,17 @@ class PlaylistViewModel internal constructor(
     /*
      * 删除歌单
      */
-    fun deletePlaylist(id: String) {
-        viewModelScope.launch {
-            _deletePlaylist.value = Resource.Loading
-            _deletePlaylist.value = repository.deletePlaylist(id)
-        }
+    fun deletePlaylist(id: String, owner: HostSessionStamp, onComplete: (Boolean) -> Unit = {}) {
+        runMutation(owner, _deletePlaylist,
+            request = {
+                val entry = library.playlists(owner.identity.userId.toString()).first().firstOrNull { it.playlist.id == id }
+                check(entry != null && !entry.isLiked && entry.playlist.author == owner.identity.userId.toString()) { "Playlist cannot be deleted by this account" }
+                sessions.requireCurrent(owner)
+                mutations.deletePlaylist(id, owner)
+            },
+            accepted = { it.code == 200 },
+            onComplete = { onComplete(it is Resource.Success && it.data.code == 200) },
+        )
     }
 
     suspend fun resolveSongUrls(ids: List<String>, quality: MusicQuality, owner: HostSessionStamp = sessions.snapshot()) =
@@ -432,7 +555,7 @@ class PlaylistViewModel internal constructor(
 
     override fun onCleared() {
         invalidation.close()
-        synchronized(detailLock) { detailVersion++ }
+        synchronized(detailLock) { detailVersion++; clearActions() }
         super.onCleared()
     }
 }
@@ -440,18 +563,16 @@ class PlaylistViewModel internal constructor(
 enum class PlaylistTrackAddOutcome {
     Added,
     AlreadyExists,
+    PartiallyAdded,
     Failed,
 }
 
-internal fun Resource<ManipulateTrackResult>.toPlaylistTrackAddOutcome(
-    previousTrackCount: Int
-): PlaylistTrackAddOutcome = when (this) {
+internal fun Resource<ManipulateTrackResult>.toPlaylistTrackAddOutcome(): PlaylistTrackAddOutcome = when (this) {
     is Resource.Success -> when {
-        data.code == 502 && data.message == "歌单内歌曲重复" -> PlaylistTrackAddOutcome.AlreadyExists
+        data.code == 502 -> PlaylistTrackAddOutcome.AlreadyExists
         data.code != 200 -> PlaylistTrackAddOutcome.Failed
-        data.count > previousTrackCount -> PlaylistTrackAddOutcome.Added
-        data.count == previousTrackCount -> PlaylistTrackAddOutcome.AlreadyExists
-        else -> PlaylistTrackAddOutcome.Failed
+        !data.offlineIds.isNullOrEmpty() -> PlaylistTrackAddOutcome.PartiallyAdded
+        else -> PlaylistTrackAddOutcome.Added
     }
     else -> PlaylistTrackAddOutcome.Failed
 }

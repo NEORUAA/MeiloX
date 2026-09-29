@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -34,6 +37,9 @@ fun AddToPlaylistSheet(
     onDismiss: () -> Unit,
     onSelectPlaylist: (Playlist) -> Unit,
     onCreateNewPlaylist: () -> Unit,
+    loading: Boolean = false,
+    error: String? = null,
+    onRetry: () -> Unit = {},
 ) {
     IosModalSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth()) {
@@ -53,6 +59,14 @@ fun AddToPlaylistSheet(
                         showTopSeparator = false,
                         onClick = onCreateNewPlaylist,
                     )
+                }
+                if (loading) {
+                    CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(16.dp).size(22.dp), strokeWidth = 2.dp)
+                } else if (error != null) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.load_failed))
+                        com.ljyh.mei.ui.glass.GlassButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                    }
                 }
                 if (playlists.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))

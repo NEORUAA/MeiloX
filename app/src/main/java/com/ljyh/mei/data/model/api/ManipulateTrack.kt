@@ -6,10 +6,14 @@ data class ManipulateTrack(
     val op:String,
     val pid:String,
     var trackIds:String,
-    val imme:Boolean=true
+    val reverse:Boolean?=true
 ){
     init {
-        trackIds= Gson().toJson(trackIds.split(","))
+        require(op == "add" || op == "del")
+        require(pid.toLongOrNull()?.let { it > 0 } == true)
+        val ids = trackIds.split(",").map(String::trim).distinct()
+        require(ids.isNotEmpty() && ids.all { it.toLongOrNull()?.let { id -> id > 0 } == true })
+        trackIds = Gson().toJson(ids)
     }
 }
 
@@ -17,7 +21,8 @@ data class ManipulateTrack(
 data class ManipulateTrackResult(
     val code:Int,
     val message: String? = null,
-    val cloudCount:Int,
-    val count:Int,
-    val trackIds:String
+    val cloudCount:Int? = null,
+    val count:Int? = null,
+    val trackIds: com.google.gson.JsonElement? = null,
+    val offlineIds: List<Long>? = null,
 )

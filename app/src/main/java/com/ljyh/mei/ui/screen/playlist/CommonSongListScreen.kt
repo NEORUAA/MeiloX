@@ -107,7 +107,6 @@ fun CommonSongListScreen(
     val bottomPadding = LocalPlayerAwareWindowInsets.current
         .asPaddingValues()
         .calculateBottomPadding()
-    val allMePlaylist by viewModel.playlist.collectAsState()
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
     val searchFocusRequester = remember { FocusRequester() }
@@ -319,7 +318,6 @@ fun CommonSongListScreen(
             overlay = currentOverlay,
             isCreator = uiData.isCreator,
             playlistId = uiData.id,
-            allMePlaylist = allMePlaylist,
             onDismiss = { currentOverlay = OverlayState.None },
             onUpdateOverlay = { currentOverlay = it },
             onDownloadTrack = onTrackDownload,

@@ -48,9 +48,10 @@ class CreatePlaylistResult(
     @SerializedName("code")
     val code: Int,
     @SerializedName("playlist")
-    val playlist: Playlist,
+    val playlist: Playlist?,
     @SerializedName("id")
-    val id: Long
+    val id: Long?,
+    val message: String? = null,
 ) {
     data class Playlist(
         @SerializedName("subscribers")
