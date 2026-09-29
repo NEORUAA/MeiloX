@@ -743,6 +743,47 @@ These are integration differences, not server API semantics.
   grant was requested automatically in this checkpoint; the user has not yet answered
   the specific quota-consuming download test authorization.
 
+#### Full Worker Qualification and User-Initiated Download (2026-09-29)
+
+- Kept the public `DownloadWorker(Context, WorkerParameters)` constructor and its real
+  module graph. A per-worker environment permits isolated qualification without replacing
+  `AppGraph`, reading official credentials, or rebinding the live session. The explicit
+  debug worker inherits the same execution body; only its account/request/resource edges,
+  database and notification sink are substitutes. MediaStore publication remains real.
+- Eight device cases exercise that execution body: completion/idempotent completed work,
+  official denial without a resource connection, truncated/corrupt media, a different
+  account before authorization, cancellation of a blocked read while preserving PAUSED,
+  in-flight session invalidation, and rejection of a replaced request. They check task
+  state, URI publication, temporary-file cleanup and grant/transfer counts. These are
+  substitute authorization responses, not observations of real server error behavior.
+- Actual host-process qualification: enqueue a delayed synthetic request, return Home,
+  stop the paused player service, kill the verified TV process and confirm its absence.
+  A namespaced `cmd jobscheduler run -f` then starts a new host process through the
+  original job carrier without any Activity. The inherited worker resolves exactly one
+  substitute grant, transfers once, and reaches WorkManager SUCCEEDED, task COMPLETED
+  and artifact PUBLISHED. This proves service-only execution, not natural cold-start
+  scheduling latency; the job was still waiting before the targeted force-run.
+- A second held transfer starts in the background without a force-run, reaches RUNNING /
+  DOWNLOADING, and is canceled through WorkManager. Its blocked read closes, the coroutine
+  exits and no artifact is published. Direct WorkManager cancellation leaves a pending
+  task (the normal app-open reconciler handles terminal work); the distinct UI PAUSED
+  invariant is covered by the device case. Probe cleanup removes only its private database,
+  test WorkSpecs and synthetic media. No pending module jobs or synthetic media remain.
+- While this qualification was being prepared, the user retried a real download in the
+  ordinary build. Its production `DownloadWorker` returned SUCCESS after approximately
+  four seconds, and the original Library download row displayed Complete. MediaStore
+  contained a published, TV-owned FLAC in the configured single-song destination:
+  22,705,573 bytes, 208.373333 seconds, stereo 44.1 kHz / 16-bit, with embedded cover art.
+  A read-only local copy passed full-file `ffmpeg -xerror` decoding and was then removed;
+  the AVD original remains intact. No new grant was requested by the agent. Requested
+  quality, audible output and offline Android playback are not inferred from the format.
+- The real retry retires the immediate queue/link-failure report for that song and account,
+  not the full download matrix. Still open: other qualities/permissions, real network loss,
+  live pause/resume/replacement, actual mid-transfer process death, long-running foreground
+  work and notification aggregation, natural cold-start latency, reboot and release runtime.
+  Final ordinary debug build and unit suite pass; 30 selected device tests pass. The probe
+  is disabled again, the real download is preserved, and the full playback stage stays open.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,

@@ -16,12 +16,9 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.DownloadArtifact
 import com.ljyh.mei.di.AppDatabase
-import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.parasite.HostSessionChangedException
 import com.ljyh.mei.parasite.HostSessionStamp
 import com.ljyh.mei.utils.DownloadManager
-import com.ljyh.mei.utils.ImageUtils
-import com.ljyh.mei.utils.LyricFetcher
 import com.ljyh.mei.utils.SongMate
 import com.ljyh.mei.utils.StringUtils.specialReplace
 import java.io.File
@@ -42,7 +39,10 @@ import okhttp3.OkHttpClient
 import org.jaudiotagger.audio.AudioFileIO
 import timber.log.Timber
 
-class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+open class DownloadWorker internal constructor(
+    context: Context, params: WorkerParameters, private val environment: DownloadWorkerEnvironment,
+) : CoroutineWorker(context, params) {
+    constructor(context: Context, params: WorkerParameters) : this(context, params, DownloadWorkerEnvironment.official(context))
     companion object {
         const val KEY_SONG_ID = "song_id"
         const val KEY_OWNER_ID = "owner_id"
@@ -62,7 +62,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    private val sessions get() = AppGraph.component.hostRequests().sessions
+    private val sessions get() = environment.sessions
     private val songId get() = inputData.getString(KEY_SONG_ID).orEmpty()
     private val accountId get() = inputData.getLong(KEY_OWNER_ID, 0)
     private lateinit var owner: HostSessionStamp
@@ -70,10 +70,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         if (songId.isBlank() || accountId <= 0) return@withContext Result.failure()
-        val db = AppDatabase.getDatabase(applicationContext)
+        val db = environment.database
         try {
             val completed = DownloadManager.mutations.withLock {
-                publication(db).recover()
+                environment.publication.recover()
                 db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.COMPLETED
             }
             if (completed) {
@@ -119,11 +119,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     private suspend fun processSong(db: AppDatabase) = coroutineScope {
         val task = requireTask(db)
-        createNotificationChannel(applicationContext)
+        if (environment.notification == null) createNotificationChannel(applicationContext)
         check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
         showNotification("准备下载...", 0)
         failureTitle = "获取官方下载授权失败"
-        val source = resolveOfficialDownloadSources(AppGraph.component.apiService(), sessions,
+        val source = resolveOfficialDownloadSources(environment.api, sessions,
             listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
             ?: throw IOException("Official download permission denied")
         requireTask(db)
@@ -136,9 +136,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val temp = File(tempDir, "$id.${source.fileType}")
         try {
             failureTitle = "下载文件失败，请重试"
-            val lyric = async { LyricFetcher.fetchBestLyric(songId, owner) }
-            val cover = async { if (task.songCover.isBlank()) null else ImageUtils.downloadImageBytes(task.songCover) }
-            transferOfficialDownload(getDownloadClient(), source, temp, { requireTask(db); Unit }) { progress ->
+            val lyric = async { environment.lyric(songId, owner) }
+            val cover = async { if (task.songCover.isBlank()) null else environment.cover(task.songCover) }
+            transferOfficialDownload(environment.client, source, temp, { requireTask(db); Unit }) { progress ->
                 check(updateTask(db, DownloadStatus.DOWNLOADING, progress) == 1)
                 showNotification("正在下载 (0/1)", progress)
             }
@@ -157,7 +157,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             DownloadManager.mutations.withLock {
                 withContext(NonCancellable) {
                     requireTask(db)
-                    publication(db).store(task, temp, fileName, source.fileType, relativePath, duration,
+                    environment.publication.store(task, temp, fileName, source.fileType, relativePath, duration,
                         requireActive = {
                             execution.ensureActive()
                             sessions.requireDownloadOwner(owner)
@@ -168,7 +168,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                             commit()
                         } },
                     )
-                    publication(db).recover()
+                    environment.publication.recover()
                 }
             }
             showNotification("全部下载完成", 100, ongoing = false)
@@ -179,12 +179,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    private fun publication(db: AppDatabase) = DownloadPublication(db, AndroidDownloadMediaStore(applicationContext), applicationContext.packageName)
-
     private suspend fun updateTask(db: AppDatabase, status: DownloadStatus, progress: Int): Int =
         db.downloadDao().updateOwnedProgress(songId, id.toString(), accountId, status, progress, System.currentTimeMillis())
 
     private fun showNotification(title: String, progress: Int, ongoing: Boolean = progress < 100) {
+        environment.notification?.let { it(title, progress, ongoing); return }
         try {
             val intent = com.ljyh.mei.parasite.HostAppComponentHooks.route(
                 Intent(applicationContext, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })

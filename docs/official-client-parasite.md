@@ -1498,6 +1498,44 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   unanswered. Full DownloadWorker, interruption/account/device/release cases in ABI-004
   remain open; stage 5 is not complete.
 
+### Full Download Worker Checkpoint (2026-09-29)
+
+- Added a per-worker dependency environment while retaining the ordinary reflective
+  constructor and official module graph. The debug-only qualification path uses an
+  independent public test identity, private Room database and closed synthetic transport;
+  it cannot request an official grant or replace the user's account graph. It inherits
+  the real Worker body, including source parsing, integrity checks, structured resource
+  work, tagging, publication and cleanup; notification output is captured privately.
+- Eight new device cases cover full success and idempotency, permission denial, corrupted
+  or truncated bytes, wrong-account preflight, blocked-read cancellation with PAUSED
+  preservation, session invalidation and request replacement. The combined regression
+  now passes 30 device tests; all 599 unit tests in 75 suites also pass.
+- In the injected TV process, a delayed synthetic worker survives process removal and
+  completes after a targeted namespaced JobScheduler force-run, without creating an
+  Activity. One substitute grant/transfer produces COMPLETED/PUBLISHED. The cold job did
+  not run naturally during the observation interval, so natural cold scheduling latency
+  remains unqualified. A separate held worker starts naturally in the background and
+  WorkManager cancellation closes its blocked read. Dedicated cleanup removes its media,
+  private database and WorkSpecs; no production queue or download is removed.
+- The user independently retried a real song during this checkpoint. The ordinary
+  production Worker succeeded, the Library download row displayed Complete, and its
+  published host-owned file was a 22,705,573-byte FLAC, 208.373333 seconds, stereo 44.1 kHz /
+  16-bit with an embedded image. A read-only local copy passed whole-file decoding and
+  was removed after verification. The AVD original remains present. No agent-initiated
+  real grant, repeated download, account change or permission change was performed.
+- This closes the reported pre-request failure for the observed retry. It does not prove
+  every quality/permission, offline player playback, audible output, real network/pause/
+  process-death behavior, long-running foreground work, reboot or release compatibility.
+  Original UI/UX and page architecture remain unchanged; stage 5 is still in progress.
+- Final verification: ordinary debug and Android-test builds, full unit suite, 30 device
+  cases, and diff checks pass. Local-only evidence: `/tmp/meilox-worker-final-build.log`,
+  `/tmp/meilox-worker-final-device.log`, `/tmp/meilox-download-user-retry.png`, and
+  `/tmp/meilox-user-download-decode.log`. No audio copy, device log or account data is
+  committed. The ordinary build was restored and the host cold-started after the probe;
+  the new process confirms scheduler initialization with test commands disabled. The
+  original Library download row still displays Complete after that cold start; screenshot
+  evidence remains local at `/tmp/meilox-worker-final-downloads.png`.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1523,7 +1561,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership and cancelable transfer have substitute coverage; ordinary builds initialize the verified host scheduler, with durable publication tested using synthetic media; real grants/full transfers and remaining lifecycle cases are unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership, full Worker and durable publication have substitute coverage; ordinary host scheduling and one user-initiated real FLAC download/whole-file decode are verified; broader download and lifecycle cases remain unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 
