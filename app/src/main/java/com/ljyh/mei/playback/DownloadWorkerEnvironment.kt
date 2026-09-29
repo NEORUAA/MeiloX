@@ -20,6 +20,7 @@ internal class DownloadWorkerEnvironment(
     val cover: suspend (String) -> ByteArray?,
     val publication: DownloadPublication,
     val notification: ((String, Int, Boolean) -> Unit)? = null,
+    val notifications: DownloadNotifications = DownloadNotifications.production,
 ) {
     companion object {
         fun official(context: Context): DownloadWorkerEnvironment {

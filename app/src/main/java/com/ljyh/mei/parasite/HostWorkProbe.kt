@@ -33,7 +33,8 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 when (command) {
                     "foreground_enqueue", "foreground_bind", "foreground_status", "foreground_cancel_first",
                     "foreground_cancel", "foreground_cleanup" -> HostForegroundProbe.command(owner, command)
-                    "download_enqueue", "download_status", "download_cancel", "download_cleanup" -> {
+                    "download_enqueue", "download_enqueue_pair", "download_status", "download_cancel", "download_cleanup",
+                    "download_release_first", "download_release_second", "download_cancel_first" -> {
                         HostDownloadProbe.command(owner, command, intent.getStringExtra("scenario"))
                     }
                     "publication" -> {

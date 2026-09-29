@@ -1575,6 +1575,53 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   No screen/page architecture, real download
   grant, account, permission or global setting was changed. Stage 5 remains open.
 
+### Production Download Foreground Checkpoint (2026-09-29)
+
+- Production DownloadWorker now registers as foreground before the transfer semaphore
+  and official grant request. Per-execution leases and account/session fences aggregate
+  concurrent work into the existing single progress notification. The original screen
+  architecture, download controls, glass and notification entry route remain unchanged.
+- Carrier callbacks render current batch state during foreground handoff and do not
+  remove the shared progress while another download remains active. Terminal results
+  use a distinct notification ID. An actual cancellation run exposed service-stop-before-
+  coroutine-cleanup ordering; both cleanup paths now publish idempotently, preserving
+  failure/cancellation notifications whichever callback arrives first. ABI-005 records
+  the adaptation and its evidence.
+- Seven new JVM tests and two new device tests bring coverage to 610 unit tests in 77
+  suites and 35 parasite device cases. The new device cases use the full worker with an
+  injected foreground updater to assert promotion precedes authorization and refusal
+  performs no grant or transfer. They do not substitute for host service verification.
+- In the injected TV process, two inherited full workers use fake grants/transport with
+  real isolated database, media publication and foreground service behavior. Completing
+  the first retains a single `正在下载 (1/2)` notice at 56 percent. Canceling the second
+  leaves one completed and one pending task and a persistent `下载已取消` result.
+  Completing both instead yields two published artifacts and `全部下载完成` at 100
+  percent. A refused synthetic grant produces `获取官方下载授权失败` with zero transfers;
+  its real notification opens the original portrait Home. All probe WorkSpecs, artifacts,
+  database, notifications and channel are cleaned afterward. Production notifications
+  and the user's existing download are outside this cleanup namespace.
+- Ordinary debug and test builds have the work probe disabled. The unsigned release
+  R8 build and 16 KB alignment also pass; the foreground service name and reflective
+  DownloadWorker constructor survive shrinking. Release runtime has not been qualified.
+  Both ordinary APKs are reinstalled and all 35 device cases pass again. A fresh TV
+  process initializes both work adapters; Home retains the original portrait glass UI
+  and paused queue. Library still shows the user's prior download as Complete, with
+  its published TV-owned 22,705,573-byte MediaStore file intact. No qualification
+  foreground service or active qualification notification remains.
+  No agent-initiated real download authorization or quota-consuming transfer was made.
+  Broader real-network downloads, pause/replacement, process death/redelivery, reboot,
+  permission/quota failures and cross-system behavior remain open. Stage 5 is not complete.
+- Local-only evidence: `/tmp/meilox-download-foreground-build.log`,
+  `/tmp/meilox-download-foreground-device.log`, `/tmp/meilox-download-foreground-host.log`,
+  `/tmp/meilox-download-foreground-final-one-of-two.png`,
+  `/tmp/meilox-download-foreground-complete.png`,
+  `/tmp/meilox-download-foreground-notification-entry.png`,
+  `/tmp/meilox-download-foreground-release-build.log` and
+  `/tmp/meilox-download-foreground-final-build.log`, plus
+  `/tmp/meilox-download-foreground-final-device.log`,
+  `/tmp/meilox-download-foreground-final-home.png` and
+  `/tmp/meilox-download-foreground-final-downloads.png`.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1600,7 +1647,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership, full Worker and durable publication have substitute coverage; ordinary host scheduling and one user-initiated real FLAC download/whole-file decode are verified; broader download and lifecycle cases remain unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership, full Worker, durable publication and foreground aggregation have substitute coverage; ordinary host scheduling and one user-initiated real FLAC download/whole-file decode are verified; broader download and lifecycle cases remain unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.taskexecutor.WorkManagerTaskExecutor
@@ -14,6 +15,7 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.DownloadWorkerFixture
 import com.ljyh.mei.playback.DownloadWorkerScenario
+import com.ljyh.mei.playback.DownloadNotifications
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
@@ -33,24 +35,56 @@ class DownloadWorkerDeviceTest {
     private val factory = object : WorkerFactory() {
         override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker? = null
     }
-    private fun worker(fixture: DownloadWorkerFixture, id: UUID): DownloadWorker {
+    private fun worker(fixture: DownloadWorkerFixture, id: UUID, foreground: (ForegroundInfo) -> Unit = {}): DownloadWorker {
         val executor = Executor { it.run() }
         val parameters = WorkerParameters(id,
             workDataOf(DownloadWorker.KEY_SONG_ID to "1", DownloadWorker.KEY_OWNER_ID to 17L), emptyList(),
             WorkerParameters.RuntimeExtras(), 0, 0, executor, Dispatchers.Default,
             WorkManagerTaskExecutor(executor), factory,
-            { _, _, _ -> Futures.immediateFuture(null) }, { _, _, _ -> Futures.immediateFuture(null) },
+            { _, _, _ -> Futures.immediateFuture(null) }, { _, _, info ->
+                try { foreground(info); Futures.immediateFuture(null) }
+                catch (error: Exception) { Futures.immediateFailedFuture<Void>(error) }
+            },
         )
         return DownloadWorker(context, parameters, fixture.environment)
     }
-    private fun test(scenario: DownloadWorkerScenario, block: suspend (DownloadWorkerFixture, UUID) -> Unit) = runBlocking(Dispatchers.IO) {
-        val fixture = DownloadWorkerFixture(context, scenario)
+    private fun test(scenario: DownloadWorkerScenario, captureNotifications: Boolean = true,
+        block: suspend (DownloadWorkerFixture, UUID) -> Unit) = runBlocking(Dispatchers.IO) {
+        val fixture = DownloadWorkerFixture(context, scenario, captureNotifications = captureNotifications)
         val id = UUID.randomUUID()
         try {
             fixture.database.downloadDao().insert(fixture.task(id))
             withTimeout(15_000) { block(fixture, id) }
-        } finally { try { fixture.cleanMedia() } finally { fixture.close() } }
+        } finally {
+            try {
+                fixture.cleanMedia()
+                if (!captureNotifications) DownloadNotifications.qualification.dismissProbeCompletion(context)
+            } finally { fixture.close() }
+        }
     }
+
+    @Test fun foregroundRegistrationPrecedesTheGrantAndProgressUsesOneReservedId() =
+        test(DownloadWorkerScenario.SUCCESS, captureNotifications = false) { fixture, id ->
+            val grants = mutableListOf<Int>()
+            val notifications = mutableListOf<ForegroundInfo>()
+            val result = worker(fixture, id) { info -> grants += fixture.grants.get(); notifications += info }.doWork()
+            assertEquals(ListenableWorker.Result.success(), result)
+            assertTrue(notifications.size > 1)
+            assertEquals(0, grants.first())
+            assertEquals(setOf(DownloadNotifications.qualification.progressId), notifications.map { it.notificationId }.toSet())
+            assertTrue(notifications.all { it.foregroundServiceType == 0 })
+            assertFalse(DownloadNotifications.qualification.active())
+        }
+
+    @Test fun refusedForegroundRegistrationCannotConsumeADownloadGrant() =
+        test(DownloadWorkerScenario.SUCCESS, captureNotifications = false) { fixture, id ->
+            val result = worker(fixture, id) { throw java.io.IOException("Synthetic foreground refusal") }.doWork()
+            assertEquals(ListenableWorker.Result.failure(), result)
+            assertEquals(0, fixture.grants.get())
+            assertEquals(0, fixture.transfers.get())
+            assertEquals(DownloadStatus.FAILED, fixture.database.downloadDao().getBySongId("1")?.status)
+            assertFalse(DownloadNotifications.qualification.active())
+        }
 
     @Test fun completeWorkerDownloadsPublishesAndDoesNotAcquireAnotherGrantForCompletedWork() = test(DownloadWorkerScenario.SUCCESS) { fixture, id ->
         assertEquals(ListenableWorker.Result.success(), worker(fixture, id).doWork())

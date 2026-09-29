@@ -14,6 +14,7 @@ import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.DownloadWorkerFixture
 import com.ljyh.mei.playback.DownloadWorkerScenario
+import com.ljyh.mei.playback.DownloadNotifications
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -23,10 +24,12 @@ internal object HostDownloadProbe {
     const val TAG = "meilox-download-qualification"
     private const val DATABASE = "download_worker_qualification"
     private const val PREFERENCES = "download_worker_qualification"
+    private val running = java.util.concurrent.ConcurrentHashMap<String, DownloadWorkerFixture>()
 
-    fun fixture(context: Context, scenario: DownloadWorkerScenario): DownloadWorkerFixture {
+    fun fixture(context: Context, scenario: DownloadWorkerScenario, songId: String = "1", captureNotifications: Boolean = true): DownloadWorkerFixture {
         check(BuildConfig.PARASITE_WORK_PROBE)
-        return DownloadWorkerFixture(context, scenario, Room.databaseBuilder(context, AppDatabase::class.java, DATABASE).build())
+        return DownloadWorkerFixture(context, scenario, Room.databaseBuilder(context, AppDatabase::class.java, DATABASE).build(),
+            songId, captureNotifications)
     }
 
     fun command(context: Context, operation: String, scenario: String?) {
@@ -34,50 +37,67 @@ internal object HostDownloadProbe {
         val manager = WorkManager.getInstance(context)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         when (operation) {
-            "download_enqueue" -> {
-                val mode = DownloadWorkerScenario.valueOf(scenario ?: "SUCCESS")
+            "download_enqueue", "download_enqueue_pair" -> {
+                val mode = DownloadWorkerScenario.valueOf(scenario ?: if (operation == "download_enqueue_pair") "HOLD" else "SUCCESS")
                 check(manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS).isEmpty()) { "Clean the previous qualification first" }
                 fixture(context, mode).use { fixture ->
                     check(runBlocking { fixture.database.downloadDao().getAll().first().isEmpty() })
-                    val request = OneTimeWorkRequestBuilder<HostDownloadProbeWorker>()
-                        .setInitialDelay(20, TimeUnit.SECONDS).addTag(TAG)
-                        .setInputData(workDataOf(DownloadWorker.KEY_SONG_ID to "1", DownloadWorker.KEY_OWNER_ID to 17L, "scenario" to mode.name))
-                        .build()
-                    runBlocking { fixture.database.downloadDao().insert(fixture.task(request.id)) }
+                    val requests = (1..if (operation == "download_enqueue_pair") 2 else 1).map { index ->
+                        val songId = index.toString()
+                        OneTimeWorkRequestBuilder<HostDownloadProbeWorker>()
+                            .setInitialDelay(20, TimeUnit.SECONDS).addTag(TAG).addTag("$TAG-$songId")
+                            .setInputData(workDataOf(DownloadWorker.KEY_SONG_ID to songId, DownloadWorker.KEY_OWNER_ID to 17L, "scenario" to mode.name))
+                            .build().also { request -> runBlocking {
+                                fixture.database.downloadDao().insert(fixture.task(request.id).copy(songId = songId))
+                            } }
+                    }
                     check(preferences.edit().clear().commit())
-                    manager.enqueueUniqueWork(TAG, ExistingWorkPolicy.KEEP, request).result.get(10, TimeUnit.SECONDS)
-                    HostRuntimeProbe.report("download_probe_enqueued scenario=${mode.name} initial_delay_seconds=20")
+                    manager.beginUniqueWork(TAG, ExistingWorkPolicy.KEEP, requests).enqueue().result.get(10, TimeUnit.SECONDS)
+                    HostRuntimeProbe.report("download_probe_enqueued scenario=${mode.name} count=${requests.size} initial_delay_seconds=20")
                 }
             }
             "download_status" -> {
                 val work = manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS)
                     .groupingBy { it.state.name }.eachCount()
                 fixture(context, DownloadWorkerScenario.SUCCESS).use { fixture ->
-                    val tasks = runBlocking { fixture.database.downloadDao().getAll().first() }
-                        .groupingBy { it.status.name }.eachCount()
+                    val rows = runBlocking { fixture.database.downloadDao().getAll().first() }
+                    val tasks = rows.groupingBy { it.status.name }.eachCount()
                     val artifacts = fixture.database.downloadArtifactDao().all().groupingBy { it.phase }.eachCount()
+                    val grants = rows.sumOf { running[it.songId]?.grants?.get() ?: preferences.getInt("${it.songId}.grants", 0) }
+                    val transfers = rows.sumOf { running[it.songId]?.transfers?.get() ?: preferences.getInt("${it.songId}.transfers", 0) }
                     HostRuntimeProbe.report("download_probe_status work=$work tasks=$tasks artifacts=$artifacts " +
-                        "grants=${preferences.getInt("grants", 0)} transfers=${preferences.getInt("transfers", 0)} " +
-                        "running=${preferences.getBoolean("running", false)} pid=${preferences.getInt("pid", 0)}")
+                        "grants=$grants transfers=$transfers running=${running.size}")
                 }
             }
+            "download_release_first", "download_release_second" -> {
+                val song = if (operation == "download_release_first") "1" else "2"
+                checkNotNull(running[song]).completeTransfer()
+                HostRuntimeProbe.report("download_probe_release_requested song=$song")
+            }
+            "download_cancel_first" -> {
+                manager.cancelAllWorkByTag("$TAG-1").result.get(10, TimeUnit.SECONDS)
+                HostRuntimeProbe.report("download_probe_first_cancel_requested")
+            }
             "download_cancel" -> {
-                manager.cancelUniqueWork(TAG).result.get(10, TimeUnit.SECONDS)
+                manager.cancelAllWorkByTag(TAG).result.get(10, TimeUnit.SECONDS)
                 HostRuntimeProbe.report("download_probe_cancel_requested")
             }
             "download_cleanup" -> {
                 val work = manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS)
                 check(work.all { it.state.isFinished })
-                check(!preferences.getBoolean("running", false) || preferences.getInt("pid", 0) != Process.myPid())
+                check(running.isEmpty())
                 fixture(context, DownloadWorkerScenario.SUCCESS).use { fixture ->
                     runBlocking {
-                        fixture.cleanMedia()
                         fixture.database.downloadDao().getAll().first().forEach { task ->
+                            fixture.database.songDao().updatePath(task.songId, null)
                             val id = java.util.UUID.fromString(task.requestId)
                             java.io.File(context.cacheDir, "download/$id.wav").delete()
                         }
+                        fixture.publication.recover()
+                        check(fixture.database.downloadArtifactDao().all().isEmpty())
                     }
                 }
+                DownloadNotifications.qualification.dismissProbeCompletion(context)
                 check(context.deleteDatabase(DATABASE))
                 val db = WorkManagerImpl.getInstance(context).workDatabase
                 db.runInTransaction { work.forEach { db.workSpecDao().delete(it.id.toString()) } }
@@ -88,16 +108,18 @@ internal object HostDownloadProbe {
         }
     }
 
-    fun started(context: Context) {
+    fun started(context: Context, fixture: DownloadWorkerFixture) {
+        check(running.putIfAbsent(fixture.songId, fixture) == null)
         check(context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
-            .putBoolean("running", true).putInt("pid", Process.myPid()).commit())
-        HostRuntimeProbe.report("download_probe_started host_process=${android.app.Application.getProcessName() == HostIdentity.PACKAGE}")
+            .putInt("${fixture.songId}.pid", Process.myPid()).commit())
+        HostRuntimeProbe.report("download_probe_started song=${fixture.songId} host_process=${android.app.Application.getProcessName() == HostIdentity.PACKAGE}")
     }
 
     fun finished(context: Context, fixture: DownloadWorkerFixture) {
         check(context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
-            .putBoolean("running", false).putInt("grants", fixture.grants.get()).putInt("transfers", fixture.transfers.get()).commit())
-        HostRuntimeProbe.report("download_probe_finished scenario=${fixture.scenario} call_cancel_invoked=${fixture.canceled.get()}")
+            .putInt("${fixture.songId}.grants", fixture.grants.get()).putInt("${fixture.songId}.transfers", fixture.transfers.get()).commit())
+        running.remove(fixture.songId, fixture)
+        HostRuntimeProbe.report("download_probe_finished song=${fixture.songId} scenario=${fixture.scenario} call_cancel_invoked=${fixture.canceled.get()}")
     }
 }
 
@@ -105,14 +127,15 @@ class HostDownloadProbeWorker private constructor(
     context: Context, params: WorkerParameters, private val fixture: DownloadWorkerFixture,
 ) : DownloadWorker(context, params, fixture.environment) {
     constructor(context: Context, params: WorkerParameters) : this(context, params,
-        HostDownloadProbe.fixture(context, DownloadWorkerScenario.valueOf(checkNotNull(params.inputData.getString("scenario")))))
+        HostDownloadProbe.fixture(context, DownloadWorkerScenario.valueOf(checkNotNull(params.inputData.getString("scenario"))),
+            checkNotNull(params.inputData.getString(KEY_SONG_ID)), captureNotifications = false))
 
     override suspend fun doWork(): Result {
-        HostDownloadProbe.started(applicationContext)
+        HostDownloadProbe.started(applicationContext, fixture)
         try { return super.doWork() }
         finally {
-            HostDownloadProbe.finished(applicationContext, fixture)
-            fixture.close()
+            try { HostDownloadProbe.finished(applicationContext, fixture) }
+            finally { fixture.close() }
         }
     }
 }

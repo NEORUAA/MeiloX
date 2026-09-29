@@ -1,16 +1,8 @@
 package com.ljyh.mei.playback
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.ljyh.mei.MainActivity
-import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
@@ -55,11 +47,6 @@ open class DownloadWorker internal constructor(
                 .followRedirects(true).build()
         }
         fun getDownloadClient(): OkHttpClient = sharedClient
-        fun createNotificationChannel(context: Context) {
-            val channel = NotificationChannel(CHANNEL_ID, "音乐下载", NotificationManager.IMPORTANCE_LOW)
-                .apply { description = "歌曲下载进度通知" }
-            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
     }
 
     private val sessions get() = environment.sessions
@@ -67,10 +54,13 @@ open class DownloadWorker internal constructor(
     private val accountId get() = inputData.getLong(KEY_OWNER_ID, 0)
     private lateinit var owner: HostSessionStamp
     private var failureTitle = "下载初始化失败"
+    private var notice: DownloadNotificationState.Lease? = null
+    private var notificationFence = 0L
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         if (songId.isBlank() || accountId <= 0) return@withContext Result.failure()
         val db = environment.database
+        notificationFence = environment.notifications.fence()
         try {
             val completed = DownloadManager.mutations.withLock {
                 environment.publication.recover()
@@ -86,6 +76,8 @@ open class DownloadWorker internal constructor(
             if (owner.identity.userId != accountId) throw HostSessionChangedException()
             sessions.withDownloadOwner(owner) {
                 requireTask(db)
+                failureTitle = "无法启动后台下载，请重试"
+                showNotification("准备下载...", 0)
                 slots.withPermit { processSong(db) }
             }
             Result.success()
@@ -94,17 +86,29 @@ open class DownloadWorker internal constructor(
                 val status = if (::owner.isInitialized && runCatching { sessions.requireDownloadOwner(owner) }.isSuccess) {
                     DownloadStatus.PENDING
                 } else DownloadStatus.FAILED
-                if (updateTask(db, status, 0) == 1) showNotification("下载已取消", 0, ongoing = false)
+                if (updateTask(db, status, 0) == 1) {
+                    finishNotification(DownloadNotificationState.Outcome.CANCELED, "下载已取消")
+                } else if (db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.PAUSED) {
+                    finishNotification(DownloadNotificationState.Outcome.CANCELED, "下载已暂停")
+                }
             }
             throw error
         } catch (error: Exception) {
             Timber.w("Download failed: %s", error.javaClass.simpleName)
             if (updateTask(db, DownloadStatus.FAILED, 0) == 1) {
-                showNotification(if (error is HostSessionChangedException) "账号会话已变化，请重新登录后下载" else failureTitle, 0, ongoing = false)
+                finishNotification(DownloadNotificationState.Outcome.FAILED,
+                    if (error is HostSessionChangedException) "账号会话已变化，请重新登录后下载" else failureTitle)
             } else if (db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.COMPLETED) {
                 return@withContext Result.retry()
             }
             Result.failure()
+        } finally {
+            environment.notifications.finish(notice, null)
+            // WorkManager can stop the service before a canceled coroutine finishes cleanup.
+            // The completion ID is distinct from the foreground ID, so either order is safe.
+            if (notice != null) {
+                environment.notifications.publishCompletion(applicationContext)
+            }
         }
     }
 
@@ -119,9 +123,7 @@ open class DownloadWorker internal constructor(
 
     private suspend fun processSong(db: AppDatabase) = coroutineScope {
         val task = requireTask(db)
-        if (environment.notification == null) createNotificationChannel(applicationContext)
         check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
-        showNotification("准备下载...", 0)
         failureTitle = "获取官方下载授权失败"
         val source = resolveOfficialDownloadSources(environment.api, sessions,
             listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
@@ -171,7 +173,7 @@ open class DownloadWorker internal constructor(
                     environment.publication.recover()
                 }
             }
-            showNotification("全部下载完成", 100, ongoing = false)
+            finishNotification(DownloadNotificationState.Outcome.SUCCESS, "全部下载完成")
         } finally {
             withContext(NonCancellable + Dispatchers.IO) {
                 temp.delete()
@@ -182,22 +184,25 @@ open class DownloadWorker internal constructor(
     private suspend fun updateTask(db: AppDatabase, status: DownloadStatus, progress: Int): Int =
         db.downloadDao().updateOwnedProgress(songId, id.toString(), accountId, status, progress, System.currentTimeMillis())
 
-    private fun showNotification(title: String, progress: Int, ongoing: Boolean = progress < 100) {
-        environment.notification?.let { it(title, progress, ongoing); return }
-        try {
-            val intent = com.ljyh.mei.parasite.HostAppComponentHooks.route(
-                Intent(applicationContext, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
-            val pendingIntent = PendingIntent.getActivity(applicationContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setContentTitle(title).setContentText("Mei 音乐下载")
-                .setSmallIcon(R.drawable.baseline_download_24).setOngoing(ongoing)
-                .setProgress(100, progress, false).setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_LOW).build()
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
-        } catch (error: SecurityException) {
-            Timber.w("Download notification permission unavailable")
+    private suspend fun showNotification(title: String, progress: Int) {
+        environment.notification?.let { it(title, progress, true); return }
+        if (notice == null) {
+            environment.notifications.createChannel(applicationContext)
+            notice = sessions.withCurrent(owner) {
+                environment.notifications.begin(applicationContext, id.toString(), accountId, owner.generation)
+            }
         }
+        val info = sessions.withCurrent(owner) {
+            environment.notifications.progress(applicationContext, checkNotNull(notice), title, progress)
+        }
+        setForeground(info)
+    }
+
+    private fun finishNotification(outcome: DownloadNotificationState.Outcome, title: String) {
+        val progress = if (outcome == DownloadNotificationState.Outcome.SUCCESS) 100 else 0
+        environment.notification?.let { it(title, progress, false); return }
+        environment.notifications.finish(notice, outcome, title)
+        if (notice == null) environment.notifications.publishPreflightFailure(applicationContext, notificationFence, id.toString(), title)
     }
 }
 

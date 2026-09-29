@@ -46,6 +46,8 @@ internal class DownloadWorkerFixture(
     private val context: Context,
     val scenario: DownloadWorkerScenario,
     val database: AppDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build(),
+    val songId: String = "1",
+    captureNotifications: Boolean = true,
 ) : Closeable {
     init { check(BuildConfig.DEBUG) }
     val sessions = HostSessionBridge()
@@ -63,12 +65,12 @@ internal class DownloadWorkerFixture(
             override fun sessionIdentity() = HostSessionIdentity(account, true, false)
             override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
                 check(path == "song/enhance/download/url/v1")
-                check(parameters == mapOf("id" to "1_0", "level" to "standard", "immerseType" to "ste"))
+                check(parameters == mapOf("id" to "${songId}_0", "level" to "standard", "immerseType" to "ste"))
                 grants.incrementAndGet()
                 return object : HostPendingRequest {
                     override fun execute(): String {
                         val data = JsonObject().apply {
-                            addProperty("id", 1)
+                            addProperty("id", songId.toLong())
                             addProperty("code", if (scenario == DownloadWorkerScenario.DENIED) -105 else 200)
                             addProperty("url", ADDRESS)
                             addProperty("type", "wav")
@@ -95,11 +97,12 @@ internal class DownloadWorkerFixture(
         client = { request -> syntheticCall(request) },
         lyric = { _, _ -> "[00:00.00]Synthetic qualification" }, cover = { null },
         publication = publication,
-        notification = { title, progress, ongoing -> notifications += Triple(title, progress, ongoing) },
+        notification = if (captureNotifications) { title, progress, ongoing -> notifications += Triple(title, progress, ongoing); Unit } else null,
+        notifications = DownloadNotifications.qualification,
     )
 
     fun task(id: UUID) = DownloadTask(
-        songId = "1", requestId = id.toString(), ownerId = 17, quality = "standard",
+        songId = songId, requestId = id.toString(), ownerId = 17, quality = "standard",
         songTitle = "MeiloX synthetic qualification", songArtist = "Test", songAlbum = "Test",
         playlistName = "MeiloX Test/$id", downloadPath = "Music",
     )
@@ -119,7 +122,7 @@ internal class DownloadWorkerFixture(
                     readBlocked.countDown()
                     if (scenario == DownloadWorkerScenario.INVALIDATE) sessions.invalidate()
                     check(release.await(120, TimeUnit.SECONDS)) { "Synthetic cancellation timed out" }
-                    throw IOException("Synthetic call canceled")
+                    if (canceled.get()) throw IOException("Synthetic call canceled")
                 }
                 if (offset == bytes.size) return -1
                 val count = minOf(byteCount.toInt(), bytes.size - offset, 4096)
@@ -148,8 +151,10 @@ internal class DownloadWorkerFixture(
 
     fun hasTemporaryFile(id: UUID) = File(context.cacheDir, "download/$id.wav").exists()
 
+    fun completeTransfer() { release.countDown() }
+
     suspend fun cleanMedia() {
-        database.songDao().updatePath("1", null)
+        database.songDao().updatePath(songId, null)
         publication.recover()
         check(database.downloadArtifactDao().all().isEmpty()) { "Synthetic media cleanup is incomplete" }
     }

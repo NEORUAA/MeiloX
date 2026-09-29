@@ -837,6 +837,37 @@ These are integration differences, not server API semantics.
   not release runtime acceptance. The ordinary debug APK is reinstalled and cold launch
   confirms both work adapters and the isolated manager initialize without probe commands.
 
+#### Production Download Promotion and Aggregation (2026-09-29)
+
+- The production worker now awaits foreground registration after session/task validation,
+  before waiting for a transfer slot or requesting official download authorization.
+  A rejected registration fails without making a grant or media request. The original
+  notification content and entry route are retained; overlapping downloads share one
+  progress notification, with execution leases fenced by account and session generation.
+- AndroidX foreground handoff may cancel the promoted worker's notification as well as
+  the finished worker's notification. A shared ID therefore cannot use the unmodified
+  per-worker cancellation policy. The carrier renders the latest batch snapshot and
+  retains progress while any owned download remains active. A separate completion ID
+  prevents a late foreground stop from removing the final result.
+- An injected two-worker test exposed another ordering difference: cancellation can stop
+  the foreground service before the canceled coroutine completes cleanup. Publishing
+  only from the service stop callback lost the cancellation result. Worker cleanup and
+  service stop now both publish the terminal snapshot idempotently. Old/replaced leases
+  cannot update a new batch, and a failure/cancellation never reports all downloads done.
+- Seven new JVM cases cover aggregation, ownership, replacement and terminal outcomes.
+  Two new device cases verify promotion-before-grant and refusal-without-grant using the
+  full worker body. In-host substitute runs exercise actual foreground service promotion,
+  real private publication and notification UI: one completion plus one cancellation,
+  two completions, and authorization refusal with zero transfers. The intermediate
+  one-of-two notification remains foreground; terminal results are non-foreground and
+  survive service destruction. Clicking the refusal notification returns to the original
+  portrait MeiloX Home. Probe state, channel and IDs are isolated from production work.
+- Final unit coverage is 610 tests; all 35 parasite device cases pass. Debug and unsigned
+  R8 release builds pass; release APK 16 KB alignment passes. No new real official grant,
+  download quota, account mutation or page redesign is involved. Actual long network
+  downloads, process redelivery, reboot, permission/quota failure, other Android versions
+  and release runtime remain separate acceptance gates.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,
