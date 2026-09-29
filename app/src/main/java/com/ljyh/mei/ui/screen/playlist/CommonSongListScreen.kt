@@ -81,6 +81,7 @@ fun CommonSongListScreen(
     onTrackDownload: ((MediaMetadata, MusicQuality) -> Unit)? = null,
     onBack: () -> Unit,
     playlistSearchQuery: String = "",
+    showSearchEmptyState: Boolean = true,
     isPlaylistSearchActive: Boolean = false,
     onPlaylistSearchQueryChange: ((String) -> Unit)? = null,
     onPlaylistSearchActiveChange: (Boolean) -> Unit = {},
@@ -297,7 +298,7 @@ fun CommonSongListScreen(
                     selectionMode = selectionMode,
                     selectedTrackIds = selectedTrackIds,
                     onMoreClick = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
-                    emptyMessage = playlistSearchQuery.takeIf { it.isNotBlank() }
+                    emptyMessage = playlistSearchQuery.takeIf { showSearchEmptyState && it.isNotBlank() }
                         ?.let { "未找到匹配的歌曲" },
                 )
             }

@@ -6,7 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +23,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
@@ -30,6 +36,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
+import com.ljyh.mei.constants.NavigationBarHeight
+import com.ljyh.mei.constants.NavigationBarBottomMargin
 import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -86,36 +94,42 @@ internal fun HostAccountProbe(activity: ComponentActivity, initialRoute: String 
     val baseBackdrop = rememberCanvasBackdrop { drawRect(glassColors.groupedBackground) }
     val pageBackdrop = rememberLayerBackdrop()
     val overlayBackdrop = rememberSharedGlassBackdrop(baseBackdrop, pageBackdrop)
+    val selectionToolbar = remember { SelectionToolbarState() }
+    val pageInsets = if (selectionToolbar.content.value != null) {
+        WindowInsets.systemBars.add(WindowInsets(bottom = NavigationBarHeight))
+    } else WindowInsets.systemBars
     CompositionLocalProvider(
         LocalNavController provides navigator,
         LocalDatabase provides graph.database(),
         LocalPlayerConnection provides null,
-        LocalPlayerAwareWindowInsets provides WindowInsets.systemBars,
-        LocalSelectionToolbar provides remember { SelectionToolbarState() },
+        LocalPlayerAwareWindowInsets provides pageInsets,
+        LocalSelectionToolbar provides selectionToolbar,
         LocalGlassColors provides glassColors,
         LocalGlassBackdrop provides baseBackdrop,
         LocalBlurBackdrop provides overlayBackdrop,
     ) {
         // Record the rendered page for separate-window menus without letting page glass
         // sample itself. Match the production Activity's shared, screen-anchored backdrop.
-        Box(
-            Modifier.fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .graphicsLayer()
-                .layerBackdrop(pageBackdrop)
-                .trackBackdropPosition(pageBackdrop),
-        ) {
-            NavDisplay(
-                backStack = backStack,
-                onBack = { if (!navigator.popBackStack()) activity.finish() },
-                entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), decorator),
-                entryProvider = { key ->
-                    val route = (key as MeiRoute).route
-                    NavEntry(key, contentKey = route) {
-                        navigationEntry(route, TopAppBarDefaults.pinnedScrollBehavior(), isNavigationTab = route == initialRoute)
-                    }
-                },
-            )
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Box(Modifier.fillMaxSize().graphicsLayer().layerBackdrop(pageBackdrop).trackBackdropPosition(pageBackdrop)) {
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { if (!navigator.popBackStack()) activity.finish() },
+                    entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), decorator),
+                    entryProvider = { key ->
+                        val route = (key as MeiRoute).route
+                        NavEntry(key, contentKey = route) {
+                            navigationEntry(route, TopAppBarDefaults.pinnedScrollBehavior(), isNavigationTab = route == initialRoute)
+                        }
+                    },
+                )
+            }
+            selectionToolbar.content.value?.let { toolbar ->
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp)
+                    .padding(bottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding() + NavigationBarBottomMargin)) {
+                    CompositionLocalProvider(LocalGlassBackdrop provides overlayBackdrop) { toolbar() }
+                }
+            }
         }
     }
 }

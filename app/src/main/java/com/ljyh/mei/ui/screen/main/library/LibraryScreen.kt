@@ -120,7 +120,6 @@ fun LibraryScreen(
                         LibraryPage.Playlists -> state.playlistsError ?: (state.albums as? Resource.Error)?.message
                         else -> null
                     },
-                    onRefresh = viewModel::refresh,
                 )
             }
 

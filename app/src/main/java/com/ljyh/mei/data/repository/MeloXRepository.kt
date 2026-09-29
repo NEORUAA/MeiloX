@@ -50,6 +50,7 @@ import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
+import com.ljyh.mei.parasite.HostSessionStamp
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
@@ -102,31 +103,32 @@ class MeloXRepository @Inject constructor(
     @Named("MeloXWeapi") private val weapi: MeloXDirectService,
     @ApplicationContext private val context: Context,
     @Named("CloudUploadClient") private val cloudUploadClient: OkHttpClient,
-) {
-    suspend fun podcastHome(): PodcastHome = coroutineScope {
+) : PodcastSource {
+    override suspend fun podcastHome(session: HostSessionStamp): PodcastHome = coroutineScope {
         val categories = async {
-            request("/api/djradio/category/get").array("categories").mapNotNull(::parsePodcastCategory)
+            request("/api/djradio/category/get", session = session).array("categories").mapNotNull(::parsePodcastCategory)
         }
         val featured = async {
-            request("/api/djradio/recommend/v1").array("djRadios").mapNotNull(::parsePodcast)
+            request("/api/djradio/recommend/v1", session = session).array("djRadios").mapNotNull(::parsePodcast)
         }
         val personalized = async {
-            request("/api/djradio/personalize/rcmd", mapOf("limit" to 12))
+            request("/api/djradio/personalize/rcmd", mapOf("limit" to 12), session)
                 .array("data").mapNotNull(::parsePodcast)
         }
         PodcastHome(categories.await(), featured.await(), personalized.await())
     }
 
-    suspend fun podcasts(categoryId: Long, offset: Int = 0, limit: Int = 30): List<Podcast> =
+    override suspend fun podcasts(session: HostSessionStamp, categoryId: Long, offset: Int, limit: Int): List<Podcast> =
         request(
             "/api/djradio/hot",
             mapOf("cateId" to categoryId, "offset" to offset, "limit" to limit.coerceIn(1, 50)),
+            session,
         ).array("djRadios").mapNotNull(::parsePodcast)
 
-    suspend fun podcastDetail(id: Long, offset: Int = 0, limit: Int = 50): PodcastDetail =
+    override suspend fun podcastDetail(session: HostSessionStamp, id: Long, offset: Int, limit: Int): PodcastDetail =
         coroutineScope {
-            val podcastResponse = async { request("/api/djradio/v2/get", mapOf("id" to id)) }
-            val programsResponse = async { podcastPrograms(id, offset, limit) }
+            val podcastResponse = async { request("/api/djradio/v2/get", mapOf("id" to id), session) }
+            val programsResponse = async { podcastPrograms(session, id, offset, limit) }
             val podcast = parsePodcast(podcastResponse.await().objectOrNull("data"))
                 ?: error("Podcast $id was not returned by NetEase")
             val programs = programsResponse.await()
@@ -135,13 +137,15 @@ class MeloXRepository @Inject constructor(
                 programs = programs.programs,
                 hasMore = programs.hasMore,
                 totalCount = programs.totalCount,
+                nextOffset = offset + programs.fetchedCount,
             )
         }
 
-    suspend fun podcastPrograms(id: Long, offset: Int = 0, limit: Int = 50): PodcastProgramPage {
+    override suspend fun podcastPrograms(session: HostSessionStamp, id: Long, offset: Int, limit: Int): PodcastProgramPage {
         val response = request(
             "/api/dj/program/byradio",
             mapOf("radioId" to id, "offset" to offset, "limit" to limit.coerceIn(1, 50), "asc" to false),
+            session,
         )
         val programs = response.array("programs").mapNotNull(::parseProgram)
         val totalCount = response.int("count") ?: (offset + programs.size)
@@ -149,13 +153,16 @@ class MeloXRepository @Inject constructor(
             programs = programs,
             hasMore = response.boolean("more") ?: (offset + programs.size < totalCount),
             totalCount = totalCount,
+            fetchedCount = response.array("programs").size,
         )
     }
 
-    suspend fun subscribedPodcasts(offset: Int = 0, limit: Int = 50): PodcastPage {
+    override suspend fun subscribedPodcasts(session: HostSessionStamp, offset: Int, limit: Int): PodcastPage {
+        check(session.identity.authenticated) { "Official sign-in required" }
         val response = request(
             "/api/djradio/get/subed",
             mapOf("offset" to offset, "limit" to limit.coerceIn(1, 100), "total" to true),
+            session,
         )
         val podcasts = response.array("djRadios").mapNotNull(::parsePodcast)
         val totalCount = response.int("count") ?: response.int("total") ?: (offset + podcasts.size)
@@ -164,6 +171,7 @@ class MeloXRepository @Inject constructor(
             hasMore = response.boolean("hasMore")
                 ?: response.boolean("more")
                 ?: (offset + podcasts.size < totalCount),
+            fetchedCount = response.array("djRadios").size,
             totalCount = totalCount,
         )
     }
@@ -329,8 +337,9 @@ class MeloXRepository @Inject constructor(
         }
     }
 
-    suspend fun setPodcastSubscribed(id: Long, subscribed: Boolean) {
-        request(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", mapOf("id" to id))
+    override suspend fun setPodcastSubscribed(session: HostSessionStamp, id: Long, subscribed: Boolean) {
+        check(session.identity.authenticated) { "Official sign-in required" }
+        request(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", mapOf("id" to id), session)
     }
 
     suspend fun setArtistFollowed(id: Long, followed: Boolean) {
@@ -858,8 +867,9 @@ class MeloXRepository @Inject constructor(
         requestEapi("/api/listen/together/end/v2", mapOf("roomId" to roomId))
     }
 
-    private suspend fun request(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
-        validate(weapi.post(path, body))
+    private suspend fun request(
+        path: String, body: Map<String, Any> = emptyMap(), session: HostSessionStamp? = null,
+    ): JsonObject = validate(weapi.post(path, body, expectedSession = session))
 
     private suspend fun requestEapi(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
         validate(eapi.post(path, body))

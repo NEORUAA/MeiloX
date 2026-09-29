@@ -135,6 +135,46 @@ class HostCallFactoryTest {
         response.use { assertThrows(HostSessionChangedException::class.java) { it.body!!.string() } }
     }
 
+    @Test fun expectedSessionTagsRejectAnActionBeforeItsCallIsCreated() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(MeloXDirectService::class.java)
+        val owner = bridge.sessions.snapshot()
+        bridge.sessions.invalidate()
+        val failure = runCatching {
+            service.post("/api/djradio/sub", mapOf("id" to 1), expectedSession = owner)
+        }.exceptionOrNull()
+        assertTrue(failure is HostSessionChangedException)
+        assertEquals(0, backend.executions.get())
+    }
+
+    @Test fun expectedSessionTagsAreTransportMetadataNotBusinessParameters() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(MeloXDirectService::class.java)
+        val owner = bridge.sessions.snapshot()
+        service.post("/api/djradio/sub", mapOf("id" to 1), expectedSession = owner)
+        assertEquals("djradio/sub", backend.path)
+        assertEquals(mapOf("id" to "1"), backend.parameters)
+        assertEquals(1, backend.executions.get())
+    }
+
+    @Test fun expectedSessionTagsRemainBoundAcrossQueuedExecutionAndClone() {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val request = post().newBuilder().tag(HostSessionStamp::class.java, bridge.sessions.snapshot()).build()
+        var queued: Runnable? = null
+        val call = HostCallFactory(bridge, Executor { queued = it }).newCall(request)
+        val copy = call.clone()
+        val callback = ResultCallback()
+        call.enqueue(callback)
+        bridge.sessions.invalidate()
+        queued!!.run()
+        assertEquals(1, callback.failures)
+        assertThrows(HostSessionChangedException::class.java) { copy.execute() }
+        assertEquals(0, backend.executions.get())
+    }
+
     @Test fun queuedCancellationDeliversExactlyOneFailure() {
         val backend = Backend()
         var queued: Runnable? = null

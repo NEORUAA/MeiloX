@@ -72,7 +72,7 @@ class HostCallFactory internal constructor(
                 }
             }
         }
-        return HostCall(request, bridge.newCall(path, parameters))
+        return HostCall(request, bridge.newCall(path, parameters, request.tag(HostSessionStamp::class.java)))
     }
 
     private inner class HostCall(

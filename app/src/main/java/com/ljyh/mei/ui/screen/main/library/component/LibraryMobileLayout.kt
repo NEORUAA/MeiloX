@@ -76,7 +76,6 @@ import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.glass.IosActionSheetContent
 import com.ljyh.mei.ui.glass.GlassSearchBar
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosModalSheet
@@ -189,7 +188,6 @@ fun LibraryMobileLayout(
     isCategoryPage: Boolean = false,
     isRefreshing: Boolean = false,
     error: String? = null,
-    onRefresh: (() -> Unit)? = null,
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -203,7 +201,7 @@ fun LibraryMobileLayout(
     val podcastViewModel: PodcastViewModel? = if (selectedPage == LibraryPage.Podcasts) viewModel() else null
     val podcastState = podcastViewModel?.state?.collectAsState()?.value
     LaunchedEffect(podcastViewModel) {
-        podcastViewModel?.ensureSubscriptionsLoaded()
+        podcastViewModel?.refreshSubscriptions()
     }
     val cloudViewModel: CloudMusicViewModel? = if (selectedPage == LibraryPage.Cloud) viewModel() else null
     val cloudState = cloudViewModel?.state?.collectAsState()?.value
@@ -290,12 +288,6 @@ fun LibraryMobileLayout(
         collapseProgress = collapseProgress,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            if (onRefresh != null && selectedPage in listOf(LibraryPage.Songs, LibraryPage.Playlists)) {
-                GlassIconButton(onClick = onRefresh, enabled = !isRefreshing) {
-                    if (isRefreshing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-                }
-            }
             if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) { contentPadding ->
@@ -681,6 +673,11 @@ private fun LazyListScope.libraryPodcastItems(
             podcast.description.containsQuery(query) ||
             podcast.recommendation.containsQuery(query)
     }
+    if (state.subscriptionsError != null) {
+        item(key = "library-podcast-refresh-error") {
+            Text(state.subscriptionsError, color = LocalGlassColors.current.secondaryContent)
+        }
+    }
     if (!state.subscriptionsLoaded && state.subscriptionsError == null) {
         item(key = "library-podcast-loading") {
             Box(Modifier.fillMaxWidth()) {
@@ -725,11 +722,11 @@ private fun LazyListScope.libraryPodcastItems(
                 )
             }
         }
-    } else if (!state.isSubscriptionsLoading) {
+    } else if (state.subscriptionsLoaded && !state.isSubscriptionsLoading && state.subscriptionsError == null) {
         item(key = "library-podcast-empty") {
             EmptyState(
                 if (query.isNotEmpty()) stringResource(R.string.no_search_results)
-                else state.subscriptionsError ?: stringResource(R.string.podcast_empty_subscriptions),
+                else stringResource(R.string.podcast_empty_subscriptions),
                 SfSymbol.Microphone,
             )
         }

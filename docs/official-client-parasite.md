@@ -4,6 +4,8 @@
 
 - Work only on `official_client_parasite`; commit verified increments locally without pushing.
 - Keep the complete MeiloX UI, playback engine, AutoMix, effects, visualization, and feature set.
+- Preserve the original page architecture, navigation, layout, controls, and interactions;
+  adapt host dependencies underneath them. Debug page carriers are not a replacement UI.
 - Run the UI inside the selected official host process through modern libxposed API 102.
 - Use `com.neoruaa.meilox.parasite` for the module APK; preserve the standalone installation.
 - Let the host own authentication, credentials, signing, and NetEase business transport.
@@ -682,6 +684,66 @@ Verification on 2026-09-29:
   migration. The tested TV process had no crash-buffer entries. Raw images/video stay
   outside Git. This is page-menu visual acceptance, not production player-glass acceptance.
 
+### Session-Owned Podcast Browsing
+
+The existing Podcast pages now use official session identity instead of a module Cookie
+preference. Discovery, categories, subscriptions, detail, and program pages retain their
+existing repositories, models, layouts, and controls.
+
+- Each podcast operation carries its captured `HostSessionStamp` through a Retrofit
+  request tag. The host bridge rejects an obsolete owner before creating or executing
+  the call, including queued and cloned calls. The tag is not serialized into headers
+  or business parameters and contains no credentials.
+- ViewModels synchronously invalidate account-owned state, cancel obsolete work, and
+  guard publication across refresh, account changes, and same-account reauthorization.
+  Recovery failures become errors instead of indefinite loading. Subscription mutation
+  rollback cannot undo a newer reload or erase concurrently appended program rows.
+- Pagination advances by raw response count rather than deduplicated display count.
+  Non-advancing pages fail explicitly. Full-program search/bulk loading only caches a
+  complete result and does not retry automatically after a business failure.
+- Detail search, selection, and pending bulk state are scoped to the official session.
+  Failed search no longer claims an empty match set; it uses the existing error/retry
+  surface. Subscription writes and production playback/download still need acceptance.
+
+Verification on 2026-09-29:
+
+- Debug assembly and all 377 unit tests passed, with no failures, errors, or skips.
+  Nineteen podcast tests cover identity, guest access, raw pagination, cancellation,
+  stale results, mutation ownership/rollback, cache invalidation, recovery, and partial
+  bulk failure. Three transport tests cover expected-session tags and queued/cloned calls.
+- AVD discovery, category switching, real covers, authenticated subscription empty state,
+  and podcast detail rows rendered through the original pages in the TV process. An
+  offline subscription request displayed a transport error; restoring connectivity and
+  retrying recovered the genuine empty subscription state. No subscription was changed.
+- A 792-episode podcast rendered its initial rows. Single-row selection and Done worked.
+  Full select-all/search met the official rate-limit response and testing stopped; these
+  operations are not accepted as complete on-device. Failure/retry pagination is covered
+  with controlled substitutes, not claimed as a successful full 792-episode fetch.
+- Module Cookie/user-ID preferences remained absent. Airplane mode is `0`, Wi-Fi `1`,
+  and mobile data `1`. No real account changes, downloads, or social writes were made.
+- The first launch immediately after the final APK replacement hit a process-attach
+  timeout before any new module event. One subsequent launch succeeded with the official
+  session intact and no crash-buffer entries for that process. The timeout's root cause
+  is not established; repeated update/cold-start stability remains a separate gate.
+
+### Original UI Contract Recheck
+
+The user explicitly reaffirmed that the original MeiloX UI/UX and page architecture must
+remain unchanged. The extra top-level refresh actions introduced during Library/Podcast
+migration were removed. Original navigation entries, page components, search, tabs, menus,
+and detail actions are retained; this is host adaptation, not a page redesign.
+
+The debug carrier supplied `LocalSelectionToolbar` but omitted the original toolbar's
+rendering slot. It now renders that same content with the production Activity's alignment,
+spacing, bottom inset, and shared backdrop. The toolbar remains outside its sampled page
+layer to avoid glass feedback. No new selection controls or material parameters were added.
+
+AVD screenshots verified the original top-bar actions, the corrected Library song-menu
+blur, and the restored original selection toolbar. The debug carrier still opens individual
+routes and has no production player connection; it must not be mistaken for the final
+application shell. Production takeover must reuse the original full navigation/player
+composition. This recheck does not complete stage 2, stage 4, or stage 6.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -708,7 +770,7 @@ Verification on 2026-09-29:
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, and Library collection reads passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
-| 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
+| 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 
 Do not advance to the broad frontend migration until the Activity/resource/service

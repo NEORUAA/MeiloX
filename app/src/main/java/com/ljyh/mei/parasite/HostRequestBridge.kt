@@ -38,13 +38,19 @@ class HostRequestBridge @Inject constructor(val sessions: HostSessionBridge) {
         this.backend = backend
     }
 
-    fun newCall(path: String, parameters: Map<String, String> = emptyMap()): Call {
+    fun newCall(
+        path: String,
+        parameters: Map<String, String> = emptyMap(),
+        expectedSession: HostSessionStamp? = null,
+    ): Call {
         require(PATH.matches(path) && path.split('/').none { it.isEmpty() || it == "." || it == ".." }) {
             "Expected a relative official business path"
         }
         require(parameters.keys.none { it.lowercase() in AUTH_PARAMETERS }) { "Authentication parameters belong to the host" }
         val transport = backend ?: throw IOException("Official request transport is not ready")
-        return Call(transport, path, parameters.toMap(), sessions.snapshot())
+        val stamp = expectedSession ?: sessions.snapshot()
+        sessions.requireCurrent(stamp)
+        return Call(transport, path, parameters.toMap(), stamp)
     }
 
     inner class Call internal constructor(

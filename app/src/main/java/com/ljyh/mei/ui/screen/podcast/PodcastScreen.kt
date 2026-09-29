@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -52,7 +53,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.Podcast
 import com.ljyh.mei.data.model.melox.PodcastProgram
@@ -88,8 +88,7 @@ fun PodcastScreen(
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current
     val bottomPadding = insets.asPaddingValues().calculateBottomPadding()
-    val cookie by rememberPreference(CookieKey, defaultValue = "")
-    val isVisitor = cookie.isBlank()
+    val isVisitor = !state.authenticated
     val listState = rememberLazyListState()
     val colors = LocalGlassColors.current
     val pageBackground = if (state.selectedTab == PodcastTab.Subscriptions || colors.isDark) {
@@ -98,9 +97,9 @@ fun PodcastScreen(
         Color.White
     }
 
-    LaunchedEffect(state.selectedTab, isVisitor) {
+    LaunchedEffect(state.selectedTab, state.session) {
         if (state.selectedTab == PodcastTab.Subscriptions && !isVisitor) {
-            viewModel.ensureSubscriptionsLoaded()
+            viewModel.refreshSubscriptions()
         }
     }
     LaunchedEffect(listState, state.selectedTab) {
@@ -145,8 +144,12 @@ fun PodcastScreen(
         if (state.selectedTab == PodcastTab.Discover) {
             if (state.isLoading && state.home == null) {
                 item(key = "podcast-loading") { InlineLoadingState() }
-            } else if (state.error != null && state.home == null) {
-                item(key = "podcast-error") { InlineErrorState(state.error, viewModel::refresh) }
+            } else if (state.error != null) {
+                item(key = "podcast-error") {
+                    InlineErrorState(state.error) {
+                        if (state.session == null) Screen.NeteaseLogin.navigate(navController) else viewModel.refresh()
+                    }
+                }
             }
             state.home?.categories?.takeIf(List<*>::isNotEmpty)?.let { categories ->
                 item {
@@ -182,7 +185,16 @@ fun PodcastScreen(
                 }
             }
         } else {
+            if (state.subscriptionsError != null && state.subscriptionsLoaded) {
+                item(key = "podcast-subscriptions-refresh-error") {
+                    InlineErrorState(state.subscriptionsError, viewModel::refreshSubscriptions)
+                }
+            }
             when {
+                state.session == null && state.subscriptionsError != null -> item(key = "podcast-session-error") {
+                    InlineErrorState(state.subscriptionsError) { Screen.NeteaseLogin.navigate(navController) }
+                }
+                state.session == null -> item(key = "podcast-session-loading") { InlineLoadingState() }
                 isVisitor -> item(key = "podcast-subscriptions-sign-in") {
                     PodcastSubscriptionsEmptyState(
                         title = stringResource(R.string.podcast_subscriptions_sign_in),
@@ -199,7 +211,7 @@ fun PodcastScreen(
                         InlineErrorState(state.subscriptionsError) { viewModel.refresh() }
                     }
                 }
-                state.subscribedPodcasts.isEmpty() -> item(key = "podcast-subscriptions-empty") {
+                state.subscribedPodcasts.isEmpty() && state.subscriptionsError == null -> item(key = "podcast-subscriptions-empty") {
                     PodcastSubscriptionsEmptyState(
                         title = stringResource(R.string.podcast_empty_subscriptions),
                         description = stringResource(R.string.podcast_empty_subscriptions_description),
@@ -371,6 +383,14 @@ fun PodcastDetailScreen(
     viewModel: PodcastDetailViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    LaunchedEffect(id) { viewModel.load(id) }
+    key(id, state.session) {
+        PodcastDetailContent(id, viewModel, state)
+    }
+}
+
+@Composable
+private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, state: PodcastDetailUiState) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -388,9 +408,9 @@ fun PodcastDetailScreen(
     var preparingDownload by remember(id) { mutableStateOf(false) }
     val downloadPath by rememberPreference(com.ljyh.mei.constants.DownloadPathKey, com.ljyh.mei.utils.DownloadManager.getDefaultDownloadPath())
     val downloadQuality by com.ljyh.mei.utils.rememberEnumPreference(com.ljyh.mei.constants.DownloadQualityKey, com.ljyh.mei.constants.DownloadQuality.EXHIGH)
-    LaunchedEffect(id) { viewModel.load(id) }
     LaunchedEffect(id, query, state.isLoading) {
         searchError = null
+        searchResults = emptyList()
         if (query.isBlank() || state.isLoading || detail == null) {
             searching = false
             return@LaunchedEffect
@@ -402,7 +422,7 @@ fun PodcastDetailScreen(
                 .filter { it.matchesPlaylistSearch(query) }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
-        } catch (error: Exception) { searchError = error.message }
+        } catch (error: Exception) { searchError = error.message ?: context.getString(R.string.load_failed) }
         finally { searching = false }
     }
     LaunchedEffect(id, listState, query) {
@@ -466,12 +486,16 @@ fun PodcastDetailScreen(
         },
         onDownload = { prepareDownload(ids = selection.ids) },
     )
+    val onSubscribe = {
+        if (state.session?.identity?.authenticated == true) viewModel.toggleSubscription()
+        else Screen.NeteaseLogin.navigate(navController)
+    }
     val menu = detailMenuItems(
         downloadTitle = stringResource(R.string.detail_podcast_download_all, count),
         subscriptionTitle = stringResource(if (detail?.podcast?.isSubscribed == true) R.string.detail_podcast_unsubscribe else R.string.podcast_subscribe),
         subscribed = detail?.podcast?.isSubscribed == true,
         onDownload = { prepareDownload(it) }, onSelect = selection::start,
-        onSubscribe = viewModel::toggleSubscription,
+        onSubscribe = onSubscribe,
         onRefresh = { selection.finish(); viewModel.load(id, true) },
     )
     fun play(trackId: Long? = null, shuffle: Boolean = false) {
@@ -496,7 +520,7 @@ fun PodcastDetailScreen(
         onPlayAll = { play() }, onShufflePlay = { play(shuffle = true) },
         headerActionIcon = Icons.Default.Add,
         headerActionLabel = stringResource(if (detail?.podcast?.isSubscribed == true) R.string.detail_podcast_unsubscribe else R.string.podcast_subscribe),
-        onHeaderAction = viewModel::toggleSubscription,
+        onHeaderAction = onSubscribe,
         onTrackClick = { track, _ ->
             if (selection.active) { if (track.id > 0) selection.toggle(track.id.toString()) }
             else if (track.id > 0) {
@@ -511,12 +535,17 @@ fun PodcastDetailScreen(
         detailMenu = menu, detailMenuTitle = stringResource(R.string.detail_podcast_menu),
         selectionMode = selection.active, selectedTrackIds = selection.ids, onSelectionDone = selection::finish,
         playlistSearchQuery = query, isPlaylistSearchActive = searchActive,
+        showSearchEmptyState = searchError == null && state.error == null,
         onPlaylistSearchQueryChange = { query = it },
         onPlaylistSearchActiveChange = { searchActive = it; if (!it) query = "" },
         onBack = { navController.navigateUp() },
         footer = {
             (searchError ?: state.error)?.let { error ->
-                item(key = "podcast-detail-error") { InlineErrorState(error) { viewModel.load(id, true) } }
+                item(key = "podcast-detail-error") {
+                    InlineErrorState(error) {
+                        if (state.session == null) Screen.NeteaseLogin.navigate(navController) else viewModel.load(id, true)
+                    }
+                }
             }
             if (query.isBlank() && (detail?.hasMore == true || state.isLoadingMore || state.loadMoreError != null)) {
                 item(key = "podcast-program-pagination") {

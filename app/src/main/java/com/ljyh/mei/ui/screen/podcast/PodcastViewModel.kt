@@ -5,18 +5,30 @@ import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.melox.Podcast
 import com.ljyh.mei.data.model.melox.PodcastDetail
 import com.ljyh.mei.data.model.melox.PodcastHome
+import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.data.repository.PodcastSource
+import com.ljyh.mei.parasite.HostAccountStore
+import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.parasite.HostSessionStamp
+import java.util.concurrent.atomic.AtomicLong
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-enum class PodcastTab {
-    Discover,
-    Subscriptions,
-}
+enum class PodcastTab { Discover, Subscriptions }
 
 data class PodcastUiState(
+    val session: HostSessionStamp? = null,
     val isLoading: Boolean = true,
     val home: PodcastHome? = null,
     val selectedCategoryId: Long? = null,
@@ -29,11 +41,15 @@ data class PodcastUiState(
     val isLoadingMoreSubscriptions: Boolean = false,
     val hasMoreSubscriptions: Boolean = false,
     val subscriptionTotalCount: Int = 0,
+    val subscriptionOffset: Int = 0,
     val subscriptionsError: String? = null,
     val subscriptionsLoadMoreError: String? = null,
-)
+) {
+    val authenticated: Boolean get() = session?.identity?.authenticated == true
+}
 
 data class PodcastDetailUiState(
+    val session: HostSessionStamp? = null,
     val isLoading: Boolean = true,
     val detail: PodcastDetail? = null,
     val error: String? = null,
@@ -42,263 +58,388 @@ data class PodcastDetailUiState(
     val isUpdatingSubscription: Boolean = false,
 )
 
-class PodcastViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class PodcastViewModel internal constructor(
+    private val repository: PodcastSource,
+    private val accounts: HostAccountStore,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(PodcastUiState())
-    val state = _state.asStateFlow()
+    @Inject constructor(repository: MeloXRepository, accounts: HostAccountStore) : this(repository as PodcastSource, accounts)
 
-    init {
-        refresh()
-    }
-
-    fun selectTab(tab: PodcastTab) {
-        if (_state.value.selectedTab == tab) return
-        _state.value = _state.value.copy(selectedTab = tab)
-        if (tab == PodcastTab.Discover && _state.value.home == null) refreshDiscover()
-    }
-
-    fun refresh() {
-        if (_state.value.selectedTab == PodcastTab.Subscriptions) {
-            loadSubscriptions(reset = true)
-        } else {
-            refreshDiscover()
+    private val mutableState = MutableStateFlow(PodcastUiState())
+    val state = mutableState.asStateFlow()
+    private val stateLock = Any()
+    private val discoveryVersion = AtomicLong()
+    private val subscriptionVersion = AtomicLong()
+    private var discoveryJob: Job? = null
+    private var subscriptionJob: Job? = null
+    private var subscriptionsRequested = false
+    private val invalidation = accounts.sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if ((state.value.session?.generation ?: -1) < revision) {
+                discoveryVersion.incrementAndGet()
+                subscriptionVersion.incrementAndGet()
+                mutableState.value = pendingState()
+            }
         }
     }
 
-    private fun refreshDiscover() {
+    init {
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, error = null)
-            runCatching { repository.podcastHome() }
-                .onSuccess {
-                    _state.value = _state.value.copy(
-                        isLoading = false,
-                        home = it,
-                        selectedCategoryId = null,
-                        categoryPodcasts = emptyList(),
-                        error = null,
-                    )
+            combine(accounts.sessions.changes, accounts.sessions.recoveryRequired) { _, _ -> Unit }.collect {
+                val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
+                if (stamp == null) {
+                    discoveryJob?.cancel()
+                    subscriptionJob?.cancel()
+                    synchronized(stateLock) {
+                        discoveryVersion.incrementAndGet()
+                        subscriptionVersion.incrementAndGet()
+                        mutableState.value = pendingState()
+                    }
+                } else if (state.value.session != stamp) {
+                    discoveryJob?.cancel()
+                    subscriptionJob?.cancel()
+                    refreshDiscover()
+                    if (subscriptionsRequested || state.value.selectedTab == PodcastTab.Subscriptions) loadSubscriptions(true)
                 }
-                .onFailure { _state.value = _state.value.copy(isLoading = false, error = it.message) }
+            }
+        }
+    }
+
+    fun selectTab(tab: PodcastTab) {
+        mutableState.update { it.copy(selectedTab = tab) }
+        if (tab == PodcastTab.Subscriptions) ensureSubscriptionsLoaded()
+        else if (state.value.home == null) refreshDiscover()
+    }
+
+    fun refresh() {
+        if (state.value.selectedTab == PodcastTab.Subscriptions) refreshSubscriptions() else refreshDiscover()
+    }
+
+    fun refreshSubscriptions() {
+        subscriptionsRequested = true
+        if (state.value.isSubscriptionsLoading) return
+        loadSubscriptions(true)
+    }
+
+    private fun refreshDiscover() {
+        val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull() ?: return
+        discoveryJob?.cancel()
+        val version = prepare(stamp, discoveryVersion) { it.copy(isLoading = true, error = null, selectedCategoryId = null) } ?: return
+        discoveryJob = viewModelScope.launch {
+            perform(stamp, discoveryVersion, version, { repository.podcastHome(stamp) },
+                success = { current, home -> current.copy(isLoading = false, home = home, categoryPodcasts = emptyList()) },
+                failure = { current, error -> current.copy(isLoading = false, error = error) },
+            )
         }
     }
 
     fun selectCategory(id: Long?) {
-        if (id == null) {
-            _state.value = _state.value.copy(
-                isLoading = false,
-                selectedCategoryId = null,
-                categoryPodcasts = emptyList(),
-                error = null,
+        val stamp = state.value.session ?: return
+        discoveryJob?.cancel()
+        val version = prepare(stamp, discoveryVersion) {
+            it.copy(isLoading = id != null, selectedCategoryId = id, categoryPodcasts = emptyList(), error = null)
+        } ?: return
+        if (id == null) return
+        discoveryJob = viewModelScope.launch {
+            perform(stamp, discoveryVersion, version, { repository.podcasts(stamp, id) },
+                success = { current, podcasts -> current.copy(isLoading = false, categoryPodcasts = podcasts) },
+                failure = { current, error -> current.copy(isLoading = false, error = error) },
             )
-            return
-        }
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, selectedCategoryId = id, error = null)
-            runCatching { repository.podcasts(id) }
-                .onSuccess { podcasts ->
-                    if (_state.value.selectedCategoryId == id) {
-                        _state.value = _state.value.copy(isLoading = false, categoryPodcasts = podcasts)
-                    }
-                }
-                .onFailure { error ->
-                    if (_state.value.selectedCategoryId == id) {
-                        _state.value = _state.value.copy(isLoading = false, error = error.message)
-                    }
-                }
         }
     }
 
     fun ensureSubscriptionsLoaded() {
-        val state = _state.value
-        if (!state.subscriptionsLoaded && !state.isSubscriptionsLoading) {
-            loadSubscriptions(reset = true)
-        }
+        subscriptionsRequested = true
+        if (!state.value.subscriptionsLoaded && !state.value.isSubscriptionsLoading) loadSubscriptions(true)
     }
 
     fun loadMoreSubscriptions() {
-        val state = _state.value
-        if (!state.subscriptionsLoaded || !state.hasMoreSubscriptions ||
-            state.isSubscriptionsLoading || state.isLoadingMoreSubscriptions
-        ) return
-        loadSubscriptions(reset = false)
+        val current = state.value
+        if (!current.subscriptionsLoaded || !current.hasMoreSubscriptions ||
+            current.isSubscriptionsLoading || current.isLoadingMoreSubscriptions) return
+        loadSubscriptions(false)
     }
 
     private fun loadSubscriptions(reset: Boolean) {
-        val current = _state.value
-        if (current.isSubscriptionsLoading || current.isLoadingMoreSubscriptions) return
-        viewModelScope.launch {
-            _state.value = if (reset) {
-                _state.value.copy(
-                    isSubscriptionsLoading = true,
-                    subscriptionsError = null,
-                    subscriptionsLoadMoreError = null,
-                )
-            } else {
-                _state.value.copy(
-                    isLoadingMoreSubscriptions = true,
-                    subscriptionsLoadMoreError = null,
-                )
-            }
-            val offset = if (reset) 0 else _state.value.subscribedPodcasts.size
-            runCatching { repository.subscribedPodcasts(offset = offset) }
-                .onSuccess { page ->
-                    val existing = if (reset) emptyList() else _state.value.subscribedPodcasts
+        val stamp = runCatching { accounts.requireAuthenticated() }.getOrNull() ?: return
+        subscriptionJob?.cancel()
+        val version = prepare(stamp, subscriptionVersion) {
+            it.copy(isSubscriptionsLoading = reset, isLoadingMoreSubscriptions = !reset,
+                subscriptionsError = null, subscriptionsLoadMoreError = null)
+        } ?: return
+        val offset = if (reset) 0 else state.value.subscriptionOffset
+        subscriptionJob = viewModelScope.launch {
+            perform(stamp, subscriptionVersion, version, { repository.subscribedPodcasts(stamp, offset) },
+                success = { current, page ->
+                    val existing = if (reset) emptyList() else current.subscribedPodcasts
                     val merged = appendUniquePodcasts(existing, page.podcasts)
-                    _state.value = _state.value.copy(
-                        subscribedPodcasts = merged,
-                        subscriptionsLoaded = true,
-                        isSubscriptionsLoading = false,
-                        isLoadingMoreSubscriptions = false,
-                        hasMoreSubscriptions = page.hasMore && merged.size > existing.size,
-                        subscriptionTotalCount = maxOf(page.totalCount, merged.size),
-                        subscriptionsError = null,
-                        subscriptionsLoadMoreError = null,
-                    )
-                }
-                .onFailure { error ->
-                    _state.value = if (reset) {
-                        _state.value.copy(
-                            subscriptionsLoaded = _state.value.subscribedPodcasts.isNotEmpty(),
-                            isSubscriptionsLoading = false,
-                            subscriptionsError = error.message,
-                        )
-                    } else {
-                        _state.value.copy(
-                            isLoadingMoreSubscriptions = false,
-                            subscriptionsLoadMoreError = error.message,
-                        )
+                    check(!page.hasMore || (page.fetchedCount > 0 && merged.size > existing.size)) {
+                        "Podcast pagination did not advance"
                     }
-                }
+                    current.copy(subscribedPodcasts = merged, subscriptionsLoaded = true,
+                        isSubscriptionsLoading = false, isLoadingMoreSubscriptions = false,
+                        hasMoreSubscriptions = page.hasMore, subscriptionOffset = offset + page.fetchedCount,
+                        subscriptionTotalCount = maxOf(page.totalCount, merged.size))
+                },
+                failure = { current, error ->
+                    if (reset) current.copy(isSubscriptionsLoading = false, subscriptionsError = error)
+                    else current.copy(isLoadingMoreSubscriptions = false, subscriptionsLoadMoreError = error)
+                },
+            )
         }
+    }
+
+    private fun pendingState(): PodcastUiState {
+        val error = if (accounts.sessions.recoveryRequired.value) "Official session recovery is required" else null
+        return PodcastUiState(selectedTab = state.value.selectedTab, isLoading = error == null,
+            error = error, subscriptionsError = error)
+    }
+
+    private fun prepare(stamp: HostSessionStamp, counter: AtomicLong, update: (PodcastUiState) -> PodcastUiState): Long? =
+        runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    val current = state.value.takeIf { it.session == stamp }
+                        ?: PodcastUiState(session = stamp, selectedTab = state.value.selectedTab)
+                    mutableState.value = update(current)
+                    counter.incrementAndGet()
+                }
+            }
+        }.getOrNull()
+
+    private fun publish(stamp: HostSessionStamp, counter: AtomicLong, version: Long, update: (PodcastUiState) -> PodcastUiState) {
+        accounts.sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (counter.get() == version) mutableState.update(update)
+            }
+        }
+    }
+
+    private suspend fun <T> perform(
+        stamp: HostSessionStamp, counter: AtomicLong, version: Long, load: suspend () -> T,
+        success: (PodcastUiState, T) -> PodcastUiState, failure: (PodcastUiState, String) -> PodcastUiState,
+    ) {
+        try {
+            accounts.sessions.requireCurrent(stamp)
+            val value = load()
+            currentCoroutineContext().ensureActive()
+            publish(stamp, counter, version) { success(it, value) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: HostSessionChangedException) {
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            runCatching { publish(stamp, counter, version) { failure(it, error.message ?: "Podcast request failed") } }
+        }
+    }
+
+    override fun onCleared() {
+        invalidation.close()
+        discoveryVersion.incrementAndGet()
+        subscriptionVersion.incrementAndGet()
+        super.onCleared()
     }
 }
 
-class PodcastDetailViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class PodcastDetailViewModel internal constructor(
+    private val repository: PodcastSource,
+    private val accounts: HostAccountStore,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(PodcastDetailUiState())
-    val state = _state.asStateFlow()
-    private var loadedId: Long? = null
-    private val allProgramsMutex = kotlinx.coroutines.sync.Mutex()
-    private var allProgramsCache: List<com.ljyh.mei.data.model.melox.PodcastProgram>? = null
-    private var generation = 0
+    @Inject constructor(repository: MeloXRepository, accounts: HostAccountStore) : this(repository as PodcastSource, accounts)
 
-    /** Reads every page for search and bulk actions without disturbing scroll pagination. */
-    suspend fun allPrograms(id: Long): List<com.ljyh.mei.data.model.melox.PodcastProgram> {
-        allProgramsMutex.lock()
-        try {
-            check(loadedId == id)
-            allProgramsCache?.let { return it }
-            val version = generation
-            val detail = checkNotNull(_state.value.detail)
-            var programs = detail.programs
-            var hasMore = detail.hasMore
-            while (hasMore) {
-                val page = repository.podcastPrograms(id, offset = programs.size)
-                val merged = appendUniquePrograms(programs, page.programs)
-                check(!page.hasMore || merged.size > programs.size) { "Podcast pagination did not advance" }
-                programs = merged
-                hasMore = page.hasMore
+    private val mutableState = MutableStateFlow(PodcastDetailUiState())
+    val state = mutableState.asStateFlow()
+    private val stateLock = Any()
+    private val generation = AtomicLong()
+    private var loadedId: Long? = null
+    private var loadJob: Job? = null
+    private var moreJob: Job? = null
+    private var subscriptionJob: Job? = null
+    private val allProgramsMutex = Mutex()
+    private var allProgramsCache: List<PodcastProgram>? = null
+    private val invalidation = accounts.sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if ((state.value.session?.generation ?: -1) < revision) {
+                generation.incrementAndGet()
+                allProgramsCache = null
+                mutableState.value = pendingState()
             }
-            if (loadedId != id || generation != version) throw kotlinx.coroutines.CancellationException("Podcast changed")
-            allProgramsCache = programs
-            return programs
-        } finally { allProgramsMutex.unlock() }
+        }
     }
 
+    init {
+        viewModelScope.launch {
+            combine(accounts.sessions.changes, accounts.sessions.recoveryRequired) { _, _ -> Unit }.collect {
+                val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
+                if (stamp == null) {
+                    loadJob?.cancel()
+                    moreJob?.cancel()
+                    subscriptionJob?.cancel()
+                    synchronized(stateLock) {
+                        generation.incrementAndGet()
+                        allProgramsCache = null
+                        mutableState.value = pendingState()
+                    }
+                } else if (state.value.session != stamp) loadedId?.let { load(it, true) }
+            }
+        }
+    }
+
+    /** Reads every page for search and bulk actions without disturbing scroll pagination. */
+    suspend fun allPrograms(id: Long): List<PodcastProgram> = allProgramsMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        val stamp = checkNotNull(state.value.session)
+        val (version, detail, cached) = accounts.sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (loadedId != id || state.value.session != stamp) throw CancellationException("Podcast changed")
+                Triple(generation.get(), checkNotNull(state.value.detail), allProgramsCache)
+            }
+        }
+        cached?.let { return@withLock it }
+        var programs = detail.programs
+        var hasMore = detail.hasMore
+        var offset = detail.nextOffset
+        while (hasMore) {
+            currentCoroutineContext().ensureActive()
+            checkCurrent(stamp, version, id)
+            val page = repository.podcastPrograms(stamp, id, offset)
+            checkCurrent(stamp, version, id)
+            val merged = appendUniquePrograms(programs, page.programs)
+            check(!page.hasMore || (page.fetchedCount > 0 && merged.size > programs.size)) { "Podcast pagination did not advance" }
+            programs = merged
+            hasMore = page.hasMore
+            offset += page.fetchedCount
+        }
+        currentCoroutineContext().ensureActive()
+        accounts.sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (generation.get() != version || loadedId != id) throw CancellationException("Podcast changed")
+                allProgramsCache = programs
+            }
+        }
+        programs
+    }
 
     fun load(id: Long, force: Boolean = false) {
-        if (!force && loadedId == id && _state.value.detail != null) return
-        generation++
-        val requestGeneration = generation
-        allProgramsCache = null
-        val changesPodcast = loadedId != id
+        val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
         loadedId = id
-        viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isLoading = true,
-                detail = if (changesPodcast) null else _state.value.detail,
-                error = null,
-                isLoadingMore = false,
-                loadMoreError = null,
+        if (stamp == null) return
+        if (!force && state.value.session == stamp && state.value.detail?.podcast?.id == id) return
+        loadJob?.cancel()
+        moreJob?.cancel()
+        subscriptionJob?.cancel()
+        val version = runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    val previous = state.value
+                    allProgramsCache = null
+                    mutableState.value = PodcastDetailUiState(session = stamp,
+                        detail = previous.detail.takeIf { previous.session == stamp && it?.podcast?.id == id && !previous.isUpdatingSubscription })
+                    generation.incrementAndGet()
+                }
+            }
+        }.getOrNull() ?: return
+        loadJob = viewModelScope.launch {
+            perform(stamp, version, id, { repository.podcastDetail(stamp, id) },
+                success = { _, detail ->
+                    check(!detail.hasMore || detail.nextOffset > 0) { "Podcast pagination did not advance" }
+                    PodcastDetailUiState(session = stamp, isLoading = false,
+                        detail = detail.copy(programs = appendUniquePrograms(emptyList(), detail.programs)))
+                },
+                failure = { current, error -> current.copy(isLoading = false, error = error) },
             )
-            runCatching { repository.podcastDetail(id) }
-                .onSuccess {
-                    if (loadedId == id && generation == requestGeneration) {
-                        _state.value = PodcastDetailUiState(isLoading = false, detail = it)
-                    }
-                }
-                .onFailure { error ->
-                    if (loadedId == id && generation == requestGeneration) {
-                        _state.value = _state.value.copy(isLoading = false, error = error.message)
-                    }
-                }
         }
     }
 
     fun loadMore() {
-        val current = _state.value
+        val current = state.value
         val detail = current.detail ?: return
+        val stamp = current.session ?: return
         if (!detail.hasMore || current.isLoading || current.isLoadingMore) return
-        val requestGeneration = generation
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoadingMore = true, loadMoreError = null)
-            runCatching {
-                repository.podcastPrograms(
-                    id = detail.podcast.id,
-                    offset = detail.programs.size,
-                )
-            }.onSuccess { page ->
-                if (loadedId != detail.podcast.id || generation != requestGeneration) return@onSuccess
-                val latest = _state.value.detail ?: return@onSuccess
-                val programs = appendUniquePrograms(latest.programs, page.programs)
-                _state.value = _state.value.copy(
-                    detail = latest.copy(
-                        programs = programs,
-                        hasMore = page.hasMore && programs.size > latest.programs.size,
-                        totalCount = maxOf(latest.totalCount, page.totalCount, programs.size),
-                    ),
-                    isLoadingMore = false,
-                    loadMoreError = null,
-                )
-            }.onFailure { error ->
-                if (loadedId == detail.podcast.id && generation == requestGeneration) {
-                    _state.value = _state.value.copy(
-                        isLoadingMore = false,
-                        loadMoreError = error.message,
-                    )
-                }
-            }
+        val version = generation.get()
+        if (!runCatching { publish(stamp, version) { it.copy(isLoadingMore = true, loadMoreError = null) } }.getOrDefault(false)) return
+        moreJob = viewModelScope.launch {
+            perform(stamp, version, detail.podcast.id, { repository.podcastPrograms(stamp, detail.podcast.id, detail.nextOffset) },
+                success = { latest, page ->
+                    val before = checkNotNull(latest.detail)
+                    val programs = appendUniquePrograms(before.programs, page.programs)
+                    check(!page.hasMore || (page.fetchedCount > 0 && programs.size > before.programs.size)) { "Podcast pagination did not advance" }
+                    latest.copy(isLoadingMore = false, detail = before.copy(programs = programs, hasMore = page.hasMore,
+                        totalCount = maxOf(before.totalCount, page.totalCount, programs.size),
+                        nextOffset = detail.nextOffset + page.fetchedCount))
+                },
+                failure = { latest, error -> latest.copy(isLoadingMore = false, loadMoreError = error) },
+            )
         }
     }
 
     fun toggleSubscription() {
-        val detail = _state.value.detail ?: return
-        if (_state.value.isUpdatingSubscription) return
-        viewModelScope.launch {
-            val target = !detail.podcast.isSubscribed
-            _state.value = _state.value.copy(
-                detail = detail.copy(podcast = detail.podcast.copy(isSubscribed = target)),
-                isUpdatingSubscription = true,
-                error = null,
-            )
-            runCatching { repository.setPodcastSubscribed(detail.podcast.id, target) }
-                .onSuccess {
-                    if (loadedId == detail.podcast.id) {
-                        _state.value = _state.value.copy(isUpdatingSubscription = false)
-                    }
-                }
-                .onFailure { error ->
-                    if (loadedId != detail.podcast.id) return@onFailure
-                    val latest = _state.value.detail
-                    _state.value = _state.value.copy(
-                        detail = latest?.copy(podcast = latest.podcast.copy(isSubscribed = !target)),
-                        isUpdatingSubscription = false,
-                        error = error.message,
-                    )
-                }
+        val current = state.value
+        val detail = current.detail ?: return
+        val stamp = current.session ?: return
+        if (current.isLoading || current.isUpdatingSubscription) return
+        val version = generation.get()
+        if (!stamp.identity.authenticated) {
+            runCatching { publish(stamp, version) { it.copy(error = "Official sign-in required") } }
+            return
         }
+        val target = !detail.podcast.isSubscribed
+        if (!runCatching {
+            publish(stamp, version) { it.copy(detail = detail.copy(podcast = detail.podcast.copy(isSubscribed = target)),
+                isUpdatingSubscription = true, error = null) }
+        }.getOrDefault(false)) return
+        subscriptionJob = viewModelScope.launch {
+            perform(stamp, version, detail.podcast.id, { repository.setPodcastSubscribed(stamp, detail.podcast.id, target) },
+                success = { latest, _ -> latest.copy(isUpdatingSubscription = false) },
+                failure = { latest, error -> latest.copy(isUpdatingSubscription = false, error = error,
+                    detail = latest.detail?.let { it.copy(podcast = it.podcast.copy(isSubscribed = !target)) }) },
+            )
+        }
+    }
+
+    private fun pendingState(): PodcastDetailUiState {
+        val error = if (accounts.sessions.recoveryRequired.value) "Official session recovery is required" else null
+        return PodcastDetailUiState(isLoading = error == null, error = error)
+    }
+
+    private fun checkCurrent(stamp: HostSessionStamp, version: Long, id: Long) {
+        accounts.sessions.requireCurrent(stamp)
+        if (generation.get() != version || loadedId != id) throw CancellationException("Podcast changed")
+    }
+
+    private fun publish(stamp: HostSessionStamp, version: Long, update: (PodcastDetailUiState) -> PodcastDetailUiState): Boolean =
+        accounts.sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (generation.get() != version) false else {
+                    mutableState.update(update)
+                    true
+                }
+            }
+        }
+
+    private suspend fun <T> perform(
+        stamp: HostSessionStamp, version: Long, id: Long, load: suspend () -> T,
+        success: (PodcastDetailUiState, T) -> PodcastDetailUiState,
+        failure: (PodcastDetailUiState, String) -> PodcastDetailUiState,
+    ) {
+        try {
+            checkCurrent(stamp, version, id)
+            val result = load()
+            currentCoroutineContext().ensureActive()
+            checkCurrent(stamp, version, id)
+            publish(stamp, version) { success(it, result) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: HostSessionChangedException) {
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            runCatching { publish(stamp, version) { failure(it, error.message ?: "Podcast request failed") } }
+        }
+    }
+
+    override fun onCleared() {
+        invalidation.close()
+        generation.incrementAndGet()
+        super.onCleared()
     }
 }
 
@@ -307,10 +448,7 @@ internal fun appendUniquePodcasts(existing: List<Podcast>, incoming: List<Podcas
     return existing + incoming.filter { ids.add(it.id) }
 }
 
-internal fun appendUniquePrograms(
-    existing: List<com.ljyh.mei.data.model.melox.PodcastProgram>,
-    incoming: List<com.ljyh.mei.data.model.melox.PodcastProgram>,
-): List<com.ljyh.mei.data.model.melox.PodcastProgram> {
-    val ids = existing.mapTo(mutableSetOf(), com.ljyh.mei.data.model.melox.PodcastProgram::id)
+internal fun appendUniquePrograms(existing: List<PodcastProgram>, incoming: List<PodcastProgram>): List<PodcastProgram> {
+    val ids = existing.mapTo(mutableSetOf(), PodcastProgram::id)
     return existing + incoming.filter { ids.add(it.id) }
 }

@@ -56,12 +56,14 @@ data class PodcastPage(
     val podcasts: List<Podcast>,
     val hasMore: Boolean,
     val totalCount: Int,
+    val fetchedCount: Int = podcasts.size,
 )
 
 data class PodcastProgramPage(
     val programs: List<PodcastProgram>,
     val hasMore: Boolean,
     val totalCount: Int,
+    val fetchedCount: Int = programs.size,
 )
 
 data class PodcastDetail(
@@ -69,6 +71,7 @@ data class PodcastDetail(
     val programs: List<PodcastProgram>,
     val hasMore: Boolean,
     val totalCount: Int,
+    val nextOffset: Int = programs.size,
 )
 
 data class CloudSong(
