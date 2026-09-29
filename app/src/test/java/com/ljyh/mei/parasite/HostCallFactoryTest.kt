@@ -402,6 +402,25 @@ class HostCallFactoryTest {
         assertEquals("1", backend.parameters["uid"])
     }
 
+    @Test fun ordinarySongLikesUseTaggedOfficialRoutesWithoutLegacyFmFields() = runBlocking {
+        val backend = Backend().apply { action = { """{"code":200,"ids":[10],"playlistId":100}""" } }
+        val sessions = HostSessionBridge()
+        val bridge = HostRequestBridge(sessions).apply { bind(backend) }
+        val service = retrofit(HostCallFactory(bridge, Executor { it.run() })).create(ApiService::class.java)
+        val owner = sessions.snapshot()
+        assertEquals(listOf(10L), service.songLikeIds(owner).ids)
+        assertEquals("song/like/get", backend.path)
+        assertTrue(backend.parameters.isEmpty())
+        service.like(com.ljyh.mei.data.model.api.SongLike(10, true), owner)
+        assertEquals("song/like", backend.path)
+        assertEquals(mapOf("trackId" to "10", "like" to "true", "userid" to "0"), backend.parameters)
+        sessions.invalidate()
+        val before = backend.executions.get()
+        assertTrue(runCatching { service.songLikeIds(owner) }.exceptionOrNull() is IOException)
+        assertTrue(runCatching { service.like(com.ljyh.mei.data.model.api.SongLike(10, false), owner) }.exceptionOrNull() is IOException)
+        assertEquals(before, backend.executions.get())
+    }
+
     @Test fun syntheticEnvelopeDoesNotTurnABusinessRejectionIntoSuccess() = runBlocking {
         val backend = Backend().apply { action = { "{\"code\":500}" } }
         val service = retrofit(factory(backend)).create(MeloXDirectService::class.java)

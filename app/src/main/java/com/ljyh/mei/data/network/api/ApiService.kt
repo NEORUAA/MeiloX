@@ -15,8 +15,9 @@ import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.model.api.BaseMessageResponse
 import com.ljyh.mei.data.model.api.BaseResponse
-import com.ljyh.mei.data.model.api.CheckSongLike
-import com.ljyh.mei.data.model.api.CheckSongLikeResult
+import com.ljyh.mei.data.model.api.SongLike
+import com.ljyh.mei.data.model.api.SongLikeIds
+import com.ljyh.mei.data.model.api.SongLikeResult
 import com.ljyh.mei.data.model.api.CreatePlaylist
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
@@ -44,8 +45,6 @@ import com.ljyh.mei.data.model.api.SearchResult
 import com.ljyh.mei.data.model.api.SearchSuggest
 import com.ljyh.mei.data.model.api.SubscribePlaylist
 import com.ljyh.mei.data.model.weapi.Comment
-import com.ljyh.mei.data.model.weapi.Like
-import com.ljyh.mei.data.model.weapi.LikeResult
 import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
@@ -105,8 +104,8 @@ interface ApiService {
         @Tag expectedSession: HostSessionStamp? = null,
     ): UserPlaylist
 
-    @POST("/api/song/like/check")
-    suspend fun checkSongLike(@Body body: CheckSongLike): CheckSongLikeResult
+    @POST("/api/song/like/get")
+    suspend fun songLikeIds(@Tag expectedSession: HostSessionStamp): SongLikeIds
 
     @POST("/api/album/sublist")
     suspend fun getCollectAlbumList(
@@ -154,8 +153,8 @@ interface ApiService {
     @POST("/api/user/photo/album/get")
     suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum): AlbumPhoto
 
-    @POST("/api/radio/like")
-    suspend fun like(@Body body: Like): LikeResult
+    @POST("/api/song/like")
+    suspend fun like(@Body body: SongLike, @Tag expectedSession: HostSessionStamp): SongLikeResult
 
     @POST("/api/v1/playlist/manipulate/tracks")
     suspend fun manipulateTracks(@Body body: ManipulateTrack, @Tag expectedSession: HostSessionStamp): ManipulateTrackResult

@@ -362,7 +362,7 @@ fun AppleMusicPlayer(
                                 title = mediaMetadata!!.title,
                                 subTitle = mediaMetadata!!.artists.joinToString { it.name },
                                 isLiked = isLiked,
-                                onLikeClick = { mediaMetadata?.let { stateContainer.playerViewModel.like(it.id.toString()) } },
+                                onLikeClick = stateContainer.likeAction(mediaMetadata),
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 onTitleClick = {
                                     mediaMetadata?.let {
@@ -407,7 +407,7 @@ fun AppleMusicPlayer(
                                         title = it.title,
                                         subTitle = it.artists.joinToString { artist -> artist.name },
                                         isLiked = isLiked,
-                                        onLikeClick = { stateContainer.playerViewModel.like(it.id.toString()) },
+                                        onLikeClick = stateContainer.likeAction(it),
                                         onMoreClick = { overlayHandler.showMoreAction() },
                                         onTitleClick = {
                                             overlayHandler.showAlbumArtist(

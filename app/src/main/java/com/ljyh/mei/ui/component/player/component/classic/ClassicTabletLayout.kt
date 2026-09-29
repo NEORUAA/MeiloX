@@ -117,9 +117,7 @@ fun ClassicTabletLayout(
                         overlayHandler.showMoreAction()
                     },
                     isLiked = isLiked,
-                    onLikeClick = {
-                        stateContainer.playerViewModel.like(it.id.toString())
-                    }
+                    onLikeClick = stateContainer.likeAction(it)
                 )
             }
 

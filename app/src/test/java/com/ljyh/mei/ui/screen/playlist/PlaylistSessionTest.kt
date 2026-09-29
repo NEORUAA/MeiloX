@@ -163,7 +163,7 @@ class PlaylistSessionTest {
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
             val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {
-                    override val albumChanges = emptyFlow<HostSessionStamp>()
+                    override val collectionChanges = emptyFlow<HostSessionStamp>()
                     override fun playlists(accountId: String) = emptyFlow<List<com.ljyh.mei.data.model.room.AccountPlaylist>>()
                     override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> {
                         sessions.requireCurrent(stamp)

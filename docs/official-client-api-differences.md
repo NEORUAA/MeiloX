@@ -282,9 +282,50 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   invalidation between requests, cancellation, and Library refresh/replacement. The
   AVD displays the existing four-song liked collection after installation and return
   from daily recommendations, using the unchanged Library page.
-- Remaining: no live like/unlike mutation is performed. The player's heart read/write
-  state machine still needs separate official-session adaptation and acceptance; this
-  checkpoint must not be reported as completion of all liked-song behavior.
+- Remaining: no live like/unlike mutation is performed. The player's control is adapted
+  separately in API-013; neither checkpoint qualifies real mutation acceptance.
+
+### API-013: Ordinary Song Favorites Are Not FM Radio Likes
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original MeiloX: `song/like/check` queries one ID; `radio/like` writes with hardcoded
+  `alg=itembased` and `time=3`. The player assumes unknown means unliked, ignores the
+  mutation business code, and toggles its icon without account or selection ownership.
+- Official ordinary-song contract: runtime `i0.f.a.H` posts `song/like`, using `trackId`,
+  `like`, `userid` (the private-cloud owner, zero for ordinary catalog songs), optional
+  `userActionMap`, and host-generated `rqRefer`/`checkToken`. Code 200 requires
+  `playlistId`; the official async caller also treats 502/404 as completed operations.
+  Other business failures, including 505/506/511/512, are not generic success.
+- Official read: `i0.f.a.l0` requests `song/like/get`; non-200 fails, null `ids` is an
+  empty snapshot. The official implementation also stores a checkpoint for its delta
+  refresh. The module uses full snapshots and does not alter the host checkpoint.
+- Separate FM contract: `i0.f.a.s`/`f` use `v1/radio/like`, returning replacement radio
+  songs with playback-time/algorithm/recommendation context. This is not the ordinary
+  favorite contract and is not substituted with invented `time` or `alg` values.
+- Adaptation: mandatory captured-session tags on full reads and ordinary mutations;
+  current-session and cancellation checks before dispatch and after parsing; validate
+  business codes and identities. The host token generator `h1.y.a.a` and referer
+  provider `s0.l.a.A().h()` run inside the pinned host backend, not the UI or DTO.
+  Null host referers are omitted, and caller-supplied referer/security overrides fail.
+  Duplicate/missing responses re-read authoritative state rather than toggling blindly.
+- Player behavior: retain the original star symbols, dimensions, glass, and layouts.
+  Selection revisions reject stale callbacks even after switching away and back to the
+  same song. Invalidation clears account state synchronously; obsolete requests are
+  canceled and late results ignored. Unknown/failed state permits read retry only;
+  duplicate pending clicks do not write again. Accepted changes notify the existing
+  Library refresh flow; refresh failure does not undo an accepted favorite result.
+- Evidence: repository/transport/state tests cover ordinary payloads, null/failed
+  snapshots, guest/stale owners, business failures, duplicate reconciliation, cancellation,
+  repeated clicks, delayed old reads/writes, track replacement, account replacement,
+  same-account reauthorization, recovery, and refresh failure.
+  `apkanalyzer dex code` confirms runtime `i0.f.a.H`, `i0.f.a.l0`, and `s0.l.a.A`/`h`
+  in the pinned APK. The AVD displays a filled star for an existing liked song, then an
+  outlined star for FRAGILE after selection, without touching either favorite button.
+- Remaining: live like/unlike acceptance is not performed without explicit test-write
+  approval. Full-ID snapshots are currently fetched on selection, without a shared
+  account cache. Private-cloud library-ID/owner translation and FM queue semantics need
+  separate migration; the original metadata does not yet carry those host fields.
+  Podcasts and device-local files do not dispatch ordinary song-favorite requests.
 
 ## Runtime Boundary Notes
 

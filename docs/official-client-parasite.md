@@ -198,7 +198,7 @@ Existing request bodies, pagination, response models, and error behavior remain 
 | Albums | `v1/album/{id}`, `album/sublist`, `album/sub`, `album/unsub`, `user/photo/album/get` | Host requests; retain detail, collection, and artwork behavior |
 | Artists | `artist/head/info/get`, `artist/albums/{id}`, `v1/artist/songs`, `v1/artist/{id}`, `artist/sub`, `artist/unsub` | Host requests; preserve paging and followed state |
 | Song detail and playback URLs | `v3/song/detail`, `song/enhance/player/url`, `song/enhance/player/url/v1` | Host authentication and rights; MeiloX playback engine; verify full duration, actual quality, trial restrictions, and cache keys |
-| Favorites and radio | `song/like/check`, `radio/like`, `v1/radio/get`, `playmode/intelligence/list` | Host requests; retain state, FM, and intelligent queue behavior |
+| Favorites and radio | `song/like/get`, `song/like`, `v1/radio/get`, `playmode/intelligence/list` | Ordinary favorites are session-bound (API-013); FM and cloud-song semantics remain separate acceptance work |
 | Lyrics | `song/lyric`, `song/lyric/v1`, QQ lyrics/search, AMLL TTML | NetEase through host; preserve third-party transport, parsing, translation, timing, and lyric settings |
 | Comments | `v2/resource/comments`, `resource/comment/floor/get` | Host requests; retain sorting, pagination, replies view, and layout |
 | Podcasts | `djradio/category/get`, `djradio/recommend/v1`, `djradio/personalize/rcmd`, `djradio/hot`, `djradio/v2/get`, `dj/program/byradio`, `djradio/get/subed`, `djradio/sub`, `djradio/unsub` | Host requests; retain categories, episodes, subscriptions, and playback |
@@ -1136,6 +1136,40 @@ The current AVD retains both overrides by user request. ABI-002 in the differenc
 records the boundary. Release runtime qualification, all external navigation, and the
 recording/PiP capability decision remain open; stage 2 is not complete.
 
+### Player Favorite Ownership Checkpoint (2026-09-29)
+
+- Ordinary player favorites now read `song/like/get` and write `song/like` through the
+  captured official session. Removed the old single-song check/radio-like DTOs and the
+  player's unused legacy LikeRepository/account-preference dependencies. The ordinary
+  TV endpoint, business results, security parameters, and separate FM/private-cloud
+  boundaries are recorded in API-013 of the difference ledger.
+- A bounded favorite state holder owns the current song/session/revision. It clears
+  synchronously on session invalidation, cancels superseded work, rejects stale clicks,
+  and does not infer an unliked value from loading/errors. Failed or uncertain actions
+  expose read retry through the same button. Duplicate pending clicks do not dispatch
+  again; accepted mutations notify the existing Library collection-refresh flow.
+- Original Apple Music and classic player layouts, star icons, button geometry,
+  navigation, and glass rendering are unchanged. Local/podcast items do not submit
+  ordinary song-like requests. No real favorite mutation was performed in this run.
+- Verification: `:app:testDebugUnitTest :app:assembleDebug` passed with 519 tests in 67
+  suites, zero failures/errors/skips. Focused tests use substitutes for writes, delayed
+  non-cooperative responses, account changes, and same-account reauthorization. Retrofit
+  tests check mandatory session tags, exact route/payload, and stale-owner rejection;
+  host-parameter tests reject caller overrides. `git diff --check` and APK 16 KB alignment
+  passed. DEX inspection confirms the new referer methods in the actual pinned APK.
+- AVD: installed the ordinary debug APK, force-stopped TV, and launched the official
+  LoadingActivity entry (cold start 1750 ms). MeiloX opened portrait with the existing
+  account. Both TV-only direction overrides remain enabled as explicitly requested.
+  The existing liked song displayed its filled star; selecting FRAGILE from daily
+  recommendations displayed the original outlined star. The player was left paused
+  at about 19 seconds, with no current-process crash-buffer entries. These screenshots
+  prove presentation, not real write acceptance or audible/full-song acceptance.
+- Local-only evidence: `/tmp/meilox-player-likes-final-build.log`,
+  `/tmp/meilox-likes-cold.png`, `/tmp/meilox-likes-liked-expanded.png`, and
+  `/tmp/meilox-likes-unliked-expanded.png`. No device artifacts or account data are
+  committed. Release runtime, live favorite writes, full FM/cloud behavior, and the
+  recording/PiP capability gate remain unqualified.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1161,7 +1195,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, and daily recommendations passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, and session-owned ordinary favorite reads passed documented checkpoints; favorite writes have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

@@ -65,8 +65,17 @@ class PlayerStateContainer(
     lateinit var qqLyricSearch: State<Resource<SearchResult>>
         internal set
 
-    lateinit var checkSongLike: State<Resource<Boolean>>
+    lateinit var checkSongLike: State<PlayerLikeSnapshot>
         internal set
+
+    fun likeAction(metadata: MediaMetadata?): () -> Unit {
+        val expected = checkSongLike.value
+        return {
+            if (metadata != null && !metadata.isLocal && !metadata.isPodcast && expected.songId == metadata.id) {
+                playerViewModel.like(expected)
+            }
+        }
+    }
 
     lateinit var isLiked: State<Boolean>
         internal set
@@ -118,22 +127,22 @@ fun rememberPlayerStateContainer(
 
     container.isLiked = remember {
         derivedStateOf {
-            when (val result = container.checkSongLike.value) {
-                is Resource.Success -> result.data
-                Resource.Loading -> false
-                is Resource.Error -> {
-                    Timber.tag("Player State").d(result.message)
-                    false
-                }
-            }
+            val result = container.checkSongLike.value
+            val metadata = container.mediaMetadata.value
+            metadata != null && !metadata.isLocal && !metadata.isPodcast &&
+                result.songId == metadata.id && result.liked == true
         }
     }
 
-    LaunchedEffect(container.mediaMetadata.value?.id) {
-        container.mediaMetadata.value?.let { meta ->
-            playerViewModel.mediaMetadata = meta
-            playerViewModel.getLike(meta.id)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(playerViewModel, context) {
+        playerViewModel.likeMessages.collect { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+    val metadata = container.mediaMetadata.value
+    LaunchedEffect(metadata?.id, metadata?.isLocal, metadata?.isPodcast) {
+        playerViewModel.selectLikeSong(metadata)
     }
 
     // The collapsed player does not render a progress indicator. Avoid publishing a 50 ms

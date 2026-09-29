@@ -11,7 +11,7 @@ import com.ljyh.mei.data.model.qq.u.GetLyricData
 import com.ljyh.mei.data.model.qq.u.GetSearchData
 import com.ljyh.mei.data.model.qq.u.LyricResult
 import com.ljyh.mei.data.model.qq.u.SearchResult
-import com.ljyh.mei.data.model.weapi.Like
+import com.ljyh.mei.data.model.api.SongLike
 import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.QQMusicUApiService
 import com.ljyh.mei.data.network.Resource
@@ -19,20 +19,28 @@ import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import android.util.Base64
-import com.ljyh.mei.data.model.api.CheckSongLike
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.parasite.HostSessionStamp
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.IOException
-import timber.log.Timber
 import java.util.concurrent.TimeUnit
+
+internal interface PlayerLikeSource {
+    suspend fun checkSongLike(id: Long, owner: HostSessionStamp): Resource<Boolean>
+    suspend fun like(id: Long, liked: Boolean, owner: HostSessionStamp): Resource<Boolean>
+}
 
 class PlayerRepository(
     private val qqMusicUApiService: QQMusicUApiService,
     private val apiService: ApiService,
-    private val weApiService: WeApiService
-) {
+    private val weApiService: WeApiService,
+    private val sessions: HostSessionBridge,
+) : PlayerLikeSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
         return withContext(Dispatchers.IO) {
@@ -133,14 +141,24 @@ class PlayerRepository(
     }
 
 
-    suspend fun like(id: String, like: Boolean) {
-        apiService.like(
-            Like(
-                trackId = id,
-                like = like
-            )
-        )
-    }
+    override suspend fun like(id: Long, liked: Boolean, owner: HostSessionStamp): Resource<Boolean> =
+        withContext(Dispatchers.IO) {
+            safeApiCall {
+                requireLikeOwner(id, owner)
+                val response = apiService.like(SongLike(id, liked), owner)
+                currentCoroutineContext().ensureActive()
+                sessions.requireCurrent(owner)
+                when (response.code) {
+                    200 -> {
+                        check((response.playlistId ?: 0) > 0) { "Missing official liked playlist" }
+                        liked
+                    }
+                    // The host accepts duplicates/missing entries. Reconcile instead of toggling blindly.
+                    502, 404 -> readLike(id, owner)
+                    else -> throw IOException("Official song like failed (${response.code})")
+                }
+            }
+        }
 
     private val amllClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -209,14 +227,23 @@ class PlayerRepository(
         }
     }
 
-    suspend fun checkSongLike(id: Long): Resource<Boolean>{
-        return withContext(Dispatchers.IO){
-            safeApiCall {
-                val result = apiService.checkSongLike(CheckSongLike("[${id}]"))
-                Timber.tag("Player Repo").d(result.toString())
-                result.ids.contains(id)
-            }
-        }
+    override suspend fun checkSongLike(id: Long, owner: HostSessionStamp): Resource<Boolean> =
+        withContext(Dispatchers.IO) { safeApiCall { readLike(id, owner) } }
+
+    private suspend fun readLike(id: Long, owner: HostSessionStamp): Boolean {
+        requireLikeOwner(id, owner)
+        val response = apiService.songLikeIds(owner)
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(owner)
+        check(response.code == 200) { "Official liked songs failed (${response.code})" }
+        val ids = response.ids.orEmpty()
+        check(ids.all { it > 0 }) { "Invalid official liked song identity" }
+        return id in ids
     }
 
+    private fun requireLikeOwner(id: Long, owner: HostSessionStamp) {
+        require(id > 0)
+        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Official login is required" }
+        sessions.requireCurrent(owner)
+    }
 }

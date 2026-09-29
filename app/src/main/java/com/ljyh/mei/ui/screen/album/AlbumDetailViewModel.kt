@@ -39,7 +39,7 @@ class AlbumDetailViewModel internal constructor(
     private val onCollectionChanged: (HostSessionStamp) -> Unit,
 ) : ViewModel() {
     @Inject constructor(repository: PlaylistRepository, sessions: HostSessionBridge, library: AccountLibraryRepository) :
-        this(repository as AlbumDetailSource, sessions, library::invalidateAlbums)
+        this(repository as AlbumDetailSource, sessions, library::invalidateCollections)
 
     private val mutableState = MutableStateFlow(AlbumDetailState())
     val state = mutableState.asStateFlow()

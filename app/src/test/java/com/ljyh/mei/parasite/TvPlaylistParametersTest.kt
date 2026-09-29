@@ -9,20 +9,20 @@ class TvPlaylistParametersTest {
         val path = "multi/terminal/playlist/subscribe"
         val parameters = mapOf("id" to "10")
         repeat(2) { index ->
-            val adapted = tvPlaylistRequestParameters(path, parameters) { calls++; "test-$calls" }
+            val adapted = tvMutationRequestParameters(path, parameters) { calls++; "test-$calls" }
             assertEquals("test-${index + 1}", adapted["checkToken"])
             assertEquals("10", adapted["id"])
         }
         assertEquals(mapOf("id" to "10"), parameters)
         listOf("multi/terminal/playlist/unsubscribe", "album/sub", "v6/playlist/detail").forEach {
-            assertSame(parameters, tvPlaylistRequestParameters(it, parameters) { error("Unexpected token") })
+            assertSame(parameters, tvMutationRequestParameters(it, parameters) { error("Unexpected token") })
         }
     }
 
     @Test fun rejectsCallerSecurityOverridesWithoutInvokingHost() {
-        listOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe", "v1/playlist/manipulate/tracks", "playlist/create").forEach { path ->
+        listOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe", "v1/playlist/manipulate/tracks", "playlist/create", "song/like").forEach { path ->
             assertThrows(IllegalArgumentException::class.java) {
-                tvPlaylistRequestParameters(path, mapOf("CheckToken" to "test")) { error("Must not generate") }
+                tvMutationRequestParameters(path, mapOf("CheckToken" to "test")) { error("Must not generate") }
             }
         }
     }
@@ -30,19 +30,29 @@ class TvPlaylistParametersTest {
     @Test fun creationAndTrackChangesGenerateSecurityParametersInsideTheHost() {
         var generated = 0
         listOf("playlist/create", "v1/playlist/manipulate/tracks").forEach { path ->
-            val adapted = tvPlaylistRequestParameters(path, mapOf("name" to "Test")) { generated++; "test-only" }
+            val adapted = tvMutationRequestParameters(path, mapOf("name" to "Test")) { generated++; "test-only" }
             assertEquals(mapOf("name" to "Test", "checkToken" to "test-only"), adapted)
         }
         assertEquals(2, generated)
     }
 
     @Test fun preservesTheOfficialDisabledSecurityResult() {
-        assertEquals("", tvPlaylistRequestParameters("multi/terminal/playlist/subscribe", mapOf("id" to "10")) { "" }["checkToken"])
+        assertEquals("", tvMutationRequestParameters("multi/terminal/playlist/subscribe", mapOf("id" to "10")) { "" }["checkToken"])
     }
 
     @Test fun generationFailureDoesNotFallBackToAModuleToken() {
         assertThrows(IllegalStateException::class.java) {
-            tvPlaylistRequestParameters("multi/terminal/playlist/subscribe", mapOf("id" to "10")) { error("Unavailable") }
+            tvMutationRequestParameters("multi/terminal/playlist/subscribe", mapOf("id" to "10")) { error("Unavailable") }
+        }
+    }
+
+    @Test fun ordinaryLikesUseHostRefererAndTokenWithoutFmParameters() {
+        val parameters = mapOf("trackId" to "10", "like" to "true", "userid" to "0")
+        val result = tvMutationRequestParameters("song/like", parameters, { "host-only" }) { "host-token" }
+        assertEquals(parameters + mapOf("rqRefer" to "host-only", "checkToken" to "host-token"), result)
+        assertEquals(parameters + ("checkToken" to ""), tvMutationRequestParameters("song/like", parameters) { "" })
+        assertThrows(IllegalArgumentException::class.java) {
+            tvMutationRequestParameters("song/like", parameters + ("RQREFER" to "spoofed")) { error("Must not generate") }
         }
     }
 }

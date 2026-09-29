@@ -41,7 +41,7 @@ class LibraryViewModelTest {
     private fun song(id: Long) = MediaMetadata(id, "Song $id", "", emptyList(), 1000, MediaMetadata.Album(1, "Album"))
 
     private class FakeSource : AccountLibrarySource {
-        override val albumChanges = kotlinx.coroutines.flow.MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1)
+        override val collectionChanges = kotlinx.coroutines.flow.MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1)
         val cached = mutableMapOf<String, MutableStateFlow<List<AccountPlaylist>>>()
         val syncCalls = mutableListOf<String>()
         val likedOwners = mutableListOf<HostSessionStamp>()
@@ -71,13 +71,13 @@ class LibraryViewModelTest {
             runCurrent()
             val old = sessions.snapshot()
             val before = albumRequests
-            source.albumChanges.emit(old)
+            source.collectionChanges.emit(old)
             runCurrent()
             assertEquals(before + 1, albumRequests)
             sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
             runCurrent()
             val changed = albumRequests
-            source.albumChanges.emit(old)
+            source.collectionChanges.emit(old)
             runCurrent()
             assertEquals(changed, albumRequests)
             assertEquals("2", model.state.value.userId)

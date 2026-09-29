@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.channels.BufferOverflow
 
 internal interface AccountLibrarySource {
-    val albumChanges: Flow<HostSessionStamp>
+    val collectionChanges: Flow<HostSessionStamp>
     fun playlists(accountId: String): Flow<List<AccountPlaylist>>
     suspend fun sync(stamp: HostSessionStamp): Resource<Unit>
     suspend fun albums(): Resource<UserAlbumList>
@@ -36,11 +36,11 @@ class AccountLibraryRepository @Inject constructor(
     private val remote: PlaylistRepository,
     private val sessions: HostSessionBridge,
 ) : AccountLibrarySource {
-    private val changedAlbums = MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    override val albumChanges = changedAlbums.asSharedFlow()
+    private val changedCollections = MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val collectionChanges = changedCollections.asSharedFlow()
 
-    fun invalidateAlbums(stamp: HostSessionStamp) {
-        sessions.withCurrent(stamp) { changedAlbums.tryEmit(stamp) }
+    fun invalidateCollections(stamp: HostSessionStamp) {
+        sessions.withCurrent(stamp) { changedCollections.tryEmit(stamp) }
     }
 
     override fun playlists(accountId: String) = local.getAccountPlaylists(accountId)

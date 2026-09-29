@@ -27,6 +27,9 @@ internal class TvHostRequestBackend(
     private val execute = requestType.getMethod("k")
     private val cancel = requestBase.getMethod("c")
     private val playlistToken = loader.loadClass("com.netease.cloudmusic.h1.y.a").getMethod("a")
+    private val refererType = loader.loadClass("com.netease.cloudmusic.s0.l.a")
+    private val currentReferer = refererType.getMethod("h")
+    private val refererInstance = refererType.getMethod("A")
     private val cancellations = ConcurrentHashMap<Any, AtomicBoolean>()
 
     init {
@@ -92,9 +95,11 @@ internal class TvHostRequestBackend(
 
     override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Host requests must run off the main thread" }
-        val businessParameters = tvPlaylistRequestParameters(path, parameters) {
-            invoke(playlistToken, null) as? String ?: throw IOException("Official playlist token unavailable")
-        }
+        val businessParameters = tvMutationRequestParameters(
+            path, parameters,
+            referer = { invoke(currentReferer, invoke(refererInstance, null)) as? String },
+            token = { invoke(playlistToken, null) as? String ?: throw IOException("Official mutation token unavailable") },
+        )
         val request = invoke(factory, null, path, businessParameters) ?: throw IOException("Official request creation failed")
         invoke(requestBase.getMethod("d", Int::class.javaPrimitiveType), request, 10_000)
         invoke(requestBase.getMethod("i0", Int::class.javaPrimitiveType), request, 15_000)
@@ -122,14 +127,19 @@ internal class TvHostRequestBackend(
     }
 }
 
-internal fun tvPlaylistRequestParameters(
+internal fun tvMutationRequestParameters(
     path: String,
     parameters: Map<String, String>,
+    referer: () -> String? = { null },
     token: () -> String,
 ): Map<String, String> {
-    val needsToken = path in setOf("multi/terminal/playlist/subscribe", "v1/playlist/manipulate/tracks", "playlist/create")
+    val needsToken = path in setOf("multi/terminal/playlist/subscribe", "v1/playlist/manipulate/tracks", "playlist/create", "song/like")
     if (!needsToken && path != "multi/terminal/playlist/unsubscribe") return parameters
-    require(parameters.keys.none { it.equals("checkToken", ignoreCase = true) }) { "Playlist security parameters belong to the host" }
+    require(parameters.keys.none { it.equals("checkToken", ignoreCase = true) }) { "Mutation security parameters belong to the host" }
+    if (path == "song/like") {
+        require(parameters.keys.none { it.equals("rqRefer", ignoreCase = true) }) { "Song like referer belongs to the host" }
+    }
     // The official generator may return empty when its security service is disabled.
-    return if (needsToken) parameters + ("checkToken" to token()) else parameters
+    val adapted = if (needsToken) parameters + ("checkToken" to token()) else parameters
+    return if (path == "song/like") referer()?.let { adapted + ("rqRefer" to it) } ?: adapted else adapted
 }

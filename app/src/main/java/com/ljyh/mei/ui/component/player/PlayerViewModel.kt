@@ -9,7 +9,6 @@ import com.ljyh.mei.AppContext
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQualityKey
 import com.ljyh.mei.constants.MusicQuality
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.Tracks
@@ -20,8 +19,10 @@ import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.di.repository.ColorRepository
-import com.ljyh.mei.di.repository.LikeRepository
+import com.ljyh.mei.data.repository.AccountLibraryRepository
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.ui.component.player.state.PlayerLikeSnapshot
+import com.ljyh.mei.ui.component.player.state.PlayerLikeState
 import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.MoreAction
@@ -50,15 +51,16 @@ class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
     private val playlistRepository: PlaylistRepository,
-    private val likeRepository: LikeRepository,
-    private val colorRepository: ColorRepository,
+    sessions: HostSessionBridge,
+    library: AccountLibraryRepository,
     val lyricManager: LyricManager
 ) : ViewModel() {
     val searchResult: StateFlow<Resource<SearchResult>> = lyricManager.qqSearchResult
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
 
-    private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
-    val like: StateFlow<Resource<Boolean>> = _like
+    private val favorites = PlayerLikeState(viewModelScope, sessions, repository, library::invalidateCollections)
+    val like = favorites.state
+    val likeMessages = favorites.messages
 
 
     private val _intelligenceList = MutableStateFlow<Resource<Intelligence>>(Resource.Loading)
@@ -73,27 +75,16 @@ class PlayerViewModel @Inject constructor(
 
     var mediaMetadata: MediaMetadata? = null
 
-    val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
-
-    // 获取点赞状态
-    fun getLike(id: Long) {
-        viewModelScope.launch {
-            Timber.tag("PlayerViewModel").d("get like $id")
-            _like.value = repository.checkSongLike(id)
-        }
+    fun selectLikeSong(metadata: MediaMetadata?) {
+        mediaMetadata = metadata
+        favorites.select(metadata?.takeUnless { it.isPodcast || it.isLocal }?.id)
     }
 
-    // 切换点赞状态
-    fun like(id: String) {
-        viewModelScope.launch {
-            try {
-                val currentLiked = (_like.value as? Resource.Success)?.data == true
-                repository.like(id, !currentLiked)
-                _like.value = Resource.Success(!currentLiked)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
+    fun like(expected: PlayerLikeSnapshot) = favorites.toggle(expected)
+
+    override fun onCleared() {
+        favorites.close()
+        super.onCleared()
     }
 
 

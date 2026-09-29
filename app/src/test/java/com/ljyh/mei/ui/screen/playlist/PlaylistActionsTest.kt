@@ -75,7 +75,7 @@ class PlaylistActionsTest {
                 }
             }
             val library = object : AccountLibrarySource {
-                override val albumChanges = emptyFlow<HostSessionStamp>()
+                override val collectionChanges = emptyFlow<HostSessionStamp>()
                 override fun playlists(accountId: String) = entries.also { reads += accountId }
                 override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> {
                     syncs += stamp
