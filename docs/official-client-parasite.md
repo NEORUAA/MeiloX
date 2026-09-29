@@ -368,6 +368,58 @@ remaining direct NetEase helpers, login/Cookie UI state, production Activity/ser
 and full visual/audio/feature regression remain open. No real listening report or social
 write was sent by this probe; those tests used substitutes.
 
+### Official QR Login Slice
+
+- Replaced the MeiloX login WebView and manual Cookie entry with the existing pinned-page
+  layout, official QR bitmap, status, and glass refresh control. No QR payload, host Profile,
+  AndroidX object, or credential is copied into a module-owned login store.
+- Verified the pinned APK's actual DEX entry points: `audio.c.b.k0(ZJZ)`, `o0()`,
+  `x0()`, `s0()`, `w0()`, private `p0(audio.c.d)` and `G0()`, host `ViewModelStore.put/clear`,
+  and `utils.d1.g(Context, boolean)`. The last entry is the full official logout flow,
+  not the login-expiration handler that launches the official login Activity.
+- A screen owns one host ViewModel in a host ViewModelStore. Reflection and a host-loader
+  Observer proxy expose only Bitmap, Pair status codes, and enum names. Refresh/stop removes
+  observers, clears the store (and its coroutine scope), removes polling callbacks, and
+  suppresses later status transitions from that retired module-owned controller. Official
+  controllers created by the host itself are not intercepted by this ownership guard.
+- The host's `G0()` failure branch queues global logout outside ViewModelScope. Module-owned
+  attempts suppress that queued cleanup so an old failed QR task cannot sign out a newer
+  session. Failure still reaches the UI and retires its own observers/scope. Explicit user
+  logout continues to call the full official logout entry with the raw host Context.
+- The pure login controller rejects stale callbacks by attempt generation, handles synchronous
+  observer delivery during creation, releases QR references on stop, and verifies the official
+  authenticated state before publishing success. QR creation has a 30-second watchdog.
+  Cancellation stops module UI/polling; it does not promise to revoke authorization already
+  accepted by the server or undo cookies written by a request already in progress.
+- The debug carrier can open the real `NeteaseLoginScreen` with `--ez meilox.login true`.
+  Its Insets and glass backdrop providers match the page's required environment. Early
+  device runs exposed missing providers; both were fixed before the passing runs below.
+  A restored carrier also binds bridges using the final Tinker Activity loader, without
+  requiring the original homepage to resume first.
+- AVD verified the official QR bitmap, readable layout and icons, a visibly different QR
+  after refresh, zero remaining observers/active attempts on refresh and backgrounding,
+  foreground regeneration, system Back, and saved-state process recreation. The recreation
+  test waited for STOPPED with a saved Bundle, killed the old PID, and resumed the same task;
+  the new process reported `restored=true` and reached WAITING without a new crash.
+- The host naturally returned EXPIRED after approximately five minutes; the QR disappeared,
+  observers/active attempts returned to zero, and refresh generated a new QR. A 15-second
+  airplane-mode test reached ERROR, exercised the guarded `G0()` branch, and cleaned up all
+  observers. Airplane mode, Wi-Fi, and mobile-data settings were restored to their recorded
+  values; after connectivity recovered, refresh returned to WAITING. The original session
+  remained authenticated, and ten lower-level plus eight typed Retrofit read-only probes
+  passed again, including account/session agreement and final unchanged-session checks.
+- The full suite passed with 282 tests, no failures, errors, or skips; debug assembly, diff
+  checks, and 16 KB APK alignment passed. Tests cover stale/synchronous callbacks, ownership,
+  stop/re-entry, terminal states, unavailable binding, and failed-logout invalidation.
+
+This is a login presentation/lifecycle slice, not stage 3 completion. Real scan authorization,
+confirmation/success navigation, logout, account switching, interrupted authorization, and
+the remaining Cookie-based account consumers still need acceptance. The real logout entry is
+wired but was not invoked against the user's authenticated account. The official launcher,
+MainActivity, and production player remain unchanged by this slice.
+In particular, keep production routing gated until the entire cookie-to-profile authorization
+window and canceled authorization responses are covered by session-publication guards.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -390,7 +442,7 @@ write was sent by this probe; those tests used substitutes.
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
-| 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
+| 3. Official-session login UI | In progress: official QR page, refresh/expiry, network failure, lifecycle teardown, and process recreation passed | Real authorization/logout/account changes and all account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport and eight typed read-only operations passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |

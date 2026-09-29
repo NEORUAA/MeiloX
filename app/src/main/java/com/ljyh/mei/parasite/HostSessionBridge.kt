@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import android.graphics.Bitmap
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
@@ -21,6 +22,7 @@ class HostSessionChangedException : IOException("Official session changed")
 @Singleton
 class HostSessionBridge @Inject constructor() {
     @Volatile private var reader: (() -> HostSessionIdentity)? = null
+    @Volatile private var loginBackend: HostLoginBackend<Bitmap>? = null
     private val generation = AtomicLong()
     private val transitions = AtomicInteger()
     private val invalidationListeners = CopyOnWriteArrayList<(Long) -> Unit>()
@@ -31,6 +33,22 @@ class HostSessionBridge @Inject constructor() {
     internal fun bind(reader: () -> HostSessionIdentity) {
         check(this.reader == null) { "Official session is already bound" }
         this.reader = reader
+    }
+
+    @Synchronized
+    internal fun bindLogin(backend: HostLoginBackend<Bitmap>) {
+        check(loginBackend == null) { "Official login is already bound" }
+        loginBackend = backend
+    }
+
+    fun newLogin(): HostLoginController<Bitmap> = HostLoginController(
+        open = { emit -> (loginBackend ?: throw IOException("Official login is not ready")).open(emit) },
+        authenticated = { runCatching { snapshot().identity.authenticated }.getOrDefault(false) },
+    )
+
+    fun logout() {
+        val backend = loginBackend ?: throw IOException("Official login is not ready")
+        beginTransition().use { backend.logout() }
     }
 
     fun snapshot(): HostSessionStamp {

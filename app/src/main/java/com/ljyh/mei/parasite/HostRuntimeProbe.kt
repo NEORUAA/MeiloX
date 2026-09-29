@@ -26,7 +26,13 @@ internal object HostRuntimeProbe {
     var report: (String) -> Unit = {}
         private set
 
-    fun install(module: XposedModule, application: Application, moduleInfo: ApplicationInfo, logger: (String) -> Unit) {
+    fun install(
+        module: XposedModule,
+        application: Application,
+        moduleInfo: ApplicationInfo,
+        logger: (String) -> Unit,
+        onHostActivity: (ClassLoader) -> Unit,
+    ) {
         report = logger
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
@@ -44,6 +50,7 @@ internal object HostRuntimeProbe {
         )).intercept { chain ->
             if (chain.getArg(1) == ACTIVITY) {
                 val loader = chain.getArg(0) as ClassLoader
+                onHostActivity(loader)
                 val config = loader.loadClass("me.jessyan.autosize.AutoSizeConfig")
                     .getMethod("getInstance").invoke(null)
                 val manager = config.javaClass.getMethod("getExternalAdaptManager").invoke(config)

@@ -427,7 +427,14 @@
     <string name="settings_account">Account</string>
     <string name="netease_login">Sign in to NetEase Cloud Music</string>
     <string name="netease_login_detected">Signed in successfully</string>
-    <string name="netease_login_waiting">Complete sign-in on the webpage</string>
+    <string name="netease_login_waiting">Waiting for scan</string>
+    <string name="netease_login_loading">Loading QR code</string>
+    <string name="netease_login_confirming">Waiting for authorization</string>
+    <string name="netease_login_expired">QR code expired</string>
+    <string name="netease_login_error">Sign-in unavailable</string>
+    <string name="netease_login_qr">NetEase sign-in QR code</string>
+    <string name="netease_login_refresh">Refresh QR code</string>
+    <string name="netease_logout_error">Unable to sign out</string>
     <string name="netease_cookie_login">Use Cookie Login</string>
     <string name="netease_cookie_login_placeholder">MUSIC_U value only</string>
     <string name="netease_cookie_login_tip_title">Cookie contents</string>

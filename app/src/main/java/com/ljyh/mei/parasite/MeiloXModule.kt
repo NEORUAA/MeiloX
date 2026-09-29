@@ -61,8 +61,33 @@ class MeiloXModule : XposedModule() {
         report("host_verified version=${info.versionName} isolated_kotlin=$isolated")
         if (!isolated) return
         HostRetrofitCompatibility.install(this, ::report)
+        val requests by lazy {
+            if (BuildConfig.PARASITE_RUNTIME_PROBE) com.ljyh.mei.di.AppGraph.component.hostRequests()
+            else HostRequestBridge(HostSessionBridge())
+        }
+        var bindingAttempted = false
+        var bridgesReady = false
+        fun bindBridges(runtimeLoader: ClassLoader): Boolean {
+            if (!BuildConfig.PARASITE_HOST_PROBE || bindingAttempted) return bridgesReady
+            bindingAttempted = true
+            try {
+                report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
+                val backend = TvHostRequestBackend(runtimeLoader, ::report)
+                backend.installHooks(this@MeiloXModule, requests.sessions)
+                requests.bind(backend)
+                report("request_bridge_bound")
+                val login = TvHostLoginBackend(runtimeLoader, application, ::report)
+                login.installHooks(this@MeiloXModule)
+                requests.sessions.bindLogin(login)
+                report("login_bridge_bound")
+                bridgesReady = true
+            } catch (error: Throwable) {
+                report("session_bridge_failed type=${error.javaClass.name}")
+            }
+            return bridgesReady
+        }
         if (BuildConfig.PARASITE_RUNTIME_PROBE) {
-            HostRuntimeProbe.install(this, application, moduleApplicationInfo, ::report)
+            HostRuntimeProbe.install(this, application, moduleApplicationInfo, ::report) { bindBridges(it) }
         }
         if (BuildConfig.PARASITE_HOST_PROBE) {
             application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -71,19 +96,7 @@ class MeiloXModule : XposedModule() {
                     application.unregisterActivityLifecycleCallbacks(this)
                     // Tinker can replace the package loader during Application.attachBaseContext.
                     val runtimeLoader = activity.javaClass.classLoader ?: return
-                    report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
-                    val requests = if (BuildConfig.PARASITE_RUNTIME_PROBE) {
-                        com.ljyh.mei.di.AppGraph.component.hostRequests()
-                    } else HostRequestBridge(HostSessionBridge())
-                    try {
-                        val backend = TvHostRequestBackend(runtimeLoader, ::report)
-                        backend.installHooks(this@MeiloXModule, requests.sessions)
-                        requests.bind(backend)
-                        report("request_bridge_bound")
-                    } catch (error: Throwable) {
-                        report("request_bridge_failed type=${error.javaClass.name}")
-                        return
-                    }
+                    if (!bindBridges(runtimeLoader)) return
                     Thread({
                         HostCapabilityProbe(requests, ::report) { url ->
                             if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url)
