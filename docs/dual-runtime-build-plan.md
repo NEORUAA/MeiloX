@@ -53,7 +53,7 @@ app/src/standalone          app/src/parasite
    MeiloX standalone APK    MeiloX parasite APK
 ```
 
-Build targets (both debug variants build; paired release qualification remains pending):
+Build targets (both debug/release variants build; paired release runtime qualification remains pending):
 
 ```sh
 ./gradlew :app:assembleStandaloneDebug :app:assembleParasiteDebug
@@ -372,6 +372,75 @@ Local-only build evidence: `/tmp/meilox-dual-reporting-build.log`,
 `/tmp/meilox-dual-reporting-final-build.log` and `/tmp/meilox-dual-reporting-release.log`.
 No generated artifact or device data is
 committed. This is a D3 code/package checkpoint, not D3 or D5 completion.
+
+### D3 Audit: Legacy Standalone Download Work (2026-09-30)
+
+- The baseline `main` worker persisted `song_ids_json`, `playlist_name` and
+  `download_path` in WorkManager inputs. Download rows had a playback URL but no
+  account/request ownership. The current worker expects `song_id` and `owner_id`;
+  merely retaining Room rows cannot make those existing work requests executable.
+- Destination metadata must survive conversion, completed local/MediaStore references
+  must remain intact, and legacy work must not be silently assigned to a newly logged-in
+  account. An unverified stored user ID is affinity evidence, not authorization.
+- Standalone's original playback-URL download behavior differs from the module's
+  dedicated download-grant endpoint, which may affect quota. The user has been asked
+  whether standalone should preserve the original behavior or adopt that new endpoint.
+  No default has been silently selected and no real grant/download was requested.
+- `PlaybackPersistence.kt` is unchanged from the recorded `main` baseline, including
+  snapshot/checkpoint formats and settings-store keys. That source comparison does
+  not qualify persisted queue restoration or media-cache compatibility on upgrade.
+  Worker conversion, cache ownership and full Room 17-to-current fixture execution
+  remain open. See ABI-010 in the interface ledger.
+
+### D6 Checkpoint: Paired CI Artifacts and Signing (2026-09-30)
+
+- CI now runs both JVM test targets and minified release targets using the repository's
+  Gradle wrapper. It checks each output-metadata file for its intended production
+  application ID, variant, one unsplit APK, valid version and existing file; both
+  version names/codes must agree before signing.
+- Preserved the `release` environment and original `SIGNING_KEY`, `ALIAS`,
+  `KEY_STORE_PASSWORD` and optional `KEY_PASSWORD` secret bindings. SDK `apksigner`
+  signs each runtime explicitly, with passwords passed through environment references.
+  The decoded keystore is private and removed on successful or failed signing. No
+  production secret or original app signing key was accessed during local testing.
+- Updated obsolete checkout/Java action runtimes and replaced the old Gradle build
+  action with setup plus an explicit wrapper command. The selected official actions
+  declare Node 24 ([checkout](https://github.com/actions/checkout/blob/v7/action.yml),
+  [Java](https://github.com/actions/setup-java/blob/v6/action.yml),
+  [Gradle](https://github.com/gradle/actions/blob/v6/setup-gradle/action.yml)). Gradle
+  caching uses its basic provider; build-scan publication is not enabled. Android
+  platform/build-tools 37 are installed explicitly for compilation and verification.
+- Before upload, both signed files must pass SDK signature verification, 16 KB ZIP
+  alignment and actual manifest package/version checks. Artifacts are named
+  `MeiloX-standalone-<version>-<run>` and `MeiloX-parasite-<version>-<run>`, containing
+  `MeiloX-standalone.apk` and `MeiloX-parasite.apk` respectively. The ambiguous
+  `app-release.apk` asset is replaced by those two explicit release assets.
+- Push still only builds/uploads artifacts; only `workflow_dispatch` creates the
+  version tag and release, after the paired build succeeds. Release name/date, notes
+  input/fallback, prerelease detection and permission separation remain unchanged.
+  The app's existing update checker opens the release page and does not select or
+  automatically install the first APK, so no frontend change is needed for this split.
+- Local verification passes: actionlint 1.7.12, shell syntax checks, workflow wiring,
+  13 metadata cases, 9 signed-preparation cases and 4 signing/cleanup cases. The same
+  workflow shell blocks also sign the actual paired release APKs with a temporary
+  fixture certificate, verify their identity/version/alignment, and reject swapped
+  or unsigned pairs. All fixture keys/APKs are removed afterward. This proves local
+  packaging logic, not hosted-runner execution, production signing compatibility,
+  installation, automatic updates or application runtime acceptance.
+
+Reproduce the workflow checks locally with:
+
+```sh
+ruby .github/tests/dual_runtime_release_test.rb
+ANDROID_HOME=<sdk-path> ruby .github/tests/dual_runtime_release_test.rb --built-apks
+```
+
+The second command requires the two built unsigned release APKs and SDK build-tools
+37.0.0; it uses a disposable test key and never installs or uploads the outputs.
+Local evidence: `/tmp/meilox-dual-release-workflow-final.log` and
+`/tmp/meilox-dual-release-fixtures-final.log`. No remote workflow, push, tag, release
+or merge was triggered. D6 remains incomplete until runtime, upgrade and merge-readiness
+gates are qualified; this checkpoint changes only CI and documentation.
 
 ## Acceptance and Remaining Decisions
 

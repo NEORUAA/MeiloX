@@ -17,60 +17,143 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     outputs:
-      artifact_name: ${{ steps.release_metadata.outputs.artifact_name }}
+      standalone_artifact_name: ${{ steps.release_metadata.outputs.standalone_artifact_name }}
+      parasite_artifact_name: ${{ steps.release_metadata.outputs.parasite_artifact_name }}
       release_name: ${{ steps.release_metadata.outputs.release_name }}
       tag_name: ${{ steps.release_metadata.outputs.tag_name }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v3
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: current
-          arguments: ':app:assembleParasiteRelease'
+      - name: Check paired release workflow
+        run: ruby .github/tests/dual_runtime_release_test.rb
 
-      - uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: app/build/outputs/apk/parasite/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
+      - name: Install Android build tools
+        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
 
-      - name: Read release metadata
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Build and test both runtimes
+        id: build_apks
+        run: >-
+          ./gradlew :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
+          :app:assembleStandaloneRelease :app:assembleParasiteRelease
+
+      - name: Read paired release metadata
         id: release_metadata
         shell: bash
         run: |
-          metadata_file="app/build/outputs/apk/parasite/release/output-metadata.json"
-          version_name="$(jq -r '.elements[0].versionName // empty' "$metadata_file")"
-
-          if [[ ! "$version_name" =~ ^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid Android versionName for release tag: $version_name"
-            exit 1
-          fi
-
+          set -euo pipefail
+          for flavor in standalone parasite; do
+            directory="app/build/outputs/apk/$flavor/release"
+            metadata_file="$directory/output-metadata.json"
+            application_id="com.neoruaa.meilox"
+            if [[ "$flavor" == parasite ]]; then application_id+=".parasite"; fi
+            jq -e --arg application_id "$application_id" --arg variant "${flavor}Release" '
+              .artifactType.type == "APK" and .applicationId == $application_id and
+              .variantName == $variant and (.elements | length) == 1 and
+              .elements[0].type == "SINGLE" and .elements[0].filters == [] and
+              (.elements[0].versionCode | type == "number" and . > 0 and . == floor) and
+              (.elements[0].versionName | type == "string") and
+              (.elements[0].outputFile | type == "string")
+            ' "$metadata_file" > /dev/null
+            version_name="$(jq -r '.elements[0].versionName' "$metadata_file")"
+            version_code="$(jq -r '.elements[0].versionCode' "$metadata_file")"
+            output_file="$(jq -r '.elements[0].outputFile' "$metadata_file")"
+            if [[ ! "$version_name" =~ ^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] ||
+               [[ ! "$output_file" =~ ^[A-Za-z0-9_.-]+\.apk$ ]] || [[ ! -s "$directory/$output_file" ]]; then
+              echo "::error::Invalid $flavor release metadata or missing APK"
+              exit 1
+            fi
+            if [[ "$flavor" == standalone ]]; then
+              paired_version_name="$version_name"
+              paired_version_code="$version_code"
+            elif [[ "$version_name" != "$paired_version_name" || "$version_code" != "$paired_version_code" ]]; then
+              echo '::error::Standalone and parasite release versions differ'
+              exit 1
+            fi
+          done
           release_date="$(TZ=Asia/Hong_Kong date +%y%m%d)"
-          echo "artifact_name=MeiloX-${version_name}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "release_name=${release_date}_${version_name}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${version_name}" >> "$GITHUB_OUTPUT"
+          {
+            echo "standalone_artifact_name=MeiloX-standalone-${version_name}-${GITHUB_RUN_NUMBER}"
+            echo "parasite_artifact_name=MeiloX-parasite-${version_name}-${GITHUB_RUN_NUMBER}"
+            echo "release_name=${release_date}_${version_name}"
+            echo "tag_name=${version_name}"
+            echo "version_code=${version_code}"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Prepare APK
+      - name: Sign both APKs
+        id: sign_apks
+        shell: bash
         env:
-          SIGNED_RELEASE_FILE: ${{ steps.sign_app.outputs.signedReleaseFile }}
-        run: mv "$SIGNED_RELEASE_FILE" app-release.apk
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$SIGNING_KEY"
+          keystore="$(mktemp "$RUNNER_TEMP/meilox-signing-XXXXXX")"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$keystore"
+          signer="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          arguments=(--ks "$keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEY_STORE_PASSWORD)
+          if [[ -n "$KEY_PASSWORD" ]]; then arguments+=(--key-pass env:KEY_PASSWORD); fi
+          for flavor in standalone parasite; do
+            directory="app/build/outputs/apk/$flavor/release"
+            source_file="$(jq -r '.elements[0].outputFile' "$directory/output-metadata.json")"
+            signed_file="$directory/app-$flavor-release-signed.apk"
+            "$signer" sign "${arguments[@]}" --out "$signed_file" "$directory/$source_file"
+            echo "${flavor}_file=$signed_file" >> "$GITHUB_OUTPUT"
+          done
 
-      - name: Upload APK artifact
+      - name: Verify and prepare signed APKs
+        id: prepare_apks
+        shell: bash
+        env:
+          STANDALONE_SIGNED_RELEASE_FILE: ${{ steps.sign_apks.outputs.standalone_file }}
+          PARASITE_SIGNED_RELEASE_FILE: ${{ steps.sign_apks.outputs.parasite_file }}
+          VERSION_NAME: ${{ steps.release_metadata.outputs.tag_name }}
+          VERSION_CODE: ${{ steps.release_metadata.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          build_tools="$ANDROID_HOME/build-tools/37.0.0"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          verify_apk() {
+            local file="$1" application_id="$2"
+            test -s "$file"
+            "$build_tools/apksigner" verify "$file"
+            "$build_tools/zipalign" -c -P 16 4 "$file"
+            test "$("$analyzer" manifest application-id "$file")" = "$application_id"
+            test "$("$analyzer" manifest version-name "$file")" = "$VERSION_NAME"
+            test "$("$analyzer" manifest version-code "$file")" = "$VERSION_CODE"
+          }
+          verify_apk "$STANDALONE_SIGNED_RELEASE_FILE" com.neoruaa.meilox
+          verify_apk "$PARASITE_SIGNED_RELEASE_FILE" com.neoruaa.meilox.parasite
+          mkdir -p release-apks
+          cp "$STANDALONE_SIGNED_RELEASE_FILE" release-apks/MeiloX-standalone.apk
+          cp "$PARASITE_SIGNED_RELEASE_FILE" release-apks/MeiloX-parasite.apk
+
+      - name: Upload standalone APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.release_metadata.outputs.artifact_name }}
-          path: app-release.apk
+          name: ${{ steps.release_metadata.outputs.standalone_artifact_name }}
+          path: release-apks/MeiloX-standalone.apk
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload parasite APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release_metadata.outputs.parasite_artifact_name }}
+          path: release-apks/MeiloX-parasite.apk
           if-no-files-found: error
           compression-level: 0
 
@@ -81,12 +164,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - name: Download signed APK
+      - name: Download standalone APK
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.build.outputs.artifact_name }}
+          name: ${{ needs.build.outputs.standalone_artifact_name }}
+          path: release-artifact
+
+      - name: Download parasite APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.parasite_artifact_name }}
           path: release-artifact
 
       - name: Read release notes
@@ -114,7 +203,7 @@ jobs:
       - name: Create tag and release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: release-artifact/app-release.apk
+          artifacts: release-artifact/MeiloX-standalone.apk,release-artifact/MeiloX-parasite.apk
           artifactContentType: application/vnd.android.package-archive
           artifactErrorsFailBuild: true
           body: ${{ steps.release_notes.outputs.body }}

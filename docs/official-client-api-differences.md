@@ -1106,6 +1106,29 @@ These are integration differences, not server API semantics.
   while user login is pending. This is not Android native, real upload, audible/full-song
   playback, release runtime or listening-history/statistics acceptance.
 
+### ABI-010: Legacy Standalone Work Inputs Do Not Carry Request Ownership
+
+- Date: 2026-09-30. Source audit against the recorded standalone `main` baseline.
+  Old `DownloadWorker` inputs contain a JSON song-ID list plus playlist and destination
+  path. Its Room task holds an already resolved playback URL and song metadata, but
+  no account ID or work-request UUID. The current shared worker instead requires one
+  song ID, a public account owner and a matching persisted UUID, then obtains a fresh
+  dedicated download grant. See API-017 for the separate permission/response contract.
+- The standalone migration preserves those rows/URLs, unlike the parasite migration,
+  but this alone does not restore execution: old `song_ids_json` input is not recognized
+  by the current `song_id`/`owner_id` worker. Old destination metadata is in WorkManager,
+  not those Room rows. A conversion must preserve it, keep completed file references
+  and never silently transfer unfinished work to whichever account logs in next.
+- A persisted account ID can only establish legacy affinity, not prove the current
+  Cookie belongs to that account. Authentication must be verified before any resumed
+  account-bound operation. Unknown ownership and changed accounts need explicit handling;
+  do not infer a grant from the existence of a stale URL or completed task row.
+- Pending user decision: preserve standalone's original playback-URL download behavior,
+  or adopt the dedicated download-grant endpoint and its possible quota semantics.
+  Parasite behavior and its already accepted real download are unchanged. No real
+  request, file transfer, WorkManager mutation or AVD upgrade was performed for this
+  audit. The conversion and persisted-data acceptance are not implemented or passed.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see
