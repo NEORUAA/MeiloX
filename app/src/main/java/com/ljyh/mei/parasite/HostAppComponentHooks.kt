@@ -13,13 +13,17 @@ import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.playback.MusicService
 import io.github.libxposed.api.XposedModule
 
-/** Debug qualification of the original app shell. Does not modify installed package metadata. */
+/** App-shell components without changes to installed package metadata. */
 internal object HostAppComponentHooks {
     fun route(intent: Intent): Intent {
-        if (!BuildConfig.PARASITE_APP_PROBE) return intent
+        if (!BuildConfig.PARASITE_APP_ENABLED) return intent
         val component = intent.component ?: return intent
         val target = HostComponentMapping.target(component.packageName, component.className) ?: return intent
-        return Intent(intent).setClassName(component.packageName, target)
+        return Intent(intent).setClassName(component.packageName, target).apply {
+            if (target == HostComponentMapping.LAUNCHER) {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+        }
     }
 
     fun install(module: XposedModule, context: Context, report: (String) -> Unit) {

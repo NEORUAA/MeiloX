@@ -62,13 +62,13 @@ class MeiloXModule : XposedModule() {
         if (!isolated) return
         HostRetrofitCompatibility.install(this, ::report)
         val requests by lazy {
-            if (BuildConfig.PARASITE_RUNTIME_PROBE) com.ljyh.mei.di.AppGraph.component.hostRequests()
+            if (BuildConfig.PARASITE_APP_ENABLED || BuildConfig.PARASITE_RUNTIME_PROBE) com.ljyh.mei.di.AppGraph.component.hostRequests()
             else HostRequestBridge(HostSessionBridge())
         }
         var bindingAttempted = false
         var bridgesReady = false
         fun bindBridges(runtimeLoader: ClassLoader): Boolean {
-            if (!BuildConfig.PARASITE_HOST_PROBE || bindingAttempted) return bridgesReady
+            if ((!BuildConfig.PARASITE_APP_ENABLED && !BuildConfig.PARASITE_HOST_PROBE) || bindingAttempted) return bridgesReady
             bindingAttempted = true
             try {
                 report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
@@ -100,7 +100,7 @@ class MeiloXModule : XposedModule() {
             }
             return bridgesReady
         }
-        if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+        if (BuildConfig.PARASITE_APP_ENABLED || BuildConfig.PARASITE_RUNTIME_PROBE) {
             HostRuntimeProbe.install(this, application, moduleApplicationInfo, ::report) { bindBridges(it) }
         }
         if (BuildConfig.PARASITE_HOST_PROBE) {

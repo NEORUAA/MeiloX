@@ -16,6 +16,9 @@
 - Pause for user login and account cooperation. A blocked capability is not permission to remove a feature.
 - Record interface/response/session differences and their evidence in
   [Official Client API Differences](official-client-api-differences.md).
+- Keep LSPosed scope limited to TV. The user declined system-framework hooks and
+  authorized two TV-only AVD orientation compat overrides instead; see the launcher
+  checkpoint for their scope and rollback.
 
 ## Candidate Baseline
 
@@ -1064,6 +1067,75 @@ recovery, player heart behavior, and authorized write acceptance remain unqualif
 The temporary-private-playlist authorization, host recording/PiP decision, production
 routing, full playback, and release gates are unchanged.
 
+### Desktop Launcher and Portrait Startup
+
+The user reported that dismissing TV from Recents and reopening its icon still showed
+official landscape advertising and the TV home. The previous carrier-only probe did
+not cover the real launcher. This checkpoint preserves MeiloX's page architecture and
+changes only component routing and its enablement.
+
+- Normal debug and release build configuration now enables the app shell independently
+  of diagnostic probes. Explicit host/runtime probe builds retain their isolated mode;
+  the legacy `parasiteAppProbe` property can explicitly override debug shell enablement.
+  Diagnostic storage/network probes do not run automatically in an ordinary app build.
+- After the existing package/version/signature check and official Application startup,
+  the launcher, TV home, and calendar startup entries instantiate MeiloX MainActivity.
+  Their official constructors/onCreate methods are not run. The request/login bridges
+  bind using the actual runtime classloader before composing MeiloX. Unrelated host
+  activities are not indiscriminately replaced.
+- Module notification activity intents target the actual launcher with CLEAR_TOP and
+  SINGLE_TOP, retaining their action, data, extras, and existing flags. Service intents
+  keep service-only routing. Implicit and other-package intents remain unchanged.
+
+Verification on 2026-09-29:
+
+- Ordinary `:app:testDebugUnitTest :app:assembleDebug` passes without probe properties:
+  496 tests in 65 suites, zero failures/errors/skips. Three new Activity-mapping tests
+  cover shell entries, isolated probes, and unrelated classes. Three focused Android
+  Intent-routing tests pass via direct instrumentation, without connected-test cleanup
+  removing the module. Android-test assembly, APK 16 KB alignment, and diff checks pass.
+- With only host hooks, a force-stopped launcher start opens MeiloX with the existing
+  account and paused 33-song queue. The first activity is the launcher carrier with
+  module MainActivity/Compose content, not the official page. The recorded first launch
+  still rotates through the system package-icon starting window. There is no official
+  calendar/ad or TV-home content in the recorded sequence.
+- Dismissing the TV task by swiping its Recents card, then tapping its desktop icon,
+  opens MeiloX again. The host process remains alive in this warm task-removal check;
+  it must not be reported as a process-cold test. Tapping the system media card returns
+  to the same single launcher task, without a duplicate Activity, with playback paused.
+- The user declined system-framework hooks, then authorized testing and retaining the
+  following two package-specific Android compat overrides. Their original state was
+  default-disabled with no TV entry. No APK, global rotation setting, or other package
+  was changed. LSPosed's static scope remains only `com.netease.cloudmusic.tv`.
+
+```sh
+adb -s emulator-5554 shell su -c 'am compat enable OVERRIDE_ANY_ORIENTATION com.netease.cloudmusic.tv'
+adb -s emulator-5554 shell su -c 'am compat enable OVERRIDE_UNDEFINED_ORIENTATION_TO_PORTRAIT com.netease.cloudmusic.tv'
+```
+
+- After those overrides, a process-cold launch by tapping the original desktop icon was
+  recorded. The screen stays portrait from the starting window through MeiloX's loaded
+  Home; the system reports overriding the landscape request to portrait, and its
+  rotation history adds no transition. The module Activity is created once, without the
+  orientation-triggered recreation seen before the override. Current host crash buffers
+  are empty in both runs. Video/screenshots/logs remain outside Git.
+- This is an AVD configuration workaround, not a pure-module orientation fix. It applies
+  to all TV activities, and its persistence after reboot/package updates and availability
+  on other systems are not yet qualified. The system's TV-icon starting window remains;
+  no official in-app splash advertisement or official home was observed after replacement.
+
+To restore the exact original compat defaults, remove only these overrides (do not use
+`reset-all`, which would affect unrelated package compat choices):
+
+```sh
+adb -s emulator-5554 shell su -c 'am compat reset OVERRIDE_ANY_ORIENTATION com.netease.cloudmusic.tv'
+adb -s emulator-5554 shell su -c 'am compat reset OVERRIDE_UNDEFINED_ORIENTATION_TO_PORTRAIT com.netease.cloudmusic.tv'
+```
+
+The current AVD retains both overrides by user request. ABI-002 in the difference ledger
+records the boundary. Release runtime qualification, all external navigation, and the
+recording/PiP capability decision remain open; stage 2 is not complete.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1086,7 +1158,7 @@ routing, full playback, and release gates are unchanged.
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
-| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
+| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, and daily recommendations passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |

@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.update
 
 internal data class ProbePlaybackState(val ready: Boolean = false, val playing: Boolean = false, val positionMs: Long = 0)
 
-/** Debug-only component/resource qualification. Never redirects the official launcher. */
+/** Installs the app shell, or the explicitly requested isolated runtime probe. */
 internal object HostRuntimeProbe {
     const val ACTIVITY = HostComponentMapping.ACTIVITY
     const val SERVICE = HostComponentMapping.SERVICE
@@ -39,33 +39,36 @@ internal object HostRuntimeProbe {
         report = logger
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
-        if (BuildConfig.PARASITE_APP_PROBE) HostAppComponentHooks.install(module, applicationContext, report)
-        Thread({ ModuleStorageProbe.run(applicationContext, application, report) }, "MeiloX-storage-probe").start()
+        if (BuildConfig.PARASITE_APP_ENABLED) HostAppComponentHooks.install(module, applicationContext, report)
+        if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+            Thread({ ModuleStorageProbe.run(applicationContext, application, report) }, "MeiloX-storage-probe").start()
+        }
         module.hook(AppComponentFactory::class.java.getMethod("instantiateService", ClassLoader::class.java, String::class.java, Intent::class.java))
             .intercept { chain ->
                 // ActivityThread supplies no start Intent until after service creation.
                 if (chain.getArg(1) == SERVICE) {
                     report("runtime_service_instantiated")
-                    if (BuildConfig.PARASITE_APP_PROBE) MusicService() else HostRuntimeProbeService()
+                    if (BuildConfig.PARASITE_APP_ENABLED) MusicService() else HostRuntimeProbeService()
                 } else chain.proceed()
             }
         module.hook(Instrumentation::class.java.getMethod(
             "newActivity", ClassLoader::class.java, String::class.java, Intent::class.java,
         )).intercept { chain ->
-            if (chain.getArg(1) == ACTIVITY) {
+            val className = chain.getArg(1) as String
+            if (HostComponentMapping.replacesActivity(className, BuildConfig.PARASITE_APP_ENABLED)) {
                 val loader = chain.getArg(0) as ClassLoader
                 onHostActivity(loader)
                 val config = loader.loadClass("me.jessyan.autosize.AutoSizeConfig")
                     .getMethod("getInstance").invoke(null)
                 val manager = config.javaClass.getMethod("getExternalAdaptManager").invoke(config)
-                val activityClass = if (BuildConfig.PARASITE_APP_PROBE) MainActivity::class.java else HostRuntimeProbeActivity::class.java
+                val activityClass = if (BuildConfig.PARASITE_APP_ENABLED) MainActivity::class.java else HostRuntimeProbeActivity::class.java
                 if (manager.javaClass.getMethod("isCancelAdapt", Class::class.java)
                         .invoke(manager, activityClass) != true) {
                     manager.javaClass.getMethod("addCancelAdaptOfActivity", Class::class.java)
                         .invoke(manager, activityClass)
                 }
-                report("runtime_activity_instantiated host_process=${Application.getProcessName() == HostIdentity.PACKAGE}")
-                if (BuildConfig.PARASITE_APP_PROBE) MainActivity() else HostRuntimeProbeActivity()
+                report("runtime_activity_instantiated host_process=${Application.getProcessName() == HostIdentity.PACKAGE} entry=$className")
+                if (BuildConfig.PARASITE_APP_ENABLED) MainActivity() else HostRuntimeProbeActivity()
             } else {
                 chain.proceed()
             }
@@ -75,7 +78,7 @@ internal object HostRuntimeProbe {
     fun wrap(base: Context): Context = applicationContext.wrap(base)
 
     fun wrapAppComponent(base: Context): Context =
-        if (BuildConfig.PARASITE_APP_PROBE && base.packageName == HostIdentity.PACKAGE) wrap(base) else base
+        if (BuildConfig.PARASITE_APP_ENABLED && base.packageName == HostIdentity.PACKAGE) wrap(base) else base
 
     fun offerMedia(url: String) {
         mediaUrl = url

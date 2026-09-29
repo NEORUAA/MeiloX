@@ -32,17 +32,21 @@ android {
 
     buildTypes {
         debug {
-            val appProbe = providers.gradleProperty("parasiteAppProbe").orNull == "true"
-            buildConfigField("boolean", "PARASITE_APP_PROBE", appProbe.toString())
-            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", (appProbe || providers.gradleProperty("parasiteRuntimeProbe").orNull == "true").toString())
+            val runtimeProbe = providers.gradleProperty("parasiteRuntimeProbe").orNull == "true"
+            val hostProbe = providers.gradleProperty("parasiteHostProbe").orNull == "true"
+            // Retain the existing probe override; ordinary builds run the app shell.
+            val appEnabled = providers.gradleProperty("parasiteAppProbe").orNull?.toBooleanStrict()
+                ?: !(runtimeProbe || hostProbe)
+            buildConfigField("boolean", "PARASITE_APP_ENABLED", appEnabled.toString())
+            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", runtimeProbe.toString())
             buildConfigField(
                 "boolean",
                 "PARASITE_HOST_PROBE",
-                (appProbe || providers.gradleProperty("parasiteHostProbe").orNull == "true").toString(),
+                (runtimeProbe || hostProbe).toString(),
             )
         }
         release {
-            buildConfigField("boolean", "PARASITE_APP_PROBE", "false")
+            buildConfigField("boolean", "PARASITE_APP_ENABLED", "true")
             buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", "false")
             buildConfigField("boolean", "PARASITE_HOST_PROBE", "false")
             isMinifyEnabled = true

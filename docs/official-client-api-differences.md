@@ -299,6 +299,39 @@ These are integration differences, not server API semantics.
 - Evidence: reflection-adapter unit tests and the corrected eight-operation Retrofit
   probe. See [Retrofit Transport Adaptation](official-client-parasite.md#retrofit-transport-adaptation).
 
+### ABI-002: Launcher Activity Replacement Is Separate From System Orientation
+
+- Recorded: 2026-09-29.
+- Original prototype: substitutes only `tv.test.TextMainActivity`; the real desktop
+  `app.LoadingActivity` still runs the official startup, calendar/ad, and TV-home path.
+  Successful debug-carrier launches therefore did not qualify desktop cold starts.
+- Adaptation: after host identity verification and official Application initialization,
+  substitute the actual launcher, home, and calendar entry classes before construction.
+  They instantiate the original MeiloX MainActivity instead of executing official page
+  lifecycle code. Notification intents use the launcher with CLEAR_TOP and SINGLE_TOP.
+  The isolated runtime probe retains its debug carrier and does not take over the launcher.
+- Orientation boundary: the official APK declares landscape on these entries. The
+  system can apply that declaration and show its package-icon starting window before
+  any host-process hook runs. MainActivity then requests portrait. This causes a visible
+  rotation without additional device configuration; the system icon is not an official
+  in-app advertisement. No system-framework scope or APK modification is introduced.
+- Authorized AVD workaround: Android per-package compat changes `OVERRIDE_ANY_ORIENTATION`
+  (265464455) plus `OVERRIDE_UNDEFINED_ORIENTATION_TO_PORTRAIT` (265452344) override the
+  fixed direction before host startup. Both were initially default-disabled, with no
+  TV override. The user authorized testing and then retaining only these TV overrides.
+  Global rotation settings and other packages are unchanged. These flags affect all TV
+  activities, not just the MeiloX entry, and are not automatically set by the module.
+- Evidence: [Android's compat-change reference](https://developer.android.com/about/versions/16/reference/compat-framework-changes#OVERRIDE_UNDEFINED_ORIENTATION_TO_PORTRAIT)
+  documents the combination. On the API 37 AVD, recorded desktop-icon cold startup stays
+  portrait; the system logs the landscape-to-portrait policy override and adds no display
+  rotation. The shell appears with its existing login and paused queue. Unit mapping
+  tests, three on-device Intent tests, task inspection, and notification-return checks
+  cover the entry replacement separately from the orientation workaround.
+- Remaining: the system package-icon starting window is still visible. Reboot/update
+  persistence and other Android/OEM versions are unverified. Arbitrary external deep
+  links, release obfuscation, and the separate recording/PiP manifest gate remain open.
+  Setup and exact rollback commands are in the migration log's launcher checkpoint.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,

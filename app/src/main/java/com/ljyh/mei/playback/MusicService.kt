@@ -365,7 +365,7 @@ class MusicService : MediaLibraryService(),
         addSession(mediaSession)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
-        if (com.ljyh.mei.BuildConfig.PARASITE_APP_PROBE) {
+        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
             com.ljyh.mei.parasite.HostRuntimeProbe.report("app_music_service_created sessions=${sessions.size}")
         }
 

@@ -243,7 +243,7 @@ class MainActivity : ComponentActivity() {
         setTheme(R.style.Theme_Music)
         com.ljyh.mei.di.AppGraph.component.inject(this)
         super.onCreate(savedInstanceState)
-        if (BuildConfig.PARASITE_APP_PROBE) {
+        if (BuildConfig.PARASITE_APP_ENABLED && packageName == com.ljyh.mei.parasite.HostIdentity.PACKAGE) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             com.ljyh.mei.parasite.HostRuntimeProbe.report("app_activity_created restored=${savedInstanceState != null}")
         }
