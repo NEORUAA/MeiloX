@@ -94,6 +94,13 @@ class MeiloXModule : XposedModule() {
                 login.installHooks(this@MeiloXModule)
                 requests.sessions.bindLogin(login)
                 report("login_bridge_bound")
+                if (BuildConfig.PARASITE_APP_ENABLED) {
+                    val playbackReports = com.ljyh.mei.di.AppGraph.component.hostPlaybackReports()
+                    val reporting = TvHostPlaybackReportBackend(runtimeLoader, playbackReports, ::report)
+                    reporting.installHooks(this@MeiloXModule)
+                    playbackReports.bind(reporting)
+                    report("playback_report_bridge_bound")
+                }
                 bridgesReady = true
             } catch (error: Throwable) {
                 report("session_bridge_failed type=${error.javaClass.name}")

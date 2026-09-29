@@ -21,6 +21,7 @@ interface AppComponent {
     fun viewModelFactory(): AppViewModelFactory
     fun database(): AppDatabase
     fun hostRequests(): HostRequestBridge
+    fun hostPlaybackReports(): com.ljyh.mei.parasite.HostPlaybackReportBridge
     fun hostAccount(): HostAccountStore
     fun apiService(): ApiService
     fun eapiService(): EApiService

@@ -4,12 +4,10 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.melox.ListenTogetherCommand
@@ -51,20 +49,15 @@ import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.parasite.HostSessionStamp
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
 import com.ljyh.mei.di.NETEASE_EAPI_PROFILE_HEADER
 import com.ljyh.mei.di.PLAYBACK_HISTORY_PROFILE
 import com.ljyh.mei.di.PlaybackResponseBodyException
 import com.ljyh.mei.di.readBoundedPlaybackResponseBody
-import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.utils.log.logPlaybackHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -254,88 +247,6 @@ class MeloXRepository @Inject constructor(
             .mapNotNull(::parseRecentHistorySong)
             .filter { it.id > 0 }
             .deduplicateRecentSongs()
-    }
-
-    suspend fun recordPlaybackStart(
-        songId: Long,
-        sourceId: Long,
-        source: String,
-        startedAtMs: Long,
-    ): PlaybackLogResponse? {
-        if (songId <= 0L) return null
-        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
-
-        return submitPlaybackHistoryStart(
-            songId = songId,
-            sourceId = sourceId,
-            source = source,
-            startedAtMs = startedAtMs,
-        ) { action, fields ->
-            submitPlaybackHistoryLog(eapi, action, fields).also { response ->
-                logPlaybackHistoryDebug(action, fields, response, debugEnabled)
-            }
-        }
-    }
-
-    suspend fun recordPlaybackDuration(
-        songId: Long,
-        sourceId: Long,
-        source: String,
-        timeSeconds: Long,
-        startedAtMs: Long,
-        endedAtMs: Long,
-        endReason: String,
-    ): PlaybackLogResponse? {
-        if (songId <= 0L) return null
-        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
-        val fields = playbackHistoryPlayFields(
-            songId = songId,
-            sourceId = sourceId,
-            source = source,
-            timeSeconds = timeSeconds,
-            startedAtMs = startedAtMs,
-            endedAtMs = endedAtMs,
-            endReason = endReason,
-        )
-        return submitPlaybackHistoryLog(eapi, "play", fields).also { response ->
-            logPlaybackHistoryDebug("play", fields, response, debugEnabled)
-        }
-    }
-
-    private suspend fun authenticatedPlaybackHistoryDebugEnabled(): Boolean? {
-        val preferences = context.dataStore.data.first()
-        if (preferences[CookieKey].isNullOrBlank()) return null
-        return BuildConfig.DEBUG || preferences[DebugKey] == true
-    }
-
-    private fun logPlaybackHistoryDebug(
-        action: String,
-        fields: Map<String, Any>,
-        response: PlaybackLogResponse,
-        debugEnabled: Boolean,
-    ) {
-        if (!debugEnabled) return
-        try {
-            logPlaybackHistory(
-                Log.DEBUG,
-                "PlaybackHistory action=%s params=id:%s sourceId:%s source:%s " +
-                    "sourcetype:%s time:%s startlogtime:%s logtime:%s end:%s result=%s",
-                action,
-                fields["id"],
-                fields["sourceId"],
-                fields["source"],
-                fields["sourcetype"],
-                fields["time"],
-                fields["startlogtime"],
-                fields["logtime"],
-                fields["end"],
-                response.diagnosticSummary(),
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            // Diagnostics must not change the playback-history result.
-        }
     }
 
     override suspend fun setPodcastSubscribed(session: HostSessionStamp, id: Long, subscribed: Boolean) {

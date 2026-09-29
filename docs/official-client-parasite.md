@@ -1296,6 +1296,51 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   `/tmp/meilox-playback-session-device-tests.log`, and playback-session screenshots.
   Stage 5 remains in progress; the recording/PiP host decision also remains open.
 
+### Official Playback Reporting Checkpoint (2026-09-29)
+
+- The original music service now sends its actual playback start/completion events
+  through a module-owned `HostPlaybackReportBridge` into the initialized official
+  native reporting SDK. It no longer reads module cookies or builds its own NCBL
+  identity, encryption or transport. Original UI, queue and playback timing remain
+  unchanged; API-016 records the exact TV classes and protocol differences.
+- Both native reporting channels use the captured authorization generation. A
+  one-use marker survives the SDK queue and is removed at each worker boundary;
+  stale/replayed/unowned playback events are rejected before those worker bodies.
+  Other official analytics are not suppressed. Native account rotation and upload
+  ownership remain official; no module lock is held across a host worker call.
+- Removed the independent NCBL implementation, dedicated network provider, Zstd JNI
+  dependency and its obsolete tests. The uncalled legacy weblog test helpers and
+  unused interceptor are not yet removed; stage 7 is not complete.
+- Debug and Android-test assembly passed. The complete unit suite (565 tests in
+  70 suites) and five focused Android tests (cache ownership, media-button ownership,
+  audio focus) passed with no failures/errors/skips. Debug APK 16 KB alignment
+  passed, and its ZIP contains no Zstd JNI library. Local build/runtime evidence
+  stays outside Git.
+- AVD native-channel timing check: `startplay` and `_plv` were processed at start;
+  switching the song later processed `play` and `_pld` with the same start timestamp.
+  About 165 wall-clock seconds, including a pause, yielded 88 active seconds. There
+  was no immediate zero-duration completion or extra start on pause/resume. This
+  is worker-dispatch evidence, not native file persistence, upload acceptance, full
+  song/audio acceptance, listening-history refresh or final server statistics.
+- The cleaned APK cold-started through the official launcher with both reporting
+  hooks bound and the original paused queue intact. The official legacy media
+  session stayed inactive/STOPPED. A repeat playback/pause/next check dispatched
+  both completion channels with 67 active seconds and the same start timestamp;
+  playback was left paused and the current host crash buffer was empty. The original
+  portrait Home and glass controls were inspected in a screenshot. Both user-retained
+  TV-only orientation overrides remain enabled; no APK behavior or global rotation
+  setting was added for them.
+- Remaining: real account changes (including an account switch inside a native
+  worker call), runtime duplicate-original-event rejection, special source metadata,
+  FM/podcast/cloud behavior, release and end-to-end server acceptance. No logout,
+  account change, social mutation, media download, user-file upload or permission
+  change was performed.
+  Stage 5 remains in progress, and the recording/PiP host decision remains open.
+- Local-only evidence: `/tmp/meilox-native-report-build.log`,
+  `/tmp/meilox-native-report-final-tests.log`,
+  `/tmp/meilox-native-report-runtime.log`,
+  `/tmp/meilox-native-report-final-runtime.log`, and the corresponding UI screenshot.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1321,7 +1366,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, and authorization-owned URL/cache resolution passed documented checkpoints; favorite writes and account transitions have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; favorite writes and account transitions have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

@@ -420,6 +420,59 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   not a promise of synchronous removal of already-decoded audio frames. Substitute
   tests do not qualify real logout/account switching, audible quality, or server totals.
 
+### API-016: Playback Reports Use the Native Official SDK
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original MeiloX: `PlaybackHistoryReporter` called a Cookie-gated repository
+  `feedback/weblog` operation and a separate client implementing NCBL payloads,
+  encryption, compression, device/session metadata and HTTP delivery. That second
+  client read module preferences and maintained an independent reporting identity.
+- Official contract: actual DEX `module.player.m.q` emits native `startplay`/`play`
+  through `IStatistic.logJSONWithMspm`, with mspm
+  `5f3ab1eab1b200b0c2e37ee6`. When the official `h.e()` configuration enables BI,
+  `bilog.k.d` publishes `_plv`/`_pld` through the initialized data-report SDK. The
+  native channels own account metadata, file queues, encryption, batching and uploads
+  via `clientlog/upload` and `clientlog/encrypt/upload`. These are not the previous
+  independently authenticated WebView/NCBL clients.
+- Adaptation: an internal bridge passes platform maps into the host's own builders
+  and fastjson objects; no host Kotlin/JSON type escapes the boundary. The official
+  BI switch is respected and its SDK must be initialized. Only actual playback
+  starts create `startplay`; completion sends active playing seconds, excluding
+  pause/buffering, with the original epoch-second `startlogtime`, millisecond
+  `logtime`, song/source and end reason. Native song reports do not receive the old
+  `mainsiteWeb` profile flag. Host SDK enrichment supplies its environment metadata.
+- Ownership: each queued channel has a one-use scalar marker associated with the
+  captured public identity and authorization generation. Hooks at actual DEX workers
+  `core.statistic.p0.I(String, JSONObject, long)` and
+  `core.statistic.j1.r(String, JSONObject)` remove that marker before invoking their
+  serializers. Expired, replayed, guest, recovery-required and stale events are
+  discarded. Unowned original-host events for these four playback actions are also
+  discarded to prevent a second reporting source; unrelated analytics proceed.
+  Pending markers are bounded and expire after five minutes. Delayed invalidation
+  callbacks remove only older generations, not newly queued events.
+- Delivery boundary: SDK enqueue/worker processing is not an upload receipt. Partial
+  native-channel failures are not automatically retried by the module, since the
+  other channel may already be queued. The final owner check deliberately does not
+  hold the module session monitor across host calls, whose account stores have their
+  own locks. Native account metadata rotation remains intact; a real account change
+  during the worker call is not yet qualified as an atomic delivery guarantee.
+- Evidence: unit tests cover ordering, captured timestamps, pause exclusion, duplicate
+  completions, draining/cancellation, guests/recovery, stale identities, one-use markers,
+  expiry, bounded retention and delayed invalidation. On the AVD, both native workers
+  processed start and completion channels with the same start timestamp; a roughly
+  165-second wall-clock interval containing a pause produced 88 active seconds.
+  This does not prove file persistence, HTTP/business acceptance, complete-song
+  playback, listening-history refresh, or later server statistics aggregation.
+- Cleanup: removed the unused independent NCBL client, codec, metadata provider,
+  dedicated OkHttp wiring, tests and Zstd JNI dependency. Old uncalled weblog helper
+  fixtures/DTOs and the unused legacy interceptor remain for the final cleanup stage;
+  this checkpoint does not claim all independent NetEase backend code is gone.
+- Remaining: real logout/reauthorization/account-transition checks, original-player
+  duplicate-event runtime injection, full song/source/effects metadata parity, FM's
+  special real-time path, podcast/cloud semantics, release runtime, and server-side
+  listening-history/statistics acceptance. No account change or social action was
+  performed for this checkpoint.
+
 ## Runtime Boundary Notes
 
 These are integration differences, not server API semantics.
