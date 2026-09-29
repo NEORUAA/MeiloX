@@ -187,9 +187,9 @@ class AlbumDetailViewModel internal constructor(
         }
     }
 
-    suspend fun resolveSongUrls(ids: List<String>, quality: MusicQuality, stamp: HostSessionStamp, albumId: String) =
+    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, stamp: HostSessionStamp, albumId: String) =
         requireCurrent(stamp, albumId).let {
-            repository.getSongUrlV1(ids, quality, stamp).also {
+            repository.getDownloadSources(ids, quality, stamp).also {
                 currentCoroutineContext().ensureActive()
                 requireCurrent(stamp, albumId)
             }

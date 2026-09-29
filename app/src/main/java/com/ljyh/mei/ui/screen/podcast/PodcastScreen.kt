@@ -438,23 +438,27 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
     val count = maxOf(detail?.totalCount ?: 0, detail?.podcast?.programCount ?: 0, detail?.programs?.size ?: 0)
 
     fun download(tracks: List<MediaMetadata>, quality: com.ljyh.mei.constants.MusicQuality) {
+        val owner = state.session ?: return
         scope.launch {
             try {
-                val sources = tracks.map { it.id.toString() }.chunked(200).flatMap { ids ->
-                    val result = downloadViewModel.resolveSongUrls(ids, quality)
-                    if (result is com.ljyh.mei.data.network.Resource.Success) result.data.fullSourcesFor(ids.toSet()) else emptyList()
+                viewModel.requireDetail(owner, id)
+                val sources = when (val result = downloadViewModel.resolveDownloadSources(tracks.map { it.id.toString() }, quality, owner)) {
+                    is com.ljyh.mei.data.network.Resource.Success -> result.data.sources
+                    is com.ljyh.mei.data.network.Resource.Error -> error(result.message)
+                    com.ljyh.mei.data.network.Resource.Loading -> error("Download authorization did not complete")
                 }.associateBy { it.id.toString() }
                 val songs = tracks.mapNotNull { track ->
                     val source = sources[track.id.toString()] ?: return@mapNotNull null
-                    val url = source.url ?: return@mapNotNull null
+                    val url = source.url
                     com.ljyh.mei.playback.SongDownloadInfo(
                         songId = track.id.toString(), url = url, songTitle = track.title,
                         songArtist = track.artists.map { it.name }, songAlbum = track.album.title,
                         songCover = track.coverUrl, duration = track.duration,
-                        fileType = source.encodeType, quality = source.level,
+                        fileType = source.fileType, quality = source.level,
                     )
                 }
                 check(songs.isNotEmpty()) { "No downloadable programs" }
+                viewModel.requireDetail(owner, id)
                 com.ljyh.mei.utils.DownloadManager.enqueue(
                     context = context, songs = songs, playlistName = detail?.podcast?.name.orEmpty(),
                     playlistId = "podcast_$id", downloadPath = downloadPath,

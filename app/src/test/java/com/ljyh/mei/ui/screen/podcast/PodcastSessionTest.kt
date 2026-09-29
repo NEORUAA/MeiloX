@@ -238,6 +238,21 @@ class PodcastSessionTest {
         }
     }
 
+    @Test fun downloadPreparationRejectsAnotherDetailRecoveryAndStaleAuthorization() {
+        checkModels { _, detail, _ ->
+            detail.load(1)
+            runCurrent()
+            val owner = sessions.snapshot()
+            detail.requireDetail(owner, 1)
+            assertTrue(runCatching { detail.requireDetail(owner, 2) }.isFailure)
+            sessions.setRecoveryRequired(true)
+            assertTrue(runCatching { detail.requireDetail(owner, 1) }.isFailure)
+            sessions.setRecoveryRequired(false)
+            sessions.invalidate()
+            assertTrue(runCatching { detail.requireDetail(owner, 1) }.isFailure)
+        }
+    }
+
     @Test fun accountChangeInvalidatesTheBulkCacheAndDetailSubscriptionState() {
         source.detail = { PodcastDetail(podcast(it).copy(isSubscribed = identity.userId == 1L), listOf(program(identity.userId)), false, 1) }
         checkModels { _, detail, _ ->

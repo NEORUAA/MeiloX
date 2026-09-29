@@ -246,6 +246,15 @@ class PodcastDetailViewModel internal constructor(
 ) : ViewModel() {
     @Inject constructor(repository: MeloXRepository, accounts: HostAccountStore) : this(repository as PodcastSource, accounts)
 
+    fun requireDetail(owner: HostSessionStamp, id: Long) {
+        accounts.sessions.withCurrent(owner) {
+            synchronized(stateLock) {
+                if (accounts.sessions.recoveryRequired.value || state.value.session != owner || loadedId != id ||
+                    state.value.detail?.podcast?.id != id) throw CancellationException("Podcast changed")
+            }
+        }
+    }
+
     private val mutableState = MutableStateFlow(PodcastDetailUiState())
     val state = mutableState.asStateFlow()
     private val stateLock = Any()

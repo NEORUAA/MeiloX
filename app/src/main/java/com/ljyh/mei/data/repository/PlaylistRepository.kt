@@ -4,7 +4,7 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.AlbumDetail
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
-import com.ljyh.mei.data.model.SongUrl
+import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.api.BaseMessageResponse
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.CreatePlaylist
@@ -13,7 +13,6 @@ import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
-import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SubscribePlaylist
@@ -26,7 +25,9 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
-import com.ljyh.mei.playback.playbackQualityFallbacks
+import com.ljyh.mei.playback.resolveOfficialDownloadSources
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.parasite.HostSessionChangedException
 import com.ljyh.mei.parasite.HostSessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,7 @@ internal interface AlbumDetailSource {
     suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail>
     suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean>
     suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse>
-    suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl>
+    suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources>
 }
 
 internal interface PlaylistPageSource {
@@ -58,7 +59,8 @@ internal interface PlaylistMutationSource {
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
-    private val eApiService: EApiService
+    private val eApiService: EApiService,
+    private val sessions: HostSessionBridge,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
     override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
@@ -108,49 +110,13 @@ class PlaylistRepository(
         }
     }
 
-    override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl> {
+    override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources> {
         return withContext(Dispatchers.IO) {
-            val requestedIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
-            if (requestedIds.isEmpty()) {
-                return@withContext Resource.Success(SongUrl(code = 200, data = emptyList()))
-            }
-
-            val fullSourcesById = LinkedHashMap<String, SongUrl.Data>()
-            var responseCode = 200
-            for (attemptedQuality in playbackQualityFallbacks(quality.text)) {
-                val response = try {
-                    apiService.getSongUrlV1(
-                        GetSongUrlV1(
-                            ids = "[${requestedIds.joinToString(",")}]",
-                            level = attemptedQuality,
-                        ),
-                        expectedSession = session,
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    // A transport/authentication failure is not a quality fallback signal.
-                    return@withContext Resource.Error(error.message ?: "Unable to resolve song URL")
-                }
-                if (response.code != 200) {
-                    return@withContext Resource.Error(
-                        "Song URL API returned code ${response.code}"
-                    )
-                }
-
-                responseCode = response.code
-                response.fullSourcesFor(requestedIds.toSet()).forEach { source ->
-                    fullSourcesById.putIfAbsent(source.id.toString(), source)
-                }
-                if (fullSourcesById.size == requestedIds.size) break
-            }
-
-            Resource.Success(
-                SongUrl(
-                    code = if (fullSourcesById.isNotEmpty()) 200 else responseCode,
-                    data = fullSourcesById.values.toList(),
-                )
-            )
+            try {
+                Resource.Success(resolveOfficialDownloadSources(apiService, sessions, ids, quality, session))
+            } catch (error: CancellationException) { throw error }
+            catch (error: HostSessionChangedException) { throw error }
+            catch (_: Exception) { Resource.Error("Unable to authorize official downloads") }
         }
     }
 

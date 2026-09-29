@@ -62,7 +62,7 @@ class AccountLikedSongsTest {
             assertEquals("1", args[0])
             entries
         })
-        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, eapi), sessions)
+        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, eapi, sessions), sessions)
     }
 
     @Test fun everyPageUsesCapturedOwnerAndReturnsTheCompleteOrderedList() = runBlocking {

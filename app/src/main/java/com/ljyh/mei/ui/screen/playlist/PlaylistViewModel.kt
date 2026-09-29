@@ -555,9 +555,9 @@ class PlaylistViewModel internal constructor(
         )
     }
 
-    suspend fun resolveSongUrls(ids: List<String>, quality: MusicQuality, owner: HostSessionStamp = sessions.snapshot()) =
+    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, owner: HostSessionStamp) =
         sessions.requireCurrent(owner).let {
-            repository.getSongUrlV1(ids, quality, owner).also {
+            repository.getDownloadSources(ids, quality, owner).also {
                 currentCoroutineContext().ensureActive()
                 sessions.requireCurrent(owner)
             }

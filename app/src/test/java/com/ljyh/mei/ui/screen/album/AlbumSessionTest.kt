@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.google.gson.Gson
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.AlbumDetail
-import com.ljyh.mei.data.model.SongUrl
+import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.AlbumDetailSource
@@ -42,7 +42,7 @@ class AlbumSessionTest {
         var detail: suspend (String, HostSessionStamp) -> Resource<AlbumDetail> = { id, _ -> Resource.Success(album(id)) }
         var collection: suspend (String, HostSessionStamp) -> Resource<Boolean> = { _, _ -> Resource.Success(false) }
         var mutate: suspend (String, Boolean, HostSessionStamp) -> Resource<BaseResponse> = { _, _, _ -> Resource.Success(BaseResponse(200)) }
-        var urls: suspend () -> Resource<SongUrl> = { Resource.Success(SongUrl(200, emptyList())) }
+        var urls: suspend () -> Resource<DownloadSources> = { Resource.Success(DownloadSources(emptyList())) }
         override suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail> {
             reads += session to id
             return detail(id, session)
@@ -55,7 +55,7 @@ class AlbumSessionTest {
             mutations += Triple(session, id, collected)
             return mutate(id, collected, session)
         }
-        override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl> {
+        override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources> {
             urlOwners += session
             return urls()
         }
@@ -272,12 +272,12 @@ class AlbumSessionTest {
 
     @Test fun staleUrlResolutionCannotBeReturnedForANewSession() {
         val pending = CompletableDeferred<Unit>()
-        source.urls = { withContext(NonCancellable) { pending.await(); Resource.Success(SongUrl(200, emptyList())) } }
+        source.urls = { withContext(NonCancellable) { pending.await(); Resource.Success(DownloadSources(emptyList())) } }
         checkModel { model, _ ->
             model.getAlbumDetail("10")
             runCurrent()
             val owner = sessions.snapshot()
-            val result = async { runCatching { model.resolveSongUrls(listOf("1"), MusicQuality.STANDARD, owner, "10") } }
+            val result = async { runCatching { model.resolveDownloadSources(listOf("1"), MusicQuality.STANDARD, owner, "10") } }
             runCurrent()
             sessions.invalidate()
             runCurrent()

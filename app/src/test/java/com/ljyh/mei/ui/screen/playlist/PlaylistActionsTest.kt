@@ -59,7 +59,7 @@ class PlaylistActionsTest {
         val store = ViewModelStore()
         try {
             val api = unused<ApiService>()
-            val repository = PlaylistRepository(api, unused<WeApiService>(), unused<EApiService>())
+            val repository = PlaylistRepository(api, unused<WeApiService>(), unused<EApiService>(), sessions)
             val source = object : PlaylistMutationSource {
                 override suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: HostSessionStamp): Resource<ManipulateTrackResult> {
                     calls += "$op:$pid:$trackIds" to session

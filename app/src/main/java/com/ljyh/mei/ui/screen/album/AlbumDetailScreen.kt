@@ -139,19 +139,19 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
         scope.launch {
             val songIds = tracks.map { it.id.toString() }
             val result = try {
-                viewModel.resolveSongUrls(songIds, quality, owner, id.toString())
+                viewModel.resolveDownloadSources(songIds, quality, owner, id.toString())
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
                 return@launch
             }
             val sourceMap = if (result is Resource.Success) {
-                result.data.fullSourcesFor(songIds.toSet()).associateBy { it.id.toString() }
+                result.data.sources.associateBy { it.id.toString() }
             } else emptyMap()
 
             val downloadInfos = tracks.mapNotNull { track ->
                 val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
-                val url = source.url ?: return@mapNotNull null
+                val url = source.url
                 SongDownloadInfo(
                     songId = track.id.toString(),
                     url = url,
@@ -160,7 +160,7 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
                     songAlbum = track.album.title,
                     songCover = track.coverUrl,
                     duration = track.duration,
-                    fileType = source.encodeType,
+                    fileType = source.fileType,
                     quality = source.level,
                 )
             }
@@ -177,6 +177,7 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
                 "未分类"
             }
 
+            if (runCatching { viewModel.requireCurrent(owner, id.toString()) }.isFailure) return@launch
             DownloadManager.enqueue(
                 context = context,
                 songs = downloadInfos,

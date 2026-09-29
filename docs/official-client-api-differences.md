@@ -390,6 +390,8 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   explicit session tag, including album/playlist download preparation, the player,
   and delayed automatic cache. The unused legacy unowned URL endpoint is removed.
   This does not establish parity for cloud-owner tuples or official download rights.
+  API-017 subsequently replaces the download callers with the dedicated official
+  download operation; ordinary playback resolution remains as described here.
 - URL ownership: one captured identity/generation spans all quality attempts and
   publication. Invalidation clears URLs, including same-account reauthorization.
   Canceled, recovery-required, or stale results cannot populate the current cache.
@@ -472,6 +474,54 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   special real-time path, podcast/cloud semantics, release runtime, and server-side
   listening-history/statistics acceptance. No account change or social action was
   performed for this checkpoint.
+
+### API-017: Download Permission Is Not Playback Permission
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original MeiloX: playlist/album menus, the player menu, podcast bulk actions and
+  automatic permanent cache all resolved playback V1 arrays, retried lower playback
+  qualities, then persisted those URLs for `DownloadWorker`. An accessible full
+  playback source was treated as sufficient permission to download.
+- Official contract: `i0.f.a.U` posts to `song/enhance/download/url/v1` with one
+  `id=songId_cloudSongUserId`, a requested `level`, and `immerseType`. Its `data` is
+  an object. `MusicInfo.getCloudSongUserId()` returns zero for ordinary songs, not
+  the logged-in user ID; private-cloud songs require their separate owner. The TV
+  transfer implementation also resolves a podcast's main song through this route.
+  The native method can supply optional effects, Dolby support and environment
+  parameters; those are not inferred from an ordinary playback grant.
+- Adaptation: added a separate typed download response and source resolver through
+  `ApiService`/`HostCallFactory`, retaining official authentication/signing/transport.
+  All five existing producers use it; the playback resolver remains separate.
+  Ordinary-song requests use the `_0` tuple and the selected quality, with `c51`
+  only for sky and `ste` otherwise. There is no playback-route or lower-quality
+  retry when download permission is denied. Every request captures the same
+  authenticated, non-anonymous authorization generation for the whole selection.
+- Validation: require outer business success, a single source object, an explicit
+  per-source status, matching ID, non-trial HTTP(S) URL without userinfo, known audio
+  type, positive 64-bit size and MD5. Returned quality is retained separately from
+  requested quality; a missing level or expiry is not invented. Explicit expiration
+  is measured from dispatch and rechecked across the whole batch. Responses and
+  resolver state are not cached. Cancellation, recovery, reauthorization or account
+  changes reject late results, including identity changes without a callback.
+- Denials: native transfer code recognizes `-103`, `-105`, `-120`, `-125`, `-130`,
+  `-140` and `404` as unsuccessful downloads. They remain explicit per-song rejected
+  results; transport/authentication/malformed/unknown errors abort the selection
+  instead of silently treating it as a smaller successful batch. No old URL is
+  reused after a denial. Existing menus, quality choices and page layout are retained.
+- Evidence: 17 focused resolver tests, the updated stale-album/podcast preparation
+  tests and Retrofit request-tag tests pass. One Android device test exercises the
+  real module Retrofit/Gson transport against a substitute host backend, validating
+  the tuple, object response, 64-bit size, denial and stale-owner paths without any
+  account request or file write. Full suite: 584 tests in 71 suites, zero failures;
+  six focused Android tests pass. These do not establish real account download rights.
+- Remaining: the live standard-quality URL-only request awaits user approval because
+  its effect on official download quota is not established. No real download request
+  or media-file transfer was performed in this checkpoint. Private-cloud owner
+  propagation, optional advanced-quality capabilities and real podcast grants are
+  not yet qualified. `DownloadWorker` still needs persisted ownership, per-run fresh
+  grants, cancellation-safe transfer/tagging/MediaStore publication and process-resume
+  checks. Its old persisted URLs cannot be considered renewed authorizations. See
+  ABI-004 for the host scheduler boundary; stage 5 is not complete.
 
 ## Runtime Boundary Notes
 
@@ -558,6 +608,24 @@ These are integration differences, not server API semantics.
   possible official widget, external playback intent, or reporting path. Slow-disk
   restoration, empty/corrupt stored queues, real Bluetooth peripherals, other OS
   versions, release runtime, and audible output remain separately unqualified.
+
+### ABI-004: WorkManager Components Are Not Installed in the Host
+
+- Recorded: 2026-09-29. The download producers still enqueue the module's isolated
+  WorkManager, but only the module APK declares its normal AndroidX components.
+  The pinned TV APK manifest has no `androidx.work.impl.background.systemjob.SystemJobService`
+  or WorkManager initializer. The module graph currently does not initialize a
+  separate WorkManager runtime. A successful URL response therefore does not prove
+  that a download can run or resume in the host.
+- Authoritative artifact: APK manifest inspection finds `BIND_JOB_SERVICE` only on
+  Tinker's patch service (separate `:patch` process) and default result service (main
+  process). Those are occupied official components, not free declarations. They
+  must not be replaced blindly at the cost of official Application/patch behavior.
+- Next gate: select and verify a host-only scheduler/component adaptation, including
+  cold service creation, original-component coexistence, pending work after process
+  death, notification routing, cancellation and download ownership. Do not repack
+  the host, add a system-framework scope, claim worker acceptance from an interface
+  test, or hide the existing download controls to mask this unfinished integration.
 
 ## Adding an Entry
 

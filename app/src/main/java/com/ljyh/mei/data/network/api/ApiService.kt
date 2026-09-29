@@ -146,6 +146,13 @@ interface ApiService {
         @Tag expectedSession: HostSessionStamp,
     ): SongUrl
 
+    @Headers("X-Netease-Crypto: eapi")
+    @POST("/api/song/enhance/download/url/v1")
+    suspend fun getDownloadUrl(
+        @Body body: com.ljyh.mei.data.model.api.GetDownloadUrl,
+        @Tag expectedSession: HostSessionStamp,
+    ): com.ljyh.mei.data.model.DownloadUrlResponse
+
     @POST("/api/user/photo/album/get")
     suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum): AlbumPhoto
 

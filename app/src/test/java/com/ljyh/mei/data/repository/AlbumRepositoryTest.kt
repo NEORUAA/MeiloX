@@ -23,6 +23,7 @@ class AlbumRepositoryTest {
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") },
         api<EApiService> { _, _ -> error("Unexpected EAPI") },
+        com.ljyh.mei.parasite.HostSessionBridge(),
     )
     private fun collection(json: String) = Gson().fromJson(json, AlbumCollectionResponse::class.java)
 

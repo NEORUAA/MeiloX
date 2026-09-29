@@ -169,15 +169,15 @@ class PlayerViewModel @Inject constructor(
                 MusicQuality.EXHIGH
             }
 
-            val result = playlistRepository.getSongUrlV1(
+            val result = try { playlistRepository.getDownloadSources(
                 ids = listOf(metadata.id.toString()),
                 quality = quality,
                 session = owner,
-            )
+            ) } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) { return@launch }
             if (sessions.recoveryRequired.value || runCatching { sessions.requireCurrent(owner) }.isFailure) return@launch
 
             if (result is Resource.Success) {
-                val songData = result.data.fullSourceFor(metadata.id.toString())
+                val songData = result.data.sources.firstOrNull { it.id == metadata.id }
                 val url = songData?.url
                 if (url != null) {
                     val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
@@ -195,7 +195,7 @@ class PlayerViewModel @Inject constructor(
                                 songAlbum = metadata.album.title,
                                 songCover = metadata.coverUrl,
                                 duration = metadata.duration,
-                                fileType = songData.encodeType,
+                                fileType = songData.fileType,
                                 quality = songData.level,
                             )
                         ),

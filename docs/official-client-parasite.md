@@ -1341,6 +1341,40 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   `/tmp/meilox-native-report-runtime.log`,
   `/tmp/meilox-native-report-final-runtime.log`, and the corresponding UI screenshot.
 
+### Official Download Source Checkpoint (2026-09-29)
+
+- Download source resolution now uses the TV's separate single-song download grant,
+  not playback V1 arrays or playback quality fallback. The five existing producers
+  (album, playlist, player, podcast and automatic permanent cache) share the same
+  explicit-owner resolver. Temporary streaming cache is unchanged. API-017 records
+  request/response, cloud-owner, quality, denial and expiration differences.
+- Invalid/expired/trial/mismatched sources, stale authorization and interrupted
+  requests cannot become successful grants. Known official download denials are
+  explicit per-song results; transport/malformed/unknown failures reject the batch.
+  Podcast preparation now captures the displayed detail's owner rather than taking
+  a new session independently for each batch. No page architecture or material was
+  changed, and no download controls were removed.
+- `:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest` passed:
+  584 tests in 71 suites, zero failures/errors/skips. Six focused Android tests pass,
+  including the new download DTO/Retrofit/ownership test with a substitute backend.
+  The test sends no request to the real account and writes no media files. APK
+  16 KB alignment passed; release runtime remains separately unqualified.
+- The cleaned debug APK cold-started from the official launcher in portrait with
+  the existing queue paused; the original legacy session stayed inactive/STOPPED.
+  Both retained TV-only orientation overrides remain enabled. This does not qualify
+  real downloads, file transfer, background continuation or offline playback.
+- Source and original APK manifest inspection exposed a prerequisite: the isolated
+  module WorkManager is not initialized or backed by an installed host SystemJobService.
+  ABI-004 records the occupied Tinker job components and the coexistence boundary.
+  The existing worker still lacks persisted session ownership, URL renewal and safe
+  cancellation/publication. These remain implementation work, not passed gates.
+- A request for one live standard-quality download URL was sent for user approval;
+  pending that reply, no real download grant or media-file write was attempted. The
+  live request may affect official quota, unlike the substitute test. No logout,
+  account change, social mutation, upload, permission or global rotation change occurred.
+- Local-only evidence: `/tmp/meilox-download-source-final-build.log` and the
+  corresponding AVD Home screenshot. Stage 5 remains in progress.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1366,7 +1400,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; favorite writes and account transitions have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources have substitute coverage, while host scheduler/worker ownership and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

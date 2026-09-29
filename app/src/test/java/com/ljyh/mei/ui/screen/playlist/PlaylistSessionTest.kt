@@ -159,7 +159,7 @@ class PlaylistSessionTest {
             val api = unused<ApiService>()
             val eapi = unused<EApiService>()
             val weapi = unused<WeApiService>()
-            val remote = PlaylistRepository(api, weapi, eapi)
+            val remote = PlaylistRepository(api, weapi, eapi, sessions)
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
             val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {

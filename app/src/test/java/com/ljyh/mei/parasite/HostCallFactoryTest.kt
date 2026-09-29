@@ -251,10 +251,22 @@ class HostCallFactoryTest {
             { service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.unsubscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.getSongUrlV1(com.ljyh.mei.data.model.api.GetSongUrlV1("[1]", "standard"), owner) },
+            { service.getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "standard"), owner) },
             { service.getCollectAlbumList(com.ljyh.mei.data.model.api.GetAlbumList(), owner) },
         )
         calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
         assertEquals(0, backend.executions.get())
+    }
+
+    @Test fun downloadRouteHasOneTupleAndDoesNotSerializeSessionOrPlaybackParameters() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        service.getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "sky"), owner)
+        assertEquals("song/enhance/download/url/v1", backend.path)
+        assertEquals(mapOf("id" to "1_0", "level" to "sky", "immerseType" to "c51"), backend.parameters)
+        assertEquals(1, backend.executions.get())
     }
 
     @Test fun expectedSessionTagsRemainBoundAcrossQueuedExecutionAndClone() {

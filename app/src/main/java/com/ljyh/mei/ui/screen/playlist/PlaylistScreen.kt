@@ -214,14 +214,15 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
             try {
                 viewModel.requireDetail(owner, detail)
                 val songIds = allTracks.map { it.id.toString() }
-                val sourceMap = songIds.chunked(200).flatMap { ids ->
-                    val result = viewModel.resolveSongUrls(ids, quality, owner)
-                    if (result is Resource.Success) result.data.fullSourcesFor(ids.toSet()) else emptyList()
+                val sourceMap = when (val result = viewModel.resolveDownloadSources(songIds, quality, owner)) {
+                    is Resource.Success -> result.data.sources
+                    is Resource.Error -> error(result.message)
+                    Resource.Loading -> error("Download authorization did not complete")
                 }.associateBy { it.id.toString() }
 
                 val downloadInfos = allTracks.mapNotNull { track ->
                     val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
-                    val url = source.url ?: return@mapNotNull null
+                    val url = source.url
                     SongDownloadInfo(
                         songId = track.id.toString(),
                         url = url,
@@ -230,7 +231,7 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
                         songAlbum = track.album.title,
                         songCover = track.coverUrl,
                         duration = track.duration,
-                        fileType = source.encodeType,
+                        fileType = source.fileType,
                         quality = source.level,
                     )
                 }
@@ -258,6 +259,8 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
             } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
+            } catch (_: Exception) {
+                Toast.makeText(context, com.ljyh.mei.R.string.load_failed, Toast.LENGTH_SHORT).show()
             }
         }
     }

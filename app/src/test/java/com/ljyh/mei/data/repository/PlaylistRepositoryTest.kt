@@ -24,6 +24,7 @@ class PlaylistRepositoryTest {
     ) { _, method, args -> invoke(method.name, args.orEmpty()) } as T
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") }, api<EApiService>(invoke),
+        com.ljyh.mei.parasite.HostSessionBridge(),
     )
     private fun detail(id: Int = 10, code: Int = 200): PlaylistDetail = Gson().fromJson(
         """{"code":$code,"playlist":{"id":$id,"tracks":[],"trackIds":[{"id":1},{"id":2}]}}""", PlaylistDetail::class.java)
@@ -137,7 +138,7 @@ class PlaylistRepositoryTest {
             assertEquals(mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1"), args[0])
             assertEquals(owner, args[1])
             Gson().fromJson("""{"code":200,"data":{"dailySongs":[]}}""", com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-        }, api { _, _ -> error("Unused EAPI") })
+        }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.parasite.HostSessionBridge())
         assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Success)
         assertTrue(source.getEveryDayRecommendSongs(owner.copy(identity = HostSessionIdentity(0, false, true))) is Resource.Error)
         assertEquals(1, calls)
@@ -148,14 +149,15 @@ class PlaylistRepositoryTest {
             """{"code":200,"data":{"dailySongs":[{"id":0}]}}""").forEach { json ->
             val source = PlaylistRepository(api { _, _ -> error("Unused API") }, api<WeApiService> { _, _ ->
                 Gson().fromJson(json, com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-            }, api { _, _ -> error("Unused EAPI") })
+            }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.parasite.HostSessionBridge())
             assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Error)
         }
     }
 
     @Test fun dailyCancellationPropagates() = runBlocking {
         val source = PlaylistRepository(api { _, _ -> error("Unused API") },
-            api<WeApiService> { _, _ -> throw CancellationException() }, api { _, _ -> error("Unused EAPI") })
+            api<WeApiService> { _, _ -> throw CancellationException() }, api { _, _ -> error("Unused EAPI") },
+            com.ljyh.mei.parasite.HostSessionBridge())
         assertTrue(runCatching { source.getEveryDayRecommendSongs(owner) }.exceptionOrNull() is CancellationException)
     }
 }
