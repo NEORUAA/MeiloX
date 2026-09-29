@@ -20,7 +20,7 @@ Inspection date: 2026-09-29.
 
 | Candidate | Package / version | Assessment |
 | --- | --- | --- |
-| TV | `com.netease.cloudmusic.tv` / `1.1.80` (`1001080`) | Selected for runtime prototyping; original login, session restoration, API 102 injection, and read-only business probes passed |
+| TV | `com.netease.cloudmusic.tv` / `1.1.80` (`1001080`) | Runtime prototype passed; full-feature selection reopened because recording permission and PiP carriers are absent |
 | Watch | `com.netease.cloudmusic.watch` / `2.9.46` (`29046`) | Supplied APK has only `armeabi`; incompatible with the current arm64-only AVD |
 | Car | `com.netease.cloudmusic.iot` / `6.2.81` (`6002081`) | arm64, but also has a separate OAuth request/session path; fallback candidate |
 | Phone | `com.netease.cloudmusic` / `9.6.05` (`9006005`) | Existing extracted phone sources are `9.2.10`; require matching APK analysis before adaptation |
@@ -28,6 +28,55 @@ Inspection date: 2026-09-29.
 The file labelled as a modified Honor release is not the selected official host.
 Matching version metadata alone does not establish that every extracted source matches an APK.
 Use the supplied APK's DEX for runtime names and signatures.
+
+### Full-Feature Manifest Gate
+
+The production component audit on 2026-09-29 found a capability gap that the
+login/request/player prototype did not exercise. The following results come from
+`apkanalyzer manifest print` on the supplied APKs, parsed as XML rather than inferred
+from decompiled source names:
+
+| Candidate | Target SDK | Requests `RECORD_AUDIO` | Requests `SYSTEM_ALERT_WINDOW` | Activities declaring PiP support |
+| --- | --- | --- | --- | --- |
+| TV 1.1.80 | 29 | No | No | 0 |
+| Watch 2.9.46 | 26 | Yes | Yes | 0 |
+| Car 6.2.81 | 33 | No | Yes | 0 |
+| Phone 9.6.05 | 33 | Yes | Yes | 0 |
+
+Additional inspected APK SHA-256 identities:
+
+- Phone: `ac67e9684fdbf6f95184c919d4a73771b5e12ec49479adafb32a8a75a6fae737`.
+- Watch: `521da6eab57d92768b5c7d038bb3e05c8ce10baa5cb11093464d14cf80e5c6e3`.
+- Car: `c8c533e19f4e3f0481bb19feaf1ce71f2f86a08ce715a49213955d3d9f394121`.
+
+The installed TV package's requested permissions were also checked with
+`adb -s emulator-5554 shell dumpsys package com.netease.cloudmusic.tv`; neither
+recording nor overlay permission is present. This was a read-only inspection:
+no permission changes, microphone capture, or new PiP runtime test were performed.
+
+Existing feature dependencies:
+
+- `SongRecognitionScreen` requests microphone permission; `SongRecognitionRecorder`
+  checks that permission and creates `AudioRecord` for microphone samples.
+  Android requires [`RECORD_AUDIO`](https://developer.android.com/reference/android/media/AudioRecord)
+  for this API. TV and car cannot use this unchanged under their installed identities.
+- `FloatingLyricsPip.kt` calls `Activity.enterPictureInPictureMode` and exposes the
+  existing playback controls inside PiP. Android requires the carrier Activity's
+  [`supportsPictureInPicture` declaration](https://developer.android.com/develop/ui/compose/system/pip-setup).
+  None of the inspected official APKs declares a suitable Activity. Overlay permission
+  is a different capability and does not satisfy the existing PiP implementation.
+- Substituting an Activity or Service inside the host process does not change the
+  host's installed manifest. Permissions and PiP declarations in the module APK
+  do not transfer to the host UID/component.
+
+The TV prototype remains useful evidence, but is not full-feature host acceptance.
+No current candidate resolves both requirements unchanged; the watch ABI restriction
+and phone source/version mismatch also remain. A decision is required before broad
+production routing: either approve a narrowly scoped module-process helper for
+microphone capture and PiP lyrics, or continue looking for a compatible official host
+while retaining the strict host-process contract. The helper is only a proposal,
+not an approved contract change or a verified implementation. No system-server hooks,
+package metadata changes, official APK repackaging, or feature removals were made.
 
 ### TV Artifact Identity
 
@@ -524,6 +573,7 @@ account consumers pass. The existing authenticated session was preserved through
 - Keep the module-owned dependency graph independent of the official Application.
 - Prove Activity, media service, notification, resource, font, native library, and lifecycle handling before migrating all screens.
 - Do not assume a service listed only in the module manifest is available under the host UID.
+- Resolve the recording/PiP manifest gate with the user before committing to a production host or changing process boundaries.
 - Translate request parameters and host objects at a single boundary; retain coroutine cancellation and session-generation checks.
 - Keep login observers and polling bounded by the login screen lifecycle.
 - Separate local playback state from official account state; never accept anonymous state as user login.
@@ -534,7 +584,7 @@ account consumers pass. The existing authenticated session was preserved through
 
 | Stage | Status | Exit condition |
 | --- | --- | --- |
-| 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
+| 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, and cloud History reads passed | All core screens use host business transport and pass UI/session acceptance |
