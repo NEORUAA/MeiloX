@@ -62,7 +62,8 @@ class AccountLikedSongsTest {
             assertEquals("1", args[0])
             entries
         })
-        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, eapi, sessions), sessions)
+        val collections = PlaylistCollectionBackend { _, _, _ -> error("Unexpected playlist collection") }
+        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, collections, sessions), sessions)
     }
 
     @Test fun everyPageUsesCapturedOwnerAndReturnsTheCompleteOrderedList() = runBlocking {

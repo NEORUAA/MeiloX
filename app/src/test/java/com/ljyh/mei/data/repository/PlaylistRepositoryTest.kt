@@ -4,13 +4,12 @@ import com.google.gson.Gson
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.BaseResponse
-import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -18,13 +17,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaylistRepositoryTest {
-    private val owner = SessionStamp(1, SessionIdentity(1, true, false))
+    private val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
+    private val owner = sessions.snapshot()
     private inline fun <reified T> api(noinline invoke: (String, Array<out Any?>) -> Any?): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
     ) { _, method, args -> invoke(method.name, args.orEmpty()) } as T
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
-        api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") }, api<EApiService>(invoke),
-        com.ljyh.mei.data.session.SessionStore(),
+        api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") }, api<PlaylistCollectionBackend>(invoke),
+        sessions,
     )
     private fun detail(id: Int = 10, code: Int = 200): PlaylistDetail = Gson().fromJson(
         """{"code":$code,"playlist":{"id":$id,"tracks":[],"trackIds":[{"id":1},{"id":2}]}}""", PlaylistDetail::class.java)
@@ -59,17 +59,55 @@ class PlaylistRepositoryTest {
         }
     }
 
-    @Test fun collectionRequestsDoNotSupplyModuleTokensAndCheckBusinessCodes() = runBlocking {
+    @Test fun collectionActionsDelegateToTheBackendAndCheckBusinessCodes() = runBlocking {
         for (subscribe in listOf(true, false)) for (code in listOf(200, 301, 506)) {
             val source = repository { name, args ->
-                assertEquals(if (subscribe) "subscribePlaylist" else "unSubscribePlaylist", name)
-                assertEquals(EApiSubscribePlaylist(10), args[0])
-                assertEquals(owner, args[1])
+                assertEquals("setCollected", name)
+                assertEquals(10L, args[0])
+                assertEquals(subscribe, args[1])
+                assertEquals(owner, args[2])
                 BaseResponse(code)
             }
             val result = if (subscribe) source.subscribePlaylist("10", owner) else source.unSubscribePlaylist("10", owner)
             assertEquals(code == 200, result is Resource.Success)
         }
+    }
+
+    @Test fun invalidGuestAndStaleCollectionActionsDoNotReachEitherBackend() = runBlocking {
+        val source = repository { _, _ -> error("Must not dispatch") }
+        for (id in listOf("bad", "0", "-1")) {
+            assertTrue(source.subscribePlaylist(id, owner) is Resource.Error)
+            assertTrue(source.unSubscribePlaylist(id, owner) is Resource.Error)
+        }
+        val guests = listOf(SessionIdentity(0, false, true), SessionIdentity(1, true, true))
+        for (identity in guests) {
+            val guestSessions = SessionStore().apply { bind { identity } }
+            val guestSource = PlaylistRepository(api { _, _ -> error("Unused API") },
+                api { _, _ -> error("Unused WEAPI") }, api { _, _ -> error("Must not dispatch") }, guestSessions)
+            assertTrue(guestSource.subscribePlaylist("10", guestSessions.snapshot()) is Resource.Error)
+            assertTrue(guestSource.unSubscribePlaylist("10", guestSessions.snapshot()) is Resource.Error)
+        }
+        sessions.invalidate()
+        assertTrue(source.subscribePlaylist("10", owner) is Resource.Error)
+        assertTrue(source.unSubscribePlaylist("10", owner) is Resource.Error)
+    }
+
+    @Test fun lateSuccessfulCollectionResponsesCannotCrossSessionGenerations() = runBlocking {
+        for (collected in listOf(true, false)) {
+            val stamp = sessions.snapshot()
+            val source = repository { _, _ -> sessions.invalidate(); BaseResponse(200) }
+            val result = if (collected) source.subscribePlaylist("10", stamp) else source.unSubscribePlaylist("10", stamp)
+            assertTrue(result is Resource.Error)
+        }
+    }
+
+    @Test fun omittedCollectionOwnerIsCapturedAndAnUnreadySessionIsAnError() = runBlocking {
+        val source = repository { _, args -> assertEquals(owner, args[2]); BaseResponse(200) }
+        assertTrue(source.subscribePlaylist("10") is Resource.Success)
+        assertTrue(source.unSubscribePlaylist("10") is Resource.Success)
+        val unready = PlaylistRepository(api { _, _ -> error("Unused API") },
+            api { _, _ -> error("Unused WEAPI") }, api { _, _ -> error("Must not dispatch") }, SessionStore())
+        assertTrue(unready.subscribePlaylist("10") is Resource.Error)
     }
 
     @Test fun cancellationDoesNotBecomeAnEmptyTrackListOrBusinessError() = runBlocking {

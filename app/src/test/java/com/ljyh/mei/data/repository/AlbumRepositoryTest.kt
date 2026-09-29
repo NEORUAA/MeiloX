@@ -5,7 +5,6 @@ import com.ljyh.mei.data.model.api.AlbumCollectionResponse
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
@@ -22,7 +21,7 @@ class AlbumRepositoryTest {
     ) { _, method, args -> invoke(method.name, args.orEmpty()) } as T
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") },
-        api<EApiService> { _, _ -> error("Unexpected EAPI") },
+        api<PlaylistCollectionBackend> { _, _ -> error("Unexpected playlist collection") },
         com.ljyh.mei.data.session.SessionStore(),
     )
     private fun collection(json: String) = Gson().fromJson(json, AlbumCollectionResponse::class.java)

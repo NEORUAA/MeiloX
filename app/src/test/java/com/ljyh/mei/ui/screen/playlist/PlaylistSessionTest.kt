@@ -6,7 +6,7 @@ import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.EApiService
+import com.ljyh.mei.data.repository.PlaylistCollectionBackend
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.repository.AccountLibrarySource
 import com.ljyh.mei.data.repository.PlaylistPageSource
@@ -157,9 +157,9 @@ class PlaylistSessionTest {
         val store = ViewModelStore()
         try {
             val api = unused<ApiService>()
-            val eapi = unused<EApiService>()
+            val collections = unused<PlaylistCollectionBackend>()
             val weapi = unused<WeApiService>()
-            val remote = PlaylistRepository(api, weapi, eapi, sessions)
+            val remote = PlaylistRepository(api, weapi, collections, sessions)
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
             val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {

@@ -442,6 +442,37 @@ Local evidence: `/tmp/meilox-dual-release-workflow-final.log` and
 or merge was triggered. D6 remains incomplete until runtime, upgrade and merge-readiness
 gates are qualified; this checkpoint changes only CI and documentation.
 
+### D1/D4 Checkpoint: Runtime-Owned Playlist Collection (2026-09-30)
+
+- Extracted playlist collection/uncollection into `PlaylistCollectionBackend`. Shared
+  Repository, ViewModel, navigation and screens remain single-source. Flavor-owned
+  adapters choose only the endpoint and security payload; shared validation accepts
+  business code 200 and rejects invalid IDs, guests and stale session generations.
+- Standalone restores the original EAPI subscription routes and signing controls from
+  the recorded `main` baseline. Parasite retains TV multi-terminal routes and official
+  token generation. Both carry their own session tag; neither backend retries through
+  the other. The original standalone transport's constant compatibility token is not
+  moved into common Repository code or the host adapter. See API-007 in the ledger.
+- Shared tests continue to cover collection rollback, serialization and current-account
+  Library refresh. New substitute tests inspect standalone encrypted wire requests,
+  both action payloads and Cookie ownership, error codes, stale dispatch and late
+  responses. Existing host request-policy tests now exercise the selected host adapter.
+- The audit also found shared TV-only album/artist collection-state reads. Their
+  standalone equivalents remain open; neither successful paired builds nor this
+  narrower collection-write checkpoint qualifies them. No UI cleanup is bundled here.
+- Verification: 585 standalone tests in 77 suites and 659 parasite tests in 84 suites
+  pass with no failures/errors/skips (shared tests execute in both variants). Both
+  debug, instrumentation and minified unsigned release APKs build. Generated Dagger
+  graphs select the matching adapters; actual release DEX retains the body/session-tag
+  annotations and generic response signatures for both methods. Each release contains
+  its own collection route and not the other runtime's route; both pass 16 KB ZIP
+  alignment. `git diff --check` passes.
+- No AVD install, instrumentation run, account mutation or download was performed in
+  this increment. Standalone login remains awaiting user confirmation. The new release
+  packages are build/package evidence only, not device or real-server acceptance.
+  Local logs: `/tmp/meilox-dual-playlist-collections-build.log` and
+  `/tmp/meilox-dual-playlist-collections-release.log`; neither is committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

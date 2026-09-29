@@ -10,7 +10,7 @@ import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.EApiService
+import com.ljyh.mei.data.repository.PlaylistCollectionBackend
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.repository.AccountLibrarySource
 import com.ljyh.mei.data.repository.PlaylistMutationSource
@@ -59,7 +59,7 @@ class PlaylistActionsTest {
         val store = ViewModelStore()
         try {
             val api = unused<ApiService>()
-            val repository = PlaylistRepository(api, unused<WeApiService>(), unused<EApiService>(), sessions)
+            val repository = PlaylistRepository(api, unused<WeApiService>(), unused<PlaylistCollectionBackend>(), sessions)
             val source = object : PlaylistMutationSource {
                 override suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: SessionStamp): Resource<ManipulateTrackResult> {
                     calls += "$op:$pid:$trackIds" to session

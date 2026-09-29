@@ -155,6 +155,39 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   are not qualified. No real account mutation is performed by these tests. Host security
   initialization is retained; it is not emulated or bypassed by the module.
 
+#### Dual-Runtime Revision (2026-09-30)
+
+- A shared `PlaylistCollectionBackend` now separates this operation's runtime-specific
+  paths and security parameters. `PlaylistRepository` and the existing ViewModel retain
+  one interface and one frontend; runtime DI selects the adapter without UI flavor checks.
+- Standalone restores the recorded `main` contract: `/api/playlist/subscribe` and
+  `/api/playlist/unsubscribe`, both with the EAPI and check-token control headers. The
+  original interceptor rewrites their wire paths to `/eapi/playlist/...`. Subscribe
+  includes the existing standalone constant in its body; unsubscribe omits the body
+  token but retains the original anti-cheat header/Cookie policy. These are baseline
+  compatibility parameters, not newly generated official SDK credentials or a claim
+  that the server will accept them for every account.
+- Parasite retains `/api/multi/terminal/playlist/{subscribe,unsubscribe}` and submits
+  only the numeric ID to the official bridge. Its host-owned token generation and
+  rejection of caller-supplied security parameters are unchanged. No Cookie backend
+  fallback is added. The TV paths are removed from the shared `EApiService`.
+- Both adapters carry the captured `SessionStamp` as a Retrofit tag, not request JSON.
+  The shared action validates a positive ID, current authenticated non-anonymous owner,
+  cancellation, post-response ownership and code 200. The accepted-write-only Library
+  refresh and rejected-write rollback remain unchanged; the old local-row deletion
+  behavior is not restored.
+- Scope: album and artist collection reads still use TV-specific shared endpoints and
+  need separate dual-runtime adaptation. This playlist change does not qualify those
+  reads, standalone login, real mutations or the complete D4 feature matrix.
+- Evidence: paired JVM suites pass (585 standalone / 659 parasite tests, with common
+  tests counted in each). Standalone wire substitutes verify both encrypted routes,
+  numeric IDs, original token/header policy and captured Cookie ownership; stale
+  owners and late responses are rejected. Host substitutes retain official routes and
+  host-only security generation. Both debug/instrumentation and minified release builds
+  pass; release DEX preserves Retrofit body/session annotations and the appropriate
+  route only, and both release APKs pass 16 KB alignment. No device or real account
+  mutation test is included in this checkpoint.
+
 ### API-008: Playlist IDs, Not Returned Row Counts, Own the Cursor
 
 - Recorded: 2026-09-29.

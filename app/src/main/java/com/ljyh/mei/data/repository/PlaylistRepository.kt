@@ -10,7 +10,6 @@ import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.CreatePlaylist
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
-import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.ManipulateTrack
@@ -22,7 +21,6 @@ import com.ljyh.mei.data.model.weapi.HighQualityPlaylist
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.playback.resolveOfficialDownloadSources
@@ -59,7 +57,7 @@ internal interface PlaylistMutationSource {
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
-    private val eApiService: EApiService,
+    private val collections: PlaylistCollectionBackend,
     private val sessions: SessionStore,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
     override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
@@ -193,31 +191,26 @@ class PlaylistRepository(
 
     override suspend fun subscribePlaylist(
         id: String, session: SessionStamp?,
-    ): Resource<BaseResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                eApiService.subscribePlaylist(
-                    EApiSubscribePlaylist(
-                        id = id.toLong(),
-                    ), session,
-                ).also { check(it.code == 200) { "Playlist collection failed (${it.code})" } }
-            }
-        }
-    }
+    ): Resource<BaseResponse> = setPlaylistCollection(id, true, session)
 
     override suspend fun unSubscribePlaylist(
         id: String, session: SessionStamp?,
-    ): Resource<BaseResponse> {
-        return withContext(Dispatchers.IO) {
+    ): Resource<BaseResponse> = setPlaylistCollection(id, false, session)
+
+    private suspend fun setPlaylistCollection(id: String, collected: Boolean, session: SessionStamp?): Resource<BaseResponse> =
+        withContext(Dispatchers.IO) {
             safeApiCall {
-                eApiService.unSubscribePlaylist(
-                    EApiSubscribePlaylist(
-                        id = id.toLong(),
-                    ), session,
-                ).also { check(it.code == 200) { "Playlist collection failed (${it.code})" } }
+                val owner = session ?: sessions.snapshot()
+                val playlistId = requireNotNull(id.toLongOrNull()?.takeIf { it > 0 }) { "Invalid playlist identity" }
+                sessions.requireCurrent(owner)
+                check(owner.identity.authenticated && !owner.identity.anonymous) { "Sign-in required" }
+                collections.setCollected(playlistId, collected, owner).also {
+                    currentCoroutineContext().ensureActive()
+                    sessions.requireCurrent(owner)
+                    check(it.code == 200) { "Playlist collection failed (${it.code})" }
+                }
             }
         }
-    }
 
 
     override suspend fun setAlbumCollection(id: String, collected: Boolean, session: SessionStamp): Resource<BaseResponse> {
