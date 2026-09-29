@@ -215,4 +215,29 @@ class HomeViewModelTest {
             executor.shutdownNow()
         }
     }
+
+    @Test fun delayedInvalidationCannotRetireARefreshBeforeItsWorkerStarts() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        sessions.onInvalidated { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            var result = "old"
+            checkModel({ blocks(result) }) { model, _ ->
+                sessions.bind { identity }
+                runCurrent()
+                val invalidating = executor.submit { sessions.invalidate() }
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                result = "new"
+                model.homePageResourceShow(refresh = true)
+                release.countDown()
+                invalidating.get(5, TimeUnit.SECONDS)
+                runCurrent()
+                assertEquals("new", model.name())
+            }
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
 }

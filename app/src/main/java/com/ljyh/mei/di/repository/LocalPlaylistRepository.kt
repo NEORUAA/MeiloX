@@ -1,6 +1,7 @@
 package com.ljyh.mei.di.repository
 
 import com.ljyh.mei.data.model.room.Playlist
+import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.model.room.PlaylistSongCrossRef
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.dao.PlaylistSongCrossRefDao
@@ -11,6 +12,9 @@ class LocalPlaylistRepository @Inject constructor(private val playlistDao: Playl
     suspend fun getPlaylist(id: String): Playlist? = playlistDao.getPlaylist(id)
     suspend fun getPlaylistByAuthor(author: String): List<Playlist> = playlistDao.getPlaylistByAuthor(author)
     fun getAllPlaylist(): Flow<List<Playlist>> = playlistDao.getAllPlaylist()
+    fun getAccountPlaylists(accountId: String): Flow<List<AccountPlaylist>> = playlistDao.getAccountPlaylists(accountId)
+    suspend fun replaceAccountPlaylists(accountId: String, entries: List<AccountPlaylist>, validate: () -> Unit) =
+        playlistDao.replaceAccountPlaylists(accountId, entries, validate)
     suspend fun insertPlaylist(playlist: Playlist) = playlistDao.insertPlaylist(playlist)
     suspend fun insertPlaylists(playlists: List<Playlist>) = playlistDao.insertPlaylists(playlists)
     suspend fun deletePlaylistById(id: String) = playlistDao.deletePlaylistById(id)

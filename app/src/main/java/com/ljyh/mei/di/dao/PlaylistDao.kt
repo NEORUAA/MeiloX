@@ -4,6 +4,9 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import com.ljyh.mei.data.model.room.AccountPlaylist
+import com.ljyh.mei.data.model.room.AccountPlaylistMembership
 import com.ljyh.mei.data.model.room.Playlist
 import kotlinx.coroutines.flow.Flow
 
@@ -17,6 +20,44 @@ interface PlaylistDao {
 
     @Query("SELECT * FROM playlist")
     fun getAllPlaylist(): Flow<List<Playlist>>
+
+    @Query("""
+        SELECT playlist.*, COALESCE(account_playlist.isLiked, 0) AS isLiked
+        FROM playlist LEFT JOIN account_playlist
+        ON playlist.id = account_playlist.playlistId AND account_playlist.accountId = :accountId
+        WHERE account_playlist.accountId = :accountId OR playlist.type != 'NETEAST'
+        ORDER BY account_playlist.position, playlist.createdAt
+    """)
+    fun getAccountPlaylists(accountId: String): Flow<List<AccountPlaylist>>
+
+    @Query("DELETE FROM account_playlist WHERE accountId = :accountId")
+    suspend fun clearAccountMemberships(accountId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAccountMemberships(memberships: List<AccountPlaylistMembership>)
+
+    @Transaction
+    suspend fun replaceAccountPlaylists(
+        accountId: String,
+        entries: List<AccountPlaylist>,
+        validate: () -> Unit,
+    ) {
+        validate()
+        val merged = entries.map { entry ->
+            val existing = getPlaylist(entry.playlist.id)
+            entry.playlist.copy(
+                createdAt = existing?.createdAt ?: entry.playlist.createdAt,
+                lastPlayTime = existing?.lastPlayTime ?: 0L,
+                localPlayCount = existing?.localPlayCount ?: 0,
+            )
+        }
+        insertPlaylists(merged)
+        clearAccountMemberships(accountId)
+        insertAccountMemberships(entries.mapIndexed { index, entry ->
+            AccountPlaylistMembership(accountId, entry.playlist.id, index, entry.isLiked)
+        })
+        validate()
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: Playlist)

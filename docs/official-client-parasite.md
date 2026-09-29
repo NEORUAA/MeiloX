@@ -605,6 +605,55 @@ completion. The carrier still has no production player connection. Intelligence-
 state, play actions, service startup, and remaining account consumers require their own
 migration and end-to-end tests. The recording/PiP host decision remains unresolved.
 
+### Session-Owned Library Collections
+
+The original Library songs/playlist presentation now observes `HostAccountStore` rather
+than Cookie or user-ID preferences. The existing typed repositories still execute
+NetEase calls through the official host transport.
+
+- Schema 18 adds account-to-playlist membership, position, and an explicit liked-playlist
+  flag. Additive migration `17 -> 18` does not import unowned cloud rows into the current
+  account. Device-local playlists remain available; replacing one account's membership
+  does not delete another account's membership or shared playlist metadata.
+- Complete playlist and collected-album pagination validates each page and rejects
+  non-advancing responses or business failures before accepting a partial collection.
+  Transactional replacement preserves existing creation time and local playback statistics.
+  Session/cancellation checks surround the write, and a failed final validation rolls it back.
+- Session invalidation immediately clears account presentation. Request generations,
+  cancellation, and guarded publication reject late results after refresh, logout, or
+  account changes. Custom photo preferences and transient layout state are account-scoped.
+  Shared `safeApiCall` now propagates coroutine cancellation instead of converting it to
+  a display error. Home and Library prepare their displayed generation synchronously,
+  so a delayed invalidation cannot erase a newer request before its coroutine starts.
+- Existing cards, tabs, sorting, search, covers, and song rows are retained. Songs and
+  Playlists gain the existing glass refresh control and an error surface. A failed load
+  no longer claims the collection is empty; a successful empty response still does.
+
+Verification on 2026-09-29:
+
+- All 355 unit tests passed, with no failures, errors, or skips. New coverage includes
+  pagination, business failures, cancellation, account changes, same-account refresh and
+  reauthorization, late results, liked-membership removal, and ViewModel disposal.
+  Debug assembly, `git diff --check`, and 16 KB APK alignment passed.
+- The actual module-private AVD database migrated from version 17 to 18, with SQLite
+  integrity `ok` before and after. A separate disposable Room probe also exercised the
+  migration, two controlled account identities, shared metadata, per-account liked flags,
+  local playlist retention, statistics preservation, and transaction cancellation rollback.
+- The original Library rendered four liked songs through the debug carrier inside TV.
+  Playlist collections were empty, matching this account's response containing only its
+  liked playlist. Screenshots verified covers, rows, tabs, refresh, and layout.
+- A force-stop/cold-start without connectivity rendered the sanitized error rather than
+  a false empty state. Restoring connectivity and tapping refresh restored all four songs.
+  Final network settings were airplane mode `0`, Wi-Fi `1`, and mobile data `1`; the
+  tested final host process had no crash-buffer entries. Module Cookie and user-ID
+  preferences remained absent. No credentials or raw device evidence were added to Git.
+
+This is collection ownership/read presentation, not all Library tabs or stage 4 completion.
+Real account switching was not performed; account races and multi-page responses used
+controlled test substitutes because the live collection is small. Cloud, Podcast, Player,
+playlist mutations, and other account consumers still need migration. Production playback
+is not connected to this carrier, and the recording/PiP host decision remains unresolved.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -629,7 +678,7 @@ migration and end-to-end tests. The recording/PiP host decision remains unresolv
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, and session-owned Home feed/cache passed | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, and Library collection reads passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

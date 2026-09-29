@@ -76,6 +76,7 @@ import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.glass.IosActionSheetContent
 import com.ljyh.mei.ui.glass.GlassSearchBar
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
+import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosModalSheet
@@ -186,6 +187,9 @@ fun LibraryMobileLayout(
     onPlaylistClick: (String) -> Unit,
     onAlbumClick: (String) -> Unit,
     isCategoryPage: Boolean = false,
+    isRefreshing: Boolean = false,
+    error: String? = null,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -286,6 +290,12 @@ fun LibraryMobileLayout(
         collapseProgress = collapseProgress,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
+            if (onRefresh != null && selectedPage in listOf(LibraryPage.Songs, LibraryPage.Playlists)) {
+                GlassIconButton(onClick = onRefresh, enabled = !isRefreshing) {
+                    if (isRefreshing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
+                }
+            }
             if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) { contentPadding ->
@@ -338,6 +348,11 @@ fun LibraryMobileLayout(
                 }
             }
 
+            if (error != null) {
+                item(key = "library-load-error") {
+                    Text(error, color = LocalGlassColors.current.secondaryContent, modifier = Modifier.padding(vertical = 12.dp))
+                }
+            }
             when (selectedPage) {
                 LibraryPage.Songs -> {
                     if (likedSongs.isEmpty() && likedSongsLoading) {
@@ -398,7 +413,7 @@ fun LibraryMobileLayout(
                                 },
                             )
                         }
-                    } else {
+                    } else if (error == null) {
                         item {
                             EmptyState(
                                 stringResource(
@@ -426,7 +441,7 @@ fun LibraryMobileLayout(
                         }
                     }
                     val playlists = visibleCreatedPlaylists + visibleCollectedPlaylists
-                    if (playlists.isEmpty() && (!isSearching || visibleAlbums.isEmpty())) {
+                    if (playlists.isEmpty() && (!isSearching || visibleAlbums.isEmpty()) && error == null && !isRefreshing) {
                         item {
                             EmptyState(
                                 stringResource(

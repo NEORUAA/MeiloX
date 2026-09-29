@@ -17,6 +17,7 @@ import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.data.model.room.PlaybackHistory
 import com.ljyh.mei.data.model.room.PlaybackCount
 import com.ljyh.mei.data.model.room.Playlist
+import com.ljyh.mei.data.model.room.AccountPlaylistMembership
 import com.ljyh.mei.data.model.room.PlaylistSongCrossRef
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.model.room.Song
@@ -35,9 +36,10 @@ import com.ljyh.mei.di.dao.SongDao
     entities = [
         CacheColor::class, Song::class, Like::class, QQSong::class, Playlist::class,
         PlaybackHistory::class, AlbumEntity::class, ArtistEntity::class, AlbumArtistCrossRef::class,
-        CachedLyric::class, DownloadTask::class, PlaylistSongCrossRef::class, PlaybackCount::class
+        CachedLyric::class, DownloadTask::class, PlaylistSongCrossRef::class, PlaybackCount::class,
+        AccountPlaylistMembership::class
     ],
-    version = 17
+    version = 18
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -168,6 +170,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS account_playlist (
+                        accountId TEXT NOT NULL,
+                        playlistId TEXT NOT NULL,
+                        position INTEGER NOT NULL,
+                        isLiked INTEGER NOT NULL,
+                        PRIMARY KEY(accountId, playlistId)
+                    )
+                """.trimIndent())
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -177,7 +193,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "app_database"
-                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                     .build()
                     .also { INSTANCE = it }
             }

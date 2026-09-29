@@ -8,6 +8,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.data.model.room.AccountPlaylist
+import com.ljyh.mei.data.model.room.Playlist
+import com.ljyh.mei.data.model.room.PlaylistType
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +75,7 @@ internal object ModuleStorageProbe {
                 context.deleteDatabase(NAME)
             }
             verifyRoom(context)
-            report("runtime_storage room_schema=true")
+            report("runtime_storage room_schema=true account_library=true migration_17_18=true")
             verifyDataStore(context)
             report("runtime_storage datastore=true")
         } catch (error: Throwable) {
@@ -82,10 +85,55 @@ internal object ModuleStorageProbe {
 
     private fun verifyRoom(context: Context) {
         val name = "${NAME}_room"
-        val database = Room.databaseBuilder(context, AppDatabase::class.java, name).build()
+        var database = Room.databaseBuilder(context, AppDatabase::class.java, name).build()
         try {
             database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").use {
                 check(it.moveToFirst() && it.getInt(0) > 1)
+            }
+            val shared = Playlist("shared", "Shared", "", "creator", "Creator", "", 1,
+                lastPlayTime = 10, localPlayCount = 4)
+            runBlocking { database.playlistDao().insertPlaylist(shared) }
+            database.close()
+            // Recreate the previous schema without exporting any real module database.
+            context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use {
+                it.execSQL("DROP TABLE account_playlist")
+                it.version = 17
+            }
+            database = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(AppDatabase.MIGRATION_17_18).build()
+            check(database.openHelper.writableDatabase.version == 18)
+            runBlocking {
+                val dao = database.playlistDao()
+                check(dao.getPlaylist("shared")?.localPlayCount == 4)
+                val local = shared.copy(id = "local", type = PlaylistType.USER)
+                dao.insertPlaylist(local)
+                dao.insertPlaylist(shared.copy(id = "unowned"))
+                dao.replaceAccountPlaylists("account-a", listOf(
+                    AccountPlaylist(shared, false), AccountPlaylist(shared.copy(id = "liked-a"), true),
+                )) {}
+                dao.replaceAccountPlaylists("account-b", listOf(
+                    AccountPlaylist(shared, true), AccountPlaylist(shared.copy(id = "only-b"), false),
+                )) {}
+                dao.touchPlaylist("shared", 20)
+                dao.replaceAccountPlaylists("account-a", listOf(AccountPlaylist(shared.copy(title = "Updated"), false))) {}
+                val updated = checkNotNull(dao.getPlaylist("shared"))
+                check(updated.title == "Updated" && updated.localPlayCount == 5 && updated.lastPlayTime == 20L)
+                check(dao.getAccountPlaylists("account-a").first().map { it.playlist.id }.toSet() == setOf("local", "shared"))
+                val otherAccount = dao.getAccountPlaylists("account-b").first()
+                check(otherAccount.map { it.playlist.id }.toSet() == setOf("local", "shared", "only-b"))
+                check(otherAccount.single { it.playlist.id == "shared" }.isLiked)
+                var checks = 0
+                val canceled = runCatching {
+                    dao.replaceAccountPlaylists("account-a", listOf(AccountPlaylist(shared.copy(title = "Canceled"), true))) {
+                        if (++checks == 2) throw kotlinx.coroutines.CancellationException("Probe cancellation")
+                    }
+                }
+                check(canceled.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+                check(dao.getPlaylist("shared")?.title == "Updated")
+                check(dao.getAccountPlaylists("account-a").first().none { it.isLiked })
+                dao.replaceAccountPlaylists("account-a", emptyList()) {}
+                check(dao.getAccountPlaylists("account-a").first().map { it.playlist.id } == listOf("local"))
+                check(dao.getAccountPlaylists("account-b").first() == otherAccount)
             }
         } finally {
             database.close()

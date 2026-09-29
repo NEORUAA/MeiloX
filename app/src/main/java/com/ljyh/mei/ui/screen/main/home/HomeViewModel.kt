@@ -61,10 +61,17 @@ class HomeViewModel @Inject constructor(
         }
         if (!refresh && displayedSession == stamp && _homePageResourceShow.value is Resource.Success) return
         requestJob?.cancel()
-        val version = requestVersion.incrementAndGet()
+        val version = runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    displayedSession = stamp
+                    _homePageResourceShow.value = Resource.Loading
+                    requestVersion.incrementAndGet()
+                }
+            }
+        }.getOrElse { return }
         requestJob = viewModelScope.launch {
             try {
-                publish(stamp, version, Resource.Loading)
                 val result = repository.getHomePageResourceShow(stamp, refresh)
                 currentCoroutineContext().ensureActive()
                 publish(stamp, version, result)

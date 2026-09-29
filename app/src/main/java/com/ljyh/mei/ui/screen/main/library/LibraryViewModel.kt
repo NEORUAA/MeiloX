@@ -3,154 +3,186 @@ package com.ljyh.mei.ui.screen.main.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.AlbumPhoto
-import com.ljyh.mei.data.model.UserAccount
-import com.ljyh.mei.data.model.UserAlbumList
-import com.ljyh.mei.data.model.UserPlaylist
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.toMiniPlaylistDetail
-import com.ljyh.mei.data.model.room.AlbumEntity
-import com.ljyh.mei.data.model.room.ArtistEntity
-import com.ljyh.mei.data.model.room.Playlist
-import com.ljyh.mei.data.model.weapi.UserSubcount
+import com.ljyh.mei.data.model.UserAlbumList
+import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.UserRepository
-import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.di.repository.AlbumsRepository
-import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
+import com.ljyh.mei.data.repository.AccountLibraryRepository
+import com.ljyh.mei.data.repository.AccountLibrarySource
+import com.ljyh.mei.parasite.HostAccountStore
+import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.parasite.HostSessionStamp
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
+data class LibraryUiState(
+    val session: HostSessionStamp? = null,
+    val playlists: List<AccountPlaylist> = emptyList(),
+    val playlistsLoading: Boolean = false,
+    val playlistsError: String? = null,
+    val albums: Resource<UserAlbumList> = Resource.Loading,
+    val photos: Resource<AlbumPhoto> = Resource.Loading,
+    val likedSongs: List<MediaMetadata> = emptyList(),
+    val likedSongsLoading: Boolean = false,
+    val likedSongsError: String? = null,
+) {
+    val userId: String get() = session?.identity?.takeIf { it.authenticated }?.userId?.toString().orEmpty()
+}
 
-class LibraryViewModel @Inject constructor(
-    private val repository: UserRepository,
-    private val localPlaylistRepository: LocalPlaylistRepository,
-    private val albumsRepository: AlbumsRepository,
-    private val playlistRepository: PlaylistRepository,
-):ViewModel() {
-    private val _account = MutableStateFlow<Resource<UserAccount>>(Resource.Loading)
-    val account: StateFlow<Resource<UserAccount>> = _account
+class LibraryViewModel internal constructor(
+    private val source: AccountLibrarySource,
+    private val accounts: HostAccountStore,
+) : ViewModel() {
+    @Inject constructor(repository: AccountLibraryRepository, accounts: HostAccountStore) : this(
+        repository as AccountLibrarySource, accounts,
+    )
 
-    private val _photoAlbum=MutableStateFlow<Resource<AlbumPhoto>>(Resource.Loading)
-    val photoAlbum:StateFlow<Resource<AlbumPhoto>> = _photoAlbum
-
-    private val _networkPlaylistsState = MutableStateFlow<Resource<UserPlaylist>>(Resource.Loading)
-    val networkPlaylistsState: StateFlow<Resource<UserPlaylist>> = _networkPlaylistsState
-
-    private val _albumList = MutableStateFlow<Resource<UserAlbumList>>(Resource.Loading)
-    val albumList: StateFlow<Resource<UserAlbumList>> = _albumList
-
-    private val _userSubcount = MutableStateFlow<Resource<UserSubcount>>(Resource.Loading)
-    val userSubcount: StateFlow<Resource<UserSubcount>> = _userSubcount
-
-    private val _likedSongs = MutableStateFlow<List<MediaMetadata>>(emptyList())
-    val likedSongs: StateFlow<List<MediaMetadata>> = _likedSongs
-
-    private val _likedSongsLoading = MutableStateFlow(true)
-    val likedSongsLoading: StateFlow<Boolean> = _likedSongsLoading
-
-    val localPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000L), // 5秒内无订阅者则停止
-            initialValue = emptyList() // 初始值为空列表
-        )
-    fun getUserAccount() {
-        if (account.value is Resource.Success) return
-        viewModelScope.launch {
-            _account.value = Resource.Loading
-            _account.value = repository.getUserAccount()
-        }
-    }
-
-    fun getPhotoAlbum(id:String){
-        viewModelScope.launch {
-            _photoAlbum.value = Resource.Loading
-            _photoAlbum.value = repository.getPhotoAlbum(id)
-        }
-    }
-
-
-
-    fun syncUserPlaylists(uid: String, limit: Int = 100) {
-        viewModelScope.launch {
-            _networkPlaylistsState.value = Resource.Loading
-            when (val networkResult = repository.getUserPlaylist(uid, limit)) {
-                is Resource.Success -> {
-                    val existingPlaylists = localPlaylistRepository.getPlaylistByAuthor(uid)
-                    val existingMap = existingPlaylists.associateBy { it.id }
-                    val playlistsToInsert = networkResult.data.playlist.map {
-                        val existing = existingMap[it.id.toString()]
-                        Playlist(
-                            id = it.id.toString(),
-                            title = it.name,
-                            cover = it.coverImgUrl,
-                            author = it.creator.userId.toString(),
-                            authorName = it.creator.nickname,
-                            authorAvatar = it.creator.avatarUrl,
-                            count = it.trackCount,
-                            playCount = it.playCount,
-                            lastPlayTime = existing?.lastPlayTime ?: 0L,
-                            localPlayCount = existing?.localPlayCount ?: 0
-                        )
-                    }
-                    localPlaylistRepository.insertPlaylists(playlistsToInsert)
-                    _networkPlaylistsState.value = networkResult
-                }
-                is Resource.Error -> {
-                    _networkPlaylistsState.value = networkResult
-                }
-                Resource.Loading -> { }
+    private val mutableState = MutableStateFlow(LibraryUiState())
+    val state = mutableState.asStateFlow()
+    private val version = AtomicLong()
+    private val stateLock = Any()
+    private var refreshJob: Job? = null
+    private val invalidation = accounts.sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if ((state.value.session?.generation ?: -1) < revision) {
+                version.incrementAndGet()
+                mutableState.value = LibraryUiState()
             }
         }
     }
 
-    fun getAlbumList(){
+    init {
         viewModelScope.launch {
-            _albumList.value= Resource.Loading
-            _albumList.value=repository.getAlbumList()
+            accounts.state.map { it.session }.distinctUntilChanged().collect { refresh() }
         }
     }
 
-    fun getUserSubcount(){
-        viewModelScope.launch {
-            _userSubcount.value= Resource.Loading
-            _userSubcount.value= repository.getUsrSubcount()
+    fun refresh() {
+        refreshJob?.cancel()
+        val stamp = runCatching { accounts.requireAuthenticated() }.getOrNull()
+        if (stamp == null) {
+            version.incrementAndGet()
+            mutableState.value = LibraryUiState()
+            return
         }
-    }
-
-    fun getLikedSongs(playlistId: Long) {
-        viewModelScope.launch {
-            _likedSongsLoading.value = true
+        val requestVersion = runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    mutableState.update {
+                        if (it.session == stamp) it.copy(playlistsLoading = true, playlistsError = null, albums = Resource.Loading)
+                        else LibraryUiState(session = stamp, playlistsLoading = true)
+                    }
+                    version.incrementAndGet()
+                }
+            }
+        }.getOrElse { return }
+        refreshJob = viewModelScope.launch {
             try {
-                when (val result = playlistRepository.getPlaylistDetail(playlistId.toString())) {
-                    is Resource.Success -> {
-                        val initialTracks = result.data.toMiniPlaylistDetail().tracks
-                        _likedSongs.value = try {
-                            playlistRepository.getCompletePlaylistTracks(result.data)
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (_: Exception) {
-                            initialTracks
+                supervisorScope {
+                    var likedId: String? = null
+                    var likedJob: Job? = null
+                    var receivedPlaylists = false
+                    fun acceptPlaylists(entries: List<AccountPlaylist>) {
+                        publish(stamp, requestVersion) { it.copy(playlists = entries) }
+                        val nextId = entries.firstOrNull { it.isLiked }?.playlist?.id
+                        if (!receivedPlaylists || nextId != likedId) {
+                            receivedPlaylists = true
+                            likedId = nextId
+                            likedJob?.cancel()
+                            publish(stamp, requestVersion) {
+                                it.copy(likedSongs = emptyList(), likedSongsLoading = nextId != null, likedSongsError = null)
+                            }
+                            if (nextId != null) likedJob = launch {
+                                request(stamp, requestVersion, { source.likedSongs(nextId) }) { current, result ->
+                                    when (result) {
+                                        is Resource.Success -> current.copy(likedSongs = result.data, likedSongsLoading = false)
+                                        is Resource.Error -> current.copy(likedSongsLoading = false, likedSongsError = result.message)
+                                        Resource.Loading -> current
+                                    }
+                                }
+                            }
                         }
                     }
-                    else -> Unit
+                    launch {
+                        try {
+                            source.playlists(stamp.identity.userId.toString()).collect { acceptPlaylists(it) }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: HostSessionChangedException) {
+                        } catch (error: Exception) {
+                            runCatching { publish(stamp, requestVersion) { it.copy(playlistsError = error.message) } }
+                        }
+                    }
+                    launch {
+                        request(stamp, requestVersion, {
+                            val result = source.sync(stamp)
+                            if (result is Resource.Success) {
+                                acceptPlaylists(source.playlists(stamp.identity.userId.toString()).first())
+                            }
+                            result
+                        }) { current, result ->
+                            current.copy(playlistsLoading = false, playlistsError = (result as? Resource.Error)?.message)
+                        }
+                    }
+                    launch {
+                        request(stamp, requestVersion, source::albums) { current, result -> current.copy(albums = result) }
+                    }
+                    launch {
+                        request(stamp, requestVersion, { source.photos(stamp.identity.userId.toString()) }) { current, result ->
+                            current.copy(photos = result)
+                        }
+                    }
                 }
-            } finally {
-                _likedSongsLoading.value = false
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
             }
         }
     }
 
-    fun insertAlbum(album: AlbumEntity, artists: List<ArtistEntity>){
-        viewModelScope.launch {
-            albumsRepository.insertAlbum(album, artists)
+    private suspend fun <T> request(
+        stamp: HostSessionStamp,
+        requestVersion: Long,
+        load: suspend () -> Resource<T>,
+        apply: (LibraryUiState, Resource<T>) -> LibraryUiState,
+    ) {
+        try {
+            accounts.sessions.requireCurrent(stamp)
+            val result = load()
+            currentCoroutineContext().ensureActive()
+            publish(stamp, requestVersion) { apply(it, result) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: HostSessionChangedException) {
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            runCatching { publish(stamp, requestVersion) { apply(it, Resource.Error(error.message ?: "Library request failed")) } }
         }
     }
 
+    private fun publish(stamp: HostSessionStamp, requestVersion: Long, update: (LibraryUiState) -> LibraryUiState) {
+        accounts.sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (version.get() == requestVersion) mutableState.update(update)
+            }
+        }
+    }
 
+    override fun onCleared() {
+        invalidation.close()
+        version.incrementAndGet()
+        super.onCleared()
+    }
 }
