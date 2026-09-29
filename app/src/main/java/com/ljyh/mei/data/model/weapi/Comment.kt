@@ -3,25 +3,25 @@ import com.google.gson.annotations.SerializedName
 
 data class Comment(
     @SerializedName("code") val code: Int,
-    @SerializedName("data") val data: Data1,
+    @SerializedName("data") val data: Data1?,
     @SerializedName("message") val message: String?
 )
 
 data class Data1(
     @SerializedName("bottomAction") val bottomAction: Any?,
-    @SerializedName("comments") val comments: List<CommentX>,
+    @SerializedName("comments") val comments: List<CommentX>?,
     @SerializedName("commentsTitle") val commentsTitle: String?,
     @SerializedName("currentComment") val currentComment: Any?,
     @SerializedName("currentCommentTitle") val currentCommentTitle: String?,
     @SerializedName("cursor") val cursor: String?,
     @SerializedName("expandCount") val expandCount: Int,
-    @SerializedName("hasMore") val hasMore: Boolean,
+    @SerializedName("hasMore") val hasMore: Boolean?,
     @SerializedName("likeAnimation") val likeAnimation: LikeAnimation?,
     @SerializedName("newReplyExpGroupName") val newReplyExpGroupName: String?,
     @SerializedName("sortType") val sortType: Int,
     @SerializedName("sortTypeList") val sortTypeList: List<SortType>?,
     @SerializedName("style") val style: String?,
-    @SerializedName("totalCount") val totalCount: Int
+    @SerializedName("totalCount") val totalCount: Int?
 )
 
 data class CommentX(

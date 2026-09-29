@@ -12,7 +12,7 @@ import com.ljyh.mei.parasite.HostPendingRequest
 import com.ljyh.mei.parasite.HostRequestBackend
 import com.ljyh.mei.parasite.HostRequestBridge
 import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -62,7 +62,7 @@ internal class DownloadWorkerFixture(
     private val original = syntheticAudio()
     private val requests = HostRequestBridge(sessions).apply {
         bind(object : HostRequestBackend {
-            override fun sessionIdentity() = HostSessionIdentity(account, true, false)
+            override fun sessionIdentity() = SessionIdentity(account, true, false)
             override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
                 check(path == "song/enhance/download/url/v1")
                 check(parameters == mapOf("id" to "${songId}_0", "level" to "standard", "immerseType" to "ste"))

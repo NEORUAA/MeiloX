@@ -26,7 +26,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.account.logoutNetease
-import com.ljyh.mei.ui.local.rememberHostAccount
+import com.ljyh.mei.ui.local.rememberAccount
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,7 +35,7 @@ fun SettingScreen(
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
-    val account by rememberHostAccount()
+    val account by rememberAccount()
     val userNickname = account.profile?.nickname.orEmpty()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(

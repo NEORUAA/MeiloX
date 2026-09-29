@@ -49,7 +49,7 @@ import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Tag
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 
 interface ApiService {
     @Headers("X-Netease-Crypto: eapi")
@@ -62,13 +62,13 @@ interface ApiService {
     * 获取歌单详情
     * */
     @POST("/api/v6/playlist/detail")
-    suspend fun getPlaylistDetail(@Body body: GetPlaylistDetail, @Tag expectedSession: HostSessionStamp? = null): PlaylistDetail
+    suspend fun getPlaylistDetail(@Body body: GetPlaylistDetail, @Tag expectedSession: SessionStamp? = null): PlaylistDetail
 
     /*
     * 获取歌曲详情
     * */
     @POST("/api/v3/song/detail")
-    suspend fun getSongDetail(@Body body: GetSongDetails, @Tag expectedSession: HostSessionStamp? = null): Tracks
+    suspend fun getSongDetail(@Body body: GetSongDetails, @Tag expectedSession: SessionStamp? = null): Tracks
 
 
     /*
@@ -92,7 +92,7 @@ interface ApiService {
     @POST("/api/song/lyric/v1")
     suspend fun getLyricV1(
         @Body body: GetLyricV1,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): Lyric
 
     /*
@@ -101,42 +101,42 @@ interface ApiService {
     @POST("/api/user/playlist")
     suspend fun getUserPlaylist(
         @Body body: GetUserPlaylist,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): UserPlaylist
 
     @POST("/api/song/like/get")
-    suspend fun songLikeIds(@Tag expectedSession: HostSessionStamp): SongLikeIds
+    suspend fun songLikeIds(@Tag expectedSession: SessionStamp): SongLikeIds
 
     @POST("/api/album/sublist")
     suspend fun getCollectAlbumList(
         @Body body: GetAlbumList,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): UserAlbumList
 
     @POST("/api/v1/album/{id}")
     suspend fun getAlbumDetail(
         @Body body: Map<String, String> = emptyMap(),
         @Path("id") id: String,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): AlbumDetail
 
     @POST("/api/tv-artist-page/album/get")
     suspend fun getAlbumCollection(
         @Body body: Map<String, String>,
-        @Tag expectedSession: HostSessionStamp,
+        @Tag expectedSession: SessionStamp,
     ): com.ljyh.mei.data.model.api.AlbumCollectionResponse
 
     @POST("/api/search/get/")
     suspend fun search(
         @Body body: GetSearch,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): SearchResult
 
 
     @POST("/api/search/suggest/web/")
     suspend fun searchSuggest(
         @Body body: GetSearchSuggest,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): SearchSuggest
 
 
@@ -144,74 +144,74 @@ interface ApiService {
     @POST("/api/song/enhance/player/url/v1")
     suspend fun getSongUrlV1(
         @Body body: GetSongUrlV1,
-        @Tag expectedSession: HostSessionStamp,
+        @Tag expectedSession: SessionStamp,
     ): SongUrl
 
     @Headers("X-Netease-Crypto: eapi")
     @POST("/api/song/enhance/download/url/v1")
     suspend fun getDownloadUrl(
         @Body body: com.ljyh.mei.data.model.api.GetDownloadUrl,
-        @Tag expectedSession: HostSessionStamp,
+        @Tag expectedSession: SessionStamp,
     ): com.ljyh.mei.data.model.DownloadUrlResponse
 
     @POST("/api/user/photo/album/get")
     suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum): AlbumPhoto
 
     @POST("/api/song/like")
-    suspend fun like(@Body body: SongLike, @Tag expectedSession: HostSessionStamp): SongLikeResult
+    suspend fun like(@Body body: SongLike, @Tag expectedSession: SessionStamp): SongLikeResult
 
     @POST("/api/v1/playlist/manipulate/tracks")
-    suspend fun manipulateTracks(@Body body: ManipulateTrack, @Tag expectedSession: HostSessionStamp): ManipulateTrackResult
+    suspend fun manipulateTracks(@Body body: ManipulateTrack, @Tag expectedSession: SessionStamp): ManipulateTrackResult
 
     @POST("/api/playlist/create")
-    suspend fun createPlaylist(@Body body: CreatePlaylist, @Tag expectedSession: HostSessionStamp): CreatePlaylistResult
+    suspend fun createPlaylist(@Body body: CreatePlaylist, @Tag expectedSession: SessionStamp): CreatePlaylistResult
 
 
 
     @POST("/api/album/sub")
     suspend fun subscribeAlbum(
         @Body body: SubscribePlaylist,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): BaseResponse
 
     @POST("/api/album/unsub")
     suspend fun unsubscribeAlbum(
         @Body body: SubscribePlaylist,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): BaseResponse
 
     @POST("/api/playlist/remove")
-    suspend fun deletePlaylist(@Body body: DeletePlaylist, @Tag expectedSession: HostSessionStamp): BaseMessageResponse
+    suspend fun deletePlaylist(@Body body: DeletePlaylist, @Tag expectedSession: SessionStamp): BaseMessageResponse
 
 
     @POST("/api/artist/head/info/get")
-    suspend fun getArtistDetail(@Body body: GetArtistDetail, @Tag expectedSession: HostSessionStamp): ArtistDetail
+    suspend fun getArtistDetail(@Body body: GetArtistDetail, @Tag expectedSession: SessionStamp): ArtistDetail
 
     @POST("/api/artist/albums/{id}")
-    suspend fun getArtistAlbums(@Body body: GetArtistAlbum, @Path("id") id: String, @Tag expectedSession: HostSessionStamp): ArtistAlbum
+    suspend fun getArtistAlbums(@Body body: GetArtistAlbum, @Path("id") id: String, @Tag expectedSession: SessionStamp): ArtistAlbum
 
     @POST("/api/v1/artist/songs")
     suspend fun getAllArtistSongs(
         @Body body: GetAllArtistSongs,
-        @Tag expectedSession: HostSessionStamp,
+        @Tag expectedSession: SessionStamp,
     ): AllArtistSongs
 
     @POST("/api/v1/artist/{id}")
-    suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String, @Tag expectedSession: HostSessionStamp): ArtistSong
+    suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String, @Tag expectedSession: SessionStamp): ArtistSong
 
     @POST("/api/tv-artist-page/artistdetail")
-    suspend fun getArtistCollection(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): com.ljyh.mei.data.model.api.ArtistCollectionResponse
+    suspend fun getArtistCollection(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): com.ljyh.mei.data.model.api.ArtistCollectionResponse
 
     @POST("/api/v1/artist/sub/")
-    suspend fun subscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): BaseResponse
+    suspend fun subscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): BaseResponse
 
     @POST("/api/artist/unsub")
-    suspend fun unsubscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): BaseResponse
+    suspend fun unsubscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): BaseResponse
 
     @POST("/api/playmode/intelligence/list")
     suspend fun getIntelligenceList(@Body body: GetIntelligence): Intelligence
 
     @POST("/api/v2/resource/comments")
-    suspend fun getComment(@Body body: GetComment): Comment
+    suspend fun getComment(@Body body: GetComment, @Tag expectedSession: SessionStamp): Comment
 
 }

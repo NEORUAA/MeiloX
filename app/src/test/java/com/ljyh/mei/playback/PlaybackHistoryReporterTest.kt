@@ -1,5 +1,8 @@
 package com.ljyh.mei.playback
 
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.parasite.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -10,16 +13,16 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackHistoryReporterTest {
-    private var identity = HostSessionIdentity(10, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(10, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val bridge = HostPlaybackReportBridge(sessions)
-    private data class Event(val action: String, val fields: Map<String, Any>, val owner: HostSessionStamp)
+    private data class Event(val action: String, val fields: Map<String, Any>, val owner: SessionStamp)
     private val events = mutableListOf<Event>()
     private val source = PlaybackHistorySource(456, "list")
     private val started = 1_700_000_000_000L
     init {
         bridge.bind(object : HostPlaybackReportBackend {
-            override fun emit(action: String, fields: Map<String, Any>, owner: HostSessionStamp) {
+            override fun emit(action: String, fields: Map<String, Any>, owner: SessionStamp) {
                 events += Event(action, fields, owner)
             }
         })
@@ -73,7 +76,7 @@ class PlaybackHistoryReporterTest {
         val reporter = PlaybackHistoryReporter(bridge, StandardTestDispatcher(testScheduler))
         reporter.recordStart("123", 123, source, started)
         runCurrent()
-        identity = HostSessionIdentity(20, true, false)
+        identity = SessionIdentity(20, true, false)
         reporter.recordDuration(completed(), started + 80_000)
         runCurrent()
         assertEquals(listOf("startplay"), events.map { it.action })
@@ -122,7 +125,7 @@ class PlaybackHistoryReporterTest {
         sessions.setRecoveryRequired(true)
         reporter.recordStart("123", 123, source, started)
         sessions.setRecoveryRequired(false)
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         reporter.recordStart("123", 123, source, started)
         runCurrent()
         assertTrue(events.isEmpty())

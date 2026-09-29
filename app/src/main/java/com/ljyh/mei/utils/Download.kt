@@ -11,9 +11,9 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.AppGraph
-import com.ljyh.mei.parasite.HostSessionStamp
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.playback.requireDownloadOwner
 import com.ljyh.mei.constants.MusicQuality
 import androidx.room.withTransaction
@@ -51,11 +51,11 @@ object DownloadManager {
         val db = AppDatabase.getDatabase(context)
         val manager = try { WorkManager.getInstance(context) }
         catch (error: IllegalStateException) { throw DownloadQueueUnavailableException(error) }
-        return DownloadQueue(context, db, AppGraph.component.hostRequests().sessions, manager)
+        return DownloadQueue(context, db, AppGraph.component.sessions(), manager)
     }
 
     suspend fun enqueue(
-        context: Context, songs: List<SongDownloadInfo>, playlistName: String, owner: HostSessionStamp,
+        context: Context, songs: List<SongDownloadInfo>, playlistName: String, owner: SessionStamp,
         playlistId: String = "", downloadPath: String = getDefaultDownloadPath(), expectedRequestId: String? = null,
     ) = withContext(Dispatchers.IO) {
         queue(context).enqueue(songs, playlistName, owner, playlistId, downloadPath, expectedRequestId)
@@ -108,7 +108,7 @@ object DownloadManager {
 internal class DownloadQueue(
     private val context: Context,
     private val db: AppDatabase,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     private val manager: WorkManager,
     private val workNamePrefix: String = "download_song_",
     private val request: (DownloadTask) -> androidx.work.OneTimeWorkRequest = ::downloadWorkRequest,
@@ -119,7 +119,7 @@ internal class DownloadQueue(
     suspend fun enqueue(
         songs: List<SongDownloadInfo>,
         playlistName: String,
-        owner: HostSessionStamp,
+        owner: SessionStamp,
         playlistId: String = "",
         downloadPath: String = DownloadManager.getDefaultDownloadPath(),
         expectedRequestId: String? = null,
@@ -228,7 +228,7 @@ internal class DownloadQueue(
         if (task.requestId != requestId || task.status !in setOf(DownloadStatus.PAUSED, DownloadStatus.FAILED)) return
         val owner = sessions.snapshot()
         sessions.requireDownloadOwner(owner)
-        if (task.ownerId != owner.identity.userId) throw HostSessionChangedException()
+        if (task.ownerId != owner.identity.userId) throw SessionChangedException()
         enqueue(
             songs = listOf(
                 SongDownloadInfo(

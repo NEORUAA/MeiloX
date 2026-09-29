@@ -1,7 +1,6 @@
 package com.ljyh.mei.playback
 
-import com.ljyh.mei.parasite.HostPlaybackReportBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -11,9 +10,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 
-/** Serializes actual playback events; the host SDK owns authentication and delivery. */
+/** Serializes actual playback events for the selected backend's reporting sink. */
 internal class PlaybackHistoryReporter(
-    private val bridge: HostPlaybackReportBridge,
+    private val bridge: PlaybackReportSink,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val report: (String) -> Unit = {},
 ) {
@@ -22,7 +21,7 @@ internal class PlaybackHistoryReporter(
         val songId: Long,
         val source: PlaybackHistorySource,
         val startedAtMs: Long,
-        val owner: HostSessionStamp,
+        val owner: SessionStamp,
     )
 
     private val reporterJob = SupervisorJob()

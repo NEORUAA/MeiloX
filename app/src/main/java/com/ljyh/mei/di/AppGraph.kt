@@ -5,7 +5,7 @@ import com.ljyh.mei.AppContext
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.parasite.HostRequestBridge
-import com.ljyh.mei.parasite.HostAccountStore
+import com.ljyh.mei.data.session.AccountStore
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
@@ -14,7 +14,8 @@ import dagger.Component
 import javax.inject.Singleton
 
 @Singleton
-@Component(modules = [AppModule::class, RetrofitModule::class, RepositoryModule::class, ViewModelBindings::class])
+@Component(modules = [AppModule::class, RetrofitModule::class, RepositoryModule::class, ViewModelBindings::class,
+    com.ljyh.mei.parasite.RuntimeBackendModule::class])
 interface AppComponent {
     fun inject(activity: MainActivity)
     fun inject(service: MusicService)
@@ -22,7 +23,9 @@ interface AppComponent {
     fun database(): AppDatabase
     fun hostRequests(): HostRequestBridge
     fun hostPlaybackReports(): com.ljyh.mei.parasite.HostPlaybackReportBridge
-    fun hostAccount(): HostAccountStore
+    fun playbackReports(): com.ljyh.mei.playback.PlaybackReportSink
+    fun sessions(): com.ljyh.mei.data.session.SessionStore
+    fun account(): AccountStore
     fun apiService(): ApiService
     fun eapiService(): EApiService
     fun weapiService(): WeApiService

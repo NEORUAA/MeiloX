@@ -1,4 +1,7 @@
-package com.ljyh.mei.parasite
+package com.ljyh.mei.data.session
+
+
+
 
 import com.ljyh.mei.data.model.melox.AccountProfile
 import java.io.IOException
@@ -20,13 +23,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class HostAccountStoreTest {
+class AccountStoreTest {
     private fun profile(id: Long, name: String = "Account $id") =
         AccountProfile(id, name, null, null, null, null, null, null, null, null)
 
     @Test fun unresolvedAuthorizationClearsProfileAndKeepsSignInAvailable() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
-        val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
+        val store = AccountStore(sessions, { profile(1) }, backgroundScope)
         runCurrent()
         val transition = sessions.beginTransition()
         sessions.setRecoveryRequired(true)
@@ -43,11 +46,11 @@ class HostAccountStoreTest {
     }
 
     @Test fun bindingWakesAnAlreadyCreatedAccountStore() = runTest {
-        val sessions = HostSessionBridge()
-        val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
+        val sessions = SessionStore()
+        val store = AccountStore(sessions, { profile(1) }, backgroundScope)
         runCurrent()
         assertNull(store.state.value.session)
-        sessions.bind { HostSessionIdentity(1, true, false) }
+        sessions.bind { SessionIdentity(1, true, false) }
         runCurrent()
         assertEquals("1", store.state.value.userId)
         assertEquals(profile(1), store.state.value.profile)
@@ -56,9 +59,9 @@ class HostAccountStoreTest {
     }
 
     @Test fun guestSessionsNeverFetchAnAccountProfile() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(0, false, true) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(0, false, true) } }
         var fetched = false
-        val store = HostAccountStore(sessions, { fetched = true; profile(1) }, backgroundScope)
+        val store = AccountStore(sessions, { fetched = true; profile(1) }, backgroundScope)
         runCurrent()
         assertFalse(fetched)
         assertFalse(store.state.value.authenticated)
@@ -69,18 +72,18 @@ class HostAccountStoreTest {
     }
 
     @Test fun canceledOldAccountCannotPublishAfterTheIdentityChanges() = runTest {
-        var identity = HostSessionIdentity(1, true, false)
-        val sessions = HostSessionBridge().apply { bind { identity } }
+        var identity = SessionIdentity(1, true, false)
+        val sessions = SessionStore().apply { bind { identity } }
         val old = CompletableDeferred<AccountProfile>()
         var requests = 0
-        val store = HostAccountStore(sessions, {
+        val store = AccountStore(sessions, {
             if (requests++ == 0) withContext(NonCancellable) { old.await() } else profile(2)
         }, backgroundScope)
         val published = mutableListOf<Long>()
         backgroundScope.launch { store.state.collect { it.profile?.id?.let(published::add) } }
         runCurrent()
         sessions.beginTransition().use {
-            identity = HostSessionIdentity(2, true, false)
+            identity = SessionIdentity(2, true, false)
             assertNull(store.state.value.session)
             runCurrent()
             assertNull(store.state.value.profile)
@@ -93,10 +96,10 @@ class HostAccountStoreTest {
     }
 
     @Test fun sameAccountReauthorizationDiscardsTheOldGeneration() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val old = CompletableDeferred<AccountProfile>()
         var requests = 0
-        val store = HostAccountStore(sessions, {
+        val store = AccountStore(sessions, {
             if (requests++ == 0) withContext(NonCancellable) { old.await() } else profile(1, "new")
         }, backgroundScope)
         runCurrent()
@@ -111,10 +114,10 @@ class HostAccountStoreTest {
     }
 
     @Test fun manualRefreshCancelsSameSessionWorkThatIgnoresCancellation() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val old = CompletableDeferred<AccountProfile>()
         var requests = 0
-        val store = HostAccountStore(sessions, {
+        val store = AccountStore(sessions, {
             if (requests++ == 0) withContext(NonCancellable) { old.await() } else profile(1, "new")
         }, backgroundScope)
         val published = mutableListOf<String>()
@@ -130,9 +133,9 @@ class HostAccountStoreTest {
     }
 
     @Test fun wrongAccountResponsesFailClosedAndRetryWithoutCredentialStorage() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         var result = profile(2)
-        val store = HostAccountStore(sessions, { result }, backgroundScope)
+        val store = AccountStore(sessions, { result }, backgroundScope)
         runCurrent()
         assertTrue(store.state.value.authenticated)
         assertTrue(store.state.value.profileUnavailable)
@@ -146,12 +149,12 @@ class HostAccountStoreTest {
     }
 
     @Test fun logoutClearsPublicProfileAndNeverLoadsAnonymousProfile() = runTest {
-        var identity = HostSessionIdentity(1, true, false)
-        val sessions = HostSessionBridge().apply { bind { identity } }
+        var identity = SessionIdentity(1, true, false)
+        val sessions = SessionStore().apply { bind { identity } }
         var loads = 0
-        val store = HostAccountStore(sessions, { loads++; profile(1) }, backgroundScope)
+        val store = AccountStore(sessions, { loads++; profile(1) }, backgroundScope)
         runCurrent()
-        sessions.beginTransition().use { identity = HostSessionIdentity(0, false, true) }
+        sessions.beginTransition().use { identity = SessionIdentity(0, false, true) }
         assertNull(store.state.value.profile)
         runCurrent()
         assertEquals(1, loads)
@@ -161,12 +164,12 @@ class HostAccountStoreTest {
     }
 
     @Test fun delayedOldInvalidationCannotEraseAFreshProfile() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         sessions.onInvalidated { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
         var result = profile(1, "old")
-        val store = HostAccountStore(sessions, { result }, backgroundScope)
+        val store = AccountStore(sessions, { result }, backgroundScope)
         val executor = Executors.newSingleThreadExecutor()
         try {
             runCurrent()
@@ -187,11 +190,11 @@ class HostAccountStoreTest {
     }
 
     @Test fun delayedInvalidationCannotHideAnAvailableRecoveryEntry() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         sessions.onInvalidated { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
-        val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
+        val store = AccountStore(sessions, { profile(1) }, backgroundScope)
         val executor = Executors.newSingleThreadExecutor()
         try {
             runCurrent()
@@ -213,13 +216,13 @@ class HostAccountStoreTest {
     }
 
     @Test fun closingReleasesStateAndDiscardsNonCooperativeResults() = runTest {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val pending = CompletableDeferred<AccountProfile>()
-        val store = HostAccountStore(sessions, { withContext(NonCancellable) { pending.await() } }, backgroundScope)
+        val store = AccountStore(sessions, { withContext(NonCancellable) { pending.await() } }, backgroundScope)
         runCurrent()
         store.close()
         pending.complete(profile(1))
         runCurrent()
-        assertEquals(HostAccountState(), store.state.value)
+        assertEquals(AccountState(), store.state.value)
     }
 }

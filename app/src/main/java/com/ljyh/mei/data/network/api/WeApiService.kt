@@ -11,7 +11,7 @@ import com.ljyh.mei.data.model.weapi.UserSubcount
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Tag
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 
 interface WeApiService {
 
@@ -19,7 +19,7 @@ interface WeApiService {
     @POST("/weapi/v3/discovery/recommend/songs")
     suspend fun getEveryDayRecommendSongs(
         @Body body: Map<String, String>,
-        @Tag expectedSession: HostSessionStamp,
+        @Tag expectedSession: SessionStamp,
     ): EveryDaySongs
 
     @POST("/weapi/subcount")
@@ -32,5 +32,5 @@ interface WeApiService {
     suspend fun getRadio(@Body body: Map<String,String> = mapOf()): Radio
 
     @POST("/weapi/resource/comment/floor/get")
-    suspend fun getFloorComment(@Body body: GetFloorComment): FloorComment
+    suspend fun getFloorComment(@Body body: GetFloorComment, @Tag expectedSession: SessionStamp): FloorComment
 }

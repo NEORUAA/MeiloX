@@ -12,7 +12,7 @@ import com.ljyh.mei.data.repository.ShareRepository
 import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.CommentRepository
-import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.data.session.SessionStore
 import dagger.Module
 import dagger.Provides
 import javax.inject.Singleton
@@ -22,14 +22,14 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun provideHomeRepository(eApiService: EApiService, sessions: HostSessionBridge): HomeRepository {
+    fun provideHomeRepository(eApiService: EApiService, sessions: SessionStore): HomeRepository {
         return HomeRepository(eApiService, sessions)
     }
 
 
     @Singleton
     @Provides
-    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, eApiService: EApiService, sessions: HostSessionBridge): PlaylistRepository {
+    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, eApiService: EApiService, sessions: SessionStore): PlaylistRepository {
         return PlaylistRepository(apiService, weApiService, eApiService, sessions)
     }
 
@@ -49,7 +49,7 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun providePlayerRepository(qqMusicUApiService: QQMusicUApiService,apiService: ApiService,weApiService: WeApiService, sessions: com.ljyh.mei.parasite.HostSessionBridge): PlayerRepository {
+    fun providePlayerRepository(qqMusicUApiService: QQMusicUApiService,apiService: ApiService,weApiService: WeApiService, sessions: com.ljyh.mei.data.session.SessionStore): PlayerRepository {
         return PlayerRepository(qqMusicUApiService,apiService,weApiService,sessions)
     }
 
@@ -61,7 +61,7 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun provideArtistRepository(apiService: ApiService, sessions: com.ljyh.mei.parasite.HostSessionBridge): ArtistRepository {
+    fun provideArtistRepository(apiService: ApiService, sessions: com.ljyh.mei.data.session.SessionStore): ArtistRepository {
         return ArtistRepository(apiService, sessions)
     }
 

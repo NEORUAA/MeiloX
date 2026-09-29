@@ -17,9 +17,9 @@ import com.ljyh.mei.data.repository.PlaylistMutationSource
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -39,12 +39,12 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistActionsTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val entries = MutableStateFlow(listOf(entry("10", "1"), entry("20", "2")))
     private val reads = mutableListOf<String>()
-    private val syncs = mutableListOf<HostSessionStamp>()
-    private val calls = mutableListOf<Pair<String, HostSessionStamp>>()
+    private val syncs = mutableListOf<SessionStamp>()
+    private val calls = mutableListOf<Pair<String, SessionStamp>>()
     private var sync: suspend () -> Resource<Unit> = { Resource.Success(Unit) }
     private var manipulate: suspend () -> Resource<ManipulateTrackResult> = { Resource.Success(ManipulateTrackResult(200)) }
     private var create: suspend () -> Resource<CreatePlaylistResult> = { Resource.Success(CreatePlaylistResult(200, null, 30)) }
@@ -61,32 +61,32 @@ class PlaylistActionsTest {
             val api = unused<ApiService>()
             val repository = PlaylistRepository(api, unused<WeApiService>(), unused<EApiService>(), sessions)
             val source = object : PlaylistMutationSource {
-                override suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: HostSessionStamp): Resource<ManipulateTrackResult> {
+                override suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: SessionStamp): Resource<ManipulateTrackResult> {
                     calls += "$op:$pid:$trackIds" to session
                     return manipulate()
                 }
-                override suspend fun createPlaylist(name: String, privacy: Boolean, type: String, session: HostSessionStamp): Resource<CreatePlaylistResult> {
+                override suspend fun createPlaylist(name: String, privacy: Boolean, type: String, session: SessionStamp): Resource<CreatePlaylistResult> {
                     calls += "create:$name:$privacy:$type" to session
                     return create()
                 }
-                override suspend fun deletePlaylist(id: String, session: HostSessionStamp): Resource<BaseMessageResponse> {
+                override suspend fun deletePlaylist(id: String, session: SessionStamp): Resource<BaseMessageResponse> {
                     calls += "delete:$id" to session
                     return delete()
                 }
             }
             val library = object : AccountLibrarySource {
-                override val collectionChanges = emptyFlow<HostSessionStamp>()
+                override val collectionChanges = emptyFlow<SessionStamp>()
                 override fun playlists(accountId: String) = entries.also { reads += accountId }
-                override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> {
+                override suspend fun sync(stamp: SessionStamp): Resource<Unit> {
                     syncs += stamp
                     return sync()
                 }
                 override suspend fun albums() = error("Unused albums")
                 override suspend fun photos(accountId: String) = error("Unused photos")
-                override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp) = error("Unused likes")
+                override suspend fun likedSongs(playlistId: String, stamp: SessionStamp) = error("Unused likes")
             }
             val pages = object : com.ljyh.mei.data.repository.PlaylistPageSource by repository {
-                override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> = Resource.Success(
+                override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> = Resource.Success(
                     Gson().fromJson("""{"code":200,"playlist":{"id":$id,"creator":{"userId":1},"tracks":[],"trackIds":[],"subscribed":false}}""", PlaylistDetail::class.java))
             }
             val model = PlaylistViewModel(pages, source, repository,
@@ -126,7 +126,7 @@ class PlaylistActionsTest {
     }
 
     @Test fun guestCannotReadPickerOrCreate() = checkModel { model, _ ->
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         sessions.invalidate()
         runCurrent()
         val owner = sessions.snapshot()
@@ -145,7 +145,7 @@ class PlaylistActionsTest {
         sync = { withContext(NonCancellable) { late.await() } }
         model.getAllMePlaylist(sessions.snapshot())
         runCurrent()
-        identity = HostSessionIdentity(2, true, false)
+        identity = SessionIdentity(2, true, false)
         sessions.invalidate()
         assertTrue(model.picker.value.playlists.isEmpty())
         assertNull(model.actionSession.value)

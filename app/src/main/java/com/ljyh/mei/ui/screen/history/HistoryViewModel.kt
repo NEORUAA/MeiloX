@@ -8,9 +8,9 @@ import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.di.repository.HistoryRepository
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostSessionStamp
-import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -38,14 +38,14 @@ data class HistoryUiState(
 class HistoryViewModel @Inject constructor(
     private val localRepository: HistoryRepository,
     private val remoteRepository: MeloXRepository,
-    private val accounts: HostAccountStore,
+    private val accounts: AccountStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow(HistoryUiState(isRefreshing = true))
     val state: StateFlow<HistoryUiState> = _state
 
     private var localEntries: List<ListeningHistoryEntry> = emptyList()
     private var remoteEntries: List<ListeningHistoryEntry>? = null
-    private var loadedSession: HostSessionStamp? = null
+    private var loadedSession: SessionStamp? = null
     private var refreshJob: Job? = null
 
     init {
@@ -96,7 +96,7 @@ class HistoryViewModel @Inject constructor(
                 publish()
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
                 // Session changes reset cloud entries without deleting device-local history.
             } catch (error: Exception) {
                 runCatching {

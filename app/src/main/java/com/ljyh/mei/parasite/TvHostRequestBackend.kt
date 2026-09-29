@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionIdentity
 import android.os.Looper
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedInterface.HookHandle
@@ -86,11 +87,11 @@ internal class TvHostRequestBackend(
         }
     }
 
-    override fun sessionIdentity(): HostSessionIdentity {
+    override fun sessionIdentity(): SessionIdentity {
         val id = invoke(userId, session) as Long
         val anon = invoke(anonymous, null) == true
         val auth = invoke(authenticated, null) == true && !anon && id > 0
-        return HostSessionIdentity(if (auth) id else 0, auth, anon)
+        return SessionIdentity(if (auth) id else 0, auth, anon)
     }
 
     override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {

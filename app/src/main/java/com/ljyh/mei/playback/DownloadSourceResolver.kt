@@ -6,9 +6,9 @@ import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.DownloadUrlResponse
 import com.ljyh.mei.data.model.api.GetDownloadUrl
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import java.io.IOException
 import java.net.URI
 import kotlinx.coroutines.currentCoroutineContext
@@ -17,10 +17,10 @@ import kotlinx.coroutines.ensureActive
 /** Resolves fresh download grants only; playback URLs are never a permission fallback. */
 internal suspend fun resolveOfficialDownloadSources(
     api: ApiService,
-    sessions: HostSessionBridge,
+    sessions: SessionStore,
     ids: List<String>,
     quality: MusicQuality,
-    owner: HostSessionStamp,
+    owner: SessionStamp,
     now: () -> Long = System::currentTimeMillis,
 ): DownloadSources {
     val requested = ids.map { value ->
@@ -32,7 +32,7 @@ internal suspend fun resolveOfficialDownloadSources(
     suspend fun requireOwner() {
         currentCoroutineContext().ensureActive()
         sessions.requirePlaybackSession(owner)
-        if (!owner.identity.authenticated || owner.identity.anonymous) throw HostSessionChangedException()
+        if (!owner.identity.authenticated || owner.identity.anonymous) throw SessionChangedException()
     }
     requireOwner()
     for (id in requested) {

@@ -2,9 +2,9 @@ package com.ljyh.mei.playback
 
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -13,9 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal fun HostSessionBridge.requirePlaybackSession(owner: HostSessionStamp) {
+internal fun SessionStore.requirePlaybackSession(owner: SessionStamp) {
     requireCurrent(owner)
-    if (recoveryRequired.value) throw HostSessionChangedException()
+    if (recoveryRequired.value) throw SessionChangedException()
 }
 
 internal data class PlaybackUrl(val url: String, val actualQuality: String, val cacheKey: String)
@@ -24,17 +24,17 @@ internal data class PlaybackUrl(val url: String, val actualQuality: String, val 
 @Singleton
 class PlaybackUrlResolver internal constructor(
     private val api: ApiService,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     private val now: () -> Long,
 ) {
-    @Inject constructor(api: ApiService, sessions: HostSessionBridge) : this(api, sessions, System::currentTimeMillis)
+    @Inject constructor(api: ApiService, sessions: SessionStore) : this(api, sessions, System::currentTimeMillis)
 
-    private data class Key(val mediaId: String, val quality: String, val owner: HostSessionStamp)
+    private data class Key(val mediaId: String, val quality: String, val owner: SessionStamp)
     private data class Entry(val source: PlaybackUrl, val expiresAt: Long)
     private val cache = ConcurrentHashMap<Key, Entry>()
     private val invalidation = sessions.onInvalidated { cache.clear() }
 
-    internal suspend fun resolve(mediaId: String, quality: String, owner: HostSessionStamp): PlaybackUrl {
+    internal suspend fun resolve(mediaId: String, quality: String, owner: SessionStamp): PlaybackUrl {
         require((mediaId.toLongOrNull() ?: 0) > 0) { "Invalid playback song identity" }
         val requested = normalizePlaybackQuality(quality)
         for (attempted in playbackQualityFallbacks(requested)) {
@@ -52,7 +52,7 @@ class PlaybackUrlResolver internal constructor(
             val response = try {
                 api.getSongUrlV1(GetSongUrlV1("[$mediaId]", attempted), owner)
             } catch (error: CancellationException) { throw error }
-            catch (error: HostSessionChangedException) { throw error }
+            catch (error: SessionChangedException) { throw error }
             catch (error: Exception) { throw IOException("Official playback URL request failed", error) }
             currentCoroutineContext().ensureActive()
             sessions.requirePlaybackSession(owner)
@@ -67,7 +67,7 @@ class PlaybackUrlResolver internal constructor(
             val ttl = source.expi?.coerceAtLeast(0)?.toLong()?.times(1_000) ?: 300_000L
             val entry = Entry(resolved, started + (ttl - 30_000L).coerceAtLeast(0))
             return sessions.withCurrent(owner) {
-                if (sessions.recoveryRequired.value) throw HostSessionChangedException()
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 for (level in setOf(requested, attempted, actual)) cache[Key(mediaId, level, owner)] = entry
                 resolved
             }

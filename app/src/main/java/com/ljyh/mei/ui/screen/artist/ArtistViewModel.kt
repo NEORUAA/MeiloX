@@ -8,8 +8,8 @@ import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.ArtistSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -22,7 +22,7 @@ import javax.inject.Inject
 
 data class ArtistState(
     val id: String? = null,
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val revision: Long = 0,
     val detail: Resource<ArtistDetail> = Resource.Loading,
     val albums: Resource<ArtistAlbum> = Resource.Loading,
@@ -34,9 +34,9 @@ data class ArtistState(
 
 class ArtistViewModel internal constructor(
     private val source: ArtistSource,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : ViewModel() {
-    @Inject constructor(repository: ArtistRepository, sessions: HostSessionBridge) : this(repository as ArtistSource, sessions)
+    @Inject constructor(repository: ArtistRepository, sessions: SessionStore) : this(repository as ArtistSource, sessions)
 
     private val mutableState = MutableStateFlow(ArtistState())
     val state = mutableState.asStateFlow()

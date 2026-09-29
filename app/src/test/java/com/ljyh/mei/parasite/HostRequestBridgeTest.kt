@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -63,12 +65,12 @@ class HostRequestBridgeTest {
         val backend = Backend()
         val bridge = bridge(backend)
         val first = bridge.newCall("search/get")
-        backend.identity = HostSessionIdentity(2, true, false)
-        assertThrows(HostSessionChangedException::class.java) { first.execute() }
+        backend.identity = SessionIdentity(2, true, false)
+        assertThrows(SessionChangedException::class.java) { first.execute() }
         assertEquals(0, backend.opened.get())
         val next = bridge.newCall("search/get")
-        backend.onExecute = { backend.identity = HostSessionIdentity(3, true, false); "{}" }
-        assertThrows(HostSessionChangedException::class.java) { next.execute() }
+        backend.onExecute = { backend.identity = SessionIdentity(3, true, false); "{}" }
+        assertThrows(SessionChangedException::class.java) { next.execute() }
         assertEquals(1, backend.closed.get())
     }
 
@@ -77,9 +79,9 @@ class HostRequestBridgeTest {
         val bridge = bridge(backend)
         val old = bridge.newCall("search/get")
         bridge.sessions.beginTransition().use {
-            assertThrows(HostSessionChangedException::class.java) { bridge.newCall("search/get") }
+            assertThrows(SessionChangedException::class.java) { bridge.newCall("search/get") }
         }
-        assertThrows(HostSessionChangedException::class.java) { old.copy().execute() }
+        assertThrows(SessionChangedException::class.java) { old.copy().execute() }
         assertEquals("{}", bridge.newCall("search/get").execute().body)
     }
 
@@ -89,7 +91,7 @@ class HostRequestBridgeTest {
         val second = bridge.sessions.beginTransition()
         first.close()
         first.close()
-        assertThrows(HostSessionChangedException::class.java) { bridge.sessions.snapshot() }
+        assertThrows(SessionChangedException::class.java) { bridge.sessions.snapshot() }
         second.close()
         assertTrue(bridge.sessions.snapshot().identity.authenticated)
     }
@@ -188,17 +190,17 @@ class HostRequestBridgeTest {
     }
 
     @Test fun permitsAnonymousReadsButRejectsAnonymousToAuthenticatedResults() {
-        val backend = Backend().apply { identity = HostSessionIdentity(0, false, true) }
+        val backend = Backend().apply { identity = SessionIdentity(0, false, true) }
         val bridge = bridge(backend)
         assertTrue(bridge.newCall("search/get").execute().session.identity.anonymous)
-        backend.onExecute = { backend.identity = HostSessionIdentity(1, true, false); "{}" }
-        assertThrows(HostSessionChangedException::class.java) { bridge.newCall("search/get").execute() }
+        backend.onExecute = { backend.identity = SessionIdentity(1, true, false); "{}" }
+        assertThrows(SessionChangedException::class.java) { bridge.newCall("search/get").execute() }
     }
 
     private fun bridge(backend: Backend) = HostRequestBridge(HostSessionBridge()).apply { bind(backend) }
 
     private class Backend : HostRequestBackend {
-        @Volatile var identity = HostSessionIdentity(1, true, false)
+        @Volatile var identity = SessionIdentity(1, true, false)
         var parameters: Map<String, String> = emptyMap()
         var onOpen: () -> Unit = {}
         var onExecute: () -> String = { "{}" }

@@ -11,9 +11,9 @@ import com.ljyh.mei.data.repository.artistAlbums
 import com.ljyh.mei.data.repository.artistDetail
 import com.ljyh.mei.data.repository.artistHotSongs
 import com.ljyh.mei.data.repository.artistTrack
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,40 +30,40 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ArtistSessionTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = Source()
     private class Source : ArtistSource {
-        val reads = mutableListOf<Triple<String, String, HostSessionStamp>>()
-        val pages = mutableListOf<Triple<String, Int, HostSessionStamp>>()
-        val writes = mutableListOf<Triple<String, Boolean, HostSessionStamp>>()
+        val reads = mutableListOf<Triple<String, String, SessionStamp>>()
+        val pages = mutableListOf<Triple<String, Int, SessionStamp>>()
+        val writes = mutableListOf<Triple<String, Boolean, SessionStamp>>()
         var detail: suspend (String) -> Resource<ArtistDetail> = { Resource.Success(artistDetail(it)) }
         var collection: suspend (String) -> Resource<Boolean> = { Resource.Success(false) }
         var update: suspend () -> Resource<Unit> = { Resource.Success(Unit) }
         var page: suspend (String, Int) -> Resource<AllArtistSongs> = { _, offset ->
             Resource.Success(AllArtistSongs(200, listOf(artistTrack(offset + 100L)), offset == 0))
         }
-        override suspend fun detail(id: String, owner: HostSessionStamp): Resource<ArtistDetail> {
+        override suspend fun detail(id: String, owner: SessionStamp): Resource<ArtistDetail> {
             reads += Triple("detail", id, owner)
             return detail(id)
         }
-        override suspend fun albums(id: String, owner: HostSessionStamp): Resource<ArtistAlbum> {
+        override suspend fun albums(id: String, owner: SessionStamp): Resource<ArtistAlbum> {
             reads += Triple("albums", id, owner)
             return Resource.Success(artistAlbums(id))
         }
-        override suspend fun hotSongs(id: String, owner: HostSessionStamp): Resource<ArtistSong> {
+        override suspend fun hotSongs(id: String, owner: SessionStamp): Resource<ArtistSong> {
             reads += Triple("hot", id, owner)
             return Resource.Success(artistHotSongs(id))
         }
-        override suspend fun followed(id: String, owner: HostSessionStamp): Resource<Boolean> {
+        override suspend fun followed(id: String, owner: SessionStamp): Resource<Boolean> {
             reads += Triple("followed", id, owner)
             return collection(id)
         }
-        override suspend fun follow(id: String, followed: Boolean, owner: HostSessionStamp): Resource<Unit> {
+        override suspend fun follow(id: String, followed: Boolean, owner: SessionStamp): Resource<Unit> {
             writes += Triple(id, followed, owner)
             return update()
         }
-        override suspend fun songs(id: String, offset: Int, owner: HostSessionStamp): Resource<AllArtistSongs> {
+        override suspend fun songs(id: String, offset: Int, owner: SessionStamp): Resource<AllArtistSongs> {
             pages += Triple(id, offset, owner)
             return page(id, offset)
         }
@@ -141,7 +141,7 @@ class ArtistSessionTest {
     }
 
     @Test fun guestsCannotWriteCollections() = checkModels { artist, _, _ ->
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         sessions.invalidate()
         artist.load("10")
         runCurrent()
@@ -278,7 +278,7 @@ class ArtistSessionTest {
         runCurrent()
         repeat(2) { index ->
             val stale = artist.state.value
-            if (index == 0) identity = HostSessionIdentity(2, true, false)
+            if (index == 0) identity = SessionIdentity(2, true, false)
             sessions.invalidate()
             assertNull(artist.state.value.session)
             assertNull(artist.state.value.followed)

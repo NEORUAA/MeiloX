@@ -10,7 +10,7 @@ import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Tag
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 
 
 interface EApiService {
@@ -21,8 +21,8 @@ interface EApiService {
     suspend fun search(@Body body: GetUserPhotoAlbum): AlbumPhoto
 
     @POST("/api/multi/terminal/playlist/subscribe")
-    suspend fun subscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: HostSessionStamp? = null): BaseResponse
+    suspend fun subscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: SessionStamp? = null): BaseResponse
 
     @POST("/api/multi/terminal/playlist/unsubscribe")
-    suspend fun unSubscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: HostSessionStamp? = null): BaseResponse
+    suspend fun unSubscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: SessionStamp? = null): BaseResponse
 }

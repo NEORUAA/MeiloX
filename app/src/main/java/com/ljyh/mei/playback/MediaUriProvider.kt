@@ -3,8 +3,8 @@ package com.ljyh.mei.playback
 import android.net.Uri
 import androidx.core.net.toUri
 import com.ljyh.mei.di.repository.SongRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.flow.firstOrNull
 import java.io.File
 import java.io.IOException
@@ -23,12 +23,12 @@ internal data class ResolvedMediaSource(
 class MediaUriProvider @Inject constructor(
     private val urls: PlaybackUrlResolver,
     private val songRepository: SongRepository,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) {
     suspend fun resolveMediaUri(mediaId: String, quality: String): Uri =
         resolveMediaSource(mediaId, quality, sessions.snapshot()).uri
 
-    internal suspend fun resolveMediaSource(mediaId: String, quality: String, owner: HostSessionStamp): ResolvedMediaSource {
+    internal suspend fun resolveMediaSource(mediaId: String, quality: String, owner: SessionStamp): ResolvedMediaSource {
         sessions.requireCurrent(owner)
         val requestedQuality = normalizePlaybackQuality(quality)
         val localPath = songRepository.getSong(mediaId).firstOrNull()?.path

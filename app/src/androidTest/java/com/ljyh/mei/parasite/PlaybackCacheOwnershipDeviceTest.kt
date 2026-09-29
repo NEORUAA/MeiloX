@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.cache.NoOpCacheEvictor
@@ -29,7 +31,7 @@ class PlaybackCacheOwnershipDeviceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val file = File.createTempFile("playback-local-test-", ".mp3", context.cacheDir)
         val sessions = HostSessionBridge().apply {
-            bind { HostSessionIdentity(10, true, false) }
+            bind { SessionIdentity(10, true, false) }
             setRecoveryRequired(true)
         }
         val song = Song("local_123", "Local", emptyList(), "", "", 1, path = file.path)
@@ -47,10 +49,10 @@ class PlaybackCacheOwnershipDeviceTest {
             assertEquals(file.path, source.uri.path)
             assertNull(source.cacheKey)
             assertTrue(runCatching { provider.resolveMediaSource("456", "exhigh", owner) }
-                .exceptionOrNull() is HostSessionChangedException)
+                .exceptionOrNull() is SessionChangedException)
             sessions.invalidate()
             assertTrue(runCatching { provider.resolveMediaSource("123", "exhigh", owner) }
-                .exceptionOrNull() is HostSessionChangedException)
+                .exceptionOrNull() is SessionChangedException)
             assertEquals(file.path, provider.resolveMediaSource("123", "exhigh", sessions.snapshot()).uri.path)
         } finally { file.delete() }
     }
@@ -60,8 +62,8 @@ class PlaybackCacheOwnershipDeviceTest {
         val directory = File(context.cacheDir, "playback-owner-test-${UUID.randomUUID()}")
         val database = StandaloneDatabaseProvider(context)
         val cache = SimpleCache(directory, NoOpCacheEvictor(), database)
-        val first = HostSessionIdentity(10, true, false)
-        val second = HostSessionIdentity(20, true, false)
+        val first = SessionIdentity(10, true, false)
+        val second = SessionIdentity(20, true, false)
         val firstKey = playbackCacheKey("123", "exhigh", "a", 4, first)
         val secondKey = playbackCacheKey("123", "exhigh", "a", 4, second)
         val legacyKey = playbackCacheKey("123", "exhigh", "a", 4)

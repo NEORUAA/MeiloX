@@ -9,9 +9,9 @@ import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.AccountLibraryRepository
 import com.ljyh.mei.data.repository.AccountLibrarySource
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 
 data class LibraryUiState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val playlists: List<AccountPlaylist> = emptyList(),
     val playlistsLoading: Boolean = false,
     val playlistsError: String? = null,
@@ -43,9 +43,9 @@ data class LibraryUiState(
 
 class LibraryViewModel internal constructor(
     private val source: AccountLibrarySource,
-    private val accounts: HostAccountStore,
+    private val accounts: AccountStore,
 ) : ViewModel() {
-    @Inject constructor(repository: AccountLibraryRepository, accounts: HostAccountStore) : this(
+    @Inject constructor(repository: AccountLibraryRepository, accounts: AccountStore) : this(
         repository as AccountLibrarySource, accounts,
     )
 
@@ -128,7 +128,7 @@ class LibraryViewModel internal constructor(
                             source.playlists(stamp.identity.userId.toString()).collect { acceptPlaylists(it) }
                         } catch (error: CancellationException) {
                             throw error
-                        } catch (_: HostSessionChangedException) {
+                        } catch (_: SessionChangedException) {
                         } catch (error: Exception) {
                             runCatching { publish(stamp, requestVersion) { it.copy(playlistsError = error.message) } }
                         }
@@ -155,13 +155,13 @@ class LibraryViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             }
         }
     }
 
     private suspend fun <T> request(
-        stamp: HostSessionStamp,
+        stamp: SessionStamp,
         requestVersion: Long,
         load: suspend () -> Resource<T>,
         apply: (LibraryUiState, Resource<T>) -> LibraryUiState,
@@ -173,14 +173,14 @@ class LibraryViewModel internal constructor(
             publish(stamp, requestVersion) { apply(it, result) }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: HostSessionChangedException) {
+        } catch (_: SessionChangedException) {
         } catch (error: Exception) {
             currentCoroutineContext().ensureActive()
             runCatching { publish(stamp, requestVersion) { apply(it, Resource.Error(error.message ?: "Library request failed")) } }
         }
     }
 
-    private fun publish(stamp: HostSessionStamp, requestVersion: Long, update: (LibraryUiState) -> LibraryUiState) {
+    private fun publish(stamp: SessionStamp, requestVersion: Long, update: (LibraryUiState) -> LibraryUiState) {
         accounts.sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (version.get() == requestVersion) mutableState.update(update)

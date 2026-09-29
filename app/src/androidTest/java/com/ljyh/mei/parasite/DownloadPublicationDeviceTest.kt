@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -100,8 +101,8 @@ class DownloadPublicationDeviceTest {
     }
 
     @Test fun invalidatedOwnerCannotCommit() = test { db, media, file, task ->
-        assertThrows(HostSessionChangedException::class.java) {
-            store(db, media, file, task) { throw HostSessionChangedException() }
+        assertThrows(SessionChangedException::class.java) {
+            store(db, media, file, task) { throw SessionChangedException() }
         }
         assertTrue(media.rows.isEmpty())
         assertTrue(db.downloadArtifactDao().all().isEmpty())

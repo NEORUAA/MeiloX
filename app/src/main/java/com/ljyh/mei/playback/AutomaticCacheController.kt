@@ -17,16 +17,16 @@ import kotlinx.coroutines.flow.first
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 
 @Singleton
 class AutomaticCacheController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) {
-    suspend fun recordPlayback(mediaItem: MediaItem, owner: HostSessionStamp) {
+    suspend fun recordPlayback(mediaItem: MediaItem, owner: SessionStamp) {
         sessions.requirePlaybackSession(owner)
         val songId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return
         database.downloadDao().recordPlayback(songId)

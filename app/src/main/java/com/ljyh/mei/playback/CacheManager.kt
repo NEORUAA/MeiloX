@@ -19,7 +19,7 @@ import com.ljyh.mei.constants.UserAgent
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.io.File
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionIdentity
 
 
 @UnstableApi
@@ -104,7 +104,7 @@ object CacheManager {
     }
 
     @OptIn(UnstableApi::class)
-    fun findFullyCachedPlaybackKey(cache: Cache, mediaId: String, quality: String, owner: HostSessionIdentity): String? {
+    fun findFullyCachedPlaybackKey(cache: Cache, mediaId: String, quality: String, owner: SessionIdentity): String? {
         val prefix = playbackCacheKeyPrefix(mediaId, quality, owner)
         return cache.keys
             .asSequence()
@@ -113,7 +113,7 @@ object CacheManager {
     }
 
     @OptIn(UnstableApi::class)
-    fun removePlaybackEntries(cache: Cache, mediaId: String, owner: HostSessionIdentity): Int {
+    fun removePlaybackEntries(cache: Cache, mediaId: String, owner: SessionIdentity): Int {
         val keys = cache.keys.filter { it.startsWith(playbackCacheKeyPrefix(mediaId, owner)) }
         keys.forEach(cache::removeResource)
         return keys.size

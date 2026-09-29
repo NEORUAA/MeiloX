@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionStamp
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedModule
 import java.io.IOException
@@ -61,7 +62,7 @@ internal class TvHostPlaybackReportBackend(
         report("official_playback_report_hooks_ready")
     }
 
-    override fun emit(action: String, fields: Map<String, Any>, owner: HostSessionStamp) {
+    override fun emit(action: String, fields: Map<String, Any>, owner: SessionStamp) {
         bridge.requireOwner(owner)
         val statistic = invoke(getService, null, statisticType)
             ?: throw IOException("Official statistic service is unavailable")

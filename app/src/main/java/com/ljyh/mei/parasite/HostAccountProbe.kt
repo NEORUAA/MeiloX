@@ -68,7 +68,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun HostAccountProbe(activity: ComponentActivity, initialRoute: String = Screen.Setting.route) {
     val graph = AppGraph.component
-    val account by graph.hostAccount().state.collectAsState()
+    val account by graph.account().state.collectAsState()
     val backStack = rememberNavBackStack(MeiRoute(initialRoute))
     val navigator = remember { MeiNavigator(activity, backStack) }
     val owners = remember { mutableMapOf<String, MeiNavEntryViewModelStoreOwner>() }

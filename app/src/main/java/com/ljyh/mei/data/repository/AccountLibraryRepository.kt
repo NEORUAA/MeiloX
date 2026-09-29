@@ -8,8 +8,8 @@ import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,12 +21,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.channels.BufferOverflow
 
 internal interface AccountLibrarySource {
-    val collectionChanges: Flow<HostSessionStamp>
+    val collectionChanges: Flow<SessionStamp>
     fun playlists(accountId: String): Flow<List<AccountPlaylist>>
-    suspend fun sync(stamp: HostSessionStamp): Resource<Unit>
+    suspend fun sync(stamp: SessionStamp): Resource<Unit>
     suspend fun albums(): Resource<UserAlbumList>
     suspend fun photos(accountId: String): Resource<AlbumPhoto>
-    suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>>
+    suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>>
 }
 
 @Singleton
@@ -34,18 +34,18 @@ class AccountLibraryRepository @Inject constructor(
     private val users: UserRepository,
     private val local: LocalPlaylistRepository,
     private val remote: PlaylistRepository,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : AccountLibrarySource {
-    private val changedCollections = MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val changedCollections = MutableSharedFlow<SessionStamp>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     override val collectionChanges = changedCollections.asSharedFlow()
 
-    fun invalidateCollections(stamp: HostSessionStamp) {
+    fun invalidateCollections(stamp: SessionStamp) {
         sessions.withCurrent(stamp) { changedCollections.tryEmit(stamp) }
     }
 
     override fun playlists(accountId: String) = local.getAccountPlaylists(accountId)
 
-    override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> = safeApiCall {
+    override suspend fun sync(stamp: SessionStamp): Resource<Unit> = safeApiCall {
         check(stamp.identity.authenticated)
         sessions.requireCurrent(stamp)
         val accountId = stamp.identity.userId.toString()
@@ -80,7 +80,7 @@ class AccountLibraryRepository @Inject constructor(
     }
     override suspend fun photos(accountId: String) = users.getPhotoAlbum(accountId)
 
-    override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>> = safeApiCall {
+    override suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>> = safeApiCall {
         check(stamp.identity.authenticated) { "Official login is required" }
         sessions.requireCurrent(stamp)
         val accountId = stamp.identity.userId.toString()

@@ -20,7 +20,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.AccountLibraryRepository
-import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.ui.component.player.state.PlayerLikeSnapshot
 import com.ljyh.mei.ui.component.player.state.PlayerLikeState
 import com.ljyh.mei.di.repository.QQSongRepository
@@ -50,7 +50,7 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     library: AccountLibraryRepository,
     val lyricManager: LyricManager
 ) : ViewModel() {

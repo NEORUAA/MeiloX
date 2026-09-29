@@ -15,13 +15,13 @@ import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.ui.local.rememberHostAccount
+import com.ljyh.mei.ui.local.rememberAccount
 
 /** Shared account entry shown on every primary tab's pinned navigation bar. */
 @Composable
 fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
     val navController = LocalNavController.current
-    val account by rememberHostAccount()
+    val account by rememberAccount()
     val avatarUrl = account.profile?.avatarUrl.orEmpty()
     val nickname = account.profile?.nickname.orEmpty()
     val accountDescription = stringResource(R.string.account_home)

@@ -3,9 +3,9 @@ package com.ljyh.mei.data.repository
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.File
 import java.io.IOException
 import java.time.Instant
@@ -29,8 +29,8 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeRepositoryTest {
     @get:Rule val temporary = TemporaryFolder()
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val timestamp = Instant.parse("2026-09-29T04:00:00Z").toEpochMilli()
 
     private fun blocks(name: String) = listOf(Gson().fromJson("""{"positionCode":"$name"}""", Block::class.java))
@@ -50,11 +50,11 @@ class HomeRepositoryTest {
         var loads = 0
         val repository = HomeRepository(temporary.newFolder(), sessions, { blocks("load-${++loads}") }, { timestamp }, StandardTestDispatcher(testScheduler))
         assertEquals("load-1", repository.getHomePageResourceShow(sessions.snapshot()).name())
-        sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+        sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
         assertEquals("load-2", repository.getHomePageResourceShow(sessions.snapshot()).name())
-        sessions.beginTransition().use { identity = HostSessionIdentity(1, false, true) }
+        sessions.beginTransition().use { identity = SessionIdentity(1, false, true) }
         assertEquals("load-3", repository.getHomePageResourceShow(sessions.snapshot()).name())
-        sessions.beginTransition().use { identity = HostSessionIdentity(1, true, false) }
+        sessions.beginTransition().use { identity = SessionIdentity(1, true, false) }
         assertEquals("load-1", repository.getHomePageResourceShow(sessions.snapshot()).name())
         assertEquals(3, loads)
     }
@@ -123,7 +123,7 @@ class HomeRepositoryTest {
         runCurrent()
         sessions.invalidate()
         pending.complete(blocks("old"))
-        assertTrue(request.await().exceptionOrNull() is HostSessionChangedException)
+        assertTrue(request.await().exceptionOrNull() is SessionChangedException)
         assertTrue(directory.list()!!.isEmpty())
     }
 
@@ -150,7 +150,7 @@ class HomeRepositoryTest {
             timestamp
         }, StandardTestDispatcher(testScheduler))
         val error = runCatching { repository.getHomePageResourceShow(sessions.snapshot()) }.exceptionOrNull()
-        assertTrue(error is HostSessionChangedException)
+        assertTrue(error is SessionChangedException)
         assertTrue(directory.list()!!.isEmpty())
     }
 }

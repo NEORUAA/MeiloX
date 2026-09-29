@@ -12,24 +12,24 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.safeApiCall
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 internal interface ArtistSource {
-    suspend fun detail(id: String, owner: HostSessionStamp): Resource<ArtistDetail>
-    suspend fun albums(id: String, owner: HostSessionStamp): Resource<ArtistAlbum>
-    suspend fun hotSongs(id: String, owner: HostSessionStamp): Resource<ArtistSong>
-    suspend fun songs(id: String, offset: Int, owner: HostSessionStamp): Resource<AllArtistSongs>
-    suspend fun followed(id: String, owner: HostSessionStamp): Resource<Boolean>
-    suspend fun follow(id: String, followed: Boolean, owner: HostSessionStamp): Resource<Unit>
+    suspend fun detail(id: String, owner: SessionStamp): Resource<ArtistDetail>
+    suspend fun albums(id: String, owner: SessionStamp): Resource<ArtistAlbum>
+    suspend fun hotSongs(id: String, owner: SessionStamp): Resource<ArtistSong>
+    suspend fun songs(id: String, offset: Int, owner: SessionStamp): Resource<AllArtistSongs>
+    suspend fun followed(id: String, owner: SessionStamp): Resource<Boolean>
+    suspend fun follow(id: String, followed: Boolean, owner: SessionStamp): Resource<Unit>
 }
 
-class ArtistRepository(private val apiService: ApiService, private val sessions: HostSessionBridge) : ArtistSource {
-    private suspend fun <T> request(id: String, owner: HostSessionStamp, action: suspend () -> T): Resource<T> =
+class ArtistRepository(private val apiService: ApiService, private val sessions: SessionStore) : ArtistSource {
+    private suspend fun <T> request(id: String, owner: SessionStamp, action: suspend () -> T): Resource<T> =
         withContext(Dispatchers.IO) {
             safeApiCall {
                 require((id.toLongOrNull() ?: 0) > 0) { "Invalid artist identity" }
@@ -41,7 +41,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
             }
         }
 
-    override suspend fun detail(id: String, owner: HostSessionStamp) = request(id, owner) {
+    override suspend fun detail(id: String, owner: SessionStamp) = request(id, owner) {
         apiService.getArtistDetail(GetArtistDetail(id), owner).also { result ->
             check(result.code == 200) { "Artist detail failed (${result.code})" }
             result.data?.artist?.let { artist ->
@@ -50,7 +50,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
         }
     }
 
-    override suspend fun albums(id: String, owner: HostSessionStamp) = request(id, owner) {
+    override suspend fun albums(id: String, owner: SessionStamp) = request(id, owner) {
         apiService.getArtistAlbums(GetArtistAlbum(), id, owner).also { result ->
             check(result.code == 200) { "Artist albums failed (${result.code})" }
             check(result.artist.id.toString() == id) { "Artist album identity mismatch" }
@@ -62,7 +62,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
         }
     }
 
-    override suspend fun hotSongs(id: String, owner: HostSessionStamp) = request(id, owner) {
+    override suspend fun hotSongs(id: String, owner: SessionStamp) = request(id, owner) {
         apiService.getArtistSongs(GetArtistSong(), id, owner).also { result ->
             check(result.code == 200) { "Artist hot songs failed (${result.code})" }
             check(result.artist.id.toString() == id) { "Artist hot-song identity mismatch" }
@@ -70,7 +70,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
         }
     }
 
-    override suspend fun songs(id: String, offset: Int, owner: HostSessionStamp) = request(id, owner) {
+    override suspend fun songs(id: String, offset: Int, owner: SessionStamp) = request(id, owner) {
         require(offset >= 0)
         apiService.getAllArtistSongs(GetAllArtistSongs(id, offset), owner).also { result ->
             check(result.code == 200) { "Artist songs failed (${result.code})" }
@@ -80,7 +80,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
         }
     }
 
-    override suspend fun followed(id: String, owner: HostSessionStamp) = request(id, owner) {
+    override suspend fun followed(id: String, owner: SessionStamp) = request(id, owner) {
         if (!owner.identity.authenticated) return@request false
         val result = apiService.getArtistCollection(mapOf("artistId" to id), owner)
         check(result.code == 200) { "Artist collection failed (${result.code})" }
@@ -89,7 +89,7 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
         checkNotNull(artist.followed) { "Missing official artist collection flag" }
     }
 
-    override suspend fun follow(id: String, followed: Boolean, owner: HostSessionStamp): Resource<Unit> = request(id, owner) {
+    override suspend fun follow(id: String, followed: Boolean, owner: SessionStamp): Resource<Unit> = request(id, owner) {
         check(owner.identity.authenticated && !owner.identity.anonymous) { "Official sign-in required" }
         val response = if (followed) apiService.subscribeArtist(mapOf("artistId" to id), owner)
         else apiService.unsubscribeArtist(mapOf("artistIds" to "[$id]"), owner)

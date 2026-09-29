@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.network.api.ApiService
@@ -19,7 +21,7 @@ class DownloadSourceDeviceTest {
         val requests = HostRequestBridge(sessions)
         var calls = 0
         requests.bind(object : HostRequestBackend {
-            override fun sessionIdentity() = HostSessionIdentity(17, true, false)
+            override fun sessionIdentity() = SessionIdentity(17, true, false)
             override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
                 assertEquals("song/lyric/v1", path)
                 assertEquals("1", parameters["id"])
@@ -50,7 +52,7 @@ class DownloadSourceDeviceTest {
         var calls = 0
         var denied = false
         requests.bind(object : HostRequestBackend {
-            override fun sessionIdentity() = HostSessionIdentity(17, true, false)
+            override fun sessionIdentity() = SessionIdentity(17, true, false)
             override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
                 assertEquals("song/enhance/download/url/v1", path)
                 assertEquals(mapOf("id" to "1_0", "level" to "lossless", "immerseType" to "ste"), parameters)
@@ -77,7 +79,7 @@ class DownloadSourceDeviceTest {
         assertTrue(rejected.sources.isEmpty())
         sessions.invalidate()
         assertTrue(runCatching { resolveOfficialDownloadSources(api, sessions, listOf("1"), MusicQuality.LOSSLESS, owner) }
-            .exceptionOrNull() is HostSessionChangedException)
+            .exceptionOrNull() is SessionChangedException)
         assertEquals(2, calls)
     }
 }

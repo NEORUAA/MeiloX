@@ -7,19 +7,19 @@ import com.ljyh.mei.data.model.api.SearchSuggest
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.safeApiCall
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 interface SearchSource {
-    suspend fun search(session: HostSessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult>
-    suspend fun searchSuggest(session: HostSessionStamp, keyword: String): Resource<SearchSuggest>
+    suspend fun search(session: SessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult>
+    suspend fun searchSuggest(session: SessionStamp, keyword: String): Resource<SearchSuggest>
 }
 
 class SearchRepository(
     val apiService: ApiService
 ) : SearchSource {
-    override suspend fun search(session: HostSessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult> {
+    override suspend fun search(session: SessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.search(
@@ -35,7 +35,7 @@ class SearchRepository(
         }
     }
 
-    override suspend fun searchSuggest(session: HostSessionStamp, keyword: String): Resource<SearchSuggest> {
+    override suspend fun searchSuggest(session: SessionStamp, keyword: String): Resource<SearchSuggest> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.searchSuggest(

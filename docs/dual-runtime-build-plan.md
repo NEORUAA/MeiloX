@@ -124,13 +124,41 @@ D1 and D2 may be split into smaller compilable commits. Existing verified host w
 not discarded or restarted. Further endpoint migration must use the dual-backend
 boundary rather than adding new mandatory `Host*` dependencies to common consumers.
 
-The in-progress comment checkpoint currently has 634 passing JVM tests and a debug
-build across the existing project, not across the proposed flavors. It has not passed
-its new AVD read/sort/reply acceptance and remains uncommitted pending adaptation to
-the revised boundary. Newly proposed frontend retry controls were withdrawn.
-The ordinary debug APK was rebuilt and reinstalled with host/runtime/work probes
-disabled; its original TV launcher cold start returned successfully. This is not
-dual-flavor, comment-screen or release acceptance.
+### D1 Checkpoint: Shared Session and Reporting Contracts (2026-09-29)
+
+- Extracted credential-free `SessionStore`, `SessionIdentity`, `SessionStamp` and
+  account presentation into shared `data/session`. Repositories, ViewModels, playback,
+  cache and download ownership now consume the common session type. The official QR
+  adapter still owns host login; credentials are neither exported nor duplicated.
+- Introduced `PlaybackReportSink`. Actual playback event timing remains shared while
+  the host adapter still owns SDK metadata, signing and delivery. Current Dagger
+  bindings supply the same session instance to account, network, playback and reporting;
+  a device graph test checks that identity rather than assuming matching types suffice.
+- Adapted the existing comment work to these contracts without new controls or page
+  changes. Read-only host checks displayed recommend/hot/time first pages and an
+  expanded three-reply thread through the original screen. See API-018 in the interface
+  ledger for payload, pagination, ownership and acceptance limits. No comment write,
+  account mutation or download grant was issued for this checkpoint.
+- 641 JVM tests pass, including backend-independent session, account and reporting
+  tests. All 43 parasite device tests pass, including the shared graph identity check;
+  these are not standalone or dual-flavor acceptance. Proposed frontend retry controls
+  remain withdrawn. No frontend bug inherited from `main` was changed.
+- `testDebugUnitTest`, `assembleDebug`, `assembleDebugAndroidTest` and `assembleRelease`
+  pass. The unsigned R8 APK passes `zipalign -c -P 16 4`; its mapping retains session
+  parameters on both comment methods and the module entry class. This is package/build
+  evidence only, not release runtime acceptance.
+- Reinstalled the ordinary debug and instrumentation APKs; verified APP=true and all
+  HOST/RUNTIME/WORK probes=false. After force-stop, the resolved original TV launcher
+  cold start completes and displays the original portrait Home, account avatar and
+  paused mini-player. Host logs confirm API 102, official session/request/report
+  bindings, isolated WorkManager and one music-service session. The current process
+  has no crash-buffer entries. The existing real media row remains published and
+  TV-owned at 22,705,573 bytes; no new authorization grant was requested.
+
+This is the first D1 increment, not its exit condition. Shared Activity/service attachment,
+login content, network injection, notifications/WorkManager and graph bootstrap still
+reference concrete host implementations. Isolate those bindings before moving them into
+flavor source sets. Neither flavor targets nor the standalone backend are implemented yet.
 
 ## Acceptance and Remaining Decisions
 
@@ -152,4 +180,4 @@ dual-flavor, comment-screen or release acceptance.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
 
-All D1-D6 exit conditions are pending at this planning checkpoint.
+All D1-D6 exit conditions remain pending; the checkpoint above records partial D1 work only.

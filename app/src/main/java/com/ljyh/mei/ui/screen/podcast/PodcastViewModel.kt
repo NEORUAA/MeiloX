@@ -8,9 +8,9 @@ import com.ljyh.mei.data.model.melox.PodcastHome
 import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.data.repository.PodcastSource
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withLock
 enum class PodcastTab { Discover, Subscriptions }
 
 data class PodcastUiState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val isLoading: Boolean = true,
     val home: PodcastHome? = null,
     val selectedCategoryId: Long? = null,
@@ -49,7 +49,7 @@ data class PodcastUiState(
 }
 
 data class PodcastDetailUiState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val isLoading: Boolean = true,
     val detail: PodcastDetail? = null,
     val error: String? = null,
@@ -60,9 +60,9 @@ data class PodcastDetailUiState(
 
 class PodcastViewModel internal constructor(
     private val repository: PodcastSource,
-    private val accounts: HostAccountStore,
+    private val accounts: AccountStore,
 ) : ViewModel() {
-    @Inject constructor(repository: MeloXRepository, accounts: HostAccountStore) : this(repository as PodcastSource, accounts)
+    @Inject constructor(repository: MeloXRepository, accounts: AccountStore) : this(repository as PodcastSource, accounts)
 
     private val mutableState = MutableStateFlow(PodcastUiState())
     val state = mutableState.asStateFlow()
@@ -194,7 +194,7 @@ class PodcastViewModel internal constructor(
             error = error, subscriptionsError = error)
     }
 
-    private fun prepare(stamp: HostSessionStamp, counter: AtomicLong, update: (PodcastUiState) -> PodcastUiState): Long? =
+    private fun prepare(stamp: SessionStamp, counter: AtomicLong, update: (PodcastUiState) -> PodcastUiState): Long? =
         runCatching {
             accounts.sessions.withCurrent(stamp) {
                 synchronized(stateLock) {
@@ -206,7 +206,7 @@ class PodcastViewModel internal constructor(
             }
         }.getOrNull()
 
-    private fun publish(stamp: HostSessionStamp, counter: AtomicLong, version: Long, update: (PodcastUiState) -> PodcastUiState) {
+    private fun publish(stamp: SessionStamp, counter: AtomicLong, version: Long, update: (PodcastUiState) -> PodcastUiState) {
         accounts.sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (counter.get() == version) mutableState.update(update)
@@ -215,7 +215,7 @@ class PodcastViewModel internal constructor(
     }
 
     private suspend fun <T> perform(
-        stamp: HostSessionStamp, counter: AtomicLong, version: Long, load: suspend () -> T,
+        stamp: SessionStamp, counter: AtomicLong, version: Long, load: suspend () -> T,
         success: (PodcastUiState, T) -> PodcastUiState, failure: (PodcastUiState, String) -> PodcastUiState,
     ) {
         try {
@@ -225,7 +225,7 @@ class PodcastViewModel internal constructor(
             publish(stamp, counter, version) { success(it, value) }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: HostSessionChangedException) {
+        } catch (_: SessionChangedException) {
         } catch (error: Exception) {
             currentCoroutineContext().ensureActive()
             runCatching { publish(stamp, counter, version) { failure(it, error.message ?: "Podcast request failed") } }
@@ -242,11 +242,11 @@ class PodcastViewModel internal constructor(
 
 class PodcastDetailViewModel internal constructor(
     private val repository: PodcastSource,
-    private val accounts: HostAccountStore,
+    private val accounts: AccountStore,
 ) : ViewModel() {
-    @Inject constructor(repository: MeloXRepository, accounts: HostAccountStore) : this(repository as PodcastSource, accounts)
+    @Inject constructor(repository: MeloXRepository, accounts: AccountStore) : this(repository as PodcastSource, accounts)
 
-    fun requireDetail(owner: HostSessionStamp, id: Long) {
+    fun requireDetail(owner: SessionStamp, id: Long) {
         accounts.sessions.withCurrent(owner) {
             synchronized(stateLock) {
                 if (accounts.sessions.recoveryRequired.value || state.value.session != owner || loadedId != id ||
@@ -410,12 +410,12 @@ class PodcastDetailViewModel internal constructor(
         return PodcastDetailUiState(isLoading = error == null, error = error)
     }
 
-    private fun checkCurrent(stamp: HostSessionStamp, version: Long, id: Long) {
+    private fun checkCurrent(stamp: SessionStamp, version: Long, id: Long) {
         accounts.sessions.requireCurrent(stamp)
         if (generation.get() != version || loadedId != id) throw CancellationException("Podcast changed")
     }
 
-    private fun publish(stamp: HostSessionStamp, version: Long, update: (PodcastDetailUiState) -> PodcastDetailUiState): Boolean =
+    private fun publish(stamp: SessionStamp, version: Long, update: (PodcastDetailUiState) -> PodcastDetailUiState): Boolean =
         accounts.sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (generation.get() != version) false else {
@@ -426,7 +426,7 @@ class PodcastDetailViewModel internal constructor(
         }
 
     private suspend fun <T> perform(
-        stamp: HostSessionStamp, version: Long, id: Long, load: suspend () -> T,
+        stamp: SessionStamp, version: Long, id: Long, load: suspend () -> T,
         success: (PodcastDetailUiState, T) -> PodcastDetailUiState,
         failure: (PodcastDetailUiState, String) -> PodcastDetailUiState,
     ) {
@@ -438,7 +438,7 @@ class PodcastDetailViewModel internal constructor(
             publish(stamp, version) { success(it, result) }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: HostSessionChangedException) {
+        } catch (_: SessionChangedException) {
         } catch (error: Exception) {
             currentCoroutineContext().ensureActive()
             runCatching { publish(stamp, version) { failure(it, error.message ?: "Podcast request failed") } }

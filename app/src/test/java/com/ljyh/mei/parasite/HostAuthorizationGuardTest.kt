@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -9,7 +11,7 @@ import org.junit.Test
 
 class HostAuthorizationGuardTest {
     private class Fixture(pending: Boolean = false) {
-        var identity = HostSessionIdentity(1, true, false)
+        var identity = SessionIdentity(1, true, false)
         val sessions = HostSessionBridge().apply { bind { identity } }
         var persisted = pending
         val queued = mutableListOf<() -> Unit>()
@@ -21,7 +23,7 @@ class HostAuthorizationGuardTest {
                 task()
             }
         }
-        fun blocked() { assertThrows(HostSessionChangedException::class.java) { sessions.snapshot() } }
+        fun blocked() { assertThrows(SessionChangedException::class.java) { sessions.snapshot() } }
     }
 
     @Test fun waitingAttemptBlocksBusinessAndCancelWithoutWritesRestoresSession() {
@@ -169,17 +171,17 @@ class HostAuthorizationGuardTest {
     }
 
     @Test fun failedPersistenceNeverPublishesAnUnverifiedSession() {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = HostSessionBridge().apply { bind { SessionIdentity(1, true, false) } }
         var failWrite = true
         val guard = HostAuthorizationGuard(sessions, false, { check(!failWrite) }, { it() })
         assertThrows(IllegalStateException::class.java) { guard.begin() }
-        assertThrows(HostSessionChangedException::class.java) { sessions.snapshot() }
+        assertThrows(SessionChangedException::class.java) { sessions.snapshot() }
         failWrite = false
         val attempt = guard.begin()
         guard.run(attempt) { guard.verifyProfile({ true }, { it }) }
         failWrite = true
         assertFalse(guard.complete(attempt))
-        assertThrows(HostSessionChangedException::class.java) { sessions.snapshot() }
+        assertThrows(SessionChangedException::class.java) { sessions.snapshot() }
         failWrite = false
         assertTrue(guard.complete(attempt))
     }
@@ -235,7 +237,7 @@ class HostAuthorizationGuardTest {
     }
 
     @Test fun failedRecoveryDispatchLeavesALoginRetryAvailable() {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = HostSessionBridge().apply { bind { SessionIdentity(1, true, false) } }
         val guard = HostAuthorizationGuard(sessions, true, {}, { throw IllegalStateException("Fixture scheduler stopped") })
         guard.setRecovery { false }
         assertTrue(sessions.recoveryRequired.value)

@@ -9,10 +9,10 @@ import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.AccountLibrarySource
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,8 +32,8 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = FakeSource()
 
     private fun playlist(id: String, liked: Boolean = false, author: String = "1") =
@@ -41,24 +41,24 @@ class LibraryViewModelTest {
     private fun song(id: Long) = MediaMetadata(id, "Song $id", "", emptyList(), 1000, MediaMetadata.Album(1, "Album"))
 
     private class FakeSource : AccountLibrarySource {
-        override val collectionChanges = kotlinx.coroutines.flow.MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1)
+        override val collectionChanges = kotlinx.coroutines.flow.MutableSharedFlow<SessionStamp>(extraBufferCapacity = 1)
         val cached = mutableMapOf<String, MutableStateFlow<List<AccountPlaylist>>>()
         val syncCalls = mutableListOf<String>()
-        val likedOwners = mutableListOf<HostSessionStamp>()
-        var sync: suspend (HostSessionStamp) -> Resource<Unit> = { Resource.Success(Unit) }
+        val likedOwners = mutableListOf<SessionStamp>()
+        var sync: suspend (SessionStamp) -> Resource<Unit> = { Resource.Success(Unit) }
         var albums: suspend () -> Resource<UserAlbumList> = { Resource.Success(UserAlbumList(emptyList(), 0, false, 0, 200)) }
         var photos: suspend (String) -> Resource<AlbumPhoto> = {
             Resource.Success(AlbumPhoto(200, AlbumPhoto.Data(AlbumPhoto.Data.Page("", false, 0), emptyList(), 0), ""))
         }
         var liked: suspend (String) -> Resource<List<MediaMetadata>> = { Resource.Success(emptyList()) }
         override fun playlists(accountId: String) = cached.getOrPut(accountId) { MutableStateFlow(emptyList()) }
-        override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> {
+        override suspend fun sync(stamp: SessionStamp): Resource<Unit> {
             syncCalls += stamp.identity.userId.toString()
             return sync.invoke(stamp)
         }
         override suspend fun albums() = albums.invoke()
         override suspend fun photos(accountId: String) = photos.invoke(accountId)
-        override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>> {
+        override suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>> {
             likedOwners += stamp
             return liked.invoke(playlistId)
         }
@@ -74,7 +74,7 @@ class LibraryViewModelTest {
             source.collectionChanges.emit(old)
             runCurrent()
             assertEquals(before + 1, albumRequests)
-            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
             runCurrent()
             val changed = albumRequests
             source.collectionChanges.emit(old)
@@ -86,7 +86,7 @@ class LibraryViewModelTest {
 
     private fun checkModel(check: suspend TestScope.(LibraryViewModel, ViewModelStore) -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val accounts = HostAccountStore(sessions, {
+        val accounts = AccountStore(sessions, {
             AccountProfile(identity.userId, "Account", null, null, null, null, null, null, null, null)
         }, backgroundScope)
         val store = ViewModelStore()
@@ -123,7 +123,7 @@ class LibraryViewModelTest {
         checkModel { model, _ ->
             runCurrent()
             sessions.beginTransition().use {
-                identity = HostSessionIdentity(2, true, false)
+                identity = SessionIdentity(2, true, false)
                 assertEquals(LibraryUiState(), model.state.value)
                 runCurrent()
             }
@@ -139,7 +139,7 @@ class LibraryViewModelTest {
         checkModel { model, _ ->
             runCurrent()
             val requests = source.syncCalls.size
-            sessions.beginTransition().use { identity = HostSessionIdentity(0, false, true) }
+            sessions.beginTransition().use { identity = SessionIdentity(0, false, true) }
             assertEquals(LibraryUiState(), model.state.value)
             runCurrent()
             assertEquals(LibraryUiState(), model.state.value)
@@ -155,7 +155,7 @@ class LibraryViewModelTest {
         checkModel { model, _ ->
             try {
                 runCurrent()
-                sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+                sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
                 runCurrent()
                 assertEquals(listOf(song(2)), model.state.value.likedSongs)
             } finally {

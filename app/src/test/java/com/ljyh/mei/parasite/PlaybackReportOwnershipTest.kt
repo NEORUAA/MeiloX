@@ -1,10 +1,12 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackReportOwnershipTest {
-    private var identity = HostSessionIdentity(10, true, false)
+    private var identity = SessionIdentity(10, true, false)
     private val sessions = HostSessionBridge().apply { bind { identity } }
     private val bridge = HostPlaybackReportBridge(sessions)
     private var now = 0L
@@ -64,7 +66,7 @@ class PlaybackReportOwnershipTest {
 
     @Test fun identityChangesAreCheckedEvenWithoutAnInvalidationCallback() {
         val old = marked()
-        identity = HostSessionIdentity(20, true, false)
+        identity = SessionIdentity(20, true, false)
         assertNull(ownership.consume("play", old))
         assertNotNull(ownership.consume("play", marked()))
     }
@@ -73,13 +75,13 @@ class PlaybackReportOwnershipTest {
         val old = marked()
         sessions.setRecoveryRequired(true)
         assertNull(ownership.consume("play", old))
-        assertTrue(runCatching { marked() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { marked() }.exceptionOrNull() is SessionChangedException)
         sessions.setRecoveryRequired(false)
         sessions.beginTransition().use {
-            assertTrue(runCatching { marked() }.exceptionOrNull() is HostSessionChangedException)
+            assertTrue(runCatching { marked() }.exceptionOrNull() is SessionChangedException)
         }
-        identity = HostSessionIdentity(0, false, true)
-        assertTrue(runCatching { marked() }.exceptionOrNull() is HostSessionChangedException)
+        identity = SessionIdentity(0, false, true)
+        assertTrue(runCatching { marked() }.exceptionOrNull() is SessionChangedException)
     }
 
     @Test fun abandonedSdkEntriesExpireWithoutExposingTheirMarker() {

@@ -13,9 +13,9 @@ import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +24,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountLikedSongsTest {
-    private val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+    private val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
     private val owner = sessions.snapshot()
     private val membership = AccountPlaylist(Playlist("10", "Any title", "", "1", "Creator", "", 405), true)
     private val entries = MutableStateFlow(listOf(membership))
@@ -41,7 +41,7 @@ class AccountLikedSongsTest {
     private fun repository(): AccountLibraryRepository {
         val api = proxy<ApiService> { name, args ->
             assertEquals(owner, args[1])
-            sessions.requireCurrent(args[1] as HostSessionStamp)
+            sessions.requireCurrent(args[1] as SessionStamp)
             calls += name
             when (name) {
                 "getPlaylistDetail" -> Gson().fromJson(
@@ -86,7 +86,7 @@ class AccountLikedSongsTest {
 
     @Test fun guestForeignAndUnmarkedMembershipsNeverDispatch() = runBlocking {
         val source = repository()
-        assertTrue(source.likedSongs("10", owner.copy(identity = HostSessionIdentity(0, false, true))) is Resource.Error)
+        assertTrue(source.likedSongs("10", owner.copy(identity = SessionIdentity(0, false, true))) is Resource.Error)
         for (entry in listOf(membership.copy(isLiked = false), membership.copy(playlist = membership.playlist.copy(author = "2")))) {
             entries.value = listOf(entry)
             assertTrue(source.likedSongs("10", owner) is Resource.Error)

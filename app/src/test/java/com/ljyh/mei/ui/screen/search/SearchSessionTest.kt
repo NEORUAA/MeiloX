@@ -8,9 +8,9 @@ import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.SearchSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,24 +28,24 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchSessionTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = Source()
-    private var discovery: suspend (HostSessionStamp) -> SearchDiscovery = { discovery(it.identity.userId) }
+    private var discovery: suspend (SessionStamp) -> SearchDiscovery = { discovery(it.identity.userId) }
 
-    private data class Request(val session: HostSessionStamp, val query: String, val type: Int, val offset: Int)
+    private data class Request(val session: SessionStamp, val query: String, val type: Int, val offset: Int)
     private class Source : SearchSource {
         val requests = mutableListOf<Request>()
-        val suggestions = mutableListOf<Pair<HostSessionStamp, String>>()
+        val suggestions = mutableListOf<Pair<SessionStamp, String>>()
         var search: suspend (Request) -> Resource<SearchResult> = { Resource.Success(page(listOf(1), it.type)) }
         var suggest: suspend (String) -> Resource<SearchSuggest> = { Resource.Success(suggestion(it)) }
-        override suspend fun search(session: HostSessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult> {
+        override suspend fun search(session: SessionStamp, keyword: String, type: Int, limit: Int, offset: Int): Resource<SearchResult> {
             assertEquals(30, limit)
             val request = Request(session, keyword, type, offset)
             requests += request
             return search(request)
         }
-        override suspend fun searchSuggest(session: HostSessionStamp, keyword: String): Resource<SearchSuggest> {
+        override suspend fun searchSuggest(session: SessionStamp, keyword: String): Resource<SearchSuggest> {
             suggestions += session to keyword
             return suggest(keyword)
         }
@@ -69,7 +69,7 @@ class SearchSessionTest {
     }
 
     @Test fun guestSearchesAllFiveTypesThroughItsOfficialSession() {
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         checkModels { search, landing, _ ->
             search.onSearchInit("music", 1)
             runCurrent()
@@ -263,7 +263,7 @@ class SearchSessionTest {
             try {
                 search.onSearchInit("music", 1)
                 runCurrent()
-                sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+                sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
                 runCurrent()
                 assertEquals(listOf(2L), search.songIds())
                 assertEquals(2L, landing.state.value.discovery!!.recommendations.single().id)
@@ -362,7 +362,7 @@ class SearchSessionTest {
             runCurrent()
             assertTrue(landing.state.value.error)
             assertEquals(1L, landing.state.value.discovery!!.recommendations.single().id)
-            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
             runCurrent()
             assertNull(landing.state.value.discovery)
             discovery = { discovery(2) }

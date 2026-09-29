@@ -7,9 +7,9 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block
 import com.ljyh.mei.data.model.weapi.buildGetHomePageResourceShow
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.EApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -28,12 +28,12 @@ import kotlinx.coroutines.withContext
 
 class HomeRepository internal constructor(
     private val directory: File,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     private val fetch: suspend (Boolean) -> List<Block>,
     private val now: () -> Long = System::currentTimeMillis,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    constructor(api: EApiService, sessions: HostSessionBridge) : this(
+    constructor(api: EApiService, sessions: SessionStore) : this(
         File(AppContext.instance.filesDir, "home_accounts"),
         sessions,
         { refresh ->
@@ -51,7 +51,7 @@ class HomeRepository internal constructor(
     private val cacheMutex = Mutex()
 
     suspend fun getHomePageResourceShow(
-        stamp: HostSessionStamp,
+        stamp: SessionStamp,
         refresh: Boolean = false,
     ): Resource<List<Block>> = try {
         sessions.requireCurrent(stamp)
@@ -70,7 +70,7 @@ class HomeRepository internal constructor(
         Resource.Success(blocks)
     } catch (error: CancellationException) {
         throw error
-    } catch (error: HostSessionChangedException) {
+    } catch (error: SessionChangedException) {
         throw error
     } catch (error: Exception) {
         currentCoroutineContext().ensureActive()
@@ -78,7 +78,7 @@ class HomeRepository internal constructor(
         Resource.Error(error.message ?: "Official home request failed")
     }
 
-    private fun readCache(stamp: HostSessionStamp): List<Block>? {
+    private fun readCache(stamp: SessionStamp): List<Block>? {
         sessions.requireCurrent(stamp)
         return try {
             val file = cacheFile(stamp)
@@ -98,7 +98,7 @@ class HomeRepository internal constructor(
         }
     }
 
-    private suspend fun writeCache(stamp: HostSessionStamp, blocks: List<Block>) {
+    private suspend fun writeCache(stamp: SessionStamp, blocks: List<Block>) {
         sessions.requireCurrent(stamp)
         currentCoroutineContext().ensureActive()
         val file = cacheFile(stamp)
@@ -117,7 +117,7 @@ class HomeRepository internal constructor(
         } catch (error: CancellationException) {
             if (replaced) file.delete()
             throw error
-        } catch (error: HostSessionChangedException) {
+        } catch (error: SessionChangedException) {
             if (replaced) file.delete()
             throw error
         } catch (_: IOException) {
@@ -127,7 +127,7 @@ class HomeRepository internal constructor(
         }
     }
 
-    private fun cacheFile(stamp: HostSessionStamp): File {
+    private fun cacheFile(stamp: SessionStamp): File {
         val identity = stamp.identity
         val kind = when {
             identity.authenticated -> "user"

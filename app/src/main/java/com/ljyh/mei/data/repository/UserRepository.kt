@@ -40,7 +40,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
         }
     }
 
-    suspend fun getAllUserPlaylists(uid: String, session: com.ljyh.mei.parasite.HostSessionStamp? = null, validate: () -> Unit = {}): Resource<UserPlaylist> = withContext(Dispatchers.IO) {
+    suspend fun getAllUserPlaylists(uid: String, session: com.ljyh.mei.data.session.SessionStamp? = null, validate: () -> Unit = {}): Resource<UserPlaylist> = withContext(Dispatchers.IO) {
         safeApiCall {
             val playlists = linkedMapOf<Long, UserPlaylist.Playlist>()
             var offset = 0
@@ -73,7 +73,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
         }
     }
 
-    suspend fun getAlbumList(session: com.ljyh.mei.parasite.HostSessionStamp? = null, validate: () -> Unit = {}): Resource<UserAlbumList> {
+    suspend fun getAlbumList(session: com.ljyh.mei.data.session.SessionStamp? = null, validate: () -> Unit = {}): Resource<UserAlbumList> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 val albums = linkedMapOf<Long, UserAlbumList.Data>()

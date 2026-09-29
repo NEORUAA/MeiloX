@@ -8,8 +8,8 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.DownloadArtifact
 import com.ljyh.mei.di.AppDatabase
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.SongMate
 import com.ljyh.mei.utils.StringUtils.specialReplace
@@ -52,7 +52,7 @@ open class DownloadWorker internal constructor(
     private val sessions get() = environment.sessions
     private val songId get() = inputData.getString(KEY_SONG_ID).orEmpty()
     private val accountId get() = inputData.getLong(KEY_OWNER_ID, 0)
-    private lateinit var owner: HostSessionStamp
+    private lateinit var owner: SessionStamp
     private var failureTitle = "下载初始化失败"
     private var notice: DownloadNotificationState.Lease? = null
     private var notificationFence = 0L
@@ -73,7 +73,7 @@ open class DownloadWorker internal constructor(
             }
             owner = sessions.snapshot()
             sessions.requireDownloadOwner(owner)
-            if (owner.identity.userId != accountId) throw HostSessionChangedException()
+            if (owner.identity.userId != accountId) throw SessionChangedException()
             sessions.withDownloadOwner(owner) {
                 requireTask(db)
                 failureTitle = "无法启动后台下载，请重试"
@@ -97,7 +97,7 @@ open class DownloadWorker internal constructor(
             Timber.w("Download failed: %s", error.javaClass.simpleName)
             if (updateTask(db, DownloadStatus.FAILED, 0) == 1) {
                 finishNotification(DownloadNotificationState.Outcome.FAILED,
-                    if (error is HostSessionChangedException) "账号会话已变化，请重新登录后下载" else failureTitle)
+                    if (error is SessionChangedException) "账号会话已变化，请重新登录后下载" else failureTitle)
             } else if (db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.COMPLETED) {
                 return@withContext Result.retry()
             }
@@ -166,7 +166,7 @@ open class DownloadWorker internal constructor(
                         },
                         withOwner = { commit -> sessions.withCurrent(owner) {
                             execution.ensureActive()
-                            if (sessions.recoveryRequired.value) throw HostSessionChangedException()
+                            if (sessions.recoveryRequired.value) throw SessionChangedException()
                             commit()
                         } },
                     )

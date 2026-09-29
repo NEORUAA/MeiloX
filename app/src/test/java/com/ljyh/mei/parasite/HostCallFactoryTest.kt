@@ -1,5 +1,8 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionIdentity
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.api.GetUserPhotoAlbum
 import com.ljyh.mei.data.model.api.GetUserPlaylist
@@ -34,12 +37,42 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 class HostCallFactoryTest {
+    @Test fun commentsAndRepliesUseHostTransportWithExplicitSessionOwnership() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val retrofit = retrofit(HostCallFactory(bridge))
+        val api = retrofit.create(ApiService::class.java)
+        val weapi = retrofit.create(com.ljyh.mei.data.network.api.WeApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        api.getComment(com.ljyh.mei.data.model.api.GetComment("R_SO_4_10", 2, 20, 3, "1000"), owner)
+        assertEquals("v2/resource/comments", backend.path)
+        assertEquals(mapOf("threadId" to "R_SO_4_10", "pageNo" to "2", "pageSize" to "20",
+            "sortType" to "3", "cursor" to "1000", "showInner" to "true"), backend.parameters)
+        weapi.getFloorComment(com.ljyh.mei.data.model.api.GetFloorComment(99, "R_SO_4_10", 20, 1000), owner)
+        assertEquals("resource/comment/floor/get", backend.path)
+        assertEquals(mapOf("parentCommentId" to "99", "threadId" to "R_SO_4_10", "limit" to "20", "time" to "1000"), backend.parameters)
+        assertEquals(2, backend.executions.get())
+    }
+
+    @Test fun obsoleteCommentSessionCannotDispatchEitherEndpoint() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val retrofit = retrofit(HostCallFactory(bridge))
+        val api = retrofit.create(ApiService::class.java)
+        val weapi = retrofit.create(com.ljyh.mei.data.network.api.WeApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        bridge.sessions.invalidate()
+        assertTrue(runCatching { api.getComment(com.ljyh.mei.data.model.api.GetComment("R_SO_4_10"), owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { weapi.getFloorComment(com.ljyh.mei.data.model.api.GetFloorComment(99, "R_SO_4_10"), owner) }.exceptionOrNull() is SessionChangedException)
+        assertEquals(0, backend.executions.get())
+    }
+
     @Test fun convertsTypedJsonWithoutLosingNestedValuesOrIntegerPrecision() {
         val backend = Backend()
         val call = factory(backend).newCall(post("""{"id":9223372036854775806,"flag":true,"text":"a+b&c","ids":[1,2],"object":{"x":1},"nil":null}"""))
         call.execute().use {
             assertEquals("official-json", it.header("X-MeiloX-Transport"))
-            assertNotNull(it.request.tag(HostSessionStamp::class.java))
+            assertNotNull(it.request.tag(SessionStamp::class.java))
             assertEquals("{\"code\":200}", it.body!!.string())
         }
         assertEquals("search/get", backend.path)
@@ -124,7 +157,7 @@ class HostCallFactoryTest {
         assertThrows(IOException::class.java) { original.execute() }
         assertEquals(0, backend.executions.get())
         bridge.sessions.invalidate()
-        assertThrows(HostSessionChangedException::class.java) { copy.execute() }
+        assertThrows(SessionChangedException::class.java) { copy.execute() }
         factory.newCall(post()).execute().close()
         assertEquals(1, backend.executions.get())
     }
@@ -134,7 +167,7 @@ class HostCallFactoryTest {
         val bridge = bridge(backend)
         val response = HostCallFactory(bridge, Executor { it.run() }).newCall(post()).execute()
         bridge.sessions.invalidate()
-        response.use { assertThrows(HostSessionChangedException::class.java) { it.body!!.string() } }
+        response.use { assertThrows(SessionChangedException::class.java) { it.body!!.string() } }
     }
 
     @Test fun expectedSessionTagsRejectAnActionBeforeItsCallIsCreated() = runBlocking {
@@ -146,7 +179,7 @@ class HostCallFactoryTest {
         val failure = runCatching {
             service.post("/api/djradio/sub", mapOf("id" to 1), expectedSession = owner)
         }.exceptionOrNull()
-        assertTrue(failure is HostSessionChangedException)
+        assertTrue(failure is SessionChangedException)
         assertEquals(0, backend.executions.get())
     }
 
@@ -180,8 +213,8 @@ class HostCallFactoryTest {
         val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
         val owner = bridge.sessions.snapshot()
         bridge.sessions.invalidate()
-        assertTrue(runCatching { service.search(GetSearch("music"), owner) }.exceptionOrNull() is HostSessionChangedException)
-        assertTrue(runCatching { service.searchSuggest(GetSearchSuggest("music"), owner) }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { service.search(GetSearch("music"), owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { service.searchSuggest(GetSearchSuggest("music"), owner) }.exceptionOrNull() is SessionChangedException)
         assertEquals(0, backend.executions.get())
     }
 
@@ -235,7 +268,7 @@ class HostCallFactoryTest {
         }
         val before = backend.executions.get()
         bridge.sessions.invalidate()
-        reads.forEach { read -> assertTrue(runCatching { read() }.exceptionOrNull() is HostSessionChangedException) }
+        reads.forEach { read -> assertTrue(runCatching { read() }.exceptionOrNull() is SessionChangedException) }
         assertEquals(before, backend.executions.get())
     }
 
@@ -254,7 +287,7 @@ class HostCallFactoryTest {
             { service.getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "standard"), owner) },
             { service.getCollectAlbumList(com.ljyh.mei.data.model.api.GetAlbumList(), owner) },
         )
-        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is SessionChangedException) }
         assertEquals(0, backend.executions.get())
     }
 
@@ -272,7 +305,7 @@ class HostCallFactoryTest {
     @Test fun expectedSessionTagsRemainBoundAcrossQueuedExecutionAndClone() {
         val backend = Backend()
         val bridge = bridge(backend)
-        val request = post().newBuilder().tag(HostSessionStamp::class.java, bridge.sessions.snapshot()).build()
+        val request = post().newBuilder().tag(SessionStamp::class.java, bridge.sessions.snapshot()).build()
         var queued: Runnable? = null
         val call = HostCallFactory(bridge, Executor { queued = it }).newCall(request)
         val copy = call.clone()
@@ -281,7 +314,7 @@ class HostCallFactoryTest {
         bridge.sessions.invalidate()
         queued!!.run()
         assertEquals(1, callback.failures)
-        assertThrows(HostSessionChangedException::class.java) { copy.execute() }
+        assertThrows(SessionChangedException::class.java) { copy.execute() }
         assertEquals(0, backend.executions.get())
     }
 
@@ -321,7 +354,7 @@ class HostCallFactoryTest {
             { eapi.subscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner) },
             { eapi.unSubscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner) },
         )
-        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is SessionChangedException) }
         assertEquals(0, backend.executions.get())
     }
 
@@ -346,7 +379,7 @@ class HostCallFactoryTest {
             { api.createPlaylist(com.ljyh.mei.data.model.api.CreatePlaylist("Test", "10"), owner) },
             { api.deletePlaylist(com.ljyh.mei.data.model.api.DeletePlaylist("[10]"), owner) },
         )
-        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is SessionChangedException) }
         assertEquals(before, backend.executions.get())
     }
 
@@ -361,7 +394,7 @@ class HostCallFactoryTest {
         assertEquals(parameters, backend.parameters)
         val before = backend.executions.get()
         bridge.sessions.invalidate()
-        assertTrue(runCatching { api.getEveryDayRecommendSongs(parameters, owner) }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { api.getEveryDayRecommendSongs(parameters, owner) }.exceptionOrNull() is SessionChangedException)
         assertEquals(before, backend.executions.get())
     }
 
@@ -494,7 +527,7 @@ class HostCallFactoryTest {
         var onClose: () -> Unit = {}
         val executions = AtomicInteger()
         val closed = AtomicInteger()
-        override fun sessionIdentity() = HostSessionIdentity(1, true, false)
+        override fun sessionIdentity() = SessionIdentity(1, true, false)
         override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
             this.path = path
             this.parameters = parameters

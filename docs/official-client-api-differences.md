@@ -904,6 +904,57 @@ These are integration differences, not server API semantics.
   release runtime open. The ordinary build is restored with probes disabled; the user's
   existing real file remains published and unchanged. No real grant was requested.
 
+### API-018: Comment Reads Need Query-Owned Cursors and Optional Reply Metadata
+
+- Date: 2026-09-29. Original standalone contracts are `/api/v2/resource/comments`
+  (`threadId`, `pageNo`, `pageSize`, `sortType`, `cursor`, `showInner`) and
+  `/weapi/resource/comment/floor/get` (`parentCommentId`, `threadId`, `limit`, `time`).
+  Parasite passes these business parameters to the official generic pipeline as
+  `v2/resource/comments` and `resource/comment/floor/get`. No TV-only endpoint
+  substitution, copied Cookie or standalone fallback was introduced. The restored
+  standalone transport has not been qualified against these shared contracts yet.
+- Both calls now carry the expected shared `SessionStamp` as a Retrofit request tag,
+  not a serialized credential. Host transport tests verify normalized paths, parameters
+  and rejection of obsolete owners before dispatch. The shared repository rejects
+  non-200 business responses and missing data/rows/continuation instead of treating
+  them as successful empty results; coroutine cancellation propagates.
+- Pages belong to a captured song/sort/session/revision. Sorting, navigation to another
+  song, recovery and account invalidation invalidate old sources and clear reply state;
+  late non-cancellable results cannot replace the current query. Each page key retains
+  its page number, cursor and raw-row offset, so initial/append size differences and
+  retry do not reset another query's cursor. Duplicate identities are filtered without
+  advancing offsets by the deduplicated count.
+- A returned nonblank cursor takes precedence. The existing sort-specific fallback
+  uses the final row time for TIME, `normalHot#<raw offset>` for HOT and the raw offset
+  for RECOMMEND. Replies follow returned `time`, falling back to the final reply time.
+  Repeated cursors, duplicate-only continuing pages and missing continuation fail
+  instead of looping. These fallback and multi-page rules are substitute-test evidence,
+  not a claim that all production responses omit or require a particular cursor shape.
+- Floor reply decoration, IP location and other optional reference metadata can be
+  absent. Gson does not enforce Kotlin non-null constructor declarations. DTO nullability
+  now reflects that, including nullable continuation fields so absence is distinguishable
+  from a terminal page. A hash-code regression test covers missing optional metadata;
+  the existing row only reads the optional IP label safely, with no layout change.
+- Read-only AVD evidence uses song `41416743` and the original CommentScreen in the
+  explicit debug page carrier: recommend, hot and time first pages show the same total
+  of 365; an expanded thread displays all three replies, including a reply without IP
+  metadata. These observations do not establish full scrolling/pagination, live failure
+  recovery, logged-out/expired-account behavior or release runtime. The total is a
+  point-in-time observation, not a fixture or invariant.
+- The ordinary player More > View Comments attempt landed on Library rather than the
+  comment screen during this check. Its cause was not established; direct page-carrier
+  success does not qualify that entry route. No frontend/navigation repair was made
+  under the backend-only scope. Newly proposed retry controls were withdrawn; existing
+  collapse/reopen semantics are retained and covered with substitute failures.
+- The checkpoint passes 641 JVM tests, including comment repository/session/paging,
+  transport ownership and shared backend contracts. No comment, like, social message,
+  logout, account switch or new download was submitted. Keep the ordinary entry route,
+  full comment matrix and both restored standalone/release runtimes open.
+- All 43 parasite device tests and debug/unsigned R8 builds pass. The release APK passes
+  16 KB alignment; this does not qualify its runtime. The ordinary debug package is
+  reinstalled with all probes disabled and cold-launches the original portrait Home.
+  Runtime screenshots/logs remain local and are not committed.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

@@ -1,4 +1,4 @@
-package com.ljyh.mei.parasite
+package com.ljyh.mei.data.session
 
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.repository.MeloXRepository
@@ -19,8 +19,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class HostAccountState(
-    val session: HostSessionStamp? = null,
+data class AccountState(
+    val session: SessionStamp? = null,
     val profile: AccountProfile? = null,
     val loading: Boolean = true,
     val profileUnavailable: Boolean = false,
@@ -30,18 +30,18 @@ data class HostAccountState(
     val userId: String get() = if (authenticated) session!!.identity.userId.toString() else ""
 }
 
-/** Public account presentation only. The official client remains the sole session owner. */
+/** Public account presentation only. Credentials stay with the selected backend. */
 @Singleton
-class HostAccountStore internal constructor(
-    val sessions: HostSessionBridge,
+class AccountStore internal constructor(
+    val sessions: SessionStore,
     private val loadProfile: suspend () -> AccountProfile,
     scope: CoroutineScope,
 ) : Closeable {
-    @Inject constructor(sessions: HostSessionBridge, repository: MeloXRepository) : this(
+    @Inject constructor(sessions: SessionStore, repository: MeloXRepository) : this(
         sessions, repository::accountProfile, CoroutineScope(SupervisorJob() + Dispatchers.IO),
     )
 
-    private val mutableState = MutableStateFlow(HostAccountState())
+    private val mutableState = MutableStateFlow(AccountState())
     val state = mutableState.asStateFlow()
     private val refreshes = MutableStateFlow(0L)
     private val invalidation = sessions.onInvalidated { revision ->
@@ -57,42 +57,42 @@ class HostAccountStore internal constructor(
                 return@collectLatest
             }
             try {
-                publish(HostAccountState(session = stamp, loading = stamp.identity.authenticated))
+                publish(AccountState(session = stamp, loading = stamp.identity.authenticated))
                 if (!stamp.identity.authenticated) return@collectLatest
                 val profile = loadProfile()
                 currentCoroutineContext().ensureActive()
-                if (profile.id != stamp.identity.userId) throw IOException("Official profile does not match session")
-                publish(HostAccountState(stamp, profile, loading = false))
+                if (profile.id != stamp.identity.userId) throw IOException("Account profile does not match session")
+                publish(AccountState(stamp, profile, loading = false))
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
                 // The new generation owns both the next load and the visible account state.
             } catch (_: Exception) {
-                runCatching { publish(HostAccountState(stamp, loading = false, profileUnavailable = true)) }
+                runCatching { publish(AccountState(stamp, loading = false, profileUnavailable = true)) }
             }
         }
     }
 
     fun refresh() { refreshes.update { it + 1 } }
 
-    private fun pendingState(): HostAccountState {
+    private fun pendingState(): AccountState {
         val recoveryRequired = sessions.recoveryRequired.value
-        return HostAccountState(
+        return AccountState(
             loading = !recoveryRequired, profileUnavailable = recoveryRequired, recoveryRequired = recoveryRequired,
         )
     }
 
-    fun requireAuthenticated(): HostSessionStamp = sessions.snapshot().also {
-        if (!it.identity.authenticated) throw IOException("Official sign-in required")
+    fun requireAuthenticated(): SessionStamp = sessions.snapshot().also {
+        if (!it.identity.authenticated) throw IOException("Sign-in required")
     }
 
-    private fun publish(next: HostAccountState) {
+    private fun publish(next: AccountState) {
         sessions.withCurrent(requireNotNull(next.session)) { mutableState.value = next }
     }
 
     override fun close() {
         worker.cancel()
         invalidation.close()
-        mutableState.value = HostAccountState()
+        mutableState.value = AccountState()
     }
 }

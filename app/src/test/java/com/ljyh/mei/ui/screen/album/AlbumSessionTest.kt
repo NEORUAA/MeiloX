@@ -8,9 +8,9 @@ import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.AlbumDetailSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,34 +28,34 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AlbumSessionTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = Source()
-    private val notifications = mutableListOf<HostSessionStamp>()
-    private var notify: (HostSessionStamp) -> Unit = { notifications += it }
+    private val notifications = mutableListOf<SessionStamp>()
+    private var notify: (SessionStamp) -> Unit = { notifications += it }
 
     private class Source : AlbumDetailSource {
-        val reads = mutableListOf<Pair<HostSessionStamp, String>>()
-        val collectionReads = mutableListOf<Pair<HostSessionStamp, String>>()
-        val mutations = mutableListOf<Triple<HostSessionStamp, String, Boolean>>()
-        val urlOwners = mutableListOf<HostSessionStamp?>()
-        var detail: suspend (String, HostSessionStamp) -> Resource<AlbumDetail> = { id, _ -> Resource.Success(album(id)) }
-        var collection: suspend (String, HostSessionStamp) -> Resource<Boolean> = { _, _ -> Resource.Success(false) }
-        var mutate: suspend (String, Boolean, HostSessionStamp) -> Resource<BaseResponse> = { _, _, _ -> Resource.Success(BaseResponse(200)) }
+        val reads = mutableListOf<Pair<SessionStamp, String>>()
+        val collectionReads = mutableListOf<Pair<SessionStamp, String>>()
+        val mutations = mutableListOf<Triple<SessionStamp, String, Boolean>>()
+        val urlOwners = mutableListOf<SessionStamp?>()
+        var detail: suspend (String, SessionStamp) -> Resource<AlbumDetail> = { id, _ -> Resource.Success(album(id)) }
+        var collection: suspend (String, SessionStamp) -> Resource<Boolean> = { _, _ -> Resource.Success(false) }
+        var mutate: suspend (String, Boolean, SessionStamp) -> Resource<BaseResponse> = { _, _, _ -> Resource.Success(BaseResponse(200)) }
         var urls: suspend () -> Resource<DownloadSources> = { Resource.Success(DownloadSources(emptyList())) }
-        override suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail> {
+        override suspend fun getAlbumDetail(id: String, session: SessionStamp): Resource<AlbumDetail> {
             reads += session to id
             return detail(id, session)
         }
-        override suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean> {
+        override suspend fun getAlbumCollection(id: String, session: SessionStamp): Resource<Boolean> {
             collectionReads += session to id
             return collection(id, session)
         }
-        override suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse> {
+        override suspend fun setAlbumCollection(id: String, collected: Boolean, session: SessionStamp): Resource<BaseResponse> {
             mutations += Triple(session, id, collected)
             return mutate(id, collected, session)
         }
-        override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources> {
+        override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: SessionStamp): Resource<DownloadSources> {
             urlOwners += session
             return urls()
         }
@@ -87,7 +87,7 @@ class AlbumSessionTest {
     }
 
     @Test fun guestsReadAlbumsButCannotSubmitCollectionWrites() {
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         checkModel { model, _ ->
             model.getAlbumDetail("10")
             runCurrent()
@@ -218,7 +218,7 @@ class AlbumSessionTest {
                 runCurrent()
                 model.toggleCollection()
                 runCurrent()
-                sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+                sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
                 runCurrent()
                 assertEquals(false, model.state.value.collected)
             } finally { old.complete(BaseResponse(200)); runCurrent() }

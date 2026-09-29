@@ -9,9 +9,9 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.AccountLibraryRepository
 import com.ljyh.mei.data.repository.AlbumDetailSource
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class AlbumDetailState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val id: String? = null,
     val detail: Resource<AlbumDetail> = Resource.Loading,
     val collected: Boolean? = null,
@@ -35,10 +35,10 @@ data class AlbumDetailState(
 
 class AlbumDetailViewModel internal constructor(
     private val repository: AlbumDetailSource,
-    private val sessions: HostSessionBridge,
-    private val onCollectionChanged: (HostSessionStamp) -> Unit,
+    private val sessions: SessionStore,
+    private val onCollectionChanged: (SessionStamp) -> Unit,
 ) : ViewModel() {
-    @Inject constructor(repository: PlaylistRepository, sessions: HostSessionBridge, library: AccountLibraryRepository) :
+    @Inject constructor(repository: PlaylistRepository, sessions: SessionStore, library: AccountLibraryRepository) :
         this(repository as AlbumDetailSource, sessions, library::invalidateCollections)
 
     private val mutableState = MutableStateFlow(AlbumDetailState())
@@ -115,7 +115,7 @@ class AlbumDetailViewModel internal constructor(
                 publish(stamp, requestVersion) { it.copy(detail = Resource.Success(detail), collected = collected) }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publish(stamp, requestVersion) { it.copy(detail = Resource.Error(error.message ?: "Album request failed")) } }
@@ -155,7 +155,7 @@ class AlbumDetailViewModel internal constructor(
                 if (accepted) runCatching { onCollectionChanged(stamp) }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publish(stamp, requestVersion) {
@@ -177,7 +177,7 @@ class AlbumDetailViewModel internal constructor(
         }
     }
 
-    fun requireCurrent(stamp: HostSessionStamp, id: String) {
+    fun requireCurrent(stamp: SessionStamp, id: String) {
         sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (state.value.session != stamp || state.value.id != id || state.value.detail !is Resource.Success) {
@@ -187,7 +187,7 @@ class AlbumDetailViewModel internal constructor(
         }
     }
 
-    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, stamp: HostSessionStamp, albumId: String) =
+    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, stamp: SessionStamp, albumId: String) =
         requireCurrent(stamp, albumId).let {
             repository.getDownloadSources(ids, quality, stamp).also {
                 currentCoroutineContext().ensureActive()
@@ -195,7 +195,7 @@ class AlbumDetailViewModel internal constructor(
             }
         }
 
-    private fun publish(stamp: HostSessionStamp, requestVersion: Long, update: (AlbumDetailState) -> AlbumDetailState): Boolean =
+    private fun publish(stamp: SessionStamp, requestVersion: Long, update: (AlbumDetailState) -> AlbumDetailState): Boolean =
         sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 (version == requestVersion).also { if (it) mutableState.value = update(state.value) }

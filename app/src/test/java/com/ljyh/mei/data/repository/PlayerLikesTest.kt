@@ -7,9 +7,9 @@ import com.ljyh.mei.data.network.QQMusicUApiService
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -17,12 +17,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlayerLikesTest {
-    private val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+    private val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
     private val owner = sessions.snapshot()
     private var readResponse = SongLikeIds(200, listOf(10))
     private var writeResponse = SongLikeResult(200, 100)
     private var afterCall: () -> Unit = {}
-    private val reads = mutableListOf<HostSessionStamp>()
+    private val reads = mutableListOf<SessionStamp>()
     private val writes = mutableListOf<SongLike>()
     private inline fun <reified T> proxy(noinline invoke: (String, Array<out Any?>) -> Any?): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
@@ -34,7 +34,7 @@ class PlayerLikesTest {
             when (name) {
                 "songLikeIds" -> {
                     assertEquals(owner, args[0])
-                    reads += args[0] as HostSessionStamp
+                    reads += args[0] as SessionStamp
                     readResponse.also { afterCall() }
                 }
                 "like" -> {
@@ -93,7 +93,7 @@ class PlayerLikesTest {
     }
 
     @Test fun guestStaleAndInvalidTrackActionsNeverDispatch() = runBlocking {
-        val guest = owner.copy(identity = HostSessionIdentity(0, false, true))
+        val guest = owner.copy(identity = SessionIdentity(0, false, true))
         assertTrue(repository.like(10, true, guest) is Resource.Error)
         assertTrue(repository.checkSongLike(10, guest) is Resource.Error)
         assertTrue(repository.like(0, true, owner) is Resource.Error)

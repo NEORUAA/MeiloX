@@ -68,7 +68,7 @@ fun FloorCommentItem(
                     color = MaterialTheme.colorScheme.outline
                 )
 
-                val location = comment.ipLocation.location
+                val location = comment.ipLocation?.location.orEmpty()
                 if (location.isNotEmpty()) {
                     Text(
                         text = "  IP: $location",

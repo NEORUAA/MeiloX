@@ -26,9 +26,9 @@ import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.playback.resolveOfficialDownloadSources
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,33 +36,33 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 internal interface AlbumDetailSource {
-    suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail>
-    suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean>
-    suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse>
-    suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources>
+    suspend fun getAlbumDetail(id: String, session: SessionStamp): Resource<AlbumDetail>
+    suspend fun getAlbumCollection(id: String, session: SessionStamp): Resource<Boolean>
+    suspend fun setAlbumCollection(id: String, collected: Boolean, session: SessionStamp): Resource<BaseResponse>
+    suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: SessionStamp): Resource<DownloadSources>
 }
 
 internal interface PlaylistPageSource {
-    suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<EveryDaySongs>
-    suspend fun getPlaylistDetail(id: String, session: HostSessionStamp? = null): Resource<PlaylistDetail>
-    suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp? = null): List<PlaylistDetail.Playlist.Track>
-    suspend fun subscribePlaylist(id: String, session: HostSessionStamp? = null): Resource<BaseResponse>
-    suspend fun unSubscribePlaylist(id: String, session: HostSessionStamp? = null): Resource<BaseResponse>
+    suspend fun getEveryDayRecommendSongs(session: SessionStamp): Resource<EveryDaySongs>
+    suspend fun getPlaylistDetail(id: String, session: SessionStamp? = null): Resource<PlaylistDetail>
+    suspend fun getPlaylistTrackDetails(ids: List<String>, session: SessionStamp? = null): List<PlaylistDetail.Playlist.Track>
+    suspend fun subscribePlaylist(id: String, session: SessionStamp? = null): Resource<BaseResponse>
+    suspend fun unSubscribePlaylist(id: String, session: SessionStamp? = null): Resource<BaseResponse>
 }
 
 internal interface PlaylistMutationSource {
-    suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: HostSessionStamp): Resource<ManipulateTrackResult>
-    suspend fun createPlaylist(name: String, privacy: Boolean, type: String, session: HostSessionStamp): Resource<CreatePlaylistResult>
-    suspend fun deletePlaylist(id: String, session: HostSessionStamp): Resource<BaseMessageResponse>
+    suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: SessionStamp): Resource<ManipulateTrackResult>
+    suspend fun createPlaylist(name: String, privacy: Boolean, type: String, session: SessionStamp): Resource<CreatePlaylistResult>
+    suspend fun deletePlaylist(id: String, session: SessionStamp): Resource<BaseMessageResponse>
 }
 
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
     private val eApiService: EApiService,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
-    override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> {
+    override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.getPlaylistDetail(
@@ -77,7 +77,7 @@ class PlaylistRepository(
         }
     }
 
-    override suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp?): List<PlaylistDetail.Playlist.Track> =
+    override suspend fun getPlaylistTrackDetails(ids: List<String>, session: SessionStamp?): List<PlaylistDetail.Playlist.Track> =
         withContext(Dispatchers.IO) {
             if (ids.isEmpty()) return@withContext emptyList()
             val response = apiService.getSongDetail(GetSongDetails(ids.joinToString(",")), session)
@@ -87,7 +87,7 @@ class PlaylistRepository(
             ids.distinct().mapNotNull(byId::get)
         }
 
-    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail, session: HostSessionStamp? = null): List<MediaMetadata> {
+    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail, session: SessionStamp? = null): List<MediaMetadata> {
         return withContext(Dispatchers.IO) {
             val playlist = detail.playlist
             val tracksById = playlist.tracks.associateBy { it.id }.toMutableMap()
@@ -110,12 +110,12 @@ class PlaylistRepository(
         }
     }
 
-    override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<DownloadSources> {
+    override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: SessionStamp): Resource<DownloadSources> {
         return withContext(Dispatchers.IO) {
             try {
                 Resource.Success(resolveOfficialDownloadSources(apiService, sessions, ids, quality, session))
             } catch (error: CancellationException) { throw error }
-            catch (error: HostSessionChangedException) { throw error }
+            catch (error: SessionChangedException) { throw error }
             catch (_: Exception) { Resource.Error("Unable to authorize official downloads") }
         }
     }
@@ -125,7 +125,7 @@ class PlaylistRepository(
         op: String,
         pid: String,
         trackIds: String,
-        session: HostSessionStamp,
+        session: SessionStamp,
     ): Resource<ManipulateTrackResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -143,7 +143,7 @@ class PlaylistRepository(
     }
 
 
-    override suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<EveryDaySongs> {
+    override suspend fun getEveryDayRecommendSongs(session: SessionStamp): Resource<EveryDaySongs> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 check(session.identity.authenticated) { "Official login is required" }
@@ -168,7 +168,7 @@ class PlaylistRepository(
         name: String,
         privacy: Boolean, // 0 普通歌单, 10 隐私歌单
         type: String,
-        session: HostSessionStamp,
+        session: SessionStamp,
     ): Resource<CreatePlaylistResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -192,7 +192,7 @@ class PlaylistRepository(
     }
 
     override suspend fun subscribePlaylist(
-        id: String, session: HostSessionStamp?,
+        id: String, session: SessionStamp?,
     ): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -206,7 +206,7 @@ class PlaylistRepository(
     }
 
     override suspend fun unSubscribePlaylist(
-        id: String, session: HostSessionStamp?,
+        id: String, session: SessionStamp?,
     ): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -220,7 +220,7 @@ class PlaylistRepository(
     }
 
 
-    override suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse> {
+    override suspend fun setAlbumCollection(id: String, collected: Boolean, session: SessionStamp): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 check(session.identity.authenticated) { "Official login is required" }
@@ -234,7 +234,7 @@ class PlaylistRepository(
     }
 
     override suspend fun deletePlaylist(
-        id: String, session: HostSessionStamp,
+        id: String, session: SessionStamp,
     ): Resource<BaseMessageResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -250,7 +250,7 @@ class PlaylistRepository(
     }
 
 
-    override suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail> {
+    override suspend fun getAlbumDetail(id: String, session: SessionStamp): Resource<AlbumDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.getAlbumDetail(
@@ -260,7 +260,7 @@ class PlaylistRepository(
         }
     }
 
-    override suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean> = withContext(Dispatchers.IO) {
+    override suspend fun getAlbumCollection(id: String, session: SessionStamp): Resource<Boolean> = withContext(Dispatchers.IO) {
         safeApiCall {
             if (!session.identity.authenticated) return@safeApiCall false
             val request = com.google.gson.JsonObject().apply { addProperty("albumId", id) }

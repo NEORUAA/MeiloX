@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -9,7 +11,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 interface HostRequestBackend {
-    fun sessionIdentity(): HostSessionIdentity
+    fun sessionIdentity(): SessionIdentity
     fun open(path: String, parameters: Map<String, String>): HostPendingRequest
 }
 
@@ -18,7 +20,7 @@ interface HostPendingRequest : Closeable {
     fun cancel()
 }
 
-data class HostResponse(val body: String, val session: HostSessionStamp)
+data class HostResponse(val body: String, val session: SessionStamp)
 
 /** Owns request lifetime only. Authentication, signing, and wire I/O remain in the host. */
 @Singleton
@@ -41,7 +43,7 @@ class HostRequestBridge @Inject constructor(val sessions: HostSessionBridge) {
     fun newCall(
         path: String,
         parameters: Map<String, String> = emptyMap(),
-        expectedSession: HostSessionStamp? = null,
+        expectedSession: SessionStamp? = null,
     ): Call {
         require(PATH.matches(path) && path.split('/').none { it.isEmpty() || it == "." || it == ".." }) {
             "Expected a relative official business path"
@@ -57,7 +59,7 @@ class HostRequestBridge @Inject constructor(val sessions: HostSessionBridge) {
         private val transport: HostRequestBackend,
         private val path: String,
         private val parameters: Map<String, String>,
-        private val stamp: HostSessionStamp,
+        private val stamp: SessionStamp,
     ) {
         private val executed = AtomicBoolean()
         private val canceled = AtomicBoolean()

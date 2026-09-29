@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionStamp
 import com.google.gson.JsonParser
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -72,7 +73,7 @@ class HostCallFactory internal constructor(
                 }
             }
         }
-        return HostCall(request, bridge.newCall(path, parameters, request.tag(HostSessionStamp::class.java)))
+        return HostCall(request, bridge.newCall(path, parameters, request.tag(SessionStamp::class.java)))
     }
 
     private inner class HostCall(
@@ -157,7 +158,7 @@ class HostCallFactory internal constructor(
                 callTimeout.throwIfReached()
                 val result = hostCall.execute()
                 response = Response.Builder()
-                    .request(original.newBuilder().tag(HostSessionStamp::class.java, result.session).build())
+                    .request(original.newBuilder().tag(SessionStamp::class.java, result.session).build())
                     .protocol(Protocol.HTTP_1_1)
                     // The host returns JSON, not HTTP metadata. This is a synthetic Retrofit envelope.
                     .code(200)

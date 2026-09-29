@@ -9,10 +9,10 @@ import com.ljyh.mei.data.model.melox.PodcastPage
 import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.model.melox.PodcastProgramPage
 import com.ljyh.mei.data.repository.PodcastSource
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +34,8 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PodcastSessionTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = Source()
 
     private class Source : PodcastSource {
@@ -48,21 +48,21 @@ class PodcastSessionTest {
         val subscriptionOffsets = mutableListOf<Int>()
         val programOffsets = mutableListOf<Int>()
         val writes = mutableListOf<Pair<Long, Boolean>>()
-        val requestedSessions = mutableListOf<HostSessionStamp>()
-        override suspend fun podcastHome(session: HostSessionStamp) = home().also { requestedSessions += session }
-        override suspend fun podcasts(session: HostSessionStamp, categoryId: Long, offset: Int, limit: Int) = category(categoryId)
-        override suspend fun podcastDetail(session: HostSessionStamp, id: Long, offset: Int, limit: Int) = detail(id)
-        override suspend fun podcastPrograms(session: HostSessionStamp, id: Long, offset: Int, limit: Int): PodcastProgramPage {
+        val requestedSessions = mutableListOf<SessionStamp>()
+        override suspend fun podcastHome(session: SessionStamp) = home().also { requestedSessions += session }
+        override suspend fun podcasts(session: SessionStamp, categoryId: Long, offset: Int, limit: Int) = category(categoryId)
+        override suspend fun podcastDetail(session: SessionStamp, id: Long, offset: Int, limit: Int) = detail(id)
+        override suspend fun podcastPrograms(session: SessionStamp, id: Long, offset: Int, limit: Int): PodcastProgramPage {
             requestedSessions += session
             programOffsets += offset
             return programs(offset)
         }
-        override suspend fun subscribedPodcasts(session: HostSessionStamp, offset: Int, limit: Int): PodcastPage {
+        override suspend fun subscribedPodcasts(session: SessionStamp, offset: Int, limit: Int): PodcastPage {
             requestedSessions += session
             subscriptionOffsets += offset
             return subscriptions(offset)
         }
-        override suspend fun setPodcastSubscribed(session: HostSessionStamp, id: Long, subscribed: Boolean) {
+        override suspend fun setPodcastSubscribed(session: SessionStamp, id: Long, subscribed: Boolean) {
             requestedSessions += session
             writes += id to subscribed
             mutation(id, subscribed)
@@ -71,7 +71,7 @@ class PodcastSessionTest {
 
     private fun checkModels(check: suspend TestScope.(PodcastViewModel, PodcastDetailViewModel, ViewModelStore) -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val accounts = HostAccountStore(sessions, {
+        val accounts = AccountStore(sessions, {
             AccountProfile(identity.userId, "Account", null, null, null, null, null, null, null, null)
         }, backgroundScope)
         val store = ViewModelStore()
@@ -102,7 +102,7 @@ class PodcastSessionTest {
     }
 
     @Test fun guestCanBrowseButCannotReadSubscriptionsOrMutate() {
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         checkModels { list, detail, _ ->
             runCurrent()
             list.selectTab(PodcastTab.Subscriptions)
@@ -168,7 +168,7 @@ class PodcastSessionTest {
                 list.ensureSubscriptionsLoaded()
                 runCurrent()
                 sessions.beginTransition().use {
-                    identity = HostSessionIdentity(2, true, false)
+                    identity = SessionIdentity(2, true, false)
                     assertNull(list.state.value.session)
                     assertTrue(list.state.value.subscribedPodcasts.isEmpty())
                 }
@@ -260,7 +260,7 @@ class PodcastSessionTest {
             runCurrent()
             assertEquals(1L, detail.allPrograms(1).single().id)
             sessions.beginTransition().use {
-                identity = HostSessionIdentity(2, true, false)
+                identity = SessionIdentity(2, true, false)
                 assertNull(detail.state.value.detail)
             }
             runCurrent()
@@ -314,7 +314,7 @@ class PodcastSessionTest {
             runCurrent()
             val bulk = async { runCatching { detail.allPrograms(1) } }
             runCurrent()
-            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
             page.complete(PodcastProgramPage(listOf(program(2)), true, 3))
             runCurrent()
             assertTrue(bulk.await().isFailure)
@@ -399,7 +399,7 @@ class PodcastSessionTest {
             detail.load(1)
             runCurrent()
             detail.toggleSubscription()
-            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
             runCurrent()
             assertTrue(source.writes.isEmpty())
             assertEquals(2L, detail.state.value.session!!.identity.userId)

@@ -19,8 +19,8 @@ import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import android.util.Base64
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
@@ -31,15 +31,15 @@ import okio.IOException
 import java.util.concurrent.TimeUnit
 
 internal interface PlayerLikeSource {
-    suspend fun checkSongLike(id: Long, owner: HostSessionStamp): Resource<Boolean>
-    suspend fun like(id: Long, liked: Boolean, owner: HostSessionStamp): Resource<Boolean>
+    suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean>
+    suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean>
 }
 
 class PlayerRepository(
     private val qqMusicUApiService: QQMusicUApiService,
     private val apiService: ApiService,
     private val weApiService: WeApiService,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : PlayerLikeSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
@@ -141,7 +141,7 @@ class PlayerRepository(
     }
 
 
-    override suspend fun like(id: Long, liked: Boolean, owner: HostSessionStamp): Resource<Boolean> =
+    override suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean> =
         withContext(Dispatchers.IO) {
             safeApiCall {
                 requireLikeOwner(id, owner)
@@ -227,10 +227,10 @@ class PlayerRepository(
         }
     }
 
-    override suspend fun checkSongLike(id: Long, owner: HostSessionStamp): Resource<Boolean> =
+    override suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean> =
         withContext(Dispatchers.IO) { safeApiCall { readLike(id, owner) } }
 
-    private suspend fun readLike(id: Long, owner: HostSessionStamp): Boolean {
+    private suspend fun readLike(id: Long, owner: SessionStamp): Boolean {
         requireLikeOwner(id, owner)
         val response = apiService.songLikeIds(owner)
         currentCoroutineContext().ensureActive()
@@ -241,7 +241,7 @@ class PlayerRepository(
         return id in ids
     }
 
-    private fun requireLikeOwner(id: Long, owner: HostSessionStamp) {
+    private fun requireLikeOwner(id: Long, owner: SessionStamp) {
         require(id > 0)
         check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Official login is required" }
         sessions.requireCurrent(owner)

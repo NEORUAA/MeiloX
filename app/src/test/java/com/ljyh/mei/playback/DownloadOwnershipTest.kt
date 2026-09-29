@@ -2,8 +2,8 @@ package com.ljyh.mei.playback
 
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
 import java.util.UUID
 import org.junit.Assert.*
 import org.junit.Test
@@ -32,7 +32,7 @@ class DownloadOwnershipTest {
     }
 
     @Test fun processRecreationNeedsAFreshStampAndSameAccountReauthorizationInvalidatesActiveWork() {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(17, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(17, true, false) } }
         val first = sessions.snapshot()
         sessions.requireDownloadOwner(first)
         sessions.invalidate()
@@ -45,15 +45,15 @@ class DownloadOwnershipTest {
     }
 
     @Test fun anonymousAndUnauthenticatedSessionsNeverDownload() {
-        listOf(HostSessionIdentity(0, true, false), HostSessionIdentity(17, false, false), HostSessionIdentity(17, true, true))
+        listOf(SessionIdentity(0, true, false), SessionIdentity(17, false, false), SessionIdentity(17, true, true))
             .forEach { identity ->
-                val sessions = HostSessionBridge().apply { bind { identity } }
+                val sessions = SessionStore().apply { bind { identity } }
                 assertTrue(runCatching { sessions.requireDownloadOwner(sessions.snapshot()) }.isFailure)
             }
     }
 
     @Test fun invalidationCancelsTheEntireOwnedOperation() = runBlocking {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(17, true, false) } }
+        val sessions = SessionStore().apply { bind { SessionIdentity(17, true, false) } }
         var finished = false
         assertTrue(runCatching {
             sessions.withDownloadOwner(sessions.snapshot()) {

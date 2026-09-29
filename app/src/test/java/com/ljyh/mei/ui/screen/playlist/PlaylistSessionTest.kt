@@ -13,9 +13,9 @@ import com.ljyh.mei.data.repository.PlaylistPageSource
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +34,8 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistSessionTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val source = Source()
     private val unexpected = mutableListOf<String>()
     private val touches = mutableListOf<Triple<String, String, () -> Unit>>()
@@ -52,26 +52,26 @@ class PlaylistSessionTest {
     } as T
 
     private class Source : PlaylistPageSource {
-        val dailyReads = mutableListOf<HostSessionStamp>()
+        val dailyReads = mutableListOf<SessionStamp>()
         var daily: suspend () -> Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs> = { Resource.Success(dailySongs(1)) }
-        override suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs> {
+        override suspend fun getEveryDayRecommendSongs(session: SessionStamp): Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs> {
             dailyReads += session
             return daily()
         }
-        val reads = mutableListOf<Pair<String, HostSessionStamp?>>()
+        val reads = mutableListOf<Pair<String, SessionStamp?>>()
         val writes = mutableListOf<Pair<String, Boolean>>()
         var read: suspend (String) -> Resource<PlaylistDetail> = { Resource.Success(detail(it)) }
         var write: suspend () -> Resource<BaseResponse> = { Resource.Error("Rejected") }
-        override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> {
+        override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
             reads += id to session
             return read(id)
         }
-        override suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp?) = ids.map { playlistTrack(it.toInt()) }
-        override suspend fun subscribePlaylist(id: String, session: HostSessionStamp?): Resource<BaseResponse> {
+        override suspend fun getPlaylistTrackDetails(ids: List<String>, session: SessionStamp?) = ids.map { playlistTrack(it.toInt()) }
+        override suspend fun subscribePlaylist(id: String, session: SessionStamp?): Resource<BaseResponse> {
             writes += id to true
             return write()
         }
-        override suspend fun unSubscribePlaylist(id: String, session: HostSessionStamp?): Resource<BaseResponse> {
+        override suspend fun unSubscribePlaylist(id: String, session: SessionStamp?): Resource<BaseResponse> {
             writes += id to false
             return write()
         }
@@ -111,7 +111,7 @@ class PlaylistSessionTest {
         model.getEveryDayRecommendSongs()
         runCurrent()
         source.daily = { Resource.Success(dailySongs(2)) }
-        sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+        sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
         assertNull(model.dailySession.value)
         assertTrue(model.everyDay.value is Resource.Loading)
         runCurrent()
@@ -143,7 +143,7 @@ class PlaylistSessionTest {
     }
 
     @Test fun guestDailyPageNeverRequestsPrivateRecommendations() = checkModel { model, _ ->
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         sessions.invalidate()
         runCurrent()
         model.getEveryDayRecommendSongs()
@@ -163,15 +163,15 @@ class PlaylistSessionTest {
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
             val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {
-                    override val collectionChanges = emptyFlow<HostSessionStamp>()
+                    override val collectionChanges = emptyFlow<SessionStamp>()
                     override fun playlists(accountId: String) = emptyFlow<List<com.ljyh.mei.data.model.room.AccountPlaylist>>()
-                    override suspend fun sync(stamp: HostSessionStamp): Resource<Unit> {
+                    override suspend fun sync(stamp: SessionStamp): Resource<Unit> {
                         sessions.requireCurrent(stamp)
                         return Resource.Error("Library refresh failed")
                     }
                     override suspend fun albums() = error("Unused albums")
                     override suspend fun photos(accountId: String) = error("Unused photos")
-                    override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp) = error("Unused liked songs")
+                    override suspend fun likedSongs(playlistId: String, stamp: SessionStamp) = error("Unused liked songs")
                 })
             store.put("playlist", model)
             runCurrent()
@@ -198,7 +198,7 @@ class PlaylistSessionTest {
         runCurrent()
         val previous = model.playlistDetail.value
         val owner = sessions.snapshot()
-        identity = HostSessionIdentity(2, true, false)
+        identity = SessionIdentity(2, true, false)
         sessions.invalidate()
         assertNull(model.detailSession.value)
         assertTrue(model.playlistDetail.value is Resource.Loading)
@@ -283,13 +283,13 @@ class PlaylistSessionTest {
     }
 
     @Test fun guestAndCreatorCannotDispatchCollectionWrites() = checkModel { model, _ ->
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         model.getPlaylistDetail("10")
         runCurrent()
         model.subscribePlaylist("10")
         runCurrent()
         assertTrue(model.subscribePlaylist.value is Resource.Error)
-        identity = HostSessionIdentity(99, true, false)
+        identity = SessionIdentity(99, true, false)
         sessions.invalidate()
         runCurrent()
         model.subscribePlaylist("10")
@@ -305,7 +305,7 @@ class PlaylistSessionTest {
             runCurrent()
             model.subscribePlaylist("10")
             runCurrent()
-            identity = HostSessionIdentity(2, true, false)
+            identity = SessionIdentity(2, true, false)
             sessions.invalidate()
             source.read = { Resource.Success(detail(it, true)) }
             model.getPlaylistDetail("20")

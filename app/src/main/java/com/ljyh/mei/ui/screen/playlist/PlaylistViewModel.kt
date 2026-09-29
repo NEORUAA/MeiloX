@@ -21,9 +21,9 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.PlaylistMutationSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
-import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -49,7 +49,7 @@ internal fun MediaMetadata.matchesPlaylistSearch(query: String): Boolean {
 }
 
 data class PlaylistPickerState(
-    val owner: HostSessionStamp? = null,
+    val owner: SessionStamp? = null,
     val playlists: List<Playlist> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
@@ -61,18 +61,18 @@ class PlaylistViewModel internal constructor(
     private val repository: PlaylistRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
     val apiService: ApiService,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     private val library: com.ljyh.mei.data.repository.AccountLibrarySource,
 ) : ViewModel() {
     @Inject constructor(
         repository: PlaylistRepository,
         localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository, apiService: ApiService,
-        sessions: HostSessionBridge, library: com.ljyh.mei.data.repository.AccountLibraryRepository,
+        sessions: SessionStore, library: com.ljyh.mei.data.repository.AccountLibraryRepository,
     ) : this(repository, repository, repository, localPlaylistRepository, apiService, sessions, library)
     val userId: String get() = runCatching { sessions.snapshot().identity.takeIf { it.authenticated }?.userId?.toString().orEmpty() }.getOrDefault("")
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
-    private val _detailSession = MutableStateFlow<HostSessionStamp?>(null)
+    private val _detailSession = MutableStateFlow<SessionStamp?>(null)
     val detailSession = _detailSession.asStateFlow()
     private val _collected = MutableStateFlow<Boolean?>(null)
     val collected = _collected.asStateFlow()
@@ -106,7 +106,7 @@ class PlaylistViewModel internal constructor(
 
     private val _everyDay = MutableStateFlow<Resource<EveryDaySongs>>(Resource.Loading)
     val everyDay: StateFlow<Resource<EveryDaySongs>> = _everyDay
-    private val _dailySession = MutableStateFlow<HostSessionStamp?>(null)
+    private val _dailySession = MutableStateFlow<SessionStamp?>(null)
     val dailySession = _dailySession.asStateFlow()
     private var dailyRequested = false
     private var dailyVersion = 0L
@@ -171,7 +171,7 @@ class PlaylistViewModel internal constructor(
         _deletePlaylist.value = Resource.Loading
     }
 
-    fun captureActionSession(): HostSessionStamp? = runCatching { sessions.snapshot() }.getOrNull()
+    fun captureActionSession(): SessionStamp? = runCatching { sessions.snapshot() }.getOrNull()
 
     private fun clearDetail() {
         detailVersion++
@@ -226,7 +226,7 @@ class PlaylistViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publishDetail(stamp, version) { _playlistDetail.value = Resource.Error(error.message ?: "Playlist request failed") } }
@@ -234,11 +234,11 @@ class PlaylistViewModel internal constructor(
         }
     }
 
-    private fun publishDetail(stamp: HostSessionStamp, version: Long, update: () -> Unit): Boolean = sessions.withCurrent(stamp) {
+    private fun publishDetail(stamp: SessionStamp, version: Long, update: () -> Unit): Boolean = sessions.withCurrent(stamp) {
         synchronized(detailLock) { (detailVersion == version).also { if (it) update() } }
     }
 
-    fun requireDetail(stamp: HostSessionStamp, detail: Resource<PlaylistDetail>) = sessions.withCurrent(stamp) {
+    fun requireDetail(stamp: SessionStamp, detail: Resource<PlaylistDetail>) = sessions.withCurrent(stamp) {
         synchronized(detailLock) {
             if (_detailSession.value != stamp || _playlistDetail.value !== detail || detail !is Resource.Success) {
                 throw CancellationException("Playlist changed")
@@ -259,7 +259,7 @@ class PlaylistViewModel internal constructor(
     fun addSongToPlaylist(
         pid: String,
         trackIds: String,
-        owner: HostSessionStamp,
+        owner: SessionStamp,
         onComplete: (PlaylistTrackAddOutcome) -> Unit = {}
     ) {
         runMutation(owner, _manipulateTracks,
@@ -276,7 +276,7 @@ class PlaylistViewModel internal constructor(
     fun deleteSongFromPlaylist(
         pid: String,
         trackIds: String,
-        owner: HostSessionStamp,
+        owner: SessionStamp,
         onComplete: (Boolean) -> Unit = {}
     ) {
         val detail = _playlistDetail.value
@@ -299,7 +299,7 @@ class PlaylistViewModel internal constructor(
     fun markTrackRemoved(trackId: Long) {
         _removedTrackIds.value = _removedTrackIds.value + trackId
     }
-    fun getAllMePlaylist(owner: HostSessionStamp) {
+    fun getAllMePlaylist(owner: SessionStamp) {
         val version = runCatching { sessions.withCurrent(owner) {
             synchronized(detailLock) {
                 pickerVersion++
@@ -330,7 +330,7 @@ class PlaylistViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publish { it.copy(loading = false, error = error.message ?: "Playlist loading failed") } }
@@ -344,7 +344,7 @@ class PlaylistViewModel internal constructor(
     }
 
     private fun <T> runMutation(
-        owner: HostSessionStamp,
+        owner: SessionStamp,
         output: MutableStateFlow<Resource<T>>,
         validate: () -> Unit = {},
         request: suspend () -> Resource<T>,
@@ -369,7 +369,7 @@ class PlaylistViewModel internal constructor(
                     request()
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: HostSessionChangedException) {
+                } catch (error: SessionChangedException) {
                     throw error
                 } catch (error: Exception) {
                     Resource.Error(error.message ?: "Playlist operation failed")
@@ -390,7 +390,7 @@ class PlaylistViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } finally {
                 synchronized(detailLock) { if (actionVersion == version) mutationRunning = false }
             }
@@ -420,7 +420,7 @@ class PlaylistViewModel internal constructor(
                 publish(result)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publish(Resource.Error(error.message ?: "Daily recommendations failed")) }
@@ -440,7 +440,7 @@ class PlaylistViewModel internal constructor(
         synchronized(detailLock) { clearDaily() }
     }
 
-    fun dailyTracks(owner: HostSessionStamp?, result: Resource<EveryDaySongs>): List<MediaMetadata> {
+    fun dailyTracks(owner: SessionStamp?, result: Resource<EveryDaySongs>): List<MediaMetadata> {
         if (owner == null || result !is Resource.Success) return emptyList()
         return runCatching { sessions.withCurrent(owner) {
             synchronized(detailLock) {
@@ -456,7 +456,7 @@ class PlaylistViewModel internal constructor(
     fun createPlaylist(
         name: String,
         privacy: Boolean,
-        owner: HostSessionStamp,
+        owner: SessionStamp,
         type: String = "NORMAL",
         onComplete: (Boolean) -> Unit = {},
     ) {
@@ -515,7 +515,7 @@ class PlaylistViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publishDetail(stamp, version) {
@@ -542,7 +542,7 @@ class PlaylistViewModel internal constructor(
     /*
      * 删除歌单
      */
-    fun deletePlaylist(id: String, owner: HostSessionStamp, onComplete: (Boolean) -> Unit = {}) {
+    fun deletePlaylist(id: String, owner: SessionStamp, onComplete: (Boolean) -> Unit = {}) {
         runMutation(owner, _deletePlaylist,
             request = {
                 val entry = library.playlists(owner.identity.userId.toString()).first().firstOrNull { it.playlist.id == id }
@@ -555,7 +555,7 @@ class PlaylistViewModel internal constructor(
         )
     }
 
-    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, owner: HostSessionStamp) =
+    suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, owner: SessionStamp) =
         sessions.requireCurrent(owner).let {
             repository.getDownloadSources(ids, quality, owner).also {
                 currentCoroutineContext().ensureActive()
@@ -563,7 +563,7 @@ class PlaylistViewModel internal constructor(
             }
         }
 
-    suspend fun getSongDetails(ids: List<String>, owner: HostSessionStamp = sessions.snapshot()): Tracks {
+    suspend fun getSongDetails(ids: List<String>, owner: SessionStamp = sessions.snapshot()): Tracks {
         sessions.requireCurrent(owner)
         return apiService.getSongDetail(GetSongDetails(c = ids.joinToString(",")), owner).also {
             currentCoroutineContext().ensureActive()

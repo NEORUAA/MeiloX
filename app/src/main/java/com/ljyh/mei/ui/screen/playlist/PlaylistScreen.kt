@@ -63,7 +63,7 @@ fun PlaylistScreen(
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSessionStamp?, viewModel: PlaylistViewModel) {
+private fun PlaylistContent(id: Long, session: com.ljyh.mei.data.session.SessionStamp?, viewModel: PlaylistViewModel) {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return

@@ -8,8 +8,8 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.HomeRepository
 import com.ljyh.mei.di.dao.ColorDao
 import com.ljyh.mei.di.repository.ColorRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
@@ -35,8 +35,8 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
     @get:Rule val temporary = TemporaryFolder()
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge()
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore()
     private val colors = ColorRepository(object : ColorDao {
         override fun getColor(url: String): CacheColor? = null
         override suspend fun insertColor(color: CacheColor) = Unit
@@ -67,7 +67,7 @@ class HomeViewModelTest {
     @Test fun bindingStartsTheHomeRequestWithoutAStoredUid() = checkModel({ blocks("guest") }) { model, _ ->
         runCurrent()
         assertEquals(Resource.Loading, model.homePageResourceShow.value)
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         sessions.bind { identity }
         runCurrent()
         assertEquals("guest", model.name())
@@ -80,14 +80,14 @@ class HomeViewModelTest {
         runCurrent()
         assertEquals("account-1", model.name())
         sessions.beginTransition().use {
-            identity = HostSessionIdentity(2, true, false)
+            identity = SessionIdentity(2, true, false)
             assertEquals(Resource.Loading, model.homePageResourceShow.value)
             runCurrent()
             assertEquals(Resource.Loading, model.homePageResourceShow.value)
         }
         runCurrent()
         assertEquals("account-2", model.name())
-        sessions.beginTransition().use { identity = HostSessionIdentity(0, false, true) }
+        sessions.beginTransition().use { identity = SessionIdentity(0, false, true) }
         assertEquals(Resource.Loading, model.homePageResourceShow.value)
         runCurrent()
         assertEquals("account-0", model.name())
@@ -101,7 +101,7 @@ class HomeViewModelTest {
         }) { model, _ ->
             sessions.bind { identity }
             runCurrent()
-            sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
             runCurrent()
             assertEquals("new", model.name())
             old.complete(blocks("old"))

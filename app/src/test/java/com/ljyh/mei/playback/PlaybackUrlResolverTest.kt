@@ -4,10 +4,10 @@ import com.google.gson.Gson
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.io.IOException
 import java.lang.reflect.Proxy
 import kotlin.coroutines.Continuation
@@ -20,22 +20,22 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackUrlResolverTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val owner = sessions.snapshot()
     private var now = 100_000L
-    private val calls = mutableListOf<Pair<GetSongUrlV1, HostSessionStamp>>()
+    private val calls = mutableListOf<Pair<GetSongUrlV1, SessionStamp>>()
     private var response: suspend (GetSongUrlV1) -> SongUrl = { full() }
     private val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) { _, method, args ->
         check(method.name == "getSongUrlV1")
         val body = args[0] as GetSongUrlV1
-        calls += body to (args[1] as HostSessionStamp)
+        calls += body to (args[1] as SessionStamp)
         @Suppress("UNCHECKED_CAST")
         val continuation = args.last() as Continuation<SongUrl>
         (suspend { response(body) }).startCoroutineUninterceptedOrReturn(continuation)
     } as ApiService
     private val resolver = PlaybackUrlResolver(api, sessions) { now }
-    private suspend fun resolve(quality: String = "exhigh", stamp: HostSessionStamp = owner) = resolver.resolve("123", quality, stamp)
+    private suspend fun resolve(quality: String = "exhigh", stamp: SessionStamp = owner) = resolver.resolve("123", quality, stamp)
 
     @Test fun fallbackKeepsOneOwnerAndCachesTheActualQuality() = runTest {
         response = { if (it.level == "hires") SongUrl(200, emptyList()) else full() }
@@ -52,15 +52,15 @@ class PlaybackUrlResolverTest {
     @Test fun sameAccountReauthorizationCannotReuseSignedUrls() = runTest {
         resolve()
         sessions.invalidate()
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
         resolve(stamp = sessions.snapshot())
         assertEquals(2, calls.size)
     }
 
     @Test fun accountIdentityAlsoGuardsCachesWithoutAnInvalidationCallback() = runTest {
         val first = resolve()
-        identity = HostSessionIdentity(2, true, false)
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        identity = SessionIdentity(2, true, false)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
         val second = resolve(stamp = sessions.snapshot())
         assertNotEquals(first.cacheKey, second.cacheKey)
         assertEquals(2, calls.size)
@@ -69,7 +69,7 @@ class PlaybackUrlResolverTest {
     @Test fun recoveryBlocksAlreadyCachedUrlsAndFurtherNetworkRequests() = runTest {
         resolve()
         sessions.setRecoveryRequired(true)
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
         assertEquals(1, calls.size)
     }
 
@@ -137,7 +137,7 @@ class PlaybackUrlResolverTest {
         sessions.invalidate()
         pending.complete(full())
         runCurrent()
-        assertTrue(old.await() is HostSessionChangedException)
+        assertTrue(old.await() is SessionChangedException)
         response = { full() }
         resolve(stamp = sessions.snapshot())
         assertEquals(2, calls.size)
@@ -157,8 +157,8 @@ class PlaybackUrlResolverTest {
     }
 
     @Test fun persistentCacheNamespacesSeparateGuestsAccountsAndLegacyBytes() {
-        val identities = listOf(owner.identity, HostSessionIdentity(2, true, false),
-            HostSessionIdentity(0, false, true), HostSessionIdentity(1, false, true))
+        val identities = listOf(owner.identity, SessionIdentity(2, true, false),
+            SessionIdentity(0, false, true), SessionIdentity(1, false, true))
         val keys = identities.map { playbackCacheKey("123", "exhigh", "abc", 100, it) }
         assertEquals(4, keys.distinct().size)
         assertTrue(keys.none { it.startsWith(playbackCacheKeyPrefix("123")) })

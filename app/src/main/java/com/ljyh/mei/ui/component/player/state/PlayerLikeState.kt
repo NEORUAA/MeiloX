@@ -2,8 +2,8 @@ package com.ljyh.mei.ui.component.player.state
 
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerLikeSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 data class PlayerLikeSnapshot(
     val songId: Long? = null,
-    val owner: HostSessionStamp? = null,
+    val owner: SessionStamp? = null,
     val revision: Long = 0,
     val liked: Boolean? = null,
     val busy: Boolean = false,
@@ -29,9 +29,9 @@ data class PlayerLikeSnapshot(
 /** Owns the original player's favorite control, independently of lyrics and playback. */
 internal class PlayerLikeState(
     private val scope: CoroutineScope,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
     private val source: PlayerLikeSource,
-    private val onChanged: (HostSessionStamp) -> Unit,
+    private val onChanged: (SessionStamp) -> Unit,
 ) : Closeable {
     private val lock = Any()
     private var selectedId: Long? = null

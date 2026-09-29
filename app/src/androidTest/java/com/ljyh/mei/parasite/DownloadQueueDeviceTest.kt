@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.Configuration
@@ -116,7 +117,7 @@ class DownloadQueueDeviceTest {
         assertEquals(DownloadStatus.FAILED, dao.getBySongId("1")?.status)
         fixture.account = 18
         try { queue.resumeSong("1", "Test", task.requestId); fail("Another account must not resume the task") }
-        catch (_: HostSessionChangedException) { }
+        catch (_: SessionChangedException) { }
         assertEquals(task.requestId, dao.getBySongId("1")?.requestId)
         assertEquals(0, fixture.grants.get())
     }

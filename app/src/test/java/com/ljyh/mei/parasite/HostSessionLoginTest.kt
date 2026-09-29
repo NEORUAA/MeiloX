@@ -1,5 +1,7 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import android.graphics.Bitmap
 import java.io.Closeable
 import java.io.IOException
@@ -17,7 +19,7 @@ class HostSessionLoginTest {
         sessions = HostSessionBridge().apply {
             bind {
                 check(!Thread.holdsLock(sessions))
-                HostSessionIdentity(1, true, false)
+                SessionIdentity(1, true, false)
             }
         }
         val stamp = sessions.snapshot()
@@ -25,7 +27,7 @@ class HostSessionLoginTest {
     }
 
     @Test fun statePublicationAndTransitionDoNotInterleave() {
-        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val sessions = HostSessionBridge().apply { bind { SessionIdentity(1, true, false) } }
         val stamp = sessions.snapshot()
         val publishing = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -46,7 +48,7 @@ class HostSessionLoginTest {
             release.countDown()
             publication.get(5, TimeUnit.SECONDS)
             change.get(5, TimeUnit.SECONDS)
-            assertThrows(HostSessionChangedException::class.java) {
+            assertThrows(SessionChangedException::class.java) {
                 sessions.withCurrent(stamp) { error("Stale state must not be published") }
             }
         } finally {
@@ -57,7 +59,7 @@ class HostSessionLoginTest {
 
     @Test fun missingHostLoginFailsClosedAndCanRetryOnceBound() {
         val sessions = HostSessionBridge()
-        sessions.bind { HostSessionIdentity(1, true, false) }
+        sessions.bind { SessionIdentity(1, true, false) }
         val login = sessions.newLogin()
         login.start()
         assertEquals(HostLoginStatus.ERROR, login.state.value.status)
@@ -74,17 +76,17 @@ class HostSessionLoginTest {
 
     @Test fun logoutInvalidatesRequestsEvenWhenOfficialCleanupFails() {
         val sessions = HostSessionBridge()
-        sessions.bind { HostSessionIdentity(1, true, false) }
+        sessions.bind { SessionIdentity(1, true, false) }
         sessions.bindLogin(object : HostLoginBackend<Bitmap> {
             override fun open(emit: (HostLoginState<Bitmap>) -> Unit): Closeable = Closeable {}
             override fun logout() {
-                assertThrows(HostSessionChangedException::class.java) { sessions.snapshot() }
+                assertThrows(SessionChangedException::class.java) { sessions.snapshot() }
                 throw IOException("Official logout unavailable")
             }
         })
         val before = sessions.snapshot()
         assertThrows(IOException::class.java) { sessions.logout() }
-        assertThrows(HostSessionChangedException::class.java) { sessions.requireCurrent(before) }
+        assertThrows(SessionChangedException::class.java) { sessions.requireCurrent(before) }
         assertTrue(sessions.snapshot().generation > before.generation)
     }
 

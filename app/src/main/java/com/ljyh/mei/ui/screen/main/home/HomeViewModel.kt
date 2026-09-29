@@ -7,9 +7,9 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.HomeRepository
 import com.ljyh.mei.di.repository.ColorRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -24,7 +24,7 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val repository: HomeRepository,
     private val colorRepository: ColorRepository,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : ViewModel() {
     private val _homePageResourceShow =
         MutableStateFlow<Resource<List<HomePageResourceShow.Data.Block>>>(Resource.Loading)
@@ -32,7 +32,7 @@ class HomeViewModel @Inject constructor(
     private val stateLock = Any()
     private val requestVersion = AtomicLong()
     private var requestJob: Job? = null
-    @Volatile private var displayedSession: HostSessionStamp? = null
+    @Volatile private var displayedSession: SessionStamp? = null
     private val invalidation = sessions.onInvalidated { revision ->
         // Clear personalized content before the next main-thread collection.
         synchronized(stateLock) {
@@ -77,7 +77,7 @@ class HomeViewModel @Inject constructor(
                 publish(stamp, version, result)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
                 // The new session owns the next request and visible state.
             } catch (error: Exception) {
                 runCatching { publish(stamp, version, Resource.Error(error.message ?: "Official home request failed")) }
@@ -86,7 +86,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun publish(
-        stamp: HostSessionStamp,
+        stamp: SessionStamp,
         version: Long,
         result: Resource<List<HomePageResourceShow.Data.Block>>,
     ) {

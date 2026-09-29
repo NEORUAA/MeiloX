@@ -7,9 +7,9 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.DownloadUrlResponse
 import com.ljyh.mei.data.model.api.GetDownloadUrl
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionIdentity
 import java.io.IOException
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
@@ -21,8 +21,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DownloadSourceResolverTest {
-    private var identity = HostSessionIdentity(17, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(17, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val owner = sessions.snapshot()
     private val requests = mutableListOf<GetDownloadUrl>()
     private var now = 1_000_000L
@@ -136,25 +136,25 @@ class DownloadSourceResolverTest {
 
     @Test fun recoveryGuestAndStaleOwnersNeverDispatch() = runTest {
         sessions.setRecoveryRequired(true)
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
         sessions.setRecoveryRequired(false)
-        identity = HostSessionIdentity(0, false, true)
-        assertTrue(runCatching { resolveOfficialDownloadSources(api, sessions, listOf("1"), MusicQuality.STANDARD, sessions.snapshot()) }.exceptionOrNull() is HostSessionChangedException)
+        identity = SessionIdentity(0, false, true)
+        assertTrue(runCatching { resolveOfficialDownloadSources(api, sessions, listOf("1"), MusicQuality.STANDARD, sessions.snapshot()) }.exceptionOrNull() is SessionChangedException)
         identity = owner.identity
         sessions.invalidate()
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
         assertTrue(requests.isEmpty())
     }
 
     @Test fun aLateResponseCannotEscapeAnAccountOrAuthorizationChange() = runTest {
         respond = { sessions.invalidate(); fixture() }
-        assertTrue(runCatching { resolve(listOf("1", "2")) }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve(listOf("1", "2")) }.exceptionOrNull() is SessionChangedException)
         assertEquals(1, requests.size)
     }
 
     @Test fun identityChangesWithoutCallbacksAlsoRejectTheResponse() = runTest {
-        respond = { identity = HostSessionIdentity(88, true, false); fixture() }
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        respond = { identity = SessionIdentity(88, true, false); fixture() }
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
     }
 
     @Test fun expiryIsMeasuredFromDispatchNotFromTheDelayedResponse() = runTest {
@@ -174,7 +174,7 @@ class DownloadSourceResolverTest {
 
     @Test fun recoveryBeginningDuringARequestRejectsItsResponse() = runTest {
         respond = { sessions.setRecoveryRequired(true); fixture() }
-        assertTrue(runCatching { resolve() }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { resolve() }.exceptionOrNull() is SessionChangedException)
     }
 
     @Test fun cancellationIsNotConvertedToAQualityFallbackOrGrant() = runTest {

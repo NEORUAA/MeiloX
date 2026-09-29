@@ -7,9 +7,9 @@ import com.ljyh.mei.data.model.api.SearchSuggest
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.SearchRepository
 import com.ljyh.mei.data.repository.SearchSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class SearchResultsState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val query: String = "",
     val type: SearchType = SearchType.Song,
     val result: Resource<SearchResult> = Resource.Loading,
@@ -34,9 +34,9 @@ data class SearchResultsState(
 
 class SearchViewModel internal constructor(
     private val repository: SearchSource,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : ViewModel() {
-    @Inject constructor(repository: SearchRepository, sessions: HostSessionBridge) : this(repository as SearchSource, sessions)
+    @Inject constructor(repository: SearchRepository, sessions: SessionStore) : this(repository as SearchSource, sessions)
 
     private val mutableState = MutableStateFlow(SearchResultsState())
     val state = mutableState.asStateFlow()
@@ -76,7 +76,7 @@ class SearchViewModel internal constructor(
         }
     }
 
-    private fun resetSession(stamp: HostSessionStamp?) {
+    private fun resetSession(stamp: SessionStamp?) {
         resultVersion++
         suggestionVersion++
         resultCache.clear()
@@ -167,7 +167,7 @@ class SearchViewModel internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching {
@@ -181,7 +181,7 @@ class SearchViewModel internal constructor(
         }
     }
 
-    private fun publish(stamp: HostSessionStamp, version: Long, update: (SearchResultsState) -> SearchResultsState) {
+    private fun publish(stamp: SessionStamp, version: Long, update: (SearchResultsState) -> SearchResultsState) {
         sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (resultVersion == version) mutableState.value = update(state.value)
@@ -209,7 +209,7 @@ class SearchViewModel internal constructor(
                 publishSuggestions(stamp, version, checked)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publishSuggestions(stamp, version, Resource.Error(error.message ?: "Search suggestions failed")) }
@@ -217,7 +217,7 @@ class SearchViewModel internal constructor(
         }
     }
 
-    private fun publishSuggestions(stamp: HostSessionStamp, version: Long, result: Resource<SearchSuggest>) {
+    private fun publishSuggestions(stamp: SessionStamp, version: Long, result: Resource<SearchSuggest>) {
         sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (suggestionVersion == version) mutableSuggestions.value = result

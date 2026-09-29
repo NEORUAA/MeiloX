@@ -43,9 +43,9 @@ import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionChangedException
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosTypography
@@ -67,17 +67,17 @@ import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 
 data class SearchDiscoveryState(
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val loading: Boolean = true,
     val discovery: SearchDiscovery? = null,
     val error: Boolean = false,
 )
 
 class SearchDiscoveryViewModel internal constructor(
-    private val sessions: HostSessionBridge,
-    private val load: suspend (HostSessionStamp) -> SearchDiscovery,
+    private val sessions: SessionStore,
+    private val load: suspend (SessionStamp) -> SearchDiscovery,
 ) : ViewModel() {
-    @Inject constructor(repository: MeloXRepository, sessions: HostSessionBridge) : this(sessions, repository::searchDiscovery)
+    @Inject constructor(repository: MeloXRepository, sessions: SessionStore) : this(sessions, repository::searchDiscovery)
 
     private val _state = MutableStateFlow(SearchDiscoveryState())
     val state = _state.asStateFlow()
@@ -132,7 +132,7 @@ class SearchDiscoveryViewModel internal constructor(
                 publish(stamp, requestVersion) { SearchDiscoveryState(session = stamp, loading = false, discovery = discovery) }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: HostSessionChangedException) {
+            } catch (_: SessionChangedException) {
             } catch (_: Exception) {
                 currentCoroutineContext().ensureActive()
                 runCatching { publish(stamp, requestVersion) { it.copy(loading = false, error = true) } }
@@ -140,7 +140,7 @@ class SearchDiscoveryViewModel internal constructor(
         }
     }
 
-    private fun publish(stamp: HostSessionStamp, requestVersion: Long, update: (SearchDiscoveryState) -> SearchDiscoveryState) {
+    private fun publish(stamp: SessionStamp, requestVersion: Long, update: (SearchDiscoveryState) -> SearchDiscoveryState) {
         sessions.withCurrent(stamp) {
             synchronized(stateLock) { if (version == requestVersion) _state.value = update(state.value) }
         }

@@ -1,7 +1,7 @@
 package com.ljyh.mei.data.network.api
 
 import com.google.gson.JsonObject
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -18,7 +18,7 @@ interface MeloXDirectService {
         @Url path: String,
         @Body body: Map<String, @JvmSuppressWildcards Any> = emptyMap(),
         @HeaderMap headers: Map<String, String> = emptyMap(),
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: SessionStamp? = null,
     ): JsonObject
 
     @Streaming

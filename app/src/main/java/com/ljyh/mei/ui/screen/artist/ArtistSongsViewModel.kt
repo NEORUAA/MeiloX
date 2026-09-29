@@ -7,8 +7,8 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.ArtistSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,7 +21,7 @@ import javax.inject.Inject
 
 data class ArtistSongsState(
     val id: String? = null,
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
     val revision: Long = 0,
     val songs: List<MediaMetadata> = emptyList(),
     val offset: Int = 0,
@@ -32,9 +32,9 @@ data class ArtistSongsState(
 
 class ArtistSongsViewModel internal constructor(
     private val source: ArtistSource,
-    private val sessions: HostSessionBridge,
+    private val sessions: SessionStore,
 ) : ViewModel() {
-    @Inject constructor(repository: ArtistRepository, sessions: HostSessionBridge) : this(repository as ArtistSource, sessions)
+    @Inject constructor(repository: ArtistRepository, sessions: SessionStore) : this(repository as ArtistSource, sessions)
     private val _state = MutableStateFlow(ArtistSongsState())
     val state = _state.asStateFlow()
     private val lock = Any()

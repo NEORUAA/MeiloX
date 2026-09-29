@@ -6,33 +6,33 @@ data class FloorComment(
     @SerializedName("code")
     val code: Int,
     @SerializedName("data")
-    val `data`: FData,
+    val `data`: FData?,
     @SerializedName("message")
-    val message: String
+    val message: String?
 )
 
 data class FData(
     @SerializedName("bestComments")
-    val bestComments: List<Any?>,
+    val bestComments: List<Any?>?,
     @SerializedName("comments")
-    val comments: List<FComment>,
+    val comments: List<FComment>?,
     @SerializedName("currentComment")
-    val currentComment: Any,
+    val currentComment: Any?,
     @SerializedName("hasMore")
-    val hasMore: Boolean,
+    val hasMore: Boolean?,
     @SerializedName("ownerComment")
-    val ownerComment: OwnerComment,
+    val ownerComment: OwnerComment?,
     @SerializedName("time")
-    val time: Long,
+    val time: Long?,
     @SerializedName("totalCount")
-    val totalCount: Int
+    val totalCount: Int?
 )
 
 data class FComment(
     @SerializedName("aiCommentLabel")
-    val aiCommentLabel: Any,
+    val aiCommentLabel: Any?,
     @SerializedName("beReplied")
-    val beReplied: Any,
+    val beReplied: Any?,
     @SerializedName("commentId")
     val commentId: Long,
     @SerializedName("commentLocationType")
@@ -40,25 +40,25 @@ data class FComment(
     @SerializedName("content")
     val content: String,
     @SerializedName("contentResource")
-    val contentResource: Any,
+    val contentResource: Any?,
     @SerializedName("decoration")
-    val decoration: Decoration,
+    val decoration: Decoration?,
     @SerializedName("expressionUrl")
-    val expressionUrl: Any,
+    val expressionUrl: Any?,
     @SerializedName("favorited")
     val favorited: Boolean,
     @SerializedName("grade")
-    val grade: Any,
+    val grade: Any?,
     @SerializedName("ipLocation")
-    val ipLocation: IpLocation,
+    val ipLocation: IpLocation?,
     @SerializedName("likeAnimationMap")
-    val likeAnimationMap: Any,
+    val likeAnimationMap: Any?,
     @SerializedName("liked")
     val liked: Boolean,
     @SerializedName("likedCount")
     val likedCount: Int,
     @SerializedName("medal")
-    val medal: Any,
+    val medal: Any?,
     @SerializedName("needDisplayTime")
     val needDisplayTime: Boolean,
     @SerializedName("owner")
@@ -66,13 +66,13 @@ data class FComment(
     @SerializedName("parentCommentId")
     val parentCommentId: Long,
     @SerializedName("pendantData")
-    val pendantData: Any,
+    val pendantData: Any?,
     @SerializedName("repliedMark")
-    val repliedMark: Any,
+    val repliedMark: Any?,
     @SerializedName("richContent")
-    val richContent: Any,
+    val richContent: Any?,
     @SerializedName("showFloorComment")
-    val showFloorComment: Any,
+    val showFloorComment: Any?,
     @SerializedName("status")
     val status: Int,
     @SerializedName("time")
@@ -82,7 +82,7 @@ data class FComment(
     @SerializedName("user")
     val user: User,
     @SerializedName("userBizLevels")
-    val userBizLevels: Any
+    val userBizLevels: Any?
 )
 
 data class OwnerComment(
@@ -141,5 +141,4 @@ data class OwnerComment(
     @SerializedName("userBizLevels")
     val userBizLevels: Any
 )
-
 

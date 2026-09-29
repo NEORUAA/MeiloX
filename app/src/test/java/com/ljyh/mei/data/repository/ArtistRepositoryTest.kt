@@ -10,9 +10,9 @@ import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.GetAllArtistSongs
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -20,8 +20,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ArtistRepositoryTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val owner = sessions.snapshot()
     private val calls = mutableListOf<Pair<String, Any?>>()
     private var detail = artistDetail("10")
@@ -33,7 +33,7 @@ class ArtistRepositoryTest {
     private var afterCall: () -> Unit = {}
     private val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) { _, method, args ->
         val parameters = args.orEmpty()
-        val tag = parameters.filterIsInstance<HostSessionStamp>().single()
+        val tag = parameters.filterIsInstance<SessionStamp>().single()
         assertEquals(sessions.snapshot(), tag)
         calls += method.name to parameters.firstOrNull()
         when (method.name) {
@@ -117,7 +117,7 @@ class ArtistRepositoryTest {
     }
 
     @Test fun guestsDoNotReadPrivateStateOrWrite() = runBlocking {
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         val guest = sessions.snapshot()
         assertEquals(Resource.Success(false), repository.followed("10", guest))
         assertTrue(repository.follow("10", true, guest) is Resource.Error)

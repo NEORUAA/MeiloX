@@ -4,7 +4,7 @@ import androidx.media3.common.PlaybackException
 import com.ljyh.mei.constants.MusicQuality
 import java.util.Locale
 import java.security.MessageDigest
-import com.ljyh.mei.parasite.HostSessionIdentity
+import com.ljyh.mei.data.session.SessionIdentity
 
 private const val PLAYBACK_CACHE_KEY_VERSION = "meilox-media-v3"
 
@@ -77,11 +77,11 @@ internal fun playbackSourceIdentity(sourceMd5: String?, sourceSize: Long?): Stri
         ?: "size-${sourceSize?.takeIf { it > 0L } ?: 0L}"
 
 /** Prefix shared by every source revision cached for one song and quality. */
-internal fun playbackCacheKeyPrefix(mediaId: String, quality: String, owner: HostSessionIdentity? = null): String =
+internal fun playbackCacheKeyPrefix(mediaId: String, quality: String, owner: SessionIdentity? = null): String =
     playbackCacheKeyPrefix(mediaId, owner) + "${normalizePlaybackQuality(quality)}:"
 
 /** Prefix shared by every playback cache entry for one song. */
-internal fun playbackCacheKeyPrefix(mediaId: String, owner: HostSessionIdentity? = null): String {
+internal fun playbackCacheKeyPrefix(mediaId: String, owner: SessionIdentity? = null): String {
     if (owner == null) return "$PLAYBACK_CACHE_KEY_VERSION:${mediaId.trim()}:"
     val identity = "${owner.userId}:${owner.authenticated}:${owner.anonymous}"
     val namespace = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
@@ -101,7 +101,7 @@ internal fun playbackCacheKey(
     quality: String,
     sourceMd5: String?,
     sourceSize: Long?,
-    owner: HostSessionIdentity? = null,
+    owner: SessionIdentity? = null,
 ): String = playbackCacheKeyPrefix(mediaId, quality, owner) +
     playbackSourceIdentity(sourceMd5, sourceSize)
 

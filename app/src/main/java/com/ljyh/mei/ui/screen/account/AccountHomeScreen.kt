@@ -62,10 +62,10 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
-import com.ljyh.mei.parasite.HostAccountStore
-import com.ljyh.mei.parasite.HostAccountState
-import com.ljyh.mei.parasite.HostSessionStamp
-import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.AccountState
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.di.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.async
@@ -89,10 +89,10 @@ data class AccountHomeState(
     val loading: Boolean = true,
     val error: String? = null,
     val requiresLogin: Boolean = false,
-    val session: HostSessionStamp? = null,
+    val session: SessionStamp? = null,
 )
 
-internal fun AccountHomeState.forAccount(account: HostAccountState): AccountHomeState =
+internal fun AccountHomeState.forAccount(account: AccountState): AccountHomeState =
     if (session == account.session && !account.recoveryRequired) this else AccountHomeState(
         loading = account.loading,
         requiresLogin = account.recoveryRequired || (account.session != null && !account.authenticated),
@@ -101,7 +101,7 @@ internal fun AccountHomeState.forAccount(account: HostAccountState): AccountHome
 
 class AccountHomeViewModel @Inject constructor(
     private val repository: MeloXRepository,
-    private val accounts: HostAccountStore,
+    private val accounts: AccountStore,
     @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AccountHomeState())
@@ -144,7 +144,7 @@ class AccountHomeViewModel @Inject constructor(
                     accounts.sessions.withCurrent(stamp) { _state.value = next }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (_: HostSessionChangedException) {
+                } catch (_: SessionChangedException) {
                     // The account collector will clear the previous generation's presentation.
                 } catch (_: Exception) {
                     runCatching {

@@ -2,9 +2,9 @@ package com.ljyh.mei.ui.component.player.state
 
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerLikeSource
-import com.ljyh.mei.parasite.HostSessionBridge
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -17,19 +17,19 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerLikeStateTest {
-    private var identity = HostSessionIdentity(1, true, false)
-    private val sessions = HostSessionBridge().apply { bind { identity } }
-    private val reads = mutableListOf<Pair<Long, HostSessionStamp>>()
-    private val writes = mutableListOf<Triple<Long, Boolean, HostSessionStamp>>()
-    private val changes = mutableListOf<HostSessionStamp>()
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
+    private val reads = mutableListOf<Pair<Long, SessionStamp>>()
+    private val writes = mutableListOf<Triple<Long, Boolean, SessionStamp>>()
+    private val changes = mutableListOf<SessionStamp>()
     private var read: suspend (Long) -> Resource<Boolean> = { Resource.Success(it == 10L) }
     private var write: suspend (Long, Boolean) -> Resource<Boolean> = { _, liked -> Resource.Success(liked) }
     private val source = object : PlayerLikeSource {
-        override suspend fun checkSongLike(id: Long, owner: HostSessionStamp): Resource<Boolean> {
+        override suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean> {
             reads += id to owner
             return read(id)
         }
-        override suspend fun like(id: Long, liked: Boolean, owner: HostSessionStamp): Resource<Boolean> {
+        override suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean> {
             writes += Triple(id, liked, owner)
             return write(id, liked)
         }
@@ -52,7 +52,7 @@ class PlayerLikeStateTest {
         val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
         state.select(-1)
         runCurrent()
-        identity = HostSessionIdentity(0, false, true)
+        identity = SessionIdentity(0, false, true)
         sessions.invalidate()
         state.select(10)
         runCurrent()
@@ -187,7 +187,7 @@ class PlayerLikeStateTest {
         runCurrent()
         repeat(2) { index ->
             val stale = state.state.value
-            if (index == 0) identity = HostSessionIdentity(2, true, false)
+            if (index == 0) identity = SessionIdentity(2, true, false)
             sessions.invalidate()
             assertNull(state.state.value.liked)
             assertNull(state.state.value.owner)

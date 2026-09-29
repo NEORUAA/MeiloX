@@ -3,7 +3,7 @@ package com.ljyh.mei.utils
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.api.GetLyricV1
 import com.ljyh.mei.di.AppGraph
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.playback.requireDownloadOwner
 import com.ljyh.mei.playback.withCancellableResponse
 import kotlinx.coroutines.CancellationException
@@ -22,8 +22,8 @@ object LyricFetcher {
         .connectionPool(DownloadWorker.getDownloadClient().connectionPool)
         .build()
 
-    suspend fun fetchBestLyric(songId: String, owner: HostSessionStamp): String? = withContext(Dispatchers.IO) {
-        val sessions = AppGraph.component.hostRequests().sessions
+    suspend fun fetchBestLyric(songId: String, owner: SessionStamp): String? = withContext(Dispatchers.IO) {
+        val sessions = AppGraph.component.sessions()
         sessions.requireDownloadOwner(owner)
         val amll = fetchAMLL(songId)
         sessions.requireDownloadOwner(owner)
@@ -57,12 +57,12 @@ object LyricFetcher {
         }
     }
 
-    private suspend fun fetchNeteaseLyric(songId: String, owner: HostSessionStamp): Lyric? {
+    private suspend fun fetchNeteaseLyric(songId: String, owner: SessionStamp): Lyric? {
         return try {
             AppGraph.component.apiService().getLyricV1(GetLyricV1(songId), owner)
         } catch (error: CancellationException) { throw error }
         catch (e: Exception) {
-            AppGraph.component.hostRequests().sessions.requireDownloadOwner(owner)
+            AppGraph.component.sessions().requireDownloadOwner(owner)
             Timber.tag("LyricFetcher").w("Official lyric fetch failed: %s", e.javaClass.simpleName)
             null
         }

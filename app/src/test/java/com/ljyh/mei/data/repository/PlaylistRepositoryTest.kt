@@ -9,8 +9,8 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
-import com.ljyh.mei.parasite.HostSessionIdentity
-import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -18,13 +18,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaylistRepositoryTest {
-    private val owner = HostSessionStamp(1, HostSessionIdentity(1, true, false))
+    private val owner = SessionStamp(1, SessionIdentity(1, true, false))
     private inline fun <reified T> api(noinline invoke: (String, Array<out Any?>) -> Any?): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
     ) { _, method, args -> invoke(method.name, args.orEmpty()) } as T
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") }, api<EApiService>(invoke),
-        com.ljyh.mei.parasite.HostSessionBridge(),
+        com.ljyh.mei.data.session.SessionStore(),
     )
     private fun detail(id: Int = 10, code: Int = 200): PlaylistDetail = Gson().fromJson(
         """{"code":$code,"playlist":{"id":$id,"tracks":[],"trackIds":[{"id":1},{"id":2}]}}""", PlaylistDetail::class.java)
@@ -116,7 +116,7 @@ class PlaylistRepositoryTest {
         assertTrue(source.deletePlaylist("10", owner) is Resource.Error)
         assertTrue(source.manipulateTrack("add", "10", "1,,2", owner) is Resource.Error)
         assertTrue(source.manipulateTrack("other", "10", "1", owner) is Resource.Error)
-        val guest = owner.copy(identity = HostSessionIdentity(0, false, true))
+        val guest = owner.copy(identity = SessionIdentity(0, false, true))
         assertTrue(source.manipulateTrack("add", "10", "1", guest) is Resource.Error)
         assertTrue(source.createPlaylist("Test", true, "NORMAL", guest) is Resource.Error)
         assertTrue(source.deletePlaylist("10", guest) is Resource.Error)
@@ -138,9 +138,9 @@ class PlaylistRepositoryTest {
             assertEquals(mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1"), args[0])
             assertEquals(owner, args[1])
             Gson().fromJson("""{"code":200,"data":{"dailySongs":[]}}""", com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-        }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.parasite.HostSessionBridge())
+        }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore())
         assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Success)
-        assertTrue(source.getEveryDayRecommendSongs(owner.copy(identity = HostSessionIdentity(0, false, true))) is Resource.Error)
+        assertTrue(source.getEveryDayRecommendSongs(owner.copy(identity = SessionIdentity(0, false, true))) is Resource.Error)
         assertEquals(1, calls)
     }
 
@@ -149,7 +149,7 @@ class PlaylistRepositoryTest {
             """{"code":200,"data":{"dailySongs":[{"id":0}]}}""").forEach { json ->
             val source = PlaylistRepository(api { _, _ -> error("Unused API") }, api<WeApiService> { _, _ ->
                 Gson().fromJson(json, com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-            }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.parasite.HostSessionBridge())
+            }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore())
             assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Error)
         }
     }
@@ -157,7 +157,7 @@ class PlaylistRepositoryTest {
     @Test fun dailyCancellationPropagates() = runBlocking {
         val source = PlaylistRepository(api { _, _ -> error("Unused API") },
             api<WeApiService> { _, _ -> throw CancellationException() }, api { _, _ -> error("Unused EAPI") },
-            com.ljyh.mei.parasite.HostSessionBridge())
+            com.ljyh.mei.data.session.SessionStore())
         assertTrue(runCatching { source.getEveryDayRecommendSongs(owner) }.exceptionOrNull() is CancellationException)
     }
 }
