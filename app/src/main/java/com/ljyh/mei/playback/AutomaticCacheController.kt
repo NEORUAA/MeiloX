@@ -21,14 +21,18 @@ import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.parasite.HostSessionStamp
 
 @Singleton
 class AutomaticCacheController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: PlaylistRepository,
     private val database: AppDatabase,
+    private val sessions: HostSessionBridge,
 ) {
-    suspend fun recordPlayback(mediaItem: MediaItem) {
+    suspend fun recordPlayback(mediaItem: MediaItem, owner: HostSessionStamp) {
+        sessions.requirePlaybackSession(owner)
         val songId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return
         database.downloadDao().recordPlayback(songId)
         val count = database.downloadDao().playbackCount(songId) ?: return
@@ -40,7 +44,8 @@ class AutomaticCacheController @Inject constructor(
         val quality = runCatching {
             DownloadQuality.valueOf(context.dataStore[AutoCacheQualityKey] ?: DownloadQuality.EXHIGH.name)
         }.getOrDefault(DownloadQuality.EXHIGH)
-        val result = repository.getSongUrlV1(listOf(songId), quality.toMusicQuality())
+        val result = repository.getSongUrlV1(listOf(songId), quality.toMusicQuality(), owner)
+        sessions.requirePlaybackSession(owner)
         val source = (result as? Resource.Success)?.data?.fullSourceFor(songId)
         if (source?.url == null) {
             Timber.w("Automatic cache could not resolve source for %s", songId)
@@ -52,6 +57,8 @@ class AutomaticCacheController @Inject constructor(
             ?.filter(String::isNotBlank)
             .orEmpty()
             .ifEmpty { listOf(context.getString(R.string.unknown_artist)) }
+        val downloadPath = context.dataStore[DownloadPathKey] ?: DownloadManager.getDefaultDownloadPath()
+        sessions.requirePlaybackSession(owner)
         DownloadManager.enqueue(
             context = context,
             songs = listOf(
@@ -69,7 +76,7 @@ class AutomaticCacheController @Inject constructor(
             ),
             playlistName = context.getString(R.string.automatic_cache),
             playlistId = "automatic_$songId",
-            downloadPath = context.dataStore[DownloadPathKey] ?: DownloadManager.getDefaultDownloadPath(),
+            downloadPath = downloadPath,
         )
     }
 

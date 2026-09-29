@@ -51,7 +51,7 @@ class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
     private val playlistRepository: PlaylistRepository,
-    sessions: HostSessionBridge,
+    private val sessions: HostSessionBridge,
     library: AccountLibraryRepository,
     val lyricManager: LyricManager
 ) : ViewModel() {
@@ -159,6 +159,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun downloadSong(metadata: MediaMetadata, context: android.content.Context, requestedQuality: MusicQuality? = null) {
+        val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
         viewModelScope.launch {
             val quality = requestedQuality ?: try {
                 val saved = AppContext.instance.dataStore[DownloadQualityKey]
@@ -170,8 +171,10 @@ class PlayerViewModel @Inject constructor(
 
             val result = playlistRepository.getSongUrlV1(
                 ids = listOf(metadata.id.toString()),
-                quality = quality
+                quality = quality,
+                session = owner,
             )
+            if (sessions.recoveryRequired.value || runCatching { sessions.requireCurrent(owner) }.isFailure) return@launch
 
             if (result is Resource.Success) {
                 val songData = result.data.fullSourceFor(metadata.id.toString())
@@ -179,6 +182,7 @@ class PlayerViewModel @Inject constructor(
                 if (url != null) {
                     val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
                         ?: com.ljyh.mei.utils.DownloadManager.getDefaultDownloadPath()
+                    if (sessions.recoveryRequired.value || runCatching { sessions.requireCurrent(owner) }.isFailure) return@launch
 
                     com.ljyh.mei.utils.DownloadManager.enqueue(
                         context = context,

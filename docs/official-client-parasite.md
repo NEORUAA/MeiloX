@@ -1253,6 +1253,49 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   are guarded in code but not qualified by this existing-data AVD run. Other official
   playback entry points and the recording/PiP capability decision remain open.
 
+### Playback Source Ownership Checkpoint (2026-09-29)
+
+- Retained the original player, queue and quality UI. V1 URL calls now require a
+  captured official session; the unused legacy URL method is removed. A focused
+  resolver separates online URL/expiry/quality policy from local Android Uri lookup.
+  Same-account reauthorization and account changes invalidate signed URLs, while
+  canceled or late responses cannot populate the current authorization's cache.
+- Stream disk keys include a public-account namespace, actual returned quality, and
+  source identity. Fully-cached lookup and source-recovery removal are account-scoped.
+  Existing unowned cache entries remain on disk but are not reused as host-account
+  entries. Local/download files remain untouched; local files and owned complete-cache
+  reads do not need renewed online authorization. No credentials are copied or logged.
+- Session invalidation stops old sources, cancels restore/recovery/automatic-cache
+  work, resets preload and AutoMix without re-priming, and rejects old queue metadata.
+  Pending history work is discarded without sending an old duration as a new account.
+  The queue is retained for a later explicit resume. This is not the completed
+  official-reporting migration or synchronous flushing of already-decoded audio.
+- Source inspection and actual DEX confirm the TV tuple IDs, trial/encoding fields,
+  and separate download route/response. API-015 in the difference ledger records
+  the current supplemental request and unresolved cloud/download semantics.
+- Final `:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest`
+  passed: 560 unit tests in 71 suites, zero failures/errors/skips. Thirteen new URL
+  tests cover authorization changes, cancellation, late responses, expiry, quality
+  aliases, malformed responses and rejected trial sources. Five focused device tests
+  passed: two isolated file/cache ownership tests plus the existing media-button and
+  audio-focus regressions. Debug APK 16 KB alignment and `git diff --check` pass.
+- AVD: the official launcher cold-started MeiloX in portrait with the account and
+  paused queue intact. Both authorized TV-only orientation overrides remain enabled;
+  the module does not set them. Original Home/player/glass-menu screenshots were
+  inspected. Playing Love Me advanced past four minutes; selecting exhigh, standard,
+  lossless, then restoring exhigh retained position and the 4:33 timeline. MediaSession
+  reported no error, the host legacy session stayed inactive/STOPPED, and an active
+  AudioFlinger output track was observed. These are state/decoder/output checks, not
+  audible quality or complete-track/server-statistics acceptance.
+- No logout, account change, social mutation, download, upload, or device permission
+  change was performed. Local-file recovery and cross-account disk isolation use
+  substitute identities and temporary test-owned data, not the user's media store.
+  Real account transitions, actual offline recovery, background worker ownership,
+  full effects/AutoMix behavior and release runtime remain unqualified.
+- Local evidence remains outside Git: `/tmp/meilox-playback-session-final-build.log`,
+  `/tmp/meilox-playback-session-device-tests.log`, and playback-session screenshots.
+  Stage 5 remains in progress; the recording/PiP host decision also remains open.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1278,7 +1321,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, and media-button ownership/cold resumption passed documented checkpoints; favorite writes have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, and authorization-owned URL/cache resolution passed documented checkpoints; favorite writes and account transitions have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

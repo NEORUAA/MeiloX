@@ -228,7 +228,7 @@ class AutoMixController(
     }
 
     /** Drops deck state so neither player can reuse a source resolved for the old quality. */
-    fun resetForQualityChange() {
+    fun resetForQualityChange(prepare: Boolean = true) {
         sourceGeneration++
         analysisJob?.cancel()
         analysisJob = null
@@ -236,7 +236,7 @@ class AutoMixController(
         analyzedAttempt = null
         resetRetryState()
         cancelTransition(prepareAfterCancel = false)
-        prepareNext(force = true)
+        if (prepare) prepareNext(force = true)
     }
 
     private fun prepareNext(

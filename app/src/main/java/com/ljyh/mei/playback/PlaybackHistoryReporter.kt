@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.cancelChildren
 
 /** Serializes NetEase playback history events without blocking local playback. */
 internal class PlaybackHistoryReporter(
@@ -76,6 +77,13 @@ internal class PlaybackHistoryReporter(
                 }
             }
         }
+    }
+
+    /** Discards queued work from an invalidated account without reporting it as a new account. */
+    fun discardSession() = synchronized(lock) {
+        activePlayback = null
+        reporterJob.cancelChildren()
+        submissionJob = null
     }
 
     /** Starts a non-blocking drain and rejects all future events. */

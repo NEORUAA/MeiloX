@@ -370,6 +370,56 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   50-entry response; this checkpoint does not claim full album pagination, release
   runtime qualification, or completion of every artist/account workflow.
 
+### API-015: Playback Sources Belong to an Official Authorization
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original MeiloX: playback V1 requests use numeric JSON `ids`, requested `level`,
+  `encodeType=flac`, and `immerseType=c51` for sky quality. URL-cache keys have a song
+  and quality but no account generation; persistent media-cache keys have no account.
+  Downloads and automatic cache also resolve through the playback URL operation.
+- Official contract: actual DEX `audio.player.i.a.c` builds quoted `songId_userId`
+  tuples, `level`, `encodeType=aac/mp3`, `trialMode`, and optional `sceneParams` for
+  `song/enhance/player/url/v1`. It can add source, effects, immersive, experiment and
+  client-capability parameters. Downloads instead use `song/enhance/download/url/v1`
+  with a single `id=songId_userId`; their `data` is an object, unlike playback's list.
+  The pinned APK DEX confirms the route strings and parameter names; JADX's renamed
+  source class is not used as a hook target.
+- Current adaptation: keep the original numeric-ID/flac business request through
+  the host's existing signing/authentication/network bridge. Ordinary-song playback
+  and quality changes work on the logged-in AVD. Every V1 caller now requires an
+  explicit session tag, including album/playlist download preparation, the player,
+  and delayed automatic cache. The unused legacy unowned URL endpoint is removed.
+  This does not establish parity for cloud-owner tuples or official download rights.
+- URL ownership: one captured identity/generation spans all quality attempts and
+  publication. Invalidation clears URLs, including same-account reauthorization.
+  Canceled, recovery-required, or stale results cannot populate the current cache.
+  Fallback remains limited to successful responses without a full matching source;
+  network/authentication/malformed responses fail. Trial sources are never accepted
+  as full songs. Expiry starts at request dispatch with a 30-second safety margin;
+  explicit short/zero lifetimes are not artificially extended.
+- Byte ownership: host stream caches use `meilox-host-media-v1` plus a hash of public
+  account identity, server-returned quality and source identity. No credentials are
+  included. Complete-cache lookup and recovery removal cannot select another account's
+  entries or legacy unowned entries. Same-account bytes survive process recreation;
+  legacy bytes and existing downloads are not deleted or migrated. Local files and
+  the current account's completed cache remain usable during login recovery; acquiring
+  a new online source still requires a usable current authorization.
+- Service behavior: invalidation stops the old player source and resets AutoMix and
+  preload work without starting a new source. Queue construction, delayed automatic
+  cache and source recovery are canceled; late metadata cannot update the replacement
+  queue. Pending history submissions are discarded, not finalized under a new account.
+  Queue contents and original player/quality-menu UI are preserved.
+- Evidence: 13 resolver tests cover stale/noncooperative/canceled responses, recovery,
+  expiry, fallback and cache identity. Two device tests use substitute identities and
+  isolated temporary files/cache to exercise actual Android Uri and SimpleCache paths.
+  AVD quality changes retain position and the 4:33 timeline; audio-output activity and
+  advancing playback were observed. No real account change or download was performed.
+- Remaining: download endpoint/permissions and worker ownership, cloud-song owner
+  semantics, FM/queue request ownership, final official reporting, complete AutoMix
+  and effects acceptance, and release runtime qualification. Stopping old sources is
+  not a promise of synchronous removal of already-decoded audio frames. Substitute
+  tests do not qualify real logout/account switching, audible quality, or server totals.
+
 ## Runtime Boundary Notes
 
 These are integration differences, not server API semantics.

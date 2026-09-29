@@ -3,6 +3,8 @@ package com.ljyh.mei.playback
 import androidx.media3.common.PlaybackException
 import com.ljyh.mei.constants.MusicQuality
 import java.util.Locale
+import java.security.MessageDigest
+import com.ljyh.mei.parasite.HostSessionIdentity
 
 private const val PLAYBACK_CACHE_KEY_VERSION = "meilox-media-v3"
 
@@ -75,12 +77,17 @@ internal fun playbackSourceIdentity(sourceMd5: String?, sourceSize: Long?): Stri
         ?: "size-${sourceSize?.takeIf { it > 0L } ?: 0L}"
 
 /** Prefix shared by every source revision cached for one song and quality. */
-internal fun playbackCacheKeyPrefix(mediaId: String, quality: String): String =
-    "$PLAYBACK_CACHE_KEY_VERSION:${mediaId.trim()}:${normalizePlaybackQuality(quality)}:"
+internal fun playbackCacheKeyPrefix(mediaId: String, quality: String, owner: HostSessionIdentity? = null): String =
+    playbackCacheKeyPrefix(mediaId, owner) + "${normalizePlaybackQuality(quality)}:"
 
 /** Prefix shared by every playback cache entry for one song. */
-internal fun playbackCacheKeyPrefix(mediaId: String): String =
-    "$PLAYBACK_CACHE_KEY_VERSION:${mediaId.trim()}:"
+internal fun playbackCacheKeyPrefix(mediaId: String, owner: HostSessionIdentity? = null): String {
+    if (owner == null) return "$PLAYBACK_CACHE_KEY_VERSION:${mediaId.trim()}:"
+    val identity = "${owner.userId}:${owner.authenticated}:${owner.anonymous}"
+    val namespace = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+    return "meilox-host-media-v1:$namespace:${mediaId.trim()}:"
+}
 
 /**
  * Builds a disk cache key for the exact server-returned source.
@@ -94,7 +101,8 @@ internal fun playbackCacheKey(
     quality: String,
     sourceMd5: String?,
     sourceSize: Long?,
-): String = playbackCacheKeyPrefix(mediaId, quality) +
+    owner: HostSessionIdentity? = null,
+): String = playbackCacheKeyPrefix(mediaId, quality, owner) +
     playbackSourceIdentity(sourceMd5, sourceSize)
 
 /** Returns whether the current source should be invalidated and retried in place. */

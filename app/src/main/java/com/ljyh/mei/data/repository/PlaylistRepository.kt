@@ -13,7 +13,6 @@ import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
-import com.ljyh.mei.data.model.api.GetSongUrl
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
@@ -39,7 +38,7 @@ internal interface AlbumDetailSource {
     suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail>
     suspend fun getAlbumCollection(id: String, session: HostSessionStamp): Resource<Boolean>
     suspend fun setAlbumCollection(id: String, collected: Boolean, session: HostSessionStamp): Resource<BaseResponse>
-    suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp? = null): Resource<SongUrl>
+    suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl>
 }
 
 internal interface PlaylistPageSource {
@@ -109,19 +108,7 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun getSongUrl(id: String): Resource<SongUrl> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.getSongUrl(
-                    GetSongUrl(
-                        ids = "[$id]"
-                    )
-                )
-            }
-        }
-    }
-
-    override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp?): Resource<SongUrl> {
+    override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl> {
         return withContext(Dispatchers.IO) {
             val requestedIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
             if (requestedIds.isEmpty()) {

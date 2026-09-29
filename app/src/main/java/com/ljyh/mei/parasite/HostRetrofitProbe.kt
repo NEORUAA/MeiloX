@@ -29,7 +29,7 @@ internal class HostRetrofitProbe(private val component: AppComponent, private va
                 if (songId != null) {
                     report("retrofit=song_detail code=${api.getSongDetail(GetSongDetails(songId.toString())).code}")
                     report("retrofit=lyrics code=${api.getLyricV1(GetLyricV1(songId.toString())).code}")
-                    val source = api.getSongUrlV1(GetSongUrlV1("[$songId]", "standard"))
+                    val source = api.getSongUrlV1(GetSongUrlV1("[$songId]", "standard"), stamp)
                     report("retrofit=playback_url code=${source.code} data_present=${source.data.isNotEmpty()}")
                 }
                 report("retrofit=subcount code=${component.weapiService().getUserSubcount().code}")

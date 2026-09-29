@@ -124,6 +124,8 @@ class MusicService : MediaLibraryService(),
     private lateinit var mediaSession: MediaLibrarySession
     private var hostMediaButtons: AutoCloseable? = null
     private var mediaButtonStartup = false
+    @Inject lateinit var hostSessions: com.ljyh.mei.parasite.HostSessionBridge
+    private var playbackInvalidation: java.io.Closeable? = null
 
     lateinit var sleepTimer: SleepTimer
     lateinit var sleepTimerNotification: SleepTimerNotification
@@ -280,10 +282,11 @@ class MusicService : MediaLibraryService(),
                 updatePreload()
                 automaticCacheJob?.cancel()
                 if (mediaItem != null) {
+                    val owner = runCatching { hostSessions.snapshot() }.getOrNull() ?: return
                     automaticCacheJob = scope.launch {
                         delay(AUTOMATIC_CACHE_DELAY_MS)
                         try {
-                            automaticCacheController.recordPlayback(mediaItem)
+                            automaticCacheController.recordPlayback(mediaItem, owner)
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {
@@ -357,6 +360,13 @@ class MusicService : MediaLibraryService(),
 
 
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
+        playbackInvalidation = hostSessions.onInvalidated {
+            playbackHistoryReporter.discardSession()
+            scope.launch { invalidatePlaybackSession() }
+        }
+        scope.launch {
+            hostSessions.recoveryRequired.collect { if (it) invalidatePlaybackSession() }
+        }
         if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
             mediaButtonStartup = com.ljyh.mei.parasite.HostMediaButtons.consumeResumeRequest()
         }
@@ -396,6 +406,19 @@ class MusicService : MediaLibraryService(),
 
     private fun dispatchRestoredMediaButton(intent: Intent, flags: Int, startId: Int) {
         super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun invalidatePlaybackSession() {
+        playbackRestoreJob?.cancel()
+        sourceRecoveryJob?.cancel()
+        automaticCacheJob?.cancel()
+        queueManager.invalidateSession()
+        playbackHistoryReporter.discardSession()
+        playbackHistorySession.finish(SystemClock.elapsedRealtime())
+        player.pause()
+        player.stop()
+        autoMixController.resetForQualityChange(prepare = false)
+        preloadManager.reset()
     }
 
     private fun deferStartupMediaButton(intent: Intent, flags: Int = 0, startId: Int? = null) {
@@ -759,6 +782,8 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onDestroy() {
+        playbackInvalidation?.close()
+        playbackInvalidation = null
         hostMediaButtons?.close()
         hostMediaButtons = null
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
@@ -806,6 +831,8 @@ class MusicService : MediaLibraryService(),
         val simpleCache = CacheManager.getSimpleCache(context)
 
         return ResolvingDataSource.Factory(getCacheDataSourceFactory(context)) { dataSpec ->
+            val owner = hostSessions.snapshot()
+            hostSessions.requireCurrent(owner)
             val mediaId = dataSpec.key ?: error("No media key")
             val quality = context.dataStore[MusicQualityKey]
                 ?.let(::normalizePlaybackQuality)
@@ -816,6 +843,7 @@ class MusicService : MediaLibraryService(),
                 song?.path
             }
             if (localFilePath != null) {
+                hostSessions.requireCurrent(owner)
                 val file = File(localFilePath)
                 if (file.exists()) {
                     Timber.tag("ResolvingDataSource").d("Using local file for mediaId: $mediaId, filePath: ${file.path}")
@@ -825,8 +853,9 @@ class MusicService : MediaLibraryService(),
                         .build()
                 }
             }
-            val fullyCachedKey = findFullyCachedPlaybackKey(simpleCache, mediaId, quality)
+            val fullyCachedKey = findFullyCachedPlaybackKey(simpleCache, mediaId, quality, owner.identity)
             if (fullyCachedKey != null) {
+                hostSessions.requireCurrent(owner)
                 Timber.tag("ResolvingDataSource").d("Fully cached on disk: $mediaId")
                 return@Factory dataSpec.buildUpon()
                     .setKey(fullyCachedKey)
@@ -834,7 +863,8 @@ class MusicService : MediaLibraryService(),
             }
 
             runBlocking {
-                val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality)
+                val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality, owner)
+                hostSessions.requireCurrent(owner)
                 dataSpec.buildUpon()
                     .setUri(resolved.uri)
                     .setKey(resolved.cacheKey)
@@ -874,6 +904,12 @@ class MusicService : MediaLibraryService(),
 
     override fun onBind(intent: Intent?) = super.onBind(intent) ?: binder
     override fun onPlayerError(error: PlaybackException) {
+        if (hostSessions.recoveryRequired.value || generateSequence<Throwable>(error) { it.cause }
+                .any { it is com.ljyh.mei.parasite.HostSessionChangedException }) {
+            player.pause()
+            player.stop()
+            return
+        }
         Timber.tag("MusicService").e( "Player Error: ${error.errorCodeName}, ${error.message}")
 
         if (shouldRefreshPlaybackSource(error.errorCode)) {
@@ -935,6 +971,7 @@ class MusicService : MediaLibraryService(),
         sourceRecoveryAttempts++
         val recoveryPositionMs = player.currentPosition.coerceAtLeast(0L)
         val resumePlayback = player.playWhenReady
+        val owner = runCatching { hostSessions.snapshot() }.getOrNull() ?: return false
         sourceRecoveryJob = scope.launch {
             try {
                 Timber.tag("MusicService").w(
@@ -946,8 +983,10 @@ class MusicService : MediaLibraryService(),
                 mediaUriProvider.invalidate(mediaId)
                 resetPlaybackSourcesForQualityChange()
                 val removedEntries = withContext(Dispatchers.IO) {
-                    removePlaybackEntries(CacheManager.getSimpleCache(context), mediaId)
+                    hostSessions.requirePlaybackSession(owner)
+                    removePlaybackEntries(CacheManager.getSimpleCache(context), mediaId, owner.identity)
                 }
+                hostSessions.requirePlaybackSession(owner)
                 if (player.currentMediaItem?.mediaId != mediaId) return@launch
 
                 Timber.tag("MusicService").d(

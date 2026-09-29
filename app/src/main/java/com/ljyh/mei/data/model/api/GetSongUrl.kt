@@ -19,15 +19,3 @@ data class GetSongUrlV1(
         }
     }
 }
-
-
-data class GetSongUrl(
-    @SerializedName("ids")
-    var ids: String,
-    @SerializedName("br")
-    var br: Int = 999000,
-) {
-    init {
-        ids = "[${ids}]"
-    }
-}

@@ -34,7 +34,6 @@ import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSearch
 import com.ljyh.mei.data.model.api.GetSearchSuggest
 import com.ljyh.mei.data.model.api.GetSongDetails
-import com.ljyh.mei.data.model.api.GetSongUrl
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.GetUserPhotoAlbum
 import com.ljyh.mei.data.model.api.GetUserPlaylist
@@ -144,11 +143,8 @@ interface ApiService {
     @POST("/api/song/enhance/player/url/v1")
     suspend fun getSongUrlV1(
         @Body body: GetSongUrlV1,
-        @Tag expectedSession: HostSessionStamp? = null,
+        @Tag expectedSession: HostSessionStamp,
     ): SongUrl
-
-    @POST("/api/song/enhance/player/url")
-    suspend fun getSongUrl(@Body body: GetSongUrl): SongUrl
 
     @POST("/api/user/photo/album/get")
     suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum): AlbumPhoto

@@ -157,10 +157,12 @@ class PlayerConnection(
     }
 
     fun changeQuality(quality: MusicQuality) {
+        val owner = runCatching { service.hostSessions.snapshot() }.getOrNull() ?: return
         qualityChangeJob?.cancel()
         qualityChangeJob = scope.launch {
             service.dataStore.edit { it[MusicQualityKey] = quality.name }
             currentCoroutineContext().ensureActive()
+            if (runCatching { service.hostSessions.requirePlaybackSession(owner) }.isFailure) return@launch
 
             val index = player.currentMediaItemIndex
             if (player.currentMediaItem == null) return@launch

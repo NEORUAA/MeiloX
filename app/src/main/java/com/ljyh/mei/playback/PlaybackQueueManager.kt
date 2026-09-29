@@ -510,7 +510,9 @@ class PlaybackQueueManager(
 
 
     private fun checkAndLoadMetadata(windowSize: Int = 3) {
+        val generation = queueBuildGeneration
         scope.launch(Dispatchers.Main) {
+            if (generation != queueBuildGeneration) return@launch
             // 基础状态检查 确保线程存活且列表不为空
             if (!player.applicationLooper.thread.isAlive || player.mediaItemCount == 0) return@launch
 
@@ -575,14 +577,14 @@ class PlaybackQueueManager(
                     loadSongDetails(itemsNeedLoading)
                 }
             } catch (e: CancellationException) {
-                loadingIds.removeAll(itemsNeedLoading.toSet())
+                if (generation == queueBuildGeneration) loadingIds.removeAll(itemsNeedLoading.toSet())
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Fetch Metadata Failed", e)
-                loadingIds.removeAll(itemsNeedLoading.toSet())
                 emptyList()
             }
 
+            if (generation != queueBuildGeneration) return@launch
             // Also clear IDs omitted by a partial response; otherwise a failed entry would
             // remain marked forever and never be retried.
             loadingIds.removeAll(itemsNeedLoading.toSet())
@@ -689,6 +691,13 @@ class PlaybackQueueManager(
         player.removeListener(this)
         loadingIds.clear()
         // 不要 cancel scope，因为它是由外部 Service 传进来的
+    }
+
+    fun invalidateSession() {
+        cancelActiveQueueBuild()
+        activeFmGeneration = null
+        isFmMode = false
+        loadingIds.clear()
     }
 
     private fun cancelActiveQueueBuild() {

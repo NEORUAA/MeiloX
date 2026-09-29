@@ -55,7 +55,7 @@ class AlbumSessionTest {
             mutations += Triple(session, id, collected)
             return mutate(id, collected, session)
         }
-        override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp?): Resource<SongUrl> {
+        override suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp): Resource<SongUrl> {
             urlOwners += session
             return urls()
         }
