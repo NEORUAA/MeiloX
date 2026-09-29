@@ -1211,6 +1211,48 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   collection writes, search-result follow behavior, release runtime, and the
   recording/PiP decision remain open. No overall stage is completed by this checkpoint.
 
+### Media Button Ownership Checkpoint (2026-09-29)
+
+- Fixed the buffering-time pause regression recorded in the artist checkpoint.
+  Verified TV DEX creates an active legacy media session and a receiver that directly
+  commands the official player. The module now keeps only that host-loader session
+  implementation inactive and redirects the official receiver to MeiloX. The host's
+  service/session objects remain initialized; no official APK, package metadata,
+  permission, global setting, or system-framework hook changes are involved.
+- For a live player, the receiver uses the module's platform session token and
+  retains Media3's key semantics. For a missing player, only play-class key-downs
+  start the registered carrier. Service creation also binds the official business
+  bridges, so it does not depend on opening the MeiloX Activity first. Startup keys
+  wait for snapshot restoration; the snapshot does not race the requested command.
+  Empty restored queues stop a requested start. ABI-003 records these boundaries.
+- The latest `:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest`
+  run passed: 547 unit tests in 70 suites, zero failures/errors/skips. Two on-device
+  receiver tests verify filtering, explicit carrier routing, discarded unrelated
+  extras, rejected starts, token dispatch, and old-binding disposal. The existing
+  AudioPlayerFocusLossTest also passed; no play-state observer/fade changes were made.
+  `git diff --check` and debug APK 16 KB alignment passed.
+- AVD: cold-launched through the official icon entry and retained the existing
+  account/queue. Foreground and background play, next, immediate pause, and previous
+  commands reached MeiloX. Buffered tracks settled to PAUSED at position zero rather
+  than starting later. The official legacy session remained inactive/STOPPED.
+- `am stop-app` removed the host process and media sessions without clearing data.
+  The system still held the registered media receiver. A subsequent play key
+  recreated MeiloX's service with its saved queue and foreground notification, while
+  the launcher remained foreground. Repeated with play/pause and headset keys,
+  including stopping a playing session first; resumption still played rather than
+  toggling the restored playing snapshot back to pause. Later launcher navigation
+  showed the original MeiloX Home, player and glass without an official page.
+- Final state: MeiloX paused at position zero after a next/pause sequence, queue intact,
+  official session inactive/STOPPED, and no current-process crash-buffer entries.
+  This is state/routing proof, not audible output, complete reporting suppression,
+  Bluetooth-hardware acceptance, or release runtime qualification. No account or
+  collection mutation was performed.
+- Evidence stays outside Git: `/tmp/meilox-media-controls-final-build.log`,
+  `/tmp/meilox-media-controls-device-tests.log`, and
+  `/tmp/meilox-media-controls-final.png`. Slow-disk and empty/corrupt-snapshot startup
+  are guarded in code but not qualified by this existing-data AVD run. Other official
+  playback entry points and the recording/PiP capability decision remain open.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1236,7 +1278,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, and session-owned ordinary favorite reads passed documented checkpoints; favorite writes have substitute coverage only; media-button arbitration during buffering remains open | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, and media-button ownership/cold resumption passed documented checkpoints; favorite writes have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

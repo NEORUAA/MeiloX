@@ -416,6 +416,46 @@ These are integration differences, not server API semantics.
   links, release obfuscation, and the separate recording/PiP manifest gate remain open.
   Setup and exact rollback commands are in the migration log's launcher checkpoint.
 
+### ABI-003: Official Media Buttons Bypass the Replacement Player
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original assumption: the module's own active Media3 session was sufficient for
+  system media controls. AVD disproved this: a pause key during track buffering
+  changed the official session while the module later continued playback.
+- Official contract: actual DEX `module.player.o.d` constructs the host's
+  `android.support.v4.media.session.MediaSessionCompat`, names it `MediaSession`,
+  and calls `setActive(true)`. Its media callback forwards to the registered
+  `receiver.MediaButtonEventReceiver`; that receiver directly calls official
+  PlayService actions, including delayed headset-button actions. Merely replacing
+  the Activity does not replace this control path.
+- Adaptation: only after package/signature verification, hook the host-loader legacy
+  compatibility class to keep its sessions inactive. Do not hook the module's
+  isolated Media3 session or system_server. The official receiver forwards events
+  to the bound module platform token; Media3 still interprets the key semantics.
+  Disposing an old binding cannot clear a newer service's binding.
+- Cold startup: when no module session exists, only initial play, play/pause, or
+  headset key-down events may start the existing registered service carrier. The
+  receiver uses a fresh intent with only the KeyEvent. Pause/skip/stop do not launch
+  a foreground service. This follows the
+  [Media3 receiver policy](https://developer.android.com/reference/androidx/media3/session/MediaButtonReceiver)
+  without relying on service filters absent from the TV manifest. Platform start
+  restrictions are retained. The request/login bridges also bind for service-only
+  startup, without launching an Activity.
+- Restore ordering: receiver startup suppresses snapshot autoplay before restore;
+  incoming startup media commands wait for disk restoration, then enter Media3's
+  normal service handler. An empty/unavailable queue stops the requested service
+  instead of leaving an unfulfilled foreground start. No playback command is issued
+  from a play-state observer or fade callback.
+- Evidence: unit key-policy tests, two device receiver/binding tests, the existing
+  audio-focus device regression, and actual host foreground/background key tests.
+  AVD cold media-button resumption recreated the module service after `am stop-app`,
+  with no Activity launch. The legacy session remained inactive and STOPPED while
+  module play/pause/next/previous and buffering-time pause operated correctly.
+- Remaining: this retires the verified media-session/receiver path, not every
+  possible official widget, external playback intent, or reporting path. Slow-disk
+  restoration, empty/corrupt stored queues, real Bluetooth peripherals, other OS
+  versions, release runtime, and audible output remain separately unqualified.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,

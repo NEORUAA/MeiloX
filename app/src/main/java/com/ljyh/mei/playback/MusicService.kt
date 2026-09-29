@@ -122,6 +122,8 @@ class MusicService : MediaLibraryService(),
     private lateinit var equalizerConfigurationState: EqualizerConfigurationState
     val context = this
     private lateinit var mediaSession: MediaLibrarySession
+    private var hostMediaButtons: AutoCloseable? = null
+    private var mediaButtonStartup = false
 
     lateinit var sleepTimer: SleepTimer
     lateinit var sleepTimerNotification: SleepTimerNotification
@@ -355,6 +357,9 @@ class MusicService : MediaLibraryService(),
 
 
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
+        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
+            mediaButtonStartup = com.ljyh.mei.parasite.HostMediaButtons.consumeResumeRequest()
+        }
         restorePlayerState()
         periodicSnapshotJob = scope.launch {
             while (true) {
@@ -363,6 +368,9 @@ class MusicService : MediaLibraryService(),
             }
         }
         addSession(mediaSession)
+        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
+            hostMediaButtons = com.ljyh.mei.parasite.HostMediaButtons.bind(this, mediaSession.platformToken)
+        }
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
@@ -372,6 +380,11 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED && intent?.action == Intent.ACTION_MEDIA_BUTTON &&
+            (isRestoringPlayback || player.mediaItemCount == 0)) {
+            deferStartupMediaButton(intent, flags, startId)
+            return START_STICKY
+        }
         when (intent?.action) {
             ACTION_CANCEL_SLEEP_TIMER -> sleepTimer.clear()
             ACTION_TOGGLE_PLAYBACK -> if (player.isPlaying) player.pause() else player.play()
@@ -379,6 +392,19 @@ class MusicService : MediaLibraryService(),
             ACTION_NEXT -> if (player.hasNextMediaItem()) player.seekToNextMediaItem()
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun dispatchRestoredMediaButton(intent: Intent, flags: Int, startId: Int) {
+        super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun deferStartupMediaButton(intent: Intent, flags: Int = 0, startId: Int? = null) {
+        mediaButtonStartup = true
+        scope.launch {
+            playbackRestoreJob?.join()
+            if (player.mediaItemCount > 0) dispatchRestoredMediaButton(intent, flags, startId ?: 0)
+            else if (startId != null) stopSelf(startId)
+        }
     }
 
     private fun restorePlayerState() {
@@ -412,7 +438,7 @@ class MusicService : MediaLibraryService(),
                     player.shuffleModeEnabled = snapshot.shuffleModeEnabled && !snapshot.isFmMode
                     queueManager.restorePlaylistSource(snapshot.playlistSource)
                     player.prepare()
-                    player.playWhenReady = snapshot.playWhenReady
+                    player.playWhenReady = snapshot.playWhenReady && !mediaButtonStartup
                     Timber.tag("MusicService").d(
                         "Restored playback snapshot -> items: ${restoredItems.size}, " +
                             "index: $restoredIndex, position: ${snapshot.positionMs}, " +
@@ -707,7 +733,14 @@ class MusicService : MediaLibraryService(),
     }
 
 
-    class LibrarySessionCallback : MediaLibrarySession.Callback
+    inner class LibrarySessionCallback : MediaLibrarySession.Callback {
+        override fun onMediaButtonEvent(session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: Intent): Boolean {
+            if (!com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED || !isRestoringPlayback) return false
+            // Direct session keys can arrive while a receiver-started restore is still loading.
+            deferStartupMediaButton(intent)
+            return true
+        }
+    }
 
     fun playNext(items: List<MediaItem>) {
         scope.launch {
@@ -726,6 +759,8 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onDestroy() {
+        hostMediaButtons?.close()
+        hostMediaButtons = null
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
         sourceRecoveryJob?.cancel()
         periodicSnapshotJob?.cancel()

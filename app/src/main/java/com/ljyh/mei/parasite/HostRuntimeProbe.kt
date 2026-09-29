@@ -45,18 +45,29 @@ internal object HostRuntimeProbe {
         }
         module.hook(AppComponentFactory::class.java.getMethod("instantiateService", ClassLoader::class.java, String::class.java, Intent::class.java))
             .intercept { chain ->
+                val loader = chain.getArg(0) as ClassLoader
+                if (BuildConfig.PARASITE_APP_ENABLED) HostPlaybackHooks.install(module, loader, report)
                 // ActivityThread supplies no start Intent until after service creation.
                 if (chain.getArg(1) == SERVICE) {
+                    onHostActivity(loader)
                     report("runtime_service_instantiated")
                     if (BuildConfig.PARASITE_APP_ENABLED) MusicService() else HostRuntimeProbeService()
                 } else chain.proceed()
             }
+        if (BuildConfig.PARASITE_APP_ENABLED) {
+            module.hook(AppComponentFactory::class.java.getMethod("instantiateReceiver", ClassLoader::class.java, String::class.java, Intent::class.java))
+                .intercept { chain ->
+                    HostPlaybackHooks.install(module, chain.getArg(0) as ClassLoader, report)
+                    chain.proceed()
+                }
+        }
         module.hook(Instrumentation::class.java.getMethod(
             "newActivity", ClassLoader::class.java, String::class.java, Intent::class.java,
         )).intercept { chain ->
             val className = chain.getArg(1) as String
             if (HostComponentMapping.replacesActivity(className, BuildConfig.PARASITE_APP_ENABLED)) {
                 val loader = chain.getArg(0) as ClassLoader
+                if (BuildConfig.PARASITE_APP_ENABLED) HostPlaybackHooks.install(module, loader, report)
                 onHostActivity(loader)
                 val config = loader.loadClass("me.jessyan.autosize.AutoSizeConfig")
                     .getMethod("getInstance").invoke(null)
