@@ -40,6 +40,9 @@ internal object HostRuntimeProbe {
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
         if (BuildConfig.PARASITE_APP_ENABLED) HostAppComponentHooks.install(module, applicationContext, report)
+        if (BuildConfig.PARASITE_APP_ENABLED && BuildConfig.PARASITE_WORK_PROBE) {
+            HostWorkManager.install(module, applicationContext, report)
+        }
         if (BuildConfig.PARASITE_RUNTIME_PROBE) {
             Thread({ ModuleStorageProbe.run(applicationContext, application, report) }, "MeiloX-storage-probe").start()
         }
@@ -47,6 +50,7 @@ internal object HostRuntimeProbe {
             .intercept { chain ->
                 val loader = chain.getArg(0) as ClassLoader
                 if (BuildConfig.PARASITE_APP_ENABLED) HostPlaybackHooks.install(module, loader, report)
+                if (BuildConfig.PARASITE_WORK_PROBE && chain.getArg(1) == HostWorkPolicy.CARRIER) onHostActivity(loader)
                 // ActivityThread supplies no start Intent until after service creation.
                 if (chain.getArg(1) == SERVICE) {
                     onHostActivity(loader)
@@ -58,6 +62,11 @@ internal object HostRuntimeProbe {
             module.hook(AppComponentFactory::class.java.getMethod("instantiateReceiver", ClassLoader::class.java, String::class.java, Intent::class.java))
                 .intercept { chain ->
                     HostPlaybackHooks.install(module, chain.getArg(0) as ClassLoader, report)
+                    if (BuildConfig.PARASITE_WORK_PROBE && chain.getArg(1) == HostWorkProbeReceiver.CARRIER &&
+                        (chain.getArg(2) as? Intent)?.action == HostWorkProbeReceiver.ACTION) {
+                        onHostActivity(chain.getArg(0) as ClassLoader)
+                        return@intercept HostWorkProbeReceiver()
+                    }
                     chain.proceed()
                 }
         }

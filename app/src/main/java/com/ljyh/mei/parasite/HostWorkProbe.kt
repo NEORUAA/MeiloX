@@ -1,0 +1,99 @@
+package com.ljyh.mei.parasite
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Process
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.impl.WorkManagerImpl
+import androidx.work.workDataOf
+import com.ljyh.mei.BuildConfig
+import com.ljyh.mei.di.AppGraph
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
+
+/** Explicit debug commands only. No network, user media, credentials or account mutations. */
+internal class HostWorkProbeReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!BuildConfig.PARASITE_WORK_PROBE || intent.action != ACTION) return
+        val pending = goAsync()
+        val command = intent.getStringExtra("operation")
+        val hold = intent.getBooleanExtra("hold", false)
+        Thread({
+            val report = HostRuntimeProbe.report
+            try {
+                val owner = AppGraph.component.context()
+                val manager = WorkManager.getInstance(owner)
+                val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                when (command) {
+                    "enqueue" -> {
+                        val request = OneTimeWorkRequestBuilder<HostWorkProbeWorker>()
+                            .setInitialDelay(30, TimeUnit.SECONDS)
+                            .setInputData(workDataOf("nonce" to UUID.randomUUID().toString(), "hold" to hold))
+                            .addTag(TAG).build()
+                        manager.enqueueUniqueWork(TAG, ExistingWorkPolicy.REPLACE, request).result.get(10, TimeUnit.SECONDS)
+                        report("work_probe_enqueued hold=$hold initial_delay_seconds=30")
+                    }
+                    "cancel" -> {
+                        manager.cancelUniqueWork(TAG).result.get(10, TimeUnit.SECONDS)
+                        report("work_probe_cancel_requested")
+                    }
+                    "status" -> {
+                        val states = manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS)
+                            .groupingBy { it.state.name }.eachCount()
+                        report("work_probe_status states=$states started_pid=${preferences.getInt("started_pid", 0)} " +
+                            "completed_pid=${preferences.getInt("completed_pid", 0)} canceled=${preferences.getBoolean("canceled", false)}")
+                    }
+                    "cleanup" -> {
+                        manager.cancelUniqueWork(TAG).result.get(10, TimeUnit.SECONDS)
+                        val work = manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS)
+                        check(work.all { it.state.isFinished })
+                        val database = WorkManagerImpl.getInstance(owner).workDatabase
+                        database.runInTransaction { work.forEach { database.workSpecDao().delete(it.id.toString()) } }
+                        check(preferences.edit().clear().commit())
+                        report("work_probe_cleaned records=${work.size}")
+                    }
+                    else -> report("work_probe_unknown_command")
+                }
+            } catch (error: Exception) {
+                report("work_probe_failed type=${error.javaClass.simpleName}")
+            } finally { pending.finish() }
+        }, "MeiloX-work-probe").start()
+    }
+
+    companion object {
+        const val CARRIER = "com.netease.cloudmusic.receiver.AlarmAlertBroadcastReceiver"
+        const val ACTION = "com.neoruaa.meilox.parasite.WORK_PROBE"
+        const val TAG = "meilox-work-qualification"
+        const val PREFERENCES = "work_qualification"
+    }
+}
+
+class HostWorkProbeWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        if (!BuildConfig.PARASITE_WORK_PROBE) return Result.failure()
+        val nonce = inputData.getString("nonce") ?: return Result.failure()
+        if (runCatching { UUID.fromString(nonce).toString() != nonce }.getOrDefault(true)) return Result.failure()
+        val preferences = applicationContext.getSharedPreferences(HostWorkProbeReceiver.PREFERENCES, Context.MODE_PRIVATE)
+        check(preferences.edit().clear().putInt("started_pid", Process.myPid()).commit())
+        HostRuntimeProbe.report("work_probe_started host_process=${android.app.Application.getProcessName() == HostIdentity.PACKAGE}")
+        var completed = false
+        try {
+            delay(if (inputData.getBoolean("hold", false)) 120_000 else 1_000)
+            check(preferences.edit().putInt("completed_pid", Process.myPid()).commit())
+            completed = true
+            HostRuntimeProbe.report("work_probe_completed")
+            return Result.success()
+        } finally {
+            if (!completed) {
+                preferences.edit().putBoolean("canceled", true).commit()
+                HostRuntimeProbe.report("work_probe_canceled")
+            }
+        }
+    }
+}

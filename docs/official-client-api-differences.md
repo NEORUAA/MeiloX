@@ -614,16 +614,43 @@ These are integration differences, not server API semantics.
 - Recorded: 2026-09-29. The download producers still enqueue the module's isolated
   WorkManager, but only the module APK declares its normal AndroidX components.
   The pinned TV APK manifest has no `androidx.work.impl.background.systemjob.SystemJobService`
-  or WorkManager initializer. The module graph currently does not initialize a
+  or WorkManager initializer. Ordinary module builds still do not initialize a
   separate WorkManager runtime. A successful URL response therefore does not prove
   that a download can run or resume in the host.
 - Authoritative artifact: APK manifest inspection finds `BIND_JOB_SERVICE` only on
   Tinker's patch service (separate `:patch` process) and default result service (main
   process). Those are occupied official components, not free declarations. They
   must not be replaced blindly at the cost of official Application/patch behavior.
-- Next gate: select and verify a host-only scheduler/component adaptation, including
-  cold service creation, original-component coexistence, pending work after process
-  death, notification routing, cancellation and download ownership. Do not repack
+- Prototype checkpoint: `-PparasiteWorkProbe=true` enables a separate module WorkManager
+  using the existing main-process `DefaultTinkerResultService` declaration. The real
+  class extends platform `IntentService`, not `JobService`. Its instance, attachment,
+  start commands, patch-result handling and destruction remain official; a separately
+  attached module `SystemJobService` delegate supplies the system job binder only for
+  the verified carrier's explicit, actionless bind. Partial hook installation rolls back.
+- AndroidX 2.11.2 otherwise targets a nonexistent module component, filters pending
+  work by that component and uses its common namespace. The adapter changes only the
+  module-loaded converter/filter/scheduler paths, isolates API 34+ jobs under
+  `com.neoruaa.meilox.parasite.work`, and requires a reserved ID range, owner marker,
+  canonical WorkSpec UUID and generation. It suppresses only module AndroidX component
+  enablement, never enabling/disabling a host declaration. Pre-34 collision handling is
+  implemented but not device-qualified. Builder bounds must differ by at least 1000;
+  an inclusive 1000-ID range is rejected by this dependency's runtime validation.
+- AVD evidence: after the host process was killed with work pending, a targeted
+  `cmd jobscheduler run -f -n ...` started a new host process and completed the isolated
+  test worker without an Activity. A second delayed worker remained RUNNING while the
+  official result service processed an empty intent through its own null-result path;
+  cancellation then stopped the system job and coroutine. No valid patch result was
+  fabricated. Background `am startservice` was rejected by Android, so the coexistence
+  test brought MeiloX to the foreground first; no background-start exemption was added.
+- This is debug-gated qualification, not production download acceptance. The probe
+  writes only its dedicated module preferences and WorkManager test records, with no
+  network or media operations; cleanup targets only its unique work. Ordinary/release
+  builds keep the gate closed. The host has no boot receiver or `RECEIVE_BOOT_COMPLETED`
+  permission, while AndroidX jobs are non-persisted, so automatic post-reboot recovery
+  is not supplied by this prototype. App-open reconciliation is not equivalent to it.
+- Next gate: durable download ownership, renewed grants, cancellable transfer and
+  publication, notification/foreground-worker routing, real transfers, natural system
+  scheduling, reboot behavior and release qualification. Do not repack
   the host, add a system-framework scope, claim worker acceptance from an interface
   test, or hide the existing download controls to mask this unfinished integration.
 

@@ -1375,6 +1375,52 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 - Local-only evidence: `/tmp/meilox-download-source-final-build.log` and the
   corresponding AVD Home screenshot. Stage 5 remains in progress.
 
+### Host Work Carrier Prototype (2026-09-29)
+
+- Added an explicit debug-only `parasiteWorkProbe` gate, independent of the existing
+  original MeiloX app shell. Ordinary and release builds leave it disabled. No screen,
+  navigation, glass effect, layout or playback behavior was changed.
+- The identity-pinned host's main-process Tinker result service remains the actual
+  Android component. A fully attached module JobService delegate supplies the system
+  binder alongside the original IntentService lifecycle; empty patch intents still
+  reach official handling. Module WorkManager uses module storage, a reserved job
+  range and its own API 34+ namespace. ABI-004 records the component/library differences,
+  ownership checks, pre-34 qualification gap and missing boot receiver/permission.
+- AVD: an initial process kill restarted the sticky music service, so that attempt was
+  not counted as job-only cold startup. After stopping that paused service and killing
+  the host again, `pidof` confirmed no process. A targeted JobScheduler command after
+  the worker's initial delay then created a new host process, attached/bound the official
+  carrier, executed the module worker and released the carrier on completion. The
+  launcher remained foreground; no module or official Activity was opened by the job.
+- A second cold-started test worker was held while an empty intent exercised the
+  original Tinker null-result path. WorkManager still reported RUNNING afterward;
+  explicit cancellation produced CANCELLED, stopped the system job and ran coroutine
+  cleanup. The first empty-intent start was rejected while backgrounded, so the valid
+  coexistence check used the foreground MeiloX shell. No OS exemption was changed.
+- Added five unit identity/range checks and three Android tests for the actual
+  Configuration builder, JobInfo parcel/marker preservation, namespace ownership and
+  unchanged patch-intent routing. Full debug unit suite: 589 tests in 72 suites, zero
+  failures/errors/skips. Eleven targeted Android tests passed, also covering component
+  routing, media-button ownership, playback cache ownership and substitute download
+  responses. These tests do not call the real download-grant endpoint.
+- Probe work cleanup removed only its tagged test records/preferences and left no TV
+  job registered. Device logs remain local; no official source, APK, account data or
+  logs are committed. Natural scheduler latency, reboot recovery, real patch outcomes,
+  notification/foreground-worker routing, file transfer and release runtime are not
+  qualified. The legacy DownloadWorker still needs durable account/task ownership,
+  fresh grants and safe cancellation/publication before this adapter can be enabled
+  for ordinary builds. Stage 5 remains in progress.
+- Rebuilt/reinstalled the ordinary debug APK after cleanup and repeated all eleven
+  targeted Android tests successfully. `PARASITE_WORK_PROBE=false`; cold launch showed
+  the original portrait MeiloX Home with its glass navigation/player surfaces and
+  paused playback, with no work hooks or new host crash. Both authorized TV-only
+  orientation overrides remain enabled. Reboot/update persistence is still untested.
+- Reproduction build: `./gradlew :app:testDebugUnitTest :app:assembleDebug
+  :app:assembleDebugAndroidTest -PparasiteWorkProbe=true --console=plain`; omit the
+  property to restore the ordinary build. Local-only evidence includes
+  `/tmp/meilox-work-carrier-build.log`, `/tmp/meilox-work-carrier-final-build.log` and
+  `/tmp/meilox-work-carrier-final-home.png`. Build and `git diff --check` pass.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1400,7 +1446,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources have substitute coverage, while host scheduler/worker ownership and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources have substitute coverage and a debug-gated host job carrier passed cold-process/coexistence/cancellation checks, while production worker ownership, scheduler integration and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

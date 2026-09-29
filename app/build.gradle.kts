@@ -39,6 +39,7 @@ android {
                 ?: !(runtimeProbe || hostProbe)
             buildConfigField("boolean", "PARASITE_APP_ENABLED", appEnabled.toString())
             buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", runtimeProbe.toString())
+            buildConfigField("boolean", "PARASITE_WORK_PROBE", (providers.gradleProperty("parasiteWorkProbe").orNull == "true").toString())
             buildConfigField(
                 "boolean",
                 "PARASITE_HOST_PROBE",
@@ -48,6 +49,7 @@ android {
         release {
             buildConfigField("boolean", "PARASITE_APP_ENABLED", "true")
             buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", "false")
+            buildConfigField("boolean", "PARASITE_WORK_PROBE", "false")
             buildConfigField("boolean", "PARASITE_HOST_PROBE", "false")
             isMinifyEnabled = true
             isShrinkResources = true

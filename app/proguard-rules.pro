@@ -160,6 +160,18 @@
 # 奇怪的问题，ArtistDetail需要免去r8混淆，但是其他类正常s com.google.common.reflect.** { *; }
 -keep class com.ljyh.mei.data.model.api.** { *; }
 
+# Preserve only the isolated WorkManager entry points inspected by the host adapter.
+-keep class androidx.work.impl.background.systemjob.SystemJobInfoConverter { *; }
+-keep class androidx.work.impl.background.systemjob.SystemJobScheduler {
+    static java.util.List getPendingJobs(android.content.Context, android.app.job.JobScheduler);
+}
+-keep class androidx.work.impl.background.systemjob.JobSchedulerExtKt {
+    static android.app.job.JobScheduler getWmJobScheduler(android.content.Context);
+}
+-keep class androidx.work.impl.utils.PackageManagerHelper {
+    public static void setComponentEnabled(android.content.Context, java.lang.Class, boolean);
+}
+
 # ONNX Runtime's JNI and reflective Java API are required by minimized builds.
 -keep class ai.onnxruntime.** { *; }
 

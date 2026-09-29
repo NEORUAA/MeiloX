@@ -100,6 +100,7 @@ class MeiloXModule : XposedModule() {
                     reporting.installHooks(this@MeiloXModule)
                     playbackReports.bind(reporting)
                     report("playback_report_bridge_bound")
+                    if (BuildConfig.PARASITE_WORK_PROBE) HostWorkManager.initialize(HostRuntimeProbe.applicationContext)
                 }
                 bridgesReady = true
             } catch (error: Throwable) {
