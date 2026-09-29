@@ -16,7 +16,7 @@ android {
     namespace = "com.ljyh.mei"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.neoruaa.meilox.parasite"
+        applicationId = "com.neoruaa.meilox"
         minSdk = 33
         targetSdk = 37
         versionCode = 11
@@ -27,6 +27,15 @@ android {
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "arm64-v8a"
+        }
+    }
+
+    flavorDimensions += "runtime"
+    productFlavors {
+        create("parasite") {
+            dimension = "runtime"
+            applicationId = "com.neoruaa.meilox.parasite"
+            proguardFiles("proguard-parasite.pro")
         }
     }
 
@@ -100,7 +109,7 @@ kotlin {
 
 dependencies {
 
-    compileOnly("io.github.libxposed:api:102.0.0")
+    "parasiteCompileOnly"("io.github.libxposed:api:102.0.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

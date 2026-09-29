@@ -88,12 +88,6 @@
 -keep class com.google.gson.stream.** { *; }
 -dontwarn com.google.gson.**
 
-# NeteaseHeader is serialized reflectively into the EAPI body and Cookie header.
-# Keep only its wire fields while allowing the class and the rest of the app to be optimized.
--keepclassmembers,allowoptimization class com.ljyh.mei.di.NeteaseHeader {
-    java.lang.String *;
-}
-
 # Playback snapshots are restored through Gson reflection. Keep the model fields and
 # their generic signatures so R8 cannot erase List element types in release builds.
 -keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
@@ -160,18 +154,6 @@
 # 奇怪的问题，ArtistDetail需要免去r8混淆，但是其他类正常s com.google.common.reflect.** { *; }
 -keep class com.ljyh.mei.data.model.api.** { *; }
 
-# Preserve only the isolated WorkManager entry points inspected by the host adapter.
--keep class androidx.work.impl.background.systemjob.SystemJobInfoConverter { *; }
--keep class androidx.work.impl.background.systemjob.SystemJobScheduler {
-    static java.util.List getPendingJobs(android.content.Context, android.app.job.JobScheduler);
-}
--keep class androidx.work.impl.background.systemjob.JobSchedulerExtKt {
-    static android.app.job.JobScheduler getWmJobScheduler(android.content.Context);
-}
--keep class androidx.work.impl.utils.PackageManagerHelper {
-    public static void setComponentEnabled(android.content.Context, java.lang.Class, boolean);
-}
-
 # ONNX Runtime's JNI and reflective Java API are required by minimized builds.
 -keep class ai.onnxruntime.** { *; }
 
@@ -179,4 +161,3 @@
 -keep class com.hchen.superlyricapi.* { *; }
 # SuperLyricApi compiles this framework entry point against its compile-only stubs.
 -dontwarn android.os.ServiceManager
--keep class com.ljyh.mei.parasite.MeiloXModule { public <init>(); }

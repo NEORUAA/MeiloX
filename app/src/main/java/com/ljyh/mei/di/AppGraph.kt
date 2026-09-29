@@ -4,7 +4,8 @@ import android.content.Context
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
-import com.ljyh.mei.parasite.HostRequestBridge
+import com.ljyh.mei.runtime.RuntimeBackendModule
+import com.ljyh.mei.runtime.RuntimeComponent
 import com.ljyh.mei.data.session.AccountStore
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
@@ -15,14 +16,12 @@ import javax.inject.Singleton
 
 @Singleton
 @Component(modules = [AppModule::class, RetrofitModule::class, RepositoryModule::class, ViewModelBindings::class,
-    com.ljyh.mei.parasite.RuntimeBackendModule::class])
-interface AppComponent {
+    RuntimeBackendModule::class])
+interface AppComponent : RuntimeComponent {
     fun inject(activity: MainActivity)
     fun inject(service: MusicService)
     fun viewModelFactory(): AppViewModelFactory
     fun database(): AppDatabase
-    fun hostRequests(): HostRequestBridge
-    fun hostPlaybackReports(): com.ljyh.mei.parasite.HostPlaybackReportBridge
     fun playbackReports(): com.ljyh.mei.playback.PlaybackReportSink
     fun runtime(): com.ljyh.mei.runtime.ComponentRuntime
     fun sessions(): com.ljyh.mei.data.session.SessionStore
@@ -38,17 +37,17 @@ interface AppComponent {
     }
 }
 
-/** One module-classloader graph per host process, independent of the host Application. */
+/** One graph per application context; the selected runtime owns bootstrap and credentials. */
 object AppGraph {
     @Volatile private var instance: AppComponent? = null
     val component: AppComponent
-        get() = checkNotNull(instance) { "Module graph has not been initialized" }
+        get() = checkNotNull(instance) { "Application graph has not been initialized" }
 
     @Synchronized
     fun initialize(context: Context) {
         val applicationContext = context.applicationContext
         instance?.let {
-            check(it.context() === applicationContext) { "Module graph already belongs to another context" }
+            check(it.context() === applicationContext) { "Application graph already belongs to another context" }
             return
         }
         AppContext.instance = applicationContext

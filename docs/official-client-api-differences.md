@@ -993,6 +993,47 @@ These are integration differences, not server API semantics.
   or release-runtime acceptance. The existing real download remains published unchanged
   in size/ownership; no new real download authorization was requested.
 
+### ABI-007: Source Sets Own Package Registration and Legacy Migration Policy
+
+- Date: 2026-09-30. The standalone backend requires its own registered launcher,
+  playback service, Cookie/signing implementation and upgrade policy. The official TV
+  runtime instead instantiates the same shared Activity/service classes behind installed
+  host carriers. A module APK does not need standalone music components registered in
+  its own manifest, and module metadata must not leak into the standalone artifact.
+- Added a `runtime` flavor dimension with the current `parasite` target. All host hooks,
+  bridges, QR login and probes, API 102 compile dependency, Xposed metadata and reflective
+  WorkManager R8 rules are parasite-owned. Flavor-specific graph extension/bindings
+  expose host bootstrap operations without requiring concrete host types in common code.
+  Shared UI/navigation/player source and resources are unchanged.
+- Original NetEase interceptor/header, RSA/EAPI/WeAPI signing, IP helper, component
+  manifest and header R8 rule are preserved under standalone-only paths. The standalone
+  flavor is not yet registered; these retained files do not constitute a restored or
+  validated backend. Shared media resource mapping and bounded response parsing remain
+  available to both future variants. Parasite has no standalone network fallback.
+- The Room 18-to-19 policy is now supplied by `RuntimeDatabaseMigrations`. Parasite
+  retains the existing URL clearing and unowned pending-task failure policy exactly.
+  Standalone must not inherit this policy blindly: account ownership, pending work and
+  legacy completed-file preservation need their own fixtures before upgrade acceptance.
+- The original standalone music Activity/service declarations move out of the common
+  manifest. Parasite keeps its module label and TV-only static scope; it does not alter
+  the installed TV manifest, permissions, orientation compatibility flags or host APK.
+  APK paths and current CI signing/metadata paths now include the parasite flavor.
+  Two-artifact CI, standalone startup and both release runtimes remain open.
+- Evidence: 642 parasite/shared JVM tests and all 49 parasite device tests pass. The
+  installed APK has no registered standalone music Activity/service or launcher, has
+  only the TV static scope, and cannot load the original standalone signing classes.
+  The existing isolated Room 18-to-20 test still preserves completed rows and rejects
+  unowned pending grants. Five standalone interceptor tests remain retained but are
+  not part of the currently executed suite; common bounded-body coverage is separate.
+- Debug/instrumentation and unsigned R8 builds pass; release alignment passes at 16 KB
+  and its mapping preserves shared component/module-entry classes. The ordinary debug
+  package cold-starts the original portrait MeiloX Home in TV, with the official account
+  and paused queue restored. One module music-service session is created and no
+  current-process crash is recorded. System PLAY/PAUSE advances its position from
+  74,257 ms to 94,809 ms; the official player remains inactive and playback ends paused.
+  The existing published TV-owned download remains 22,705,573 bytes. This does not
+  qualify audible output, new grants, standalone behavior or release runtime.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

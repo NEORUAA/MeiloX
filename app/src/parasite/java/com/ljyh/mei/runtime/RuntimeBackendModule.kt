@@ -1,14 +1,17 @@
-package com.ljyh.mei.parasite
+package com.ljyh.mei.runtime
 
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.playback.PlaybackReportSink
-import com.ljyh.mei.runtime.ComponentRuntime
+import com.ljyh.mei.parasite.HostCallFactory
+import com.ljyh.mei.parasite.HostComponentRuntime
+import com.ljyh.mei.parasite.HostPlaybackReportBridge
+import com.ljyh.mei.parasite.HostSessionBridge
 import dagger.Module
 import dagger.Provides
 import javax.inject.Named
 import okhttp3.Call
 
-/** Parasite bindings; standalone supplies its own bindings when flavors are separated. */
+/** Only the parasite source set binds shared consumers to official host adapters. */
 @Module
 object RuntimeBackendModule {
     @Provides fun sessions(host: HostSessionBridge): SessionStore = host

@@ -31,12 +31,12 @@ jobs:
       - uses: gradle/gradle-build-action@v2
         with:
           gradle-version: current
-          arguments: assembleRelease
+          arguments: ':app:assembleParasiteRelease'
 
       - uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
-          releaseDirectory: app/build/outputs/apk/release
+          releaseDirectory: app/build/outputs/apk/parasite/release
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
@@ -48,7 +48,7 @@ jobs:
         id: release_metadata
         shell: bash
         run: |
-          metadata_file="app/build/outputs/apk/release/output-metadata.json"
+          metadata_file="app/build/outputs/apk/parasite/release/output-metadata.json"
           version_name="$(jq -r '.elements[0].versionName // empty' "$metadata_file")"
 
           if [[ ! "$version_name" =~ ^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then

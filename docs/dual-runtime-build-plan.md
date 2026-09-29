@@ -53,7 +53,7 @@ app/src/standalone          app/src/parasite
    MeiloX standalone APK    MeiloX parasite APK
 ```
 
-Planned build targets (not implemented at this checkpoint):
+Final build targets (parasite targets now exist; standalone targets remain pending):
 
 ```sh
 ./gradlew :app:assembleStandaloneDebug :app:assembleParasiteDebug
@@ -198,12 +198,62 @@ Local-only evidence: `/tmp/meilox-runtime-bindings-build.log`,
 `/tmp/meilox-runtime-notification.png`, `/tmp/meilox-runtime-notification-entry.png`
 and `/tmp/meilox-runtime-final-home.png`. No logs, screenshots or APKs are committed.
 
-D1 is still partial. Graph/bootstrap accessors, backend-specific login content and the
-host qualification fixtures must move behind flavor-owned source boundaries. Standalone
-Application startup, WorkManager foreground types/aggregation and database-upgrade policy
-still need explicit restoration/validation. Neither flavor targets nor the standalone
-backend are implemented yet; the next increment must address those remaining dependencies,
-not reintroduce host branches in shared pages.
+D1 remained partial at this checkpoint. Graph/bootstrap accessors, backend-specific
+login content and host qualification fixtures still needed flavor-owned source boundaries.
+
+### D2 Checkpoint: Parasite Source-Set Isolation (2026-09-30)
+
+- Added the `runtime` dimension and the `parasite` flavor, preserving its installed
+  application ID. Host hooks, bridges, module Context/storage, QR login implementation,
+  qualification fixtures and `META-INF/xposed` now belong to `src/parasite`; host tests
+  belong to `testParasite`/`androidTestParasite`. API 102 is `parasiteCompileOnly`.
+  Existing host behavior and the QR page were moved without modification.
+- Shared graph construction uses flavor-owned `RuntimeBackendModule` and
+  `RuntimeComponent`. Concrete host bootstrap accessors no longer appear in common
+  graph declarations. Common Activity, service, navigation, ViewModels and resources
+  remain single-source; no UI layout or navigation change is part of this increment.
+- Preserved the original interceptor, headers, RSA/EAPI/WeAPI signing and Chinese-IP
+  helper under `src/standalone`. Shared media-ID mapping, random MAC generation and QQ
+  crypto remain shared. Bounded playback-response reading is common and tested without
+  constructing either backend. Standalone interceptor tests were retained in
+  `testStandalone`, not deleted or counted as currently executed tests.
+- Separated the manifests and R8 rules. The module no longer registers its own music
+  Activity/service; existing hooks still instantiate the common classes using official
+  host carriers. Original standalone component/launcher declarations are preserved in
+  its manifest. The parasite 18-to-19 download migration is now flavor-owned with the
+  same SQL; standalone upgrade policy must be supplied and tested independently.
+- Current commands are `:app:testParasiteDebugUnitTest`, `:app:assembleParasiteDebug`,
+  `:app:assembleParasiteDebugAndroidTest` and `:app:assembleParasiteRelease`. APKs now
+  reside under `app/build/outputs/apk/parasite/{debug,release}`. The existing CI build,
+  signing directory and metadata path use the parasite target; push/manual-release
+  semantics are unchanged. No remote run was triggered; paired CI remains D6 work.
+- 642 JVM tests pass in 83 suites. Five new common bounded-body tests replace the five
+  interceptor-specific tests in this variant's count; the latter remain pending under
+  `testStandalone`. All 49 parasite device tests pass, including three new installed-APK
+  checks for absent standalone components/signing classes and retained TV-only Xposed
+  metadata. Existing isolated Room migration tests still pass. These tests do not
+  qualify standalone upgrades, real download grants or host-process playback.
+- Debug/instrumentation and unsigned R8 builds pass; release 16 KB alignment passes.
+  The release mapping retains the module entry and shared component classes even
+  though they are no longer registered in the module manifest. Installed ordinary
+  debug flags remain APP=true, HOST/RUNTIME/WORK=false. The resolved original TV launcher
+  cold-starts the portrait MeiloX Home, restores its account/avatar and paused queue,
+  and creates one module music-service session. No current-process crash is recorded.
+- A system PLAY then PAUSE advances the active module session from 74,257 ms to
+  94,809 ms and leaves it paused; the official session remains inactive. This is live
+  routing/progress evidence, not audible-output or server-statistics acceptance.
+  The existing real media row stays published, TV-owned and 22,705,573 bytes; no real
+  download authorization, logout or account mutation was requested.
+
+Local-only evidence: `/tmp/meilox-source-boundary-build.log`,
+`/tmp/meilox-source-boundary-release.log`, `/tmp/meilox-source-boundary-device.log`
+and `/tmp/meilox-source-boundary-home.png`. No generated artifacts are committed.
+
+This is an incremental D2 prerequisite, not its exit condition. The standalone source
+directory is not yet a registered/buildable flavor: its owned Cookie session, graph
+bootstrap, login binding, reporting and upgrade policy still need restoration. Do not
+add placeholder bindings to claim a second working APK. D1 feature-specific request
+semantics also remain under audit; factory selection alone is not dual-backend parity.
 
 ## Acceptance and Remaining Decisions
 
@@ -225,4 +275,4 @@ not reintroduce host branches in shared pages.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
 
-All D1-D6 exit conditions remain pending; the checkpoints above record partial D1 work only.
+All D1-D6 exit conditions remain pending; the checkpoints above record partial D1/D2 work.

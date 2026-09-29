@@ -23,7 +23,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:launchMode="singleTop"
-        android:label="MeiloX Parasite"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
@@ -46,27 +46,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-        <activity
-            android:name=".MainActivity"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.Music">
-        </activity>
-
-        <service
-            android:name=".playback.MusicService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
-            tools:ignore="ExportedService">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-                <action android:name="androidx.media3.session.MediaLibraryService" />
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
-
     </application>
 
 </manifest>
