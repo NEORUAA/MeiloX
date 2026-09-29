@@ -1536,6 +1536,45 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   original Library download row still displays Complete after that cold start; screenshot
   evidence remains local at `/tmp/meilox-worker-final-downloads.png`.
 
+### Foreground Work Carrier Checkpoint (2026-09-29)
+
+- Added a separately attached foreground-work delegate on the pinned host's existing
+  Wow IPC service. Its original instance, Binder and binding lifecycle remain intact;
+  the adapter consumes only marked, validated module AndroidX foreground commands.
+  ABI-005 records the actual DEX/manifest boundary, legacy untyped notification handling,
+  rejected carrier alternatives and remaining qualification gaps.
+- Two explicit debug workers have no account, network or media-file dependency. They
+  exercise real WorkManager promotion, independent notification IDs and handoff when
+  one worker is canceled. The original IPC Binder remains callable for descriptor/ping
+  checks; no official messages or registrations are changed. Playback progress and its
+  independent notification are preserved. The second worker completes after twelve
+  minutes, including a roughly 90-second screen-off interval. The first is CANCELLED;
+  the second is SUCCEEDED. After completion there are no test notifications or foreground
+  processor wake lock; the original Binder remains alive until explicit test unbinding.
+  Both test records/channel are cleaned and both namespaced jobs are absent afterward.
+- Four new unit tests and three device tests cover command ownership and the installed
+  AndroidX Intent/Parcelable contracts. The final ordinary unit suite passes 603 tests
+  in 76 suites; all 33 parasite device cases pass, including publication, ownership,
+  job-carrier and full DownloadWorker regressions. The prototype
+  does not change page layout, navigation, glass or production download notifications.
+- Production download foreground promotion/notification aggregation is the next step,
+  not a completed feature in this checkpoint. Process redelivery, exhausted scheduler
+  quota, reboot, other Android versions and release runtime remain separate gates.
+- Ordinary debug and Android-test builds are restored/reinstalled with the work probe
+  disabled. Cold launcher startup confirms both adapters and isolated WorkManager
+  initialize in the new TV process; the original portrait Home and paused queue remain.
+  Both TV-only orientation overrides are unchanged. The release R8 build and 16 KB
+  alignment pass; mapping confirms the AndroidX service name survives and debug probe
+  code is removed. The unsigned release APK was not installed or runtime-qualified.
+  The user's prior download still displays Complete in the original Library view after
+  cold start; no new grant or transfer was performed for this recheck.
+- Local-only evidence: `/tmp/meilox-foreground-host.log`,
+  `/tmp/meilox-foreground-notification.png`, `/tmp/meilox-foreground-final-build.log`,
+  `/tmp/meilox-foreground-final-device.log`, `/tmp/meilox-foreground-release-build.log`
+  `/tmp/meilox-foreground-final-home.png` and `/tmp/meilox-foreground-final-downloads.png`.
+  No screen/page architecture, real download
+  grant, account, permission or global setting was changed. Stage 5 remains open.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.

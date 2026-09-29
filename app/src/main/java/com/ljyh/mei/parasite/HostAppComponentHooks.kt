@@ -17,6 +17,8 @@ import io.github.libxposed.api.XposedModule
 internal object HostAppComponentHooks {
     fun route(intent: Intent): Intent {
         if (!BuildConfig.PARASITE_APP_ENABLED) return intent
+        val foreground = HostWorkForeground.route(intent)
+        if (foreground !== intent) return foreground
         val component = intent.component ?: return intent
         val target = HostComponentMapping.target(component.packageName, component.className) ?: return intent
         return Intent(intent).setClassName(component.packageName, target).apply {

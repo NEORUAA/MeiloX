@@ -784,6 +784,59 @@ These are integration differences, not server API semantics.
   Final ordinary debug build and unit suite pass; 30 selected device tests pass. The probe
   is disabled again, the real download is preserved, and the full playback stage stays open.
 
+### ABI-005: Foreground Work Needs a Separate Host Carrier
+
+- Date: 2026-09-29. The host has no installed AndroidX `SystemForegroundService`.
+  A successful ordinary Worker or a posted progress notification does not establish
+  a long-running foreground Worker. Reusing the Tinker job carrier would mix its
+  original IntentService start/stop behavior with the foreground dispatcher's lifetime.
+- The pinned TV APK's actual DEX confirms `org.chromium.wow.extension.usage.WowIPCService`
+  directly extends platform Service and overrides only `onBind`. Its original Binder
+  speaks `org.chromium.wow.extension.usage.WowIPCServer`; the examined official callers
+  bind to it, not start it. Its manifest entry is non-exported, main-process, target 29,
+  with no foreground service type. LocalMusicTaskService, VideoPlayService and the
+  network detection service have occupied lifecycles and were not substituted.
+- The original IPC Service and Binder remain installed and instantiated. Android's
+  attachment/token is mirrored into an isolated AndroidX delegate, created lazily on
+  the first owned start command. Only explicit module dispatcher commands route to
+  this carrier; canonical WorkSpec IDs, generations, reserved notification IDs, payloads
+  and an ownership marker are checked. Original bind/unbind and unrelated starts are
+  untouched. This is in-process ownership separation, not a security sandbox against
+  another component in the same UID.
+- The delegate forwards start/stop/destroy and available platform timeout callbacks.
+  Platform Service's default timeout callbacks are empty; its started and bound
+  lifetimes are independent ([AOSP Service source](https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/master/core/java/android/app/Service.java)).
+  The pinned target-29 host uses two-argument `startForeground` with type zero, as the
+  existing player does. Typed requests are rejected, not fabricated in package metadata.
+  Android's permission/start/quota enforcement remains active; no system scope, global
+  setting, manifest repack or permission grant is involved.
+- Four unit cases cover command, identity, ID and type boundaries. Three device cases
+  use the installed AndroidX command factories and real Parcelable transport, including
+  unchanged official binding intents and rejection of altered commands. Fourteen selected
+  device tests initially passed with the existing job-carrier and full download-worker
+  regressions; the expanded final regression passes all 33 parasite device cases.
+- In the injected host, two no-network workers start naturally and post separate
+  notifications. The first owns the foreground notification; canceling it promotes the
+  second. System service state confirms the original registered carrier is foreground
+  with type zero. The original Binder remains alive. Playback advances and its distinct
+  notification remains present; neither observation proves audible output. The remaining
+  worker runs for twelve minutes and reaches SUCCEEDED (the first is CANCELLED).
+  Foreground notifications disappear and the processor wake lock is released; the
+  original Binder survives STOP and the service is destroyed only after test unbinding.
+  The run includes a screen-off interval of approximately 90 seconds, not twelve minutes
+  of continuous screen-off or forced idle. Cleanup removes the two test WorkSpecs and
+  channel; neither namespaced system job remains registered.
+- Production `DownloadWorker` is deliberately not switched by this checkpoint: its shared
+  progress notification ID still needs per-work ownership and completion aggregation
+  before calling `setForeground`. This carrier qualification alone does not close long
+  download, process-redelivery, reboot, quota-exhaustion, other-system or release-runtime
+  acceptance. No official download grant is requested by these synthetic workers.
+  Final ordinary debug build and 603 unit tests pass with the probe disabled. Release
+  R8 build and 16 KB APK alignment pass; its mapping preserves the AndroidX service
+  name and removes the debug foreground probe. This is unsigned build/package evidence,
+  not release runtime acceptance. The ordinary debug APK is reinstalled and cold launch
+  confirms both work adapters and the isolated manager initialize without probe commands.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,

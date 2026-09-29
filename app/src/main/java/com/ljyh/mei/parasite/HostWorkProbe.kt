@@ -31,6 +31,8 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "foreground_enqueue", "foreground_bind", "foreground_status", "foreground_cancel_first",
+                    "foreground_cancel", "foreground_cleanup" -> HostForegroundProbe.command(owner, command)
                     "download_enqueue", "download_status", "download_cancel", "download_cleanup" -> {
                         HostDownloadProbe.command(owner, command, intent.getStringExtra("scenario"))
                     }
