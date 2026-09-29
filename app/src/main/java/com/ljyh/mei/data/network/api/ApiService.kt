@@ -64,13 +64,13 @@ interface ApiService {
     * 获取歌单详情
     * */
     @POST("/api/v6/playlist/detail")
-    suspend fun getPlaylistDetail(@Body body: GetPlaylistDetail): PlaylistDetail
+    suspend fun getPlaylistDetail(@Body body: GetPlaylistDetail, @Tag expectedSession: HostSessionStamp? = null): PlaylistDetail
 
     /*
     * 获取歌曲详情
     * */
     @POST("/api/v3/song/detail")
-    suspend fun getSongDetail(@Body body: GetSongDetails): Tracks
+    suspend fun getSongDetail(@Body body: GetSongDetails, @Tag expectedSession: HostSessionStamp? = null): Tracks
 
 
     /*
@@ -101,7 +101,8 @@ interface ApiService {
     * */
     @POST("/api/user/playlist")
     suspend fun getUserPlaylist(
-        @Body body: GetUserPlaylist
+        @Body body: GetUserPlaylist,
+        @Tag expectedSession: HostSessionStamp? = null,
     ): UserPlaylist
 
     @POST("/api/song/like/check")

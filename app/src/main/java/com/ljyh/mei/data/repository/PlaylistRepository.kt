@@ -1,7 +1,6 @@
 package com.ljyh.mei.data.repository
 
 import com.ljyh.mei.constants.MusicQuality
-import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.model.AlbumDetail
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
@@ -33,6 +32,8 @@ import com.ljyh.mei.parasite.HostSessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 internal interface AlbumDetailSource {
     suspend fun getAlbumDetail(id: String, session: HostSessionStamp): Resource<AlbumDetail>
@@ -41,24 +42,44 @@ internal interface AlbumDetailSource {
     suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality, session: HostSessionStamp? = null): Resource<SongUrl>
 }
 
+internal interface PlaylistPageSource {
+    suspend fun getPlaylistDetail(id: String, session: HostSessionStamp? = null): Resource<PlaylistDetail>
+    suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp? = null): List<PlaylistDetail.Playlist.Track>
+    suspend fun subscribePlaylist(id: String, session: HostSessionStamp? = null): Resource<BaseResponse>
+    suspend fun unSubscribePlaylist(id: String, session: HostSessionStamp? = null): Resource<BaseResponse>
+}
+
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
     private val eApiService: EApiService
-) : AlbumDetailSource {
-    suspend fun getPlaylistDetail(id: String): Resource<PlaylistDetail> {
+) : AlbumDetailSource, PlaylistPageSource {
+    override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 apiService.getPlaylistDetail(
                     GetPlaylistDetail(
                         id = id
-                    )
-                )
+                    ), session,
+                ).also {
+                    check(it.code == 200) { "Playlist request failed (${it.code})" }
+                    check(it.playlist.Id.toString() == id) { "Official playlist identity mismatch" }
+                }
             }
         }
     }
 
-    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail): List<MediaMetadata> {
+    override suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp?): List<PlaylistDetail.Playlist.Track> =
+        withContext(Dispatchers.IO) {
+            if (ids.isEmpty()) return@withContext emptyList()
+            val response = apiService.getSongDetail(GetSongDetails(ids.joinToString(",")), session)
+            check(response.code == 200) { "Playlist tracks failed (${response.code})" }
+            val byId = response.songs.associateBy { it.id.toString() }
+            currentCoroutineContext().ensureActive()
+            ids.distinct().mapNotNull(byId::get)
+        }
+
+    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail, session: HostSessionStamp? = null): List<MediaMetadata> {
         return withContext(Dispatchers.IO) {
             val playlist = detail.playlist
             val tracksById = playlist.tracks.associateBy { it.id }.toMutableMap()
@@ -68,12 +89,14 @@ class PlaylistRepository(
                 .filterNot(tracksById::containsKey)
                 .chunked(200)
                 .forEach { ids ->
-                    apiService.getSongDetail(GetSongDetails(ids.joinToString(",")))
-                        .songs
+                    currentCoroutineContext().ensureActive()
+                    getPlaylistTrackDetails(ids.map(Long::toString), session)
                         .forEach { track -> tracksById[track.id] = track }
                 }
-
+            check(playlist.trackIds.all { it.id in tracksById }) { "Incomplete official playlist tracks" }
+            currentCoroutineContext().ensureActive()
             playlist.trackIds
+                .distinctBy { it.id }
                 .mapNotNull { trackId -> tracksById[trackId.id] }
                 .map { track -> track.toMediaMetadata() }
         }
@@ -186,31 +209,30 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun subscribePlaylist(
-        id: String
+    override suspend fun subscribePlaylist(
+        id: String, session: HostSessionStamp?,
     ): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 eApiService.subscribePlaylist(
                     EApiSubscribePlaylist(
                         id = id.toLong(),
-                        checkToken = checkToken
-                    )
-                )
+                    ), session,
+                ).also { check(it.code == 200) { "Playlist collection failed (${it.code})" } }
             }
         }
     }
 
-    suspend fun unSubscribePlaylist(
-        id: String
+    override suspend fun unSubscribePlaylist(
+        id: String, session: HostSessionStamp?,
     ): Resource<BaseResponse> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 eApiService.unSubscribePlaylist(
                     EApiSubscribePlaylist(
                         id = id.toLong(),
-                    )
-                )
+                    ), session,
+                ).also { check(it.code == 200) { "Playlist collection failed (${it.code})" } }
             }
         }
     }

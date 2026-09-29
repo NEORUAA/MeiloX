@@ -40,7 +40,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
         }
     }
 
-    suspend fun getAllUserPlaylists(uid: String, validate: () -> Unit = {}): Resource<UserPlaylist> = withContext(Dispatchers.IO) {
+    suspend fun getAllUserPlaylists(uid: String, session: com.ljyh.mei.parasite.HostSessionStamp? = null, validate: () -> Unit = {}): Resource<UserPlaylist> = withContext(Dispatchers.IO) {
         safeApiCall {
             val playlists = linkedMapOf<Long, UserPlaylist.Playlist>()
             var offset = 0
@@ -48,7 +48,7 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
             do {
                 currentCoroutineContext().ensureActive()
                 validate()
-                page = apiService.getUserPlaylist(GetUserPlaylist(uid = uid, limit = "100", offset = offset.toString()))
+                page = apiService.getUserPlaylist(GetUserPlaylist(uid = uid, limit = "100", offset = offset.toString()), session)
                 validate()
                 if (page.code != 200) throw IOException("Official playlist request failed (${page.code})")
                 val previousSize = playlists.size

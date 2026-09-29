@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,7 +28,6 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQuality
 import com.ljyh.mei.constants.DownloadQualityKey
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.toMediaItem
@@ -44,7 +44,6 @@ import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +56,14 @@ fun PlaylistScreen(
     LaunchedEffect(key1 = id) {
         viewModel.getPlaylistDetail(id.toString())
     }
+    val session by viewModel.detailSession.collectAsState()
+    key(id, session) { PlaylistContent(id, session, viewModel) }
+}
 
+@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSessionStamp?, viewModel: PlaylistViewModel) {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -65,7 +71,7 @@ fun PlaylistScreen(
     val selection = rememberDetailSelection(id)
 
     // 2. 状态收集
-    val userId by rememberPreference(UserIdKey, "")
+    val userId = session?.identity?.takeIf { it.authenticated }?.userId?.toString().orEmpty()
     val playlistDetail by viewModel.playlistDetail.collectAsState()
     val removedTrackIds by viewModel.removedTrackIds.collectAsState()
     val subscriberState by viewModel.subscribePlaylist.collectAsState()
@@ -82,6 +88,7 @@ fun PlaylistScreen(
     // Download dialog state
     var showDownloadDialog by remember { mutableStateOf(false) }
     var pendingDownloadTracks by remember { mutableStateOf<List<MediaMetadata>>(emptyList()) }
+    var pendingDownloadDetail by remember { mutableStateOf<Resource<PlaylistDetail>?>(null) }
     var isPreparingDownload by remember { mutableStateOf(false) }
 
     val (downloadPath) = rememberPreference(DownloadPathKey, DownloadManager.getDefaultDownloadPath())
@@ -89,52 +96,42 @@ fun PlaylistScreen(
 
     // 4. 管理收藏状态 (乐观更新核心)
     // 默认 false，等待数据加载后同步
-    var isSubscribed by remember { mutableStateOf(false) }
-
-    // 当网络数据(playlistDetail)加载成功时，同步初始状态
-    LaunchedEffect(playlistDetail) {
-        if (playlistDetail is Resource.Success) {
-            isSubscribed = (playlistDetail as Resource.Success).data.playlist.subscribed
-        }
-    }
+    val collection by viewModel.collected.collectAsState()
+    val isSubscribed = collection == true
 
     LaunchedEffect(subscriberState) {
         when(val result=subscriberState){
             is Resource.Success ->{
                 if(result.data.code!=200){
-                    isSubscribed = false // 回滚为未收藏
                     Toast.makeText(context, "收藏失败: 错误码:${result.data.code}", Toast.LENGTH_SHORT).show()
                 }else{
                     Toast.makeText(context, "收藏成功", Toast.LENGTH_SHORT).show()
 
                 }
-                Timber.tag("PlaylistScreen").d(result.data.toString())
             }
             is Resource.Error->{
-                isSubscribed = false // 回滚为未收藏
                 Toast.makeText(context, "收藏失败: ${(subscriberState as Resource.Error).message}", Toast.LENGTH_SHORT).show()
             }
             else -> {}
         }
+        if (subscriberState !is Resource.Loading) viewModel.consumeCollectionResult(subscriberState, true)
     }
 
     LaunchedEffect(unSubscriberState) {
         when(val result=unSubscriberState){
             is Resource.Success ->{
-                Timber.tag("PlaylistScreen").d(result.data.toString())
                 if(result.data.code!=200){
-                    isSubscribed = true // 回滚为未收藏
                     Toast.makeText(context, "取消收藏失败: 错误码:${result.data.code}", Toast.LENGTH_SHORT).show()
                 }else{
                     Toast.makeText(context, "取消收藏成功", Toast.LENGTH_SHORT).show()
                 }
             }
             is Resource.Error->{
-                isSubscribed = true // 回滚为未收藏
                 Toast.makeText(context, "取消收藏失败: ${result.message}", Toast.LENGTH_SHORT).show()
             }
             else -> {}
         }
+        if (unSubscriberState !is Resource.Loading) viewModel.consumeCollectionResult(unSubscriberState, false)
     }
 
     // 5. 构建 UI 模型 (移除副作用和内部状态修改)
@@ -170,6 +167,8 @@ fun PlaylistScreen(
 
     // 6. 提取构建播放队列的逻辑 (避免重复代码)
     fun buildListQueue(startTrackId: Long? = null, randomStart: Boolean = false): ListQueue? {
+        val owner = session ?: return null
+        if (runCatching { viewModel.requireDetail(owner, playlistDetail) }.isFailure) return null
         val detail = playlistDetail
         if (detail is Resource.Success) {
             val playlist = detail.data.playlist
@@ -205,74 +204,96 @@ fun PlaylistScreen(
     }
 
     // 7. 下载处理逻辑
-    fun doBulkDownload(allTracks: List<MediaMetadata>, quality: MusicQuality = downloadQuality.toMusicQuality()) {
+    fun doBulkDownload(
+        allTracks: List<MediaMetadata>,
+        quality: MusicQuality = downloadQuality.toMusicQuality(),
+        detail: Resource<PlaylistDetail> = playlistDetail,
+    ) {
+        val owner = session ?: return
         scope.launch {
-            val songIds = allTracks.map { it.id.toString() }
-            val sourceMap = songIds.chunked(200).flatMap { ids ->
-                val result = viewModel.resolveSongUrls(ids, quality)
-                if (result is Resource.Success) result.data.fullSourcesFor(ids.toSet()) else emptyList()
-            }.associateBy { it.id.toString() }
+            try {
+                viewModel.requireDetail(owner, detail)
+                val songIds = allTracks.map { it.id.toString() }
+                val sourceMap = songIds.chunked(200).flatMap { ids ->
+                    val result = viewModel.resolveSongUrls(ids, quality, owner)
+                    if (result is Resource.Success) result.data.fullSourcesFor(ids.toSet()) else emptyList()
+                }.associateBy { it.id.toString() }
 
-            val downloadInfos = allTracks.mapNotNull { track ->
-                val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
-                val url = source.url ?: return@mapNotNull null
-                SongDownloadInfo(
-                    songId = track.id.toString(),
-                    url = url,
-                    songTitle = track.title,
-                    songArtist = track.artists.map { it.name },
-                    songAlbum = track.album.title,
-                    songCover = track.coverUrl,
-                    duration = track.duration,
-                    fileType = source.encodeType,
-                    quality = source.level,
+                val downloadInfos = allTracks.mapNotNull { track ->
+                    val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
+                    val url = source.url ?: return@mapNotNull null
+                    SongDownloadInfo(
+                        songId = track.id.toString(),
+                        url = url,
+                        songTitle = track.title,
+                        songArtist = track.artists.map { it.name },
+                        songAlbum = track.album.title,
+                        songCover = track.coverUrl,
+                        duration = track.duration,
+                        fileType = source.encodeType,
+                        quality = source.level,
+                    )
+                }
+
+                if (downloadInfos.isEmpty()) {
+                    Toast.makeText(context, "无法获取歌曲链接，请稍后重试", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val playlistName = if (detail is Resource.Success) {
+                    detail.data.playlist.name
+                } else {
+                    "未分类"
+                }
+
+                viewModel.requireDetail(owner, detail)
+                DownloadManager.enqueue(
+                    context = context,
+                    songs = downloadInfos,
+                    playlistName = playlistName,
+                    playlistId = id.toString(),
+                    downloadPath = downloadPath
                 )
+                Toast.makeText(context, "已添加 ${downloadInfos.size} 首到下载队列", Toast.LENGTH_SHORT).show()
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
             }
-
-            if (downloadInfos.isEmpty()) {
-                Toast.makeText(context, "无法获取歌曲链接，请稍后重试", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-
-            val detail = playlistDetail
-            val playlistName = if (detail is Resource.Success) {
-                detail.data.playlist.name
-            } else {
-                "未分类"
-            }
-
-            DownloadManager.enqueue(
-                context = context,
-                songs = downloadInfos,
-                playlistName = playlistName,
-                playlistId = id.toString(),
-                downloadPath = downloadPath
-            )
-            Toast.makeText(context, "已添加 ${downloadInfos.size} 首到下载队列", Toast.LENGTH_SHORT).show()
         }
     }
 
-    suspend fun loadTracks(selectedIds: Set<String>? = null): List<MediaMetadata> {
-        val playlist = (playlistDetail as? Resource.Success)?.data?.playlist ?: return emptyList()
+    suspend fun loadTracks(
+        selectedIds: Set<String>? = null,
+        detail: Resource<PlaylistDetail> = playlistDetail,
+    ): List<MediaMetadata> {
+        val owner = session ?: return emptyList()
+        viewModel.requireDetail(owner, detail)
+        val playlist = (detail as? Resource.Success)?.data?.playlist ?: return emptyList()
         val ids = playlist.trackIds.map { it.id }.filterNot { it in removedTrackIds }
             .filter { selectedIds == null || it.toString() in selectedIds }
         val known = playlist.tracks.associate { it.id to it.toMediaMetadata() }.toMutableMap()
         ids.filterNot(known::containsKey).chunked(200).forEach { chunk ->
-            viewModel.getSongDetails(chunk.map(Long::toString)).songs.forEach { known[it.id] = it.toMediaMetadata() }
+            viewModel.getSongDetails(chunk.map(Long::toString), owner).songs.forEach { known[it.id] = it.toMediaMetadata() }
         }
+        viewModel.requireDetail(owner, detail)
         check(ids.all(known::containsKey)) { "Incomplete playlist details" }
         return ids.map { known.getValue(it) }
     }
 
     fun prepareDownload(quality: MusicQuality? = null, ids: Set<String>? = null) {
         if (isPreparingDownload) return
+        val detail = playlistDetail
         isPreparingDownload = true
         scope.launch {
             try {
-                val tracks = loadTracks(ids)
+                val tracks = loadTracks(ids, detail)
                 if (tracks.isNotEmpty()) {
-                    if (quality != null) doBulkDownload(tracks, quality)
-                    else { pendingDownloadTracks = tracks; showDownloadDialog = true }
+                    if (quality != null) doBulkDownload(tracks, quality, detail)
+                    else {
+                        pendingDownloadTracks = tracks
+                        pendingDownloadDetail = detail
+                        showDownloadDialog = true
+                    }
                 }
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
@@ -287,9 +308,8 @@ fun PlaylistScreen(
             Toast.makeText(context, "不能收藏自己创建的歌单", Toast.LENGTH_SHORT).show()
             return
         }
-        isSubscribed = !isSubscribed
-        if (isSubscribed) viewModel.subscribePlaylist(id.toString())
-        else viewModel.unsubscribePlaylist(id.toString())
+        if (isSubscribed) viewModel.unsubscribePlaylist(id.toString())
+        else viewModel.subscribePlaylist(id.toString())
     }
 
     DetailSelectionToolbar(
@@ -317,7 +337,7 @@ fun PlaylistScreen(
             onDismiss = { showDownloadDialog = false },
             onConfirm = {
                 showDownloadDialog = false
-                doBulkDownload(pendingDownloadTracks)
+                pendingDownloadDetail?.let { doBulkDownload(pendingDownloadTracks, detail = it) }
             },
             onGoToSettings = {
                 showDownloadDialog = false
@@ -333,7 +353,12 @@ fun PlaylistScreen(
     // 8. UI 渲染
     if (playlistDetail is Resource.Error) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Error: ${(playlistDetail as Resource.Error).message}")
+            androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Error: ${(playlistDetail as Resource.Error).message}")
+                com.ljyh.mei.ui.glass.GlassButton(onClick = { viewModel.getPlaylistDetail(id.toString()) }) {
+                    Text(androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.retry))
+                }
+            }
         }
     } else {
         CommonSongListScreen(

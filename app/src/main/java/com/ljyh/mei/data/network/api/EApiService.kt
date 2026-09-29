@@ -9,6 +9,8 @@ import com.ljyh.mei.data.model.weapi.GetHomePageResourceShow
 import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
+import retrofit2.http.Tag
+import com.ljyh.mei.parasite.HostSessionStamp
 
 
 interface EApiService {
@@ -18,11 +20,9 @@ interface EApiService {
     @POST("/eapi/search/pc/complex/page/v3")
     suspend fun search(@Body body: GetUserPhotoAlbum): AlbumPhoto
 
-    @Headers("X-Netease-Crypto: eapi", "X-Netease-Check-Token: true")
-    @POST("/api/playlist/subscribe")
-    suspend fun subscribePlaylist(@Body body: EApiSubscribePlaylist): BaseResponse
+    @POST("/api/multi/terminal/playlist/subscribe")
+    suspend fun subscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: HostSessionStamp? = null): BaseResponse
 
-    @Headers("X-Netease-Crypto: eapi", "X-Netease-Check-Token: true")
-    @POST("/api/playlist/unsubscribe")
-    suspend fun unSubscribePlaylist(@Body body: EApiSubscribePlaylist): BaseResponse
+    @POST("/api/multi/terminal/playlist/unsubscribe")
+    suspend fun unSubscribePlaylist(@Body body: EApiSubscribePlaylist, @Tag expectedSession: HostSessionStamp? = null): BaseResponse
 }

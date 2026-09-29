@@ -244,6 +244,46 @@ class HostCallFactoryTest {
         assertEquals(0, backend.executions.get())
     }
 
+    @Test fun playlistReadsAndCollectionsUseOfficialRoutesAndCapturedOwners() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val retrofit = retrofit(HostCallFactory(bridge))
+        val api = retrofit.create(ApiService::class.java)
+        val eapi = retrofit.create(com.ljyh.mei.data.network.api.EApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        api.getPlaylistDetail(com.ljyh.mei.data.model.api.GetPlaylistDetail("10"), owner)
+        assertEquals("v6/playlist/detail", backend.path)
+        assertEquals("10", backend.parameters["id"])
+        assertFalse(backend.parameters.containsKey("expectedSession"))
+        api.getSongDetail(com.ljyh.mei.data.model.api.GetSongDetails("1,2"), owner)
+        assertEquals("v3/song/detail", backend.path)
+        assertEquals(mapOf("c" to "[{\"id\":\"1\"},{\"id\":\"2\"}]"), backend.parameters)
+        eapi.subscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner)
+        assertEquals("multi/terminal/playlist/subscribe", backend.path)
+        assertEquals(mapOf("id" to "10"), backend.parameters)
+        eapi.unSubscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner)
+        assertEquals("multi/terminal/playlist/unsubscribe", backend.path)
+        assertEquals(mapOf("id" to "10"), backend.parameters)
+    }
+
+    @Test fun obsoletePlaylistOwnerCannotDispatchReadsOrCollections() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val retrofit = retrofit(HostCallFactory(bridge))
+        val api = retrofit.create(ApiService::class.java)
+        val eapi = retrofit.create(com.ljyh.mei.data.network.api.EApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        bridge.sessions.invalidate()
+        val calls: List<suspend () -> Any> = listOf(
+            { api.getPlaylistDetail(com.ljyh.mei.data.model.api.GetPlaylistDetail("10"), owner) },
+            { api.getSongDetail(com.ljyh.mei.data.model.api.GetSongDetails("1,2"), owner) },
+            { eapi.subscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner) },
+            { eapi.unSubscribePlaylist(com.ljyh.mei.data.model.api.EApiSubscribePlaylist(10), owner) },
+        )
+        calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is HostSessionChangedException) }
+        assertEquals(0, backend.executions.get())
+    }
+
     @Test fun queuedCancellationDeliversExactlyOneFailure() {
         val backend = Backend()
         var queued: Runnable? = null

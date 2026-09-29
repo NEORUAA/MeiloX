@@ -50,7 +50,7 @@ class AccountLibraryRepository @Inject constructor(
         check(stamp.identity.authenticated)
         sessions.requireCurrent(stamp)
         val accountId = stamp.identity.userId.toString()
-        val response = users.getAllUserPlaylists(accountId) { sessions.requireCurrent(stamp) }
+        val response = users.getAllUserPlaylists(accountId, stamp) { sessions.requireCurrent(stamp) }
         val playlists = when (response) {
             is Resource.Success -> response.data.playlist
             is Resource.Error -> throw java.io.IOException(response.message)

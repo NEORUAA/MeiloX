@@ -181,6 +181,15 @@ fun LazyListScope.playlistTrackItems(
     selectionMode: Boolean = false,
     selectedTrackIds: Set<String> = emptySet(),
 ) {
+    if (pagingItems?.loadState?.refresh is LoadState.Loading) {
+        item(key = "playlist-refresh-loading") {
+            Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+        }
+    } else if (pagingItems?.loadState?.refresh is LoadState.Error) {
+        item(key = "playlist-refresh-error") { PlaylistLoadError(pagingItems::retry) }
+    }
     val itemCount = pagingItems?.itemCount ?: staticTracks.size
     val hasAppendFooter = pagingItems?.loadState?.append.let { state ->
         state is LoadState.Loading || state is LoadState.Error
@@ -239,11 +248,7 @@ fun LazyListScope.playlistTrackItems(
 
             is LoadState.Error -> item(key = "playlist-append-error") {
                 PlaylistSurface(isFirst = false, isLast = true) {
-                    Text(
-                        text = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.load_failed),
-                        color = LocalGlassColors.current.secondaryContent,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
+                    PlaylistLoadError(pagingItems::retry)
                 }
             }
 
@@ -294,6 +299,14 @@ fun LazyListScope.playlistTrackItems(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PlaylistLoadError(retry: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(com.ljyh.mei.R.string.load_failed), color = LocalGlassColors.current.secondaryContent)
+        com.ljyh.mei.ui.glass.GlassButton(onClick = retry) { Text(stringResource(com.ljyh.mei.R.string.retry)) }
     }
 }
 

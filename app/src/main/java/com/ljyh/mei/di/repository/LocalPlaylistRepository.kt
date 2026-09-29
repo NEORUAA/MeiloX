@@ -19,6 +19,8 @@ class LocalPlaylistRepository @Inject constructor(private val playlistDao: Playl
     suspend fun insertPlaylists(playlists: List<Playlist>) = playlistDao.insertPlaylists(playlists)
     suspend fun deletePlaylistById(id: String) = playlistDao.deletePlaylistById(id)
     suspend fun touchPlaylist(id: String, timestamp: Long) = playlistDao.touchPlaylist(id, timestamp)
+    suspend fun touchAccountPlaylist(accountId: String, id: String, timestamp: Long, validate: () -> Unit) =
+        playlistDao.touchAccountPlaylist(accountId, id, timestamp, validate)
 }
 
 class PlaylistSongCrossRefRepository @Inject constructor(private val dao: PlaylistSongCrossRefDao) {

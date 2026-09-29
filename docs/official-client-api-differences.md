@@ -130,6 +130,59 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   acceptance. Source and substitute tests do not establish live mutation acceptance;
   canceling an old request cannot undo a server mutation already accepted.
 
+### API-007: Playlist Collection Uses Host-Generated Security Parameters
+
+- Recorded: 2026-09-29.
+- Original implementation: `playlist/subscribe` receives a fixed module `checkToken`;
+  unsubscribe shares its security-header path. The old ViewModel deletes the local row
+  after unsubscribe even when the server rejects it.
+- Official TV source: the collection task sends `id` and a freshly obtained official
+  `checkToken` to `multi/terminal/playlist/subscribe`; unsubscribe uses
+  `multi/terminal/playlist/unsubscribe` with `id` only. The security helper delegates to
+  the official security service and can return an empty string when disabled by host
+  configuration. An empty official result is not replaced with a fabricated token.
+- Adaptation: use the TV routes; keep token generation inside `TvHostRequestBackend`.
+  Module callers cannot override that field on these routes. No token is persisted,
+  logged, exposed as session state, or returned to a Repository. Accept business code
+  200 only, serialize detail-page collection writes, and refresh the current account's
+  Library only after acceptance. A rejection restores the previous detail flag and does
+  not delete a shared local row.
+- Evidence: local official collection-task source and APK DEX confirm the generator
+  `com.netease.cloudmusic.h1.y.a.a(): String`. This is the actual DEX name, not the JADX
+  alias. Parameter-policy, Retrofit, Repository, and ViewModel tests cover adaptation,
+  missing generator failure, obsolete owners, and failure rollback.
+- Remaining: live collection/uncollection and the generated token's server acceptance
+  are not qualified. No real account mutation is performed by these tests. Host security
+  initialization is retained; it is not emulated or bypassed by the module.
+
+### API-008: Playlist IDs, Not Returned Row Counts, Own the Cursor
+
+- Recorded: 2026-09-29.
+- Original assumption: initial `tracks` occupies the first contiguous positions in
+  `trackIds`; subsequent pages advance by the number of returned songs. A name ending
+  in the liked-music suffix bypasses paging. Full-list search silently drops missing IDs.
+- Compatibility constraint: the detail's `trackIds` defines order, while song-detail
+  responses may omit unavailable entries. This is a correction to the old adapter's
+  assumptions, not a claim that TV alone returns sparse or differently ordered data.
+  MeiloX retains its richer `v6/playlist/detail` and `v3/song/detail` models through the
+  official request pipeline; a requested detail size is not proof of complete data.
+- Adaptation: deduplicate authoritative IDs, resolve each requested ID range against the
+  initial snapshot and missing-song reads, reorder by requested ID, and advance by the
+  requested range even if no song is returned. Business failures remain retryable errors.
+  All playlists use this path irrespective of their display name. Full-list search and
+  bulk loading reject incomplete snapshots rather than presenting partial results as
+  complete; search failure/retry stays in the original list using existing glass controls.
+- Session handling: details, pages, search batches, detail-page URL reads, and collection
+  requests carry their captured owner. Page/account replacement invalidates presentation
+  and rejects late work. Search snapshots are retained only after complete validation;
+  obsolete UI collectors cancel their Paging loads rather than caching them for the
+  lifetime of the ViewModel.
+- Evidence: controlled tests cover sparse initial data, reversed/duplicate/extra rows,
+  empty intermediate pages, complete search beyond 400 IDs, partial search retry, owner
+  changes, and cancellation. On-device qualification is recorded in the migration log.
+- Remaining: the shared playlist picker, create/delete/edit actions, daily recommendations,
+  legacy like-table updates, and downstream downloads have not completed account migration.
+
 ## Runtime Boundary Notes
 
 These are integration differences, not server API semantics.

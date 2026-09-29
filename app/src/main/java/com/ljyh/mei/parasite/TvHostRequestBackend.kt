@@ -26,6 +26,7 @@ internal class TvHostRequestBackend(
     private val factory = loader.loadClass("com.netease.cloudmusic.network.f").getMethod("c", String::class.java, Map::class.java)
     private val execute = requestType.getMethod("k")
     private val cancel = requestBase.getMethod("c")
+    private val playlistToken = loader.loadClass("com.netease.cloudmusic.h1.y.a").getMethod("a")
     private val cancellations = ConcurrentHashMap<Any, AtomicBoolean>()
 
     init {
@@ -91,7 +92,10 @@ internal class TvHostRequestBackend(
 
     override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Host requests must run off the main thread" }
-        val request = invoke(factory, null, path, parameters) ?: throw IOException("Official request creation failed")
+        val businessParameters = tvPlaylistRequestParameters(path, parameters) {
+            invoke(playlistToken, null) as? String ?: throw IOException("Official playlist token unavailable")
+        }
+        val request = invoke(factory, null, path, businessParameters) ?: throw IOException("Official request creation failed")
         invoke(requestBase.getMethod("d", Int::class.javaPrimitiveType), request, 10_000)
         invoke(requestBase.getMethod("i0", Int::class.javaPrimitiveType), request, 15_000)
         val canceled = AtomicBoolean()
@@ -116,4 +120,15 @@ internal class TvHostRequestBackend(
         // Do not retain a host exception message/cause that may contain request credentials.
         throw IOException("Official transport failed: ${cause.javaClass.simpleName}")
     }
+}
+
+internal fun tvPlaylistRequestParameters(
+    path: String,
+    parameters: Map<String, String>,
+    token: () -> String,
+): Map<String, String> {
+    if (path !in setOf("multi/terminal/playlist/subscribe", "multi/terminal/playlist/unsubscribe")) return parameters
+    require(parameters.keys.none { it.equals("checkToken", ignoreCase = true) }) { "Playlist security parameters belong to the host" }
+    // The official generator may return empty when its security service is disabled.
+    return if (path.endsWith("/subscribe")) parameters + ("checkToken" to token()) else parameters
 }

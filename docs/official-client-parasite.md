@@ -892,6 +892,64 @@ pending; canceling an old request cannot reverse a server-side write. Shared son
 playlist actions, playlist/artist/account migration, downloads, production routing,
 the recording/PiP host decision, and release regression remain outstanding.
 
+### Session-Owned Playlist Detail and Paging
+
+- Original playlist page composition, cover/header, actions, search, multi-selection,
+  glass menus, and mini player are retained. Details, ID-based pages, full-list search,
+  collection writes, and detail-page URL requests carry the captured official session.
+  Invalidation clears detail/collection presentation synchronously; replaced pages,
+  same-account reauthorization, canceled loaders, and disposed ViewModels cannot publish
+  obsolete results. Selection/search/overlay composition is keyed to the page owner.
+- All playlist names, including liked-music names, use authoritative `trackIds` for
+  ordering and pagination. Requested ID ranges advance the cursor even when a song is
+  unavailable. Responses are reordered and deduplicated; extra IDs are ignored. Full
+  search loads missing metadata in batches of at most 200 and rejects incomplete results.
+  Initial/append failures expose retry in the original list using existing glass controls.
+- Collection now uses the official TV multi-terminal routes and host security generator.
+  Caller-provided security tokens are rejected on these routes. Failure restores the
+  prior flag without deleting shared local rows; duplicate writes are suppressed and
+  refresh waits for settlement. Accepted writes refresh the account-owned Library through
+  captured-session user-playlist pages. Live mutation acceptance is still pending.
+- Successful authenticated detail entry preserves local access metadata only for a
+  playlist already associated with that account. A Room transaction validates ownership
+  before and after the access update. No schema change or standalone-data migration is
+  introduced. This guards access publication; it does not redesign historical local
+  playlist statistics into a new per-account statistics schema.
+- Source, parameter, and paging differences are recorded as API-007 and API-008 in
+  [the API difference ledger](official-client-api-differences.md).
+
+Verification on 2026-09-29:
+
+- `:app:testDebugUnitTest :app:assembleDebug -PparasiteAppProbe=true` passes 453 tests
+  in 63 suites with no failures, errors, or skips. The 33 new tests include
+  includes sparse/reordered/duplicate/extra songs, empty intermediate pages, more than
+  400 search IDs, incomplete search retry, business errors, session-tag dispatch,
+  generator policy, stale detail/mutation results, access validation, and cancellation.
+  A forced rerun of `:app:testDebugUnitTest --rerun -PparasiteAppProbe=true` also passes.
+  Bulk preparation and confirmation retain the original detail snapshot so refreshing
+  the same playlist cannot authorize an older pending operation against the new snapshot.
+- The updated module was installed without replacing standalone MeiloX or clearing host
+  data. The opt-in original-app carrier cold-started in the official TV process and
+  retained the logged-in account and paused mini player. The generator method resolves
+  from the pinned host DEX; it was not invoked through a real collection mutation.
+- A real 63-song playlist opened from search. Ten bounded hierarchy snapshots contained
+  63 distinct title/artist row pairs, ending at the visible last row. Searching that last
+  song produced the correct single result. Filtered multi-select/all-select, system Back
+  out of selection, clearing the query, refresh, background return, and Back to search
+  all succeeded. This is frontend paging evidence, not proof that every row needed an
+  additional network request; the initial detail response can already contain metadata.
+- Native screenshots confirm the cover sampled behind the original glass menu, blurred
+  content behind the pinned header, and the paused mini player. Screenshot/hierarchy
+  evidence stays outside Git. APK 16 KB alignment and `git diff --check` pass, and the
+  tested process has no crash-buffer entries. No subscription, edit, create, delete,
+  download, social send, logout, or audio/network-setting change was performed.
+
+This increment does not complete playlist migration or stage 4. The shared playlist
+picker, add/remove-song/create/delete flows, daily recommendations, legacy like-table
+updates, and downstream download work still require account isolation and acceptance.
+Real collection/account-change tests, full playback/reporting, production routing, the
+recording/PiP host decision, and release regression remain gates.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -916,7 +974,7 @@ the recording/PiP host decision, and release regression remain outstanding.
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, and album detail reads passed; album mutations have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, album detail reads, and playlist detail/paging/search passed; collection mutations have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

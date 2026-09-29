@@ -70,4 +70,19 @@ interface PlaylistDao {
 
     @Query("UPDATE playlist SET lastPlayTime = :timestamp, localPlayCount = localPlayCount + 1 WHERE id = :id")
     suspend fun touchPlaylist(id: String, timestamp: Long)
+
+    @Query("""
+        UPDATE playlist SET lastPlayTime = :timestamp, localPlayCount = localPlayCount + 1
+        WHERE id = :id AND EXISTS (
+            SELECT 1 FROM account_playlist WHERE accountId = :accountId AND playlistId = :id
+        )
+    """)
+    suspend fun updateAccountPlaylistAccess(accountId: String, id: String, timestamp: Long)
+
+    @Transaction
+    suspend fun touchAccountPlaylist(accountId: String, id: String, timestamp: Long, validate: () -> Unit) {
+        validate()
+        updateAccountPlaylistAccess(accountId, id, timestamp)
+        validate()
+    }
 }
