@@ -1,22 +1,24 @@
 package com.ljyh.mei.ui.screen.history
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.di.repository.HistoryRepository
-import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.di.ApplicationContext
+import com.ljyh.mei.parasite.HostAccountStore
+import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.parasite.HostSessionChangedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -36,14 +38,14 @@ data class HistoryUiState(
 class HistoryViewModel @Inject constructor(
     private val localRepository: HistoryRepository,
     private val remoteRepository: MeloXRepository,
-    @param:ApplicationContext private val context: Context,
+    private val accounts: HostAccountStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow(HistoryUiState(isRefreshing = true))
     val state: StateFlow<HistoryUiState> = _state
 
     private var localEntries: List<ListeningHistoryEntry> = emptyList()
     private var remoteEntries: List<ListeningHistoryEntry>? = null
-    private var loadedCookie: String? = null
+    private var loadedSession: HostSessionStamp? = null
     private var refreshJob: Job? = null
 
     init {
@@ -53,38 +55,56 @@ class HistoryViewModel @Inject constructor(
                 publish()
             }
         }
-        refresh()
+        viewModelScope.launch {
+            accounts.state.map { it.session }.distinctUntilChanged().collect {
+                refreshJob?.cancel()
+                loadedSession = null
+                remoteEntries = null
+                _state.value = _state.value.copy(isRefreshing = false, error = null)
+                publish()
+                if (it?.identity?.authenticated == true) refresh()
+            }
+        }
     }
 
     fun refresh() {
-        if (refreshJob?.isActive == true) return
+        refreshJob?.cancel()
+        val stamp = runCatching { accounts.requireAuthenticated() }.getOrNull()
+        if (stamp == null) {
+            loadedSession = null
+            remoteEntries = null
+            _state.value = _state.value.copy(isRefreshing = false, error = null)
+            publish()
+            return
+        }
         refreshJob = viewModelScope.launch {
-            val cookie = context.dataStore.data.first()[CookieKey].orEmpty().trim()
-            if (cookie.isEmpty()) {
-                loadedCookie = null
-                remoteEntries = null
-                _state.value = _state.value.copy(isRefreshing = false, error = null)
-                publish()
-                return@launch
-            }
-            if (loadedCookie != null && loadedCookie != cookie) {
+            if (loadedSession != stamp) {
                 remoteEntries = null
             }
             _state.value = _state.value.copy(isRefreshing = true, error = null)
+            publish()
             try {
+                accounts.sessions.requireCurrent(stamp)
                 val songs = remoteRepository.recentSongs()
-                loadedCookie = cookie
-                remoteEntries = songs.map(AccountSong::toListeningHistoryEntry)
-                _state.value = _state.value.copy(isRefreshing = false, error = null)
+                val entries = songs.map(AccountSong::toListeningHistoryEntry)
+                currentCoroutineContext().ensureActive()
+                accounts.sessions.withCurrent(stamp) {
+                    loadedSession = stamp
+                    remoteEntries = entries
+                    _state.value = _state.value.copy(isRefreshing = false, error = null)
+                }
                 publish()
             } catch (error: CancellationException) {
                 throw error
+            } catch (_: HostSessionChangedException) {
+                // Session changes reset cloud entries without deleting device-local history.
             } catch (error: Exception) {
-                _state.value = _state.value.copy(
-                    isRefreshing = false,
-                    error = error.message ?: error.javaClass.simpleName,
-                )
-                publish()
+                runCatching {
+                    accounts.sessions.withCurrent(stamp) {
+                        _state.value = _state.value.copy(isRefreshing = false, error = error.message ?: error.javaClass.simpleName)
+                        publish()
+                    }
+                }
             }
         }
     }
@@ -94,9 +114,19 @@ class HistoryViewModel @Inject constructor(
     }
 
     private fun publish() {
+        val stamp = loadedSession
+        if (stamp != null) {
+            val merged = mergeHistoryEntries(remoteEntries, localEntries)
+            val published = runCatching {
+                accounts.sessions.withCurrent(stamp) {
+                    _state.value = _state.value.copy(items = merged, canClearLocalHistory = false)
+                }
+            }.isSuccess
+            if (published) return
+        }
         _state.value = _state.value.copy(
-            items = mergeHistoryEntries(remoteEntries, localEntries),
-            canClearLocalHistory = remoteEntries == null && localEntries.isNotEmpty(),
+            items = mergeHistoryEntries(null, localEntries),
+            canClearLocalHistory = localEntries.isNotEmpty(),
         )
     }
 }

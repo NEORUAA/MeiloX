@@ -420,6 +420,47 @@ MainActivity, and production player remain unchanged by this slice.
 In particular, keep production routing gated until the entire cookie-to-profile authorization
 window and canceled authorization responses are covered by session-publication guards.
 
+### Public Account Presentation Slice
+
+- Added a process-local `HostAccountStore` for public identity and profile presentation.
+  It reads the official session and account endpoint, never writes credentials or identity
+  copies into module preferences, and rejects a profile whose ID differs from the session.
+  Binding wakes an already-created store; invalidation clears old-generation presentation.
+  Refresh, account changes, logout, and close discard canceled results even when the loader
+  does not cooperate with coroutine cancellation.
+- `HostSessionBridge.withCurrent` makes short state publications atomic with transitions.
+  Invalidation callbacks remain outside the monitor; delayed notifications cannot erase
+  a newer profile. Account-page presentation also checks its loaded generation against the
+  current account while old child requests are still unwinding.
+- Global avatar routing, Settings, Account Home, and cloud listening history now consume
+  official identity instead of module Cookie/user-ID preferences. Removed the General
+  Settings Cookie-export control. Cloud history drops prior-generation remote records while
+  retaining device-local history; merging local entries also rechecks session ownership.
+- The gated account carrier uses the original `navigationEntry`, Navigation 3 back stack,
+  per-entry ViewModels, and existing glass/resource providers. It does not replace production
+  Activity/service routing or provide a production player connection.
+- On the API 37 / 16 KB AVD, module Cookie and user-ID preference presence both reported
+  false while the original Settings avatar/name, Account Home profile/details/playlists,
+  and nonempty cloud recent-play history loaded through the official session. Covers and
+  avatars rendered correctly; account refresh and General Settings were visually inspected.
+  No Cookie-export entry remains. No remote mutation, logout, or track play was triggered.
+- Saved-state navigation was tested from History into Account Home: after HOME, STOPPED,
+  and a saved Bundle, the old process was killed and the same task resumed. The new process
+  reported `restored=true`, restored Account Home with the official session, and Back returned
+  to History. The tested cold-start and restored processes had no crash-buffer entries.
+  Ten lower-level and eight typed Retrofit read-only probes passed again after returning to
+  the official launcher; cancellation and final unchanged-session checks also passed.
+- The complete suite passed with 295 tests, no failures, errors, or skips; debug assembly,
+  diff checks, and 16 KB APK alignment passed. The new cases cover binding, anonymous state,
+  account/generation changes, non-cooperative cancellation, mismatched identities, refresh,
+  logout, delayed invalidation, close, and atomic publication versus transition.
+
+This is scoped account presentation acceptance, not proof of fresh QR authorization or
+listening-stat settlement. Existing cloud records are not attributed to module playback.
+Library, Home, Podcast, Social, Playlist, Player, Listen Together, account-owned local caches,
+and legacy report consumers still require migration. The authorization-window guard and
+production component gates remain open; no official session was exported or cleared.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -442,8 +483,8 @@ window and canceled authorization responses are covered by session-publication g
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
-| 3. Official-session login UI | In progress: official QR page, refresh/expiry, network failure, lifecycle teardown, and process recreation passed | Real authorization/logout/account changes and all account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport and eight typed read-only operations passed | All core screens use host business transport and pass UI/session acceptance |
+| 3. Official-session login UI | In progress: QR lifecycle and first official-account consumers passed | Real authorization/logout/account changes, authorization-window guards, and remaining account consumers remain |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, and cloud History reads passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
@@ -465,6 +506,7 @@ adb -s emulator-5554 shell dumpsys package com.netease.cloudmusic.tv
 adb -s emulator-5554 shell am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.app.LoadingActivity
 adb -s emulator-5554 shell su -c 'am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.tv.activity.TvLoginActivity'
 adb -s emulator-5554 shell su -c 'am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.tv.test.TextMainActivity'
+adb -s emulator-5554 shell su -c 'am start -W -n com.netease.cloudmusic.tv/com.netease.cloudmusic.tv.test.TextMainActivity --ez meilox.account true --es meilox.route history'
 adb -s emulator-5554 shell dumpsys media_session
 adb -s emulator-5554 logcat -d -b crash
 ```

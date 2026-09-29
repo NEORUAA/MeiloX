@@ -3,6 +3,7 @@ package com.ljyh.mei.ui.component
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -10,33 +11,31 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserAvatarUrlKey
-import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.local.rememberHostAccount
 
 /** Shared account entry shown on every primary tab's pinned navigation bar. */
 @Composable
 fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
     val navController = LocalNavController.current
-    val (cookie) = rememberPreference(CookieKey, "")
-    val (avatarUrl) = rememberPreference(UserAvatarUrlKey, "")
-    val (nickname) = rememberPreference(UserNicknameKey, "")
+    val account by rememberHostAccount()
+    val avatarUrl = account.profile?.avatarUrl.orEmpty()
+    val nickname = account.profile?.nickname.orEmpty()
     val accountDescription = stringResource(R.string.account_home)
 
     GlassIconButton(
         onClick = {
-            if (cookie.isBlank()) {
+            if (!account.authenticated) {
                 Screen.NeteaseLogin.navigate(navController)
             } else {
                 Screen.AccountHome.navigate(navController)
             }
         },
         modifier = modifier,
+        enabled = account.session != null,
     ) {
         if (avatarUrl.isBlank()) {
             SfIcon(

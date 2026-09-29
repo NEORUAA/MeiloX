@@ -435,6 +435,7 @@
     <string name="netease_login_qr">NetEase sign-in QR code</string>
     <string name="netease_login_refresh">Refresh QR code</string>
     <string name="netease_logout_error">Unable to sign out</string>
+    <string name="account_profile_unavailable">Account details are unavailable</string>
     <string name="netease_cookie_login">Use Cookie Login</string>
     <string name="netease_cookie_login_placeholder">MUSIC_U value only</string>
     <string name="netease_cookie_login_tip_title">Cookie contents</string>

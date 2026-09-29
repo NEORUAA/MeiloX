@@ -10,13 +10,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosPinnedListPage
@@ -27,7 +26,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.account.logoutNetease
-import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.local.rememberHostAccount
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,8 +35,8 @@ fun SettingScreen(
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
-    val (cookie) = rememberPreference(CookieKey, "")
-    val (userNickname) = rememberPreference(UserNicknameKey, "")
+    val account by rememberHostAccount()
+    val userNickname = account.profile?.nickname.orEmpty()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
         title = stringResource(R.string.settings),
@@ -47,7 +46,7 @@ fun SettingScreen(
         item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
         item {
             IosGroupedList {
-                if (cookie.isBlank()) {
+                if (!account.authenticated) {
                     SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
                         Screen.NeteaseLogin.navigate(navController)
                     }

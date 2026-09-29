@@ -33,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,9 +40,6 @@ import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.UserAvatarUrlKey
-import com.ljyh.mei.constants.UserIdKey
-import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.data.model.melox.AccountDetail
 import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
@@ -66,11 +62,21 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
-import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.parasite.HostAccountStore
+import com.ljyh.mei.parasite.HostAccountState
+import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.parasite.HostSessionChangedException
 import com.ljyh.mei.di.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -82,38 +88,76 @@ data class AccountHomeState(
     val playlists: List<AccountPlaylist> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
+    val requiresLogin: Boolean = false,
+    val session: HostSessionStamp? = null,
 )
+
+internal fun AccountHomeState.forAccount(account: HostAccountState): AccountHomeState =
+    if (session == account.session) this else AccountHomeState(
+        loading = account.loading,
+        requiresLogin = account.session != null && !account.authenticated,
+        session = account.session,
+    )
 
 class AccountHomeViewModel @Inject constructor(
     private val repository: MeloXRepository,
-    @ApplicationContext private val context: Context,
+    private val accounts: HostAccountStore,
+    @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AccountHomeState())
-    val state: StateFlow<AccountHomeState> = _state
+    val state: StateFlow<AccountHomeState> = combine(_state, accounts.state) { state, account ->
+        state.forAccount(account)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountHomeState())
 
     init {
-        refresh()
-    }
-
-    fun refresh() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching {
-                val profile = repository.accountProfile()
-                context.dataStore.edit { preferences ->
-                    preferences[UserIdKey] = profile.id.toString()
-                    preferences[UserNicknameKey] = profile.nickname
-                    profile.avatarUrl?.let { preferences[UserAvatarUrlKey] = it }
+            accounts.state.collectLatest { account ->
+                val initial = AccountHomeState(
+                    profile = account.profile,
+                    loading = account.loading || account.profile != null,
+                    error = if (account.profileUnavailable) context.getString(R.string.account_profile_unavailable) else null,
+                    requiresLogin = account.session != null && !account.authenticated,
+                    session = account.session,
+                )
+                val stamp = account.session
+                if (stamp == null) {
+                    _state.value = initial
+                    return@collectLatest
                 }
-                coroutineScope {
-                    val detail = async { runCatching { repository.accountDetail(profile.id) }.getOrNull() }
-                    val playlists = async { runCatching { repository.accountPlaylists(profile.id) }.getOrDefault(emptyList()) }
-                    AccountHomeState(profile, detail.await(), playlists.await(), loading = false)
+                if (runCatching { accounts.sessions.withCurrent(stamp) { _state.value = initial } }.isFailure) {
+                    return@collectLatest
                 }
-            }.onSuccess { _state.value = it }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+                val profile = account.profile ?: return@collectLatest
+                try {
+                    val next = coroutineScope {
+                        val detail = async { runCatching { repository.accountDetail(profile.id) }.getOrNull() }
+                        val playlists = async { runCatching { repository.accountPlaylists(profile.id) }.getOrDefault(emptyList()) }
+                        AccountHomeState(
+                            profile,
+                            detail.await()?.takeIf { it.profile.id == profile.id },
+                            playlists.await(),
+                            loading = false,
+                            session = stamp,
+                        )
+                    }
+                    currentCoroutineContext().ensureActive()
+                    accounts.sessions.withCurrent(stamp) { _state.value = next }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: HostSessionChangedException) {
+                    // The account collector will clear the previous generation's presentation.
+                } catch (_: Exception) {
+                    runCatching {
+                        accounts.sessions.withCurrent(stamp) {
+                            _state.value = _state.value.copy(loading = false, error = context.getString(R.string.account_profile_unavailable))
+                        }
+                    }
+                }
+            }
         }
     }
+
+    fun refresh() = accounts.refresh()
 }
 
 @Composable
@@ -132,6 +176,13 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = viewModel()) {
             }
         },
     ) {
+        if (state.requiresLogin) {
+            item {
+                GlassButton(onClick = { Screen.NeteaseLogin.navigate(navController) }) {
+                    Text(stringResource(R.string.netease_login))
+                }
+            }
+        }
         state.profile?.let { profile ->
             val displayedProfile = state.detail?.profile ?: profile
             item {

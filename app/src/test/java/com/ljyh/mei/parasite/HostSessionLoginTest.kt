@@ -3,12 +3,46 @@ package com.ljyh.mei.parasite
 import android.graphics.Bitmap
 import java.io.Closeable
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostSessionLoginTest {
+    @Test fun statePublicationAndTransitionDoNotInterleave() {
+        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val stamp = sessions.snapshot()
+        val publishing = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val invalidated = CountDownLatch(1)
+        sessions.onInvalidated { invalidated.countDown() }
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val publication = pool.submit {
+                sessions.withCurrent(stamp) {
+                    publishing.countDown()
+                    check(release.await(5, TimeUnit.SECONDS))
+                    sessions.requireCurrent(stamp)
+                }
+            }
+            assertTrue(publishing.await(5, TimeUnit.SECONDS))
+            val change = pool.submit { sessions.beginTransition().close() }
+            assertEquals(false, invalidated.await(100, TimeUnit.MILLISECONDS))
+            release.countDown()
+            publication.get(5, TimeUnit.SECONDS)
+            change.get(5, TimeUnit.SECONDS)
+            assertThrows(HostSessionChangedException::class.java) {
+                sessions.withCurrent(stamp) { error("Stale state must not be published") }
+            }
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
+
     @Test fun missingHostLoginFailsClosedAndCanRetryOnceBound() {
         val sessions = HostSessionBridge()
         sessions.bind { HostSessionIdentity(1, true, false) }

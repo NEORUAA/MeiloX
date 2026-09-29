@@ -69,6 +69,13 @@ class HostRuntimeProbeActivity : ComponentActivity() {
         HostRuntimeProbe.report("runtime_activity_created restored=${savedInstanceState != null}")
         setContent {
             MusicTheme(seedColor = Color(0xFFFA233B)) {
+                if (intent.getBooleanExtra("meilox.account", false)) {
+                    HostAccountProbe(
+                        this@HostRuntimeProbeActivity,
+                        intent.getStringExtra("meilox.route") ?: com.ljyh.mei.ui.screen.Screen.Setting.route,
+                    )
+                    return@MusicTheme
+                }
                 if (intent.getBooleanExtra("meilox.login", false)) {
                     CompositionLocalProvider(LocalPlayerAwareWindowInsets provides WindowInsets.systemBars) {
                         GlassBackdropHost(

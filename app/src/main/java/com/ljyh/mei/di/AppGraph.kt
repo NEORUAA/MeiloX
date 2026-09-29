@@ -5,6 +5,7 @@ import com.ljyh.mei.AppContext
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.parasite.HostRequestBridge
+import com.ljyh.mei.parasite.HostAccountStore
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
@@ -20,6 +21,7 @@ interface AppComponent {
     fun viewModelFactory(): AppViewModelFactory
     fun database(): AppDatabase
     fun hostRequests(): HostRequestBridge
+    fun hostAccount(): HostAccountStore
     fun apiService(): ApiService
     fun eapiService(): EApiService
     fun weapiService(): WeApiService

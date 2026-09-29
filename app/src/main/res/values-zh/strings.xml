@@ -434,6 +434,7 @@
     <string name="netease_login_qr">网易云登录二维码</string>
     <string name="netease_login_refresh">刷新二维码</string>
     <string name="netease_logout_error">退出登录失败</string>
+    <string name="account_profile_unavailable">暂时无法加载账户资料</string>
     <string name="netease_cookie_login">使用 Cookie 登录</string>
     <string name="netease_cookie_login_placeholder">MUSIC_U 的纯值</string>
     <string name="netease_cookie_login_tip_title">Cookie 内容</string>

@@ -26,13 +26,14 @@ class HostSessionBridge @Inject constructor() {
     private val generation = AtomicLong()
     private val transitions = AtomicInteger()
     private val invalidationListeners = CopyOnWriteArrayList<(Long) -> Unit>()
-    private val revisions = MutableStateFlow(0L)
+    private val revisions = MutableStateFlow(-1L)
     val changes = revisions.asStateFlow()
 
     @Synchronized
     internal fun bind(reader: () -> HostSessionIdentity) {
         check(this.reader == null) { "Official session is already bound" }
         this.reader = reader
+        revisions.update { maxOf(it, generation.get()) }
     }
 
     @Synchronized
@@ -51,6 +52,7 @@ class HostSessionBridge @Inject constructor() {
         beginTransition().use { backend.logout() }
     }
 
+    @Synchronized
     fun snapshot(): HostSessionStamp {
         val read = reader ?: throw IOException("Official session is not ready")
         repeat(3) {
@@ -66,26 +68,40 @@ class HostSessionBridge @Inject constructor() {
         if (snapshot() != stamp) throw HostSessionChangedException()
     }
 
+    /** Keep a short, non-suspending state publication atomic with session invalidation. */
+    @Synchronized
+    fun <T> withCurrent(stamp: HostSessionStamp, publish: () -> T): T {
+        requireCurrent(stamp)
+        return publish()
+    }
+
     /** Also invalidates same-account reauthorization, which an ID comparison cannot detect. */
     fun invalidate() {
-        publish(generation.incrementAndGet())
+        val revision = synchronized(this) { generation.incrementAndGet() }
+        publish(revision)
     }
 
     fun beginTransition(): Closeable {
-        transitions.incrementAndGet()
-        invalidate()
+        val started = synchronized(this) {
+            transitions.incrementAndGet()
+            generation.incrementAndGet()
+        }
+        publish(started)
         val closed = AtomicBoolean()
         return Closeable {
             if (closed.compareAndSet(false, true)) {
-                val revision = generation.incrementAndGet()
-                transitions.decrementAndGet()
+                val revision = synchronized(this) {
+                    transitions.decrementAndGet()
+                    generation.incrementAndGet()
+                }
                 publish(revision)
             }
         }
     }
 
-    internal fun onInvalidated(listener: (Long) -> Unit) {
+    internal fun onInvalidated(listener: (Long) -> Unit): Closeable {
         invalidationListeners += listener
+        return Closeable { invalidationListeners -= listener }
     }
 
     private fun publish(revision: Long) {
