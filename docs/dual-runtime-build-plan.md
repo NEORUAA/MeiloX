@@ -578,6 +578,69 @@ gates are qualified; this checkpoint changes only CI and documentation.
   Android document providers and cloud page account/paging ownership remain unqualified.
   This increment does not complete the cloud feature, D4, or release runtime acceptance.
 
+### D1/D4 Checkpoint: Session-Owned Cloud Library and Page Actions (2026-09-30)
+
+- Introduced a shared `CloudMusicSource` and a cloud library business adapter using the
+  selected runtime's existing authenticated service. Cloud reads and single-song
+  deletions now carry explicit session stamps; upload preparation inherits the owner
+  captured before document selection rather than taking a fresh account afterward.
+  There is no Cookie/host fallback. API-020 records the request and identity contracts.
+- The existing list receives a complete, validated snapshot from automatic pagination.
+  It rejects malformed/partial/stalled pages, duplicate cloud identities and detected
+  count changes. Failed refreshes preserve only the current account's previous snapshot;
+  they do not turn a partially fetched library into success. This does not promise a
+  server-atomic snapshot if undetectable concurrent changes occur.
+- Account invalidation clears the shared page synchronously and cancels old work.
+  Latest-refresh ordering, duplicate-write reservation, stale picker rejection and
+  independent upload/delete flags are covered by substitute tests. Both the standalone
+  cloud page and the embedded Library entry guard their rendered callback owner. Layouts,
+  resources, navigation and controls stay unchanged; no flavor-specific frontend is added.
+- All 30 new contract/state tests pass under both backends, bringing the paired JVM
+  suites to 657 standalone and 722 parasite tests, without failures/errors/skips.
+  These tests simulate cancellation, account replacement, same-account renewal, late
+  callbacks, unavailable session readers and in-flight invalidation after disposal;
+  they do not delete or upload any real user file.
+- Both debug APKs, instrumentation APKs and unsigned minified release APKs build from
+  the final source. Both releases retain the shared cloud/Library frontend and their
+  intended production package IDs, pass 16 KB ZIP alignment, and preserve dynamic
+  service session-tag annotations/generic signatures. Xposed metadata remains absent
+  from standalone and present only in parasite. These are package checks, not release
+  device execution. `git diff --check` passes. The final build uses scoped
+  `--max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3g`; local evidence is
+  `/tmp/meilox-dual-cloud-library-frozen.log`. No generated artifact is committed.
+- Private-cloud playback/download owner translation, real deletion/publication,
+  provider lifecycle and paired runtime acceptance remain open. This is a bounded
+  cloud ownership checkpoint, not complete D4 acceptance.
+
+### D3/D5 Checkpoint: User-Supplied Cookie Login and Read-Only Device Checks (2026-09-30)
+
+- The user supplied a Cookie for testing, resolving the earlier standalone-login wait.
+  Updated only `MeiloX Standalone Debug`, then entered the credential through the existing
+  manual Cookie sheet. The exact input was checked privately before submission; no
+  credential content was printed, logged, committed, or copied from the official host.
+  Live verification succeeded and the original UI displayed successful login.
+- Authenticated Library and cloud rows rendered through the shared frontend. A later
+  process-cold launch restored the account/avatar without re-entry. These are real
+  Cookie/read/persistence observations, not proof of every endpoint, all pagination
+  cases, interactive WebView authentication or an upgrade of the original installation.
+- All four scoped standalone device tests pass: independent registered components,
+  shared graph/session identity, absence of host/Xposed classes/metadata and packaged
+  Zstd loading with NCBL envelope encoding on the API 37, 16 KB AVD. Encoding does not
+  qualify network report delivery or server listening statistics. The AVD still has
+  LSPosed enabled; no framework-free device is qualified here.
+- Reinstalled the final standalone debug artifact, repeated those four tests, then
+  cold-started the app with its retained Cookie. The authenticated Home/avatar returned
+  and the current process had no fatal crash entries. This is the isolated debug
+  package's update/restart check, not a legacy production-data upgrade.
+- No TV/module update, logout, account switch, playback, upload, deletion or real download
+  grant was performed. The original standalone app and existing TV-owned download were
+  not modified. Legacy standalone download policy/work conversion, signed release
+  upgrades and full paired regression remain pending. Local evidence includes
+  `/tmp/meilox-standalone-cookie-device-final.log`, `/tmp/meilox-standalone-cookie-accepted.png`,
+  `/tmp/meilox-standalone-library-authenticated.png`, `/tmp/meilox-standalone-cloud-tab.png`
+  `/tmp/meilox-standalone-cookie-restored.png` and
+  `/tmp/meilox-standalone-cookie-final-home.png`; none are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

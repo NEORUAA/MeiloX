@@ -1,7 +1,6 @@
 package com.ljyh.mei.ui.screen.cloud
 
 import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +20,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +40,10 @@ import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.data.repository.CloudMusicSource
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.GlassButton
@@ -56,11 +58,22 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import javax.inject.Inject
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class CloudMusicUiState(
+    val session: SessionStamp? = null,
     val isLoading: Boolean = true,
     val page: CloudMusicPage? = null,
     val deletingIds: Set<Long> = emptySet(),
@@ -69,61 +82,213 @@ data class CloudMusicUiState(
     val error: String? = null,
 )
 
-class CloudMusicViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class CloudMusicViewModel internal constructor(
+    private val repository: CloudMusicSource,
+    private val sessions: SessionStore,
 ) : ViewModel() {
+    @Inject constructor(repository: MeloXRepository, sessions: SessionStore) : this(repository as CloudMusicSource, sessions)
+
     private val _state = MutableStateFlow(CloudMusicUiState())
     val state = _state.asStateFlow()
-
-    init { refresh() }
-
-    fun refresh() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, error = null)
-            runCatching { repository.cloudSongs() }
-                .onSuccess { _state.value = CloudMusicUiState(isLoading = false, page = it) }
-                .onFailure { _state.value = _state.value.copy(isLoading = false, error = it.message) }
-        }
-    }
-
-    fun delete(song: CloudSong) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(deletingIds = _state.value.deletingIds + song.id)
-            runCatching { repository.deleteCloudSong(song.id) }
-                .onSuccess { refresh() }
-                .onFailure {
-                    _state.value = _state.value.copy(
-                        deletingIds = _state.value.deletingIds - song.id,
-                        error = it.message,
-                    )
-                }
-        }
-    }
-
-    fun upload(uri: Uri) {
-        if (_state.value.isUploading) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isUploading = true, uploadProgress = 0f, error = null)
-            runCatching {
-                repository.uploadCloudSong(uri) { sent, total ->
-                    _state.value = _state.value.copy(uploadProgress = if (total > 0) sent.toFloat() / total else 0f)
-                }
-            }.onSuccess {
-                _state.value = _state.value.copy(isUploading = false, uploadProgress = 1f)
-                refresh()
-            }.onFailure {
-                _state.value = _state.value.copy(isUploading = false, error = it.message)
+    private val stateLock = Any()
+    private val readVersion = AtomicLong()
+    private val uploadVersion = AtomicLong()
+    private var accountScope: CoroutineScope? = null
+    private var readJob: Job? = null
+    private var selectionOwner: SessionStamp? = null
+    private var cleared = false
+    private val invalidation = sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if (!cleared && (state.value.session?.generation ?: -1) < revision) {
+                readVersion.incrementAndGet()
+                uploadVersion.incrementAndGet()
+                _state.value = pendingState()
             }
         }
     }
+
+    init {
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
+                val owner = runCatching { sessions.snapshot() }.getOrNull()
+                if (owner == null || sessions.recoveryRequired.value || state.value.session != owner) {
+                    accountScope?.cancel()
+                    readVersion.incrementAndGet()
+                    uploadVersion.incrementAndGet()
+                    if (owner == null || sessions.recoveryRequired.value) {
+                        synchronized(stateLock) { _state.value = pendingState() }
+                    } else {
+                        try {
+                            sessions.withCurrent(owner) {
+                                synchronized(stateLock) {
+                                    accountScope = CoroutineScope(viewModelScope.coroutineContext +
+                                        SupervisorJob(viewModelScope.coroutineContext[Job]))
+                                    _state.value = CloudMusicUiState(session = owner,
+                                        isLoading = owner.canUseCloud,
+                                        error = if (owner.canUseCloud) null else "Sign-in required")
+                                }
+                            }
+                            if (owner.canUseCloud) refresh(owner)
+                        } catch (_: IOException) {
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun refresh() { state.value.session?.let(::refresh) }
+
+    private fun refresh(owner: SessionStamp) {
+        val scope = accountScope ?: return
+        var version = 0L
+        if (!publish(owner) {
+            version = readVersion.incrementAndGet()
+            it.copy(isLoading = true, error = null)
+        }) return
+        readJob?.cancel()
+        readJob = scope.launch {
+            try {
+                sessions.requireCurrent(owner)
+                val page = repository.cloudSongs(owner)
+                currentCoroutineContext().ensureActive()
+                publish(owner) { if (readVersion.get() == version) it.copy(isLoading = false, page = page) else null }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                publish(owner) { if (readVersion.get() == version) it.copy(isLoading = false, error = error.message) else null }
+            } finally {
+                publish(owner) { if (readVersion.get() == version) it.copy(isLoading = false) else null }
+            }
+        }
+    }
+
+    fun delete(song: CloudSong, owner: SessionStamp?) {
+        val scope = accountScope ?: return
+        if (!publish(owner) {
+            if (song.id in it.deletingIds || it.page?.songs?.none { row -> row.id == song.id } != false) null
+            else it.copy(deletingIds = it.deletingIds + song.id, error = null)
+        }) return
+        scope.launch {
+            try {
+                sessions.requireCurrent(checkNotNull(owner))
+                repository.deleteCloudSong(owner, song.id)
+                currentCoroutineContext().ensureActive()
+                if (publish(owner) {
+                    it.copy(page = it.page?.let { page ->
+                        val remaining = page.songs.filterNot { row -> row.id == song.id }
+                        page.copy(songs = remaining, count = remaining.size)
+                    })
+                }) refresh(owner)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                publish(owner) { it.copy(error = error.message) }
+            } finally {
+                publish(owner) { it.copy(deletingIds = it.deletingIds - song.id) }
+            }
+        }
+    }
+
+    fun beginUploadSelection(owner: SessionStamp?): Boolean = publish(owner) {
+        if (it.isUploading || selectionOwner != null) null else {
+            selectionOwner = owner
+            it
+        }
+    }
+
+    /** Not saved across process death; an orphan document result cannot choose an account. */
+    fun takeUploadSelection(): SessionStamp? {
+        val owner = synchronized(stateLock) { selectionOwner.also { selectionOwner = null } } ?: return null
+        return owner.takeIf { publish(it) { current -> current } }
+    }
+
+    fun upload(uri: String, owner: SessionStamp) {
+        val scope = accountScope ?: return
+        var version = 0L
+        if (uri.isBlank() || !publish(owner) {
+            if (it.isUploading) null else {
+                version = uploadVersion.incrementAndGet()
+                it.copy(isUploading = true, uploadProgress = 0f, error = null)
+            }
+        }) return
+        scope.launch {
+            try {
+                val operation = currentCoroutineContext()
+                sessions.requireCurrent(owner)
+                repository.uploadCloudSong(owner, uri) { sent, total ->
+                    operation.ensureActive()
+                    check(total > 0 && sent in 0..total) { "Invalid cloud upload progress" }
+                    publish(owner) {
+                        if (uploadVersion.get() == version && it.isUploading)
+                            it.copy(uploadProgress = (sent.toDouble() / total).toFloat()) else null
+                    }
+                }
+                operation.ensureActive()
+                if (publish(owner) { it.copy(isUploading = false, uploadProgress = 1f) }) refresh(owner)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                publish(owner) { it.copy(error = error.message) }
+            } finally {
+                publish(owner) { if (uploadVersion.get() == version) it.copy(isUploading = false) else null }
+            }
+        }
+    }
+
+    fun withCurrentPage(owner: SessionStamp?, page: CloudMusicPage?, action: () -> Unit) {
+        publish(owner) {
+            if (page == null || it.page !== page) null else {
+                action()
+                it
+            }
+        }
+    }
+
+    private fun publish(owner: SessionStamp?, update: (CloudMusicUiState) -> CloudMusicUiState?): Boolean {
+        if (owner == null || !owner.canUseCloud) return false
+        return try {
+            sessions.withCurrent(owner) {
+                synchronized(stateLock) {
+                    if (cleared || sessions.recoveryRequired.value || state.value.session != owner) false
+                    else update(state.value)?.let { _state.value = it; true } ?: false
+                }
+            }
+        } catch (_: IOException) { false }
+    }
+
+    private fun pendingState() = CloudMusicUiState(isLoading = !sessions.recoveryRequired.value,
+        error = if (sessions.recoveryRequired.value) "Session recovery is required" else null)
+
+    override fun onCleared() {
+        invalidation.close()
+        synchronized(stateLock) {
+            cleared = true
+            selectionOwner = null
+            readVersion.incrementAndGet()
+            uploadVersion.incrementAndGet()
+        }
+        accountScope?.cancel()
+        super.onCleared()
+    }
 }
+
+private val SessionStamp.canUseCloud: Boolean
+    get() = identity.authenticated && !identity.anonymous && identity.userId > 0
 
 @Composable
 fun CloudMusicScreen(
     viewModel: CloudMusicViewModel = viewModel(),
     isNavigationTab: Boolean = false,
 ) {
-    val state by viewModel.state.collectAsState()
+    // Event callbacks must retain the rendered owner, not read a newer account's State.
+    val state = viewModel.state.collectAsState().value
     val playerConnection = LocalPlayerConnection.current
     val navController = LocalNavController.current
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
@@ -131,11 +296,12 @@ fun CloudMusicScreen(
     val cloudTitle = stringResource(R.string.cloud_music)
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
+        val owner = viewModel.takeUploadSelection()
+        if (uri != null && owner != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            viewModel.upload(uri)
+            viewModel.upload(uri.toString(), owner)
         }
     }
 
@@ -148,7 +314,12 @@ fun CloudMusicScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlassButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
+            GlassButton(onClick = {
+                if (viewModel.beginUploadSelection(state.session)) {
+                    try { picker.launch(arrayOf("audio/*")) }
+                    catch (error: Exception) { viewModel.takeUploadSelection(); throw error }
+                }
+            }, enabled = !state.isUploading) {
                 SfIcon("arrow.up.circle.fill", stringResource(R.string.cloud_upload), size = 18.dp)
             }
             GlassButton(onClick = viewModel::refresh) {
@@ -230,7 +401,7 @@ fun CloudMusicScreen(
                     },
                     trailing = {
                         GlassButton(
-                            onClick = { viewModel.delete(song) },
+                            onClick = { viewModel.delete(song, state.session) },
                             enabled = song.id !in state.deletingIds,
                             emphasis = GlassEmphasis.Regular,
                         ) { Text(stringResource(R.string.delete)) }
@@ -240,7 +411,9 @@ fun CloudMusicScreen(
                             val mediaItem = item.asMediaMetadata().toMediaItem()
                             mediaItem.mediaId to mediaItem
                         }
-                        playerConnection?.playQueue(ListQueue("cloud", cloudTitle, queue, index))
+                        viewModel.withCurrentPage(state.session, state.page) {
+                            playerConnection?.playQueue(ListQueue("cloud", cloudTitle, queue, index))
+                        }
                     },
                 )
             }

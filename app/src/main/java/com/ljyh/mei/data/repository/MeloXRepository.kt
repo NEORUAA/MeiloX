@@ -9,7 +9,6 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.ljyh.mei.data.model.melox.CloudMusicPage
-import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.melox.ListenTogetherCommand
 import com.ljyh.mei.data.model.melox.ListenTogetherRoom
 import com.ljyh.mei.data.model.melox.ListenTogetherPlaybackCommand
@@ -95,7 +94,8 @@ class MeloXRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val sessions: SessionStore,
     private val cloudUploads: CloudUploadCoordinator,
-) : PodcastSource {
+    private val cloudLibrary: CloudLibraryBackend,
+) : PodcastSource, CloudMusicSource {
     private val uploadDirectory by lazy { prepareCloudUploadDirectory(context.cacheDir) }
 
     override suspend fun podcastHome(session: SessionStamp): PodcastHome = coroutineScope {
@@ -255,29 +255,21 @@ class MeloXRepository @Inject constructor(
         request(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", mapOf("id" to id), session)
     }
 
-    suspend fun cloudSongs(offset: Int = 0, limit: Int = 200): CloudMusicPage {
-        val response = request("/api/v1/cloud/get", mapOf("offset" to offset, "limit" to limit))
-        val songs = response.array("data").mapNotNull(::parseCloudSong)
-        val count = response.int("count") ?: songs.size
-        return CloudMusicPage(
-            songs = songs,
-            count = count,
-            usedSize = response.long("size") ?: 0,
-            maxSize = response.long("maxSize") ?: 0,
-            hasMore = response.boolean("hasMore") ?: (offset + songs.size < count),
-        )
-    }
+    override suspend fun cloudSongs(session: SessionStamp): CloudMusicPage = cloudLibrary.songs(session)
 
-    suspend fun deleteCloudSong(id: Long) {
-        request("/api/cloud/del", mapOf("songIds" to listOf(id)))
-    }
+    override suspend fun deleteCloudSong(session: SessionStamp, id: Long) = cloudLibrary.delete(session, id)
 
-    suspend fun uploadCloudSong(uri: Uri, onProgress: (Long, Long) -> Unit = { _, _ -> }) = withContext(Dispatchers.IO) {
-        val owner = sessions.snapshot()
-        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
+    override suspend fun uploadCloudSong(session: SessionStamp, uri: String, onProgress: (Long, Long) -> Unit) = withContext(Dispatchers.IO) {
+        check(session.identity.authenticated && !session.identity.anonymous && session.identity.userId > 0) { "Sign-in required" }
         val operation = currentCoroutineContext()
-        val file = prepareCloudUploadFile(uri) { operation.ensureActive(); sessions.requireCurrent(owner) }
-        try { cloudUploads.upload(file, owner, onProgress) }
+        operation.ensureActive()
+        sessions.requireCurrent(session)
+        val file = prepareCloudUploadFile(Uri.parse(uri)) {
+            operation.ensureActive()
+            sessions.requireCurrent(session)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        }
+        try { cloudUploads.upload(file, session, onProgress) }
         finally { file.file.delete() }
     }
 
@@ -1122,25 +1114,6 @@ private fun parseProgram(element: JsonElement?): PodcastProgram? {
         radioName = radio?.string("name") ?: "Podcast",
         host = value.objectOrNull("dj")?.let(::parseHost),
         mainSongId = value.objectOrNull("mainSong")?.long("id"),
-    )
-}
-
-private fun parseCloudSong(element: JsonElement?): CloudSong? {
-    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
-    val simple = value.objectOrNull("simpleSong")
-    val album = simple?.objectOrNull("al") ?: simple?.objectOrNull("album")
-    val artists = simple?.array("ar")?.ifEmpty { simple.array("artists") }
-    val id = value.long("songId") ?: simple?.long("id") ?: return null
-    return CloudSong(
-        id = id,
-        name = value.string("songName") ?: simple?.string("name") ?: "Unknown song",
-        artist = value.string("artist") ?: artists?.joinToString(" / ") { it.asJsonObject.string("name") ?: "" }.orEmpty(),
-        album = value.string("album") ?: album?.string("name") ?: "Unknown album",
-        coverUrl = album?.string("picUrl"),
-        durationMs = simple?.long("dt") ?: simple?.long("duration") ?: 0,
-        fileSize = value.long("fileSize") ?: 0,
-        bitrate = value.int("bitrate") ?: 0,
-        addTime = value.long("addTime") ?: 0,
     )
 }
 

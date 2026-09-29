@@ -1167,10 +1167,50 @@ These are integration differences, not server API semantics.
 - Remaining: actual SDK callback/transfer acceptance, Android document-provider and
   metadata/snapshot lifecycle tests, expired upload-token behavior and live publication
   reconciliation. Official cancellation is checked through SDK callbacks; interruption
-  latency during blocked host I/O is not qualified. Cloud listing/deletion paging and
-  ViewModel-level account/revision ownership still need their own migration. This is not
+  latency during blocked host I/O is not qualified. API-020 subsequently adds cloud
+  listing/deletion paging and ViewModel-level account/revision ownership. This is not
   complete cloud-feature, paired device, release-runtime or D4 acceptance; no
   UI/layout/navigation change is bundled.
+
+### API-020: Cloud Library Reads and Actions Share One Session Owner
+
+- Date: 2026-09-30. Both builds retain the original supplemental WeAPI business
+  routes: `v1/cloud/get` with `offset/limit`, and `cloud/del` with a `songIds` array.
+  Their payloads do not require separate flavor adapters; the named service selects
+  the standalone Cookie transport or the official-host request pipeline. These routes
+  are not newly discovered native TV cloud methods. No alternative-account/transport
+  fallback or application-level mutation retry is introduced.
+- The original frontend loaded at most 200 rows with no continuation control. A shared
+  backend now reads all pages under one captured session before publishing a snapshot,
+  without adding pagination UI or changing page architecture. It requires explicit
+  business success, valid data/count/quota fields and advancing pages. Missing
+  `hasMore` can use a valid count; malformed flags, duplicates, changed counts, stalled
+  pages and inconsistent terminal pages fail rather than silently truncate the library.
+  Detected drift is not retried automatically and this is not a server-atomic snapshot.
+- Cloud rows must have a positive `songId`. The old `simpleSong.id` fallback could
+  substitute a catalog identity for a missing cloud deletion identity. The pinned
+  `PrivateCloudSong` separately stores `id`, `songId`, `userId` and
+  `originalAudioSongId`; it does not justify treating these fields as interchangeable.
+  Missing cloud identity now rejects the snapshot. Existing display fallbacks remain;
+  private-cloud playback/download owner translation is still open under API-015/017.
+- `CloudMusicSource` carries credential-free session stamps through list, deletion,
+  file preparation and the upload coordinator. The document picker captures its owner
+  when opened, not when its result returns. Canceled/orphan/stale results cannot select
+  another account, and picker ownership is not restored across process death.
+- Shared page state clears synchronously on account invalidation, cancels old-account
+  work and rejects late reads/errors/progress. Same-account reauthorization also
+  invalidates ownership. Refresh uses latest-request ordering while preserving current
+  upload/delete flags; duplicate mutations are reserved before dispatch. Accepted
+  deletion/upload refreshes the current account only. Canceled operations are not
+  reported as success. Row callbacks verify their rendered page/session at dispatch;
+  this does not qualify ownership throughout asynchronous private-cloud playback.
+- All 30 added substitute cases pass in both variants: complete/short pagination,
+  malformed identities/envelopes, changed snapshots, exact mutation payload/session,
+  invalidation/cancellation, concurrent refresh/write state, stale document results,
+  same-account reauthorization, unavailable session readers and in-flight invalidation
+  after ViewModel disposal. No real deletion/upload or
+  quota-consuming download is used for these checks. Device/provider, actual private
+  cloud playback, account switching and full cloud-feature acceptance remain separate.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 
@@ -1289,6 +1329,15 @@ These are integration differences, not server API semantics.
   framework-free device run or real standalone login has been accepted yet. Parasite
   still cold-starts the original portrait Home with its official account and paused queue.
   The original standalone installation and the existing real TV download are preserved.
+- Follow-up (2026-09-30): the user supplied a Cookie for isolated standalone testing.
+  It was entered through the unchanged manual sheet, verified against the exact file
+  contents without printing them, and accepted by the live verification endpoint.
+  The UI showed successful login, then authenticated Library and cloud rows. A subsequent
+  process-cold launch restored the account/avatar without entering the Cookie again.
+  Only the separate standalone debug package was updated; neither TV credentials nor
+  the original standalone installation/data were read or replaced. This qualifies the
+  manual Cookie path and this account's read/recovery path, not interactive WebView
+  authentication, logout/account switching, playback/reporting or release upgrades.
 
 ### ABI-009: Standalone and Official Playback Reporting Stay Separate
 
@@ -1319,9 +1368,13 @@ These are integration differences, not server API semantics.
   sessions and unchanged host fields. APK/DEX inspection confirms source/dependency
   isolation. Both minified unsigned release builds also pass, with reporting/JNI entry
   points retained. Debug/release ZIP alignment and the restored Zstd ELF's `0x4000`
-  LOAD alignment pass. The compiled Android native smoke test has not run; no AVD state was touched
-  while user login is pending. This is not Android native, real upload, audible/full-song
+  LOAD alignment pass. At that checkpoint the compiled Android native smoke test had
+  not run; no AVD state was touched while user login was pending. This was not Android native, real upload, audible/full-song
   playback, release runtime or listening-history/statistics acceptance.
+- Follow-up (2026-09-30): after the user supplied standalone login credentials, the
+  native smoke test passed on the API 37, 16 KB AVD. Packaged Zstd compress/decompress
+  and NCBL envelope encoding are now device-qualified. No reporting request or music
+  playback was performed; upload/server statistics and release runtime remain open.
 
 ### ABI-010: Legacy Standalone Work Inputs Do Not Carry Request Ownership
 

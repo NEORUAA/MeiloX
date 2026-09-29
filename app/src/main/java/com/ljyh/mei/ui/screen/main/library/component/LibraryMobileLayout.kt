@@ -472,7 +472,11 @@ fun LibraryMobileLayout(
 
                 LibraryPage.Cloud -> {
                     cloudState?.let { state ->
-                        libraryCloudItems(state, playerConnection, query)
+                        libraryCloudItems(state, query) { queue ->
+                            cloudViewModel?.withCurrentPage(state.session, state.page) {
+                                playerConnection?.playQueue(queue)
+                            }
+                        }
                     }
                 }
 
@@ -1006,8 +1010,8 @@ private fun DownloadTaskActionSheet(
 
 private fun LazyListScope.libraryCloudItems(
     state: CloudMusicUiState,
-    playerConnection: PlayerConnection?,
     query: String,
+    onPlay: (ListQueue) -> Unit,
 ) {
     val songs = state.page?.songs.orEmpty().filterIfSearching(query) { song ->
         song.name.containsQuery(query) ||
@@ -1058,7 +1062,7 @@ private fun LazyListScope.libraryCloudItems(
                         ).toMediaItem()
                         mediaItem.mediaId to mediaItem
                     }
-                    playerConnection?.playQueue(ListQueue("library-cloud", "Cloud", queue, index))
+                    onPlay(ListQueue("library-cloud", "Cloud", queue, index))
                 },
             )
         }
