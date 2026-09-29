@@ -714,11 +714,22 @@ class MusicService : MediaLibraryService(),
 
         val songId = mediaItem.playbackHistorySongIdOrNull() ?: return
         val source = resolvePlaybackHistorySource(songId) ?: return
+        val metadata = mediaItem.metadata
+        val artist = metadata?.artists?.map { it.name }?.filter(String::isNotBlank)
+            ?.joinToString(", ").orEmpty()
+            .ifBlank { mediaItem.mediaMetadata.artist?.toString().orEmpty() }
         playbackHistoryReporter.recordStart(
             mediaId = mediaItem.mediaId,
             songId = songId,
             source = source,
             startedAtMs = startedAtMs,
+            details = PlaybackReportDetails(
+                startedAtMs = startedAtMs,
+                title = metadata?.title.orEmpty().ifBlank { mediaItem.mediaMetadata.title?.toString().orEmpty() },
+                artist = artist,
+                durationMs = metadata?.duration?.takeIf { it > 0L }
+                    ?: player.duration.takeIf { it > 0L && it != C.TIME_UNSET },
+            ),
         )
     }
 

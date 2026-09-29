@@ -120,6 +120,8 @@ kotlin {
 dependencies {
 
     "parasiteCompileOnly"("io.github.libxposed:api:102.0.0")
+    "standaloneImplementation"("com.github.luben:zstd-jni:1.5.7-20@aar")
+    "testStandaloneRuntimeOnly"("com.github.luben:zstd-jni:1.5.7-20")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

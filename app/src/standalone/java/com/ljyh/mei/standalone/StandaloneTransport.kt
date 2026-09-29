@@ -2,6 +2,7 @@ package com.ljyh.mei.standalone
 
 import com.google.gson.JsonParser
 import com.ljyh.mei.constants.AndroidUserAgent
+import com.ljyh.mei.data.network.netease.NCBL_UPLOAD_ENDPOINT
 import com.ljyh.mei.data.session.SessionCallFactory
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.di.NeteaseInterceptor
@@ -47,6 +48,21 @@ internal class StandaloneTransport @Inject constructor(private val sessions: Sta
         }.build()) { request, _ ->
         validateBusinessRequest(request)
         require(request.url.encodedPath == "/api/music/audio/match")
+        request
+    }
+
+    val clientLogs: Call.Factory = SessionCallFactory(sessions, OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()) { request, owner ->
+        sessions.requireAuthenticated(owner)
+        require(request.method == "POST" && request.url.toString() == NCBL_UPLOAD_ENDPOINT)
+        require(request.header("X-Music-U") == sessions.credentials(owner).musicU)
         request
     }
 

@@ -40,6 +40,9 @@ class ParasitePackageDeviceTest {
             "com.ljyh.mei.utils.encrypt.RSAKt",
             "com.ljyh.mei.utils.encrypt.NeteaseCipherKt",
             "com.ljyh.mei.utils.netease.ChineseIpUtils",
+            "com.ljyh.mei.data.network.netease.NcblCodec",
+            "com.ljyh.mei.data.network.netease.NeteaseClientLogClient",
+            "com.github.luben.zstd.Zstd",
         ).forEach { name ->
             assertThrows(ClassNotFoundException::class.java) {
                 Class.forName(name, false, context.classLoader)

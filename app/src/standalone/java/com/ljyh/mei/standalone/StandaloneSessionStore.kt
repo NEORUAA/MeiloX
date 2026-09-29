@@ -65,6 +65,13 @@ class StandaloneSessionStore @Inject internal constructor(
         StandaloneCredentials(requireNotNull(current).musicU)
     }
 
+    internal fun requireAuthenticated(owner: SessionStamp) {
+        requireCurrent(owner)
+        if (!owner.identity.authenticated || owner.identity.anonymous || recoveryRequired.value) {
+            throw SessionChangedException()
+        }
+    }
+
     internal class LoginAttempt(val number: Long, val owner: SessionStamp)
 
     internal fun beginLogin(): LoginAttempt = LoginAttempt(attempts.incrementAndGet(), snapshot())

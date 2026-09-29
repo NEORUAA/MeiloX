@@ -1073,6 +1073,39 @@ These are integration differences, not server API semantics.
   still cold-starts the original portrait Home with its official account and paused queue.
   The original standalone installation and the existing real TV download are preserved.
 
+### ABI-009: Standalone and Official Playback Reporting Stay Separate
+
+- Date: 2026-09-30. Dual-runtime scope supersedes API-016's module-only cleanup as a
+  project-wide policy. Standalone restores its original weblog plus NCBL `_plv`/`_pld`
+  client, while parasite continues to use only the TV's initialized native SDK. Neither
+  is a fallback for the other, and the NCBL/Zstd implementation is absent from parasite.
+- The original standalone codec/payload are restored unchanged from the recorded `main`
+  baseline. Its context provider now captures credentials from the verified standalone
+  session and tags uploads with that authorization generation. It no longer rereads an
+  unowned Cookie preference. Original Android reporting profile, device metadata,
+  multipart endpoint and exact-filename acceptance rules remain intact.
+- The shared event contract adds immutable start metadata and suspendable delivery,
+  without changing player timing, page layout or official SDK payload fields. Standalone
+  starts and ends share one context keyed by owner, song and exact millisecond start,
+  avoiding collisions between same-song starts in the same second. Active elapsed
+  seconds still exclude pause/buffering. Failures in one standalone channel do not
+  suppress the other; no automatic cross-channel or account fallback is added.
+- Owner checks cover context creation/publication, dispatch, unread response bodies and
+  acceptance. Invalidation cancels calls and removes older contexts; caller cancellation
+  cancels both channels and drops the pending start context. The NCBL client is restricted
+  to its original HTTPS upload endpoint with matching credentials, redirects disabled,
+  no connection-failure retry and bounded response consumption. Logs exclude credentials
+  and raw server errors. HTTP/business/file acceptance does not prove final statistics.
+- Evidence: 578 standalone and 656 parasite JVM tests pass; both debug/instrumentation
+  APKs build. Tests cover original golden codec fixtures, Zstd round trips, payload and
+  response rules, independent channel failure, queued metadata, cancellation, stale
+  sessions and unchanged host fields. APK/DEX inspection confirms source/dependency
+  isolation. Both minified unsigned release builds also pass, with reporting/JNI entry
+  points retained. Debug/release ZIP alignment and the restored Zstd ELF's `0x4000`
+  LOAD alignment pass. The compiled Android native smoke test has not run; no AVD state was touched
+  while user login is pending. This is not Android native, real upload, audible/full-song
+  playback, release runtime or listening-history/statistics acceptance.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

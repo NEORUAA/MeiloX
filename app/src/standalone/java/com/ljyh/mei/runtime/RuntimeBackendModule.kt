@@ -1,6 +1,8 @@
 package com.ljyh.mei.runtime
 
 import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.network.netease.DataStoreNcblSessionContextProvider
+import com.ljyh.mei.data.network.netease.NcblSessionContextProvider
 import com.ljyh.mei.playback.PlaybackReportSink
 import com.ljyh.mei.standalone.DataStoreAccountPersistence
 import com.ljyh.mei.standalone.StandaloneAccountPersistence
@@ -27,4 +29,10 @@ object RuntimeBackendModule {
 
     @Provides @Named("AudioMatchCalls")
     internal fun audioMatchCalls(transport: StandaloneTransport): Call.Factory = transport.audioMatch
+
+    @Provides @Named("NeteaseClientLog")
+    internal fun clientLogCalls(transport: StandaloneTransport): Call.Factory = transport.clientLogs
+
+    @Provides
+    internal fun clientLogContext(provider: DataStoreNcblSessionContextProvider): NcblSessionContextProvider = provider
 }

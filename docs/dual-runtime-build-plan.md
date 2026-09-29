@@ -320,6 +320,59 @@ device-ID-provider testability change in `NeteaseInterceptor`; the final source 
 and five wire-signing tests pass. Reinstall after the user's login interaction, not while
 they are entering credentials. Signed paired releases and remote CI remain unqualified.
 
+### D3 Checkpoint: Standalone Reporting Restoration (2026-09-30)
+
+- Restored the original NCBL v3 codec, payload builder, immutable metadata and upload
+  client into `src/standalone`. The codec and payload are unchanged from the recorded
+  `main` baseline; its Zstd AAR/JVM test dependency is standalone-only. This supersedes
+  the previous checkpoint's missing-NCBL implementation item, not its runtime or
+  server acceptance limits.
+- Shared playback captures title, artist, duration and exact millisecond start time
+  once. The reporting contract now supports suspension, so standalone network calls
+  can be canceled and queued start/end events still serialize. Local details do not
+  enter parasite SDK fields; its native builders and delivery path remain unchanged.
+- Standalone weblog and NCBL are independent channels. Failure in either does not
+  suppress the other or prevent the matching end event. NCBL start/end retain the
+  same session ID, source, device and credentials, keyed by account generation, song
+  and exact start time. Stale authorization clears old contexts; abandoned contexts
+  are bounded, and cancellation releases a pending start context. Active seconds
+  retain the common timer's truncation and exclusion of pause/buffering time.
+- NCBL captures credentials from the verified standalone session, never from TV or
+  a fresh global Cookie read at upload time. Dispatch, response/body consumption and
+  result publication are owner-checked. Its transport restricts the upload endpoint,
+  requires matching credentials, disables redirects and implicit connection retries,
+  and cancels in-flight calls on invalidation. File acceptance requires HTTP/business
+  success and the exact submitted filename in `successfiles`; it is not a listening
+  statistics receipt.
+- Both debug and instrumentation APKs build. All 578 standalone JVM tests in 76 suites
+  and 656 parasite JVM tests in 84 suites pass, with no failures/skips (common tests
+  are counted twice). Coverage includes codec golden vectors/Zstd round trips,
+  bounded response parsing, channel independence, metadata capture, same-song starts
+  within one second, invalidation during context creation, queued event cancellation,
+  both underlying transport cancellations and unchanged official SDK field keys.
+- APK/DEX inspection confirms NCBL/Zstd are present only in standalone; parasite keeps
+  its TV-only Xposed metadata and standalone has none. Both debug APKs pass 16 KB ZIP
+  alignment; the restored arm64 Zstd library's LOAD segments use `0x4000` alignment.
+  These static checks do not prove native loading on the AVD. A no-network standalone
+  instrumentation codec smoke test is compiled but has **not been executed**.
+- Both minified unsigned release APKs build with their intended production package IDs.
+  Each passes 16 KB ZIP alignment; Zstd remains standalone-only and Xposed metadata
+  remains parasite-only. R8 retains the reachable standalone reporter/codec and Zstd's
+  JNI names, plus the parasite module entry. This is the first paired release build
+  checkpoint, not signed-artifact, installation, runtime or upgrade qualification.
+- No AVD install, instrumentation, screen change or account interaction was performed
+  for this checkpoint while the user's standalone login response is pending. Installed
+  artifacts therefore predate this restoration. Real standalone authentication,
+  authenticated playback, both report channels on device, account changes, full-song
+  playback and server listening history/statistics remain unaccepted. Legacy standalone
+  upgrade/work compatibility also remains mandatory; do not install release over the
+  user's original app.
+
+Local-only build evidence: `/tmp/meilox-dual-reporting-build.log`,
+`/tmp/meilox-dual-reporting-final-build.log` and `/tmp/meilox-dual-reporting-release.log`.
+No generated artifact or device data is
+committed. This is a D3 code/package checkpoint, not D3 or D5 completion.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

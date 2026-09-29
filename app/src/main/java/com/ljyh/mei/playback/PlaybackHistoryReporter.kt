@@ -22,6 +22,7 @@ internal class PlaybackHistoryReporter(
         val source: PlaybackHistorySource,
         val startedAtMs: Long,
         val owner: SessionStamp,
+        val details: PlaybackReportDetails,
     )
 
     private val reporterJob = SupervisorJob()
@@ -31,14 +32,18 @@ internal class PlaybackHistoryReporter(
     private var submissionJob: Job? = null
     private var closed = false
 
-    fun recordStart(mediaId: String, songId: Long, source: PlaybackHistorySource, startedAtMs: Long) {
+    fun recordStart(
+        mediaId: String, songId: Long, source: PlaybackHistorySource, startedAtMs: Long,
+        details: PlaybackReportDetails = PlaybackReportDetails(startedAtMs),
+    ) {
         if (songId <= 0 || source.sourceId <= 0 || startedAtMs <= 0) return
+        require(details.startedAtMs == startedAtMs)
         val owner = runCatching { bridge.sessions.snapshot().also(bridge::requireOwner) }.getOrNull() ?: return
         synchronized(lock) {
             if (closed || activePlayback?.let { it.mediaId == mediaId && it.startedAtMs == startedAtMs } == true) return
-            val playback = ActivePlayback(mediaId, songId, source, startedAtMs, owner)
+            val playback = ActivePlayback(mediaId, songId, source, startedAtMs, owner, details)
             activePlayback = playback
-            enqueueLocked { bridge.submit("startplay", playback.fields(startedAtMs), owner) }
+            enqueueLocked { bridge.submit("startplay", playback.fields(startedAtMs), owner, details) }
         }
     }
 
@@ -53,7 +58,7 @@ internal class PlaybackHistoryReporter(
                 "time" to completed.playedDurationMs.coerceAtLeast(0) / 1_000,
                 "end" to completed.endReason,
             )
-            enqueueLocked { bridge.submit("play", fields, playback.owner) }
+            enqueueLocked { bridge.submit("play", fields, playback.owner, playback.details) }
         }
     }
 
@@ -75,7 +80,7 @@ internal class PlaybackHistoryReporter(
         }
     }
 
-    private fun enqueueLocked(block: () -> Unit) {
+    private fun enqueueLocked(block: suspend () -> Unit) {
         val previous = submissionJob
         submissionJob = scope.launch {
             previous?.join()
@@ -84,7 +89,7 @@ internal class PlaybackHistoryReporter(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                report("official_playback_report_failed type=${error.javaClass.simpleName}")
+                report("playback_report_failed type=${error.javaClass.simpleName}")
             }
         }
     }

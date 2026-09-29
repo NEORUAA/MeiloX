@@ -32,7 +32,7 @@ class PlaybackHistoryReporterTest {
 
     @Test fun startDoesNotFinishPlaybackAndDurationKeepsTheCapturedTimeAndOwner() = runTest {
         val reporter = PlaybackHistoryReporter(bridge, StandardTestDispatcher(testScheduler))
-        reporter.recordStart("123", 123, source, started)
+        reporter.recordStart("123", 123, source, started, PlaybackReportDetails(started, "Local title", "Local artist", 123_000))
         runCurrent()
         assertEquals(listOf("startplay"), events.map { it.action })
         reporter.recordDuration(completed(), started + 74_000)
@@ -44,6 +44,7 @@ class PlaybackHistoryReporterTest {
         assertEquals("ui", events.last().fields["end"])
         assertEquals(events.first().owner, events.last().owner)
         assertTrue(events.all { it.fields.keys.none { key -> key in setOf("MUSIC_U", "cookie", "deviceId", "mainsiteWeb") } })
+        assertEquals(setOf("type", "id", "source", "sourceId", "startlogtime", "logtime", "time", "end"), events.last().fields.keys)
         reporter.close()
         runCurrent()
     }
