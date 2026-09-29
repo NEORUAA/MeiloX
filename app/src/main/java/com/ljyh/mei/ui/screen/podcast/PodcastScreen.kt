@@ -458,7 +458,7 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
                 )
                 android.widget.Toast.makeText(context, context.getString(R.string.detail_download_queued, songs.size), android.widget.Toast.LENGTH_SHORT).show()
             } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-            catch (_: Exception) { android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show() }
+            catch (error: Exception) { android.widget.Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), android.widget.Toast.LENGTH_SHORT).show() }
         }
     }
     fun prepareDownload(quality: com.ljyh.mei.constants.MusicQuality? = null, ids: Set<String>? = null) {

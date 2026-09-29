@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
@@ -21,6 +23,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.SongDownloadInfo
+import com.ljyh.mei.playback.AndroidDownloadMediaStore
+import com.ljyh.mei.playback.DownloadPublication
+import com.ljyh.mei.playback.requireExecutable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -54,7 +59,7 @@ object DownloadManager {
         mutations.withLock {
             val sessions = AppGraph.component.hostRequests().sessions
             sessions.requireDownloadOwner(owner)
-            val wm = WorkManager.getInstance(context)
+            val wm = workManager(context)
             val db = AppDatabase.getDatabase(context)
             val tasks = songs.distinctBy { it.songId }.map { info ->
                 require(info.songId.toLongOrNull()?.takeIf { it > 0 }?.toString() == info.songId)
@@ -92,17 +97,7 @@ object DownloadManager {
                 tasks.forEach { task ->
                     sessions.requireDownloadOwner(owner)
                     val uniqueWorkName = SONG_WORK_NAME_PREFIX + task.songId
-                    val workRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
-                        .setId(UUID.fromString(task.requestId))
-                        .addTag("download")
-                        .addTag(uniqueWorkName)
-                        .setInputData(
-                            androidx.work.Data.Builder()
-                                .putString(DownloadWorker.KEY_SONG_ID, task.songId)
-                                .putLong(DownloadWorker.KEY_OWNER_ID, task.ownerId)
-                                .build()
-                        )
-                        .build()
+                    val workRequest = workRequest(task)
                     wm.enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.REPLACE, workRequest).result.await()
                 }
                 sessions.requireDownloadOwner(owner)
@@ -119,6 +114,57 @@ object DownloadManager {
             Timber.tag("DownloadManager").d("Song work enqueued: playlist=$playlistId, songs=${songs.size}")
         }
     }
+
+    private fun workManager(context: Context): WorkManager = try {
+        WorkManager.getInstance(context)
+    } catch (error: IllegalStateException) {
+        throw DownloadQueueUnavailableException(error)
+    }
+
+    private fun workRequest(task: DownloadTask) = OneTimeWorkRequestBuilder<DownloadWorker>()
+        .setId(UUID.fromString(task.requestId))
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .addTag("download")
+        .addTag(SONG_WORK_NAME_PREFIX + task.songId)
+        .setInputData(androidx.work.workDataOf(DownloadWorker.KEY_SONG_ID to task.songId, DownloadWorker.KEY_OWNER_ID to task.ownerId))
+        .build()
+
+    internal fun recover(context: Context) {
+        managementScope.launch {
+            mutations.withLock {
+                val db = AppDatabase.getDatabase(context)
+                publication(context, db).recover()
+                val manager = workManager(context)
+                val sessions = AppGraph.component.hostRequests().sessions
+                val owner = sessions.snapshot()
+                if (runCatching { sessions.requireDownloadOwner(owner) }.isFailure) return@withLock
+                db.downloadDao().getAll().first().filter {
+                    it.status in setOf(DownloadStatus.PENDING, DownloadStatus.DOWNLOADING)
+                }.forEach { task ->
+                    val id = task.workId()
+                    if (id == null || task.ownerId != owner.identity.userId) {
+                        db.downloadDao().updateOwnedProgress(task.songId, task.requestId, task.ownerId,
+                            DownloadStatus.FAILED, 0, System.currentTimeMillis())
+                        return@forEach
+                    }
+                    task.requireExecutable(id, owner.identity.userId)
+                    sessions.requireDownloadOwner(owner)
+                    val work = manager.getWorkInfoById(id).await()
+                    if (work == null) {
+                        // Repair a crash between the Room enqueue commit and WorkManager enqueue.
+                        manager.enqueueUniqueWork(SONG_WORK_NAME_PREFIX + task.songId,
+                            ExistingWorkPolicy.REPLACE, workRequest(task)).result.await()
+                    } else if (work.state.isFinished) {
+                        db.downloadDao().updateOwnedProgress(task.songId, task.requestId, task.ownerId,
+                            DownloadStatus.FAILED, 0, System.currentTimeMillis())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun publication(context: Context, db: AppDatabase) =
+        DownloadPublication(db, AndroidDownloadMediaStore(context), context.packageName)
 
     fun pauseSong(context: Context, songId: String, requestId: String) {
         managementScope.launch {
@@ -173,44 +219,41 @@ object DownloadManager {
                 val db = AppDatabase.getDatabase(context)
                 val task = db.downloadDao().getBySongId(songId) ?: return@withLock
                 if (task.requestId != requestId) return@withLock
-                db.downloadDao().deleteOwned(songId, task.requestId, task.ownerId)
-                task.workId()?.let { WorkManager.getInstance(context).cancelWorkById(it).result.await() }
-                val song = db.songDao().getSong(songId).first()
-                song?.takeIf { it.sourceType == com.ljyh.mei.data.model.room.SourceType.DOWNLOAD }?.path?.let { path ->
-                    runCatching {
-                        if (path.startsWith("content://")) {
-                            context.contentResolver.delete(android.net.Uri.parse(path), null, null)
-                        } else {
-                            File(path).takeIf(File::exists)?.delete()
-                        }
-                    }.onFailure { Timber.w(it, "Unable to remove downloaded file for %s", songId) }
-                    db.songDao().updatePath(songId, null)
-                }
+                removeTask(context, db, task)
             }
         }
     }
 
     fun deleteAll(context: Context) {
-        managementScope.launch {
-            mutations.withLock {
-                val db = AppDatabase.getDatabase(context)
-                db.downloadDao().getAll().first().forEach { task ->
-                    db.downloadDao().deleteOwned(task.songId, task.requestId, task.ownerId)
-                    task.workId()?.let { WorkManager.getInstance(context).cancelWorkById(it).result.await() }
-                    val song = db.songDao().getSong(task.songId).first()
-                    song?.takeIf { it.sourceType == com.ljyh.mei.data.model.room.SourceType.DOWNLOAD }?.path?.let { path ->
-                        runCatching {
-                            if (path.startsWith("content://")) {
-                                context.contentResolver.delete(android.net.Uri.parse(path), null, null)
-                            } else {
-                                File(path).takeIf(File::exists)?.delete()
-                            }
-                        }.onFailure { Timber.w(it, "Unable to remove downloaded file for %s", task.songId) }
-                        db.songDao().updatePath(task.songId, null)
-                    }
-                }
+        managementScope.launch { deleteAllAndAwait(context) }
+    }
+
+    suspend fun deleteAllAndAwait(context: Context, resetPlaybackCounts: Boolean = false) = withContext(Dispatchers.IO) {
+        mutations.withLock {
+            val db = AppDatabase.getDatabase(context)
+            db.downloadDao().getAll().first().forEach { task ->
+                removeTask(context, db, task)
             }
+            if (resetPlaybackCounts) db.downloadDao().clearPlaybackCounts()
         }
+    }
+
+    private suspend fun removeTask(context: Context, db: AppDatabase, task: DownloadTask) {
+        task.workId()?.let { workManager(context).cancelWorkById(it).result.await() }
+        val song = db.songDao().getSong(task.songId).first()
+            ?.takeIf { it.sourceType == com.ljyh.mei.data.model.room.SourceType.DOWNLOAD }
+        val path = song?.path
+        if (!path.isNullOrBlank() && db.downloadArtifactDao().byUri(path) == null) {
+            // Legacy files have no ownership receipt. Only an explicit user deletion reaches here.
+            if (path.startsWith("content://")) {
+                context.contentResolver.delete(android.net.Uri.parse(path), null, null)
+            } else File(path).let { check(!it.exists() || it.delete()) }
+        }
+        db.withTransaction {
+            if (song != null) db.songDao().updatePath(task.songId, null)
+            db.downloadDao().deleteOwned(task.songId, task.requestId, task.ownerId)
+        }
+        publication(context, db).recover()
     }
 
     fun cancelAll(context: Context) {

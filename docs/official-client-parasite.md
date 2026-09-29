@@ -1462,6 +1462,42 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   and `/tmp/meilox-download-owner-final-home.png`. No system scope or direction setting
   was changed.
 
+### Download Scheduler Activation Checkpoint (2026-09-29)
+
+- Fixed the user's immediate pre-request download failure: scheduler initialization no
+  longer depends on `PARASITE_WORK_PROBE`. Host app and service-only startup use the
+  existing verified job carrier. Explicit test broadcasts and workers remain disabled
+  in ordinary builds. Enqueue failures no longer claim that obtaining a URL failed.
+- Added Room v20 download publication receipts and startup/worker recovery. Each newly
+  allocated MediaStore file has a request-specific staging directory and a stored
+  owner/version/generation plus tagged byte length/hash. An atomic Room commit records
+  its Song reference, task completion and publication intent before external visibility;
+  recovery completes visibility without a new grant or cleans only its own incomplete
+  media. Edited/reused media are retained. Queue/Storage cleanup shares the mutation
+  lock, and app-open reconciliation repairs missing account-owned WorkManager requests.
+- Retained the original download controls, menu, quality choices, layout, blur and glass.
+  Only state/error feedback changed; the original destination and filenames remain.
+  Publication recovery tests use synthetic bytes and private databases, never official
+  credentials or authorization URLs. No login, permissions, scope or orientation setting
+  was changed.
+- Verification: 599 tests in 75 unit suites, zero failures/errors/skips; 22 selected device
+  tests pass, including eight publication tests, ownership migration/conditional updates,
+  source/session adapters, job carrier identity, component routing, media buttons and
+  playback cache ownership. The actual TV-process synthetic WAV probe verifies creation,
+  tagged-content check, publication and cleanup under the host package. It does not call
+  the download API or exercise the entire DownloadWorker transfer.
+- Reinstalled the ordinary debug build and cold-launched TV. Both `work_hooks_ready` and
+  `work_manager_initialized` are present in the new process; the original portrait Home,
+  official login and paused player remain. The previous process retained old module
+  classes after APK installation, explaining the user's repeated old toast before the
+  cold restart. Local-only evidence: `/tmp/meilox-download-final-build.log`,
+  `/tmp/meilox-download-final-device.log`, `/tmp/meilox-download-final-home.png`.
+- The installed scheduler is now available, but real-song download acceptance remains
+  pending. No automatic real grant or quota-consuming download was attempted. The user
+  can retry in the ordinary build; the requested real-song test authorization is still
+  unanswered. Full DownloadWorker, interruption/account/device/release cases in ABI-004
+  remain open; stage 5 is not complete.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1487,7 +1523,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, persisted request ownership and cancelable transfer have substitute coverage, and a debug-gated host job carrier passed cold-process/coexistence/cancellation checks; durable file publication, production scheduler integration and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership and cancelable transfer have substitute coverage; ordinary builds initialize the verified host scheduler, with durable publication tested using synthetic media; real grants/full transfers and remaining lifecycle cases are unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

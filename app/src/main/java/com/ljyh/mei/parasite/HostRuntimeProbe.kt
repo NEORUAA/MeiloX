@@ -40,7 +40,7 @@ internal object HostRuntimeProbe {
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
         if (BuildConfig.PARASITE_APP_ENABLED) HostAppComponentHooks.install(module, applicationContext, report)
-        if (BuildConfig.PARASITE_APP_ENABLED && BuildConfig.PARASITE_WORK_PROBE) {
+        if (BuildConfig.PARASITE_APP_ENABLED) {
             HostWorkManager.install(module, applicationContext, report)
         }
         if (BuildConfig.PARASITE_RUNTIME_PROBE) {
@@ -50,7 +50,7 @@ internal object HostRuntimeProbe {
             .intercept { chain ->
                 val loader = chain.getArg(0) as ClassLoader
                 if (BuildConfig.PARASITE_APP_ENABLED) HostPlaybackHooks.install(module, loader, report)
-                if (BuildConfig.PARASITE_WORK_PROBE && chain.getArg(1) == HostWorkPolicy.CARRIER) onHostActivity(loader)
+                if (BuildConfig.PARASITE_APP_ENABLED && chain.getArg(1) == HostWorkPolicy.CARRIER) onHostActivity(loader)
                 // ActivityThread supplies no start Intent until after service creation.
                 if (chain.getArg(1) == SERVICE) {
                     onHostActivity(loader)

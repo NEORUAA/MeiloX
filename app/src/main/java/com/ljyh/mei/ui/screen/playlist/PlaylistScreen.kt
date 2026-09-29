@@ -248,9 +248,8 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
                 Toast.makeText(context, "已添加 ${downloadInfos.size} 首到下载队列", Toast.LENGTH_SHORT).show()
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
-            } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
-            } catch (_: Exception) {
-                Toast.makeText(context, com.ljyh.mei.R.string.load_failed, Toast.LENGTH_SHORT).show()
+            } catch (error: Exception) {
+                Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -656,10 +656,10 @@ These are integration differences, not server API semantics.
 
 ### ABI-004: WorkManager Components Are Not Installed in the Host
 
-- Recorded: 2026-09-29. The download producers still enqueue the module's isolated
+- Recorded: 2026-09-29. At the initial checkpoint, download producers enqueued the module's isolated
   WorkManager, but only the module APK declares its normal AndroidX components.
   The pinned TV APK manifest has no `androidx.work.impl.background.systemjob.SystemJobService`
-  or WorkManager initializer. Ordinary module builds still do not initialize a
+  or WorkManager initializer. Ordinary module builds did not initialize a
   separate WorkManager runtime. A successful URL response therefore does not prove
   that a download can run or resume in the host.
 - Authoritative artifact: APK manifest inspection finds `BIND_JOB_SERVICE` only on
@@ -687,10 +687,10 @@ These are integration differences, not server API semantics.
   cancellation then stopped the system job and coroutine. No valid patch result was
   fabricated. Background `am startservice` was rejected by Android, so the coexistence
   test brought MeiloX to the foreground first; no background-start exemption was added.
-- This is debug-gated qualification, not production download acceptance. The probe
+- The initial evidence was debug-gated qualification, not production download acceptance. The probe
   writes only its dedicated module preferences and WorkManager test records, with no
   network or media operations; cleanup targets only its unique work. Ordinary/release
-  builds keep the gate closed. The host has no boot receiver or `RECEIVE_BOOT_COMPLETED`
+  builds initially kept the gate closed; see the activation checkpoint below. The host has no boot receiver or `RECEIVE_BOOT_COMPLETED`
   permission, while AndroidX jobs are non-persisted, so automatic post-reboot recovery
   is not supplied by this prototype. App-open reconciliation is not equivalent to it.
 - Next gate: durable download ownership, renewed grants, cancellable transfer and
@@ -698,6 +698,50 @@ These are integration differences, not server API semantics.
   scheduling, reboot behavior and release qualification. Do not repack
   the host, add a system-framework scope, claim worker acceptance from an interface
   test, or hide the existing download controls to mask this unfinished integration.
+
+#### Scheduler Activation and File Publication (2026-09-29)
+
+- User reproduction: selecting download displayed "Failed to obtain link" before any
+  grant request. The ordinary build gated both host scheduler hooks and initialization
+  behind `PARASITE_WORK_PROBE`, while the player caught every enqueue exception with
+  that misleading message. Source and installed build state establish this pre-request
+  failure; the exact exception from the user's original click was not captured.
+- Ordinary app builds now install and initialize the qualified host scheduler, including
+  service-only startup. Only explicit test broadcasts/workers remain probe-gated. AVD
+  cold-start logs confirm isolated WorkManager initialization with the probe disabled.
+  Installing the module alone does not replace classes in an already running TV process;
+  the repeated old toast occurred while that old process was still alive. Force-stop and
+  cold launch load the new module without clearing the official account or app data.
+- Enqueue errors distinguish scheduler readiness, official-session changes and queue
+  insertion failures. Worker notifications distinguish authorization, transfer and local
+  publication failures. No playback URL is substituted for denied download permission;
+  queued requests wait for connected networking and obtain fresh official grants at execution.
+- Room v20 adds a per-request publication receipt independently of the replaceable task
+  row. Before MediaStore insertion it records a private UUID staging directory; after
+  insertion it records the URI, owner package, provider version and generation. Tagged
+  bytes are synced and checked against their SHA-256/length. Song path, completed task
+  and committed receipt are written together inside the official-session publication
+  lock. The MediaStore row is then moved to the original configured destination and
+  made visible. No page, quality selector, menu or navigation architecture changed.
+- Startup/worker recovery discards uncommitted pending files or finishes visibility for
+  committed files without another grant. URI reuse, changed provider identity, moved or
+  edited detached media fail closed. Unreferenced, unchanged receipt-owned files can be
+  removed after replacement/deletion; unjournaled legacy files are never adopted by name.
+  Storage-management deletion uses the same serialized path. An app-open reconciliation
+  also repairs active account-owned queue rows missing their WorkManager request; this
+  is not a boot receiver, and its crash-gap scheduling path still needs live acceptance.
+- Evidence: 599 unit tests and 22 selected device tests pass. Publication tests simulate
+  death after insertion/copy and before/after visibility, reject invalidated ownership,
+  and preserve edited/reused media. Both instrumentation and an explicit host-process
+  probe publish and remove synthetic WAV bytes through the real MediaStore without a
+  permission change. The host probe uses a private in-memory database, not the account's
+  queue; it is not a real song download or a full DownloadWorker run.
+- Still open: user-authorized real grant/complete transfer, permission-denied response
+  display, live pause/resume/replacement, actual mid-transfer process death, long-running
+  foreground-worker routing/notification aggregation, natural job scheduling, reboot,
+  and release runtime. The final installed build has test commands disabled. No real
+  grant was requested automatically in this checkpoint; the user has not yet answered
+  the specific quota-consuming download test authorization.
 
 ## Adding an Entry
 

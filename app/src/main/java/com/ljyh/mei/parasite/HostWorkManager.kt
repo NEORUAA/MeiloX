@@ -20,7 +20,7 @@ import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedModule
 import java.util.WeakHashMap
 
-/** Prototype gate remains closed in ordinary builds until download ownership is migrated. */
+/** Isolated module work on a verified, non-exported official service carrier. */
 internal object HostWorkManager {
     private val delegates = WeakHashMap<Service, HostWorkJobService>()
     private var initialized = false
@@ -141,6 +141,7 @@ internal object HostWorkManager {
             .build())
         initialized = true
         report("work_manager_initialized isolated_storage=true")
+        com.ljyh.mei.utils.DownloadManager.recover(context)
     }
 
     private fun isModuleContext(context: Context) = context is ModuleContext && context.packageName == HostIdentity.PACKAGE

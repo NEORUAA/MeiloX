@@ -46,6 +46,7 @@ class DownloadOwnershipDeviceTest {
         try {
             SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { sqlite ->
                 sqlite.execSQL("DROP TABLE download_task")
+                sqlite.execSQL("DROP TABLE download_artifact")
                 sqlite.execSQL("""CREATE TABLE download_task (
                     songId TEXT NOT NULL PRIMARY KEY, url TEXT NOT NULL, fileName TEXT NOT NULL,
                     fileType TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL,
@@ -58,7 +59,7 @@ class DownloadOwnershipDeviceTest {
                 sqlite.version = 18
             }
             val migrated = Room.databaseBuilder(context, AppDatabase::class.java, name)
-                .addMigrations(AppDatabase.MIGRATION_18_19).build()
+                .addMigrations(AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20).build()
             try {
                 val old = checkNotNull(migrated.downloadDao().getBySongId("1"))
                 assertEquals(DownloadStatus.FAILED, old.status)

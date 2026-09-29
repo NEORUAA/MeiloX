@@ -193,8 +193,8 @@ class PlayerViewModel @Inject constructor(
                     )
                     android.widget.Toast.makeText(context, "已添加到下载队列", android.widget.Toast.LENGTH_SHORT).show()
             } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-            catch (_: Exception) {
-                android.widget.Toast.makeText(context, "获取链接失败", android.widget.Toast.LENGTH_SHORT).show()
+            catch (error: Exception) {
+                android.widget.Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }

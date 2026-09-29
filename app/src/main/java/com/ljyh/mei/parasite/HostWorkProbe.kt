@@ -31,6 +31,10 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "publication" -> {
+                        check(com.ljyh.mei.playback.DownloadPublicationProbe.run(owner))
+                        report("work_probe_publication_passed synthetic_only=true media_cleaned=true")
+                    }
                     "enqueue" -> {
                         val request = OneTimeWorkRequestBuilder<HostWorkProbeWorker>()
                             .setInitialDelay(30, TimeUnit.SECONDS)

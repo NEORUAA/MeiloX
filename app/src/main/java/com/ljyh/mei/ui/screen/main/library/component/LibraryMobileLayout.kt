@@ -560,7 +560,7 @@ fun LibraryMobileLayout(
                         playlistName = context.getString(R.string.resumed_download),
                         requestId = task.requestId,
                     ) } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-                    catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
+                    catch (error: Exception) { Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), Toast.LENGTH_SHORT).show() }
                 }
             },
             onRetry = {

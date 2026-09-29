@@ -3,14 +3,10 @@ package com.ljyh.mei.playback
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.room.withTransaction
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.ljyh.mei.MainActivity
@@ -18,8 +14,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
-import com.ljyh.mei.data.model.room.Song
-import com.ljyh.mei.data.model.room.SourceType
+import com.ljyh.mei.data.model.room.DownloadArtifact
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.parasite.HostSessionChangedException
@@ -71,11 +66,21 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     private val songId get() = inputData.getString(KEY_SONG_ID).orEmpty()
     private val accountId get() = inputData.getLong(KEY_OWNER_ID, 0)
     private lateinit var owner: HostSessionStamp
+    private var failureTitle = "下载初始化失败"
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         if (songId.isBlank() || accountId <= 0) return@withContext Result.failure()
         val db = AppDatabase.getDatabase(applicationContext)
         try {
+            val completed = DownloadManager.mutations.withLock {
+                publication(db).recover()
+                db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.COMPLETED
+            }
+            if (completed) {
+                return@withContext if (db.downloadArtifactDao().all().any {
+                    it.requestId == id.toString() && it.phase == DownloadArtifact.PUBLISHED
+                }) Result.success() else Result.retry()
+            }
             owner = sessions.snapshot()
             sessions.requireDownloadOwner(owner)
             if (owner.identity.userId != accountId) throw HostSessionChangedException()
@@ -95,7 +100,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         } catch (error: Exception) {
             Timber.w("Download failed: %s", error.javaClass.simpleName)
             if (updateTask(db, DownloadStatus.FAILED, 0) == 1) {
-                showNotification("完成 0, 失败 1", 100, ongoing = false)
+                showNotification(if (error is HostSessionChangedException) "账号会话已变化，请重新登录后下载" else failureTitle, 0, ongoing = false)
+            } else if (db.downloadDao().getOwned(songId, id.toString(), accountId)?.status == DownloadStatus.COMPLETED) {
+                return@withContext Result.retry()
             }
             Result.failure()
         }
@@ -115,6 +122,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         createNotificationChannel(applicationContext)
         check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
         showNotification("准备下载...", 0)
+        failureTitle = "获取官方下载授权失败"
         val source = resolveOfficialDownloadSources(AppGraph.component.apiService(), sessions,
             listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
             ?: throw IOException("Official download permission denied")
@@ -126,9 +134,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         check(db.downloadDao().updateOwnedFileInfo(songId, id.toString(), accountId, fileName, source.fileType) == 1)
         val tempDir = File(applicationContext.cacheDir, "download").apply { check(isDirectory || mkdirs()) }
         val temp = File(tempDir, "$id.${source.fileType}")
-        var newMedia: Uri? = null
-        var published = false
         try {
+            failureTitle = "下载文件失败，请重试"
             val lyric = async { LyricFetcher.fetchBestLyric(songId, owner) }
             val cover = async { if (task.songCover.isBlank()) null else ImageUtils.downloadImageBytes(task.songCover) }
             transferOfficialDownload(getDownloadClient(), source, temp, { requireTask(db); Unit }) { progress ->
@@ -145,81 +152,34 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             catch (error: Exception) { Timber.w("Download tags failed: %s", error.javaClass.simpleName) }
             requireTask(db)
             val duration = runCatching { AudioFileIO.read(temp).audioHeader.trackLength.toLong() * 1000 }.getOrDefault(0)
-            newMedia = insertPendingMedia(temp, fileName, source.fileType, relativePath)
+            failureTitle = "保存下载文件失败，请重试"
             val execution = currentCoroutineContext()
             DownloadManager.mutations.withLock {
                 withContext(NonCancellable) {
-                    db.withTransaction {
-                        execution.ensureActive()
-                        requireTask(db)
-                        db.songDao().insertSong(Song(
-                            id = songId, title = task.songTitle,
-                            artist = task.songArtist.split(Regex("[/、,;]")).map(String::trim).filter(String::isNotBlank)
-                                .ifEmpty { listOf(task.songArtist.trim()) },
-                            album = task.songAlbum, cover = task.songCover, duration = duration,
-                            path = checkNotNull(newMedia).toString(), sourceType = SourceType.DOWNLOAD, folderPath = relativePath,
-                        ))
-                        check(updateTask(db, DownloadStatus.COMPLETED, 100) == 1)
-                        sessions.requireDownloadOwner(owner)
-                        execution.ensureActive()
-                        sessions.withCurrent(owner) {
+                    requireTask(db)
+                    publication(db).store(task, temp, fileName, source.fileType, relativePath, duration,
+                        requireActive = {
+                            execution.ensureActive()
+                            sessions.requireDownloadOwner(owner)
+                        },
+                        withOwner = { commit -> sessions.withCurrent(owner) {
+                            execution.ensureActive()
                             if (sessions.recoveryRequired.value) throw HostSessionChangedException()
-                            val values = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
-                            check(applicationContext.contentResolver.update(checkNotNull(newMedia), values, null, null) == 1)
-                        }
-                    }
-                    published = true
+                            commit()
+                        } },
+                    )
+                    publication(db).recover()
                 }
             }
             showNotification("全部下载完成", 100, ongoing = false)
         } finally {
             withContext(NonCancellable + Dispatchers.IO) {
-                if (!published) newMedia?.let { uri ->
-                    runCatching { applicationContext.contentResolver.delete(uri, null, null) }
-                }
                 temp.delete()
             }
         }
     }
 
-    private suspend fun insertPendingMedia(file: File, name: String, type: String, path: String): Uri {
-        val mime = when (type) {
-            "flac" -> "audio/flac"
-            "aac" -> "audio/aac"
-            "ogg" -> "audio/ogg"
-            "wav" -> "audio/wav"
-            "m4a" -> "audio/mp4"
-            "opus" -> "audio/opus"
-            else -> "audio/mpeg"
-        }
-        val resolver = applicationContext.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, name)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "$path/")
-            put(MediaStore.Audio.Media.MIME_TYPE, mime)
-            put(MediaStore.Audio.Media.IS_PENDING, 1)
-        }
-        val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IOException("Cannot create download media")
-        try {
-            val output = resolver.openOutputStream(uri) ?: throw IOException("Cannot write download media")
-            output.use { sink ->
-                file.inputStream().use { input ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        sink.write(buffer, 0, count)
-                    }
-                }
-            }
-            return uri
-        } catch (error: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            throw error
-        }
-    }
+    private fun publication(db: AppDatabase) = DownloadPublication(db, AndroidDownloadMediaStore(applicationContext), applicationContext.packageName)
 
     private suspend fun updateTask(db: AppDatabase, status: DownloadStatus, progress: Int): Int =
         db.downloadDao().updateOwnedProgress(songId, id.toString(), accountId, status, progress, System.currentTimeMillis())

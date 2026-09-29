@@ -13,6 +13,8 @@ import com.ljyh.mei.data.model.room.ArtistEntity
 import com.ljyh.mei.data.model.room.CacheColor
 import com.ljyh.mei.data.model.room.CachedLyric
 import com.ljyh.mei.data.model.room.DownloadTask
+import com.ljyh.mei.data.model.room.DownloadArtifact
+import com.ljyh.mei.di.dao.DownloadArtifactDao
 import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.data.model.room.PlaybackHistory
 import com.ljyh.mei.data.model.room.PlaybackCount
@@ -37,9 +39,9 @@ import com.ljyh.mei.di.dao.SongDao
         CacheColor::class, Song::class, Like::class, QQSong::class, Playlist::class,
         PlaybackHistory::class, AlbumEntity::class, ArtistEntity::class, AlbumArtistCrossRef::class,
         CachedLyric::class, DownloadTask::class, PlaylistSongCrossRef::class, PlaybackCount::class,
-        AccountPlaylistMembership::class
+        AccountPlaylistMembership::class, DownloadArtifact::class
     ],
-    version = 19
+    version = 20
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun AlbumsDao(): AlbumsDao
     abstract fun cachedLyricDao(): CachedLyricDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun downloadArtifactDao(): DownloadArtifactDao
     abstract fun playlistSongCrossRefDao(): PlaylistSongCrossRefDao
 
     companion object {
@@ -195,6 +198,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS download_artifact (
+                    requestId TEXT NOT NULL PRIMARY KEY, songId TEXT NOT NULL,
+                    ownerId INTEGER NOT NULL, ownerPackage TEXT NOT NULL,
+                    displayName TEXT NOT NULL, relativePath TEXT NOT NULL, mimeType TEXT NOT NULL,
+                    size INTEGER NOT NULL, sha256 TEXT NOT NULL, uri TEXT NOT NULL,
+                    providerVersion TEXT NOT NULL, generation INTEGER NOT NULL, phase TEXT NOT NULL
+                )""")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -204,7 +219,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "app_database"
-                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                     .build()
                     .also { INSTANCE = it }
             }

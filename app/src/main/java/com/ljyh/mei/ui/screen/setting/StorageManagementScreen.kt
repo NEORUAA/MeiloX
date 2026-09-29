@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.WorkManager
 import coil3.imageLoader
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.room.DownloadStatus
@@ -187,18 +186,7 @@ class StorageManagementViewModel @Inject constructor(
     }
 
     private suspend fun deleteAllDownloads() {
-        WorkManager.getInstance(context).cancelAllWorkByTag("download")
-        database.downloadDao().getAll().first().forEach { task ->
-            database.songDao().getSong(task.songId).first()?.path?.let { path ->
-                runCatching {
-                    if (path.startsWith("content://")) context.contentResolver.delete(Uri.parse(path), null, null)
-                    else File(path).delete()
-                }
-            }
-            database.songDao().updatePath(task.songId, null)
-        }
-        database.downloadDao().deleteAll()
-        database.downloadDao().clearPlaybackCounts()
+        com.ljyh.mei.utils.DownloadManager.deleteAllAndAwait(context, resetPlaybackCounts = true)
     }
 
     private fun storedContentSize(path: String): Long = if (path.startsWith("content://")) {

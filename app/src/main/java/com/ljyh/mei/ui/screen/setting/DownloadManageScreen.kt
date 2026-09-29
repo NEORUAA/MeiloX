@@ -159,8 +159,8 @@ fun DownloadManageScreen(
                                 context.getString(R.string.resumed_download),
                                 task.requestId,
                             ) } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-                            catch (_: Exception) {
-                                android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
+                            catch (error: Exception) {
+                                android.widget.Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     },

@@ -173,7 +173,7 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
             )
             Toast.makeText(context, "已添加 ${downloadInfos.size} 首到下载队列", Toast.LENGTH_SHORT).show()
           } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-          catch (_: Exception) { Toast.makeText(context, com.ljyh.mei.R.string.load_failed, Toast.LENGTH_SHORT).show() }
+          catch (error: Exception) { Toast.makeText(context, com.ljyh.mei.utils.downloadEnqueueError(error), Toast.LENGTH_SHORT).show() }
         }
     }
 
