@@ -181,18 +181,28 @@ interface ApiService {
 
 
     @POST("/api/artist/head/info/get")
-    suspend fun getArtistDetail(@Body body: GetArtistDetail): ArtistDetail
+    suspend fun getArtistDetail(@Body body: GetArtistDetail, @Tag expectedSession: HostSessionStamp): ArtistDetail
 
     @POST("/api/artist/albums/{id}")
-    suspend fun getArtistAlbums(@Body body: GetArtistAlbum, @Path("id") id: String): ArtistAlbum
+    suspend fun getArtistAlbums(@Body body: GetArtistAlbum, @Path("id") id: String, @Tag expectedSession: HostSessionStamp): ArtistAlbum
 
     @POST("/api/v1/artist/songs")
     suspend fun getAllArtistSongs(
         @Body body: GetAllArtistSongs,
+        @Tag expectedSession: HostSessionStamp,
     ): AllArtistSongs
 
     @POST("/api/v1/artist/{id}")
-    suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String): ArtistSong
+    suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String, @Tag expectedSession: HostSessionStamp): ArtistSong
+
+    @POST("/api/tv-artist-page/artistdetail")
+    suspend fun getArtistCollection(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): com.ljyh.mei.data.model.api.ArtistCollectionResponse
+
+    @POST("/api/v1/artist/sub/")
+    suspend fun subscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): BaseResponse
+
+    @POST("/api/artist/unsub")
+    suspend fun unsubscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: HostSessionStamp): BaseResponse
 
     @POST("/api/playmode/intelligence/list")
     suspend fun getIntelligenceList(@Body body: GetIntelligence): Intelligence

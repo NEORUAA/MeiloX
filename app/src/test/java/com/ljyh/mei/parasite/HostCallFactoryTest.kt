@@ -210,6 +210,35 @@ class HostCallFactoryTest {
         assertFalse(backend.parameters.containsKey("expectedSession"))
     }
 
+    @Test fun artistRoutesPreserveSupplementalCatalogParametersAndOfficialCollectionContracts() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        val reads: List<suspend () -> Unit> = listOf(
+            { service.getArtistDetail(com.ljyh.mei.data.model.api.GetArtistDetail("10"), owner) },
+            { service.getArtistAlbums(com.ljyh.mei.data.model.api.GetArtistAlbum(), "10", owner) },
+            { service.getArtistSongs(com.ljyh.mei.data.model.api.GetArtistSong(), "10", owner) },
+            { service.getAllArtistSongs(com.ljyh.mei.data.model.api.GetAllArtistSongs("10", 100), owner) },
+            { service.getArtistCollection(mapOf("artistId" to "10"), owner) },
+            { service.subscribeArtist(mapOf("artistId" to "10"), owner) },
+            { service.unsubscribeArtist(mapOf("artistIds" to "[10]"), owner) },
+        )
+        val paths = listOf("artist/head/info/get", "artist/albums/10", "v1/artist/10", "v1/artist/songs", "tv-artist-page/artistdetail", "v1/artist/sub", "artist/unsub")
+        reads.forEachIndexed { index, read ->
+            read()
+            assertEquals(paths[index], backend.path)
+            assertFalse(backend.parameters.containsKey("expectedSession"))
+            if (index == 3) assertEquals(mapOf("id" to "10", "offset" to "100", "limit" to "100", "order" to "hot", "private_cloud" to "true", "work_type" to "1"), backend.parameters)
+            if (index in 4..5) assertEquals(mapOf("artistId" to "10"), backend.parameters)
+            if (index == 6) assertEquals(mapOf("artistIds" to "[10]"), backend.parameters)
+        }
+        val before = backend.executions.get()
+        bridge.sessions.invalidate()
+        reads.forEach { read -> assertTrue(runCatching { read() }.exceptionOrNull() is HostSessionChangedException) }
+        assertEquals(before, backend.executions.get())
+    }
+
     @Test fun obsoleteAlbumOwnerCannotDispatchReadsWritesOrUrlRequests() = runBlocking {
         val backend = Backend()
         val bridge = bridge(backend)

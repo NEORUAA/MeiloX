@@ -343,13 +343,6 @@ class MeloXRepository @Inject constructor(
         request(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", mapOf("id" to id), session)
     }
 
-    suspend fun setArtistFollowed(id: Long, followed: Boolean) {
-        request(
-            if (followed) "/api/artist/sub" else "/api/artist/unsub",
-            mapOf("artistId" to id, "artistIds" to "[$id]"),
-        )
-    }
-
     suspend fun cloudSongs(offset: Int = 0, limit: Int = 200): CloudMusicPage {
         val response = request("/api/v1/cloud/get", mapOf("offset" to offset, "limit" to limit))
         val songs = response.array("data").mapNotNull(::parseCloudSong)

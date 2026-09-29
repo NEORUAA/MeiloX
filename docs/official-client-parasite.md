@@ -196,7 +196,7 @@ Existing request bodies, pagination, response models, and error behavior remain 
 | Playlists and daily songs | `v6/playlist/detail`, `user/playlist`, `v3/discovery/recommend/songs` | Host requests; preserve complete track expansion and ordering |
 | Playlist mutations | `playlist/create`, `playlist/manipulate/tracks`, `playlist/subscribe`, `playlist/unsubscribe`, `playlist/remove` | Host requests; verify writes using disposable test resources only |
 | Albums | `v1/album/{id}`, `album/sublist`, `album/sub`, `album/unsub`, `user/photo/album/get` | Host requests; retain detail, collection, and artwork behavior |
-| Artists | `artist/head/info/get`, `artist/albums/{id}`, `v1/artist/songs`, `v1/artist/{id}`, `artist/sub`, `artist/unsub` | Host requests; preserve paging and followed state |
+| Artists | `artist/head/info/get`, `artist/albums/{id}`, `v1/artist/songs`, `v1/artist/{id}`, `tv-artist-page/artistdetail`, `v1/artist/sub`, `artist/unsub` | Session-owned detail/catalog and official collection contracts; AVD paged-song reads passed; writes use substitutes; full album paging remains |
 | Song detail and playback URLs | `v3/song/detail`, `song/enhance/player/url`, `song/enhance/player/url/v1` | Host authentication and rights; MeiloX playback engine; verify full duration, actual quality, trial restrictions, and cache keys |
 | Favorites and radio | `song/like/get`, `song/like`, `v1/radio/get`, `playmode/intelligence/list` | Ordinary favorites are session-bound (API-013); FM and cloud-song semantics remain separate acceptance work |
 | Lyrics | `song/lyric`, `song/lyric/v1`, QQ lyrics/search, AMLL TTML | NetEase through host; preserve third-party transport, parsing, translation, timing, and lyric settings |
@@ -1170,6 +1170,47 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   committed. Release runtime, live favorite writes, full FM/cloud behavior, and the
   recording/PiP capability gate remain unqualified.
 
+### Artist Session and Paging Checkpoint (2026-09-29)
+
+- Artist header, hot songs, albums, full-song pages, and collection state now require
+  a captured official session. The collection flag comes from the TV artist DTO,
+  not the artist's linked user. Subscribe/unsubscribe use their separate official
+  payloads. API-014 records the source/DEX contract and supplemental catalog routes.
+- Both ViewModels clear synchronously on account invalidation and reject obsolete
+  artist/session callbacks, including queue creation and navigation. Follow actions
+  serialize; an uncertain state retries a read without another write. Pagination
+  preserves rows/cursors on errors, deduplicates overlapping pages, and rejects
+  non-advancing nonterminal responses. Recovery blocks actions synchronously.
+- Preserved the original header, biography, follow button, hot ten rows, full-song
+  entry points, album carousel, list page, glass, and navigation. Section errors gain
+  retry using the existing glass button. Optional missing aliases/biography are safe.
+- Verification: `:app:testDebugUnitTest :app:assembleDebug` passed with 545 tests in
+  69 suites, zero failures/errors/skips. Repository, ViewModel, and Retrofit tests
+  cover official route/payload ownership, cancellation, late responses, account
+  changes, recovery, pagination, and substitute mutations. `git diff --check` and
+  APK 16 KB alignment passed. No real follow/unfollow request was performed.
+- AVD: installed the current ordinary debug APK and cold-launched the official
+  LoadingActivity entry. The existing login opened portrait MeiloX. From the original
+  player artist sheet, the artist header rendered artwork, biography, 683 songs,
+  64 albums, and hot tracks. The full-song page produced a 100-item queue; scrolling
+  loaded further pages and selecting an appended item produced a 300-item queue
+  with active item index 200. This proves pagination beyond the first response, not
+  complete traversal of all 683 songs. Return navigation, the bottom full-song entry,
+  album carousel, and an album detail route rendered normally.
+- Playback was left paused via MeiloX's mini player at about 37 seconds. The current
+  host process had no crash-buffer entries. A media pause key sent while the new
+  item was buffering changed the official legacy session to PAUSED, while MeiloX
+  subsequently played. Media-button ownership during startup/buffering is therefore
+  a remaining stage-5 regression, separate from the artist data checkpoint. This run
+  does not establish audible/full-song playback or final listening-stat settlement.
+- Local-only evidence: `/tmp/meilox-artist-verified-build.log`,
+  `/tmp/meilox-artist-detail.png`, `/tmp/meilox-artist-songs.png`,
+  `/tmp/meilox-artist-page2-loaded.png`, `/tmp/meilox-artist-albums.png`, and
+  `/tmp/meilox-artist-album-route.png`. No device artifacts or account data are
+  committed. Full album pagination (the original response is limited to 50), live
+  collection writes, search-result follow behavior, release runtime, and the
+  recording/PiP decision remain open. No overall stage is completed by this checkpoint.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1194,8 +1235,8 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, and daily recommendations passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, and session-owned ordinary favorite reads passed documented checkpoints; favorite writes have substitute coverage only | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, and session-owned ordinary favorite reads passed documented checkpoints; favorite writes have substitute coverage only; media-button arbitration during buffering remains open | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

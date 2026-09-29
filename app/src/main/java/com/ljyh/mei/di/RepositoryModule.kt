@@ -61,8 +61,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun provideArtistRepository(apiService: ApiService): ArtistRepository {
-        return ArtistRepository(apiService)
+    fun provideArtistRepository(apiService: ApiService, sessions: com.ljyh.mei.parasite.HostSessionBridge): ArtistRepository {
+        return ArtistRepository(apiService, sessions)
     }
 
     @Singleton

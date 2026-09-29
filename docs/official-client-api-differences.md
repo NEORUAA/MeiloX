@@ -327,6 +327,49 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   separate migration; the original metadata does not yet carry those host fields.
   Podcasts and device-local files do not dispatch ordinary song-favorite requests.
 
+### API-014: Artist Collection State Is Separate From the Linked User
+
+- Recorded: 2026-09-29. Host: TV 1.1.80.
+- Original MeiloX: the artist header reads `artist/head/info/get` and derives the
+  button state from `data.user.followed`. Its writes use `artist/sub` or `artist/unsub`
+  with both `artistId` and `artistIds`. Requests, follow callbacks, and complete-song
+  pagination do not capture a shared account/artist owner.
+- Official contract: runtime `tv.artist.artistdetail.b.a.a` reads
+  `tv-artist-page/artistdetail` with `artistId`. Collection is the artist's own
+  `data.artistDetail.followed`, not the linked account's follow state. Its `b` method
+  posts `v1/artist/sub/` with one `artistId`; `c` posts `artist/unsub` with JSON
+  `artistIds`. The datasource formats the latter as `[id]`. DEX annotations in the
+  pinned APK confirm these routes and parameter names. The common bridge normalizes
+  the trailing slash, as it does for other business routes.
+- Adaptation: keep the existing rich header, hot-song and album DTOs, and original
+  `artist/head/info/get`, `v1/artist/{id}`, `artist/albums/{id}`, `v1/artist/songs`
+  operations as supplemental business requests through the host transport. No TV
+  page replacement or reduced catalog substitutes for the original MeiloX views.
+  The complete-song body retains `limit=100`, `order=hot`, `private_cloud=true`, and
+  `work_type=1`. Artist collections read the official TV field and use the two exact
+  official mutation payloads. Every request requires a captured session tag.
+- Validation: non-200 or malformed responses fail instead of becoming empty/unfollowed
+  results; a missing optional artist detail still reaches the existing unavailable
+  view. Empty final song pages are valid. An empty/non-advancing nonterminal page
+  becomes a retryable error; append failures preserve rows and offset. Overlapping
+  pages deduplicate in order while advancing by the raw response length.
+- Ownership: account invalidation clears both pages synchronously; cancellation plus
+  artist/revision checks discard late results. Follow writes serialize; a refresh
+  during a write waits for completion. Unknown or failed follow state retries a read,
+  and guests never submit collection changes. Stale page callbacks cannot start a
+  queue, open a track menu, or navigate using the previous artist/session.
+- UI: keep the original hero, metadata, star-independent follow button, hot-song rows,
+  album carousel, complete-song list and routing. Optional missing aliases/biography
+  are tolerated. Error retry stays in the existing section error area.
+- Runtime reads: the pinned TV process rendered the original artist header and
+  catalog. Scrolling the full-song list and selecting an appended item grew the
+  MeiloX queue from 100 to 300 songs. Artist-to-album navigation also rendered.
+  These checks do not establish the full catalog size or live collection mutations.
+- Remaining: live follow/unfollow writes require explicit test authorization and are
+  not automatically performed. The original album carousel still loads its first
+  50-entry response; this checkpoint does not claim full album pagination, release
+  runtime qualification, or completion of every artist/account workflow.
+
 ## Runtime Boundary Notes
 
 These are integration differences, not server API semantics.

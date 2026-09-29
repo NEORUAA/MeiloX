@@ -48,6 +48,8 @@ fun ArtistSongsScreen(
     val state by viewModel.state.collectAsState()
     var overlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val title = stringResource(R.string.artist_all_songs)
+    LaunchedEffect(id) { viewModel.open(id) }
+    LaunchedEffect(state.session, state.revision) { overlay = OverlayState.None }
 
     Box(Modifier.fillMaxSize()) {
         IosPinnedListPage(
@@ -61,7 +63,7 @@ fun ArtistSongsScreen(
             items(state.songs, key = { it.id }) { song ->
                 Track(
                     track = song,
-                    onClick = {
+                    onClick = { viewModel.withCurrent(state) {
                         val songs = state.songs
                         playerConnection.onTrackClicked(
                             trackId = song.id.toString(),
@@ -74,8 +76,8 @@ fun ArtistSongsScreen(
                                 )
                             },
                         )
-                    },
-                    onMoreClick = { overlay = OverlayState.TrackActionMenu(song, it) },
+                    } },
+                    onMoreClick = { bounds -> viewModel.withCurrent(state) { overlay = OverlayState.TrackActionMenu(song, bounds) } },
                 )
             }
             if (state.error != null) {

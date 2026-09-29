@@ -93,13 +93,13 @@ fun ArtistScreen(
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
-    val artistDetail by viewModel.artistDetail.collectAsState()
-    val artistAlbums by viewModel.artistAlbums.collectAsState()
-    val artistSongs by viewModel.artistSongs.collectAsState()
-    val followMutation by viewModel.followMutation.collectAsState()
-    var isFollowed by remember(id) { mutableStateOf(false) }
+    val state by viewModel.state.collectAsState()
+    val artistDetail = state.detail
+    val artistAlbums = state.albums
+    val artistSongs = state.songs
+    val followMutation = state.mutation
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
-    val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
+    val onAllSongsClick = { viewModel.withCurrent(state) { navController.navigate("${Screen.ArtistSongs.route}/$id") } }
     val artistData = (artistDetail as? Resource.Success)?.data?.data
     val isArtistUnavailable = artistDetail is Resource.Success && artistData?.artist == null
 
@@ -114,17 +114,15 @@ fun ArtistScreen(
         }
     }
     LaunchedEffect(id) {
-        viewModel.getArtistDetail(id)
-        viewModel.getArtistAlbums(id)
-        viewModel.getArtistSongs(id)
+        viewModel.load(id)
     }
-    LaunchedEffect(artistDetail) {
-        (artistDetail as? Resource.Success)?.data?.data?.user?.followed?.let {
-            isFollowed = it
-        }
+    LaunchedEffect(state.session, state.revision) {
+        currentOverlay = OverlayState.None
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(followMutation) {
-        (followMutation as? Resource.Success)?.data?.let { isFollowed = it }
+        if (followMutation is Resource.Error) android.widget.Toast.makeText(context, followMutation.message, android.widget.Toast.LENGTH_SHORT).show()
+        if (followMutation != null && followMutation !is Resource.Loading) viewModel.consumeMutation(followMutation)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -157,11 +155,9 @@ fun ArtistScreen(
                             ArtistHeader(
                                 artist = artist,
                                 onSongsClick = onAllSongsClick,
-                                isFollowed = isFollowed,
-                                isFollowLoading = followMutation is Resource.Loading,
-                                onFollowClick = {
-                                    viewModel.setArtistFollowed(artist.id.toLong(), !isFollowed)
-                                },
+                                isFollowed = state.followed == true,
+                                isFollowLoading = state.followLoading,
+                                onFollowClick = { viewModel.toggleFollow(state) },
                                 expertIdentities = data.secondaryExpertIdentiy.orEmpty()
                                     .filter { it.expertIdentiyCount > 0 }
                             )
@@ -170,7 +166,7 @@ fun ArtistScreen(
                         }
                     }
                     is Resource.Loading -> ArtistHeaderShimmer()
-                    is Resource.Error -> ErrorItem(detail.message)
+                    is Resource.Error -> ErrorItem(detail.message) { viewModel.load(id) }
                 }
             }
 
@@ -183,7 +179,7 @@ fun ArtistScreen(
                     items(songs.take(10), key = { it.id }) { song ->
                         Track(
                             track = song.toMediaMetadata(),
-                            onClick = {
+                            onClick = { viewModel.withCurrent(state) {
                                 val allIds = songs.map {
                                     it.id.toString() to it.toMediaMetadata().toMediaItem()
                                 }
@@ -198,13 +194,13 @@ fun ArtistScreen(
                                         )
                                     }
                                 )
-                            },
-                            onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), it) }
+                            } },
+                            onMoreClick = { bounds -> viewModel.withCurrent(state) { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), bounds) } }
                         )
                     }
                 }
                 is Resource.Loading -> items(5) { ShimmerHost { ListItemPlaceHolder() } }
-                is Resource.Error -> item { ErrorItem(songsResource.message) }
+                is Resource.Error -> item { ErrorItem(songsResource.message) { viewModel.load(id) } }
             }
 
             val songCount = artistData?.artist?.musicSize
@@ -250,8 +246,8 @@ fun ArtistScreen(
                                         },
                                         size = hotAlbum.size
                                     ),
-                                    onClick = {
-                                        navController.navigate("${Screen.Album.route}/$it")
+                                    onClick = { albumId ->
+                                        viewModel.withCurrent(state) { navController.navigate("${Screen.Album.route}/$albumId") }
                                     }
                                 )
                             }
@@ -266,7 +262,7 @@ fun ArtistScreen(
                         items(4) { ShimmerHost { AlbumCardShimmer() } }
                     }
                 }
-                is Resource.Error -> item { ErrorItem(albumsResource.message) }
+                is Resource.Error -> item { ErrorItem(albumsResource.message) { viewModel.load(id) } }
             }
                 }
             }
@@ -376,7 +372,7 @@ fun ArtistHeader(
                     .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
             ) {
                 // 认证/身份 badges
-                val allTags = artist.identifyTag ?: (emptyList<String>() + artist.identities)
+                val allTags = artist.identifyTag ?: artist.identities.orEmpty()
                 if (allTags.isNotEmpty()) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -413,8 +409,8 @@ fun ArtistHeader(
                             overflow = TextOverflow.Ellipsis
                         )
                         val subtitleParts = buildList {
-                            if (artist.transNames.isNotEmpty()) addAll(artist.transNames)
-                            if (artist.alias.isNotEmpty()) addAll(artist.alias)
+                            addAll(artist.transNames.orEmpty())
+                            addAll(artist.alias.orEmpty())
                         }
                         if (subtitleParts.isNotEmpty()) {
                             Text(
@@ -484,7 +480,7 @@ fun ArtistHeader(
             }
 
             // 简介
-            if (artist.briefDesc.isNotBlank()) {
+            if (!artist.briefDesc.isNullOrBlank()) {
                 Text(
                     text = artist.briefDesc,
                     style = MaterialTheme.typography.bodySmall,
@@ -707,12 +703,13 @@ fun SectionTitle(title: String) {
 }
 
 @Composable
-fun ErrorItem(message: String) {
-    Text(
-        text = message,
-        modifier = Modifier.padding(20.dp),
-        color = MaterialTheme.colorScheme.error
-    )
+fun ErrorItem(message: String, onRetry: (() -> Unit)? = null) {
+    Column(Modifier.padding(20.dp)) {
+        Text(text = message, color = MaterialTheme.colorScheme.error)
+        if (onRetry != null) GlassButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
+            Text(stringResource(R.string.retry))
+        }
+    }
 }
 
 private fun Int.formatCount(): String = when {
