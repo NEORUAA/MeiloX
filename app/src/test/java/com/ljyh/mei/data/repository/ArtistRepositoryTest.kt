@@ -3,7 +3,6 @@ package com.ljyh.mei.data.repository
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.api.AllArtistSongs
 import com.ljyh.mei.data.model.api.ArtistAlbum
-import com.ljyh.mei.data.model.api.ArtistCollectionResponse
 import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.model.api.BaseResponse
@@ -28,7 +27,8 @@ class ArtistRepositoryTest {
     private var albums = artistAlbums("10")
     private var hotSongs = artistHotSongs("10")
     private var songs = AllArtistSongs(200, listOf(artistTrack(100)), false)
-    private var followed = ArtistCollectionResponse(200, ArtistCollectionResponse.Data(ArtistCollectionResponse.Artist(10, false)))
+    private var followed = false
+    private var collectionFailure: Exception? = null
     private var mutation = BaseResponse(200)
     private var afterCall: () -> Unit = {}
     private val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) { _, method, args ->
@@ -41,12 +41,24 @@ class ArtistRepositoryTest {
             "getArtistAlbums" -> albums
             "getArtistSongs" -> hotSongs
             "getAllArtistSongs" -> songs
-            "getArtistCollection" -> followed
-            "subscribeArtist", "unsubscribeArtist" -> mutation
             else -> error("Unexpected ${method.name}")
         }.also { afterCall() }
     } as ApiService
-    private val repository = ArtistRepository(api, sessions)
+    private val collections = object : CatalogCollectionBackend {
+        override suspend fun albumCollected(id: Long, owner: SessionStamp) = error("Unused album")
+        override suspend fun artistFollowed(id: Long, owner: SessionStamp): Boolean {
+            assertEquals(sessions.snapshot(), owner)
+            calls += "artistFollowed" to id
+            collectionFailure?.let { throw it }
+            return followed.also { afterCall() }
+        }
+        override suspend fun setArtistFollowed(id: Long, followed: Boolean, owner: SessionStamp): BaseResponse {
+            assertEquals(sessions.snapshot(), owner)
+            calls += "setArtistFollowed" to (id to followed)
+            return mutation.also { afterCall() }
+        }
+    }
+    private val repository = ArtistRepository(api, sessions, collections)
 
     @Test fun allReadsUseTheCapturedSessionAndExplicitCatalogParameters() = runBlocking {
         assertTrue(repository.detail("10", owner) is Resource.Success)
@@ -57,28 +69,22 @@ class ArtistRepositoryTest {
         assertEquals(GetAllArtistSongs("10", 100, 100, "hot", true, 1), request)
     }
 
-    @Test fun collectionReadsUseArtistNotAssociatedUserFollowState() = runBlocking {
+    @Test fun collectionReadsUseTheSelectedBackendNotTheLinkedUser() = runBlocking {
         assertEquals(Resource.Success(false), repository.followed("10", owner))
-        assertEquals(mapOf("artistId" to "10"), calls.single().second)
-        followed = followed.copy(data = ArtistCollectionResponse.Data(ArtistCollectionResponse.Artist(10, true)))
+        assertEquals("artistFollowed" to 10L, calls.single())
+        followed = true
         assertEquals(Resource.Success(true), repository.followed("10", owner))
     }
 
-    @Test fun subscribeAndUnsubscribeHaveDifferentExactPayloads() = runBlocking {
+    @Test fun collectionWritesDelegateBothActionsToTheSelectedBackend() = runBlocking {
         assertEquals(Resource.Success(Unit), repository.follow("10", true, owner))
         assertEquals(Resource.Success(Unit), repository.follow("10", false, owner))
-        assertEquals(listOf("subscribeArtist" to mapOf("artistId" to "10"), "unsubscribeArtist" to mapOf("artistIds" to "[10]")), calls)
+        assertEquals(listOf("setArtistFollowed" to (10L to true), "setArtistFollowed" to (10L to false)), calls)
     }
 
-    @Test fun missingCollectionFlagsWrongArtistsAndBusinessFailuresAreNotFalse() = runBlocking {
-        for (response in listOf(
-            ArtistCollectionResponse(301, null), ArtistCollectionResponse(200, null),
-            ArtistCollectionResponse(200, ArtistCollectionResponse.Data(ArtistCollectionResponse.Artist(11, false))),
-            ArtistCollectionResponse(200, ArtistCollectionResponse.Data(ArtistCollectionResponse.Artist(10, null))),
-        )) {
-            followed = response
-            assertTrue(repository.followed("10", owner) is Resource.Error)
-        }
+    @Test fun collectionReadErrorsAndRejectedWritesDoNotBecomeSuccessfulStates() = runBlocking {
+        collectionFailure = java.io.IOException("Offline")
+        assertTrue(repository.followed("10", owner) is Resource.Error)
         mutation = BaseResponse(500)
         assertTrue(repository.follow("10", true, owner) is Resource.Error)
     }
@@ -139,6 +145,13 @@ class ArtistRepositoryTest {
         assertTrue(runCatching { repository.songs("10", 0, owner) }.exceptionOrNull() is CancellationException)
         afterCall = sessions::invalidate
         assertTrue(repository.follow("10", true, owner) is Resource.Error)
+    }
+
+    @Test fun collectionReadCancellationAndLateAccountChangesAreRejected() = runBlocking {
+        afterCall = { throw CancellationException() }
+        assertTrue(runCatching { repository.followed("10", owner) }.exceptionOrNull() is CancellationException)
+        afterCall = sessions::invalidate
+        assertTrue(repository.followed("10", owner) is Resource.Error)
     }
 }
 

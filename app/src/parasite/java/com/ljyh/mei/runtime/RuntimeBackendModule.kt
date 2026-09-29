@@ -2,6 +2,8 @@ package com.ljyh.mei.runtime
 
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.repository.PlaylistCollectionBackend
+import com.ljyh.mei.data.repository.CatalogCollectionBackend
+import com.ljyh.mei.parasite.HostCatalogCollectionBackend
 import com.ljyh.mei.parasite.HostPlaylistCollectionBackend
 import com.ljyh.mei.playback.PlaybackReportSink
 import com.ljyh.mei.parasite.HostCallFactory
@@ -20,6 +22,7 @@ object RuntimeBackendModule {
     @Provides fun playbackReports(host: HostPlaybackReportBridge): PlaybackReportSink = host
     @Provides fun components(host: HostComponentRuntime): ComponentRuntime = host
     @Provides internal fun playlistCollections(backend: HostPlaylistCollectionBackend): PlaylistCollectionBackend = backend
+    @Provides internal fun catalogCollections(backend: HostCatalogCollectionBackend): CatalogCollectionBackend = backend
 
     @Provides @Named("NetEaseApiCalls")
     fun apiCalls(host: HostCallFactory): Call.Factory = host

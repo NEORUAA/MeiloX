@@ -28,7 +28,11 @@ internal interface ArtistSource {
     suspend fun follow(id: String, followed: Boolean, owner: SessionStamp): Resource<Unit>
 }
 
-class ArtistRepository(private val apiService: ApiService, private val sessions: SessionStore) : ArtistSource {
+class ArtistRepository(
+    private val apiService: ApiService,
+    private val sessions: SessionStore,
+    private val collections: CatalogCollectionBackend,
+) : ArtistSource {
     private suspend fun <T> request(id: String, owner: SessionStamp, action: suspend () -> T): Resource<T> =
         withContext(Dispatchers.IO) {
             safeApiCall {
@@ -81,18 +85,13 @@ class ArtistRepository(private val apiService: ApiService, private val sessions:
     }
 
     override suspend fun followed(id: String, owner: SessionStamp) = request(id, owner) {
-        if (!owner.identity.authenticated) return@request false
-        val result = apiService.getArtistCollection(mapOf("artistId" to id), owner)
-        check(result.code == 200) { "Artist collection failed (${result.code})" }
-        val artist = checkNotNull(result.data?.artist) { "Missing official artist collection" }
-        check(artist.id.toString() == id) { "Official artist collection identity mismatch" }
-        checkNotNull(artist.followed) { "Missing official artist collection flag" }
+        if (!owner.identity.authenticated || owner.identity.anonymous) return@request false
+        collections.artistFollowed(id.toLong(), owner)
     }
 
     override suspend fun follow(id: String, followed: Boolean, owner: SessionStamp): Resource<Unit> = request(id, owner) {
-        check(owner.identity.authenticated && !owner.identity.anonymous) { "Official sign-in required" }
-        val response = if (followed) apiService.subscribeArtist(mapOf("artistId" to id), owner)
-        else apiService.unsubscribeArtist(mapOf("artistIds" to "[$id]"), owner)
+        check(owner.identity.authenticated && !owner.identity.anonymous) { "Sign-in required" }
+        val response = collections.setArtistFollowed(id.toLong(), followed, owner)
         check(response.code == 200) { "Artist collection update failed (${response.code})" }
     }
 

@@ -12,6 +12,7 @@ import com.ljyh.mei.data.repository.ShareRepository
 import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.CommentRepository
+import com.ljyh.mei.data.repository.CatalogCollectionBackend
 import com.ljyh.mei.data.session.SessionStore
 import dagger.Module
 import dagger.Provides
@@ -29,8 +30,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, collections: com.ljyh.mei.data.repository.PlaylistCollectionBackend, sessions: SessionStore): PlaylistRepository {
-        return PlaylistRepository(apiService, weApiService, collections, sessions)
+    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, collections: com.ljyh.mei.data.repository.PlaylistCollectionBackend, sessions: SessionStore, catalogCollections: CatalogCollectionBackend): PlaylistRepository {
+        return PlaylistRepository(apiService, weApiService, collections, sessions, catalogCollections)
     }
 
     @Singleton
@@ -61,8 +62,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun provideArtistRepository(apiService: ApiService, sessions: com.ljyh.mei.data.session.SessionStore): ArtistRepository {
-        return ArtistRepository(apiService, sessions)
+    fun provideArtistRepository(apiService: ApiService, sessions: com.ljyh.mei.data.session.SessionStore, collections: CatalogCollectionBackend): ArtistRepository {
+        return ArtistRepository(apiService, sessions, collections)
     }
 
     @Singleton

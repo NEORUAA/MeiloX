@@ -130,6 +130,35 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   acceptance. Source and substitute tests do not establish live mutation acceptance;
   canceling an old request cannot undo a server mutation already accepted.
 
+#### Dual-Runtime Collection State (2026-09-30)
+
+- `CatalogCollectionBackend` now owns runtime-specific album/artist collection reads.
+  The shared album Repository, ViewModel and screen still expose the same Boolean
+  state. The TV route and response DTO move to `src/parasite`; its request envelope,
+  ID check and nullable `collect` handling are unchanged.
+- Standalone uses the existing `/api/album/sublist` contract from baseline
+  `ApiService`/`UserRepository`, not the TV endpoint or unscoped `AlbumsRepository`
+  table. It requests `limit=100`, `total=true` and offset pages under one captured
+  Cookie/session, returning true on a matching album or false only on a valid final
+  page. Offsets advance by raw row counts; overlapping pages may advance but an empty
+  or non-advancing nonterminal page fails instead of looping or reporting false.
+- This is a backend state-source adaptation, not a literal restoration of the old
+  cache-based flag. Missing/malformed lists, IDs, Boolean cursors and business errors
+  are errors. It neither writes the legacy album table nor treats another account's
+  cached membership as authentication. No arbitrary first-page cutoff is used.
+- Both runtimes keep the existing common `album/sub` and `album/unsub` mutation
+  contracts. Shared reads validate positive IDs and the session before and after
+  dispatch; guests do not query private state. The account-owned Library refresh and
+  original frontend remain unchanged. New source/substitute proof does not qualify
+  live Cookie reads, cross-account device behavior or real album mutations.
+- Verification: standalone substitutes cover multi-page matches/absence, overlapping
+  progress, early positive termination, final empty pages, stalled cursors, malformed
+  flags/IDs/lists, business rejection and mid-pagination session invalidation. The host
+  substitutes preserve its exact envelope and reject missing flags/wrong identities.
+  Shared tests cover guest/invalid/stale/late reads and cancellation. These pass in
+  the paired 598/668 JVM suites; both debug and minified release builds pass. Release
+  DEX retains the required Retrofit annotations and nullable list projection schema.
+
 ### API-007: Playlist Collection Uses Host-Generated Security Parameters
 
 - Recorded: 2026-09-29.
@@ -402,6 +431,40 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   not automatically performed. The original album carousel still loads its first
   50-entry response; this checkpoint does not claim full album pagination, release
   runtime qualification, or completion of every artist/account workflow.
+
+#### Dual-Runtime Artist Collection (2026-09-30)
+
+- `CatalogCollectionBackend` separates artist state and writes from the shared
+  `ArtistRepository`; TV endpoints/DTOs are now parasite-only. The official adapter
+  preserves `data.artistDetail.followed`, the identity check, `v1/artist/sub/` with
+  only `artistId`, and `artist/unsub` with only the JSON `artistIds` array.
+- Standalone reads `/api/v1/artist/{id}` with the existing `GetArtistSong` parameters
+  (`limit=50`, `offset=0`, `total=true`) and checks its `artist.id`/`artist.followed`.
+  This field already exists in the original `ArtistSong.Artist` contract; it is not
+  `data.user.followed` from the rich header. A narrow nullable response projection
+  avoids turning an omitted Boolean into Gson's primitive false. Missing/non-Boolean
+  flags, wrong IDs or non-200 responses fail; linked-user follow state is ignored.
+- Standalone writes restore the original `MeloXRepository.setArtistFollowed` primary
+  WeAPI route (`/weapi/artist/sub` or `/weapi/artist/unsub`) on `music.163.com`, with
+  numeric `artistId` and JSON `artistIds` in both directions. Its own interceptor and
+  captured Cookie sign the request; it does not borrow official host credentials.
+- Deliberate safety difference: the original generic helper retried failed writes
+  through EAPI, including failures with an uncertain server result. This adapter does
+  not add that application-level protocol retry. Business rejection is returned to
+  the shared acceptance check, and transport failure remains an error. This is not
+  a promise of server-side exactly-once execution or rollback after cancellation.
+- Shared serialization, code-200 acceptance, owner/revision checks and existing UI
+  retry behavior remain intact. Account authorization and real follow/unfollow
+  acceptance remain unqualified; all new write tests use substitutes only.
+- Verification: substitutes cover true/false flags independent of the linked user,
+  missing/malformed flags, wrong identities, exact runtime-specific routes/payloads,
+  Cookie ownership, rejected/uncertain writes and obsolete owners. Shared tests reject
+  late and canceled collection results. The 598 standalone / 668 parasite JVM suites
+  and both debug/instrumentation/minified-release builds pass. Actual release DEX
+  retains body/session annotations, generic signatures and nullable artist fields;
+  TV collection routes are absent from standalone and the standalone WeAPI mutation
+  route is absent from parasite. Both releases pass 16 KB alignment. No device or real
+  account write is part of this checkpoint.
 
 ### API-015: Playback Sources Belong to an Official Authorization
 

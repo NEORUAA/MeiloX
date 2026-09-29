@@ -2,6 +2,8 @@ package com.ljyh.mei.runtime
 
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.repository.PlaylistCollectionBackend
+import com.ljyh.mei.data.repository.CatalogCollectionBackend
+import com.ljyh.mei.standalone.StandaloneCatalogCollectionBackend
 import com.ljyh.mei.standalone.StandalonePlaylistCollectionBackend
 import com.ljyh.mei.data.network.netease.DataStoreNcblSessionContextProvider
 import com.ljyh.mei.data.network.netease.NcblSessionContextProvider
@@ -23,6 +25,7 @@ object RuntimeBackendModule {
     @Provides internal fun playbackReports(reports: StandalonePlaybackReports): PlaybackReportSink = reports
     @Provides fun components(runtime: StandaloneComponentRuntime): ComponentRuntime = runtime
     @Provides internal fun playlistCollections(backend: StandalonePlaylistCollectionBackend): PlaylistCollectionBackend = backend
+    @Provides internal fun catalogCollections(backend: StandaloneCatalogCollectionBackend): CatalogCollectionBackend = backend
 
     @Provides @Named("NetEaseApiCalls")
     internal fun apiCalls(transport: StandaloneTransport): Call.Factory = transport.business

@@ -473,6 +473,40 @@ gates are qualified; this checkpoint changes only CI and documentation.
   Local logs: `/tmp/meilox-dual-playlist-collections-build.log` and
   `/tmp/meilox-dual-playlist-collections-release.log`; neither is committed.
 
+### D1/D4 Checkpoint: Runtime-Owned Album and Artist Collections (2026-09-30)
+
+- Added `CatalogCollectionBackend` for album state, artist state and artist follow
+  mutations. Shared Repository/ViewModel contracts and all frontend files remain
+  unchanged apart from Repository injection/delegation. TV collection endpoints and
+  response DTOs move to parasite-only sources without changing their wire contracts.
+- Standalone album state uses its existing Cookie-authenticated `album/sublist`
+  contract with complete, cancellable pagination rather than an unscoped legacy
+  table. It checks page shape/progress and cannot turn a missing cursor or a partial
+  list into an uncollected result. Standalone artist state reads the artist flag
+  already modeled in the existing `v1/artist/{id}` response, not the associated
+  user's follow flag. Both paths reject unknown or stale state.
+- Standalone artist mutations use the original primary WeAPI route and both original
+  ID fields. Uncertain/rejected writes are not retried through another protocol by
+  the adapter. Parasite keeps its exact official sub/unsub payloads and does not fall
+  back to Cookie transport. API-006/API-014 record these differences and evidence limits.
+- Shared tests exercise delegation, guest/invalid/stale rejection and late-result
+  ownership. Flavor tests exercise actual Retrofit mapping, standalone signing/Cookie
+  ownership, pagination, malformed/error responses and the host's unchanged schemas.
+  No account mutation, quota request or AVD interaction is part of this increment.
+- Verification: 598 standalone tests in 78 suites and 668 parasite tests in 85 suites
+  pass without failures/errors/skips; shared cases run in both. Both debug,
+  instrumentation and unsigned minified release builds pass. Generated Dagger graphs
+  select the intended implementations; debug APKs contain only their runtime-specific
+  collection classes. Release DEX checks confirm isolated TV/WeAPI routes, retained
+  Retrofit method/parameter annotations and generic signatures, and preserved nullable
+  projection fields/list element types. Both release APKs pass 16 KB ZIP alignment.
+- `git diff --check` passes. Local evidence is in
+  `/tmp/meilox-dual-catalog-collections-build.log` and
+  `/tmp/meilox-dual-catalog-collections-release.log`; no generated artifacts are
+  committed. No AVD install or instrumentation run was performed while standalone
+  login confirmation remains pending. Live standalone collection reads, mutation
+  acceptance and release runtime qualification remain open, as do other D4 features.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

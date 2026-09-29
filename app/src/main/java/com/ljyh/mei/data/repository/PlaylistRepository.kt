@@ -59,6 +59,7 @@ class PlaylistRepository(
     private val weApiService: WeApiService,
     private val collections: PlaylistCollectionBackend,
     private val sessions: SessionStore,
+    private val catalogCollections: CatalogCollectionBackend,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
     override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
@@ -255,13 +256,13 @@ class PlaylistRepository(
 
     override suspend fun getAlbumCollection(id: String, session: SessionStamp): Resource<Boolean> = withContext(Dispatchers.IO) {
         safeApiCall {
-            if (!session.identity.authenticated) return@safeApiCall false
-            val request = com.google.gson.JsonObject().apply { addProperty("albumId", id) }
-            val response = apiService.getAlbumCollection(mapOf("request" to request.toString()), session)
-            check(response.code == 200) { "Album collection state failed (${response.code})" }
-            val album = checkNotNull(response.data) { "Missing official album collection state" }
-            check(album.id.toString() == id) { "Official album identity mismatch" }
-            checkNotNull(album.collected) { "Missing official album collection flag" }
+            val albumId = requireNotNull(id.toLongOrNull()?.takeIf { it > 0 }) { "Invalid album identity" }
+            sessions.requireCurrent(session)
+            if (!session.identity.authenticated || session.identity.anonymous) return@safeApiCall false
+            catalogCollections.albumCollected(albumId, session).also {
+                currentCoroutineContext().ensureActive()
+                sessions.requireCurrent(session)
+            }
         }
     }
 

@@ -120,12 +120,6 @@ interface ApiService {
         @Tag expectedSession: SessionStamp? = null,
     ): AlbumDetail
 
-    @POST("/api/tv-artist-page/album/get")
-    suspend fun getAlbumCollection(
-        @Body body: Map<String, String>,
-        @Tag expectedSession: SessionStamp,
-    ): com.ljyh.mei.data.model.api.AlbumCollectionResponse
-
     @POST("/api/search/get/")
     suspend fun search(
         @Body body: GetSearch,
@@ -198,15 +192,6 @@ interface ApiService {
 
     @POST("/api/v1/artist/{id}")
     suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String, @Tag expectedSession: SessionStamp): ArtistSong
-
-    @POST("/api/tv-artist-page/artistdetail")
-    suspend fun getArtistCollection(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): com.ljyh.mei.data.model.api.ArtistCollectionResponse
-
-    @POST("/api/v1/artist/sub/")
-    suspend fun subscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): BaseResponse
-
-    @POST("/api/artist/unsub")
-    suspend fun unsubscribeArtist(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): BaseResponse
 
     @POST("/api/playmode/intelligence/list")
     suspend fun getIntelligenceList(@Body body: GetIntelligence): Intelligence

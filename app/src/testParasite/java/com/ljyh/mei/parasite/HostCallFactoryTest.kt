@@ -226,7 +226,8 @@ class HostCallFactoryTest {
         service.getAlbumDetail(id = "10", expectedSession = owner)
         assertEquals("v1/album/10", backend.path)
         assertTrue(backend.parameters.isEmpty())
-        service.getAlbumCollection(mapOf("request" to "{\"albumId\":\"10\"}"), owner)
+        retrofit(HostCallFactory(bridge)).create(HostCatalogCollectionApi::class.java)
+            .album(mapOf("request" to "{\"albumId\":\"10\"}"), owner)
         assertEquals("tv-artist-page/album/get", backend.path)
         assertEquals(mapOf("request" to "{\"albumId\":\"10\"}"), backend.parameters)
         service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner)
@@ -253,9 +254,9 @@ class HostCallFactoryTest {
             { service.getArtistAlbums(com.ljyh.mei.data.model.api.GetArtistAlbum(), "10", owner) },
             { service.getArtistSongs(com.ljyh.mei.data.model.api.GetArtistSong(), "10", owner) },
             { service.getAllArtistSongs(com.ljyh.mei.data.model.api.GetAllArtistSongs("10", 100), owner) },
-            { service.getArtistCollection(mapOf("artistId" to "10"), owner) },
-            { service.subscribeArtist(mapOf("artistId" to "10"), owner) },
-            { service.unsubscribeArtist(mapOf("artistIds" to "[10]"), owner) },
+            { retrofit(HostCallFactory(bridge)).create(HostCatalogCollectionApi::class.java).artist(mapOf("artistId" to "10"), owner) },
+            { retrofit(HostCallFactory(bridge)).create(HostCatalogCollectionApi::class.java).subscribeArtist(mapOf("artistId" to "10"), owner) },
+            { retrofit(HostCallFactory(bridge)).create(HostCatalogCollectionApi::class.java).unsubscribeArtist(mapOf("artistIds" to "[10]"), owner) },
         )
         val paths = listOf("artist/head/info/get", "artist/albums/10", "v1/artist/10", "v1/artist/songs", "tv-artist-page/artistdetail", "v1/artist/sub", "artist/unsub")
         reads.forEachIndexed { index, read ->
@@ -280,7 +281,7 @@ class HostCallFactoryTest {
         bridge.sessions.invalidate()
         val calls: List<suspend () -> Any> = listOf(
             { service.getAlbumDetail(id = "10", expectedSession = owner) },
-            { service.getAlbumCollection(mapOf("request" to "{}"), owner) },
+            { retrofit(HostCallFactory(bridge)).create(HostCatalogCollectionApi::class.java).album(mapOf("request" to "{}"), owner) },
             { service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.unsubscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.getSongUrlV1(com.ljyh.mei.data.model.api.GetSongUrlV1("[1]", "standard"), owner) },

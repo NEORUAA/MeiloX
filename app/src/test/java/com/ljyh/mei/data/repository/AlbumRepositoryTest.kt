@@ -1,13 +1,13 @@
 package com.ljyh.mei.data.repository
 
-import com.google.gson.Gson
-import com.ljyh.mei.data.model.api.AlbumCollectionResponse
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import java.io.IOException
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -15,46 +15,53 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AlbumRepositoryTest {
-    private val owner = SessionStamp(3, SessionIdentity(1, true, false))
+    private var identity = SessionIdentity(1, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
+    private val owner = sessions.snapshot()
     private inline fun <reified T> api(noinline invoke: (String, Array<out Any?>) -> Any?): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
     ) { _, method, args -> invoke(method.name, args.orEmpty()) } as T
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") },
         api<PlaylistCollectionBackend> { _, _ -> error("Unexpected playlist collection") },
-        com.ljyh.mei.data.session.SessionStore(),
+        sessions, api<CatalogCollectionBackend>(invoke),
     )
-    private fun collection(json: String) = Gson().fromJson(json, AlbumCollectionResponse::class.java)
 
-    @Test fun readsAndValidatesTheTvCollectionContract() = runBlocking {
+    @Test fun readsCurrentAccountStateThroughTheSelectedBackend() = runBlocking {
         for (collected in listOf(false, true)) {
             val source = repository { name, args ->
-                assertEquals("getAlbumCollection", name)
-                assertEquals(mapOf("request" to "{\"albumId\":\"10\"}"), args[0])
+                assertEquals("albumCollected", name)
+                assertEquals(10L, args[0])
                 assertEquals(owner, args[1])
-                collection("""{"code":200,"data":{"id":10,"collect":$collected}}""")
+                collected
             }
             assertEquals(Resource.Success(collected), source.getAlbumCollection("10", owner))
         }
     }
 
-    @Test fun missingFlagWrongIdentityAndFailureAreNotAnUncollectedAlbum() = runBlocking {
-        listOf(
-            """{"code":200,"data":{"id":10}}""",
-            """{"code":200,"data":{"id":20,"collect":true}}""",
-            """{"code":200,"data":null}""",
-            """{"code":301}""",
-        ).forEach { json ->
-            val result = repository { _, _ -> collection(json) }.getAlbumCollection("10", owner)
-            assertTrue(result is Resource.Error)
-        }
+    @Test fun backendFailuresAreNotAnUncollectedAlbum() = runBlocking {
+        assertTrue(repository { _, _ -> throw IOException("Offline") }.getAlbumCollection("10", owner) is Resource.Error)
+        assertTrue(repository { _, _ -> error("Missing collection flag") }.getAlbumCollection("10", owner) is Resource.Error)
     }
 
     @Test fun guestReadsDoNotCallTheCollectionEndpointAndWritesAreRejected() = runBlocking {
-        val guest = owner.copy(identity = SessionIdentity(0, false, true))
+        identity = SessionIdentity(0, false, true)
+        val guest = sessions.snapshot()
         val source = repository { _, _ -> error("Guest must not dispatch") }
         assertEquals(Resource.Success(false), source.getAlbumCollection("10", guest))
         assertTrue(source.setAlbumCollection("10", true, guest) is Resource.Error)
+    }
+
+    @Test fun invalidIdsAndStaleOwnersNeverDispatchCollectionReads() = runBlocking {
+        val source = repository { _, _ -> error("Must not dispatch") }
+        for (id in listOf("bad", "0", "-1")) assertTrue(source.getAlbumCollection(id, owner) is Resource.Error)
+        sessions.invalidate()
+        assertTrue(source.getAlbumCollection("10", owner) is Resource.Error)
+    }
+
+    @Test fun accountChangeAfterCollectionResponseRejectsTheOldResult() = runBlocking {
+        val source = repository { _, _ -> sessions.invalidate(); true }
+        assertTrue(source.getAlbumCollection("10", owner) is Resource.Error)
     }
 
     @Test fun mutationsCheckBusinessCodesInBothDirections() = runBlocking {
