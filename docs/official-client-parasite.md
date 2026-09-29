@@ -563,6 +563,48 @@ logout/anonymous initialization, and process death during those real transitions
 require device acceptance. Keep production routing gated until those tests and the remaining
 account consumers pass. The existing authenticated session was preserved throughout this slice.
 
+### Session-Owned Home Feed
+
+The original Home page now observes official session generations instead of the stored
+`UserIdKey`. Its `HomeRepository` uses the existing typed API through the host transport
+and an expected session stamp for reads, cache writes, errors, and final publication.
+
+- Personalized cache files live in the module's host-private `home_accounts` directory,
+  separated by public user/anonymous/guest identity. No credentials are stored. The old
+  shared `home_page_data_1.json` and preference timestamp are not imported or consulted.
+- Each cache envelope owns its timestamp and retains the existing 06:00 Asia/Shanghai
+  freshness boundary. Missing, malformed, null, or future-dated entries trigger a fetch.
+  Temporary-file/atomic replacement avoids publishing partial cache writes; cache I/O
+  failure does not discard a valid network response.
+- Session invalidation clears visible personalized content synchronously. Cancellation,
+  generation checks, and publication guards reject obsolete requests, including same-user
+  reauthorization and non-cooperative refreshes. Delayed invalidation cannot erase newer
+  content or hide the session-recovery error behind a spinner.
+- Original home cards and song rows can render while the real playback connection is
+  pending. No substitute player was introduced. The previously blank error branch now
+  uses the existing glass retry control, and refresh progress reflects actual loading.
+
+Verification on 2026-09-29:
+
+- All 335 unit tests passed (19 new home repository/ViewModel cases), with no failures,
+  errors, or skips. Debug assembly, `git diff --check`, and 16 KB APK alignment passed.
+- The debug carrier opened `home` in the TV process. The host-backed response populated
+  six original home blocks; screenshots verified recommendation cards, cover loading,
+  text layout, and the error/retry surface. Module Cookie and user-ID preferences remained
+  absent. No request headers, public profile values, or raw responses were logged in Git.
+- With airplane mode enabled and Wi-Fi/mobile data disabled, a force-stop/cold-start
+  restored the current account's cached feed. Pull-to-refresh displayed the sanitized
+  host transport failure and a retry control. After connectivity settled, retry fetched
+  updated recommendations. Network settings were restored to airplane mode `0`, Wi-Fi
+  `1`, and mobile data `1`. The tested final process had no crash-buffer entries.
+- Cross-account isolation, anonymous transitions, cancellation, and late results were
+  verified with controlled test identities, not by changing the user's live account.
+
+This is a feed/session/cache slice, not complete Home playback acceptance or stage 4
+completion. The carrier still has no production player connection. Intelligence-mode
+state, play actions, service startup, and remaining account consumers require their own
+migration and end-to-end tests. The recording/PiP host decision remains unresolved.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -587,7 +629,7 @@ account consumers pass. The existing authenticated session was preserved through
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, and cloud History reads passed | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, and session-owned Home feed/cache passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

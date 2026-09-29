@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,7 +63,6 @@ import com.ljyh.mei.constants.RecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardHeightTablet
 import com.ljyh.mei.constants.RecommendCardWidth
 import com.ljyh.mei.constants.RecommendCardWidthTablet
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.toMediaItem
@@ -78,6 +78,9 @@ import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.glass.IosPinnedPage
+import com.ljyh.mei.ui.glass.GlassIconButton
+import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
@@ -86,7 +89,6 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.DateUtils.getGreeting
 import com.ljyh.mei.utils.positionComparator
-import com.ljyh.mei.utils.rememberPreference
 import java.util.UUID
 import kotlin.math.ceil
 import timber.log.Timber
@@ -107,8 +109,7 @@ fun HomeScreen(
     val listState = rememberLazyListState()
 
     val homePageResourceShowPage1 by viewModel.homePageResourceShow.collectAsState()
-    val userId by rememberPreference(UserIdKey, "")
-    val isRefreshing by remember { mutableStateOf(false) }
+    val isRefreshing = homePageResourceShowPage1 is Resource.Loading
     val device = rememberDeviceInfo()
     val glassColors = LocalGlassColors.current
     val playerConnection = LocalPlayerConnection.current
@@ -162,10 +163,6 @@ fun HomeScreen(
             listState.animateScrollToItem(0)
             backStackEntry?.savedStateHandle?.set("scrollToTop", false)
         }
-    }
-
-    LaunchedEffect(userId) {
-        viewModel.homePageResourceShow()
     }
 
     val systemBarsPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -231,7 +228,24 @@ fun HomeScreen(
                 }
 
                 is Resource.Error -> {
-                    // 这里可以加一个错误重试页面
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(pinnedPadding).padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                    ) {
+                        Text(
+                            stringResource(R.string.load_failed),
+                            style = IosTypography.headline,
+                        )
+                        Text(
+                            result.message,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        GlassIconButton(onClick = { viewModel.homePageResourceShow(refresh = true) }) {
+                            SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.retry))
+                        }
+                    }
                 }
 
                 Resource.Loading -> {
@@ -260,7 +274,7 @@ private fun HomeBlockItem(
     device: com.ljyh.mei.ui.component.utils.DeviceInfo
 ) {
     val gson = remember { Gson() }
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
 
     val playlistCardSize = if (device.isTablet) PlaylistCardSizeTablet else PlaylistCardSize
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
@@ -315,13 +329,13 @@ private fun HomeBlockItem(
 
                         "fm" -> {
                             // 私人FM
-                            playerConnection.fmStart(resource.resourceId)
+                            playerConnection?.fmStart(resource.resourceId)
 
                         }
 
                         "musicPodcast" -> resource.toMusicPodcastMediaMetadata()?.let { metadata ->
                             val item = metadata.toMediaItem()
-                            playerConnection.playQueue(
+                            playerConnection?.playQueue(
                                 ListQueue(
                                     id = "home_music_podcast_${resource.resourceId}",
                                     title = resource.title,
@@ -430,11 +444,12 @@ private fun HomeBlockItem(
                 isTablet = device.isTablet,
                 screenWidthDp = device.screenWidthDp,
             ) { songs, index ->
+                val connection = playerConnection ?: return@TripleLaneSlider
                 val flatSongs = songs.flatMap { it.items }.map { it.resourceId to null }
-                if (playerConnection.isPlaying(flatSongs[index].first)) {
-                    playerConnection.player.togglePlayPause()
+                if (connection.isPlaying(flatSongs[index].first)) {
+                    connection.player.togglePlayPause()
                 } else {
-                    playerConnection.onTrackClicked(
+                    connection.onTrackClicked(
                         trackId = flatSongs[index].first,
                         buildQueue = {
                             ListQueue(
@@ -516,9 +531,11 @@ fun TripleLaneSlider(
     screenWidthDp: Int = 0,
     onClick: (List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>, Int) -> Unit
 ) {
-    val playerConnection = LocalPlayerConnection.current ?: return
-    val currentMetadata by playerConnection.mediaMetadata.collectAsState()
-    val isPlaying by playerConnection.isPlaying.collectAsState()
+    val playerConnection = LocalPlayerConnection.current
+    val currentMetadata by playerConnection?.mediaMetadata?.collectAsState()
+        ?: remember { mutableStateOf<MediaMetadata?>(null) }
+    val isPlaying by playerConnection?.isPlaying?.collectAsState()
+        ?: remember { mutableStateOf(false) }
 
     val columns = when {
         screenWidthDp >= 900 -> 3

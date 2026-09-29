@@ -12,6 +12,7 @@ import com.ljyh.mei.data.repository.ShareRepository
 import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.CommentRepository
+import com.ljyh.mei.parasite.HostSessionBridge
 import dagger.Module
 import dagger.Provides
 import javax.inject.Singleton
@@ -21,8 +22,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun provideHomeRepository(eApiService: EApiService, apiService: ApiService): HomeRepository {
-        return HomeRepository(eApiService, apiService)
+    fun provideHomeRepository(eApiService: EApiService, sessions: HostSessionBridge): HomeRepository {
+        return HomeRepository(eApiService, sessions)
     }
 
 
@@ -70,4 +71,3 @@ object RepositoryModule {
         return CommentRepository(apiService, weApiService)
     }
 }
-

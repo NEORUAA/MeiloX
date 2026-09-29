@@ -7,33 +7,103 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.HomeRepository
 import com.ljyh.mei.di.repository.ColorRepository
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.parasite.HostSessionStamp
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 class HomeViewModel @Inject constructor(
     private val repository: HomeRepository,
-    private val colorRepository: ColorRepository
+    private val colorRepository: ColorRepository,
+    private val sessions: HostSessionBridge,
 ) : ViewModel() {
-    val context= AppContext.instance
-
     private val _homePageResourceShow =
         MutableStateFlow<Resource<List<HomePageResourceShow.Data.Block>>>(Resource.Loading)
     val homePageResourceShow: StateFlow<Resource<List<HomePageResourceShow.Data.Block>>> = _homePageResourceShow
-
-
-    fun homePageResourceShow(refresh: Boolean = false) {
-        viewModelScope.launch {
-            // 如果不是刷新且有成功数据，则不加载
-            val currentData = _homePageResourceShow.value
-            if (!refresh && currentData is Resource.Success) return@launch
-
-            _homePageResourceShow.value = Resource.Loading
-            _homePageResourceShow.value = repository.getHomePageResourceShow(refresh)
+    private val stateLock = Any()
+    private val requestVersion = AtomicLong()
+    private var requestJob: Job? = null
+    @Volatile private var displayedSession: HostSessionStamp? = null
+    private val invalidation = sessions.onInvalidated { revision ->
+        // Clear personalized content before the next main-thread collection.
+        synchronized(stateLock) {
+            if ((displayedSession?.generation ?: -1L) < revision) {
+                requestVersion.incrementAndGet()
+                _homePageResourceShow.value = pendingState()
+            }
         }
     }
+
+    init {
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }
+                .collect { homePageResourceShow() }
+        }
+    }
+
+    fun homePageResourceShow(refresh: Boolean = false) {
+        val stamp = runCatching { sessions.snapshot() }.getOrNull()
+        if (stamp == null) {
+            requestVersion.incrementAndGet()
+            requestJob?.cancel()
+            displayedSession = null
+            _homePageResourceShow.value = pendingState()
+            return
+        }
+        if (!refresh && displayedSession == stamp && _homePageResourceShow.value is Resource.Success) return
+        requestJob?.cancel()
+        val version = requestVersion.incrementAndGet()
+        requestJob = viewModelScope.launch {
+            try {
+                publish(stamp, version, Resource.Loading)
+                val result = repository.getHomePageResourceShow(stamp, refresh)
+                currentCoroutineContext().ensureActive()
+                publish(stamp, version, result)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
+                // The new session owns the next request and visible state.
+            } catch (error: Exception) {
+                runCatching { publish(stamp, version, Resource.Error(error.message ?: "Official home request failed")) }
+            }
+        }
+    }
+
+    private fun publish(
+        stamp: HostSessionStamp,
+        version: Long,
+        result: Resource<List<HomePageResourceShow.Data.Block>>,
+    ) {
+        sessions.withCurrent(stamp) {
+            synchronized(stateLock) {
+                if (requestVersion.get() == version) {
+                    displayedSession = stamp
+                    _homePageResourceShow.value = result
+                }
+            }
+        }
+    }
+
+    private fun pendingState(): Resource<Nothing> = if (sessions.recoveryRequired.value) {
+        Resource.Error("Official session recovery is required")
+    } else Resource.Loading
+
     fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
 
-    suspend fun getOrExtractColor(url: String) = colorRepository.getColorOrExtract(context, url)
+    suspend fun getOrExtractColor(url: String) = colorRepository.getColorOrExtract(AppContext.instance, url)
+
+    override fun onCleared() {
+        invalidation.close()
+        requestVersion.incrementAndGet()
+        super.onCleared()
+    }
 }
