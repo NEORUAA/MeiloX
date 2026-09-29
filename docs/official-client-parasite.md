@@ -654,6 +654,34 @@ controlled test substitutes because the live collection is small. Cloud, Podcast
 playlist mutations, and other account consumers still need migration. Production playback
 is not connected to this carrier, and the recording/PiP host decision remains unresolved.
 
+### Page Glass Regression
+
+The user's Library track-menu screenshot exposed a missing backdrop connection in the
+debug page carrier. Its `GlassBackdropHost` recorded only a solid background, while the
+actual navigation content was an unrecorded overlay. Popup glass also lacked the source
+position needed for cross-window sampling, leaving sharp page text visible through it.
+Earlier page-layout screenshots did not establish popup glass acceptance.
+
+`HostAccountProbe` now follows the production Activity's existing rendering contract:
+page controls sample a separate static base, the rendered page is recorded and tracked
+in screen coordinates, and popup/sheet glass receives the shared page backdrop. Glass
+colors follow the active light/dark theme. Existing blur/refraction shaders, materials,
+opacity, and menu layout are unchanged.
+
+Verification on 2026-09-29:
+
+- Reproduced the reported Library song-menu transparency and captured settled before/after
+  screenshots on the AVD. After the fix, page text behind the menu is blurred while menu
+  text remains sharp, with the source anchored to the menu's screen position.
+- Expanded the download-quality submenu without choosing a quality or starting a download.
+  Consecutive screen-recording frames showed expansion and a stable sampled backdrop;
+  the final submenu layout and Back dismissal were also inspected. The emulator recorder
+  fell back from the native resolution to 720x1280; settled screenshots remained native.
+- Debug assembly, all 369 tests in the current working tree, `git diff --check`, and 16 KB
+  APK alignment passed. This includes 14 tests from the separate, not-yet-accepted Podcast
+  migration. The tested TV process had no crash-buffer entries. Raw images/video stay
+  outside Git. This is page-menu visual acceptance, not production player-glass acceptance.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
