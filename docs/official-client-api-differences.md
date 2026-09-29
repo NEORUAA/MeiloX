@@ -1034,6 +1034,45 @@ These are integration differences, not server API semantics.
   The existing published TV-owned download remains 22,705,573 bytes. This does not
   qualify audible output, new grants, standalone behavior or release runtime.
 
+### ABI-008: Standalone Cookie Publication Must Not Borrow Host Ownership
+
+- Date: 2026-09-30. The original standalone interceptor read `CookieKey` on every send;
+  manual login temporarily wrote a candidate Cookie before profile verification. This
+  cannot preserve the shared generation/ownership contract introduced for the official
+  backend: a queued request could otherwise use a different account's credentials.
+- Standalone now captures credentials with its public `SessionStamp`, while private login
+  verification targets `/api/w/nuser/account/get` through the original EAPI signer before
+  any durable/live account replacement. Saved Cookie/UserId pairs are reverified rather
+  than trusted as a matching identity. Same-account renewal also advances generations.
+  Failed/canceled verification leaves the prior account untouched, and late verification
+  cannot undo logout or overwrite a newer attempt. Official TV login/session code is
+  unchanged; no host credentials are exported to standalone.
+- The shared generation-aware transport wrapper guards dispatch, callbacks and unread
+  bodies, cancels pending work on invalidation and pins clones to their original owner.
+  Standalone API/WeAPI retain their own signing and a separate plain Android-UA audio-match
+  client. Default TLS validation replaces the original debug trust-all configuration;
+  signed redirects are disabled. QQ/artwork/media paths are not redirected through TV.
+- Original WebView/manual Cookie controls and layout are restored in the standalone
+  source set, with Dagger bindings instead of Hilt. WebView polling only reports verified
+  success and does not repeatedly submit an unchanged rejected Cookie. The parasite
+  QR page, common navigation, player and glass components are unchanged.
+- Standalone weblog start/end events are wired to the common playback lifecycle, using
+  the original EAPI playback-history profile. NCBL, expired-session recovery behavior,
+  real account transitions, authenticated request coverage and listening statistics are
+  still open. Keeping the standalone migration's legacy rows is not proof that old
+  pending workers, queues or media references can upgrade; that adapter remains pending.
+- Evidence: 555 standalone JVM tests and 654 parasite JVM tests pass (shared tests are
+  counted in each variant). Five signing tests inspect captured MUSIC_U in the Cookie
+  and decrypted EAPI header, anonymous omission, missing-credential rejection, WeAPI form
+  construction and retained weblog profile. These are fixture wire checks, not server
+  acceptance. Three standalone package/graph and all 49 parasite device tests pass.
+- With TV stopped, the isolated standalone debug package cold-starts its own anonymous
+  Home with live content, opens the original WebView and Cookie sheet, and has neither
+  Xposed metadata nor host adapter classes. The AVD still has LSPosed installed; no
+  framework-free device run or real standalone login has been accepted yet. Parasite
+  still cold-starts the original portrait Home with its official account and paused queue.
+  The original standalone installation and the existing real TV download are preserved.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

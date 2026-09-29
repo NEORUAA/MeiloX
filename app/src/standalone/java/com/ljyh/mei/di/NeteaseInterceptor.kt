@@ -7,10 +7,10 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.BuildConfig
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.checkToken
+import com.ljyh.mei.standalone.StandaloneCredentials
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.encrypt.createRandomKey
 import com.ljyh.mei.utils.encrypt.decryptEApi
@@ -33,7 +33,11 @@ import timber.log.Timber
 import java.io.IOException
 import kotlin.apply
 
-class NeteaseInterceptor : Interceptor {
+class NeteaseInterceptor(
+    private val deviceIdProvider: () -> String = {
+        AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
+    },
+) : Interceptor {
 
     private val gson by lazy {
         GsonBuilder()
@@ -138,8 +142,9 @@ class NeteaseInterceptor : Interceptor {
             cookieOsOverride ?: config["os"]!!
         }
 
-        val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
-        val musicU = AppContext.instance.dataStore[CookieKey] ?: ""
+        val deviceId = deviceIdProvider()
+        val musicU = originalRequest.tag(StandaloneCredentials::class.java)?.musicU
+            ?: throw IOException("Standalone credentials were not captured")
         val rawBody = getBodyString(originalRequest.body)
         val requiresCheckToken = !isPlaybackHistoryProfile && (
             originalRequest.header(CHECK_TOKEN_HEADER) == "true" ||

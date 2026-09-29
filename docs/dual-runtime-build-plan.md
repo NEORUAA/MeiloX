@@ -53,7 +53,7 @@ app/src/standalone          app/src/parasite
    MeiloX standalone APK    MeiloX parasite APK
 ```
 
-Final build targets (parasite targets now exist; standalone targets remain pending):
+Build targets (both debug variants build; paired release qualification remains pending):
 
 ```sh
 ./gradlew :app:assembleStandaloneDebug :app:assembleParasiteDebug
@@ -249,11 +249,76 @@ Local-only evidence: `/tmp/meilox-source-boundary-build.log`,
 `/tmp/meilox-source-boundary-release.log`, `/tmp/meilox-source-boundary-device.log`
 and `/tmp/meilox-source-boundary-home.png`. No generated artifacts are committed.
 
-This is an incremental D2 prerequisite, not its exit condition. The standalone source
-directory is not yet a registered/buildable flavor: its owned Cookie session, graph
-bootstrap, login binding, reporting and upgrade policy still need restoration. Do not
-add placeholder bindings to claim a second working APK. D1 feature-specific request
-semantics also remain under audit; factory selection alone is not dual-backend parity.
+At this checkpoint the standalone source directory was not yet registered/buildable.
+The following increment adds its initial executable backend. D1 feature-specific request
+semantics remain under audit; factory selection alone is not dual-backend parity.
+
+### D2/D3 Checkpoint: Paired Debug Bootstrap and Owned Cookie Session (2026-09-30)
+
+- Both `standaloneDebug` and `parasiteDebug` now build from the same shared frontend,
+  player, resources, navigation and ViewModel graph. Standalone debug uses
+  `com.neoruaa.meilox.standalone.debug`, with the launcher label `MeiloX Standalone Debug`.
+  Standalone release retains `com.neoruaa.meilox` but is **not qualified for installation
+  over existing data**. Parasite retains its existing installed module identity.
+- A flavor-owned Application bootstrap initializes the standalone graph and loads its
+  own existing `settings` DataStore keys. The module Application does not start a music
+  runtime; only its verified official Application hook does that. Standalone uses normal
+  registered Activity/service components without module Contexts or carrier routing.
+- Restored the baseline WebView/manual Cookie page without changing layout or navigation.
+  Only the ViewModel/backend bindings and success handling change. A detected WebView
+  Cookie is verified before the page reports success, and the same rejected value is not
+  repeatedly retried by the polling loop. No credential is copied from TV or the original
+  standalone installation into the debug app.
+- `StandaloneSessionStore` owns credentials and persists successful login atomically.
+  Saved Cookie/UserId pairs are not treated as proof of identity: startup verifies the
+  saved Cookie privately before publishing an authenticated session. Candidate login
+  never temporarily overwrites the active Cookie. Generations invalidate old requests,
+  latest-attempt tokens reject late login results, and logout fences publication while
+  clearing preferences and the standalone WebView session. Failed/canceled verification
+  preserves the previous live account. Real logout/account switching remains untested.
+- `SessionCallFactory` captures ownership at creation, checks dispatch/callback/body reads,
+  cancels in-flight work on invalidation and keeps clones on their original owner. The
+  standalone interceptor reads only captured credentials, not the global Cookie preference.
+  Original EAPI/WeAPI/API signing is restored with default TLS verification; the old debug
+  trust-all TLS setup is not restored. Signed business redirects are disabled to avoid
+  forwarding a captured Cookie to a different origin. Audio matching retains a separate
+  plain Android-UA transport. No standalone transport is used by parasite.
+- Standalone weblog `startplay`/`play` delivery uses actual shared playback events and the
+  original signing profile, with explicit owner tags. **NCBL remains to be restored**;
+  this is not full standalone reporting parity or listening-statistics acceptance.
+- Standalone Room migration currently adds ownership columns while preserving legacy
+  URLs/statuses/rows. This does not yet adapt old WorkManager inputs or associate legacy
+  work with verified ownership. Pending-work conversion, completed file references,
+  queue/cache upgrade and foreground-work semantics remain mandatory D3 work. Do not
+  install this checkpoint over the real standalone app as an upgrade test.
+- Both debug/instrumentation builds pass. Standalone has 555 JVM tests across 71 suites;
+  parasite has 654 across 84 suites, with zero failures/skips. These totals include common
+  tests in each variant, not 1,209 distinct tests. New coverage includes private candidate
+  verification, late login/logout races, canceled/persistence-failed login, same-account
+  renewal, request/body invalidation, clone ownership and actual signed wire fields.
+  Original standalone interceptor tests are now executed again.
+- Three standalone package/graph device tests and all 49 parasite device tests pass.
+  The standalone APK has its own launcher/service, no Xposed metadata or host adapter
+  classes, and initializes its graph without host bootstrap. With TV force-stopped, it
+  cold-launches an anonymous Home with live content/images, then opens the original
+  WebView login and manual Cookie sheet. LSPosed remains enabled on this AVD; a separate
+  framework-free device run has not been performed. No standalone account was authorized
+  automatically. The user has been asked to complete its login locally.
+- The updated parasite package still cold-launches the original portrait Home with the
+  official account/avatar and paused queue; no current-process crash is recorded.
+  The original standalone package's install/update timestamps remain unchanged, and the
+  existing real TV download remains published, TV-owned and 22,705,573 bytes. No real
+  download, upload, social write, logout or account switch was executed.
+
+Local-only evidence: `/tmp/meilox-paired-bootstrap-build.log`,
+`/tmp/meilox-standalone-restoration-build.log`, `/tmp/meilox-standalone-signing-build.log`,
+`/tmp/meilox-standalone-package-device.log`, `/tmp/meilox-paired-parasite-device.log`,
+`/tmp/meilox-standalone-first-home.png`, `/tmp/meilox-standalone-account.png`,
+`/tmp/meilox-standalone-cookie-sheet.png` and `/tmp/meilox-paired-parasite-home.png`.
+The installed standalone smoke-test artifact predates only the default-preserving
+device-ID-provider testability change in `NeteaseInterceptor`; the final source rebuild
+and five wire-signing tests pass. Reinstall after the user's login interaction, not while
+they are entering credentials. Signed paired releases and remote CI remain unqualified.
 
 ## Acceptance and Remaining Decisions
 
@@ -275,4 +340,6 @@ semantics also remain under audit; factory selection alone is not dual-backend p
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
 
-All D1-D6 exit conditions remain pending; the checkpoints above record partial D1/D2 work.
+The dual-debug skeleton is now operational on the current AVD. D1/D3-D6 remain incomplete;
+the complete D2 independence gate and all final acceptance conditions still require the
+scoped evidence above to be supplemented, not inferred from successful compilation.

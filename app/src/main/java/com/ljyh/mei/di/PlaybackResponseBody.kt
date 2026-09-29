@@ -43,7 +43,7 @@ internal fun readBoundedPlaybackResponseBody(
     }
 }
 
-private fun playbackBodyTooLarge(httpStatus: Int) = PlaybackResponseBodyException(
+internal fun playbackBodyTooLarge(httpStatus: Int) = PlaybackResponseBodyException(
     httpStatus = httpStatus,
     failureKind = "ResponseBodyTooLarge",
     failureReason = "response body exceeds ${MAX_PLAYBACK_HISTORY_RESPONSE_BYTES} bytes",

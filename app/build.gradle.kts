@@ -32,6 +32,10 @@ android {
 
     flavorDimensions += "runtime"
     productFlavors {
+        create("standalone") {
+            dimension = "runtime"
+            proguardFiles("proguard-standalone.pro")
+        }
         create("parasite") {
             dimension = "runtime"
             applicationId = "com.neoruaa.meilox.parasite"
@@ -87,6 +91,12 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withFlavor("runtime" to "standalone").withBuildType("debug")) {
+        it.applicationId.set("com.neoruaa.meilox.standalone.debug")
     }
 }
 

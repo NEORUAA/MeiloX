@@ -16,6 +16,7 @@ class AppContext : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.ljyh.mei.runtime.RuntimeBootstrap.initialize(this)
     }
 
     companion object {
