@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.util.fastFirstOrNull
 
 suspend fun PointerInputScope.inspectDragGestures(
+    consumeGestures: Boolean = false,
     onDragStart: (down: PointerInputChange) -> Unit = {},
     onDragEnd: (change: PointerInputChange) -> Unit = {},
     onDragCancel: () -> Unit = {},
@@ -42,17 +43,22 @@ suspend fun PointerInputScope.inspectDragGestures(
         val initialDown = awaitFirstDown(false, PointerEventPass.Initial)
         val down = awaitFirstDown(false)
         val drag = initialDown
+        if (consumeGestures) down.consume()
 
         onDragStart(down)
         onDrag(drag, Offset.Zero)
         val upEvent =
             drag(
                 pointerId = drag.id,
-                onDrag = { onDrag(it, it.positionChange()) }
+                onDrag = {
+                    onDrag(it, it.positionChange())
+                    if (consumeGestures) it.consume()
+                }
             )
         if (upEvent == null) {
             onDragCancel()
         } else {
+            if (consumeGestures) upEvent.consume()
             onDragEnd(upEvent)
         }
     }

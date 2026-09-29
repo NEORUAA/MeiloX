@@ -50,6 +50,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -96,7 +100,9 @@ fun GlassToggle(
     val scope = rememberCoroutineScope()
     var didDrag by remember { mutableStateOf(false) }
     var fraction by remember { mutableFloatStateOf(if (checked) 1f else 0f) }
-    val animation = remember(scope, enabled) {
+    val currentChecked by rememberUpdatedState(checked)
+    val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
+    val animation = remember(scope, enabled, travelPx, ltr) {
         DampedDragAnimation(
             animationScope = scope,
             initialValue = fraction,
@@ -108,10 +114,10 @@ fun GlassToggle(
             onDragStopped = {
                 if (!enabled) return@DampedDragAnimation
                 fraction = if (didDrag) {
-                    if (targetValue >= 0.5f) 1f else 0f
-                } else if (checked) 0f else 1f
+                    if (fraction >= 0.5f) 1f else 0f
+                } else if (currentChecked) 0f else 1f
                 didDrag = false
-                onCheckedChange(fraction == 1f)
+                currentOnCheckedChange(fraction == 1f)
             },
             onDrag = { _, dragAmount ->
                 if (!enabled) return@DampedDragAnimation
@@ -119,6 +125,11 @@ fun GlassToggle(
                 val delta = dragAmount.x / travelPx
                 fraction = if (ltr) (fraction + delta).fastCoerceIn(0f, 1f)
                 else (fraction - delta).fastCoerceIn(0f, 1f)
+            },
+            consumeGestures = true,
+            onDragCancelled = {
+                didDrag = false
+                fraction = if (currentChecked) 1f else 0f
             },
         )
     }
@@ -183,7 +194,15 @@ fun GlassToggle(
     Box(
         modifier = modifier
             .size(width = 64.dp, height = 28.dp)
-            .semantics { role = Role.Switch }
+            .semantics {
+                role = Role.Switch
+                toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                if (!enabled) disabled()
+                onClick {
+                    if (enabled) currentOnCheckedChange(!currentChecked)
+                    enabled
+                }
+            }
             .then(animation.modifier),
         contentAlignment = Alignment.CenterStart,
     ) {
