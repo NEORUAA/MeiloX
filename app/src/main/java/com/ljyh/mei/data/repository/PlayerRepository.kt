@@ -11,7 +11,6 @@ import com.ljyh.mei.data.model.qq.u.GetLyricData
 import com.ljyh.mei.data.model.qq.u.GetSearchData
 import com.ljyh.mei.data.model.qq.u.LyricResult
 import com.ljyh.mei.data.model.qq.u.SearchResult
-import com.ljyh.mei.data.model.api.SongLike
 import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.QQMusicUApiService
 import com.ljyh.mei.data.network.Resource
@@ -40,6 +39,7 @@ class PlayerRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
     private val sessions: SessionStore,
+    private val favorites: SongFavoritesBackend,
 ) : PlayerLikeSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
@@ -145,17 +145,9 @@ class PlayerRepository(
         withContext(Dispatchers.IO) {
             safeApiCall {
                 requireLikeOwner(id, owner)
-                val response = apiService.like(SongLike(id, liked), owner)
-                currentCoroutineContext().ensureActive()
-                sessions.requireCurrent(owner)
-                when (response.code) {
-                    200 -> {
-                        check((response.playlistId ?: 0) > 0) { "Missing official liked playlist" }
-                        liked
-                    }
-                    // The host accepts duplicates/missing entries. Reconcile instead of toggling blindly.
-                    502, 404 -> readLike(id, owner)
-                    else -> throw IOException("Official song like failed (${response.code})")
+                favorites.setLiked(id, liked, owner).also {
+                    currentCoroutineContext().ensureActive()
+                    sessions.requireCurrent(owner)
                 }
             }
         }
@@ -232,18 +224,15 @@ class PlayerRepository(
 
     private suspend fun readLike(id: Long, owner: SessionStamp): Boolean {
         requireLikeOwner(id, owner)
-        val response = apiService.songLikeIds(owner)
-        currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(owner)
-        check(response.code == 200) { "Official liked songs failed (${response.code})" }
-        val ids = response.ids.orEmpty()
-        check(ids.all { it > 0 }) { "Invalid official liked song identity" }
-        return id in ids
+        return favorites.isLiked(id, owner).also {
+            currentCoroutineContext().ensureActive()
+            sessions.requireCurrent(owner)
+        }
     }
 
     private fun requireLikeOwner(id: Long, owner: SessionStamp) {
         require(id > 0)
-        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Official login is required" }
+        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
         sessions.requireCurrent(owner)
     }
 }

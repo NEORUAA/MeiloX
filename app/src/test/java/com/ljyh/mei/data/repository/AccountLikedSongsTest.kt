@@ -64,7 +64,8 @@ class AccountLikedSongsTest {
         })
         val collections = PlaylistCollectionBackend { _, _, _ -> error("Unexpected playlist collection") }
         val catalog = proxy<CatalogCollectionBackend> { _, _ -> error("Unused catalog") }
-        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, collections, sessions, catalog), sessions)
+        val tracks = PlaylistTracksBackend { _, _, _, _ -> error("Unused tracks") }
+        return AccountLibraryRepository(UserRepository(api, eapi, weapi), local, PlaylistRepository(api, weapi, collections, sessions, catalog, tracks), sessions)
     }
 
     @Test fun everyPageUsesCapturedOwnerAndReturnsTheCompleteOrderedList() = runBlocking {

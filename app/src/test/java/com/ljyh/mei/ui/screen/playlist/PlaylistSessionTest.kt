@@ -159,7 +159,7 @@ class PlaylistSessionTest {
             val api = unused<ApiService>()
             val collections = unused<PlaylistCollectionBackend>()
             val weapi = unused<WeApiService>()
-            val remote = PlaylistRepository(api, weapi, collections, sessions, unused<com.ljyh.mei.data.repository.CatalogCollectionBackend>())
+            val remote = PlaylistRepository(api, weapi, collections, sessions, unused<com.ljyh.mei.data.repository.CatalogCollectionBackend>(), unused<com.ljyh.mei.data.repository.PlaylistTracksBackend>())
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
             val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {

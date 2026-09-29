@@ -12,7 +12,6 @@ import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
-import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SubscribePlaylist
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -60,6 +59,7 @@ class PlaylistRepository(
     private val collections: PlaylistCollectionBackend,
     private val sessions: SessionStore,
     private val catalogCollections: CatalogCollectionBackend,
+    private val playlistTracks: PlaylistTracksBackend,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
     override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
@@ -128,15 +128,17 @@ class PlaylistRepository(
     ): Resource<ManipulateTrackResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
-                check(session.identity.authenticated) { "Official login is required" }
-                apiService.manipulateTracks(
-                    ManipulateTrack(
-                        op = op,
-                        pid = pid,
-                        trackIds = trackIds,
-                        reverse = if (op == "add") true else null,
-                    ), session,
-                )
+                sessions.requireCurrent(session)
+                check(session.identity.authenticated && !session.identity.anonymous) { "Sign-in required" }
+                require(op == "add" || op == "del")
+                val playlistId = requireNotNull(pid.toLongOrNull()?.takeIf { it > 0 }) { "Invalid playlist identity" }
+                val ids = trackIds.split(",").map { raw ->
+                    requireNotNull(raw.trim().toLongOrNull()?.takeIf { it > 0 }) { "Invalid track identity" }
+                }.distinct()
+                playlistTracks.modify(op, playlistId, ids, session).also {
+                    currentCoroutineContext().ensureActive()
+                    sessions.requireCurrent(session)
+                }
             }
         }
     }

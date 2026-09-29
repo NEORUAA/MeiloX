@@ -13,6 +13,8 @@ import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.CommentRepository
 import com.ljyh.mei.data.repository.CatalogCollectionBackend
+import com.ljyh.mei.data.repository.PlaylistTracksBackend
+import com.ljyh.mei.data.repository.SongFavoritesBackend
 import com.ljyh.mei.data.session.SessionStore
 import dagger.Module
 import dagger.Provides
@@ -30,8 +32,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, collections: com.ljyh.mei.data.repository.PlaylistCollectionBackend, sessions: SessionStore, catalogCollections: CatalogCollectionBackend): PlaylistRepository {
-        return PlaylistRepository(apiService, weApiService, collections, sessions, catalogCollections)
+    fun providePlaylistRepository(apiService: ApiService, weApiService: WeApiService, collections: com.ljyh.mei.data.repository.PlaylistCollectionBackend, sessions: SessionStore, catalogCollections: CatalogCollectionBackend, playlistTracks: PlaylistTracksBackend): PlaylistRepository {
+        return PlaylistRepository(apiService, weApiService, collections, sessions, catalogCollections, playlistTracks)
     }
 
     @Singleton
@@ -50,8 +52,8 @@ object RepositoryModule {
 
     @Singleton
     @Provides
-    fun providePlayerRepository(qqMusicUApiService: QQMusicUApiService,apiService: ApiService,weApiService: WeApiService, sessions: com.ljyh.mei.data.session.SessionStore): PlayerRepository {
-        return PlayerRepository(qqMusicUApiService,apiService,weApiService,sessions)
+    fun providePlayerRepository(qqMusicUApiService: QQMusicUApiService,apiService: ApiService,weApiService: WeApiService, sessions: com.ljyh.mei.data.session.SessionStore, favorites: SongFavoritesBackend): PlayerRepository {
+        return PlayerRepository(qqMusicUApiService,apiService,weApiService,sessions,favorites)
     }
 
     @Singleton

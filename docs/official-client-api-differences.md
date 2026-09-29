@@ -275,6 +275,28 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   Controlled tests cover it, but live add/duplicate/remove acceptance remains pending.
   Cancellation prevents obsolete publication; it cannot undo a server-accepted write.
 
+#### Dual-Runtime Update (2026-09-30)
+
+- `PlaylistTracksBackend` now owns the runtime-specific route and payload. The shared
+  Repository validates add/delete operations and positive playlist/song identities,
+  removes duplicate song IDs in input order, and rejects guest, stale and canceled
+  results. Existing pickers, result handling and Library refresh remain unchanged.
+- Standalone restores `/api/playlist/manipulate/tracks` from baseline
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, with string `pid`, a JSON string array
+  in `trackIds`, and `imme=true` for both operations. Its captured Cookie is signed by
+  the standalone transport. No TV `reverse` field or host token generator is used.
+- Parasite retains `/api/v1/playlist/manipulate/tracks`, the same ID encoding and
+  `reverse=true` only for adds. Official security fields remain generated inside the
+  host transport. Delete is still a supplemental contract, not a source-confirmed TV
+  caller. Neither implementation retries an uncertain write through another route.
+- Both adapters preserve business codes and optional count/offline-ID fields for the
+  shared caller. Counts do not establish success; a partial result or duplicate does
+  not become an unconditional success because the transport returned HTTP 200.
+- Substitute tests cover both operation payloads, route isolation, standalone Cookie
+  ownership, raw business/partial results, guest/invalid/stale rejection and late
+  responses. These are contract checks, not real add/remove/duplicate acceptance;
+  no user playlist is modified in this increment.
+
 ### API-010: Playlist Creation Returns a Nested Playlist Identity
 
 - Recorded: 2026-09-29.
@@ -388,6 +410,41 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   account cache. Private-cloud library-ID/owner translation and FM queue semantics need
   separate migration; the original metadata does not yet carry those host fields.
   Podcasts and device-local files do not dispatch ordinary song-favorite requests.
+
+#### Dual-Runtime Update (2026-09-30)
+
+- `SongFavoritesBackend` separates state reads, mutations and response interpretation
+  from the shared player Repository. Player/Library UI, selection ownership, serialized
+  writes and refresh behavior remain single-source. Authenticated non-guest owners
+  and positive song IDs are required; cancellation and late account results cannot
+  publish a new star state.
+- Standalone restores the baseline `/api/song/like/check` query with one ID encoded in
+  `trackIds`. Code 200 must contain an ID list containing only the requested identity
+  (an empty list is valid). A missing list or unexpected ID is unknown/error, not false.
+  Parasite keeps the official full `/api/song/like/get` snapshot, including its distinct
+  null-as-empty rule. That host response rule is not applied to the standalone query.
+- Standalone preserves the original `/api/radio/like` compatibility request: string
+  `trackId`, Boolean `like`, `alg=itembased`, and string `time=3`. These are legacy
+  request fields, not measured playback duration or a verified official FM context.
+  This restoration does not claim that the legacy route is equivalent to the official
+  ordinary-song contract. Response replacement songs remain unused, as in baseline.
+- Parasite retains `/api/song/like`, numeric `trackId`, Boolean `like` and `userid=0`
+  for ordinary catalog songs; its referer/security fields stay host-owned. It does not
+  borrow the standalone radio route or its compatibility fields.
+- Both mutations require a positive `playlistId` on code 200. Only the host adapter
+  reconciles 502/404 with one authoritative snapshot read, without repeating the write.
+  Standalone reports those codes as failures rather than importing host semantics or
+  restoring the old unchecked optimistic toggle. Unknown writes never fall back to
+  the other protocol/runtime.
+- Shared and flavor substitute tests cover the exact requests, null/malformed/rejected
+  responses, duplicate reconciliation, session invalidation, Cookie replacement and
+  cancellation. No real like/unlike, account switch or AVD instrumentation is performed
+  for this increment; live standalone reads/writes still require scoped validation.
+- Paired verification: 608 standalone and 678 parasite JVM tests pass, alongside both
+  debug/instrumentation and unsigned minified release builds. Release DEX retains the
+  favorite/track Retrofit annotations, response generics and nullable fields, and
+  contains only the matching runtime's routes. Both APKs pass 16 KB ZIP alignment.
+  This also covers the API-009 extraction; it is not device or real-write acceptance.
 
 ### API-014: Artist Collection State Is Separate From the Linked User
 

@@ -507,6 +507,38 @@ gates are qualified; this checkpoint changes only CI and documentation.
   login confirmation remains pending. Live standalone collection reads, mutation
   acceptance and release runtime qualification remain open, as do other D4 features.
 
+### D1/D4 Checkpoint: Runtime-Owned Song Favorites and Playlist Tracks (2026-09-30)
+
+- Added `SongFavoritesBackend` and `PlaylistTracksBackend`. Shared Repositories retain
+  identity/session validation, cancellation and existing caller-facing results; each
+  flavor owns its request routes, DTOs and favorite response interpretation. Existing
+  player, playlist, picker, Library, navigation and resources are not modified.
+- Standalone restores the original single-song liked query, legacy radio-like payload
+  and playlist track endpoint with `imme=true`. Parasite retains official ordinary-song
+  favorites, full liked snapshots and the TV track endpoint with add-only `reverse`.
+  Security/Cookie ownership stays in the matching transport. API-009/API-013 document
+  the legacy compatibility fields and the limits of these source-confirmed contracts.
+- Only parasite reconciles favorite 502/404 results with an authoritative state read.
+  Standalone rejects failed/unknown mutations; neither backend repeats an uncertain
+  write through another route. Shared song-ID normalization and before/after session
+  checks prevent invalid dispatch and old-account result publication.
+- Verification: 608 standalone tests in 79 suites and 678 parasite tests in 86 suites
+  pass without failures/errors/skips; common tests execute in both variants. Both
+  debug APKs and instrumentation APKs build. New wire substitutes inspect both routes,
+  payloads, private Cookie ownership and error/partial results. Existing player and
+  playlist state tests continue to cover rollback, serialization and refresh behavior.
+- Both unsigned minified release APKs build. Generated Dagger graphs select the matching
+  backend implementations. Actual release DEX retains Retrofit body/session annotations,
+  generic response signatures and nullable DTO fields/list element types; each artifact
+  contains only its own favorite/track mutation routes. Both pass 16 KB ZIP alignment.
+  `git diff --check` passes. These are package checks, not release device execution.
+- No AVD install, instrumentation run, real account mutation or download grant is part
+  of this increment. Standalone login confirmation is still pending. Build/substitute
+  evidence does not qualify live server acceptance, release runtime or all D4 features.
+  Local build logs: `/tmp/meilox-dual-song-mutations-build.log` and
+  `/tmp/meilox-dual-song-mutations-release.log`; generated artifacts and device/private
+  data are not committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

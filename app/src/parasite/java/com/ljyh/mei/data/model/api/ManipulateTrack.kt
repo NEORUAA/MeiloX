@@ -3,11 +3,11 @@ package com.ljyh.mei.data.model.api
 import com.google.gson.Gson
 
 data class ManipulateTrack(
-    val op:String,
-    val pid:String,
-    var trackIds:String,
-    val reverse:Boolean?=true
-){
+    val op: String,
+    val pid: String,
+    var trackIds: String,
+    val reverse: Boolean? = true,
+) {
     init {
         require(op == "add" || op == "del")
         require(pid.toLongOrNull()?.let { it > 0 } == true)
@@ -16,13 +16,3 @@ data class ManipulateTrack(
         trackIds = Gson().toJson(ids)
     }
 }
-
-
-data class ManipulateTrackResult(
-    val code:Int,
-    val message: String? = null,
-    val cloudCount:Int? = null,
-    val count:Int? = null,
-    val trackIds: com.google.gson.JsonElement? = null,
-    val offlineIds: List<Long>? = null,
-)

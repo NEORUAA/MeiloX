@@ -24,7 +24,7 @@ class AlbumRepositoryTest {
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") },
         api<PlaylistCollectionBackend> { _, _ -> error("Unexpected playlist collection") },
-        sessions, api<CatalogCollectionBackend>(invoke),
+        sessions, api<CatalogCollectionBackend>(invoke), api<PlaylistTracksBackend> { _, _ -> error("Unused tracks") },
     )
 
     @Test fun readsCurrentAccountStateThroughTheSelectedBackend() = runBlocking {

@@ -60,7 +60,7 @@ class PlaylistActionsTest {
         try {
             val api = unused<ApiService>()
             val repository = PlaylistRepository(api, unused<WeApiService>(), unused<PlaylistCollectionBackend>(), sessions,
-                unused<com.ljyh.mei.data.repository.CatalogCollectionBackend>())
+                unused<com.ljyh.mei.data.repository.CatalogCollectionBackend>(), unused<com.ljyh.mei.data.repository.PlaylistTracksBackend>())
             val source = object : PlaylistMutationSource {
                 override suspend fun manipulateTrack(op: String, pid: String, trackIds: String, session: SessionStamp): Resource<ManipulateTrackResult> {
                     calls += "$op:$pid:$trackIds" to session
