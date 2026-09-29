@@ -868,6 +868,42 @@ These are integration differences, not server API semantics.
   downloads, process redelivery, reboot, permission/quota failure, other Android versions
   and release runtime remain separate acceptance gates.
 
+#### Queue Controls and Process Redelivery (2026-09-29)
+
+- DownloadManager keeps its existing UI API, while its suspend queue operations use
+  explicitly supplied database, official session bridge and WorkManager dependencies.
+  The qualification queue uses the same operations with private data and a closed
+  synthetic worker. It does not replace the live app graph or use the real account.
+  Resume is restricted to PAUSED/FAILED rows; pending or completed work cannot consume
+  another grant through a stale resume command. A resumed request retains destination,
+  quality and public owner ID but gets a new UUID and no saved authorization URL.
+- WorkManager 2.11.2 REPLACE cancels and deletes old WorkSpecs; explicit pause retains a
+  CANCELLED record. This distinction was observed on-device and checked against the
+  installed library's EnqueueRunnable source. Tests check replacement removal, not an
+  assumed retained CANCELLED state. Seven new device cases cover queue controls, stale
+  requests, account rejection, enqueue crash-gap recovery and scheduler refusal.
+- In a held full-worker transfer, killing the verified host PID leaves a 4,096-byte
+  temporary file. Without opening an Activity or forcing JobScheduler, Android redelivers
+  the registered foreground carrier and restarts the WorkManager request in a new process.
+  A newly constructed worker acquires a fresh substitute grant, restarts transfer rather
+  than appending, publishes one verified artifact and removes the temporary file/service.
+  This is actual process-death evidence with synthetic transport, not real network,
+  reboot, forced-stop recovery or a guarantee of restart latency on every system.
+- In-host queue controls stop a held transfer, persist PAUSED, cancel its WorkSpec,
+  remove temporary bytes and show `下载已暂停`. Recovery leaves it paused; resume replaces
+  the request, then completes publication. Deleting that completed test task removes its
+  receipt-owned media. A separate pending-then-paused request remains PAUSED after process
+  death and explicit recovery, with zero grants/transfers. These calls exercise the exact
+  queue implementation, not automated taps on the visible pause/resume controls.
+- AVD startup was not uniformly healthy: several process-attach/startup timeouts affected
+  both the host and the instrumentation process, and a system_server input-monitor
+  pre-watchdog was captured during the same interval. The traces do not establish a
+  single root cause. Failed startups are excluded from passing test evidence; subsequent
+  ordinary cold launch and all 42 parasite device cases pass. Keep startup stability,
+  real-network interruption, UI control interaction, quota/permission failures and
+  release runtime open. The ordinary build is restored with probes disabled; the user's
+  existing real file remains published and unchanged. No real grant was requested.
+
 ## Adding an Entry
 
 Use a stable ID and record the date, endpoint or entry point, original assumption,

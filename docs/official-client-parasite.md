@@ -1622,6 +1622,49 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   `/tmp/meilox-download-foreground-final-home.png` and
   `/tmp/meilox-download-foreground-final-downloads.png`.
 
+### Download Queue Lifecycle Checkpoint (2026-09-29)
+
+- Kept the existing DownloadManager UI facade and extracted its queue coordination into
+  per-instance dependencies. The same production enqueue/pause/resume/recovery/delete
+  operations can now run against private qualification data without rebinding AppGraph.
+  Resume ignores pending/completed rows, preventing unnecessary replacement/authorization.
+  There is no layout, navigation, glass or download-control redesign.
+- Seven additional device tests exercise real Room and WorkManager coordination with
+  delayed, never-executed requests: pause/new-ID resume with original metadata and no
+  old URL, stale controls after replacement, account rejection, missing-job recovery,
+  terminal-job reconciliation, pending/completed resume protection, bulk control and
+  scheduling refusal. The installed library deletes replaced WorkSpecs, so that assertion
+  differs from explicit cancellation, as recorded in ABI-005. Final coverage is 610 JVM
+  tests in 77 suites and 42 parasite device cases, all passing.
+- Actual process-death qualification kills a verified host PID during a held synthetic
+  transfer. The old process disappears, leaving a partial file. Android automatically
+  redelivers the foreground service and the job in a new process without Activity entry
+  or a forced JobScheduler run. The reconstructed full worker obtains a new substitute
+  grant, restarts bytes, succeeds, publishes one artifact and removes the temporary file
+  and foreground service. This proves the observed pinned-AVD path, not all restart modes.
+- In-host controls pause a running substitute transfer with no publication, preserve the
+  PAUSED row during recovery, resume with a new request and complete it. Deleting the
+  completed test task cleans its published media. A separate queued/paused request retains
+  PAUSED across process death and explicit recovery with zero grants/transfers. Probe
+  cleanup removes its records/database/channel; production data remains untouched.
+- Several AVD process-attach/startup attempts failed, including instrumentation before
+  any test ran. The same interval includes a system_server input-monitor pre-watchdog.
+  Evidence is preserved; no single cause or startup-stability fix is claimed. Retried
+  instrumentation passes all 42 tests. The restored probe-disabled ordinary APK cold
+  launches into the original portrait Home with glass and paused playback; the existing
+  real download remains TV-owned, published and 22,705,573 bytes.
+- Debug/test and unsigned release R8 builds pass, as does 16 KB APK alignment. Release
+  runtime is still untested. Real-network interruption, visible pause/resume interaction,
+  other qualities/permissions, reboot/forced-stop policy and broader startup stability
+  remain open; this checkpoint does not complete stage 5 or authorize any new real grant.
+- Local-only evidence: `/tmp/meilox-download-recovery-host.log`,
+  `/tmp/meilox-download-queue-build.log`, `/tmp/meilox-download-queue-final-build.log`,
+  `/tmp/meilox-download-queue-final-device-retry.log`,
+  `/tmp/meilox-download-queue-release-build.log`,
+  `/tmp/meilox-download-queue-startup-anr.txt`,
+  `/tmp/meilox-download-queue-final-home.png` and
+  `/tmp/meilox-download-queue-final-downloads.png`. No logs or media are committed.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.

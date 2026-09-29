@@ -15,6 +15,8 @@ import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.DownloadWorkerFixture
 import com.ljyh.mei.playback.DownloadWorkerScenario
 import com.ljyh.mei.playback.DownloadNotifications
+import com.ljyh.mei.playback.SongDownloadInfo
+import com.ljyh.mei.utils.DownloadQueue
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -37,6 +39,34 @@ internal object HostDownloadProbe {
         val manager = WorkManager.getInstance(context)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         when (operation) {
+            "download_queue_enqueue", "download_queue_pause", "download_queue_resume", "download_queue_recover", "download_queue_delete" -> {
+                fixture(context, DownloadWorkerScenario.HOLD).use { fixture ->
+                    val queue = DownloadQueue(context, fixture.database, fixture.sessions, manager, "$TAG-queue-") { task ->
+                        OneTimeWorkRequestBuilder<HostDownloadProbeWorker>().setId(java.util.UUID.fromString(task.requestId))
+                            .setInitialDelay(20, TimeUnit.SECONDS).addTag(TAG).addTag("$TAG-${task.songId}")
+                            .setInputData(workDataOf(DownloadWorker.KEY_SONG_ID to task.songId,
+                                DownloadWorker.KEY_OWNER_ID to task.ownerId, "scenario" to "HOLD")).build()
+                    }
+                    runBlocking {
+                        val before = fixture.database.downloadDao().getBySongId("1")
+                        when (operation) {
+                            "download_queue_enqueue" -> {
+                                check(manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS).isEmpty() && before == null)
+                                check(preferences.edit().clear().commit())
+                                queue.enqueue(listOf(SongDownloadInfo("1", "MeiloX synthetic qualification", listOf("Test"), "Test", "", 0, "standard")),
+                                    "MeiloX Test/${java.util.UUID.randomUUID()}", fixture.sessions.snapshot())
+                            }
+                            "download_queue_pause" -> queue.pauseSong("1", checkNotNull(before).requestId)
+                            "download_queue_resume" -> queue.resumeSong("1", "MeiloX Test", checkNotNull(before).requestId)
+                            "download_queue_recover" -> queue.recover()
+                            "download_queue_delete" -> queue.deleteTask("1", checkNotNull(before).requestId)
+                        }
+                        val after = fixture.database.downloadDao().getBySongId("1")
+                        HostRuntimeProbe.report("download_queue_result operation=$operation status=${after?.status} request_changed=" +
+                            "${before != null && after != null && before.requestId != after.requestId} grants=${fixture.grants.get()}")
+                    }
+                }
+            }
             "download_enqueue", "download_enqueue_pair" -> {
                 val mode = DownloadWorkerScenario.valueOf(scenario ?: if (operation == "download_enqueue_pair") "HOLD" else "SUCCESS")
                 check(manager.getWorkInfosByTag(TAG).get(10, TimeUnit.SECONDS).isEmpty()) { "Clean the previous qualification first" }
