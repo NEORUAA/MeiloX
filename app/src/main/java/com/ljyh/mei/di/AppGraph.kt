@@ -4,6 +4,7 @@ import android.content.Context
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
+import com.ljyh.mei.parasite.HostRequestBridge
 import dagger.BindsInstance
 import dagger.Component
 import javax.inject.Singleton
@@ -15,6 +16,7 @@ interface AppComponent {
     fun inject(service: MusicService)
     fun viewModelFactory(): AppViewModelFactory
     fun database(): AppDatabase
+    fun hostRequests(): HostRequestBridge
     @ApplicationContext fun context(): Context
 
     @Component.Factory

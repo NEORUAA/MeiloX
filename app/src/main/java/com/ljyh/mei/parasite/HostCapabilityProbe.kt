@@ -1,11 +1,12 @@
 package com.ljyh.mei.parasite
 
 import org.json.JSONObject
-import java.lang.reflect.InvocationTargetException
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
 
 /** Opt-in, read-only qualification probe. Never logs response bodies, identifiers or credentials. */
 internal class HostCapabilityProbe(
-    private val hostLoader: ClassLoader,
+    private val requests: HostRequestBridge,
     private val report: (String) -> Unit,
     private val onPlayable: (String) -> Unit = {},
 ) {
@@ -13,41 +14,27 @@ internal class HostCapabilityProbe(
         try {
             probe()
         } catch (error: Throwable) {
-            report("probe_aborted type=${cause(error).javaClass.name}")
+            report("probe_aborted type=${error.javaClass.name}")
         }
     }
 
     private fun probe() {
-        // Check the live Application before touching Session's static initializer.
-        hostLoader.loadClass("com.netease.cloudmusic.NeteaseMusicApplication")
-            .getMethod("getInstance").invoke(null)
-        val core = hostLoader.loadClass("com.netease.cloudmusic.core.b")
-        val sessionType = hostLoader.loadClass("com.netease.cloudmusic.r0.a")
-        val session = sessionType.getMethod("c").invoke(null)
-        val userIdMethod = sessionType.getMethod("e")
-        val userId = userIdMethod.invoke(session) as Long
-        fun isCurrentSession(): Boolean = core.getMethod("d").invoke(null) == true &&
-            core.getMethod("c").invoke(null) == false && userId > 0 &&
-            userIdMethod.invoke(session) == userId
+        val session = requests.sessions.snapshot()
+        val userId = session.identity.userId
+        fun isCurrentSession(): Boolean = session.identity.authenticated &&
+            runCatching { requests.sessions.requireCurrent(session) }.isSuccess
         report("session authenticated=${isCurrentSession()}")
         if (!isCurrentSession()) return
 
-        val factory = hostLoader.loadClass("com.netease.cloudmusic.network.f")
-            .getMethod("c", String::class.java, Map::class.java)
-        val requestType = hostLoader.loadClass("com.netease.cloudmusic.network.v.e.a")
-        val execute = requestType.getMethod("k")
         fun request(name: String, path: String, params: Map<String, String> = emptyMap()): JSONObject? {
             check(isCurrentSession())
             return try {
-                val request = factory.invoke(null, path, params)
-                requestType.getMethod("d", Int::class.javaPrimitiveType).invoke(request, 10_000)
-                requestType.getMethod("i0", Int::class.javaPrimitiveType).invoke(request, 15_000)
-                val response = execute.invoke(request) as JSONObject
+                val response = JSONObject(requests.newCall(path, params).execute().body)
                 check(isCurrentSession())
                 report("probe=$name code=${response.optInt("code", -1)}")
                 response
-            } catch (error: InvocationTargetException) {
-                report("probe=$name failed type=${cause(error).javaClass.name}")
+            } catch (error: IOException) {
+                report("probe=$name failed type=${error.javaClass.name}")
                 null
             }
         }
@@ -90,9 +77,23 @@ internal class HostCapabilityProbe(
                 onPlayable(source.getString("url"))
             }
         }
+        verifyCancellation()
         report("probe_complete session_unchanged=${isCurrentSession()}")
     }
 
-    private fun cause(error: Throwable): Throwable =
-        if (error is InvocationTargetException) error.targetException else error
+    private fun verifyCancellation() {
+        val call = requests.newCall("search/get", mapOf("s" to "music", "type" to "1", "limit" to "1", "offset" to "1"))
+        val failure = AtomicReference<Throwable?>()
+        val worker = Thread({
+            try { call.execute() } catch (error: Throwable) { failure.set(error) }
+        }, "MeiloX-cancel-probe").apply { isDaemon = true }
+        worker.start()
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (worker.isAlive && !call.isRunning && System.nanoTime() < deadline) Thread.sleep(1)
+        val observed = call.isRunning
+        call.cancel()
+        worker.join(20_000)
+        report("request_cancel observed_running=$observed worker_finished=${!worker.isAlive} rejected=${failure.get() is IOException}")
+        check(!worker.isAlive) { "Cancellation probe did not finish" }
+    }
 }

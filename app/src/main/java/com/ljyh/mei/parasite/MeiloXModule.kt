@@ -71,8 +71,20 @@ class MeiloXModule : XposedModule() {
                     // Tinker can replace the package loader during Application.attachBaseContext.
                     val runtimeLoader = activity.javaClass.classLoader ?: return
                     report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
+                    val requests = if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+                        com.ljyh.mei.di.AppGraph.component.hostRequests()
+                    } else HostRequestBridge(HostSessionBridge())
+                    try {
+                        val backend = TvHostRequestBackend(runtimeLoader, ::report)
+                        backend.installHooks(this@MeiloXModule, requests.sessions)
+                        requests.bind(backend)
+                        report("request_bridge_bound")
+                    } catch (error: Throwable) {
+                        report("request_bridge_failed type=${error.javaClass.name}")
+                        return
+                    }
                     Thread({
-                        HostCapabilityProbe(runtimeLoader, ::report) { url ->
+                        HostCapabilityProbe(requests, ::report) { url ->
                             if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url)
                         }.run()
                     }, "MeiloX-host-probe").start()

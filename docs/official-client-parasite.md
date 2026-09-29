@@ -119,7 +119,7 @@ confirmed distinct at runtime.
 The host's `core.b.d()` and `core.b.c()` expose authenticated/anonymous booleans
 without exporting credentials. The request base `network.v.e.f` provides `c()`
 for cancellation, `d(int)` for connect timeout, and `i0(int)` for read timeout;
-cancellation semantics still require dedicated integration tests.
+the cancellation adapter and its current verification boundary are documented below.
 
 The extracted login implementation calls `login/anon/device`, `login/qrcode/unikey`,
 `login/qrcode/client/login`, and `nuser/account/get`. On successful authorization it also
@@ -283,6 +283,44 @@ This changes dependency ownership, not NetEase transport. Existing network provi
 remain pending the host bridge migration. The runtime probe deliberately creates only local
 ViewModels; enabling the complete frontend before replacing that transport is not acceptance.
 Full MainActivity/MusicService hosting and production navigation are still pending.
+
+### Host Request and Session Core
+
+- `HostRequestBridge` freezes business parameters and attaches a public session identity and
+  generation to each call. It rejects credential overrides and non-relative business paths.
+  Calls are single-use; copies retain the original account/generation rather than silently
+  adopting a newly logged-in account. There is no module-owned cookie or signing state.
+- `TvHostRequestBackend` uses the final Tinker loader and the original request factory,
+  timeouts, synchronous JSON execution, and cancellation methods. Host exceptions are reduced
+  to safe exception-class diagnostics; response bodies and credentials are not logged.
+- Cancellation is forwarded even when requested during host request creation. The exact
+  DEX method `network.v.e.f.f(): okhttp3.Call` creates the host's network Call; an after-hook
+  cancels it before execution if cancellation happened before that Call existed. Only
+  requests created by this adapter are tracked or canceled by this hook.
+- Session generations change around profile account switches and official session-cookie
+  writes/removals. Hooks inspect cookie names only, never values. DEX-verified entry points
+  are `r0.a.p(Profile)` and `AbsCookieStore.saveCookies(List)`, `removeCookie(Cookie)`,
+  and `removeAllCookie()`. Nested transitions stay blocked until all owners finish.
+- The first device run exposed excessive invalidation when the official home screen refreshed
+  the same account's profile. The corrected adapter ignores that ordinary refresh while
+  retaining invalidation for session-cookie updates, including same-account reauthorization.
+- Twelve unit tests cover parameter ownership, invalid paths/auth overrides, single execution,
+  cancellation before/during dispatch, account changes, same-account reauthorization, nested
+  transitions, stale copies, failures/resource closure, delayed generation delivery, and
+  anonymous-to-authenticated transitions. The complete suite passed: 253 tests, no failures,
+  errors, or skips. Debug assembly, diff checks, and 16 KB alignment also passed.
+- The corrected AVD run bound the bridge inside the official process, observed a same-account
+  profile refresh, and completed all ten authenticated read-only operations with code 200.
+  Account matching and the final unchanged-session check passed. A separate bounded search
+  cancellation observed a pending host request, rejected its result with an IOException, and
+  joined the worker successfully. This does not prove that an upstream server never received
+  the request or that a server-side mutation can be rolled back.
+
+The bridge is currently exercised by the opt-in qualification probe. Retrofit/repository
+adapters, QR/logout lifecycle integration, account-scoped UI reset, binary upload, and complete
+response-delivery guards remain required. Unit session transitions use test doubles; this
+checkpoint did not log out the real account or perform real social writes. It is not full
+login, cross-process session synchronization, or feature-level migration acceptance.
 
 ### Remaining Gates
 
