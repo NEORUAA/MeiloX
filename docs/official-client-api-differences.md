@@ -906,6 +906,12 @@ These are integration differences, not server API semantics.
 
 ## Adding an Entry
 
+As of 2026-09-29, the project targets both standalone and parasite APKs; see
+[Dual Runtime Build Plan](dual-runtime-build-plan.md). Future entries must distinguish
+the original standalone contract, the official-host contract, their shared frontend
+mapping and the verification status of each backend. Existing host-only observations
+do not authorize replacing the standalone contract with a TV-specific operation.
+
 Use a stable ID and record the date, endpoint or entry point, original assumption,
 observed behavior, adaptation, source/test/device evidence, and remaining uncertainty.
 Update acceptance evidence in place as later stages verify it. Do not mark speculative

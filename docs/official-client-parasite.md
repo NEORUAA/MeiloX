@@ -1,15 +1,28 @@
 # Official Client Parasite
 
+## Target Revision (2026-09-29)
+
+The final deliverable is now two APKs from one shared frontend: the original
+standalone WebView/Cookie client and the API 102 parasite client. This branch is
+intended for eventual integration into `main`. The authoritative revised milestones
+and source-set boundaries are in [Dual Runtime Build Plan](dual-runtime-build-plan.md).
+
+Deleting the standalone backend and globally disabling standalone startup are no
+longer goals. Keep host authentication/transport rules specific to the parasite
+variant. Unrelated frontend fixes inherited from `main` are out of scope. Existing
+checkpoints below remain historical evidence, not proof of dual-variant acceptance.
+
 ## Delivery Contract
 
 - Work only on `official_client_parasite`; commit verified increments locally without pushing.
 - Keep the complete MeiloX UI, playback engine, AutoMix, effects, visualization, and feature set.
 - Preserve the original page architecture, navigation, layout, controls, and interactions;
   adapt host dependencies underneath them. Debug page carriers are not a replacement UI.
-- Run the UI inside the selected official host process through modern libxposed API 102.
-- Use `com.neoruaa.meilox.parasite` for the module APK; preserve the standalone installation.
-- Let the host own authentication, credentials, signing, and NetEase business transport.
-- Render login in MeiloX while delegating the authentication state machine to the host.
+- For the parasite variant, run the UI inside the selected official host process through modern libxposed API 102.
+- Build `com.neoruaa.meilox.parasite` and the original `com.neoruaa.meilox` from shared frontend sources; preserve existing installations and data.
+- In parasite, let the host own authentication, credentials, signing, and NetEase business transport.
+- In standalone, retain original WebView/Cookie login and its independent backend implementation.
+- Render parasite login in MeiloX while delegating the authentication state machine to the host.
 - Preserve third-party lyrics and direct image/media loading. Retain business parameter and response adapters.
 - Use separate host-private storage for module data. Do not import the standalone app's data or cookies.
 - Do not redistribute the host APK, decompiled sources, credentials, screenshots, or device logs in Git.
@@ -1684,6 +1697,10 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 
 ## Stage Status
 
+This is the historical parasite workstream status. The revised project completion
+gate is D1-D6 in [Dual Runtime Build Plan](dual-runtime-build-plan.md); the standalone
+backend must be restored and both variants qualified before merge readiness.
+
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
@@ -1692,7 +1709,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, request ownership, full Worker, durable publication and foreground aggregation have substitute coverage; ordinary host scheduling and one user-initiated real FLAC download/whole-file decode are verified; broader download and lifecycle cases remain unaccepted | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
-| 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
+| 7. Cleanup and regression | Superseded by dual-runtime D6 | Standalone transport isolated to its flavor, parasite transport remains official-only; both release builds and regressions pass |
 
 Do not advance to the broad frontend migration until the Activity/resource/service
 prototype passes. Module loading alone does not complete stage 2.
