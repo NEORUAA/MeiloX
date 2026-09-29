@@ -14,7 +14,6 @@ import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
-import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
@@ -22,7 +21,6 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.PlaylistMutationSource
-import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionStamp
 import com.ljyh.mei.parasite.HostSessionChangedException
@@ -61,17 +59,16 @@ class PlaylistViewModel internal constructor(
     private val pageSource: com.ljyh.mei.data.repository.PlaylistPageSource,
     private val mutations: PlaylistMutationSource,
     private val repository: PlaylistRepository,
-    private val likeRepository: LikeRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
     val apiService: ApiService,
     private val sessions: HostSessionBridge,
     private val library: com.ljyh.mei.data.repository.AccountLibrarySource,
 ) : ViewModel() {
     @Inject constructor(
-        repository: PlaylistRepository, likeRepository: LikeRepository,
+        repository: PlaylistRepository,
         localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository, apiService: ApiService,
         sessions: HostSessionBridge, library: com.ljyh.mei.data.repository.AccountLibraryRepository,
-    ) : this(repository, repository, repository, likeRepository, localPlaylistRepository, apiService, sessions, library)
+    ) : this(repository, repository, repository, localPlaylistRepository, apiService, sessions, library)
     val userId: String get() = runCatching { sessions.snapshot().identity.takeIf { it.authenticated }?.userId?.toString().orEmpty() }.getOrDefault("")
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
@@ -109,6 +106,11 @@ class PlaylistViewModel internal constructor(
 
     private val _everyDay = MutableStateFlow<Resource<EveryDaySongs>>(Resource.Loading)
     val everyDay: StateFlow<Resource<EveryDaySongs>> = _everyDay
+    private val _dailySession = MutableStateFlow<HostSessionStamp?>(null)
+    val dailySession = _dailySession.asStateFlow()
+    private var dailyRequested = false
+    private var dailyVersion = 0L
+    private var dailyJob: Job? = null
 
     // 创建歌单状态
     private val _createPlaylist = MutableStateFlow<Resource<CreatePlaylistResult>>(Resource.Loading)
@@ -129,6 +131,7 @@ class PlaylistViewModel internal constructor(
         synchronized(detailLock) {
             if ((_detailSession.value?.generation ?: -1) < revision) clearDetail()
             if ((_actionSession.value?.generation ?: -1) < revision) clearActions()
+            if ((_dailySession.value?.generation ?: -1) < revision) clearDaily()
         }
     }
 
@@ -149,6 +152,10 @@ class PlaylistViewModel internal constructor(
                         _actionSession.value = stamp
                     }
                 }
+                if (stamp == null) {
+                    dailyJob?.cancel()
+                    synchronized(detailLock) { clearDaily() }
+                } else if (dailyRequested && _dailySession.value != stamp) getEveryDayRecommendSongs()
             }
         }
     }
@@ -248,11 +255,6 @@ class PlaylistViewModel internal constructor(
     }
 
 
-    fun updateAllLike(likes: List<Like>) {
-        viewModelScope.launch {
-            likeRepository.updateAllLike(likes)
-        }
-    }
 
     fun addSongToPlaylist(
         pid: String,
@@ -396,11 +398,56 @@ class PlaylistViewModel internal constructor(
     }
 
     fun getEveryDayRecommendSongs() {
-        viewModelScope.launch {
-            _everyDay.value = Resource.Loading
-            _everyDay.value = repository.getEveryDayRecommendSongs()
+        dailyRequested = true
+        val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
+        val version = runCatching { sessions.withCurrent(owner) {
+            synchronized(detailLock) {
+                clearDaily()
+                _dailySession.value = owner
+                dailyVersion
+            }
+        } }.getOrNull() ?: return
+        dailyJob?.cancel()
+        dailyJob = viewModelScope.launch {
+            fun publish(result: Resource<EveryDaySongs>) = sessions.withCurrent(owner) {
+                synchronized(detailLock) { if (dailyVersion == version) _everyDay.value = result }
+            }
+            try {
+                check(owner.identity.authenticated) { "Official login is required" }
+                sessions.requireCurrent(owner)
+                val result = pageSource.getEveryDayRecommendSongs(owner)
+                currentCoroutineContext().ensureActive()
+                publish(result)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { publish(Resource.Error(error.message ?: "Daily recommendations failed")) }
+            }
         }
+    }
 
+    private fun clearDaily() {
+        dailyVersion++
+        _dailySession.value = null
+        _everyDay.value = Resource.Loading
+    }
+
+    fun stopDailyRecommendations() {
+        dailyRequested = false
+        dailyJob?.cancel()
+        synchronized(detailLock) { clearDaily() }
+    }
+
+    fun dailyTracks(owner: HostSessionStamp?, result: Resource<EveryDaySongs>): List<MediaMetadata> {
+        if (owner == null || result !is Resource.Success) return emptyList()
+        return runCatching { sessions.withCurrent(owner) {
+            synchronized(detailLock) {
+                check(_dailySession.value == owner && _everyDay.value === result)
+                result.data.data.dailySongs.distinctBy { it.id }.map { it.toMediaMetadata() }
+            }
+        } }.getOrDefault(emptyList())
     }
 
     /*
@@ -555,7 +602,7 @@ class PlaylistViewModel internal constructor(
 
     override fun onCleared() {
         invalidation.close()
-        synchronized(detailLock) { detailVersion++; clearActions() }
+        synchronized(detailLock) { detailVersion++; clearActions(); clearDaily() }
         super.onCleared()
     }
 }

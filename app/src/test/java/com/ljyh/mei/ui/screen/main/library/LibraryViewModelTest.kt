@@ -36,14 +36,15 @@ class LibraryViewModelTest {
     private val sessions = HostSessionBridge().apply { bind { identity } }
     private val source = FakeSource()
 
-    private fun playlist(id: String, liked: Boolean = false) =
-        AccountPlaylist(Playlist(id, "Playlist $id", "", "1", "Creator", "", 1), liked)
+    private fun playlist(id: String, liked: Boolean = false, author: String = "1") =
+        AccountPlaylist(Playlist(id, "Playlist $id", "", author, "Creator", "", 1), liked)
     private fun song(id: Long) = MediaMetadata(id, "Song $id", "", emptyList(), 1000, MediaMetadata.Album(1, "Album"))
 
     private class FakeSource : AccountLibrarySource {
         override val albumChanges = kotlinx.coroutines.flow.MutableSharedFlow<HostSessionStamp>(extraBufferCapacity = 1)
         val cached = mutableMapOf<String, MutableStateFlow<List<AccountPlaylist>>>()
         val syncCalls = mutableListOf<String>()
+        val likedOwners = mutableListOf<HostSessionStamp>()
         var sync: suspend (HostSessionStamp) -> Resource<Unit> = { Resource.Success(Unit) }
         var albums: suspend () -> Resource<UserAlbumList> = { Resource.Success(UserAlbumList(emptyList(), 0, false, 0, 200)) }
         var photos: suspend (String) -> Resource<AlbumPhoto> = {
@@ -57,7 +58,10 @@ class LibraryViewModelTest {
         }
         override suspend fun albums() = albums.invoke()
         override suspend fun photos(accountId: String) = photos.invoke(accountId)
-        override suspend fun likedSongs(playlistId: String) = liked.invoke(playlistId)
+        override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>> {
+            likedOwners += stamp
+            return liked.invoke(playlistId)
+        }
     }
 
     @Test fun acceptedAlbumChangesRefreshOnlyTheirCurrentAccountLibrary() {
@@ -108,6 +112,7 @@ class LibraryViewModelTest {
             assertEquals(listOf(song(1)), model.state.value.likedSongs)
             assertFalse(model.state.value.playlistsLoading)
             assertFalse(model.state.value.likedSongsLoading)
+            assertEquals(listOf(sessions.snapshot()), source.likedOwners.distinct())
         }
     }
 
@@ -145,7 +150,7 @@ class LibraryViewModelTest {
     @Test fun oldNonCooperativeLikedResultCannotReplaceAnotherAccountsSongs() {
         val old = CompletableDeferred<Resource<List<MediaMetadata>>>()
         source.playlists("1").value = listOf(playlist("old", true))
-        source.playlists("2").value = listOf(playlist("new", true))
+        source.playlists("2").value = listOf(playlist("new", true, author = "2"))
         source.liked = { if (it == "old") withContext(NonCancellable) { old.await() } else Resource.Success(listOf(song(2))) }
         checkModel { model, _ ->
             try {
@@ -221,6 +226,47 @@ class LibraryViewModelTest {
             runCurrent()
             assertTrue(source.syncCalls.size > requests)
             assertTrue(model.state.value.session!!.generation > generation)
+        }
+    }
+
+    @Test fun sameLikedPlaylistMetadataChangesReloadSongsAndRejectLateResults() {
+        val late = CompletableDeferred<Resource<List<MediaMetadata>>>()
+        val entry = playlist("liked", true)
+        source.playlists("1").value = listOf(entry)
+        source.liked = { withContext(NonCancellable) { late.await() } }
+        checkModel { model, _ ->
+            runCurrent()
+            source.liked = { Resource.Success(listOf(song(2), song(3))) }
+            source.playlists("1").value = listOf(entry.copy(playlist = entry.playlist.copy(count = 2)))
+            runCurrent()
+            late.complete(Resource.Success(listOf(song(1))))
+            runCurrent()
+            assertEquals(listOf(2L, 3L), model.state.value.likedSongs.map { it.id })
+            assertFalse(model.state.value.likedSongsLoading)
+        }
+    }
+
+    @Test fun foreignLikedMembershipNeverLoadsPrivateSongs() {
+        source.playlists("1").value = listOf(playlist("foreign", true, author = "2"))
+        checkModel { model, _ ->
+            runCurrent()
+            assertTrue(source.likedOwners.isEmpty())
+            assertTrue(model.state.value.likedSongs.isEmpty())
+        }
+    }
+
+    @Test fun incompleteLikedReadShowsFailureAndRefreshCanRecover() {
+        source.playlists("1").value = listOf(playlist("liked", true))
+        source.liked = { Resource.Error("Incomplete official playlist tracks") }
+        checkModel { model, _ ->
+            runCurrent()
+            assertTrue(model.state.value.likedSongs.isEmpty())
+            assertEquals("Incomplete official playlist tracks", model.state.value.likedSongsError)
+            source.liked = { Resource.Success(listOf(song(1))) }
+            model.refresh()
+            runCurrent()
+            assertEquals(listOf(song(1)), model.state.value.likedSongs)
+            assertEquals(null, model.state.value.likedSongsError)
         }
     }
 

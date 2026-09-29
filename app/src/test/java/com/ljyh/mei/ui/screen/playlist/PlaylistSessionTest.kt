@@ -11,9 +11,7 @@ import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.repository.AccountLibrarySource
 import com.ljyh.mei.data.repository.PlaylistPageSource
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.di.dao.LikeDao
 import com.ljyh.mei.di.dao.PlaylistDao
-import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionIdentity
@@ -54,6 +52,12 @@ class PlaylistSessionTest {
     } as T
 
     private class Source : PlaylistPageSource {
+        val dailyReads = mutableListOf<HostSessionStamp>()
+        var daily: suspend () -> Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs> = { Resource.Success(dailySongs(1)) }
+        override suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs> {
+            dailyReads += session
+            return daily()
+        }
         val reads = mutableListOf<Pair<String, HostSessionStamp?>>()
         val writes = mutableListOf<Pair<String, Boolean>>()
         var read: suspend (String) -> Resource<PlaylistDetail> = { Resource.Success(detail(it)) }
@@ -73,6 +77,81 @@ class PlaylistSessionTest {
         }
     }
 
+    @Test fun dailyRecommendationsCaptureOwnerAndRejectObsoletePlaybackSnapshots() = checkModel { model, _ ->
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        val owner = model.dailySession.value
+        val result = model.everyDay.value
+        assertEquals(listOf(sessions.snapshot()), source.dailyReads)
+        assertEquals(listOf(1L), model.dailyTracks(owner, result).map { it.id })
+        assertNull(model.dailyTracks(owner, result).single().tns)
+        source.daily = { Resource.Success(dailySongs(2)) }
+        model.getEveryDayRecommendSongs()
+        assertTrue(model.dailyTracks(owner, result).isEmpty())
+        runCurrent()
+        assertEquals(listOf(2L), model.dailyTracks(model.dailySession.value, model.everyDay.value).map { it.id })
+    }
+
+    @Test fun emptyDailyRecommendationsAndFailedReadsCanBeRetriedWithoutAnEmptyQueue() = checkModel { model, _ ->
+        source.daily = { Resource.Error("Offline") }
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        assertTrue(model.everyDay.value is Resource.Error)
+        assertTrue(model.dailyTracks(model.dailySession.value, model.everyDay.value).isEmpty())
+        source.daily = { Resource.Success(dailySongs()) }
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        assertTrue(model.everyDay.value is Resource.Success)
+        assertTrue(model.dailyTracks(model.dailySession.value, model.everyDay.value).isEmpty())
+    }
+
+    @Test fun dailySessionInvalidationClearsImmediatelyAndRejectsLateSongs() = checkModel { model, _ ->
+        val late = CompletableDeferred<Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs>>()
+        source.daily = { withContext(NonCancellable) { late.await() } }
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        source.daily = { Resource.Success(dailySongs(2)) }
+        sessions.beginTransition().use { identity = HostSessionIdentity(2, true, false) }
+        assertNull(model.dailySession.value)
+        assertTrue(model.everyDay.value is Resource.Loading)
+        runCurrent()
+        late.complete(Resource.Success(dailySongs(1)))
+        runCurrent()
+        assertEquals(listOf(2L), model.dailyTracks(model.dailySession.value, model.everyDay.value).map { it.id })
+        val reads = source.dailyReads.size
+        sessions.invalidate()
+        runCurrent()
+        assertEquals(reads + 1, source.dailyReads.size)
+    }
+
+    @Test fun leavingDailyPageRejectsLateSongsAndDoesNotReloadUntilReentered() = checkModel { model, _ ->
+        val late = CompletableDeferred<Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs>>()
+        source.daily = { withContext(NonCancellable) { late.await() } }
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        model.stopDailyRecommendations()
+        sessions.invalidate()
+        runCurrent()
+        late.complete(Resource.Success(dailySongs(1)))
+        runCurrent()
+        assertTrue(model.everyDay.value is Resource.Loading)
+        assertEquals(1, source.dailyReads.size)
+        source.daily = { Resource.Success(dailySongs(2)) }
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        assertEquals(listOf(2L), model.dailyTracks(model.dailySession.value, model.everyDay.value).map { it.id })
+    }
+
+    @Test fun guestDailyPageNeverRequestsPrivateRecommendations() = checkModel { model, _ ->
+        identity = HostSessionIdentity(0, false, true)
+        sessions.invalidate()
+        runCurrent()
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        assertTrue(source.dailyReads.isEmpty())
+        assertTrue(model.everyDay.value is Resource.Error)
+    }
+
     private fun checkModel(check: suspend TestScope.(PlaylistViewModel, ViewModelStore) -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
@@ -82,7 +161,7 @@ class PlaylistSessionTest {
             val weapi = unused<WeApiService>()
             val remote = PlaylistRepository(api, weapi, eapi)
             val local = LocalPlaylistRepository(unused<PlaylistDao>())
-            val model = PlaylistViewModel(source, remote, remote, LikeRepository(unused<LikeDao>()), local, api, sessions,
+            val model = PlaylistViewModel(source, remote, remote, local, api, sessions,
                 object : AccountLibrarySource {
                     override val albumChanges = emptyFlow<HostSessionStamp>()
                     override fun playlists(accountId: String) = emptyFlow<List<com.ljyh.mei.data.model.room.AccountPlaylist>>()
@@ -92,7 +171,7 @@ class PlaylistSessionTest {
                     }
                     override suspend fun albums() = error("Unused albums")
                     override suspend fun photos(accountId: String) = error("Unused photos")
-                    override suspend fun likedSongs(playlistId: String) = error("Unused liked songs")
+                    override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp) = error("Unused liked songs")
                 })
             store.put("playlist", model)
             runCurrent()
@@ -295,6 +374,11 @@ class PlaylistSessionTest {
     }
 
     companion object {
+        fun dailySongs(vararg ids: Int): com.ljyh.mei.data.model.weapi.EveryDaySongs = Gson().fromJson(
+            """{"code":200,"data":{"dailySongs":[${ids.joinToString(",") {
+                """{"id":$it,"name":"Song $it","al":{"id":1,"name":"Album","picUrl":""},"ar":[],"dt":1000,"tns":[]}"""
+            }}]}}""", com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java,
+        )
         fun detail(id: String, subscribed: Boolean = false): PlaylistDetail = Gson().fromJson(
             """{"code":200,"playlist":{"id":$id,"name":"Playlist","subscribed":$subscribed,"creator":{"userId":99},"tracks":[],"trackIds":[]}}""",
             PlaylistDetail::class.java,

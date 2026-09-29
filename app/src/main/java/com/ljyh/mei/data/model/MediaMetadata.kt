@@ -69,7 +69,7 @@ fun PlaylistDetail.Playlist.Track.toMediaMetadata() = MediaMetadata(
         id = al.Id,
         title = al.name?:"",
     ),
-    tns= tns?.get(0)
+    tns= tns?.firstOrNull()
 )
 
 
@@ -109,7 +109,7 @@ fun EveryDaySongs.Data.DailySong.toMediaMetadata() = MediaMetadata(
         id = al.id,
         title = al.name
     ),
-    tns= tns?.get(0)
+    tns= tns?.firstOrNull()
 )
 
 

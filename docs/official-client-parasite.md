@@ -1017,6 +1017,53 @@ account switches, daily recommendations, legacy like-table ownership, and downst
 download/playback work remain unqualified. The host capability and production-routing
 gates are unchanged.
 
+### Daily Recommendations and Complete Liked Reads
+
+- Daily recommendations now carry a captured official session and use the inspected
+  TV normal-scene parameters. The page's read starts and stops with its composition;
+  invalidation clears results synchronously, cancels obsolete work, and refreshes only
+  while requested. Empty results and optional empty translation arrays are safe. Errors
+  expose a retry in the existing error area using the shared glass control.
+- The original daily header, cover, song list, search, navigation, and player composition
+  remain intact. Filtered selection resolves its position in the full returned queue;
+  Play All and shuffle use the same current-owner snapshot guard. The existing shuffle
+  action now requests shuffle rather than falling through to ordinary playback.
+- Library liked-song reads require the current account's marked membership and matching
+  cached/returned creator. Every detail and missing-song batch carries the owner. Partial
+  fallback is removed: incomplete full-list reads remain errors with the existing Library
+  refresh path. Changes to membership metadata reload an unchanged playlist ID, while
+  canceled/replaced reads cannot overwrite newer results.
+- Removed the song-list title-suffix effect that wrote a global Like table. The database
+  schema and existing data are preserved. The player's heart read/write state machine
+  remains outside this increment. Contracts and uncertainties are recorded as API-011
+  and API-012 in [the difference ledger](official-client-api-differences.md).
+
+Verification on 2026-09-29:
+
+- Debug assembly and 493 unit tests in 65 suites pass, including 20 new tests for daily
+  parameters and transport tags, empty/error/retry behavior, ownership, cancellation,
+  obsolete queue snapshots, complete liked reads beyond 400 songs, and Library refresh
+  replacement. No test is skipped. `zipalign -c -P 16 4` and `git diff --check` pass.
+- Installed the debug APK without running connected-test cleanup; the existing module
+  enable/scope and official login survive a cold host restart. The four-song Library
+  collection loads without error. Home opens the unchanged daily page, including cover,
+  search/IME, filtered rows, and complete-list restoration when search closes.
+- The first daily read returned 33 songs. Selecting the filtered second song produced
+  a 33-item Media3 queue at active index 1 with matching metadata. Playback advanced to
+  26,086 ms before being paused, with no playback error. The original official player
+  stayed stopped. This proves short selected-item playback and queue handoff only, not
+  audible output, full-song completion, reporting, or later server statistics.
+- Back returns to Home; re-entry reads 30 songs without a layout change. Returning to
+  Library restores its four-song list and paused mini-player. The current host process
+  has no crash-buffer entries during this check. Screenshots and device state remain
+  outside Git. No playlist/like/social mutation, logout, download, or audio/network
+  setting change is performed.
+
+This checkpoint leaves stage 4 in progress. Real account replacement, device offline
+recovery, player heart behavior, and authorized write acceptance remain unqualified.
+The temporary-private-playlist authorization, host recording/PiP decision, production
+routing, full playback, and release gates are unchanged.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1041,7 +1088,7 @@ gates are unchanged.
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, and shared picker reads passed; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, and daily recommendations passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

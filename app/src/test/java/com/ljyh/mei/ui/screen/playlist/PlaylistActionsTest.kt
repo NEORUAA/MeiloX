@@ -15,9 +15,7 @@ import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.repository.AccountLibrarySource
 import com.ljyh.mei.data.repository.PlaylistMutationSource
 import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.di.dao.LikeDao
 import com.ljyh.mei.di.dao.PlaylistDao
-import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionIdentity
@@ -85,13 +83,13 @@ class PlaylistActionsTest {
                 }
                 override suspend fun albums() = error("Unused albums")
                 override suspend fun photos(accountId: String) = error("Unused photos")
-                override suspend fun likedSongs(playlistId: String) = error("Unused likes")
+                override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp) = error("Unused likes")
             }
             val pages = object : com.ljyh.mei.data.repository.PlaylistPageSource by repository {
                 override suspend fun getPlaylistDetail(id: String, session: HostSessionStamp?): Resource<PlaylistDetail> = Resource.Success(
                     Gson().fromJson("""{"code":200,"playlist":{"id":$id,"creator":{"userId":1},"tracks":[],"trackIds":[],"subscribed":false}}""", PlaylistDetail::class.java))
             }
-            val model = PlaylistViewModel(pages, source, repository, LikeRepository(unused<LikeDao>()),
+            val model = PlaylistViewModel(pages, source, repository,
                 LocalPlaylistRepository(unused<PlaylistDao>()), api, sessions, library)
             store.put("actions", model)
             runCurrent()

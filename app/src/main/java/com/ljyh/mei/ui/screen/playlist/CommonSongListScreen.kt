@@ -47,7 +47,6 @@ import androidx.paging.compose.LazyPagingItems
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassSurface
@@ -115,12 +114,6 @@ fun CommonSongListScreen(
     LaunchedEffect(isPlaylistSearchActive) {
         if (isPlaylistSearchActive && onPlaylistSearchQueryChange != null) {
             searchFocusRequester.requestFocus()
-        }
-    }
-
-    LaunchedEffect(uiData.title, uiData.tracks) {
-        if (uiData.title.endsWith("喜欢的音乐")) {
-            viewModel.updateAllLike(uiData.tracks.map { Like(it.id.toString()) })
         }
     }
 

@@ -43,6 +43,7 @@ internal interface AlbumDetailSource {
 }
 
 internal interface PlaylistPageSource {
+    suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<EveryDaySongs>
     suspend fun getPlaylistDetail(id: String, session: HostSessionStamp? = null): Resource<PlaylistDetail>
     suspend fun getPlaylistTrackDetails(ids: List<String>, session: HostSessionStamp? = null): List<PlaylistDetail.Playlist.Track>
     suspend fun subscribePlaylist(id: String, session: HostSessionStamp? = null): Resource<BaseResponse>
@@ -189,10 +190,22 @@ class PlaylistRepository(
     }
 
 
-    suspend fun getEveryDayRecommendSongs(): Resource<EveryDaySongs> {
+    override suspend fun getEveryDayRecommendSongs(session: HostSessionStamp): Resource<EveryDaySongs> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
-                weApiService.getEveryDayRecommendSongs()
+                check(session.identity.authenticated) { "Official login is required" }
+                weApiService.getEveryDayRecommendSongs(
+                    mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1"), session,
+                ).also { response ->
+                    check(response.code == 200) { "Daily recommendations failed (${response.code})" }
+                    val data: EveryDaySongs.Data? = response.data
+                    val songs: List<EveryDaySongs.Data.DailySong>? = data?.dailySongs
+                    checkNotNull(songs) { "Missing daily recommendations" }
+                    songs.forEach { song ->
+                        check(song.id > 0) { "Invalid recommended song identity" }
+                        song.toMediaMetadata()
+                    }
+                }
             }
         }
     }

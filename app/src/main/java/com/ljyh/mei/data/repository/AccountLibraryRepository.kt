@@ -5,7 +5,6 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.UserAlbumList
 import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.model.room.Playlist
-import com.ljyh.mei.data.model.toMiniPlaylistDetail
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
@@ -13,10 +12,10 @@ import com.ljyh.mei.parasite.HostSessionBridge
 import com.ljyh.mei.parasite.HostSessionStamp
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.channels.BufferOverflow
@@ -27,7 +26,7 @@ internal interface AccountLibrarySource {
     suspend fun sync(stamp: HostSessionStamp): Resource<Unit>
     suspend fun albums(): Resource<UserAlbumList>
     suspend fun photos(accountId: String): Resource<AlbumPhoto>
-    suspend fun likedSongs(playlistId: String): Resource<List<MediaMetadata>>
+    suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>>
 }
 
 @Singleton
@@ -81,17 +80,25 @@ class AccountLibraryRepository @Inject constructor(
     }
     override suspend fun photos(accountId: String) = users.getPhotoAlbum(accountId)
 
-    override suspend fun likedSongs(playlistId: String): Resource<List<MediaMetadata>> = safeApiCall {
-        when (val response = remote.getPlaylistDetail(playlistId)) {
-            is Resource.Success -> try {
-                remote.getCompletePlaylistTracks(response.data)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                response.data.toMiniPlaylistDetail().tracks
+    override suspend fun likedSongs(playlistId: String, stamp: HostSessionStamp): Resource<List<MediaMetadata>> = safeApiCall {
+        check(stamp.identity.authenticated) { "Official login is required" }
+        sessions.requireCurrent(stamp)
+        val accountId = stamp.identity.userId.toString()
+        check(local.getAccountPlaylists(accountId).first().any {
+            it.isLiked && it.playlist.id == playlistId && it.playlist.author == accountId
+        }) { "Liked playlist does not belong to this account" }
+        sessions.requireCurrent(stamp)
+        val songs = when (val response = remote.getPlaylistDetail(playlistId, stamp)) {
+            is Resource.Success -> {
+                check(response.data.playlist.creator.userId == stamp.identity.userId) { "Liked playlist owner changed" }
+                sessions.requireCurrent(stamp)
+                remote.getCompletePlaylistTracks(response.data, stamp)
             }
             is Resource.Error -> throw java.io.IOException(response.message)
             Resource.Loading -> error("Unexpected pending liked playlist response")
         }
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(stamp)
+        songs
     }
 }

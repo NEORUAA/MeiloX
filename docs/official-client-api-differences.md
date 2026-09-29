@@ -181,7 +181,8 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   empty intermediate pages, complete search beyond 400 IDs, partial search retry, owner
   changes, and cancellation. On-device qualification is recorded in the migration log.
 - Follow-up: the shared playlist picker and guarded write implementation are recorded in
-  API-009/API-010. Real write acceptance, daily recommendations, legacy like-table updates,
+  API-009/API-010; daily recommendations and complete account-owned liked reads are
+  recorded in API-011/API-012. Real write acceptance, player heart-state ownership,
   and downstream downloads remain incomplete.
 
 ### API-009: Playlist Track Writes Use Business Codes, Not Cached Counts
@@ -232,6 +233,58 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   failure tests. Live create/delete and returned-state reconciliation are pending user
   authorization to operate only on a temporary private test playlist. No user playlist
   or account response is copied into this ledger.
+
+### API-011: Daily Recommendations Retain the Official Normal Scene
+
+- Recorded: 2026-09-29.
+- Original implementation: sends an empty body to `v3/discovery/recommend/songs`, assumes
+  a first song exists for the cover, and retains results without an official-session
+  owner. Playback actions can reuse stale results after account replacement.
+- Official TV evidence: `com.netease.cloudmusic.app.n.c(int)` sends `ispush=false`,
+  `limit=30`, and the supplied `trialMode`; its parser reads `data.dailySongs`. The normal
+  daily redirect supplies `FreeTrialScene.NORMAL`, whose value is 1. These names are
+  resolved from the local TV source; `C2538n` is only its JADX file alias. Normal-scene
+  parameters do not replace or bypass official playback permission checks.
+- Adaptation: retain those parameters through the host request pipeline, with a mandatory
+  captured-session tag. Require business code 200 and a valid song list; an empty list
+  is valid. Optional empty translation arrays are safe. Leaving the page cancels its
+  read; invalidation clears results, and late replies cannot restore obsolete data.
+  Search and queue selection stay in the original page. Playback uses the full validated
+  response, not only the filtered rows, and rejects obsolete snapshots.
+- Evidence: parameter, Retrofit-tag, decoder, empty/error/retry, cancellation, and
+  session-replacement unit tests pass. The AVD returned 33 songs on the first visit and
+  30 on re-entry despite the same requested limit. The cause of that variation is not
+  established; the client does not truncate valid returned rows to 30. Selecting the
+  filtered second song retained the full 33-song queue and selected index 1.
+- Remaining: real account replacement, device network-failure recovery, complete audio,
+  and server listening-statistics acceptance are not qualified by this checkpoint.
+
+### API-012: Liked Library Reads Need an Owner and a Complete Snapshot
+
+- Recorded: 2026-09-29.
+- Original implementation: a display name ending in the liked-music suffix writes a
+  global Like table. Library reads lack a captured owner and fall back to the initial
+  `tracks` subset when full-song loading fails. Neither a title nor a partial response
+  proves the current account's complete liked collection.
+- Compatibility constraint: this is an ownership/completeness correction to MeiloX,
+  not a newly discovered TV endpoint. It retains the account-membership identification
+  and supplemental detail/song-detail contracts described in API-008, all through the
+  official request pipeline.
+- Adaptation: require an authenticated owner, its marked liked-playlist membership,
+  matching cached creator, and matching returned creator. Every detail and missing-song
+  batch carries the same session tag. Complete results follow authoritative track IDs;
+  missing songs and failed batches remain retryable errors, never successful partial
+  lists. Membership metadata changes reload the list even when its ID is unchanged;
+  replaced or canceled reads cannot publish late results. Remove the title-driven
+  global-table write without deleting the existing database schema or user data.
+- Evidence: tests cover 405 songs across three detail batches, ordered results, zero
+  songs, missing rows, foreign/guest/unmarked memberships, changed server ownership,
+  invalidation between requests, cancellation, and Library refresh/replacement. The
+  AVD displays the existing four-song liked collection after installation and return
+  from daily recommendations, using the unchanged Library page.
+- Remaining: no live like/unlike mutation is performed. The player's heart read/write
+  state machine still needs separate official-session adaptation and acceptance; this
+  checkpoint must not be reported as completion of all liked-song behavior.
 
 ## Runtime Boundary Notes
 

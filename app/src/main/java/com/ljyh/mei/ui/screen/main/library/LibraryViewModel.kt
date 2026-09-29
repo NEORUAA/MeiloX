@@ -96,22 +96,25 @@ class LibraryViewModel internal constructor(
         refreshJob = viewModelScope.launch {
             try {
                 supervisorScope {
-                    var likedId: String? = null
+                    var likedEntry: AccountPlaylist? = null
                     var likedJob: Job? = null
+                    var likedVersion = 0L
                     var receivedPlaylists = false
                     fun acceptPlaylists(entries: List<AccountPlaylist>) {
                         publish(stamp, requestVersion) { it.copy(playlists = entries) }
-                        val nextId = entries.firstOrNull { it.isLiked }?.playlist?.id
-                        if (!receivedPlaylists || nextId != likedId) {
+                        val nextEntry = entries.firstOrNull { it.isLiked && it.playlist.author == stamp.identity.userId.toString() }
+                        val nextId = nextEntry?.playlist?.id
+                        if (!receivedPlaylists || nextEntry != likedEntry) {
                             receivedPlaylists = true
-                            likedId = nextId
+                            likedEntry = nextEntry
+                            val loadVersion = ++likedVersion
                             likedJob?.cancel()
                             publish(stamp, requestVersion) {
                                 it.copy(likedSongs = emptyList(), likedSongsLoading = nextId != null, likedSongsError = null)
                             }
                             if (nextId != null) likedJob = launch {
-                                request(stamp, requestVersion, { source.likedSongs(nextId) }) { current, result ->
-                                    when (result) {
+                                request(stamp, requestVersion, { source.likedSongs(nextId, stamp) }) { current, result ->
+                                    if (likedVersion != loadVersion) current else when (result) {
                                         is Resource.Success -> current.copy(likedSongs = result.data, likedSongsLoading = false)
                                         is Resource.Error -> current.copy(likedSongsLoading = false, likedSongsError = result.message)
                                         Resource.Loading -> current

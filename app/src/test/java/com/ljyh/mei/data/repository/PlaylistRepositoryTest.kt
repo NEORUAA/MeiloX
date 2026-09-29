@@ -128,4 +128,34 @@ class PlaylistRepositoryTest {
         assertTrue(runCatching { source.createPlaylist("Test", true, "NORMAL", owner) }.exceptionOrNull() is CancellationException)
         assertTrue(runCatching { source.deletePlaylist("10", owner) }.exceptionOrNull() is CancellationException)
     }
+
+    @Test fun dailyUsesOfficialParametersAndCapturedOwnerAndAcceptsEmptyRecommendations() = runBlocking {
+        var calls = 0
+        val source = PlaylistRepository(api { _, _ -> error("Unused API") }, api<WeApiService> { name, args ->
+            calls++
+            assertEquals("getEveryDayRecommendSongs", name)
+            assertEquals(mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1"), args[0])
+            assertEquals(owner, args[1])
+            Gson().fromJson("""{"code":200,"data":{"dailySongs":[]}}""", com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
+        }, api { _, _ -> error("Unused EAPI") })
+        assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Success)
+        assertTrue(source.getEveryDayRecommendSongs(owner.copy(identity = HostSessionIdentity(0, false, true))) is Resource.Error)
+        assertEquals(1, calls)
+    }
+
+    @Test fun dailyRejectsBusinessErrorsMissingListsAndMalformedSongs() = runBlocking {
+        listOf("""{"code":301}""", """{"code":200,"data":{}}""",
+            """{"code":200,"data":{"dailySongs":[{"id":0}]}}""").forEach { json ->
+            val source = PlaylistRepository(api { _, _ -> error("Unused API") }, api<WeApiService> { _, _ ->
+                Gson().fromJson(json, com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
+            }, api { _, _ -> error("Unused EAPI") })
+            assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Error)
+        }
+    }
+
+    @Test fun dailyCancellationPropagates() = runBlocking {
+        val source = PlaylistRepository(api { _, _ -> error("Unused API") },
+            api<WeApiService> { _, _ -> throw CancellationException() }, api { _, _ -> error("Unused EAPI") })
+        assertTrue(runCatching { source.getEveryDayRecommendSongs(owner) }.exceptionOrNull() is CancellationException)
+    }
 }

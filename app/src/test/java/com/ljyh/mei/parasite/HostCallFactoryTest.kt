@@ -309,6 +309,21 @@ class HostCallFactoryTest {
         assertEquals(before, backend.executions.get())
     }
 
+    @Test fun dailyRequestsKeepOwnerTagsAndOfficialRecommendationParameters() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val api = retrofit(HostCallFactory(bridge)).create(com.ljyh.mei.data.network.api.WeApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        val parameters = mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1")
+        api.getEveryDayRecommendSongs(parameters, owner)
+        assertEquals("v3/discovery/recommend/songs", backend.path)
+        assertEquals(parameters, backend.parameters)
+        val before = backend.executions.get()
+        bridge.sessions.invalidate()
+        assertTrue(runCatching { api.getEveryDayRecommendSongs(parameters, owner) }.exceptionOrNull() is HostSessionChangedException)
+        assertEquals(before, backend.executions.get())
+    }
+
     @Test fun queuedCancellationDeliversExactlyOneFailure() {
         val backend = Backend()
         var queued: Runnable? = null
