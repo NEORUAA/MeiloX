@@ -24,7 +24,7 @@ data class SearchResult(
     @SerializedName("code")
     val code: Int,
     @SerializedName("trp")
-    val trp: Trp
+    val trp: Trp? = null,
 ) {
     data class Result(
         @SerializedName("songs")
@@ -36,7 +36,13 @@ data class SearchResult(
         @SerializedName("albums")
         val albums: List<Album>?,
         @SerializedName("djRadios")
-        val podcasts: List<Podcast>?
+        val podcasts: List<Podcast>?,
+        @SerializedName("songCount") val songCount: Int? = null,
+        @SerializedName("artistCount") val artistCount: Int? = null,
+        @SerializedName("albumCount") val albumCount: Int? = null,
+        @SerializedName("playlistCount") val playlistCount: Int? = null,
+        @SerializedName("djRadiosCount") val podcastCount: Int? = null,
+        @SerializedName("hasMore") val hasMore: Boolean? = null,
     ) {
         data class Podcast(
             @SerializedName("id") val id: Long,

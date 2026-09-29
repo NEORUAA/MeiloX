@@ -50,6 +50,8 @@ import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Tag
+import com.ljyh.mei.parasite.HostSessionStamp
 
 interface ApiService {
     @Headers("X-Netease-Crypto: eapi")
@@ -116,13 +118,15 @@ interface ApiService {
 
     @POST("/api/search/get/")
     suspend fun search(
-        @Body body: GetSearch
+        @Body body: GetSearch,
+        @Tag expectedSession: HostSessionStamp? = null,
     ): SearchResult
 
 
     @POST("/api/search/suggest/web/")
     suspend fun searchSuggest(
-        @Body body: GetSearchSuggest
+        @Body body: GetSearchSuggest,
+        @Tag expectedSession: HostSessionStamp? = null,
     ): SearchSuggest
 
 

@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,7 +38,6 @@ import com.ljyh.mei.ui.component.SearchBarIconOffsetX
 import com.ljyh.mei.ui.glass.SfIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import timber.log.Timber
 
 
 @Composable
@@ -66,6 +66,9 @@ fun SearchScreen(
     LaunchedEffect(query) {
         viewModel.updateInputQuery( query)
     }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.updateInputQuery("") }
+    }
 
     LazyColumn(
         modifier = modifier,
@@ -78,7 +81,6 @@ fun SearchScreen(
         when (val result=searchSuggest) {
             is Resource.Loading -> {}
             is Resource.Success -> {
-                Timber.tag("SearchSuggest").d("result: ${result.data}")
                 result.data.result.songs?.let { songs->
                     items(
                         items = songs,

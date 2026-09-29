@@ -9,6 +9,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +66,8 @@ import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.smallImage
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -72,20 +76,27 @@ fun SearchResultScreen(
     type: Int,
     viewModel: SearchViewModel = viewModel(),
 ) {
-    val searchState by viewModel.searchResult.collectAsState()
-    val selectedType by viewModel.currentTab.collectAsState()
+    val state by viewModel.state.collectAsState()
+    val selectedType = state.type
     val playerConnection = LocalPlayerConnection.current
     val navController = LocalNavController.current
     val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val listState = rememberLazyListState()
-    var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
+    var currentOverlay by remember(query, selectedType, state.session) { mutableStateOf<OverlayState>(OverlayState.None) }
 
-    // Keep initialization and the ViewModel's tab/cache semantics unchanged.
     LaunchedEffect(query, type) {
         viewModel.onSearchInit(query, type)
     }
-    LaunchedEffect(query, selectedType) {
+    LaunchedEffect(query, selectedType, state.session) {
         listState.scrollToItem(0)
+    }
+    LaunchedEffect(query, selectedType, state.session, state.nextOffset, state.hasMore, state.loadingMore, state.loadMoreError) {
+        if (!state.hasMore || state.loadingMore || state.loadMoreError != null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            last >= 0 && last >= layout.totalItemsCount - 4
+        }.distinctUntilChanged().filter { it }.collect { viewModel.loadMore() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -105,7 +116,7 @@ fun SearchResultScreen(
                 }
             }
 
-            when (val result = searchState) {
+            when (val result = state.result) {
                 is Resource.Loading -> item(key = "search-loading") { LoadingView() }
                 is Resource.Error -> item(key = "search-error") { ErrorView(result.message) }
                 is Resource.Success -> SearchResultList(
@@ -127,6 +138,19 @@ fun SearchResultScreen(
                         )
                     },
                 )
+            }
+            if (state.loadingMore) {
+                item(key = "search-loading-more") { LoadingView() }
+            }
+            state.loadMoreError?.let { message ->
+                item(key = "search-load-more-error") {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        ErrorView(message)
+                        GlassButton(onClick = viewModel::loadMore) {
+                            SfIcon("arrow.clockwise", contentDescription = stringResource(R.string.retry))
+                        }
+                    }
+                }
             }
         }
 

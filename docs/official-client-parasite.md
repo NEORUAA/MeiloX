@@ -14,6 +14,8 @@
 - Use separate host-private storage for module data. Do not import the standalone app's data or cookies.
 - Do not redistribute the host APK, decompiled sources, credentials, screenshots, or device logs in Git.
 - Pause for user login and account cooperation. A blocked capability is not permission to remove a feature.
+- Record interface/response/session differences and their evidence in
+  [Official Client API Differences](official-client-api-differences.md).
 
 ## Candidate Baseline
 
@@ -801,6 +803,53 @@ session stayed STOPPED. Preventing duplicate official playback/reporting, migrat
 account/reporting consumers, downloads, effects/AutoMix regression, lyric/beat verification,
 and the recording/PiP host decision remain gates. Release runtime acceptance is pending.
 
+### Session-Owned Search
+
+- Original search discovery, suggestions, five result categories, navigation, list rows,
+  track menus, and player surfaces remain intact. Discovery recommendations and every
+  search/suggestion request now carry their captured official session stamp. No search
+  query, raw suggestion response, or session credential is added to diagnostic logging.
+- Session invalidation synchronously clears old results, suggestions, and per-category
+  caches. Query/tab replacement and disposal cancel obsolete work. Publication is guarded
+  after asynchronous work, including a non-cooperative canceled loader and same-account
+  reauthorization. Failed official recovery displays an error rather than waiting forever.
+- All five result categories support incremental paging in the existing list. The raw
+  response count advances the offset; displayed IDs deduplicate without changing order.
+  Append failure retains rows/cursor and exposes explicit retry through existing error and
+  glass-button components. A non-advancing response cannot start an infinite paging loop.
+- The first device result exposed a non-null `trp` assumption in the old DTO. The optional
+  metadata now tolerates absent/null values. This and earlier interface differences are
+  tracked separately in [the API difference ledger](official-client-api-differences.md).
+
+Verification on 2026-09-29:
+
+- The full debug suite passed 397 tests in 57 suites, with no failures, errors, or skips.
+  Sixteen search tests cover guest access, all five paged result types, raw offsets,
+  deduplication, cache ownership, debounce/cancellation, stale results, business failure,
+  recovery, discovery retry, and disposal. Two transport tests cover session-tag handling
+  without serializing the tag and obsolete-owner rejection before request execution.
+- AVD search discovery displayed real recommendation covers. Two different queries
+  produced suggestions and results. Suggestion selection and the soft-keyboard search
+  action both opened the original results page; the IME first committed its composition
+  before sending the search action. Keyboard settings were not changed.
+- Song, artist, album, playlist, and podcast results rendered. Artist, album, playlist,
+  and podcast detail entry and system Back succeeded. This is read/navigation acceptance,
+  not acceptance of their subscriptions, mutations, or complete session migration.
+- Scrolling a song search exposed 48 distinct title/artist row pairs across five bounded
+  UI hierarchy snapshots, exceeding the 30-row initial page. Native screenshots confirmed
+  the original song-menu blur, progressive header blur, and mini-player material. All
+  hierarchy/screenshot evidence stays outside Git. Exact paging failure/account-change
+  paths were exercised with controlled substitutes, not the real account.
+- The installed opt-in app probe ran in the verified TV process with API 102. The tested
+  process had no crash-buffer entries. Debug assembly, diff checks, and 16 KB APK alignment
+  passed. Playback remained paused; no follow, subscription, download, social send, logout,
+  or audio/network-setting change was performed during this search verification.
+
+This increment does not complete stage 4. Search-result artist follow still has the
+pre-existing placeholder handler; the original control is retained and its implementation
+belongs to the remaining artist/mutation work. Album/playlist/account ownership, remaining
+core pages, production routing, and final release regression are still outstanding.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -825,7 +874,7 @@ and the recording/PiP host decision remain gates. Release runtime acceptance is 
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
-| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, and Library collection reads passed | All core screens use host business transport and pass UI/session acceptance |
+| 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection reads, and search discovery/results/paging passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

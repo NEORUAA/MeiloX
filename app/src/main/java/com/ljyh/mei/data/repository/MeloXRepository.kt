@@ -176,10 +176,11 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    suspend fun searchDiscovery(): SearchDiscovery {
+    suspend fun searchDiscovery(session: HostSessionStamp): SearchDiscovery {
         val response = requestEapi(
             "/api/personalized/playlist",
             mapOf("limit" to 10, "total" to true, "n" to 1_000),
+            session,
         )
         val recommendations = response.array("result").mapNotNull { element ->
             val value = element.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return@mapNotNull null
@@ -871,8 +872,9 @@ class MeloXRepository @Inject constructor(
         path: String, body: Map<String, Any> = emptyMap(), session: HostSessionStamp? = null,
     ): JsonObject = validate(weapi.post(path, body, expectedSession = session))
 
-    private suspend fun requestEapi(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
-        validate(eapi.post(path, body))
+    private suspend fun requestEapi(
+        path: String, body: Map<String, Any> = emptyMap(), session: HostSessionStamp? = null,
+    ): JsonObject = validate(eapi.post(path, body, expectedSession = session))
 
     private fun validate(response: JsonObject): JsonObject {
         val code = response.int("code") ?: 200

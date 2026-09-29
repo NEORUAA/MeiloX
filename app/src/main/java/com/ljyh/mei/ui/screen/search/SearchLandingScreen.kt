@@ -43,6 +43,9 @@ import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.parasite.HostSessionBridge
+import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.parasite.HostSessionStamp
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosTypography
@@ -55,30 +58,97 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 
 data class SearchDiscoveryState(
+    val session: HostSessionStamp? = null,
     val loading: Boolean = true,
     val discovery: SearchDiscovery? = null,
     val error: Boolean = false,
 )
 
-class SearchDiscoveryViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class SearchDiscoveryViewModel internal constructor(
+    private val sessions: HostSessionBridge,
+    private val load: suspend (HostSessionStamp) -> SearchDiscovery,
 ) : ViewModel() {
+    @Inject constructor(repository: MeloXRepository, sessions: HostSessionBridge) : this(sessions, repository::searchDiscovery)
+
     private val _state = MutableStateFlow(SearchDiscoveryState())
     val state = _state.asStateFlow()
+    private val stateLock = Any()
+    private var version = 0L
+    private var job: Job? = null
+    private val invalidation = sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if ((state.value.session?.generation ?: -1) < revision) {
+                version++
+                _state.value = pendingState()
+            }
+        }
+    }
 
-    init { refresh() }
+    init {
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
+                val stamp = runCatching { sessions.snapshot() }.getOrNull()
+                if (stamp == null) {
+                    job?.cancel()
+                    synchronized(stateLock) {
+                        version++
+                        _state.value = pendingState()
+                    }
+                } else if (state.value.session != stamp) refresh()
+            }
+        }
+    }
+
+    private fun pendingState() = SearchDiscoveryState(
+        loading = !sessions.recoveryRequired.value, error = sessions.recoveryRequired.value,
+    )
 
     fun refresh() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = false)
-            runCatching { repository.searchDiscovery() }
-                .onSuccess { _state.value = SearchDiscoveryState(loading = false, discovery = it) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = true) }
+        val stamp = runCatching { sessions.snapshot() }.getOrNull() ?: return
+        job?.cancel()
+        val requestVersion = runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    _state.value = if (state.value.session == stamp) state.value.copy(loading = true, error = false)
+                        else SearchDiscoveryState(session = stamp)
+                    ++version
+                }
+            }
+        }.getOrNull() ?: return
+        job = viewModelScope.launch {
+            try {
+                sessions.requireCurrent(stamp)
+                val discovery = load(stamp)
+                currentCoroutineContext().ensureActive()
+                publish(stamp, requestVersion) { SearchDiscoveryState(session = stamp, loading = false, discovery = discovery) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HostSessionChangedException) {
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { publish(stamp, requestVersion) { it.copy(loading = false, error = true) } }
+            }
         }
+    }
+
+    private fun publish(stamp: HostSessionStamp, requestVersion: Long, update: (SearchDiscoveryState) -> SearchDiscoveryState) {
+        sessions.withCurrent(stamp) {
+            synchronized(stateLock) { if (version == requestVersion) _state.value = update(state.value) }
+        }
+    }
+
+    override fun onCleared() {
+        invalidation.close()
+        super.onCleared()
     }
 }
 

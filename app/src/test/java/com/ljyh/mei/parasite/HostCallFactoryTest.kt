@@ -3,6 +3,8 @@ package com.ljyh.mei.parasite
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.api.GetUserPhotoAlbum
 import com.ljyh.mei.data.model.api.GetUserPlaylist
+import com.ljyh.mei.data.model.api.GetSearch
+import com.ljyh.mei.data.model.api.GetSearchSuggest
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.repository.submitPlaybackHistoryLog
@@ -157,6 +159,30 @@ class HostCallFactoryTest {
         assertEquals("djradio/sub", backend.path)
         assertEquals(mapOf("id" to "1"), backend.parameters)
         assertEquals(1, backend.executions.get())
+    }
+
+    @Test fun searchAndSuggestionsCarryTheirOwnerWithoutSerializingIt() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        service.search(GetSearch("music", type = 10, offset = 30), owner)
+        assertEquals("search/get", backend.path)
+        assertEquals(mapOf("s" to "music", "type" to "10", "limit" to "30", "offset" to "30"), backend.parameters)
+        service.searchSuggest(GetSearchSuggest("music"), owner)
+        assertEquals("search/suggest/web", backend.path)
+        assertEquals(mapOf("s" to "music", "type" to "mobile"), backend.parameters)
+    }
+
+    @Test fun obsoleteSearchOwnerCannotCreateEitherRequest() = runBlocking {
+        val backend = Backend()
+        val bridge = bridge(backend)
+        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val owner = bridge.sessions.snapshot()
+        bridge.sessions.invalidate()
+        assertTrue(runCatching { service.search(GetSearch("music"), owner) }.exceptionOrNull() is HostSessionChangedException)
+        assertTrue(runCatching { service.searchSuggest(GetSearchSuggest("music"), owner) }.exceptionOrNull() is HostSessionChangedException)
+        assertEquals(0, backend.executions.get())
     }
 
     @Test fun expectedSessionTagsRemainBoundAcrossQueuedExecutionAndClone() {
