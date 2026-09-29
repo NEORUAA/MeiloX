@@ -31,9 +31,7 @@ data class GetHomePageResourceShow(
     @SerializedName("reqTimeStamp") val reqTimeStamp: String,
     @SerializedName("clientTime") val clientTime: String,
     @SerializedName("ruleJson") val ruleJson: String,
-    @SerializedName("algDemoteBlockCodeOrderList") val algDemoteBlockCodeOrderList: String,
-    @SerializedName("header") val header: String,
-    @SerializedName("e_r") val eR: Boolean
+    @SerializedName("algDemoteBlockCodeOrderList") val algDemoteBlockCodeOrderList: String
 )
 
 /* ==========================
@@ -144,8 +142,6 @@ private object DefaultBuilder {
             "PAGE_RECOMMEND_PODCAST_RADIO_PROGRAM"
         )
     )
-    const val HEADER = "{}"
-    const val ER = true
 }
 
 /* =========================================================
@@ -172,9 +168,7 @@ inline fun buildGetHomePageResourceShow(
         reqTimeStamp = dsl.reqTimeStamp,
         clientTime = dsl.clientTime,
         ruleJson = dsl.ruleJson,
-        algDemoteBlockCodeOrderList = dsl.algDemoteBlockCodeOrderList,
-        header = dsl.header,
-        eR = dsl.eR
+        algDemoteBlockCodeOrderList = dsl.algDemoteBlockCodeOrderList
     )
 }
 
@@ -197,8 +191,6 @@ class GetHomePageResourceShowDsl(
         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
     var ruleJson: String = DefaultBuilder.RULE_JSON
     var algDemoteBlockCodeOrderList: String = DefaultBuilder.ALG_DEMOTE_BLOCK_CODE_ORDER_LIST
-    var header: String = DefaultBuilder.HEADER
-    var eR: Boolean = DefaultBuilder.ER
 }
 
 /* ---------------- AdExtJson 构造器 ---------------- */

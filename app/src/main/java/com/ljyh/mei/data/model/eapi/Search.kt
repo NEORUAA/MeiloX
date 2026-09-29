@@ -12,9 +12,7 @@ data class GetSearch(
     @SerializedName("channel")
     val channel: String="typing",
     @SerializedName("bizQueryInfo")
-    val bizQueryInfo: String="",
-    @SerializedName("e_r")
-    val eR: Boolean= true
+    val bizQueryInfo: String=""
 )
 
 

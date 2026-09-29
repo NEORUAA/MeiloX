@@ -60,6 +60,7 @@ class MeiloXModule : XposedModule() {
             hostLoader.loadClass("kotlin.Unit") !== kotlin.Unit::class.java
         report("host_verified version=${info.versionName} isolated_kotlin=$isolated")
         if (!isolated) return
+        HostRetrofitCompatibility.install(this, ::report)
         if (BuildConfig.PARASITE_RUNTIME_PROBE) {
             HostRuntimeProbe.install(this, application, moduleApplicationInfo, ::report)
         }
@@ -87,6 +88,9 @@ class MeiloXModule : XposedModule() {
                         HostCapabilityProbe(requests, ::report) { url ->
                             if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url)
                         }.run()
+                        if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+                            HostRetrofitProbe(com.ljyh.mei.di.AppGraph.component, ::report).run()
+                        }
                     }, "MeiloX-host-probe").start()
                 }
                 override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit

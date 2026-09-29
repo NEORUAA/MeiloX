@@ -13,6 +13,7 @@ import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.api.AudioMatchService
 import com.ljyh.mei.data.network.netease.DataStoreNcblSessionContextProvider
 import com.ljyh.mei.data.network.netease.NcblSessionContextProvider
+import com.ljyh.mei.parasite.HostCallFactory
 import com.ljyh.mei.utils.log.NetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
@@ -20,15 +21,10 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import timber.log.Timber
 import java.lang.reflect.Type
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 
 @Module
@@ -38,67 +34,22 @@ object RetrofitModule {
     private const val DOMAIN = "https://music.163.com"
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
-        return OkHttpClient.Builder().apply {
-            // 基础配置
-            connectTimeout(30, TimeUnit.SECONDS)
-            readTimeout(30, TimeUnit.SECONDS)
-            writeTimeout(30, TimeUnit.SECONDS)
-
-            // 日志拦截器
-            addInterceptor(HttpLoggingInterceptor().apply {
-                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
-            })
-
-            // 核心业务拦截器 (使用我们提取出来的类)
-            addInterceptor(NeteaseInterceptor())
-
-            // 网络错误日志拦截器
-            addInterceptor(NetworkLogInterceptor())
-
-            // SSL 配置 (仅在 Debug 模式下忽略证书，防止中间人攻击)
-            if (BuildConfig.DEBUG) {
-                configureUnsafeSSL(this)
-            }
-        }.build()
-    }
-
-    private fun configureUnsafeSSL(builder: OkHttpClient.Builder) {
-        try {
-            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            })
-
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(null, trustAllCerts, java.security.SecureRandom())
-
-            builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-            builder.hostnameVerifier { _, _ -> true }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to create unsafe SSL context")
-        }
-    }
-
-    @Provides
-    @Singleton
     @Named("WeApiRetrofit")
-    fun provideWeApiRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideWeApiRetrofit(calls: HostCallFactory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(DOMAIN)
             .addConverterFactory(GsonConverterFactory.create()) // 仅 WeApiService 使用
-            .client(okHttpClient)
+            .callFactory(calls)
             .build()
     }
 
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    fun provideRetrofit(calls: HostCallFactory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(APIDOMAIN)
             .addConverterFactory(GsonConverterFactory.create())
-            .client(okHttpClient)
+            .callFactory(calls)
             .build()
     }
 
@@ -138,23 +89,11 @@ object RetrofitModule {
     @Provides
     @Singleton
     @Named("AudioMatchRetrofit")
-    fun provideAudioMatchRetrofit(): Retrofit {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor { chain ->
-                chain.proceed(
-                    chain.request().newBuilder()
-                        .header("User-Agent", AndroidUserAgent)
-                        .build(),
-                )
-            }
-            .addInterceptor(NetworkLogInterceptor())
-            .build()
+    fun provideAudioMatchRetrofit(calls: HostCallFactory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(APIDOMAIN)
             .addConverterFactory(GsonConverterFactory.create())
-            .client(client)
+            .callFactory(calls)
             .build()
     }
 

@@ -7,11 +7,7 @@ data class GetUserPhotoAlbum(
     @SerializedName("userId")
     val userId: String,
     @SerializedName("page")
-    var page: String="",
-    @SerializedName("header")
-    val header: String = "{}",
-    @SerializedName("e_r")
-    val e_r: Boolean = true
+    var page: String=""
 
 ) {
     init {

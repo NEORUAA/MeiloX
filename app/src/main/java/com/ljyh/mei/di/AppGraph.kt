@@ -5,6 +5,9 @@ import com.ljyh.mei.AppContext
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.parasite.HostRequestBridge
+import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.data.network.api.EApiService
+import com.ljyh.mei.data.network.api.WeApiService
 import dagger.BindsInstance
 import dagger.Component
 import javax.inject.Singleton
@@ -17,6 +20,9 @@ interface AppComponent {
     fun viewModelFactory(): AppViewModelFactory
     fun database(): AppDatabase
     fun hostRequests(): HostRequestBridge
+    fun apiService(): ApiService
+    fun eapiService(): EApiService
+    fun weapiService(): WeApiService
     @ApplicationContext fun context(): Context
 
     @Component.Factory

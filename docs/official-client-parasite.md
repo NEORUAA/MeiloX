@@ -279,9 +279,9 @@ still need their own component/feature acceptance tests.
   the Activity restored counter `1`; module rendering remained intact with no new crash.
 - APK inspection found the module Dagger component/factory and no defined Hilt classes.
 
-This changes dependency ownership, not NetEase transport. Existing network provider bodies
-remain pending the host bridge migration. The runtime probe deliberately creates only local
-ViewModels; enabling the complete frontend before replacing that transport is not acceptance.
+This dependency-graph checkpoint did not itself change NetEase transport; the subsequent
+transport migration is documented below. The runtime Activity still creates only local
+ViewModels; enabling the complete frontend before finishing its session/component adapters is not acceptance.
 Full MainActivity/MusicService hosting and production navigation are still pending.
 
 ### Host Request and Session Core
@@ -316,11 +316,57 @@ Full MainActivity/MusicService hosting and production navigation are still pendi
   joined the worker successfully. This does not prove that an upstream server never received
   the request or that a server-side mutation can be rolled back.
 
-The bridge is currently exercised by the opt-in qualification probe. Retrofit/repository
-adapters, QR/logout lifecycle integration, account-scoped UI reset, binary upload, and complete
+The bridge is exercised by opt-in qualification and Retrofit probes. QR/logout lifecycle
+integration, account-scoped UI reset, binary upload, and complete
 response-delivery guards remain required. Unit session transitions use test doubles; this
 checkpoint did not log out the real account or perform real social writes. It is not full
 login, cross-process session synchronization, or feature-level migration acceptance.
+
+### Retrofit Transport Adaptation
+
+- The production DI providers for `ApiService`, `WeApiService`, `EApiService`, both dynamic
+  `MeloXDirectService` variants, and `AudioMatchService` now use `HostCallFactory` rather than
+  a module OkHttp network pipeline. The old NetEase interceptor and debug trust-all SSL
+  configuration are no longer installed by those providers. QQ transport remains separate.
+- The adapter accepts only pinned official HTTPS origins and API path families. Legacy
+  `/api/`, `/weapi/`, and `/eapi/` labels resolve to the same host business path, without
+  selecting a module signing implementation. JSON scalars, nested JSON, and query values
+  preserve their meaning; ambiguous query/body parameters, credential overrides, and binary
+  bodies are rejected. Binary uploads require their own official adapter, not a fallback.
+- Calls have a bounded worker pool/queue, host cancellation, timeout propagation, retained
+  session ownership on clone, response-read checks, and single terminal callbacks. OkHttp
+  call tags/listeners are implemented without fabricating socket/TLS events. Consumers still
+  need account-scoped state reset and a publication guard after asynchronous transformations.
+- Removed old `header`/`e_r` overrides from homepage, photo-album, and complex-search DTOs.
+  Removed the repository's automatic alternate-signature retry because both paths now reach
+  the same host transport and retrying writes could submit an operation twice.
+- Host JSON is wrapped in a synthetic Retrofit response, explicitly tagged `official-json`.
+  Playback diagnostics now record `hostAccepted` and leave the actual HTTP status unknown;
+  a synthetic 200 is not reported as an observed wire response or final server settlement.
+- The first AVD Retrofit run exposed truncated parameter-annotation arrays: a method with
+  a body and a continuation returned one annotation slot for two parameters. Retrofit then
+  treated its return type as `Object` instead of recognizing a suspend function. A narrowly
+  scoped API 102 hook restores only that missing empty continuation slot for the six module
+  service interfaces. It leaves all host interfaces and complete/unrelated arrays unchanged.
+  This matches the [Android reflection contract](https://developer.android.com/reference/java/lang/reflect/Method#getParameterAnnotations()).
+- The corrected device run reported the observed `2` parameters / `1` original annotation
+  slot and completed eight original typed API operations: account, playlists, search, song
+  details, lyrics, playback URL, subscription counts, and homepage. All business codes were
+  200; the account matched the session, playlists and homepage blocks were present, and the
+  final session check passed. The ten lower-level bridge probes and cancellation probe also
+  passed. No new crash appeared in the tested process.
+
+The complete unit suite passed with 269 tests, no failures, errors, or skips; debug assembly,
+diff checks, and 16 KB APK alignment passed. The new tests include structured/large-number
+parameters, typed DTOs, legacy route labels, invalid requests, clone/session ownership,
+response-read rejection, queue/callback behavior, actual coroutine cancellation, timeout,
+call tags/listeners, synthetic reporting semantics, and annotation compatibility.
+
+This is transport/provider acceptance, not acceptance of every screen or request. Recognition
+uses the new transport but still needs a real fingerprint test. Cloud binary upload, NCBL,
+remaining direct NetEase helpers, login/Cookie UI state, production Activity/service routing,
+and full visual/audio/feature regression remain open. No real listening report or social
+write was sent by this probe; those tests used substitutes.
 
 ### Remaining Gates
 
@@ -345,7 +391,7 @@ login, cross-process session synchronization, or feature-level migration accepta
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
 | 3. Official-session login UI | Not started | Refresh/cancel/login/logout/restart behavior passes without module-owned credentials |
-| 4. Core business migration | Not started | All core screens use host business transport |
+| 4. Core business migration | In progress: shared Retrofit transport and eight typed read-only operations passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |

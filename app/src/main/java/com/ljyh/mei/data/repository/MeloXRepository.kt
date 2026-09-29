@@ -90,9 +90,10 @@ data class PlaybackLogResponse(
     val exceptionType: String? = null,
     val failureReason: String? = null,
     val endpoint: String? = null,
+    val hostAccepted: Boolean = false,
 ) {
     val businessAccepted: Boolean
-        get() = httpAccepted && code?.let { it in 200..299 } == true
+        get() = (httpAccepted || hostAccepted) && code?.let { it in 200..299 } == true
 }
 
 @Singleton
@@ -858,15 +859,10 @@ class MeloXRepository @Inject constructor(
     }
 
     private suspend fun request(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
-        try {
-            validate(weapi.post(path.replaceFirst("/api/", "/weapi/"), body))
-        } catch (error: Exception) {
-            if (error is kotlinx.coroutines.CancellationException) throw error
-            requestEapi(path, body)
-        }
+        validate(weapi.post(path, body))
 
     private suspend fun requestEapi(path: String, body: Map<String, Any> = emptyMap()): JsonObject =
-        validate(eapi.post(path.replaceFirst("/api/", "/eapi/"), body))
+        validate(eapi.post(path, body))
 
     private fun validate(response: JsonObject): JsonObject {
         val code = response.int("code") ?: 200
@@ -914,6 +910,7 @@ internal suspend fun submitPlaybackHistoryLog(
         return playbackTransportFailure(endpoint, error)
     }
 
+    val hostEnvelope = response.headers()["X-MeiloX-Transport"] == "official-json"
     val parsed = readPlaybackHistoryBody(
         body = response.body() ?: response.errorBody(),
         httpStatus = response.code(),
@@ -927,8 +924,9 @@ internal suspend fun submitPlaybackHistoryLog(
         else -> null
     }
     return PlaybackLogResponse(
-        httpAccepted = response.isSuccessful,
-        httpStatus = response.code(),
+        httpAccepted = !hostEnvelope && response.isSuccessful,
+        httpStatus = response.code().takeUnless { hostEnvelope },
+        hostAccepted = hostEnvelope && response.isSuccessful,
         code = parsed.code,
         message = parsed.message,
         exceptionType = parsed.exceptionType
@@ -1097,11 +1095,12 @@ private fun playbackBodyTooLarge() = PlaybackBodyParseResult(
 internal fun PlaybackLogResponse.diagnosticSummary(): String = buildString {
     append("httpAccepted=").append(httpAccepted)
     append(" httpStatus=").append(httpStatus ?: "null")
+    append(" hostAccepted=").append(hostAccepted)
     append(" businessCode=").append(code ?: "null")
     append(" exceptionType=").append(exceptionType ?: "none")
     sanitizePlaybackDiagnosticText(message)?.let { append(" businessMessage=").append(it) }
     val reason = sanitizePlaybackDiagnosticText(failureReason)
-        ?: if (httpAccepted && !businessAccepted) "business response rejected" else "none"
+        ?: if ((httpAccepted || hostAccepted) && !businessAccepted) "business response rejected" else "none"
     append(" reason=").append(reason)
     if (endpoint == PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT) {
         append(" endpoint=").append(endpoint)
