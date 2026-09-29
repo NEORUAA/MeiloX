@@ -7,4 +7,5 @@ import com.ljyh.mei.parasite.HostRequestBridge
 interface RuntimeComponent {
     fun hostRequests(): HostRequestBridge
     fun hostPlaybackReports(): HostPlaybackReportBridge
+    fun hostCloudUploads(): com.ljyh.mei.parasite.HostCloudBinaryUploader
 }

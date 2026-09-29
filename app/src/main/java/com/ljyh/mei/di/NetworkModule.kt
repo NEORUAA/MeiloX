@@ -101,16 +101,6 @@ object RetrofitModule {
         @Named("AudioMatchRetrofit") retrofit: Retrofit,
     ): AudioMatchService = retrofit.create(AudioMatchService::class.java)
 
-    @Provides
-    @Singleton
-    @Named("CloudUploadClient")
-    fun provideCloudUploadClient(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(200, TimeUnit.SECONDS)
-        .writeTimeout(200, TimeUnit.SECONDS)
-        .addInterceptor(NetworkLogInterceptor())
-        .build()
-
     @Singleton
     @Provides
     @Named("qqMusicRetrofitU")

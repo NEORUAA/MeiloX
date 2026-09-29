@@ -28,8 +28,11 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   retries. Retrying a mutation through another label could submit it twice.
 - Evidence: `HostCallFactoryTest`; eight typed read-only AVD operations succeeded through
   the official pipeline. See [Retrofit Transport Adaptation](official-client-parasite.md#retrofit-transport-adaptation).
-- Remaining: binary uploads have no accepted official adapter yet. They fail explicitly
-  rather than falling back to module-owned signing or direct NetEase transport.
+- The JSON bridge rejects binary request bodies. A later dual-runtime audit found that
+  cloud upload also had a separate shared direct-NOS client, outside this bridge's
+  checks. API-019 replaces that path with runtime-owned binary transports; official
+  SDK device/server acceptance remains open. The earlier JSON rejection did not prove
+  that every binary path was official-only.
 
 ### API-002: Parsed JSON Is Not an HTTP Envelope
 
@@ -1107,6 +1110,67 @@ These are integration differences, not server API semantics.
   16 KB alignment; this does not qualify its runtime. The ordinary debug package is
   reinstalled with all probes disabled and cold-launches the original portrait Home.
   Runtime screenshots/logs remain local and are not committed.
+
+### API-019: Cloud File Transfer Is Separate From Business Authorization
+
+- Date: 2026-09-30. Original standalone cloud upload requests `cloud/upload/check`,
+  allocates metadata and file tokens through `nos/token/alloc`, transfers bytes through
+  NOS, registers `upload/cloud/info/v2`, then publishes `cloud/pub/v2`. These supplemental
+  business parameters are retained, including the legacy bitrate field and distinct
+  metadata/file allocation. They are not presented as a complete TV cloud feature API.
+- Audit correction: the previous shared `CloudUploadClient` could transfer bytes directly
+  even though `HostCallFactory` rejects binary bodies. That shared provider and transfer
+  implementation are removed. `CloudBinaryUploader` is bound independently in each
+  flavor; a failed/unavailable host uploader cannot fall back to standalone OkHttp.
+- Pinned host source and actual DEX expose `core.upload.c.upload(File, b, l)` through
+  `common.ServiceFacade.get(Class)`. `core.upload.k` setters `p/y/z/r` carry bucket,
+  object key, token and MIME type; `core.upload.l$b` supplies cache/server options and
+  `core.n.b.a(long,long)` / `core.n.c.a()` progress/cancellation callbacks. The adapter
+  uses the initialized official uploader, with Java proxies and platform types across
+  class loaders, no module OkHttp/Kotlin models passed to the SDK, and resume caching
+  disabled for private temporary files. SDK return value 1 is transfer completion,
+  not business publication or an independently observed HTTP receipt.
+- The TV high-level helper `h1.e0.b.a.a.c(...)` returns null and its token-refresh
+  helper `d(...)` returns an empty string in actual DEX. The adapter therefore supplies
+  captured-session business authorization to the generic uploader rather than invoking
+  those stubs. Expired NOS authorization fails instead of fetching a new-account token,
+  inventing a refresh contract, or switching transport. This limitation needs explicit
+  live qualification; source signatures alone do not prove the SDK succeeds on AVD.
+- Standalone retains its own NOS lookup and transfer protocol. Lookup responses are
+  bounded; token-bearing uploads require an HTTPS `.127.net` origin with no userinfo,
+  alternate port, path/query/fragment, redirects or connection-failure retries. Only
+  the allocated upload token and file digest are attached, never account Cookies.
+  Cancellation and session invalidation close its current call; token/raw server-error
+  logging is not enabled. A bounded NOS receipt must acknowledge the full file length
+  through `offset`, following the official uploader's offset-based completion contract;
+  HTTP 200 alone cannot advance registration. Host URL selection/chunking stays inside
+  the official SDK.
+- A common coordinator captures one authenticated account across check, both token
+  allocations, byte transfer, registration and publication. Every business call is
+  tagged and checked before/after dispatch. Missing decisions/identities, rejected
+  responses, cancellation or stale owners cannot continue the sequence. Pre-registration
+  `songId=0` remains valid for a new object; publication requires a positive returned ID.
+  Binary progress remains below completion until publication code 200 is accepted.
+- The source URI is copied once to a private runtime-cache snapshot. Metadata, measured
+  size, digest and transfer reference that snapshot; the original source is untouched.
+  Success/failure/cancellation delete the temporary copy. After process death, the next
+  Repository upload initialization removes only owned snapshot files in its dedicated
+  directory. It does not claim persistent or automatically resumed upload jobs.
+- Substitute tests cover phase ordering and payloads, existing-object skip, failure/no
+  retry, wrong/stale owners, blocked-call cancellation, destination validation, changed
+  bytes, incomplete/invalid NOS receipts, progress/publication boundaries and narrow
+  snapshot cleanup. No user file is uploaded, no AVD state is changed, and no real account
+  mutation is performed here. All 627 standalone / 692 parasite JVM tests pass, as do
+  both debug, instrumentation and unsigned minified release builds. APK/DEX checks show
+  flavor-specific uploader isolation, retained SDK reflection names/receipt guard and
+  16 KB ZIP alignment. These are build/contract checks, not SDK runtime execution.
+- Remaining: actual SDK callback/transfer acceptance, Android document-provider and
+  metadata/snapshot lifecycle tests, expired upload-token behavior and live publication
+  reconciliation. Official cancellation is checked through SDK callbacks; interruption
+  latency during blocked host I/O is not qualified. Cloud listing/deletion paging and
+  ViewModel-level account/revision ownership still need their own migration. This is not
+  complete cloud-feature, paired device, release-runtime or D4 acceptance; no
+  UI/layout/navigation change is bundled.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

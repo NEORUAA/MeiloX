@@ -49,6 +49,7 @@ import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
 import com.ljyh.mei.di.NETEASE_EAPI_PROFILE_HEADER
 import com.ljyh.mei.di.PLAYBACK_HISTORY_PROFILE
@@ -59,15 +60,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
 import okhttp3.ResponseBody
-import okio.BufferedSink
-import okio.source
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.io.File
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -95,8 +93,11 @@ class MeloXRepository @Inject constructor(
     @Named("MeloXEapi") private val eapi: MeloXDirectService,
     @Named("MeloXWeapi") private val weapi: MeloXDirectService,
     @ApplicationContext private val context: Context,
-    @Named("CloudUploadClient") private val cloudUploadClient: OkHttpClient,
+    private val sessions: SessionStore,
+    private val cloudUploads: CloudUploadCoordinator,
 ) : PodcastSource {
+    private val uploadDirectory by lazy { prepareCloudUploadDirectory(context.cacheDir) }
+
     override suspend fun podcastHome(session: SessionStamp): PodcastHome = coroutineScope {
         val categories = async {
             request("/api/djradio/category/get", session = session).array("categories").mapNotNull(::parsePodcastCategory)
@@ -271,152 +272,68 @@ class MeloXRepository @Inject constructor(
         request("/api/cloud/del", mapOf("songIds" to listOf(id)))
     }
 
-    suspend fun uploadCloudSong(uri: Uri, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
-        val file = prepareCloudUploadFile(uri)
-        val bitrate = 999_000
-        val check = requestEapi(
-            "/api/cloud/upload/check",
-            mapOf(
-                "bitrate" to bitrate.toString(), "ext" to "", "length" to file.size,
-                "md5" to file.md5, "songId" to "0", "version" to 1,
-            ),
-        )
-        val metadataToken = requestEapi(
-            "/api/nos/token/alloc",
-            mapOf(
-                "bucket" to "", "ext" to file.extension, "filename" to file.normalizedStem,
-                "local" to false, "nos_product" to 3, "type" to "audio", "md5" to file.md5,
-            ),
-        ).objectOrNull("result") ?: error("NetEase did not return a cloud resource token")
-
-        if (check.boolean("needUpload") == true) {
-            val bucket = "jd-musicrep-privatecloud-audio-public"
-            val tokenData = mapOf<String, Any>(
-                "bucket" to bucket, "ext" to file.extension, "filename" to file.normalizedStem,
-                "local" to false, "nos_product" to 3, "type" to "audio", "md5" to file.md5,
-            )
-            val uploadToken = request("/api/nos/token/alloc", tokenData).objectOrNull("result")
-                ?: error("NetEase did not return a NOS upload token")
-            uploadToNos(
-                file = file,
-                bucket = bucket,
-                objectKey = uploadToken.string("objectKey") ?: error("NOS object key is missing"),
-                token = uploadToken.string("token") ?: error("NOS token is missing"),
-                onProgress = onProgress,
-            )
-        }
-
-        val info = requestEapi(
-            "/api/upload/cloud/info/v2",
-            mapOf(
-                "md5" to file.md5,
-                "songid" to (check.long("songId") ?: 0),
-                "filename" to file.filename,
-                "song" to file.songName,
-                "album" to file.album,
-                "artist" to file.artist,
-                "bitrate" to bitrate.toString(),
-                "resourceId" to (metadataToken.string("resourceId") ?: error("Cloud resource ID is missing")),
-            ),
-        )
-        requestEapi("/api/cloud/pub/v2", mapOf("songid" to (info.long("songId") ?: 0)))
-        onProgress(file.size, file.size)
+    suspend fun uploadCloudSong(uri: Uri, onProgress: (Long, Long) -> Unit = { _, _ -> }) = withContext(Dispatchers.IO) {
+        val owner = sessions.snapshot()
+        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
+        val operation = currentCoroutineContext()
+        val file = prepareCloudUploadFile(uri) { operation.ensureActive(); sessions.requireCurrent(owner) }
+        try { cloudUploads.upload(file, owner, onProgress) }
+        finally { file.file.delete() }
     }
 
-    private suspend fun prepareCloudUploadFile(uri: Uri): CloudUploadFile = withContext(Dispatchers.IO) {
+    private fun prepareCloudUploadFile(uri: Uri, checkCurrent: () -> Unit): CloudUploadFile {
+        checkCurrent()
         val resolver = context.contentResolver
         var filename: String? = null
-        var size = -1L
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { filename = cursor.getString(it) }
-                cursor.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { size = cursor.getLong(it) }
             }
         }
         val safeFilename = filename?.takeIf(String::isNotBlank) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "music.mp3"
-        if (size <= 0) size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1
-        check(size > 0) { "The selected audio file is empty or unavailable" }
-        val digest = MessageDigest.getInstance("MD5")
-        resolver.openInputStream(uri)?.use { input ->
-            val buffer = ByteArray(1_048_576)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                if (read > 0) digest.update(buffer, 0, read)
-            }
-        } ?: error("The selected audio file cannot be opened")
-        val fallbackName = safeFilename.substringBeforeLast('.', safeFilename)
-        val retriever = MediaMetadataRetriever()
-        val metadata = runCatching {
-            retriever.setDataSource(context, uri)
-            Triple(
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
-            )
-        }.getOrNull()
-        retriever.release()
-        CloudUploadFile(
-            uri = uri,
-            filename = safeFilename,
-            extension = safeFilename.substringAfterLast('.', "mp3").lowercase(),
-            normalizedStem = fallbackName.filterNot(Char::isWhitespace).replace('.', '_').ifEmpty { "music" },
-            size = size,
-            md5 = digest.digest().joinToString("") { "%02x".format(it) },
-            songName = metadata?.first?.takeIf(String::isNotBlank) ?: fallbackName,
-            artist = metadata?.second?.takeIf(String::isNotBlank) ?: "Unknown artist",
-            album = metadata?.third?.takeIf(String::isNotBlank) ?: "Unknown album",
-            mimeType = resolver.getType(uri) ?: "audio/mpeg",
-        )
-    }
-
-    private suspend fun uploadToNos(
-        file: CloudUploadFile,
-        bucket: String,
-        objectKey: String,
-        token: String,
-        onProgress: (Long, Long) -> Unit,
-    ) = withContext(Dispatchers.IO) {
-        val lbsRequest = Request.Builder()
-            .url("https://wanproxy.127.net/lbs?version=1.0&bucketname=$bucket")
-            .get()
-            .build()
-        val uploadHost = cloudUploadClient.newCall(lbsRequest).execute().use { response ->
-            check(response.isSuccessful) { "NOS server lookup failed (${response.code})" }
-            val body = response.body.string()
-            JsonParser.parseString(body).asJsonObject.getAsJsonArray("upload")?.firstOrNull()?.asString
-                ?: error("NetEase did not return an available upload server")
-        }
-        val encodedObjectKey = java.net.URLEncoder.encode(objectKey, Charsets.UTF_8.name()).replace("+", "%20")
-        val uploadUrl = "${uploadHost.trimEnd('/')}/$bucket/$encodedObjectKey?offset=0&complete=true&version=1.0"
-        val body = object : RequestBody() {
-            override fun contentType() = file.mimeType.toMediaTypeOrNull()
-            override fun contentLength() = file.size
-            override fun writeTo(sink: BufferedSink) {
-                context.contentResolver.openInputStream(file.uri)?.use { input ->
-                    val source = input.source()
-                    var sent = 0L
+        val snapshot = File.createTempFile("upload-", ".bin", uploadDirectory)
+        try {
+            val digest = MessageDigest.getInstance("MD5")
+            resolver.openInputStream(uri)?.use { input ->
+                snapshot.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
                     while (true) {
-                        val read = source.read(sink.buffer, 64 * 1024L)
+                        checkCurrent()
+                        val read = input.read(buffer)
                         if (read < 0) break
-                        sent += read
-                        sink.flush()
-                        onProgress(sent, file.size)
+                        if (read > 0) { digest.update(buffer, 0, read); output.write(buffer, 0, read) }
                     }
-                } ?: error("The selected audio file cannot be reopened")
-            }
-        }
-        val request = Request.Builder()
-            .url(uploadUrl)
-            .header("x-nos-token", token)
-            .header("Content-MD5", file.md5)
-            .post(body)
-            .build()
-        cloudUploadClient.newCall(request).execute().use { response ->
-            check(response.isSuccessful) {
-                response.body.string().takeIf(String::isNotBlank) ?: "NOS upload failed (${response.code})"
-            }
-        }
+                }
+            } ?: error("The selected audio file cannot be opened")
+            check(snapshot.length() > 0) { "The selected audio file is empty or unavailable" }
+            checkCurrent()
+            val fallbackName = safeFilename.substringBeforeLast('.', safeFilename)
+            val retriever = MediaMetadataRetriever()
+            val metadata = try {
+                retriever.setDataSource(snapshot.absolutePath)
+                Triple(
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+                )
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                null
+            } finally { retriever.release() }
+            checkCurrent()
+            return CloudUploadFile(
+                file = snapshot,
+                filename = safeFilename,
+                extension = safeFilename.substringAfterLast('.', "mp3").lowercase(),
+                normalizedStem = fallbackName.filterNot(Char::isWhitespace).replace('.', '_').ifEmpty { "music" },
+                size = snapshot.length(),
+                md5 = digest.digest().joinToString("") { "%02x".format(it) },
+                songName = metadata?.first?.takeIf(String::isNotBlank) ?: fallbackName,
+                artist = metadata?.second?.takeIf(String::isNotBlank) ?: "Unknown artist",
+                album = metadata?.third?.takeIf(String::isNotBlank) ?: "Unknown album",
+                mimeType = resolver.getType(uri) ?: "audio/mpeg",
+            )
+        } catch (error: Throwable) { snapshot.delete(); throw error }
     }
 
     suspend fun privateConversations(offset: Int = 0, limit: Int = 50): List<PrivateConversation> =
@@ -1093,19 +1010,6 @@ private val PLAYBACK_QUERY_SENSITIVE_PATTERN = Regex(
         "check[_-]?token|x-anticheattoken|token|password|passwd|secret)=)[^&\\s]+",
 )
 private val PLAYBACK_URL_CREDENTIAL_PATTERN = Regex("(?i)(https?://)[^/@\\s:]+:[^/@\\s]+@")
-
-private data class CloudUploadFile(
-    val uri: Uri,
-    val filename: String,
-    val extension: String,
-    val normalizedStem: String,
-    val size: Long,
-    val md5: String,
-    val songName: String,
-    val artist: String,
-    val album: String,
-    val mimeType: String,
-)
 
 private fun JsonElement.identifierLong(): Long? = runCatching {
     when {

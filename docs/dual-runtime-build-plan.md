@@ -539,6 +539,45 @@ gates are qualified; this checkpoint changes only CI and documentation.
   `/tmp/meilox-dual-song-mutations-release.log`; generated artifacts and device/private
   data are not committed.
 
+### D1/D4 Checkpoint: Runtime-Owned Cloud File Transfer (2026-09-30)
+
+- Removed the shared direct-NOS client. `CloudBinaryUploader` selects the standalone
+  NOS implementation or a parasite bridge to the pinned official upload SDK. Shared
+  business orchestration uses each flavor's existing authenticated transport; it never
+  borrows the other flavor's credentials/client. No frontend source is changed.
+- All upload phases now share a captured owner. Canceled/stale requests and rejected
+  check/allocation/registration/publication responses stop the remaining sequence.
+  Byte transfer alone cannot report completion. A private, cancellable snapshot keeps
+  file size/digest/metadata/bytes consistent without modifying the source URI; ordinary
+  exits delete it and later initialization cleans only owned process-death leftovers.
+- TV source and APK DEX confirm the generic NOS uploader, setters, builder and callback
+  signatures. Its high-level cloud allocation/refresh helpers are stubs, so the existing
+  business authorization is supplied through a Java callback. Token refresh is not
+  invented or implemented as a transport/account fallback. See API-019 for the exact
+  contract and the correction to the earlier broad binary-upload rejection claim.
+- Standalone retains its NOS route with bounded lookup, HTTPS destination validation,
+  no account-Cookie forwarding/redirect/retry, streamed file-integrity checks and current-call
+  cancellation. Tests caught an IOException replacing coroutine cancellation; both
+  runtime bridges now recheck their owner/job before propagating a transport failure.
+  A bounded standalone NOS receipt must acknowledge the complete file length before
+  metadata registration, not merely return HTTP 200.
+- Verification: 627 standalone tests in 81 suites and 692 parasite tests in 88 suites
+  pass without failures/errors/skips, including the shared coordinator and both runtime
+  upload substitutes. Both debug, instrumentation and unsigned minified release APKs
+  build. Generated Dagger graphs and debug APK classes select the matching uploader;
+  release DEX retains the SDK reflection names and standalone receipt guard, and the
+  standalone NOS URL is absent from parasite. Both release APKs pass 16 KB ZIP alignment.
+  `git diff --check` passes. A combined debug/release
+  run exhausted the local Kotlin compiler heap; the debug gate passed after a scoped
+  retry with `--max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3g`, without changing repository
+  build settings. The final paired build uses the same scoped flags. Local logs:
+  `/tmp/meilox-dual-cloud-debug-verified.log`,
+  `/tmp/meilox-dual-cloud-release-verified.log`, and `/tmp/meilox-dual-cloud-final.log`.
+- No AVD install, user-file transfer, cloud mutation or device test was performed while
+  standalone login confirmation is pending. Official SDK invocation, real publication,
+  Android document providers and cloud page account/paging ownership remain unqualified.
+  This increment does not complete the cloud feature, D4, or release runtime acceptance.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

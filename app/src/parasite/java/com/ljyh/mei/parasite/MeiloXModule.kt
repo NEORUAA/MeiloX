@@ -100,6 +100,10 @@ class MeiloXModule : XposedModule() {
                     reporting.installHooks(this@MeiloXModule)
                     playbackReports.bind(reporting)
                     report("playback_report_bridge_bound")
+                    runCatching {
+                        com.ljyh.mei.di.AppGraph.component.hostCloudUploads().bind(TvHostNosUploadBackend(runtimeLoader))
+                    }.onSuccess { report("cloud_upload_bridge_bound") }
+                        .onFailure { report("cloud_upload_bridge_unavailable type=${it.javaClass.simpleName}") }
                     HostWorkManager.initialize(HostRuntimeProbe.applicationContext)
                 }
                 bridgesReady = true
