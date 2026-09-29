@@ -24,6 +24,7 @@ data class HostAccountState(
     val profile: AccountProfile? = null,
     val loading: Boolean = true,
     val profileUnavailable: Boolean = false,
+    val recoveryRequired: Boolean = false,
 ) {
     val authenticated: Boolean get() = session?.identity?.authenticated == true
     val userId: String get() = if (authenticated) session!!.identity.userId.toString() else ""
@@ -45,12 +46,16 @@ class HostAccountStore internal constructor(
     private val refreshes = MutableStateFlow(0L)
     private val invalidation = sessions.onInvalidated { revision ->
         mutableState.update { current ->
-            if ((current.session?.generation ?: -1) < revision) HostAccountState() else current
+            if ((current.session?.generation ?: -1) < revision) pendingState() else current
         }
     }
     private val worker = scope.launch {
-        combine(sessions.changes, refreshes) { _, _ -> Unit }.collectLatest {
-            val stamp = runCatching { sessions.snapshot() }.getOrNull() ?: return@collectLatest
+        combine(sessions.changes, refreshes, sessions.recoveryRequired) { _, _, _ -> Unit }.collectLatest {
+            val stamp = runCatching { sessions.snapshot() }.getOrNull()
+            if (stamp == null) {
+                mutableState.value = pendingState()
+                return@collectLatest
+            }
             try {
                 publish(HostAccountState(session = stamp, loading = stamp.identity.authenticated))
                 if (!stamp.identity.authenticated) return@collectLatest
@@ -69,6 +74,13 @@ class HostAccountStore internal constructor(
     }
 
     fun refresh() { refreshes.update { it + 1 } }
+
+    private fun pendingState(): HostAccountState {
+        val recoveryRequired = sessions.recoveryRequired.value
+        return HostAccountState(
+            loading = !recoveryRequired, profileUnavailable = recoveryRequired, recoveryRequired = recoveryRequired,
+        )
+    }
 
     fun requireAuthenticated(): HostSessionStamp = sessions.snapshot().also {
         if (!it.identity.authenticated) throw IOException("Official sign-in required")

@@ -28,6 +28,10 @@ class HostSessionBridge @Inject constructor() {
     private val invalidationListeners = CopyOnWriteArrayList<(Long) -> Unit>()
     private val revisions = MutableStateFlow(-1L)
     val changes = revisions.asStateFlow()
+    private val recovery = MutableStateFlow(false)
+    val recoveryRequired = recovery.asStateFlow()
+
+    internal fun setRecoveryRequired(required: Boolean) { recovery.value = required }
 
     @Synchronized
     internal fun bind(reader: () -> HostSessionIdentity) {
@@ -52,7 +56,6 @@ class HostSessionBridge @Inject constructor() {
         beginTransition().use { backend.logout() }
     }
 
-    @Synchronized
     fun snapshot(): HostSessionStamp {
         val read = reader ?: throw IOException("Official session is not ready")
         repeat(3) {
@@ -69,10 +72,13 @@ class HostSessionBridge @Inject constructor() {
     }
 
     /** Keep a short, non-suspending state publication atomic with session invalidation. */
-    @Synchronized
     fun <T> withCurrent(stamp: HostSessionStamp, publish: () -> T): T {
+        // Host identity readers can take cookie-store locks. Never call them under our monitor.
         requireCurrent(stamp)
-        return publish()
+        return synchronized(this) {
+            if (generation.get() != stamp.generation || transitions.get() != 0) throw HostSessionChangedException()
+            publish()
+        }
     }
 
     /** Also invalidates same-account reauthorization, which an ID comparison cannot detect. */

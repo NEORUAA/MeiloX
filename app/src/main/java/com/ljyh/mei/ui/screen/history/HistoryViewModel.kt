@@ -102,8 +102,8 @@ class HistoryViewModel @Inject constructor(
                 runCatching {
                     accounts.sessions.withCurrent(stamp) {
                         _state.value = _state.value.copy(isRefreshing = false, error = error.message ?: error.javaClass.simpleName)
-                        publish()
                     }
+                    publish()
                 }
             }
         }

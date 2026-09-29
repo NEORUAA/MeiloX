@@ -36,4 +36,11 @@ class AccountHomeStateTest {
         assertNull(visible.profile)
         assertTrue(visible.requiresLogin)
     }
+
+    @Test fun failedAuthorizationRecoveryKeepsTheSignInRouteAvailable() {
+        val visible = loaded.forAccount(HostAccountState(loading = false, recoveryRequired = true))
+        assertNull(visible.profile)
+        assertTrue(visible.requiresLogin)
+        assertEquals(false, visible.loading)
+    }
 }

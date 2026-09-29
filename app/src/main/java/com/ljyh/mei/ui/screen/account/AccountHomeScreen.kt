@@ -93,9 +93,9 @@ data class AccountHomeState(
 )
 
 internal fun AccountHomeState.forAccount(account: HostAccountState): AccountHomeState =
-    if (session == account.session) this else AccountHomeState(
+    if (session == account.session && !account.recoveryRequired) this else AccountHomeState(
         loading = account.loading,
-        requiresLogin = account.session != null && !account.authenticated,
+        requiresLogin = account.recoveryRequired || (account.session != null && !account.authenticated),
         session = account.session,
     )
 
@@ -116,7 +116,7 @@ class AccountHomeViewModel @Inject constructor(
                     profile = account.profile,
                     loading = account.loading || account.profile != null,
                     error = if (account.profileUnavailable) context.getString(R.string.account_profile_unavailable) else null,
-                    requiresLogin = account.session != null && !account.authenticated,
+                    requiresLogin = account.recoveryRequired || (account.session != null && !account.authenticated),
                     session = account.session,
                 )
                 val stamp = account.session

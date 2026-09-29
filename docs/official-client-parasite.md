@@ -458,8 +458,61 @@ window and canceled authorization responses are covered by session-publication g
 This is scoped account presentation acceptance, not proof of fresh QR authorization or
 listening-stat settlement. Existing cloud records are not attributed to module playback.
 Library, Home, Podcast, Social, Playlist, Player, Listen Together, account-owned local caches,
-and legacy report consumers still require migration. The authorization-window guard and
-production component gates remain open; no official session was exported or cleared.
+and legacy report consumers still require migration. The authorization-window guard is
+described below; production component gates remain open. No official session was exported
+or cleared by this account presentation slice.
+
+### Authorization Transaction Guard
+
+- Pinned DEX/source inspection confirms that QR polling saves response cookies before
+  `audio.c.b.p0(AUTH_SUCCESS)` starts the separate official profile request. Clearing a
+  ViewModel does not synchronously stop its already-running blocking request. The prior
+  per-mutation invalidations alone could therefore expose new credentials with an old ID.
+- A module-owned attempt now keeps `HostSessionBridge` unavailable across this entire
+  window. Its worker scope follows the verified `b.n0(Callable)` and non-suspending
+  `b$h.invokeSuspend(Object)` / captured field `b` entries. Official account and anonymous
+  response parsers, profile updates, and session-cookie writes check that ownership.
+  A retired worker cannot enter another session write. An already-entered write may finish,
+  including nested host writes, but blocks replacement and recovery until it leaves.
+- The official profile helper `audio.c.a.c()` must finish against the same credential
+  revision and match the host's public ID and anonymous/authenticated flags before releasing
+  the session. Ordinary profile mutations invalidate older confirmation. Module-created
+  controllers also reject queued `B0`/`I0` retries after retirement; original host-owned
+  controllers continue through their existing entry points.
+- Before starting, a namespaced SharedPreferences file commits one `pending` boolean.
+  It contains no identity, cookie, QR key, or authorization response. If a mutation preceded
+  cancellation, or the process stopped with this flag set, a background worker uses the
+  official account helper to recover. It never restores old cookies, manufactures a profile,
+  or performs a logout. Failure leaves the session unavailable and sign-in accessible;
+  a new attempt supersedes stale recovery work. There is no automatic retry loop.
+- Snapshot readers no longer hold the module session monitor while reading host identity
+  (which can acquire cookie-store locks). Final state publication still checks the revision
+  under that monitor. The history error path no longer nests a host identity read inside
+  another publication block. Delayed invalidation retains the recovery sign-in affordance.
+- AVD confirmed the new hooks and scoped callable worker, normal QR rendering/WAITING,
+  and a persisted pending flag during the attempt. Force-stopping while WAITING left the
+  flag intact; opening Settings in a new process kept public account data hidden until the
+  official profile helper verified it, then restored the account and cleared the flag.
+- A second interrupted-attempt test enabled airplane mode and disabled Wi-Fi/mobile data.
+  Recovery returned false, the marker stayed set, and Settings showed a usable sign-in
+  entry without the old avatar/name. Its avatar opened the QR route; the login later reached
+  ERROR with all observers removed. Radio settings were restored to their original values
+  (airplane 0, Wi-Fi 1, mobile data 1). Re-entering login reached WAITING; returning to Settings
+  retried official recovery, which succeeded and restored account presentation. No tested
+  process produced a crash-buffer entry. No real logout or fresh scan authorization occurred.
+- The final installed package also passed ten lower-level and eight typed read-only request
+  probes, active-request cancellation, account/session agreement, and unchanged-session checks.
+- All 316 unit tests passed, with no failures, errors, or skips; debug assembly, diff checks,
+  and 16 KB alignment passed. New tests cover stale writes, draining mutations, concurrent
+  replacement, restart markers, failed recovery/persistence/dispatch, rejected revalidation,
+  lock ownership, and recovery UI state. Cancellation-time writes use test substitutes,
+  not fabricated credentials against the user's live host.
+
+This implements the module-owned transaction protection, but does not complete stage 3.
+Fresh QR authorization, cancellation during actual server acceptance, account switching,
+logout/anonymous initialization, and process death during those real transitions still
+require device acceptance. Keep production routing gated until those tests and the remaining
+account consumers pass. The existing authenticated session was preserved throughout this slice.
 
 ### Remaining Gates
 
@@ -483,7 +536,7 @@ production component gates remain open; no official session was exported or clea
 | --- | --- | --- |
 | 1. Host and feature baseline | Passed for runtime prototyping: login/session/request gates above | Complete baseline; later feature-specific acceptance remains mandatory |
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
-| 3. Official-session login UI | In progress: QR lifecycle and first official-account consumers passed | Real authorization/logout/account changes, authorization-window guards, and remaining account consumers remain |
+| 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, and cloud History reads passed | All core screens use host business transport and pass UI/session acceptance |
 | 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
 | 6. Remaining features | Not started | Every feature row above has implementation and appropriate verification evidence |

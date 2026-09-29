@@ -33,7 +33,7 @@ internal class TvHostRequestBackend(
         session = requireNotNull(sessionType.getMethod("c").invoke(null))
     }
 
-    fun installHooks(module: XposedModule, sessions: HostSessionBridge) {
+    fun installHooks(module: XposedModule, sessions: HostSessionBridge, authorization: HostAuthorizationGuard) {
         val prepare = requestBase.getMethod("f")
         val profileType = loader.loadClass("com.netease.cloudmusic.meta.Profile")
         val profileUpdate = sessionType.getMethod("p", profileType)
@@ -59,19 +59,22 @@ internal class TvHostRequestBackend(
                 val changed = profile == null || invoke(profileId, profile) != invoke(userId, session)
                 report("session_profile_update account_changed=$changed")
                 // The host also persists ordinary profile/privilege refreshes here.
-                if (changed) sessions.beginTransition().use { chain.proceed() } else chain.proceed()
+                authorization.mutate {
+                    if (changed) sessions.beginTransition().use { chain.proceed() } else chain.proceed()
+                }
             }
             hooks += module.hook(saveCookies).intercept { chain ->
                 val changed = (chain.getArg(0) as? List<*>)?.any(::isSessionCookie) == true
                 // Observe names only; cookie values never enter the module session state.
-                if (changed) sessions.beginTransition().use { chain.proceed() } else chain.proceed()
+                if (changed) authorization.mutate(cookie = true) { sessions.beginTransition().use { chain.proceed() } }
+                else chain.proceed()
             }
             hooks += module.hook(removeCookie).intercept { chain ->
-                if (isSessionCookie(chain.getArg(0))) sessions.beginTransition().use { chain.proceed() }
+                if (isSessionCookie(chain.getArg(0))) authorization.mutate(cookie = true) { sessions.beginTransition().use { chain.proceed() } }
                 else chain.proceed()
             }
             hooks += module.hook(removeAll).intercept { chain ->
-                sessions.beginTransition().use { chain.proceed() }
+                authorization.mutate(cookie = true) { sessions.beginTransition().use { chain.proceed() } }
             }
         } catch (error: Throwable) {
             hooks.asReversed().forEach { runCatching { it.unhook() } }

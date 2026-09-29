@@ -35,7 +35,7 @@ fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
             }
         },
         modifier = modifier,
-        enabled = account.session != null,
+        enabled = account.session != null || account.recoveryRequired,
     ) {
         if (avatarUrl.isBlank()) {
             SfIcon(

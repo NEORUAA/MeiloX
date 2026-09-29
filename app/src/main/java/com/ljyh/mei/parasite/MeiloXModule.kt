@@ -73,10 +73,24 @@ class MeiloXModule : XposedModule() {
             try {
                 report("runtime_loader_changed=${runtimeLoader !== hostLoader}")
                 val backend = TvHostRequestBackend(runtimeLoader, ::report)
-                backend.installHooks(this@MeiloXModule, requests.sessions)
+                val authorizationPreferences = application.getSharedPreferences(
+                    "${ModuleStorage.NAMESPACE}_authorization", android.content.Context.MODE_PRIVATE,
+                )
+                val authorization = HostAuthorizationGuard(
+                    requests.sessions,
+                    authorizationPreferences.getBoolean("pending", false),
+                    persistPending = { pending ->
+                        check(authorizationPreferences.edit().putBoolean("pending", pending).commit()) {
+                            "Cannot persist official-session recovery state"
+                        }
+                    },
+                    dispatch = { task -> Thread(task, "MeiloX-session-recovery").start() },
+                    report = ::report,
+                )
+                backend.installHooks(this@MeiloXModule, requests.sessions, authorization)
                 requests.bind(backend)
                 report("request_bridge_bound")
-                val login = TvHostLoginBackend(runtimeLoader, application, ::report)
+                val login = TvHostLoginBackend(runtimeLoader, application, authorization, ::report)
                 login.installHooks(this@MeiloXModule)
                 requests.sessions.bindLogin(login)
                 report("login_bridge_bound")

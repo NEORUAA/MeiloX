@@ -24,6 +24,24 @@ class HostAccountStoreTest {
     private fun profile(id: Long, name: String = "Account $id") =
         AccountProfile(id, name, null, null, null, null, null, null, null, null)
 
+    @Test fun unresolvedAuthorizationClearsProfileAndKeepsSignInAvailable() = runTest {
+        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
+        runCurrent()
+        val transition = sessions.beginTransition()
+        sessions.setRecoveryRequired(true)
+        runCurrent()
+        assertNull(store.state.value.profile)
+        assertTrue(store.state.value.recoveryRequired)
+        assertFalse(store.state.value.loading)
+        sessions.setRecoveryRequired(false)
+        transition.close()
+        runCurrent()
+        assertEquals(profile(1), store.state.value.profile)
+        assertFalse(store.state.value.recoveryRequired)
+        store.close()
+    }
+
     @Test fun bindingWakesAnAlreadyCreatedAccountStore() = runTest {
         val sessions = HostSessionBridge()
         val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
@@ -161,6 +179,32 @@ class HostAccountStoreTest {
             release.countDown()
             invalidating.get(5, TimeUnit.SECONDS)
             assertEquals("new", store.state.value.profile?.nickname)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            store.close()
+        }
+    }
+
+    @Test fun delayedInvalidationCannotHideAnAvailableRecoveryEntry() = runTest {
+        val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        sessions.onInvalidated { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
+        val store = HostAccountStore(sessions, { profile(1) }, backgroundScope)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            runCurrent()
+            val transition = executor.submit<java.io.Closeable> { sessions.beginTransition() }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertTrue(store.state.value.recoveryRequired)
+            release.countDown()
+            val handle = transition.get(5, TimeUnit.SECONDS)
+            assertTrue(store.state.value.recoveryRequired)
+            assertFalse(store.state.value.loading)
+            handle.close()
         } finally {
             release.countDown()
             executor.shutdownNow()

@@ -12,6 +12,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostSessionLoginTest {
+    @Test fun hostIdentityReadersNeverRunUnderTheSessionMonitor() {
+        lateinit var sessions: HostSessionBridge
+        sessions = HostSessionBridge().apply {
+            bind {
+                check(!Thread.holdsLock(sessions))
+                HostSessionIdentity(1, true, false)
+            }
+        }
+        val stamp = sessions.snapshot()
+        sessions.withCurrent(stamp) { assertTrue(Thread.holdsLock(sessions)) }
+    }
+
     @Test fun statePublicationAndTransitionDoNotInterleave() {
         val sessions = HostSessionBridge().apply { bind { HostSessionIdentity(1, true, false) } }
         val stamp = sessions.snapshot()
