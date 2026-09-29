@@ -395,7 +395,6 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
     val playerConnection = LocalPlayerConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val downloadViewModel: com.ljyh.mei.ui.screen.playlist.PlaylistViewModel = viewModel()
     val selection = rememberDetailSelection(id)
     val listState = rememberLazyListState()
     val detail = state.detail
@@ -442,24 +441,18 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
         scope.launch {
             try {
                 viewModel.requireDetail(owner, id)
-                val sources = when (val result = downloadViewModel.resolveDownloadSources(tracks.map { it.id.toString() }, quality, owner)) {
-                    is com.ljyh.mei.data.network.Resource.Success -> result.data.sources
-                    is com.ljyh.mei.data.network.Resource.Error -> error(result.message)
-                    com.ljyh.mei.data.network.Resource.Loading -> error("Download authorization did not complete")
-                }.associateBy { it.id.toString() }
-                val songs = tracks.mapNotNull { track ->
-                    val source = sources[track.id.toString()] ?: return@mapNotNull null
-                    val url = source.url
+                val songs = tracks.map { track ->
                     com.ljyh.mei.playback.SongDownloadInfo(
-                        songId = track.id.toString(), url = url, songTitle = track.title,
+                        songId = track.id.toString(), songTitle = track.title,
                         songArtist = track.artists.map { it.name }, songAlbum = track.album.title,
                         songCover = track.coverUrl, duration = track.duration,
-                        fileType = source.fileType, quality = source.level,
+                        quality = quality.text,
                     )
                 }
                 check(songs.isNotEmpty()) { "No downloadable programs" }
                 viewModel.requireDetail(owner, id)
                 com.ljyh.mei.utils.DownloadManager.enqueue(
+                    owner = owner,
                     context = context, songs = songs, playlistName = detail?.podcast?.name.orEmpty(),
                     playlistId = "podcast_$id", downloadPath = downloadPath,
                 )

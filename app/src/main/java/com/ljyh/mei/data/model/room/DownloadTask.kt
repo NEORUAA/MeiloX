@@ -2,6 +2,7 @@ package com.ljyh.mei.data.model.room
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(tableName = "download_task")
 data class DownloadTask(
@@ -17,5 +18,9 @@ data class DownloadTask(
     val songCover: String = "",
     val quality: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "''") val requestId: String = "",
+    @ColumnInfo(defaultValue = "0") val ownerId: Long = 0,
+    @ColumnInfo(defaultValue = "''") val playlistName: String = "",
+    @ColumnInfo(defaultValue = "'Music/Mei'") val downloadPath: String = "Music/Mei",
 )

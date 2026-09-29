@@ -31,6 +31,18 @@ interface DownloadDao {
     @Query("SELECT * FROM download_task WHERE songId = :songId")
     suspend fun getBySongId(songId: String): DownloadTask?
 
+    @Query("SELECT * FROM download_task WHERE songId = :songId AND requestId = :requestId AND ownerId = :ownerId")
+    suspend fun getOwned(songId: String, requestId: String, ownerId: Long): DownloadTask?
+
+    @Query("UPDATE download_task SET status = :status, progress = :progress, updatedAt = :time WHERE songId = :songId AND requestId = :requestId AND ownerId = :ownerId AND status IN ('PENDING', 'DOWNLOADING')")
+    suspend fun updateOwnedProgress(songId: String, requestId: String, ownerId: Long, status: DownloadStatus, progress: Int, time: Long): Int
+
+    @Query("UPDATE download_task SET url = '', fileName = :fileName, fileType = :fileType WHERE songId = :songId AND requestId = :requestId AND ownerId = :ownerId AND status IN ('PENDING', 'DOWNLOADING')")
+    suspend fun updateOwnedFileInfo(songId: String, requestId: String, ownerId: Long, fileName: String, fileType: String): Int
+
+    @Query("DELETE FROM download_task WHERE songId = :songId AND requestId = :requestId AND ownerId = :ownerId")
+    suspend fun deleteOwned(songId: String, requestId: String, ownerId: Long): Int
+
     @Query("SELECT * FROM download_task ORDER BY createdAt DESC")
     fun getAll(): Flow<List<DownloadTask>>
 

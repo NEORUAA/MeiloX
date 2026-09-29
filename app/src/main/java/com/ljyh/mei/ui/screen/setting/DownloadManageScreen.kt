@@ -150,17 +150,21 @@ fun DownloadManageScreen(
                 DownloadTaskItem(
                     task = task,
                     showTopSeparator = index > 0,
-                    onPause = { DownloadManager.pauseSong(context, task.songId) },
+                    onPause = { DownloadManager.pauseSong(context, task.songId, task.requestId) },
                     onResume = {
                         scope.launch {
-                            DownloadManager.resumeSong(
+                            try { DownloadManager.resumeSong(
                                 context,
                                 task.songId,
                                 context.getString(R.string.resumed_download),
-                            )
+                                task.requestId,
+                            ) } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+                            catch (_: Exception) {
+                                android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
-                    onDelete = { DownloadManager.deleteTask(context, task.songId) },
+                    onDelete = { DownloadManager.deleteTask(context, task.songId, task.requestId) },
                 )
             }
         }

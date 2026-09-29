@@ -91,7 +91,8 @@ interface ApiService {
     * */
     @POST("/api/song/lyric/v1")
     suspend fun getLyricV1(
-        @Body body: GetLyricV1
+        @Body body: GetLyricV1,
+        @Tag expectedSession: HostSessionStamp? = null,
     ): Lyric
 
     /*

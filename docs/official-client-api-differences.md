@@ -491,11 +491,12 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   parameters; those are not inferred from an ordinary playback grant.
 - Adaptation: added a separate typed download response and source resolver through
   `ApiService`/`HostCallFactory`, retaining official authentication/signing/transport.
-  All five existing producers use it; the playback resolver remains separate.
+  All five existing producers enqueue owner-bound intent/metadata; the worker uses
+  this resolver when it actually executes. The playback resolver remains separate.
   Ordinary-song requests use the `_0` tuple and the selected quality, with `c51`
   only for sky and `ste` otherwise. There is no playback-route or lower-quality
-  retry when download permission is denied. Every request captures the same
-  authenticated, non-anonymous authorization generation for the whole selection.
+  retry when download permission is denied. Each resolver call captures one
+  authenticated, non-anonymous authorization generation for its entire ID list.
 - Validation: require outer business success, a single source object, an explicit
   per-source status, matching ID, non-trial HTTP(S) URL without userinfo, known audio
   type, positive 64-bit size and MD5. Returned quality is retained separately from
@@ -505,7 +506,7 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   changes reject late results, including identity changes without a callback.
 - Denials: native transfer code recognizes `-103`, `-105`, `-120`, `-125`, `-130`,
   `-140` and `404` as unsuccessful downloads. They remain explicit per-song rejected
-  results; transport/authentication/malformed/unknown errors abort the selection
+  results; transport/authentication/malformed/unknown errors abort resolution
   instead of silently treating it as a smaller successful batch. No old URL is
   reused after a denial. Existing menus, quality choices and page layout are retained.
 - Evidence: 17 focused resolver tests, the updated stale-album/podcast preparation
@@ -518,10 +519,54 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   its effect on official download quota is not established. No real download request
   or media-file transfer was performed in this checkpoint. Private-cloud owner
   propagation, optional advanced-quality capabilities and real podcast grants are
-  not yet qualified. `DownloadWorker` still needs persisted ownership, per-run fresh
-  grants, cancellation-safe transfer/tagging/MediaStore publication and process-resume
-  checks. Its old persisted URLs cannot be considered renewed authorizations. See
+  not yet qualified. The following ownership checkpoint implements persisted request
+  identity, fresh grants and transfer cancellation, but durable MediaStore publication
+  and end-to-end worker/process-resume checks remain unfinished. See
   ABI-004 for the host scheduler boundary; stage 5 is not complete.
+
+#### Download Ownership Checkpoint (2026-09-29)
+
+- The old queue persisted a temporary URL and identified all attempts by song ID.
+  Room v19 stores a public account ID, unique request UUID and destination instead;
+  the UUID is also the WorkManager request ID. New tasks leave the legacy URL column
+  empty. Migration clears old addresses and fails unfinished unowned rows without
+  assigning the current account, copying cookies or deleting completed rows/media.
+- Enqueue/pause/resume/delete operations serialize local mutations. Progress and
+  file metadata updates require matching song/request/account and an active state;
+  stale UI actions cancel only the captured WorkManager ID. Resume retains the stored
+  destination but creates a new request after checking the official account. Worker
+  retries reacquire a current authorization stamp for the same persisted public ID;
+  no in-memory generation is assumed to survive process death.
+- Removed producer-side prefetch to avoid consuming one official grant at enqueue
+  and another at execution. Album, playlist, podcast, player and automatic-cache
+  producers now enqueue the requested quality; permission denial becomes a failed
+  queue item when the worker resolves it. Existing pages, quality controls, queue
+  actions and layout are unchanged. An unavailable scheduler fails before storing
+  new rows or requesting a grant. This timing difference is intentional, not a
+  playback-permission fallback.
+- Each attempt uses an isolated UUID-named temporary file. Media responses require
+  HTTP 200, the authorized byte length and original MD5 before tags are written.
+  Blocking HTTP calls are canceled by a structured child coroutine; a canceled read's
+  IOException is converted back to coroutine cancellation. Session invalidation
+  cancels the entire owned operation. Lyric/cover work is attached to that operation,
+  never launched in an unrelated scope.
+- Download lyrics retain the AMLL-first preference. The old fallback posted directly
+  through `NeteaseInterceptor`; it now uses `song/lyric/v1` with `GetLyricV1` and the
+  captured official session via `ApiService`/`HostCallFactory`. Cover/media/AMLL resource
+  requests remain direct and cancelable. No additional cookie client is retained here.
+- Removed filename-only MediaStore adoption and in-place repair of unrelated existing
+  files. The worker creates a pending row, copies only its own temporary file, validates
+  task/session ownership before publishing, and rolls back its newly created URI on
+  caught failure. This does not yet cover abrupt process death: a durable URI receipt,
+  orphan/replacement cleanup and reconciliation across DB/WorkManager/MediaStore are
+  still required before enabling ordinary scheduling. Concurrent download notification
+  aggregation and foreground-worker behavior also remain unqualified.
+- Evidence: 598 unit tests in 74 suites, including five ownership tests and four
+  substitute transfer tests, pass. Fourteen focused Android tests pass, including
+  actual Room migration/conditional updates and a substitute host lyric request with
+  stale-session rejection. Tests use temporary private files/databases and fake HTTP
+  calls; no real grant, user media write, account change or complete live worker run
+  occurred. The ordinary/release scheduler gate remains disabled.
 
 ## Runtime Boundary Notes
 

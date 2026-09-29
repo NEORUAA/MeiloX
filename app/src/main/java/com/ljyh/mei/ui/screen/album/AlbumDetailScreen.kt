@@ -137,31 +137,16 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
     fun doDownload(tracks: List<MediaMetadata>, quality: MusicQuality = downloadQuality.toMusicQuality()) {
         val owner = state.session ?: return
         scope.launch {
-            val songIds = tracks.map { it.id.toString() }
-            val result = try {
-                viewModel.resolveDownloadSources(songIds, quality, owner, id.toString())
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) {
-                return@launch
-            }
-            val sourceMap = if (result is Resource.Success) {
-                result.data.sources.associateBy { it.id.toString() }
-            } else emptyMap()
-
-            val downloadInfos = tracks.mapNotNull { track ->
-                val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
-                val url = source.url
+          try {
+            val downloadInfos = tracks.map { track ->
                 SongDownloadInfo(
                     songId = track.id.toString(),
-                    url = url,
                     songTitle = track.title,
                     songArtist = track.artists.map { it.name },
                     songAlbum = track.album.title,
                     songCover = track.coverUrl,
                     duration = track.duration,
-                    fileType = source.fileType,
-                    quality = source.level,
+                    quality = quality.text,
                 )
             }
 
@@ -180,12 +165,15 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
             if (runCatching { viewModel.requireCurrent(owner, id.toString()) }.isFailure) return@launch
             DownloadManager.enqueue(
                 context = context,
+                owner = owner,
                 songs = downloadInfos,
                 playlistName = playlistName,
                 playlistId = id.toString(),
                 downloadPath = downloadPath
             )
             Toast.makeText(context, "已添加 ${downloadInfos.size} 首到下载队列", Toast.LENGTH_SHORT).show()
+          } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+          catch (_: Exception) { Toast.makeText(context, com.ljyh.mei.R.string.load_failed, Toast.LENGTH_SHORT).show() }
         }
     }
 

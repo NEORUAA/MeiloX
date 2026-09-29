@@ -213,26 +213,15 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
         scope.launch {
             try {
                 viewModel.requireDetail(owner, detail)
-                val songIds = allTracks.map { it.id.toString() }
-                val sourceMap = when (val result = viewModel.resolveDownloadSources(songIds, quality, owner)) {
-                    is Resource.Success -> result.data.sources
-                    is Resource.Error -> error(result.message)
-                    Resource.Loading -> error("Download authorization did not complete")
-                }.associateBy { it.id.toString() }
-
-                val downloadInfos = allTracks.mapNotNull { track ->
-                    val source = sourceMap[track.id.toString()] ?: return@mapNotNull null
-                    val url = source.url
+                val downloadInfos = allTracks.map { track ->
                     SongDownloadInfo(
                         songId = track.id.toString(),
-                        url = url,
                         songTitle = track.title,
                         songArtist = track.artists.map { it.name },
                         songAlbum = track.album.title,
                         songCover = track.coverUrl,
                         duration = track.duration,
-                        fileType = source.fileType,
-                        quality = source.level,
+                        quality = quality.text,
                     )
                 }
 
@@ -250,6 +239,7 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.parasite.HostSession
                 viewModel.requireDetail(owner, detail)
                 DownloadManager.enqueue(
                     context = context,
+                    owner = owner,
                     songs = downloadInfos,
                     playlistName = playlistName,
                     playlistId = id.toString(),

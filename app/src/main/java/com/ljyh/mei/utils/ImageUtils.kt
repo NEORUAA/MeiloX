@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import androidx.core.graphics.createBitmap
 import com.ljyh.mei.playback.DownloadWorker
+import com.ljyh.mei.playback.withCancellableResponse
 
 fun String.smallImage(): String {
     if (this.startsWith("/")) return this
@@ -66,10 +67,10 @@ object ImageUtils {
             .build()
 
         try {
-            val result = httpClient.newCall(request).execute().use { response ->
+            val result = httpClient.newCall(request).withCancellableResponse { response ->
                 if (response.isSuccessful) {
                     val bytes = response.body.bytes()
-                    if (bytes[1].toInt() == 80) {
+                    if (bytes.size > 1 && bytes[1].toInt() == 80) {
                         pngToJpg(bytes)
                     } else {
                         bytes
@@ -79,7 +80,8 @@ object ImageUtils {
                 }
             }
             result
-        } catch (e: Exception) {
+        } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+        catch (e: Exception) {
             e.printStackTrace()
             null
         }

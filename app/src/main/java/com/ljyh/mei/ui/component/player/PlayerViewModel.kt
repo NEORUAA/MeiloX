@@ -50,7 +50,6 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
-    private val playlistRepository: PlaylistRepository,
     private val sessions: HostSessionBridge,
     library: AccountLibraryRepository,
     val lyricManager: LyricManager
@@ -169,44 +168,32 @@ class PlayerViewModel @Inject constructor(
                 MusicQuality.EXHIGH
             }
 
-            val result = try { playlistRepository.getDownloadSources(
-                ids = listOf(metadata.id.toString()),
-                quality = quality,
-                session = owner,
-            ) } catch (_: com.ljyh.mei.parasite.HostSessionChangedException) { return@launch }
             if (sessions.recoveryRequired.value || runCatching { sessions.requireCurrent(owner) }.isFailure) return@launch
-
-            if (result is Resource.Success) {
-                val songData = result.data.sources.firstOrNull { it.id == metadata.id }
-                val url = songData?.url
-                if (url != null) {
+            try {
                     val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
                         ?: com.ljyh.mei.utils.DownloadManager.getDefaultDownloadPath()
                     if (sessions.recoveryRequired.value || runCatching { sessions.requireCurrent(owner) }.isFailure) return@launch
 
                     com.ljyh.mei.utils.DownloadManager.enqueue(
                         context = context,
+                        owner = owner,
                         songs = listOf(
                             com.ljyh.mei.playback.SongDownloadInfo(
                                 songId = metadata.id.toString(),
-                                url = url,
                                 songTitle = metadata.title,
                                 songArtist = metadata.artists.map { it.name },
                                 songAlbum = metadata.album.title,
                                 songCover = metadata.coverUrl,
                                 duration = metadata.duration,
-                                fileType = songData.fileType,
-                                quality = songData.level,
+                                quality = quality.text,
                             )
                         ),
                         playlistName = "单曲下载",
                         downloadPath = downloadPath
                     )
                     android.widget.Toast.makeText(context, "已添加到下载队列", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    android.widget.Toast.makeText(context, "无法获取歌曲链接", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            } else {
+            } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+            catch (_: Exception) {
                 android.widget.Toast.makeText(context, "获取链接失败", android.widget.Toast.LENGTH_SHORT).show()
             }
         }

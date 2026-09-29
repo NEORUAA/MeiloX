@@ -1,7 +1,6 @@
 package com.ljyh.mei.playback
 
 import android.content.Context
-import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AutoCacheEnabledKey
@@ -9,15 +8,12 @@ import com.ljyh.mei.constants.AutoCachePlaybackThresholdKey
 import com.ljyh.mei.constants.AutoCacheQualityKey
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQuality
-import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.di.ApplicationContext
 import kotlinx.coroutines.flow.first
-import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,7 +23,6 @@ import com.ljyh.mei.parasite.HostSessionStamp
 @Singleton
 class AutomaticCacheController @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val repository: PlaylistRepository,
     private val database: AppDatabase,
     private val sessions: HostSessionBridge,
 ) {
@@ -44,13 +39,6 @@ class AutomaticCacheController @Inject constructor(
         val quality = runCatching {
             DownloadQuality.valueOf(context.dataStore[AutoCacheQualityKey] ?: DownloadQuality.EXHIGH.name)
         }.getOrDefault(DownloadQuality.EXHIGH)
-        val result = repository.getDownloadSources(listOf(songId), quality.toMusicQuality(), owner)
-        sessions.requirePlaybackSession(owner)
-        val source = (result as? Resource.Success)?.data?.sources?.firstOrNull { it.id.toString() == songId }
-        if (source?.url == null) {
-            Timber.w("Automatic cache could not resolve source for %s", songId)
-            return
-        }
 
         val metadata = mediaItem.mediaMetadata
         val artists = metadata.extras?.getStringArrayList("artist_list")
@@ -61,17 +49,16 @@ class AutomaticCacheController @Inject constructor(
         sessions.requirePlaybackSession(owner)
         DownloadManager.enqueue(
             context = context,
+            owner = owner,
             songs = listOf(
                 SongDownloadInfo(
                     songId = songId,
-                    url = source.url,
                     songTitle = metadata.title?.toString().orEmpty().ifBlank { context.getString(R.string.unknown_song) },
                     songArtist = artists,
                     songAlbum = metadata.albumTitle?.toString().orEmpty(),
                     songCover = metadata.artworkUri?.toString().orEmpty(),
                     duration = metadata.durationMs ?: 0,
-                    fileType = source.fileType,
-                    quality = source.level,
+                    quality = quality.toMusicQuality().text,
                 ),
             ),
             playlistName = context.getString(R.string.automatic_cache),

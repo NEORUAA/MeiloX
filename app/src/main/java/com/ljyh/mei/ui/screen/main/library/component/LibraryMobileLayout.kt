@@ -549,16 +549,18 @@ fun LibraryMobileLayout(
             },
             onPause = {
                 selectedDownloadTaskId = null
-                DownloadManager.pauseSong(context, task.songId)
+                DownloadManager.pauseSong(context, task.songId, task.requestId)
             },
             onResume = {
                 selectedDownloadTaskId = null
                 scope.launch {
-                    DownloadManager.resumeSong(
+                    try { DownloadManager.resumeSong(
                         context = context,
                         songId = task.songId,
                         playlistName = context.getString(R.string.resumed_download),
-                    )
+                        requestId = task.requestId,
+                    ) } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+                    catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
                 }
             },
             onRetry = {
@@ -567,7 +569,7 @@ fun LibraryMobileLayout(
             },
             onRemove = {
                 selectedDownloadTaskId = null
-                DownloadManager.deleteTask(context, task.songId)
+                DownloadManager.deleteTask(context, task.songId, task.requestId)
             },
         )
     }

@@ -1421,6 +1421,47 @@ recording/PiP capability decision remain open; stage 2 is not complete.
   `/tmp/meilox-work-carrier-build.log`, `/tmp/meilox-work-carrier-final-build.log` and
   `/tmp/meilox-work-carrier-final-home.png`. Build and `git diff --check` pass.
 
+### Download Request Ownership Checkpoint (2026-09-29)
+
+- Room v19 persists a public account ID and unique download request/WorkManager ID,
+  requested quality and original destination, never a new temporary media URL.
+  Upgrading this module database does not migrate the independent app's data; unowned
+  unfinished rows fail closed, existing completed rows and files are retained.
+- All five producers now enqueue captured-owner intent/metadata without a grant
+  preflight. The worker resolves one fresh native download grant for each execution
+  and rejects an anonymous, changed, recovering or different official account. Resume
+  preserves the destination and replaces the request identity. Stale task callbacks
+  cannot change paused/replaced/deleted rows or cancel a newer WorkManager request.
+- Reworked the worker with structured child work and a shared three-transfer limit,
+  UUID-named private temporary files, HTTP length/MD5 validation before tagging and
+  immediate cancellation of blocking HTTP reads. The cancellation test caught and
+  fixed socket IOExceptions masking coroutine cancellation. Lyric fallback now uses
+  the official session transport; AMLL and cover fetching remain direct resources.
+- Existing page/component architecture and controls are unchanged. Grant denial is
+  reflected in the existing failed-task state at execution time; enqueue confirmation
+  no longer claims that an earlier URL is a durable authorization. Both download-list
+  entry points pass the row's request identity to pause/resume/delete actions.
+- Nine new unit tests plus the existing suite pass: 598 tests, 74 suites, no failures,
+  errors or skips. Fourteen targeted Android tests pass, including private-database
+  Room v18-to-v19 migration, conditional task writes and official lyric transport with
+  a substitute backend. These are not full-worker/real-download acceptance tests.
+- The worker no longer adopts an arbitrary same-named MediaStore file or edits an
+  existing file's tags in place. Caught errors roll back only its newly inserted URI.
+  Abrupt process-death cleanup/publication needs a durable receipt and reconciliation;
+  the DB-insert/WorkManager-enqueue crash window, duplicate/replacement cleanup,
+  concurrent notifications, long-running foreground work, reboot behavior, real grants
+  and release runtime remain open. Keep `PARASITE_WORK_PROBE=false` in ordinary builds
+  until those implementation and acceptance gates pass. API-017 records these changes.
+- No real download authorization, media-store test write, logout, permission change,
+  social mutation or upload was attempted. Local build evidence remains outside Git:
+  `/tmp/meilox-download-owner-build.log`. Stage 5 is not complete.
+- Final ordinary debug build, repeated fourteen-test device run and diff checks pass.
+  AVD cold launch returns to the original portrait MeiloX Home with visible glass and
+  blur and paused playback, with no new host crash; `PARASITE_WORK_PROBE=false` remains
+  verified. Local-only final evidence: `/tmp/meilox-download-owner-final-build.log`
+  and `/tmp/meilox-download-owner-final-home.png`. No system scope or direction setting
+  was changed.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -1446,7 +1487,7 @@ recording/PiP capability decision remain open; stage 2 is not complete.
 | 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, desktop launcher, and notification qualification passed; AVD cold-start orientation uses authorized TV-only compat overrides | All external component routing, release runtime qualification, and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, Library collection and complete liked reads, search discovery/results/paging, album detail reads, playlist detail/paging/search, shared picker reads, daily recommendations, and artist detail/song paging passed their documented checkpoints; collection and playlist writes have substitute-test coverage only | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources have substitute coverage and a debug-gated host job carrier passed cold-process/coexistence/cancellation checks, while production worker ownership, scheduler integration and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, notification qualification, session-owned ordinary favorite reads, media-button ownership/cold resumption, authorization-owned URL/cache resolution, and native official reporting dispatch passed documented checkpoints; dedicated download sources, persisted request ownership and cancelable transfer have substitute coverage, and a debug-gated host job carrier passed cold-process/coexistence/cancellation checks; durable file publication, production scheduler integration and live grants remain open | Full audio, effects/AutoMix, download, timer, account ownership, and end-to-end official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 

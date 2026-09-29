@@ -3,7 +3,6 @@ package com.ljyh.mei.playback
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -11,333 +10,180 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.net.toUri
+import androidx.room.withTransaction
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.room.DownloadStatus
+import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.di.AppGraph
+import com.ljyh.mei.parasite.HostSessionChangedException
+import com.ljyh.mei.parasite.HostSessionStamp
+import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.ImageUtils
 import com.ljyh.mei.utils.LyricFetcher
 import com.ljyh.mei.utils.SongMate
 import com.ljyh.mei.utils.StringUtils.specialReplace
-import kotlinx.coroutines.CoroutineScope
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okio.buffer
-import okio.sink
 import org.jaudiotagger.audio.AudioFileIO
 import timber.log.Timber
-import java.io.File
-import java.util.concurrent.TimeUnit
 
-class DownloadWorker(
-    context: Context,
-    params: WorkerParameters
-) : CoroutineWorker(context, params) {
-
+class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     companion object {
-        const val KEY_SONG_IDS = "song_ids_json"
-        const val KEY_PLAYLIST_NAME = "playlist_name"
-        const val KEY_DOWNLOAD_PATH = "download_path"
+        const val KEY_SONG_ID = "song_id"
+        const val KEY_OWNER_ID = "owner_id"
         const val CHANNEL_ID = "download_channel"
         const val NOTIFICATION_ID = 1001
-        private const val CONCURRENCY = 3
-
-        @Volatile
-        private var sharedClient: OkHttpClient? = null
-
-        fun getDownloadClient(): OkHttpClient {
-            return sharedClient ?: synchronized(this) {
-                sharedClient ?: OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(300, TimeUnit.SECONDS)
-                    .writeTimeout(30, TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .build().also { sharedClient = it }
-            }
+        private val slots = Semaphore(3)
+        private val sharedClient by lazy {
+            OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(300, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(true).build()
         }
-
+        fun getDownloadClient(): OkHttpClient = sharedClient
         fun createNotificationChannel(context: Context) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "音乐下载",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "歌曲下载进度通知"
-            }
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            val channel = NotificationChannel(CHANNEL_ID, "音乐下载", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "歌曲下载进度通知" }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    private val okHttpClient = getDownloadClient()
-    private val completedCount = java.util.concurrent.atomic.AtomicInteger(0)
-    private val failedCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private val sessions get() = AppGraph.component.hostRequests().sessions
+    private val songId get() = inputData.getString(KEY_SONG_ID).orEmpty()
+    private val accountId get() = inputData.getLong(KEY_OWNER_ID, 0)
+    private lateinit var owner: HostSessionStamp
 
-    override suspend fun doWork(): Result {
-        Timber.d("DownloadWorker started, runAttemptCount=$runAttemptCount")
-
-        val songIdsJson = inputData.getString(KEY_SONG_IDS) ?: run {
-            Timber.e("KEY_SONG_IDS not found in inputData")
-            return Result.failure()
-        }
-        val playlistName = inputData.getString(KEY_PLAYLIST_NAME) ?: "未分类"
-        val downloadPath = inputData.getString(KEY_DOWNLOAD_PATH)
-            ?: "Music/Mei"
-
-        val songIds: List<String> = try {
-            Gson().fromJson(songIdsJson, object : TypeToken<List<String>>() {}.type)
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to parse songIds")
-            return Result.failure()
-        }
-
-        if (songIds.isEmpty()) return Result.success()
-
-        Timber.d("DownloadWorker will process ${songIds.size} songs, path=$downloadPath")
-        createNotificationChannel(applicationContext)
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        if (songId.isBlank() || accountId <= 0) return@withContext Result.failure()
         val db = AppDatabase.getDatabase(applicationContext)
-        val totalCount = songIds.size
-
-        val sanitizedPlaylistName = specialReplace(playlistName).trim()
-        val configuredRoot = downloadPath.trim().trim('/').ifBlank { "Music/Mei" }
-        val relativePath = "$configuredRoot/$sanitizedPlaylistName"
-        val tempDir = File(applicationContext.cacheDir, "download")
-        if (!tempDir.exists()) tempDir.mkdirs()
-
-        showNotification("准备下载...", 0)
-
-        val semaphore = Semaphore(CONCURRENCY)
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-        val jobs = songIds.map { songId ->
-            scope.async {
-                if (isStopped) return@async
-
-                semaphore.withPermit {
-                    if (isStopped) return@withPermit
-
-                    processSong(songId, db, tempDir, relativePath)
-                }
-
-                val done = completedCount.get() + failedCount.get()
-                showNotification("正在下载 ($done/$totalCount)", done * 100 / totalCount)
+        try {
+            owner = sessions.snapshot()
+            sessions.requireDownloadOwner(owner)
+            if (owner.identity.userId != accountId) throw HostSessionChangedException()
+            sessions.withDownloadOwner(owner) {
+                requireTask(db)
+                slots.withPermit { processSong(db) }
             }
+            Result.success()
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                val status = if (::owner.isInitialized && runCatching { sessions.requireDownloadOwner(owner) }.isSuccess) {
+                    DownloadStatus.PENDING
+                } else DownloadStatus.FAILED
+                if (updateTask(db, status, 0) == 1) showNotification("下载已取消", 0, ongoing = false)
+            }
+            throw error
+        } catch (error: Exception) {
+            Timber.w("Download failed: %s", error.javaClass.simpleName)
+            if (updateTask(db, DownloadStatus.FAILED, 0) == 1) {
+                showNotification("完成 0, 失败 1", 100, ongoing = false)
+            }
+            Result.failure()
         }
-
-        jobs.awaitAll()
-
-        if (isStopped) {
-            showNotification("下载已取消", 0, ongoing = false)
-            return Result.failure()
-        }
-
-        val done = completedCount.get()
-        val failed = failedCount.get()
-        val statusText = if (failed > 0) "完成 $done, 失败 $failed" else "全部下载完成"
-        showNotification(statusText, 100, ongoing = false)
-
-        return Result.success()
     }
 
-    private suspend fun processSong(
-        songId: String,
-        db: AppDatabase,
-        tempDir: File,
-        relativePath: String
-    ) {
-        val task = db.downloadDao().getBySongId(songId)
-        if (task == null || task.url.isBlank() || task.status == DownloadStatus.PAUSED) {
-            failedCount.incrementAndGet()
-            updateTask(db, songId, DownloadStatus.FAILED, 0)
-            return
-        }
+    private suspend fun requireTask(db: AppDatabase): DownloadTask {
+        currentCoroutineContext().ensureActive()
+        sessions.requireDownloadOwner(owner)
+        val task = db.downloadDao().getOwned(songId, id.toString(), accountId)
+            ?: throw CancellationException("Download request was replaced or deleted")
+        task.requireExecutable(id, accountId)
+        return task
+    }
 
-        val existingSong = db.songDao().getSong(songId).first()
-        if (existingSong != null && existingSong.path != null) {
-            val isValid = if (existingSong.path.startsWith("content://")) {
-                try {
-                    applicationContext.contentResolver.openInputStream(
-                        existingSong.path.toUri()
-                    )?.close()
-                    true
-                } catch (_: Exception) { false }
-            } else {
-                File(existingSong.path).exists()
+    private suspend fun processSong(db: AppDatabase) = coroutineScope {
+        val task = requireTask(db)
+        createNotificationChannel(applicationContext)
+        check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
+        showNotification("准备下载...", 0)
+        val source = resolveOfficialDownloadSources(AppGraph.component.apiService(), sessions,
+            listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
+            ?: throw IOException("Official download permission denied")
+        requireTask(db)
+        val root = task.downloadPath.trim().trim('/').ifBlank { "Music/Mei" }
+        require(root.split('/').none { it == ".." || it == "." })
+        val relativePath = "$root/${specialReplace(task.playlistName).trim().ifBlank { "未分类" }}"
+        val fileName = "${specialReplace("${task.songTitle} - ${task.songArtist}")}.${source.fileType}"
+        check(db.downloadDao().updateOwnedFileInfo(songId, id.toString(), accountId, fileName, source.fileType) == 1)
+        val tempDir = File(applicationContext.cacheDir, "download").apply { check(isDirectory || mkdirs()) }
+        val temp = File(tempDir, "$id.${source.fileType}")
+        var newMedia: Uri? = null
+        var published = false
+        try {
+            val lyric = async { LyricFetcher.fetchBestLyric(songId, owner) }
+            val cover = async { if (task.songCover.isBlank()) null else ImageUtils.downloadImageBytes(task.songCover) }
+            transferOfficialDownload(getDownloadClient(), source, temp, { requireTask(db); Unit }) { progress ->
+                check(updateTask(db, DownloadStatus.DOWNLOADING, progress) == 1)
+                showNotification("正在下载 (0/1)", progress)
             }
-            if (isValid) {
-                if (!existingSong.path.startsWith("content://")) {
-                    val tagStatus = SongMate.checkTags(existingSong.path)
-                    if (tagStatus != null && (!tagStatus.isBasicComplete || !tagStatus.hasLyric)) {
-                        try {
-                            val lyric = if (!tagStatus.hasLyric) {
-                                LyricFetcher.fetchBestLyric(songId)
-                            } else null
-                            SongMate.writeTags(
-                                task.songTitle, task.songArtist, task.songAlbum,
-                                task.songCover, existingSong.path, lyric
-                            )
-                        } catch (e: Exception) {
-                            Timber.e(e, "Tag repair failed for ${task.songTitle}")
+            requireTask(db)
+            val lyricText = lyric.await()
+            val coverBytes = cover.await()
+            try {
+                SongMate.writeTagsWithCoverBytes(task.songTitle, task.songArtist, task.songAlbum,
+                    coverBytes, temp.absolutePath, lyricText)
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) { Timber.w("Download tags failed: %s", error.javaClass.simpleName) }
+            requireTask(db)
+            val duration = runCatching { AudioFileIO.read(temp).audioHeader.trackLength.toLong() * 1000 }.getOrDefault(0)
+            newMedia = insertPendingMedia(temp, fileName, source.fileType, relativePath)
+            val execution = currentCoroutineContext()
+            DownloadManager.mutations.withLock {
+                withContext(NonCancellable) {
+                    db.withTransaction {
+                        execution.ensureActive()
+                        requireTask(db)
+                        db.songDao().insertSong(Song(
+                            id = songId, title = task.songTitle,
+                            artist = task.songArtist.split(Regex("[/、,;]")).map(String::trim).filter(String::isNotBlank)
+                                .ifEmpty { listOf(task.songArtist.trim()) },
+                            album = task.songAlbum, cover = task.songCover, duration = duration,
+                            path = checkNotNull(newMedia).toString(), sourceType = SourceType.DOWNLOAD, folderPath = relativePath,
+                        ))
+                        check(updateTask(db, DownloadStatus.COMPLETED, 100) == 1)
+                        sessions.requireDownloadOwner(owner)
+                        execution.ensureActive()
+                        sessions.withCurrent(owner) {
+                            if (sessions.recoveryRequired.value) throw HostSessionChangedException()
+                            val values = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
+                            check(applicationContext.contentResolver.update(checkNotNull(newMedia), values, null, null) == 1)
                         }
                     }
+                    published = true
                 }
-                updateTask(db, songId, DownloadStatus.COMPLETED, 100)
-                completedCount.incrementAndGet()
-                return
             }
-        }
-
-        updateTask(db, songId, DownloadStatus.DOWNLOADING, 0)
-
-        val suffix = task.fileType.ifBlank {
-            val pathWithoutQuery = task.url.substringBefore("?")
-            val lastSegment = pathWithoutQuery.substringAfterLast("/")
-            lastSegment.substringAfterLast(".", "")
-        }
-        if (suffix.isBlank()) {
-            failedCount.incrementAndGet()
-            updateTask(db, songId, DownloadStatus.FAILED, 0)
-            return
-        }
-
-        val fileName = "${specialReplace("${task.songTitle} - ${task.songArtist}")}.$suffix"
-        val tempFile = File(tempDir, fileName)
-
-        // Reuse a complete MediaStore item left by an interrupted or repeated download.
-        // Matching both name and destination prevents duplicate files without changing
-        // the current user-configured folder layout.
-        val existingMedia = withContext(Dispatchers.IO) {
-            findMediaStoreAudio(applicationContext, fileName, relativePath)
-        }
-        if (existingMedia != null) {
-            saveDownloadedSong(
-                db = db,
-                songId = songId,
-                task = task,
-                uri = existingMedia.uri,
-                durationMs = existingMedia.durationMs ?: existingSong?.duration ?: 0L,
-                relativePath = relativePath
-            )
-            updateTask(db, songId, DownloadStatus.COMPLETED, 100)
-            completedCount.incrementAndGet()
-            return
-        }
-
-        try {
-            val lyricDeferred = CoroutineScope(Dispatchers.IO).async {
-                LyricFetcher.fetchBestLyric(songId)
-            }
-            val coverDeferred = CoroutineScope(Dispatchers.IO).async {
-                if (task.songCover.isNotBlank()) {
-                    ImageUtils.downloadImageBytes(task.songCover)
-                } else null
-            }
-
-            val success = downloadFile(task.url, tempFile) { progress ->
-                updateTask(db, songId, DownloadStatus.DOWNLOADING, progress)
-            }
-
-            if (success && tempFile.exists()) {
-                try {
-                    val lyric = lyricDeferred.await()
-                    val coverBytes = coverDeferred.await()
-                    SongMate.writeTagsWithCoverBytes(
-                        task.songTitle, task.songArtist, task.songAlbum,
-                        coverBytes, tempFile.absolutePath, lyric
-                    )
-                } catch (e: Exception) {
-                    Timber.e(e, "writeTags failed for ${task.songTitle}")
+            showNotification("全部下载完成", 100, ongoing = false)
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) {
+                if (!published) newMedia?.let { uri ->
+                    runCatching { applicationContext.contentResolver.delete(uri, null, null) }
                 }
-
-                val audioDuration = withContext(Dispatchers.IO) {
-                    try {
-                        AudioFileIO.read(tempFile).audioHeader.trackLength
-                    } catch (_: Exception) { 0 }
-                }
-
-                val mediaStoreUri = withContext(Dispatchers.IO) {
-                    insertToMediaStore(applicationContext, tempFile, fileName, suffix, relativePath)
-                }
-
-                if (mediaStoreUri != null) {
-                    saveDownloadedSong(
-                        db = db,
-                        songId = songId,
-                        task = task,
-                        uri = mediaStoreUri,
-                        durationMs = audioDuration.toLong() * 1_000L,
-                        relativePath = relativePath
-                    )
-                    updateTask(db, songId, DownloadStatus.COMPLETED, 100)
-                    completedCount.incrementAndGet()
-                } else {
-                    failedCount.incrementAndGet()
-                    updateTask(db, songId, DownloadStatus.FAILED, 0)
-                }
-                tempFile.delete()
-            } else {
-                failedCount.incrementAndGet()
-                updateTask(db, songId, DownloadStatus.FAILED, 0)
+                temp.delete()
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Download failed for ${task.songTitle}")
-            failedCount.incrementAndGet()
-            updateTask(db, songId, DownloadStatus.FAILED, 0)
         }
     }
 
-    private suspend fun saveDownloadedSong(
-        db: AppDatabase,
-        songId: String,
-        task: com.ljyh.mei.data.model.room.DownloadTask,
-        uri: Uri,
-        durationMs: Long,
-        relativePath: String
-    ) {
-        db.songDao().insertSong(
-            Song(
-                id = songId,
-                title = task.songTitle,
-                artist = task.songArtist
-                    .split(Regex("[/、,;]"))
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .ifEmpty { listOf(task.songArtist.trim()) },
-                album = task.songAlbum,
-                cover = task.songCover,
-                duration = durationMs,
-                path = uri.toString(),
-                sourceType = SourceType.DOWNLOAD,
-                folderPath = relativePath
-            )
-        )
-    }
-
-    private fun insertToMediaStore(
-        context: Context,
-        srcFile: File,
-        displayName: String,
-        fileType: String,
-        relativePath: String
-    ): Uri? {
-        findMediaStoreAudio(context, displayName, relativePath)?.let { return it.uri }
-
-        val mimeType = when (fileType.lowercase()) {
+    private suspend fun insertPendingMedia(file: File, name: String, type: String, path: String): Uri {
+        val mime = when (type) {
             "flac" -> "audio/flac"
             "aac" -> "audio/aac"
             "ogg" -> "audio/ogg"
@@ -346,176 +192,62 @@ class DownloadWorker(
             "opus" -> "audio/opus"
             else -> "audio/mpeg"
         }
-        val contentValues = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "$relativePath/")
-            put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
+        val resolver = applicationContext.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, name)
+            put(MediaStore.Audio.Media.RELATIVE_PATH, "$path/")
+            put(MediaStore.Audio.Media.MIME_TYPE, mime)
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
-        val uri = context.contentResolver.insert(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, contentValues
-        ) ?: return null
-
+        val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("Cannot create download media")
         try {
-            context.contentResolver.openOutputStream(uri)?.use { os ->
-                srcFile.inputStream().use { input -> input.copyTo(os, 64 * 1024) }
-            }
-            contentValues.clear()
-            contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
-            context.contentResolver.update(uri, contentValues, null, null)
-            return uri
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to write to MediaStore")
-            context.contentResolver.delete(uri, null, null)
-            return null
-        }
-    }
-
-    private fun findMediaStoreAudio(
-        context: Context,
-        displayName: String,
-        relativePath: String
-    ): MediaStoreAudio? {
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.SIZE
-        )
-        val selection =
-            "${MediaStore.Audio.Media.DISPLAY_NAME} = ? AND ${MediaStore.Audio.Media.RELATIVE_PATH} = ?"
-        val selectionArgs = arrayOf(displayName, "$relativePath/")
-        return context.contentResolver.query(
-            collection,
-            projection,
-            selection,
-            selectionArgs,
-            "${MediaStore.Audio.Media.DATE_ADDED} DESC"
-        )?.use { cursor ->
-            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
-            val sizeIndex = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
-            while (cursor.moveToNext()) {
-                val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                    cursor.getLong(sizeIndex)
-                } else 0L
-                if (size <= 0L) continue
-                val id = cursor.getLong(idIndex)
-                val duration = if (durationIndex >= 0 && !cursor.isNull(durationIndex)) {
-                    cursor.getLong(durationIndex)
-                } else null
-                return@use MediaStoreAudio(
-                    uri = ContentUris.withAppendedId(collection, id),
-                    durationMs = duration
-                )
-            }
-            null
-        }
-    }
-
-    private data class MediaStoreAudio(
-        val uri: Uri,
-        val durationMs: Long?
-    )
-
-    private suspend fun downloadFile(
-        url: String,
-        file: File,
-        onProgress: suspend (Int) -> Unit
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder().url(url).build()
-            val response = okHttpClient.newCall(request).execute()
-
-            if (!response.isSuccessful) return@withContext false
-
-            val body = response.body ?: return@withContext false
-            val totalBytes = body.contentLength()
-            var downloadedBytes = 0L
-
-            val source = body.source()
-            val buffer = okio.Buffer()
-
-            file.parentFile?.mkdirs()
-            val sink = file.sink().buffer()
-
-            var lastProgress = -1
-            while (true) {
-                val read = source.read(buffer, 64 * 1024)
-                if (read == -1L) break
-                sink.write(buffer, read)
-                downloadedBytes += read
-
-                if (totalBytes > 0) {
-                    val progress = (downloadedBytes * 100 / totalBytes).toInt()
-                    if (progress != lastProgress) {
-                        lastProgress = progress
-                        onProgress(progress)
+            val output = resolver.openOutputStream(uri) ?: throw IOException("Cannot write download media")
+            output.use { sink ->
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        sink.write(buffer, 0, count)
                     }
                 }
             }
-
-            sink.flush()
-            sink.close()
-            source.close()
-            response.close()
-
-            true
-        } catch (e: Exception) {
-            Timber.e(e, "downloadFile error")
-            false
+            return uri
+        } catch (error: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw error
         }
     }
 
-    private suspend fun updateTask(
-        db: AppDatabase,
-        songId: String,
-        status: DownloadStatus,
-        progress: Int
-    ) {
-        try {
-            db.downloadDao().updateProgress(songId, status, progress, System.currentTimeMillis())
-        } catch (e: Exception) {
-            Timber.e(e, "updateTask error")
-        }
-    }
+    private suspend fun updateTask(db: AppDatabase, status: DownloadStatus, progress: Int): Int =
+        db.downloadDao().updateOwnedProgress(songId, id.toString(), accountId, status, progress, System.currentTimeMillis())
 
     private fun showNotification(title: String, progress: Int, ongoing: Boolean = progress < 100) {
         try {
-            val intent = Intent(applicationContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                applicationContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
+            val intent = com.ljyh.mei.parasite.HostAppComponentHooks.route(
+                Intent(applicationContext, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
+            val pendingIntent = PendingIntent.getActivity(applicationContext, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setContentTitle(title)
-                .setContentText("Mei 音乐下载")
-                .setSmallIcon(R.drawable.baseline_download_24)
-                .setOngoing(ongoing)
-                .setProgress(100, progress, !ongoing)
-                .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build()
-
+                .setContentTitle(title).setContentText("Mei 音乐下载")
+                .setSmallIcon(R.drawable.baseline_download_24).setOngoing(ongoing)
+                .setProgress(100, progress, false).setContentIntent(pendingIntent)
+                .setPriority(NotificationCompat.PRIORITY_LOW).build()
             NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
-        } catch (e: SecurityException) {
-            Timber.w(e, "Notification permission not granted")
+        } catch (error: SecurityException) {
+            Timber.w("Download notification permission unavailable")
         }
     }
 }
 
 data class SongDownloadInfo(
     val songId: String,
-    val url: String?,
     val songTitle: String,
     val songArtist: List<String>,
     val songAlbum: String,
     val songCover: String,
     val duration: Long,
-    val fileType: String = "",
     val quality: String = "",
-    val lyric: String = ""
 )
