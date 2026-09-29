@@ -11,11 +11,11 @@ import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.api.AudioMatchService
-import com.ljyh.mei.parasite.HostCallFactory
 import com.ljyh.mei.utils.log.NetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
 import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -33,7 +33,7 @@ object RetrofitModule {
     @Provides
     @Singleton
     @Named("WeApiRetrofit")
-    fun provideWeApiRetrofit(calls: HostCallFactory): Retrofit {
+    fun provideWeApiRetrofit(@Named("NetEaseWeApiCalls") calls: Call.Factory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(DOMAIN)
             .addConverterFactory(GsonConverterFactory.create()) // 仅 WeApiService 使用
@@ -43,7 +43,7 @@ object RetrofitModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(calls: HostCallFactory): Retrofit {
+    fun provideRetrofit(@Named("NetEaseApiCalls") calls: Call.Factory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(APIDOMAIN)
             .addConverterFactory(GsonConverterFactory.create())
@@ -87,7 +87,7 @@ object RetrofitModule {
     @Provides
     @Singleton
     @Named("AudioMatchRetrofit")
-    fun provideAudioMatchRetrofit(calls: HostCallFactory): Retrofit {
+    fun provideAudioMatchRetrofit(@Named("AudioMatchCalls") calls: Call.Factory): Retrofit {
         return Retrofit.Builder()
             .baseUrl(APIDOMAIN)
             .addConverterFactory(GsonConverterFactory.create())

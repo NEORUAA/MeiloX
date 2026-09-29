@@ -106,7 +106,7 @@ class MusicService : MediaLibraryService(),
     PlaybackStatsListener.Callback {
 
     override fun attachBaseContext(newBase: Context) =
-        super.attachBaseContext(com.ljyh.mei.parasite.HostRuntimeProbe.wrapAppComponent(newBase))
+        super.attachBaseContext(com.ljyh.mei.di.AppGraph.component.runtime().wrapComponent(newBase))
 
     lateinit var player: StableDeckPlayer
     val beatMeter = PlaybackBeatMeter()
@@ -119,7 +119,8 @@ class MusicService : MediaLibraryService(),
     private lateinit var equalizerConfigurationState: EqualizerConfigurationState
     val context = this
     private lateinit var mediaSession: MediaLibrarySession
-    private var hostMediaButtons: AutoCloseable? = null
+    @Inject lateinit var componentRuntime: com.ljyh.mei.runtime.ComponentRuntime
+    private var mediaButtonBinding: AutoCloseable? = null
     private var mediaButtonStartup = false
     @Inject lateinit var accountSessions: com.ljyh.mei.data.session.SessionStore
     private var playbackInvalidation: java.io.Closeable? = null
@@ -363,9 +364,7 @@ class MusicService : MediaLibraryService(),
         scope.launch {
             accountSessions.recoveryRequired.collect { if (it) invalidatePlaybackSession() }
         }
-        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
-            mediaButtonStartup = com.ljyh.mei.parasite.HostMediaButtons.consumeResumeRequest()
-        }
+        mediaButtonStartup = componentRuntime.consumePlaybackResumeRequest()
         restorePlayerState()
         periodicSnapshotJob = scope.launch {
             while (true) {
@@ -374,19 +373,15 @@ class MusicService : MediaLibraryService(),
             }
         }
         addSession(mediaSession)
-        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
-            hostMediaButtons = com.ljyh.mei.parasite.HostMediaButtons.bind(this, mediaSession.platformToken)
-        }
+        mediaButtonBinding = componentRuntime.bindMediaButtons(this, mediaSession.platformToken)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
-        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED) {
-            com.ljyh.mei.parasite.HostRuntimeProbe.report("app_music_service_created sessions=${sessions.size}")
-        }
+        componentRuntime.playbackServiceCreated(sessions.size)
 
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED && intent?.action == Intent.ACTION_MEDIA_BUTTON &&
+        if (componentRuntime.deferMediaButtonsUntilRestored && intent?.action == Intent.ACTION_MEDIA_BUTTON &&
             (isRestoringPlayback || player.mediaItemCount == 0)) {
             deferStartupMediaButton(intent, flags, startId)
             return START_STICKY
@@ -738,7 +733,7 @@ class MusicService : MediaLibraryService(),
 
     inner class LibrarySessionCallback : MediaLibrarySession.Callback {
         override fun onMediaButtonEvent(session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: Intent): Boolean {
-            if (!com.ljyh.mei.BuildConfig.PARASITE_APP_ENABLED || !isRestoringPlayback) return false
+            if (!componentRuntime.deferMediaButtonsUntilRestored || !isRestoringPlayback) return false
             // Direct session keys can arrive while a receiver-started restore is still loading.
             deferStartupMediaButton(intent)
             return true
@@ -764,8 +759,8 @@ class MusicService : MediaLibraryService(),
     override fun onDestroy() {
         playbackInvalidation?.close()
         playbackInvalidation = null
-        hostMediaButtons?.close()
-        hostMediaButtons = null
+        mediaButtonBinding?.close()
+        mediaButtonBinding = null
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
         sourceRecoveryJob?.cancel()
         periodicSnapshotJob?.cancel()

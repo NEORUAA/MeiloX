@@ -955,6 +955,44 @@ These are integration differences, not server API semantics.
   reinstalled with all probes disabled and cold-launches the original portrait Home.
   Runtime screenshots/logs remain local and are not committed.
 
+### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
+
+- Date: 2026-09-29. Standalone components use their own Application, registered Activity,
+  playback service and platform media receiver. Parasite components are instantiated
+  inside the pinned TV process after its module graph is initialized, use a module
+  resource/storage Context, and receive media events through the official carrier.
+  A module-specific Context wrapper or receiver state must not become a shared frontend
+  requirement when standalone is restored.
+- Shared Activity/service code now consumes `ComponentRuntime`. The host adapter alone
+  chooses wrapping, portrait initialization, startup-key deferral, resume ownership and
+  platform controller binding. No hook scope, manifest permission, global orientation
+  setting or existing Activity/service lifecycle order is changed. Graph initialization
+  must still precede component attachment in both future flavor bootstraps.
+- Shared Retrofit construction accepts distinct named API/WeAPI/audio-match factories.
+  The parasite module binds all three to `HostCallFactory`, so official authentication,
+  signing and request ownership are unchanged. No standalone client is created or used
+  as a fallback. Factory isolation tests are not proof of equivalent endpoint semantics
+  or a working standalone session.
+- Shared download notifications build ordinary MainActivity PendingIntents. The existing
+  host-scoped PendingIntent hook maps them to the registered launcher; the explicit
+  second routing call was redundant and is removed. Notification IDs/content remain
+  unchanged. Host-only probe selection and foreground dispatcher callbacks stay in the
+  carrier adapter. Standalone foreground types and aggregation still require qualification.
+- Evidence: 642 JVM tests and 46 parasite device tests pass, including runtime identity,
+  host-only wrapping/orientation, disabled resume ownership and platform MediaSession
+  adapter binding/replacement. An actual host-process synthetic DENIED worker promotes
+  the carrier, executes one substitute grant with zero resource transfers, leaves no
+  artifact and posts a failure notification. Tapping it returns to the original portrait
+  Home. Cleanup removes only its private test rows/channel. This is notification-routing
+  evidence, not a new user download failure, real server denial or standalone acceptance.
+- Debug/instrumentation and unsigned R8 builds pass; release APK 16 KB alignment passes.
+  The restored ordinary debug package has probes disabled and cold-launches portrait
+  Home. System PLAY/PAUSE controls the active module session and advances position from
+  47,014 ms to 74,255 ms while the official session remains inactive; playback is left
+  paused. This is not audible-output, cold media-receiver resumption, server-statistics
+  or release-runtime acceptance. The existing real download remains published unchanged
+  in size/ownership; no new real download authorization was requested.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

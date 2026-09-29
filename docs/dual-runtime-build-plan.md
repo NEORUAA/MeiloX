@@ -155,10 +155,55 @@ boundary rather than adding new mandatory `Host*` dependencies to common consume
   has no crash-buffer entries. The existing real media row remains published and
   TV-owned at 22,705,573 bytes; no new authorization grant was requested.
 
-This is the first D1 increment, not its exit condition. Shared Activity/service attachment,
-login content, network injection, notifications/WorkManager and graph bootstrap still
-reference concrete host implementations. Isolate those bindings before moving them into
-flavor source sets. Neither flavor targets nor the standalone backend are implemented yet.
+This was the first D1 increment, not its exit condition. At that point, shared
+Activity/service attachment, login content, network injection, notifications/WorkManager
+and graph bootstrap still referenced concrete host implementations.
+
+### D1 Checkpoint: Component and Transport Bindings (2026-09-29)
+
+- Added `ComponentRuntime` for component Context attachment, Activity initialization,
+  media-button startup ownership, platform session binding and service diagnostics.
+  Shared `MainActivity` and `MusicService` no longer reference `Host*` implementations
+  or parasite build flags. `HostComponentRuntime` retains the existing host-only
+  wrapping/orientation and restore-before-media-key behavior without changing layouts,
+  player state serialization, controls or lifecycle order.
+- Shared Retrofit providers now accept named `Call.Factory` bindings for NetEase API,
+  WeAPI and audio matching. Parasite selects the same official factory for all three;
+  standalone can supply its original separate transports. These bindings alone do not
+  resolve endpoint/response differences or qualify standalone requests.
+- Shared download notifications no longer explicitly call host routing or depend on a
+  host notification-ID policy. Their progress ID remains unchanged. Runtime-owned
+  PendingIntent hooks perform carrier routing, as they already do for Media3; the host
+  foreground adapter owns probe selection and dispatcher completion callbacks.
+- 642 JVM tests and all 46 parasite device tests pass. New cases check independent
+  request factories, graph runtime identity, host/foreign Context boundaries, disabled
+  behavior and Activity orientation. Actual platform MediaSessions exercise adapter
+  binding, replacement disposal and delivery; this is not audible-output evidence.
+- In-host synthetic DENIED work starts naturally after its configured delay, promotes
+  the foreground carrier, completes one substitute authorization call with zero resource
+  transfers, and leaves FAILED work/task rows with no artifact. The resulting notification
+  opens the original portrait MeiloX Home. Its private records/channel are cleaned up;
+  the real account, queue and downloaded song are not qualification substitutes.
+- Debug, instrumentation and unsigned R8 builds pass; release 16 KB alignment passes.
+  The final ordinary debug package has APP=true and HOST/RUNTIME/WORK probes=false.
+  Its original launcher cold start restores portrait Home and the account/player;
+  one module music service is reported and the current process has no crash-buffer
+  entries. A system media PLAY then PAUSE advances the active module session from
+  47,014 ms to 74,255 ms and leaves it paused; the official session stays inactive.
+  This proves live control/progress, not audible output or server listening statistics.
+  The pre-existing real media row remains published, TV-owned and 22,705,573 bytes.
+
+Local-only evidence: `/tmp/meilox-runtime-bindings-build.log`,
+`/tmp/meilox-runtime-bindings-device.log`, `/tmp/meilox-runtime-bindings-final-build.log`,
+`/tmp/meilox-runtime-notification.png`, `/tmp/meilox-runtime-notification-entry.png`
+and `/tmp/meilox-runtime-final-home.png`. No logs, screenshots or APKs are committed.
+
+D1 is still partial. Graph/bootstrap accessors, backend-specific login content and the
+host qualification fixtures must move behind flavor-owned source boundaries. Standalone
+Application startup, WorkManager foreground types/aggregation and database-upgrade policy
+still need explicit restoration/validation. Neither flavor targets nor the standalone
+backend are implemented yet; the next increment must address those remaining dependencies,
+not reintroduce host branches in shared pages.
 
 ## Acceptance and Remaining Decisions
 
@@ -180,4 +225,4 @@ flavor source sets. Neither flavor targets nor the standalone backend are implem
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
 
-All D1-D6 exit conditions remain pending; the checkpoint above records partial D1 work only.
+All D1-D6 exit conditions remain pending; the checkpoints above record partial D1 work only.

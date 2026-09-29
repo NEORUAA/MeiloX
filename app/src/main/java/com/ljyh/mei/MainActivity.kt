@@ -217,7 +217,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: Context) =
-        super.attachBaseContext(com.ljyh.mei.parasite.HostRuntimeProbe.wrapAppComponent(newBase))
+        super.attachBaseContext(com.ljyh.mei.di.AppGraph.component.runtime().wrapComponent(newBase))
 
     override val defaultViewModelProviderFactory: androidx.lifecycle.ViewModelProvider.Factory
         get() = com.ljyh.mei.di.AppGraph.component.viewModelFactory()
@@ -243,10 +243,7 @@ class MainActivity : ComponentActivity() {
         setTheme(R.style.Theme_Music)
         com.ljyh.mei.di.AppGraph.component.inject(this)
         super.onCreate(savedInstanceState)
-        if (BuildConfig.PARASITE_APP_ENABLED && packageName == com.ljyh.mei.parasite.HostIdentity.PACKAGE) {
-            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            com.ljyh.mei.parasite.HostRuntimeProbe.report("app_activity_created restored=${savedInstanceState != null}")
-        }
+        com.ljyh.mei.di.AppGraph.component.runtime().activityCreated(this, savedInstanceState != null)
         enableEdgeToEdge()
         CrashHandler.init(this)
         if (BuildConfig.DEBUG) {

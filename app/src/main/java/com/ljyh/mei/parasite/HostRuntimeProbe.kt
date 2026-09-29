@@ -99,9 +99,6 @@ internal object HostRuntimeProbe {
 
     fun wrap(base: Context): Context = applicationContext.wrap(base)
 
-    fun wrapAppComponent(base: Context): Context =
-        if (BuildConfig.PARASITE_APP_ENABLED && base.packageName == HostIdentity.PACKAGE) wrap(base) else base
-
     fun offerMedia(url: String) {
         mediaUrl = url
         playback.update { it.copy(ready = true) }

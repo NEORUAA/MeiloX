@@ -24,6 +24,7 @@ interface AppComponent {
     fun hostRequests(): HostRequestBridge
     fun hostPlaybackReports(): com.ljyh.mei.parasite.HostPlaybackReportBridge
     fun playbackReports(): com.ljyh.mei.playback.PlaybackReportSink
+    fun runtime(): com.ljyh.mei.runtime.ComponentRuntime
     fun sessions(): com.ljyh.mei.data.session.SessionStore
     fun account(): AccountStore
     fun apiService(): ApiService

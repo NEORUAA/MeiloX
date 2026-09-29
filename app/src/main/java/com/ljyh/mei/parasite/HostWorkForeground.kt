@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.work.impl.foreground.SystemForegroundService
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.playback.DownloadNotifications
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedModule
@@ -104,21 +105,27 @@ internal class HostWorkForegroundService(private val report: (String) -> Unit) :
     private var foregroundId = 0
     override fun attachBaseContext(base: Context) = super.attachBaseContext(HostRuntimeProbe.wrap(base))
 
+    private fun downloadNotifications(id: Int): DownloadNotifications? = when {
+        id == DownloadNotifications.PROGRESS_ID -> DownloadNotifications.production
+        BuildConfig.PARASITE_WORK_PROBE && id == DownloadNotifications.PROGRESS_ID - 1 -> DownloadNotifications.qualification
+        else -> null
+    }
+
     override fun startForeground(notificationId: Int, notificationType: Int, notification: Notification) {
         check(packageName == HostIdentity.PACKAGE && applicationInfo.targetSdkVersion == 29 && notificationType == 0)
         check(notificationId in HostWorkForegroundPolicy.MIN_NOTIFICATION_ID..HostWorkForegroundPolicy.MAX_NOTIFICATION_ID)
         // The pinned manifest has no typed foreground declaration; retain platform permission checks.
-        startForeground(notificationId, DownloadNotifications.forProgressId(notificationId)?.current(this, notification) ?: notification)
+        startForeground(notificationId, downloadNotifications(notificationId)?.current(this, notification) ?: notification)
         if (foregroundId != notificationId) report("work_foreground_promoted legacy_manifest=true")
         foregroundId = notificationId
     }
 
     override fun notify(notificationId: Int, notification: Notification) {
-        super.notify(notificationId, DownloadNotifications.forProgressId(notificationId)?.current(this, notification) ?: notification)
+        super.notify(notificationId, downloadNotifications(notificationId)?.current(this, notification) ?: notification)
     }
 
     override fun cancelNotification(notificationId: Int) {
-        DownloadNotifications.forProgressId(notificationId)?.let { notices ->
+        downloadNotifications(notificationId)?.let { notices ->
             // AndroidX cancels the promoted notification as well as the completed work's one.
             // Shared download progress is owned by the batch, never an individual callback.
             if (notices.refreshProgress(this)) return
@@ -130,6 +137,7 @@ internal class HostWorkForegroundService(private val report: (String) -> Unit) :
     override fun stop(startId: Int) {
         super.stop(startId)
         foregroundId = 0
-        DownloadNotifications.publishCompletions(this)
+        DownloadNotifications.production.publishCompletion(this)
+        if (BuildConfig.PARASITE_WORK_PROBE) DownloadNotifications.qualification.publishCompletion(this)
     }
 }

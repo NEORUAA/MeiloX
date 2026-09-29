@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.playback.DownloadNotifications
 import java.util.UUID
 
 /** Commands from the isolated AndroidX dispatcher, not the host's IPC protocol. */
@@ -18,7 +19,7 @@ internal object HostWorkForegroundPolicy {
     const val CANCEL = "ACTION_CANCEL_WORK"
     const val STOP = "ACTION_STOP_FOREGROUND"
     const val MIN_NOTIFICATION_ID = 0x4D590000
-    const val MAX_NOTIFICATION_ID = MIN_NOTIFICATION_ID + 65535
+    const val MAX_NOTIFICATION_ID = DownloadNotifications.PROGRESS_ID
 
     fun valid(action: String?, workId: String?, generation: Int, notificationId: Int, hasNotification: Boolean, notificationType: Int): Boolean {
         if (action == STOP) return true

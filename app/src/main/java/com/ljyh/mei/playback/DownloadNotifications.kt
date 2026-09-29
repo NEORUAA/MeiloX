@@ -11,14 +11,12 @@ import androidx.work.ForegroundInfo
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.BuildConfig
-import com.ljyh.mei.parasite.HostAppComponentHooks
-import com.ljyh.mei.parasite.HostWorkForegroundPolicy
 import timber.log.Timber
 
 /** One visible progress notification; WorkManager still owns each worker's foreground lifetime. */
 internal class DownloadNotifications private constructor(val progressId: Int, private val completionId: Int, private val channel: String) {
     companion object {
-        const val PROGRESS_ID = HostWorkForegroundPolicy.MAX_NOTIFICATION_ID
+        const val PROGRESS_ID = 0x4D59FFFF
         private const val LAST_REQUEST = "meilox_download_last_request"
         private const val TOTAL = "meilox_download_total"
         val production = DownloadNotifications(PROGRESS_ID, DownloadWorker.NOTIFICATION_ID, DownloadWorker.CHANNEL_ID)
@@ -27,16 +25,6 @@ internal class DownloadNotifications private constructor(val progressId: Int, pr
             DownloadNotifications(PROGRESS_ID - 1, PROGRESS_ID - 2, "download_qualification_channel")
         }
 
-        fun forProgressId(id: Int): DownloadNotifications? = when {
-            id == PROGRESS_ID -> production
-            BuildConfig.PARASITE_WORK_PROBE && id == PROGRESS_ID - 1 -> qualification
-            else -> null
-        }
-
-        fun publishCompletions(context: Context) {
-            production.publishCompletion(context)
-            if (BuildConfig.PARASITE_WORK_PROBE) qualification.publishCompletion(context)
-        }
     }
     private val state = DownloadNotificationState()
     private var publishedRevision = -1L
@@ -101,8 +89,8 @@ internal class DownloadNotifications private constructor(val progressId: Int, pr
     }
 
     private fun build(context: Context, snapshot: DownloadNotificationState.Snapshot): Notification {
-        val intent = HostAppComponentHooks.route(Intent(context, MainActivity::class.java)
-            .apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP })
+        val intent = Intent(context, MainActivity::class.java)
+            .apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP }
         val pendingIntent = PendingIntent.getActivity(context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(context, channel)

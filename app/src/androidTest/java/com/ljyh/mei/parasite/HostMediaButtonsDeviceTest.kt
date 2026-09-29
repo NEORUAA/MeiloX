@@ -75,8 +75,9 @@ class HostMediaButtonsDeviceTest {
                 return true
             }
         }, Handler(Looper.getMainLooper()))
-        val old = HostMediaButtons.bind(base, first.sessionToken)
-        val current = HostMediaButtons.bind(base, second.sessionToken)
+        val runtime = HostComponentRuntime()
+        val old = checkNotNull(runtime.bindMediaButtons(base, first.sessionToken))
+        val current = checkNotNull(runtime.bindMediaButtons(base, second.sessionToken))
         try {
             old.close()
             HostMediaButtons.receive(context, key(KeyEvent.KEYCODE_MEDIA_PAUSE)) {}
@@ -86,7 +87,7 @@ class HostMediaButtonsDeviceTest {
             current.close()
             HostMediaButtons.receive(context, key(KeyEvent.KEYCODE_MEDIA_PLAY)) {}
             assertEquals(1, context.starts.size)
-            assertTrue(HostMediaButtons.consumeResumeRequest())
+            assertTrue(runtime.consumePlaybackResumeRequest())
         } finally {
             old.close()
             current.close()

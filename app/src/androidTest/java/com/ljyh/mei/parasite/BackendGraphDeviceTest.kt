@@ -15,6 +15,8 @@ class BackendGraphDeviceTest {
             assertSame(graph.sessions(), graph.playbackReports().sessions)
             assertSame(graph.sessions(), account.sessions)
             assertSame(graph.playbackReports(), graph.hostPlaybackReports())
+            assertSame(graph.runtime(), graph.runtime())
+            org.junit.Assert.assertTrue(graph.runtime() is HostComponentRuntime)
         } finally { account.close() }
     }
 }
