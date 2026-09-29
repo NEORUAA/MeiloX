@@ -32,14 +32,17 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", (providers.gradleProperty("parasiteRuntimeProbe").orNull == "true").toString())
+            val appProbe = providers.gradleProperty("parasiteAppProbe").orNull == "true"
+            buildConfigField("boolean", "PARASITE_APP_PROBE", appProbe.toString())
+            buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", (appProbe || providers.gradleProperty("parasiteRuntimeProbe").orNull == "true").toString())
             buildConfigField(
                 "boolean",
                 "PARASITE_HOST_PROBE",
-                (providers.gradleProperty("parasiteHostProbe").orNull == "true").toString(),
+                (appProbe || providers.gradleProperty("parasiteHostProbe").orNull == "true").toString(),
             )
         }
         release {
+            buildConfigField("boolean", "PARASITE_APP_PROBE", "false")
             buildConfigField("boolean", "PARASITE_RUNTIME_PROBE", "false")
             buildConfigField("boolean", "PARASITE_HOST_PROBE", "false")
             isMinifyEnabled = true

@@ -216,6 +216,9 @@ import javax.inject.Inject
 
 class MainActivity : ComponentActivity() {
 
+    override fun attachBaseContext(newBase: Context) =
+        super.attachBaseContext(com.ljyh.mei.parasite.HostRuntimeProbe.wrapAppComponent(newBase))
+
     override val defaultViewModelProviderFactory: androidx.lifecycle.ViewModelProvider.Factory
         get() = com.ljyh.mei.di.AppGraph.component.viewModelFactory()
 
@@ -235,8 +238,15 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.S)
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        savedInstanceState?.classLoader = javaClass.classLoader
+        intent?.setExtrasClassLoader(javaClass.classLoader)
+        setTheme(R.style.Theme_Music)
         com.ljyh.mei.di.AppGraph.component.inject(this)
         super.onCreate(savedInstanceState)
+        if (BuildConfig.PARASITE_APP_PROBE) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            com.ljyh.mei.parasite.HostRuntimeProbe.report("app_activity_created restored=${savedInstanceState != null}")
+        }
         enableEdgeToEdge()
         CrashHandler.init(this)
         if (BuildConfig.DEBUG) {
@@ -330,6 +340,7 @@ class MainActivity : ComponentActivity() {
 
                 onDispose {
                     // Compose 销毁时解绑
+                    playerConnection?.dispose()
                     context.unbindService(connection)
                     playerConnection = null
                 }
@@ -1100,6 +1111,11 @@ class MainActivity : ComponentActivity() {
     }
     override fun onDestroy() {
         super.onDestroy()
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        savedInstanceState.classLoader = javaClass.classLoader
+        super.onRestoreInstanceState(savedInstanceState)
     }
 
 }

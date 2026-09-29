@@ -1,7 +1,6 @@
 package com.ljyh.mei.playback
 
 import android.app.PendingIntent
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.audiofx.AudioEffect
@@ -47,12 +46,9 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.DefaultMediaNotificationProvider
-import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.SessionToken
 import coil3.ImageLoader
-import com.google.common.util.concurrent.MoreExecutors
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.IsShuffleModeKey
@@ -111,6 +107,9 @@ import javax.inject.Inject
 class MusicService : MediaLibraryService(),
     Player.Listener,
     PlaybackStatsListener.Callback {
+
+    override fun attachBaseContext(newBase: Context) =
+        super.attachBaseContext(com.ljyh.mei.parasite.HostRuntimeProbe.wrapAppComponent(newBase))
 
     lateinit var player: StableDeckPlayer
     val beatMeter = PlaybackBeatMeter()
@@ -363,11 +362,12 @@ class MusicService : MediaLibraryService(),
                 persistPlaybackSnapshot()
             }
         }
-        val sessionToken = SessionToken(this, ComponentName(this, MusicService::class.java))
-        val controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
-        controllerFuture.addListener({ controllerFuture.get() }, MoreExecutors.directExecutor())
+        addSession(mediaSession)
 
         connectivityManager = getSystemService(ConnectivityManager::class.java)
+        if (com.ljyh.mei.BuildConfig.PARASITE_APP_PROBE) {
+            com.ljyh.mei.parasite.HostRuntimeProbe.report("app_music_service_created sessions=${sessions.size}")
+        }
 
     }
 

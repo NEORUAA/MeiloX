@@ -744,6 +744,63 @@ routes and has no production player connection; it must not be mistaken for the 
 application shell. Production takeover must reuse the original full navigation/player
 composition. This recheck does not complete stage 2, stage 4, or stage 6.
 
+### Original App Component Qualification
+
+The opt-in debug flag `-PparasiteAppProbe=true` now carries the original `MainActivity`
+and `MusicService` through the TV's registered test Activity and local-music service.
+It enables the existing host/runtime probes as prerequisites. Default debug and release
+builds leave this flag off, and the official launcher remains untouched.
+
+- The original Compose tree, navigation, page hierarchy, mini/full player, glass materials,
+  and animations are reused without alternate layouts. The Activity receives module
+  resources, its original theme, saved-state class loader, and portrait orientation; the
+  host's AutoSize adaptation excludes this Activity.
+- Only explicit module Activity/service targets under the verified host package are
+  mapped. Implicit intents, unrelated packages, and official component targets remain
+  unchanged. Context service calls and Media3-created PendingIntents use that mapping.
+- The original service owns its MediaSession with `addSession`, without constructing an
+  otherwise unused self-controller against an unregistered module component. Activity
+  disposal releases its PlayerConnection listener before unbinding.
+- Notification small icons name the installed module resource package. Module-owned
+  notification action icons are rasterized before crossing into SystemUI, retaining the
+  original actions, labels, and PendingIntents. Live testing initially found invisible
+  transport icons despite populated notification actions. The legacy
+  [AOSP media-action path](https://android.googlesource.com/platform/frameworks/base/+/a3b7a10a15aa/packages/SystemUI/src/com/android/systemui/media/MediaDataManager.kt)
+  rebinds resource IDs to the posting package; the rasterized icons rendered correctly on
+  this AVD. Hooks affect only the module's isolated AndroidX classes.
+- The pinned TV target-29 service uses the platform's legacy two-argument
+  `startForeground`. This narrow Media3 adaptation neither fabricates a foreground-service
+  type nor changes package metadata, permissions, or system-server behavior.
+
+Verification on 2026-09-29:
+
+- The original Home and Library, bottom navigation, mini player, and expanded player ran
+  inside the verified TV process. Cold start and the portrait-triggered saved-state
+  recreation succeeded. A subsequent module reinstall/host restart restored the paused
+  playback snapshot and official account presentation.
+- The reported Library song menu and its download-quality submenu blurred the recorded
+  page while retaining sharp menu content. Consecutive recording frames showed submenu
+  expansion and the original player glass transition/fluid-background motion. Native
+  screenshots also showed the Home feed sampled behind the original bottom controls.
+  No download was selected. Images and videos remain outside Git.
+- A Library track played through the real MusicService, completed its 5:29 timeline, and
+  advanced to another queue item. MediaSession position advanced in the background;
+  AudioFlinger showed active 44.1 kHz stereo PCM output, unmuted state, and zero observed
+  underruns. This is decoder/output-state evidence, not audible-quality acceptance.
+- The registered host service held foreground notification 888. After the icon fix,
+  SystemUI displayed artwork and all three original transport icons. Actual notification
+  taps changed the real session from PLAYING to PAUSED and back; the content PendingIntent
+  returned to the original MeiloX Activity without a second Activity in its task.
+- `:app:testDebugUnitTest :app:assembleDebug -PparasiteAppProbe=true` passed all 379 tests
+  in 56 suites. Explicit-component/resource policy has two focused tests. `git diff --check`
+  and 16 KB APK alignment passed. The tested host processes had no crash-buffer entries.
+
+This is debug component qualification, not production launcher takeover or complete
+playback migration. Official playback services still initialize but their observed media
+session stayed STOPPED. Preventing duplicate official playback/reporting, migrating old
+account/reporting consumers, downloads, effects/AutoMix regression, lyric/beat verification,
+and the recording/PiP host decision remain gates. Release runtime acceptance is pending.
+
 ### Remaining Gates
 
 - Pin package, version, and signing identity before installing host-specific hooks.
@@ -766,10 +823,10 @@ composition. This recheck does not complete stage 2, stage 4, or stage 6.
 | Stage | Status | Exit condition |
 | --- | --- | --- |
 | 1. Host and feature baseline | Reopened: runtime prototype passed, but recording/PiP manifest gate requires a user decision | Select a host or explicitly approve a process-boundary exception without removing features |
-| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, and background-service prototype passed | Production component routing remains |
+| 2. API 102 runtime | In progress: identity, Compose/resources, recreation, JNI, storage, module dependency graph, original app shell, real music service, and notification qualification passed | Production component routing and host capability decision remain |
 | 3. Official-session login UI | In progress: QR lifecycle, first account consumers, and guarded recovery passed | Real authorization/abort/logout/account changes and remaining account consumers remain |
 | 4. Core business migration | In progress: shared Retrofit transport, eight typed operations, Account Home, cloud History, session-owned Home feed/cache, and Library collection reads passed | All core screens use host business transport and pass UI/session acceptance |
-| 5. Playback migration | Not started | Existing audio, download, timer, notification, and reporting behavior passes |
+| 5. Playback migration | In progress: original player/service, initial queue playback, and notification qualification passed | Full audio, effects/AutoMix, download, timer, account ownership, and official reporting behavior passes |
 | 6. Remaining features | In progress: podcast session ownership and initial read presentation; full paging and writes remain unaccepted | Every feature row above has implementation and appropriate verification evidence |
 | 7. Cleanup and regression | Not started | Old NetEase transport removed; release build and full regression pass |
 
@@ -784,6 +841,7 @@ Use Android SDK `aapt2 dump badging`, `apksigner verify --print-certs`, and
 ```sh
 ./gradlew :app:testDebugUnitTest --tests 'com.ljyh.mei.parasite.*' :app:assembleDebug -PparasiteHostProbe=true
 ./gradlew :app:assembleDebug -PparasiteHostProbe=true -PparasiteRuntimeProbe=true
+./gradlew :app:testDebugUnitTest :app:assembleDebug -PparasiteAppProbe=true
 adb -s emulator-5554 shell getprop ro.product.cpu.abilist
 adb -s emulator-5554 shell getconf PAGE_SIZE
 adb -s emulator-5554 shell dumpsys package com.netease.cloudmusic.tv

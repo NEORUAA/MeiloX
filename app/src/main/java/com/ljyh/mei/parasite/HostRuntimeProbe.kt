@@ -6,6 +6,9 @@ import android.app.Instrumentation
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import com.ljyh.mei.BuildConfig
+import com.ljyh.mei.MainActivity
+import com.ljyh.mei.playback.MusicService
 import io.github.libxposed.api.XposedModule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,8 +18,8 @@ internal data class ProbePlaybackState(val ready: Boolean = false, val playing: 
 
 /** Debug-only component/resource qualification. Never redirects the official launcher. */
 internal object HostRuntimeProbe {
-    const val ACTIVITY = "com.netease.cloudmusic.tv.test.TextMainActivity"
-    const val SERVICE = "com.netease.cloudmusic.service.LocalMusicMatchService"
+    const val ACTIVITY = HostComponentMapping.ACTIVITY
+    const val SERVICE = HostComponentMapping.SERVICE
     @Volatile var mediaUrl: String? = null
         private set
     private val playback = MutableStateFlow(ProbePlaybackState())
@@ -36,13 +39,14 @@ internal object HostRuntimeProbe {
         report = logger
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
+        if (BuildConfig.PARASITE_APP_PROBE) HostAppComponentHooks.install(module, applicationContext, report)
         Thread({ ModuleStorageProbe.run(applicationContext, application, report) }, "MeiloX-storage-probe").start()
         module.hook(AppComponentFactory::class.java.getMethod("instantiateService", ClassLoader::class.java, String::class.java, Intent::class.java))
             .intercept { chain ->
                 // ActivityThread supplies no start Intent until after service creation.
                 if (chain.getArg(1) == SERVICE) {
                     report("runtime_service_instantiated")
-                    HostRuntimeProbeService()
+                    if (BuildConfig.PARASITE_APP_PROBE) MusicService() else HostRuntimeProbeService()
                 } else chain.proceed()
             }
         module.hook(Instrumentation::class.java.getMethod(
@@ -54,13 +58,14 @@ internal object HostRuntimeProbe {
                 val config = loader.loadClass("me.jessyan.autosize.AutoSizeConfig")
                     .getMethod("getInstance").invoke(null)
                 val manager = config.javaClass.getMethod("getExternalAdaptManager").invoke(config)
+                val activityClass = if (BuildConfig.PARASITE_APP_PROBE) MainActivity::class.java else HostRuntimeProbeActivity::class.java
                 if (manager.javaClass.getMethod("isCancelAdapt", Class::class.java)
-                        .invoke(manager, HostRuntimeProbeActivity::class.java) != true) {
+                        .invoke(manager, activityClass) != true) {
                     manager.javaClass.getMethod("addCancelAdaptOfActivity", Class::class.java)
-                        .invoke(manager, HostRuntimeProbeActivity::class.java)
+                        .invoke(manager, activityClass)
                 }
                 report("runtime_activity_instantiated host_process=${Application.getProcessName() == HostIdentity.PACKAGE}")
-                HostRuntimeProbeActivity()
+                if (BuildConfig.PARASITE_APP_PROBE) MainActivity() else HostRuntimeProbeActivity()
             } else {
                 chain.proceed()
             }
@@ -68,6 +73,9 @@ internal object HostRuntimeProbe {
     }
 
     fun wrap(base: Context): Context = applicationContext.wrap(base)
+
+    fun wrapAppComponent(base: Context): Context =
+        if (BuildConfig.PARASITE_APP_PROBE && base.packageName == HostIdentity.PACKAGE) wrap(base) else base
 
     fun offerMedia(url: String) {
         mediaUrl = url

@@ -2,6 +2,9 @@ package com.ljyh.mei.parasite
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.res.AssetManager
 import android.content.res.Configuration
@@ -33,6 +36,12 @@ internal class ModuleContext private constructor(
     override fun getSystemService(name: String): Any? = if (name == LAYOUT_INFLATER_SERVICE) {
         LayoutInflater.from(baseContext).cloneInContext(this)
     } else super.getSystemService(name)
+
+    override fun startService(service: Intent): ComponentName? = super.startService(HostAppComponentHooks.route(service))
+    override fun startForegroundService(service: Intent): ComponentName? = super.startForegroundService(HostAppComponentHooks.route(service))
+    override fun stopService(name: Intent): Boolean = super.stopService(HostAppComponentHooks.route(name))
+    override fun bindService(service: Intent, connection: ServiceConnection, flags: Int): Boolean =
+        super.bindService(HostAppComponentHooks.route(service), connection, flags)
 
     override fun getDataDir(): File = directory(File(super.getDataDir(), ModuleStorage.NAMESPACE))
     override fun getFilesDir(): File = directory(File(dataDir, "files"))
