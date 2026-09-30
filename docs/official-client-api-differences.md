@@ -1422,6 +1422,35 @@ These are integration differences, not server API semantics.
   request, file transfer, WorkManager mutation or AVD upgrade was performed for this
   audit. The conversion and persisted-data acceptance are not implemented or passed.
 
+#### Standalone v17 Fixture Qualification (2026-09-30)
+
+- The standalone 18-to-19 migration deliberately differs from parasite: it adds the
+  ownership/destination columns without clearing legacy URLs or failing pending rows.
+  Three new device tests now exercise the complete 17-to-20 chain using a frozen,
+  independently created 13-table v17 entity-schema fixture from the recorded `main`
+  baseline. They do not downgrade a current Room database or copy installed user data.
+- Populated/empty upgrades and populated reopen pass current Room schema validation.
+  All old columns, SQLite value types and values survive, including every download
+  status/URL/progress, song metadata/file references, playlist order, history and
+  lyric/color caches. DAO reads expose the completed fixture downloads, and the private
+  dummy file's bytes are unchanged. Its synthetic content URI is compared as stored
+  text only; no real MediaStore permission, playback or transfer is implied.
+- Added ownership fields remain empty/zero with the default destination; the new
+  account membership and artifact tables stay empty. A retained remote playlist row
+  is not proof of current-account membership, so account-filtered queries await the
+  authoritative refresh. Local playlists remain visible. Tests do not assign any
+  unfinished legacy work to the currently authenticated account.
+- An injected failure after the final migration rolls back all three steps to the
+  original v17 schema/data. Retrying real migrations succeeds and preserves history
+  autoincrement. All three migration cases and four existing standalone package/graph/
+  native-codec checks pass on the API 37, 16 KB AVD; the tests clean their UUID-named
+  private databases/files. No production migration or frontend code changed.
+- This is database-fixture evidence, not signed production update acceptance. Earlier
+  pre-v17 migration histories, external provider grants, preferences/queue files and
+  WorkManager inputs/execution remain unqualified. The pending download-policy choice
+  and legacy work converter above are still required; row preservation does not
+  resolve them. No quota-consuming grant, social mutation or user-media write occurred.
+
 ### ABI-011: Asynchronous Cookie Recovery Must Not Cancel Local Queue Restoration
 
 - Date: 2026-09-30. Standalone cold-start device regression after real playback.

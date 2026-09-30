@@ -710,6 +710,48 @@ Local evidence: `/tmp/meilox-standalone-live-playback-reports.log`,
 `/tmp/meilox-standalone-restore-fixed.png`, plus
 `/tmp/meilox-standalone-playback-final-home.png`. None are committed.
 
+### D3 Checkpoint: Isolated Standalone v17 Database Upgrade (2026-09-30)
+
+- Added a frozen, synthetic v17 SQLite fixture based on the 13 entity tables at
+  `main` commit `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. It is created independently
+  of current Room code, not by creating v20 and lowering its version. Each test uses
+  a UUID-named private database and dummy file under the isolated standalone debug
+  package; cleanup checks remove only those fixture paths. The fixture code never
+  opens the installed app database, loads credentials or accesses real media/work.
+  Instrumentation still runs the debug application's ordinary session bootstrap.
+- The actual 17-to-18, standalone 18-to-19 and 19-to-20 migrations pass Room's complete
+  v20 schema validation. Every original column/value/type is compared before and after
+  migration and again after reopening. Songs, favorites, QQ mappings, playlists/order,
+  album/artist relations, lyrics/colors, playback history/counts and all five legacy
+  download states retain their fixture data. Integrity and foreign-key checks pass.
+- DAO reads still expose completed downloads and their original path/URI strings;
+  the private dummy file retains its bytes. Legacy pending URLs/progress remain intact,
+  unlike the parasite policy. New request/account fields retain unowned defaults, and
+  no account playlist membership or download publication receipt is fabricated.
+  Legacy remote playlist rows remain stored but require an authoritative account
+  refresh to appear in the account-filtered list. Local playlist visibility is retained.
+- Three AVD tests pass: populated upgrade/reopen, empty upgrade, and injected final-step
+  failure followed by rollback/retry. The failure rolls back all preceding schema/data
+  changes to v17, and the successful retry also preserves the history autoincrement
+  sequence. Together with the existing package/graph/native-codec checks, all seven
+  selected standalone device tests pass. Only the instrumentation APK was updated;
+  no TV/module or standalone application APK was installed for this checkpoint.
+- Both debug builds and the standalone instrumentation build pass. The paired JVM
+  gate remains 666 standalone tests in 84 suites and 731 parasite tests in 91 suites,
+  with no failures/errors/skips. `git diff --check` passes. No production, UI or migration
+  code changed, and no new release-runtime claim is made. The standalone Home was
+  reopened after instrumentation; its retained account and paused mini-player returned.
+- This qualifies the fresh-v17 entity-schema fixture only. Earlier historical migration
+  paths, DataStore/settings/serialized queues, WorkManager conversion, provider access
+  grants, valid audio decoding and signed production upgrades remain separate gates.
+  Preserved pending rows do not prove resumable work; ABI-010's download-policy decision
+  remains open. D3, D5 and the overall goal are not complete.
+
+Local evidence: `/tmp/meilox-dual-v17-migration-build.log`,
+`/tmp/meilox-standalone-v17-migration-device.log`,
+`/tmp/meilox-standalone-v17-regression-device.log` and
+`/tmp/meilox-standalone-v17-final-home.png`. None are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
