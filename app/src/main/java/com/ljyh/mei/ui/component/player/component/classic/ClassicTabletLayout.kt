@@ -201,7 +201,7 @@ fun ClassicTabletLayout(
                     },
                     onLongClick = { source ->
                         if (source == LyricSource.QQMusic && mediaMetadata != null) {
-                            stateContainer.playerViewModel.deleteSongById(id = mediaMetadata!!.id.toString())
+                            stateContainer.playerViewModel.resetQQSongForLyric(mediaMetadata!!)
                             Toast.makeText(context, "已删除QQ音乐歌词", Toast.LENGTH_SHORT)
                                 .show()
                         }

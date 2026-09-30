@@ -106,7 +106,7 @@ fun FloatingLyricsPipScreen(
     val (fontScale) = rememberPreference(FloatingLyricsFontScaleKey, 1f)
     var position by remember { mutableLongStateOf(playerConnection.player.currentPosition) }
 
-    LaunchedEffect(metadata?.id) {
+    LaunchedEffect(metadata?.id, metadata?.source) {
         metadata?.let { viewModel.lyricManager.loadLyrics(it) }
     }
     LaunchedEffect(isPlaying) {

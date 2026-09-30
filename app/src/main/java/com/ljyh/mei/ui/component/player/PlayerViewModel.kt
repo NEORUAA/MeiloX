@@ -107,16 +107,9 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun deleteSongById(id: String) {
-        viewModelScope.launch {
-            qqSongRepository.deleteSongById(id)
-            lyricManager.loadLyrics(mediaMetadata ?: return@launch, forceReload = true)
-        }
-    }
+    fun resetQQSongForLyric(metadata: MediaMetadata) = lyricManager.resetQQSongForLyric(metadata)
 
-    suspend fun getQQSongId(metadataId: Long): String? {
-        return qqSongRepository.getQQSong(metadataId.toString()).firstOrNull()?.qid
-    }
+    suspend fun getQQSongId(metadata: MediaMetadata): String? = lyricManager.getQQSongId(metadata)
 
 
 

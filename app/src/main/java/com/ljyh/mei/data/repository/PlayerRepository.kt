@@ -23,10 +23,15 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okio.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 internal interface PlayerLikeSource {
     suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean>
@@ -40,6 +45,10 @@ class PlayerRepository(
     private val sessions: SessionStore,
     private val favorites: SongFavoritesBackend,
     private val lyrics: SongLyricBackend = SongLyricBackend(apiService, sessions),
+    private val amllClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build(),
 ) : PlayerLikeSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
@@ -148,37 +157,39 @@ class PlayerRepository(
             }
         }
 
-    private val amllClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
-
     suspend fun getAMLLyric(id: String): Resource<String> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val url = "https://amlldb.bikonoo.com/ncm-lyrics/$id.ttml"
-                val request = Request.Builder().url(url).build()
-
-                val result = amllClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val lyricContent = response.body?.string()
-                        if (!lyricContent.isNullOrEmpty() && lyricContent != "歌词不存在") {
-                            Resource.Success(lyricContent)
-                        } else {
-                            Resource.Error("歌词不存在")
-                        }
-                    } else {
-                        if (response.code == 404) {
-                            Resource.Error("歌词不存在")
-                        } else {
-                            Resource.Error("请求失败，错误码: ${response.code}")
-                        }
-                    }
+        return suspendCancellableCoroutine { continuation ->
+            val url = "https://amlldb.bikonoo.com/ncm-lyrics/$id.ttml"
+            val request = Request.Builder().url(url).build()
+            val call = amllClient.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resume(Resource.Error("网络异常，请检查你的网络连接"))
                 }
-                result
-            } catch (e: IOException) {
-                Resource.Error("网络异常，请检查你的网络连接")
-            }
+
+                override fun onResponse(call: Call, response: Response) {
+                    val result = try {
+                        response.use {
+                            if (response.isSuccessful) {
+                                val lyricContent = response.body?.string()
+                                if (!lyricContent.isNullOrEmpty() && lyricContent != "歌词不存在") {
+                                    Resource.Success(lyricContent)
+                                } else {
+                                    Resource.Error("歌词不存在")
+                                }
+                            } else if (response.code == 404) {
+                                Resource.Error("歌词不存在")
+                            } else {
+                                Resource.Error("请求失败，错误码: ${response.code}")
+                            }
+                        }
+                    } catch (_: IOException) {
+                        Resource.Error("网络异常，请检查你的网络连接")
+                    }
+                    continuation.resume(result)
+                }
+            })
         }
     }
 

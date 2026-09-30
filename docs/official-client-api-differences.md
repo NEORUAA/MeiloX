@@ -615,7 +615,8 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   real account switching and complete AutoMix/effects/release-runtime acceptance remain
   separate work. Playing this one uploaded entry does not complete the cloud feature.
   API-021 subsequently implements source-aware lyric requests and Worker propagation;
-  rendered/current/preloaded lyric state ownership still needs its own acceptance.
+  API-022 adapts current/preloaded lyric state and cache ownership. Real cloud text and
+  karaoke rendering still need their own acceptance.
 
 ### API-016: Playback Reports Use the Native Official SDK
 
@@ -1331,10 +1332,46 @@ These are integration differences, not server API semantics.
   ordinary debug/release flags remain disabled after qualification.
 - Remaining: current/preloaded/manual-QQ/System Lyrics state and Room/in-memory cache
   ownership must consume the complete cloud identity rather than numeric entry IDs.
+  API-022 subsequently implements that ownership path without changing page architecture.
   Native cloud karaoke still needs verified parser/timing adaptation in the existing
   merge path. Actual text/timing/rendering, real account switches, real embedded tags
   and minified release execution are not proven by successful endpoint reads or closed
   fixtures. This checkpoint is not full cloud-lyrics or D4/D5 acceptance.
+
+### API-022: Cloud Lyric Consumers Must Retain Source and Request Ownership
+
+- Recorded: 2026-10-01. API-021's request adapter was source-aware, but shared current
+  and preloaded consumers still passed the logical entry ID. Memory/Room lyrics, QQ
+  mappings, Song Info lookup and existing mapping-reset actions also keyed that ID.
+  Two cloud files can have the same logical ID but different audio/file-owner/account
+  tuples. Catalog lyrics and private-cloud lyrics must not share that numeric namespace.
+- Current and preloaded loads now capture the complete `SongSourceIdentity` and one
+  session stamp. Official lyric requests receive the full source key; public AMLL
+  receives only its audio ID. Memory/Room/QQ entries use the full cloud key, while
+  ordinary catalog keys and V1 bodies remain numeric. There is no lookup fallback to
+  a cloud entry's numeric cache or QQ mapping, and no reinterpretation of old records.
+  Song Info and all existing player styles pass their unchanged metadata to source-owned
+  QQ lookup/reset operations. Their controls, navigation, layout and lyric precedence
+  are unchanged; this is backend identity propagation, not a frontend redesign.
+- Each current load, force reload or manual QQ selection starts a distinct request
+  batch even if its stable key is unchanged. One immutable source-result envelope
+  retains that batch through sampling and off-main parsing, including QQ's LRC
+  fallback. Network, public-resource, search, merge, duet and cache publications check
+  the captured session and batch. Cancellation propagates rather than becoming an
+  empty lyric. AMLL's actual OkHttp call is canceled through its suspend continuation.
+  Session invalidation/recovery clears private current state and session-affine memory
+  caches, cancels pending work, and retries the unchanged metadata only after its
+  account/session becomes valid; a foreign cloud account does not dispatch any source.
+- System Lyrics compares the complete player/lyric source key, advances its track
+  generation on source changes, and clears an old lyric timeline when its ownership
+  no longer matches. Shared player/PiP lyric effects and next-item preloading also react
+  to source changes, not just entry IDs. External provider/device acceptance remains
+  separate from this source adaptation.
+- Verification and live acceptance are recorded in the paired build-plan checkpoint.
+  Native cloud karaoke parser/timing, real cloud text rendering, actual account-switch
+  cooperation, embedded download tags and minified release execution remain open.
+  Existing same-source lyric-priority/update behavior is deliberately retained; this
+  entry does not claim fixes to inherited frontend behavior or full D4/D5 acceptance.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

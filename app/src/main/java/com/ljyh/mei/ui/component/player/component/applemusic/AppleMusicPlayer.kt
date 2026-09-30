@@ -301,7 +301,7 @@ fun AppleMusicPlayer(
                             },
                             onLongClick = { source ->
                                 if (source == LyricSource.QQMusic && mediaMetadata != null) {
-                                    stateContainer.playerViewModel.deleteSongById(id = mediaMetadata!!.id.toString())
+                                    stateContainer.playerViewModel.resetQQSongForLyric(mediaMetadata!!)
                                     android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             },

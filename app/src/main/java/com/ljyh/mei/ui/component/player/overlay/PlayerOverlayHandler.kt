@@ -150,7 +150,7 @@ class PlayerOverlayHandler(
             }
             MoreAction.DELETE -> {
                 mediaMetadata?.let {
-                    stateContainer.playerViewModel.deleteSongById(it.id.toString())
+                    stateContainer.playerViewModel.resetQQSongForLyric(it)
                 }
             }
             MoreAction.VIEW_PLAYLIST -> {

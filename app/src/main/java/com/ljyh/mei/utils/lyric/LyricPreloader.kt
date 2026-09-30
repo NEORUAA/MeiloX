@@ -2,16 +2,23 @@ package com.ljyh.mei.utils.lyric
 
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.qq.u.LyricResult
 import com.ljyh.mei.data.model.qq.u.SearchResult
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerRepository
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricSourceData
 import com.ljyh.mei.utils.encrypt.QRCUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
@@ -31,6 +38,7 @@ import kotlin.math.abs
 class LyricPreloader @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
+    private val sessions: SessionStore,
 ) {
     private val TAG = "LyricPreloader"
 
@@ -40,16 +48,25 @@ class LyricPreloader @Inject constructor(
      * @param metadata 歌曲元数据
      * @return 合并后的歌词数据，失败或无需预加载时返回 null
      */
-    suspend fun preload(metadata: MediaMetadata): LyricData? {
-        val songId = metadata.id.toString()
-        return fetchAndMerge(metadata, songId)
+    suspend fun preload(metadata: MediaMetadata, owner: SessionStamp = sessions.snapshot()): LyricData? {
+        val source = metadata.source ?: SongSourceIdentity(metadata.id)
+        require(source.entryId == metadata.id)
+        source.requireAccount(owner.identity)
+        requireOwner(owner)
+        return fetchAndMerge(metadata, source, owner).also { requireOwner(owner) }
     }
 
-    private suspend fun fetchAndMerge(metadata: MediaMetadata, songId: String): LyricData? {
+    private suspend fun requireOwner(owner: SessionStamp) {
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(owner)
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
+    }
+
+    private suspend fun fetchAndMerge(metadata: MediaMetadata, source: SongSourceIdentity, owner: SessionStamp): LyricData? {
         val (netResult, amResult, qqResult) = coroutineScope {
-            val netDeferred = async { fetchNetEase(songId) }
-            val amDeferred = async { fetchAM(songId) }
-            val qqDeferred = async { fetchQQ(metadata) }
+            val netDeferred = async { fetchNetEase(source.key, owner) }
+            val amDeferred = async { fetchAM(source.songId.toString(), owner) }
+            val qqDeferred = async { fetchQQ(metadata, source.key, owner) }
             Triple(netDeferred.await(), amDeferred.await(), qqDeferred.await())
         }
 
@@ -69,7 +86,7 @@ class LyricPreloader @Inject constructor(
                     )
                     sources.add(LyricSourceData.QQMusic(decoded, isQRC, null))
                 } catch (e: Exception) {
-                    Timber.e(e, "QRC decoding failed in preload")
+                    Timber.tag(TAG).w("QRC preload decoding failed: %s", e.javaClass.simpleName)
                 }
             }
 
@@ -77,42 +94,56 @@ class LyricPreloader @Inject constructor(
         }
     }
 
-    private suspend fun fetchNetEase(id: String): Resource<Lyric> {
+    private suspend fun fetchNetEase(id: String, owner: SessionStamp): Resource<Lyric> {
         return try {
-            repository.getLyricV1(id)
+            requireOwner(owner)
+            repository.getLyricV1(id, owner).also { requireOwner(owner) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SessionChangedException) {
+            throw e
         } catch (e: Exception) {
-            Timber.e(e, "NetEase preload fetch error")
+            Timber.tag(TAG).w("NetEase preload fetch failed: %s", e.javaClass.simpleName)
             Resource.Error("NetEase fetch failed")
         }
     }
 
-    private suspend fun fetchAM(id: String): Resource<String> {
+    private suspend fun fetchAM(id: String, owner: SessionStamp): Resource<String> {
         return try {
-            repository.getAMLLyric(id)
+            requireOwner(owner)
+            repository.getAMLLyric(id).also { requireOwner(owner) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SessionChangedException) {
+            throw e
         } catch (e: Exception) {
-            Timber.e(e, "AML preload fetch error")
+            Timber.tag(TAG).w("AML preload fetch failed: %s", e.javaClass.simpleName)
             Resource.Error("AML fetch failed")
         }
     }
 
-    private suspend fun fetchQQ(metadata: MediaMetadata): Resource<LyricResult> {
-        val songId = metadata.id.toString()
-
+    private suspend fun fetchQQ(metadata: MediaMetadata, songId: String, owner: SessionStamp): Resource<LyricResult> {
+        requireOwner(owner)
         val localSong = qqSongRepository.getQQSong(songId).firstOrNull()
+        requireOwner(owner)
         if (localSong != null) {
             return try {
                 repository.getLyricNew(
                     localSong.title, localSong.album, localSong.artist,
                     localSong.duration, localSong.qid.toLong()
-                )
+                ).also { requireOwner(owner) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SessionChangedException) {
+                throw e
             } catch (e: Exception) {
-                Timber.e(e, "QQ preload fetch error")
+                Timber.tag(TAG).w("QQ preload fetch failed: %s", e.javaClass.simpleName)
                 Resource.Error("QQ fetch failed")
             }
         }
 
         // 静默搜索：查询但不写入任何共享 StateFlow
-        val best = searchSilent(metadata) ?: return Resource.Error("No QQ match found")
+        val best = searchSilent(metadata, owner) ?: return Resource.Error("No QQ match found")
 
         val qqSong = QQSong(
             id = songId,
@@ -122,15 +153,21 @@ class LyricPreloader @Inject constructor(
             album = best.album.title,
             duration = best.interval
         )
+        requireOwner(owner)
         qqSongRepository.insertSong(qqSong)
+        requireOwner(owner)
 
         return try {
             repository.getLyricNew(
                 qqSong.title, qqSong.album, qqSong.artist,
                 qqSong.duration, qqSong.qid.toLong()
-            )
+            ).also { requireOwner(owner) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SessionChangedException) {
+            throw e
         } catch (e: Exception) {
-            Timber.e(e, "QQ preload fetch error after search")
+            Timber.tag(TAG).w("QQ preload fetch after search failed: %s", e.javaClass.simpleName)
             Resource.Error("QQ fetch failed")
         }
     }
@@ -143,7 +180,8 @@ class LyricPreloader @Inject constructor(
      * 与 [LyricManager.searchAndMatchBest] 逻辑相同，但不写入 _qqSearchResult。
      */
     private suspend fun searchSilent(
-        metadata: MediaMetadata
+        metadata: MediaMetadata,
+        owner: SessionStamp,
     ): SearchResult.Request.Data.Body.ItemSong? {
         val currentDurationSec = metadata.duration / 1000
         val artistName = metadata.artists.firstOrNull()?.name ?: ""
@@ -151,21 +189,19 @@ class LyricPreloader @Inject constructor(
         val cleanedTitle = cleanTitle(title)
 
         if (cleanedTitle != title) {
-            Timber.tag(TAG).d("silent QQ search: $cleanedTitle")
-            trySearchSilent(cleanedTitle, currentDurationSec)?.let { return it }
+            trySearchSilent(cleanedTitle, currentDurationSec, owner)?.let { return it }
         }
 
-        Timber.tag(TAG).d("silent QQ search retry: $title")
-        trySearchSilent(title, currentDurationSec)?.let { return it }
+        trySearchSilent(title, currentDurationSec, owner)?.let { return it }
 
         if (artistName.isNotBlank() && cleanedTitle != title) {
             val combined = "$cleanedTitle $artistName"
-            trySearchSilent(combined, currentDurationSec)?.let { return it }
+            trySearchSilent(combined, currentDurationSec, owner)?.let { return it }
         }
 
         if (artistName.isNotBlank()) {
             val combined = "$title $artistName"
-            trySearchSilent(combined, currentDurationSec)?.let { return it }
+            trySearchSilent(combined, currentDurationSec, owner)?.let { return it }
         }
 
         return null
@@ -173,9 +209,12 @@ class LyricPreloader @Inject constructor(
 
     private suspend fun trySearchSilent(
         keyword: String,
-        targetDurationSec: Long
+        targetDurationSec: Long,
+        owner: SessionStamp,
     ): SearchResult.Request.Data.Body.ItemSong? {
+        requireOwner(owner)
         val result = repository.searchNew(keyword)
+        requireOwner(owner)
         if (result !is Resource.Success) return null
         val songs = result.data.request.data.body.itemSong
         return songs.take(5).firstOrNull { song ->

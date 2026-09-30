@@ -84,8 +84,8 @@ fun CommonOverlayHandler(
         }
 
         is OverlayState.SongInfo -> {
-            val qqSongId by produceState<String?>(null, overlay.metadata.id) {
-                value = stateContainer.playerViewModel.getQQSongId(overlay.metadata.id)
+            val qqSongId by produceState<String?>(null, overlay.metadata.id, overlay.metadata.source) {
+                value = stateContainer.playerViewModel.getQQSongId(overlay.metadata)
             }
             SongInfoSheet(
                 metadata = overlay.metadata,

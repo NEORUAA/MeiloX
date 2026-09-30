@@ -172,7 +172,7 @@ fun rememberPlayerStateContainer(
         }
     }
 
-    LaunchedEffect(container.mediaMetadata.value?.id) {
+    LaunchedEffect(container.mediaMetadata.value?.id, container.mediaMetadata.value?.source) {
         container.mediaMetadata.value?.let { meta ->
             container.currentSongId = meta.id.toString()
             container.reset()
@@ -187,7 +187,8 @@ fun rememberPlayerStateContainer(
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsState()
     val queueWindows by playerConnection.queueWindows.collectAsState()
 
-    LaunchedEffect(currentWindowIndex, queueWindows.size) {
+    LaunchedEffect(currentWindowIndex, queueWindows.size,
+        queueWindows.getOrNull(currentWindowIndex + 1)?.mediaItem?.metadata?.source) {
         val idx = currentWindowIndex
         if (idx >= 0 && idx + 1 < queueWindows.size) {
             val nextMeta = queueWindows[idx + 1].mediaItem?.metadata

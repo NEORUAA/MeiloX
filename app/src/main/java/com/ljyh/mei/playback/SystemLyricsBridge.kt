@@ -10,6 +10,8 @@ import com.ljyh.mei.constants.LyricTranslationEnabledKey
 import com.ljyh.mei.constants.SystemLyricsEnabledKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.data.model.sourceKey
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.lyric.LyricManager
@@ -118,7 +120,8 @@ internal class SystemLyricsBridge(
     private fun syncTrack() {
         val current = player.currentMediaItem?.metadata
         if (current == metadata) return
-        if (current?.id != metadata?.id) generation++
+        if (current?.let { it.source ?: SongSourceIdentity(it.id) } !=
+            metadata?.let { it.source ?: SongSourceIdentity(it.id) }) generation++
         metadata = current
         publishedLyrics = null
         colorOsPublisher.setLyrics(null, null)
@@ -136,9 +139,9 @@ internal class SystemLyricsBridge(
             syncPlayback()
             return
         }
-        if (player.currentMediaItem?.mediaId != current.id.toString()) return
-        if (lyricManager.songId != current.id.toString()) return
-        val data = lyricManager.lyricData.value
+        val key = (current.source ?: SongSourceIdentity(current.id)).key
+        if (player.currentMediaItem?.sourceKey != key) return
+        val data = lyricManager.lyricData.value.takeIf { lyricManager.sourceKey == key }
         if (!force && publishedLyrics === data) return
         publishedLyrics = data
         val song = current.toSystemLyricSong(data)

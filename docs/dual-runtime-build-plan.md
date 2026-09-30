@@ -975,6 +975,71 @@ Local evidence: `/tmp/meilox-cloud-lyric-verified-debug.log`,
 No generated artifact, device log, credential
 or private lyric content is committed.
 
+### D1/D4 Checkpoint: Source-Owned Current and Preloaded Lyrics (2026-10-01)
+
+- Current loads, forced reloads and manual QQ selections now retain the full cloud
+  entry/audio/file-owner/account identity plus a captured session and distinct request
+  batch. Sampled source results, background parsing, QQ fallback/search, duet updates
+  and UI/cache publications cannot be relabeled as a newer batch. Preloading captures
+  the same owner and rejects canceled/stale results; AMLL cancels its real OkHttp call.
+- Memory/Room lyrics and QQ mappings use the complete cloud key without numeric-entry
+  or foreign-account fallback. Catalog V1 requests, numeric cache namespaces and existing
+  lyric precedence remain unchanged. Song Info and all existing player mapping-reset
+  controls forward metadata to source-owned operations. Source changes invalidate the
+  unchanged player/PiP effects and System Lyrics track identity; no screen tree, layout,
+  navigation, feature entry or visual setting is redesigned.
+- Invalidation/recovery clears current private state and session-affine memory caches,
+  cancels outstanding work and retries the same metadata only after its source/account
+  becomes valid. A different account cannot dispatch requests for the old cloud source.
+  Same-account renewal and initial asynchronous recovery do not require a page remount.
+  See API-022 for the original mismatch, adaptation and residual boundaries.
+- Final full JVM results: 697 standalone tests across 88 suites and 756 parasite tests
+  across 94 suites, all passing without skips. The new closed fixture's 16 cases pass
+  on both APKs; selected device regressions total 33 standalone and 39 parasite passes,
+  including source persistence and actual Workers using synthetic resources only.
+  Coverage exercises exact source/AMLL IDs, numeric/foreign cache collisions, same-ID
+  file changes, forced/manual batch switches, late noncooperative callbacks, recovery,
+  same-account transition, wrong-account rejection, QQ lookup/reset and cancellation.
+- The first final standalone instrumentation launch failed before tests began with
+  the platform process-attach timeout (PID 30626, no crash-buffer entries). Its retry
+  ran the tests and exposed a fixture observation race: a background read saw the
+  manager's key cleared before the rest of its main-thread reset. The fixture now
+  observes predicates on Main; no production behavior was changed to hide the failure.
+  The final 33/39-case runs pass. No underlying attach-timeout cause is claimed.
+- One opt-in standalone cloud-lyric read passes against its existing Cookie account,
+  without logging private content or identities. Normal probe-disabled module debug
+  cold-starts the original TV launcher into authenticated portrait MeiloX (PID 30928)
+  and restores the cloud queue paused at 78,338 ms. Opening its unchanged lyric view
+  renders the existing QQ QRC/translation fallback. A read-only local database snapshot
+  confirms one source-keyed cloud QQ mapping and one cloud lyric row (QQMusic/QRC),
+  without printing identities/text; the temporary database copies are removed.
+  This is public-fallback/source-cache evidence, not native official KRC qualification.
+- The isolated standalone debug cold start restores authenticated Library and its
+  paused queue at 60,347 ms (PID 32009). Both current PIDs have no crash-buffer entries;
+  the official TV player stays inactive. Existing TV media row 820 remains published
+  at 22,705,573 bytes. No play, upload/delete/social write, real download grant/transfer,
+  account mutation or screen-off action is performed in this checkpoint.
+- Paired Debug/instrumentation and unsigned minified release builds pass. Release APKs
+  keep their production package IDs, pass 16 KB ZIP alignment and retain zero/three
+  standalone/parasite Xposed metadata entries; the module remains API 102, TV-only and
+  without hot reload. Host/runtime/work probes are disabled in the installed module.
+  Release packages were not installed or executed, so signed/runtime gates remain open.
+- Native cloud karaoke parsing/timing, real official cloud lyric text, external System
+  Lyrics provider acceptance, real account-switch cooperation and real embedded tags
+  remain required. Source ownership does not complete cloud parity, D4/D5/D6 or the
+  overall dual-runtime goal. No functionality is hidden to substitute for acceptance.
+
+Local evidence: `/tmp/meilox-cloud-lyric-owner-final-validation.log`,
+`/tmp/meilox-cloud-lyric-owner-final-device-build.log`,
+`/tmp/meilox-cloud-lyric-owner-final-standalone-device-passed.log`,
+`/tmp/meilox-cloud-lyric-owner-final-parasite-device.log`,
+`/tmp/meilox-cloud-lyric-owner-standalone-live.log`,
+`/tmp/meilox-cloud-lyric-owner-host-home.png`,
+`/tmp/meilox-cloud-lyric-owner-host-player.png`,
+`/tmp/meilox-cloud-lyric-owner-host-lyrics.png` and
+`/tmp/meilox-cloud-lyric-owner-standalone-home.png`. No device log, generated artifact,
+credential, official decompiled source or private lyric content is committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
