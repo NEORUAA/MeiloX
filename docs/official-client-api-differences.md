@@ -1406,7 +1406,9 @@ These are integration differences, not server API semantics.
   path. Its Room task holds an already resolved playback URL and song metadata, but
   no account ID or work-request UUID. The current shared worker instead requires one
   song ID, a public account owner and a matching persisted UUID, then obtains a fresh
-  dedicated download grant. See API-017 for the separate permission/response contract.
+  runtime-selected source. Parasite uses a dedicated download grant; standalone uses
+  the original playback contract. See API-017 for the separate permission/response
+  contract and the confirmed policy below.
 - The standalone migration preserves those rows/URLs, unlike the parasite migration,
   but this alone does not restore execution: old `song_ids_json` input is not recognized
   by the current `song_id`/`owner_id` worker. Old destination metadata is in WorkManager,
@@ -1416,11 +1418,11 @@ These are integration differences, not server API semantics.
   Cookie belongs to that account. Authentication must be verified before any resumed
   account-bound operation. Unknown ownership and changed accounts need explicit handling;
   do not infer a grant from the existence of a stale URL or completed task row.
-- Pending user decision: preserve standalone's original playback-URL download behavior,
-  or adopt the dedicated download-grant endpoint and its possible quota semantics.
-  Parasite behavior and its already accepted real download are unchanged. No real
-  request, file transfer, WorkManager mutation or AVD upgrade was performed for this
-  audit. The conversion and persisted-data acceptance are not implemented or passed.
+- The download-policy choice was pending at this source audit and has since been
+  confirmed below. Parasite behavior and its already accepted real download are
+  unchanged. No real request, file transfer, WorkManager mutation or AVD upgrade was
+  performed for this initial audit. Legacy work conversion and persisted-work execution
+  acceptance are not implemented or passed.
 
 #### Standalone v17 Fixture Qualification (2026-09-30)
 
@@ -1447,9 +1449,65 @@ These are integration differences, not server API semantics.
   private databases/files. No production migration or frontend code changed.
 - This is database-fixture evidence, not signed production update acceptance. Earlier
   pre-v17 migration histories, external provider grants, preferences/queue files and
-  WorkManager inputs/execution remain unqualified. The pending download-policy choice
-  and legacy work converter above are still required; row preservation does not
-  resolve them. No quota-consuming grant, social mutation or user-media write occurred.
+  WorkManager inputs/execution remain unqualified. The download-policy choice was still
+  pending at this fixture checkpoint and is now resolved below; the legacy work
+  converter remains required. No quota-consuming grant, social mutation or user-media
+  write occurred during the database-fixture checkpoint.
+
+#### Confirmed Dual Download Policies (2026-09-30)
+
+- User decision: retain original playback-link downloads in standalone. Parasite keeps
+  its verified dedicated official download authorization, with no playback fallback.
+  One shared `DownloadSourceBackend` now supplies both repository preflight and the
+  real `DownloadWorker`. Menus, navigation, quality controls, transfer validation,
+  publication and queue ownership remain shared; no frontend layout was changed.
+- The dedicated Retrofit method, object DTO, tuple request and all 17 official resolver
+  tests now belong to parasite source sets. `HostDownloadSourceBackend` still executes
+  through the official host factory/session. Its resolver and denial/quality semantics
+  are retained; the shared `ApiService` no longer declares the dedicated endpoint.
+- `StandaloneDownloadSourceBackend` sends numeric ID arrays to the original
+  `/api/song/enhance/player/url/v1` through standalone Cookie signing/transport. It
+  reuses the original playback quality fallback list and retries only missing songs,
+  in batches of at most 200. It never sends the official download tuple or calls the
+  dedicated endpoint. Returned server quality remains distinct from requested quality.
+- Standalone array decoding requires complete, unique, requested identities and
+  explicit statuses. Trial/missing sources and known per-song denials may try the next
+  original quality; authentication, unknown status, network and malformed responses
+  abort instead of becoming partial success. Accepted sources require HTTP(S), known
+  type, positive 64-bit size and MD5. Optional expiry/level are not invented, and
+  dispatch-based expiry is rechecked after the whole resolution. Neither adapter stores
+  a resolved URL or allows recovery/account-generation changes to publish late results.
+- Four new shared repository tests and 14 standalone backend tests cover selection,
+  signing/tags, batching/fallback, malformed/trial/expired responses, account changes,
+  recovery and cancellation. All 667 standalone and 735 parasite JVM tests pass.
+  The 17 official resolver cases moved to parasite rather than being removed.
+- On the rooted API 37, 16 KB AVD, the graph-selected standalone backend obtains a
+  complete standard-quality source for public song `30245467` using the existing
+  isolated debug account. The opt-in test does not print or transfer the signed URL.
+  This proves a live playback-source read, not a real completed download or dedicated
+  download permission. No new official grant or quota-consuming TV download occurred.
+- Five new standalone device cases run the actual shared Worker, production standalone
+  backend/signing, private Room and Android MediaStore with fake credentials and closed
+  network/media substitutes. Success/completed retry, denial/trial, corruption/truncation,
+  wrong owner and session invalidation pass. Fixture publications are uniquely named
+  and removed; installed credentials, user work and existing media are not fixture data.
+  These direct Worker calls do not qualify WorkManager scheduling/process recovery.
+  Seven standalone package/graph/codec/migration regressions and 12 parasite source/
+  Worker substitute tests also pass, for 25 selected device tests including the live read.
+- Both debug and unsigned minified release builds pass. Release package IDs remain
+  correct and both APKs pass 16 KB ZIP alignment. Standalone DEX has the playback route
+  but not the dedicated download route; Xposed metadata counts remain zero/three for
+  standalone/parasite. R8 retains each adapter's Retrofit session-tagged method and
+  nullable source DTOs. These are build/package checks, not release-device acceptance.
+- Started the AVD with the user-provided rooted launcher; root and LSPosed modules are
+  present, and both TV-specific orientation overrides survive this cold boot. Both
+  authenticated original Home screens and paused restored mini-players return after
+  debug update/restart. The existing TV-owned MediaStore row remains published at
+  22,705,573 bytes. The crash buffer is empty. No original standalone app update,
+  real media transfer, logout, account switch, upload or social write occurred.
+- Legacy `song_ids_json` conversion, old ownership/destination recovery, startup
+  scheduling, real account changes and signed-release upgrades remain unqualified.
+  Confirming the source policy and preserving old rows do not complete those gates.
 
 ### ABI-011: Asynchronous Cookie Recovery Must Not Cancel Local Queue Restoration
 

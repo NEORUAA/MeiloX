@@ -25,6 +25,7 @@ class PlaylistRepositoryTest {
     private fun repository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") }, api<PlaylistCollectionBackend>(invoke),
         sessions, api<CatalogCollectionBackend> { _, _ -> error("Unused catalog") }, api<PlaylistTracksBackend>(invoke),
+        com.ljyh.mei.playback.DownloadSourceBackend { _, _, _ -> error("Unused downloads") },
     )
     private fun detail(id: Int = 10, code: Int = 200): PlaylistDetail = Gson().fromJson(
         """{"code":$code,"playlist":{"id":$id,"tracks":[],"trackIds":[{"id":1},{"id":2}]}}""", PlaylistDetail::class.java)
@@ -84,7 +85,7 @@ class PlaylistRepositoryTest {
             val guestSessions = SessionStore().apply { bind { identity } }
             val guestSource = PlaylistRepository(api { _, _ -> error("Unused API") },
                 api { _, _ -> error("Unused WEAPI") }, api { _, _ -> error("Must not dispatch") }, guestSessions,
-                api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") })
+                api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") }, api { _, _ -> error("Unused downloads") })
             assertTrue(guestSource.subscribePlaylist("10", guestSessions.snapshot()) is Resource.Error)
             assertTrue(guestSource.unSubscribePlaylist("10", guestSessions.snapshot()) is Resource.Error)
         }
@@ -108,7 +109,7 @@ class PlaylistRepositoryTest {
         assertTrue(source.unSubscribePlaylist("10") is Resource.Success)
         val unready = PlaylistRepository(api { _, _ -> error("Unused API") },
             api { _, _ -> error("Unused WEAPI") }, api { _, _ -> error("Must not dispatch") }, SessionStore(),
-            api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") })
+            api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") }, api { _, _ -> error("Unused downloads") })
         assertTrue(unready.subscribePlaylist("10") is Resource.Error)
     }
 
@@ -204,7 +205,7 @@ class PlaylistRepositoryTest {
             assertEquals(mapOf("ispush" to "false", "limit" to "30", "trialMode" to "1"), args[0])
             assertEquals(owner, args[1])
             Gson().fromJson("""{"code":200,"data":{"dailySongs":[]}}""", com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-        }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") })
+        }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") }, api { _, _ -> error("Unused downloads") })
         assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Success)
         assertTrue(source.getEveryDayRecommendSongs(owner.copy(identity = SessionIdentity(0, false, true))) is Resource.Error)
         assertEquals(1, calls)
@@ -215,7 +216,7 @@ class PlaylistRepositoryTest {
             """{"code":200,"data":{"dailySongs":[{"id":0}]}}""").forEach { json ->
             val source = PlaylistRepository(api { _, _ -> error("Unused API") }, api<WeApiService> { _, _ ->
                 Gson().fromJson(json, com.ljyh.mei.data.model.weapi.EveryDaySongs::class.java)
-            }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") })
+            }, api { _, _ -> error("Unused EAPI") }, com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") }, api { _, _ -> error("Unused downloads") })
             assertTrue(source.getEveryDayRecommendSongs(owner) is Resource.Error)
         }
     }
@@ -223,7 +224,7 @@ class PlaylistRepositoryTest {
     @Test fun dailyCancellationPropagates() = runBlocking {
         val source = PlaylistRepository(api { _, _ -> error("Unused API") },
             api<WeApiService> { _, _ -> throw CancellationException() }, api { _, _ -> error("Unused EAPI") },
-            com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") })
+            com.ljyh.mei.data.session.SessionStore(), api { _, _ -> error("Unused catalog") }, api { _, _ -> error("Unused tracks") }, api { _, _ -> error("Unused downloads") })
         assertTrue(runCatching { source.getEveryDayRecommendSongs(owner) }.exceptionOrNull() is CancellationException)
     }
 }

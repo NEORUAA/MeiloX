@@ -24,6 +24,7 @@ import okhttp3.Call
 
 @Module
 object RuntimeBackendModule {
+    @Provides internal fun downloadSources(backend: com.ljyh.mei.standalone.StandaloneDownloadSourceBackend): com.ljyh.mei.playback.DownloadSourceBackend = backend
     @Provides internal fun cloudUploader(backend: com.ljyh.mei.standalone.StandaloneCloudBinaryUploader): com.ljyh.mei.data.repository.CloudBinaryUploader = backend
     @Provides internal fun persistence(store: DataStoreAccountPersistence): StandaloneAccountPersistence = store
     @Provides fun sessions(store: StandaloneSessionStore): SessionStore = store

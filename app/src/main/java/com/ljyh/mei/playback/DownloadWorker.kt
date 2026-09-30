@@ -34,7 +34,7 @@ import timber.log.Timber
 open class DownloadWorker internal constructor(
     context: Context, params: WorkerParameters, private val environment: DownloadWorkerEnvironment,
 ) : CoroutineWorker(context, params) {
-    constructor(context: Context, params: WorkerParameters) : this(context, params, DownloadWorkerEnvironment.official(context))
+    constructor(context: Context, params: WorkerParameters) : this(context, params, DownloadWorkerEnvironment.production(context))
     companion object {
         const val KEY_SONG_ID = "song_id"
         const val KEY_OWNER_ID = "owner_id"
@@ -124,10 +124,10 @@ open class DownloadWorker internal constructor(
     private suspend fun processSong(db: AppDatabase) = coroutineScope {
         val task = requireTask(db)
         check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
-        failureTitle = "获取官方下载授权失败"
-        val source = resolveOfficialDownloadSources(environment.api, sessions,
+        failureTitle = environment.sources.failureTitle
+        val source = environment.sources.resolve(
             listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
-            ?: throw IOException("Official download permission denied")
+            ?: throw IOException("Download source unavailable")
         requireTask(db)
         val root = task.downloadPath.trim().trim('/').ifBlank { "Music/Mei" }
         require(root.split('/').none { it == ".." || it == "." })

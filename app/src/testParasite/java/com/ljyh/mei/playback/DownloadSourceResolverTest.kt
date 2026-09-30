@@ -6,7 +6,7 @@ import com.google.gson.JsonParser
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.DownloadUrlResponse
 import com.ljyh.mei.data.model.api.GetDownloadUrl
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.parasite.HostDownloadApi
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionIdentity
@@ -27,11 +27,11 @@ class DownloadSourceResolverTest {
     private val requests = mutableListOf<GetDownloadUrl>()
     private var now = 1_000_000L
     private var respond: (GetDownloadUrl) -> DownloadUrlResponse = { fixture(it.id.substringBefore('_').toLong()) }
-    private val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) { _, method, args ->
+    private val api = Proxy.newProxyInstance(HostDownloadApi::class.java.classLoader, arrayOf(HostDownloadApi::class.java)) { _, method, args ->
         check(method.name == "getDownloadUrl") { "Download resolution must not use playback APIs" }
         assertEquals(owner, args[1])
         (args[0] as GetDownloadUrl).let { requests += it; respond(it) }
-    } as ApiService
+    } as HostDownloadApi
 
     private fun fixture(id: Long = 1, edit: JsonObject.() -> Unit = {}): DownloadUrlResponse {
         val json = JsonParser.parseString("""{"code":200,"data":{"id":$id,"code":200,"url":"https://media.example.test/audio.flac","type":"flac","level":"lossless","size":12345678901,"md5":"0123456789abcdef0123456789abcdef","expi":600}}""").asJsonObject

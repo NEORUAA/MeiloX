@@ -22,6 +22,7 @@ import okhttp3.Call
 /** Only the parasite source set binds shared consumers to official host adapters. */
 @Module
 object RuntimeBackendModule {
+    @Provides internal fun downloadSources(backend: com.ljyh.mei.parasite.HostDownloadSourceBackend): com.ljyh.mei.playback.DownloadSourceBackend = backend
     @Provides fun cloudUploader(backend: com.ljyh.mei.parasite.HostCloudBinaryUploader): com.ljyh.mei.data.repository.CloudBinaryUploader = backend
     @Provides fun sessions(host: HostSessionBridge): SessionStore = host
     @Provides fun playbackReports(host: HostPlaybackReportBridge): PlaybackReportSink = host

@@ -22,7 +22,8 @@ import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
-import com.ljyh.mei.playback.resolveOfficialDownloadSources
+import com.ljyh.mei.playback.DownloadSourceBackend
+import com.ljyh.mei.playback.requireDownloadOwner
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
@@ -60,6 +61,7 @@ class PlaylistRepository(
     private val sessions: SessionStore,
     private val catalogCollections: CatalogCollectionBackend,
     private val playlistTracks: PlaylistTracksBackend,
+    private val downloadSources: DownloadSourceBackend,
 ) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
     override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
@@ -112,10 +114,14 @@ class PlaylistRepository(
     override suspend fun getDownloadSources(ids: List<String>, quality: MusicQuality, session: SessionStamp): Resource<DownloadSources> {
         return withContext(Dispatchers.IO) {
             try {
-                Resource.Success(resolveOfficialDownloadSources(apiService, sessions, ids, quality, session))
+                sessions.requireDownloadOwner(session)
+                Resource.Success(downloadSources.resolve(ids, quality, session).also {
+                    currentCoroutineContext().ensureActive()
+                    sessions.requireDownloadOwner(session)
+                })
             } catch (error: CancellationException) { throw error }
             catch (error: SessionChangedException) { throw error }
-            catch (_: Exception) { Resource.Error("Unable to authorize official downloads") }
+            catch (_: Exception) { Resource.Error("Unable to resolve download sources") }
         }
     }
 

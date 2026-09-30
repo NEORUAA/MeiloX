@@ -5,7 +5,7 @@ import com.ljyh.mei.data.model.DownloadSource
 import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.DownloadUrlResponse
 import com.ljyh.mei.data.model.api.GetDownloadUrl
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.parasite.HostDownloadApi
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
@@ -16,7 +16,7 @@ import kotlinx.coroutines.ensureActive
 
 /** Resolves fresh download grants only; playback URLs are never a permission fallback. */
 internal suspend fun resolveOfficialDownloadSources(
-    api: ApiService,
+    api: HostDownloadApi,
     sessions: SessionStore,
     ids: List<String>,
     quality: MusicQuality,

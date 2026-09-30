@@ -744,13 +744,66 @@ Local evidence: `/tmp/meilox-standalone-live-playback-reports.log`,
 - This qualifies the fresh-v17 entity-schema fixture only. Earlier historical migration
   paths, DataStore/settings/serialized queues, WorkManager conversion, provider access
   grants, valid audio decoding and signed production upgrades remain separate gates.
-  Preserved pending rows do not prove resumable work; ABI-010's download-policy decision
-  remains open. D3, D5 and the overall goal are not complete.
+  Preserved pending rows do not prove resumable work. ABI-010's download-policy decision
+  was open at this checkpoint and is confirmed below. D3, D5 and the overall goal are
+  not complete.
 
 Local evidence: `/tmp/meilox-dual-v17-migration-build.log`,
 `/tmp/meilox-standalone-v17-migration-device.log`,
 `/tmp/meilox-standalone-v17-regression-device.log` and
 `/tmp/meilox-standalone-v17-final-home.png`. None are committed.
+
+### D3/D4 Checkpoint: Runtime-Owned Download Sources (2026-09-30)
+
+- Confirmed user choice: standalone retains original playback-link downloads;
+  parasite retains dedicated official download authorization. Shared download preflight
+  and Worker consume one `DownloadSourceBackend`; endpoint/response/fallback differences
+  are flavor-owned. No UI, navigation, quality control or publication layout changed.
+  See API-017 and ABI-010 for the contracts, current adaptation and evidence limits.
+- Moved official grant types/resolver and its 17 tests to parasite. Standalone uses
+  the original numeric player V1 batch/quality-fallback contract through its own Cookie
+  signing/session transport, with complete-array, metadata, expiry and trial checks.
+  Both implementations reject stale/recovering/account-changed operations. No dedicated
+  download endpoint or host source implementation remains required by shared consumers.
+- Both debug APKs and instrumentation APKs build. Paired JVM acceptance is 667 standalone
+  tests in 85 suites and 735 parasite tests in 92 suites, with no failures/errors/skips.
+  This includes four new shared delegation/session tests and 14 standalone backend
+  cases; relocating official tests explains the differing flavor counts.
+- Five standalone direct Worker device cases pass using the production standalone
+  adapter/signing, private Room and actual MediaStore with closed request/media
+  substitutes. They qualify publication, completed retry, denial/trial, corrupt/truncated
+  bytes, changed owner and session invalidation, not WorkManager scheduling. Seven
+  standalone package/graph/codec/v17 migration cases and 12 parasite source/Worker cases
+  also pass. All uniquely named synthetic media/receipts are cleaned up.
+- One additional opt-in standalone live check obtains a complete standard-quality source
+  for public song `30245467` through the graph-selected backend and retained isolated
+  login, without printing/transferring its URL. Total selected AVD cases: 25. No real
+  download grant/transfer, upload, logout, account switch or social mutation was issued.
+- Both final unsigned R8 release APKs build and pass 16 KB ZIP alignment. Correct
+  production IDs and zero/three Xposed metadata entries remain. Standalone DEX contains
+  the player route but not the dedicated download route; R8 retains each adapter's
+  Retrofit method, session tag and nullable DTOs. Release runtime remains pending.
+- The user-provided `~/.android/avd/Pixel_10_Pro-root/Start-Rooted.command` restores the
+  rooted AVD without snapshots. Root/LSPosed modules and retained TV-only orientation
+  overrides are verified after boot. Updated debug apps restore their authenticated
+  original Home and paused mini-players; the accepted TV media row remains published
+  at 22,705,573 bytes, with no crash-buffer entries. The original standalone installation
+  is not replaced. The AVD remains awake; audible output is not claimed.
+- This resolves the download-source policy, not legacy work conversion. Old
+  `song_ids_json` inputs, affinity/destination reconstruction, startup scheduling,
+  real ownership changes and signed production upgrades remain separate required
+  gates. D3-D6 and the overall goal remain incomplete.
+
+Local evidence: `/tmp/meilox-dual-download-backends-debug.log`,
+`/tmp/meilox-dual-download-backends-release.log`,
+`/tmp/meilox-standalone-download-worker-device.log`,
+`/tmp/meilox-standalone-download-regression-device.log`,
+`/tmp/meilox-standalone-download-source-live.log`,
+`/tmp/meilox-parasite-download-backend-device.log`,
+`/tmp/meilox-download-final-standalone-ready.png`,
+`/tmp/meilox-download-final-host-ready.png`,
+`/tmp/meilox-download-final-host-session.log` and
+`/tmp/meilox-download-final-crash.log`. None are committed.
 
 ## Acceptance and Remaining Decisions
 

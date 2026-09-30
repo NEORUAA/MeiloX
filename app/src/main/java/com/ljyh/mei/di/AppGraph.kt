@@ -27,6 +27,7 @@ interface AppComponent : RuntimeComponent {
     fun sessions(): com.ljyh.mei.data.session.SessionStore
     fun account(): AccountStore
     fun apiService(): ApiService
+    fun downloadSources(): com.ljyh.mei.playback.DownloadSourceBackend
     fun eapiService(): EApiService
     fun weapiService(): WeApiService
     @ApplicationContext fun context(): Context

@@ -21,6 +21,18 @@ import org.junit.Test
 class StandaloneLiveReadDeviceTest {
     private val arguments get() = InstrumentationRegistry.getArguments()
 
+    @Test fun downloadBackendObtainsACompleteSourceFromTheStandalonePlayerContract() = liveRead { owner ->
+        val songId = positiveArgument("standaloneReadSongId")
+        val result = AppGraph.component.downloadSources().resolve(
+            listOf(songId.toString()), com.ljyh.mei.constants.MusicQuality.STANDARD, owner,
+        )
+        val source = requireNotNull(result.sources.singleOrNull())
+        assertEquals("Download source identity mismatch", songId, source.id)
+        assertTrue("Download media metadata is unavailable", source.size > 0 && source.md5.matches(Regex("[a-f0-9]{32}")))
+        assertTrue("Download source lifetime is unusable", (source.expiresAtMs ?: 0) > System.currentTimeMillis() + 30_000)
+        assertTrue("Selected song was rejected", result.rejectedCodes.isEmpty())
+    }
+
     @Test fun authenticatedSongHasAFullPlaybackSource() = liveRead { owner ->
         val songId = positiveArgument("standaloneReadSongId")
         val api = AppGraph.component.apiService()

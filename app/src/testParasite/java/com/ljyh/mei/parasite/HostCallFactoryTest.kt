@@ -285,7 +285,7 @@ class HostCallFactoryTest {
             { service.subscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.unsubscribeAlbum(com.ljyh.mei.data.model.api.SubscribePlaylist("10"), owner) },
             { service.getSongUrlV1(com.ljyh.mei.data.model.api.GetSongUrlV1("[1]", "standard"), owner) },
-            { service.getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "standard"), owner) },
+            { retrofit(HostCallFactory(bridge)).create(HostDownloadApi::class.java).getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "standard"), owner) },
             { service.getCollectAlbumList(com.ljyh.mei.data.model.api.GetAlbumList(), owner) },
         )
         calls.forEach { assertTrue(runCatching { it() }.exceptionOrNull() is SessionChangedException) }
@@ -295,7 +295,7 @@ class HostCallFactoryTest {
     @Test fun downloadRouteHasOneTupleAndDoesNotSerializeSessionOrPlaybackParameters() = runBlocking {
         val backend = Backend()
         val bridge = bridge(backend)
-        val service = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
+        val service = retrofit(HostCallFactory(bridge)).create(HostDownloadApi::class.java)
         val owner = bridge.sessions.snapshot()
         service.getDownloadUrl(com.ljyh.mei.data.model.api.GetDownloadUrl("1_0", "sky"), owner)
         assertEquals("song/enhance/download/url/v1", backend.path)

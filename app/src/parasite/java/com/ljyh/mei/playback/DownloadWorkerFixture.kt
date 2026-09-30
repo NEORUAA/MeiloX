@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.google.gson.JsonObject
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.model.room.DownloadTask
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.parasite.HostDownloadSourceBackend
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.parasite.HostCallFactory
 import com.ljyh.mei.parasite.HostPendingRequest
@@ -92,8 +92,8 @@ internal class DownloadWorkerFixture(
     val publication = DownloadPublication(database, media, context.packageName)
     val environment = DownloadWorkerEnvironment(
         database, sessions,
-        Retrofit.Builder().baseUrl("https://music.163.com/").callFactory(HostCallFactory(requests))
-            .addConverterFactory(GsonConverterFactory.create()).build().create(ApiService::class.java),
+        HostDownloadSourceBackend(Retrofit.Builder().baseUrl("https://music.163.com/").callFactory(HostCallFactory(requests))
+            .addConverterFactory(GsonConverterFactory.create()).build(), sessions),
         client = { request -> syntheticCall(request) },
         lyric = { _, _ -> "[00:00.00]Synthetic qualification" }, cover = { null },
         publication = publication,

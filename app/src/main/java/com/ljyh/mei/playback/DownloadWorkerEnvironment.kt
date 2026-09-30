@@ -1,7 +1,6 @@
 package com.ljyh.mei.playback
 
 import android.content.Context
-import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.data.session.SessionStore
@@ -14,7 +13,7 @@ import okhttp3.Call
 internal class DownloadWorkerEnvironment(
     val database: AppDatabase,
     val sessions: SessionStore,
-    val api: ApiService,
+    val sources: DownloadSourceBackend,
     val client: Call.Factory,
     val lyric: suspend (String, SessionStamp) -> String?,
     val cover: suspend (String) -> ByteArray?,
@@ -23,11 +22,11 @@ internal class DownloadWorkerEnvironment(
     val notifications: DownloadNotifications = DownloadNotifications.production,
 ) {
     companion object {
-        fun official(context: Context): DownloadWorkerEnvironment {
+        fun production(context: Context): DownloadWorkerEnvironment {
             val graph = AppGraph.component
             val database = graph.database()
             return DownloadWorkerEnvironment(
-                database, graph.sessions(), graph.apiService(), DownloadWorker.getDownloadClient(),
+                database, graph.sessions(), graph.downloadSources(), DownloadWorker.getDownloadClient(),
                 LyricFetcher::fetchBestLyric, ImageUtils::downloadImageBytes,
                 DownloadPublication(database, AndroidDownloadMediaStore(context), context.packageName),
             )

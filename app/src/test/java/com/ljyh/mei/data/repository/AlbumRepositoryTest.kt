@@ -25,6 +25,7 @@ class AlbumRepositoryTest {
         api<ApiService>(invoke), api<WeApiService> { _, _ -> error("Unexpected WEAPI") },
         api<PlaylistCollectionBackend> { _, _ -> error("Unexpected playlist collection") },
         sessions, api<CatalogCollectionBackend>(invoke), api<PlaylistTracksBackend> { _, _ -> error("Unused tracks") },
+        com.ljyh.mei.playback.DownloadSourceBackend { _, _, _ -> error("Unused downloads") },
     )
 
     @Test fun readsCurrentAccountStateThroughTheSelectedBackend() = runBlocking {

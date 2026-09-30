@@ -67,7 +67,7 @@ class DownloadSourceDeviceTest {
         })
         val api = Retrofit.Builder().baseUrl("https://music.163.com/")
             .callFactory(HostCallFactory(requests)).addConverterFactory(GsonConverterFactory.create())
-            .build().create(ApiService::class.java)
+            .build().create(HostDownloadApi::class.java)
         val owner = sessions.snapshot()
         val source = resolveOfficialDownloadSources(api, sessions, listOf("1"), MusicQuality.LOSSLESS, owner).sources.single()
         assertEquals(12345678901L, source.size)
