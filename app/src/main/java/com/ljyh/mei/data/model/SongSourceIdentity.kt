@@ -32,7 +32,11 @@ data class SongSourceIdentity(
     }
 
     companion object {
+        private const val CLOUD_NAMESPACE = "meilox-cloud-"
         private const val CLOUD_PREFIX = "meilox-cloud-v1:"
+
+        internal fun cloudFromKeyOrNull(key: String): SongSourceIdentity? =
+            if (key.trim().startsWith(CLOUD_NAMESPACE)) fromKey(key) else null
 
         fun fromKey(key: String): SongSourceIdentity {
             val raw = key.trim()

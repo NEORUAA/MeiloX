@@ -1,6 +1,8 @@
 package com.ljyh.mei.ui.screen.history
 
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.data.session.SessionIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,6 +93,41 @@ class HistoryMergeTest {
         )
 
         assertEquals(listOf("local-new"), result.map(ListeningHistoryEntry::key))
+    }
+
+    @Test fun sameEntryWithDifferentCloudAudioOrFileOwnersDoesNotCollapseToACatalogRow() {
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        val first = entry(17, "private-one", 300).let { it.copy(song = it.song.copy(source = source)) }
+        val second = entry(17, "private-two", 200).let { it.copy(song = it.song.copy(source = source.copy(cloudOwnerId = 89))) }
+        val third = entry(17, "private-three", 100).let { it.copy(song = it.song.copy(source = source.copy(songId = 1000))) }
+        val result = mergeHistoryEntries(listOf(entry(17, "catalog", 400)), listOf(first, second, third))
+        assertEquals(listOf("catalog", "private-one", "private-two", "private-three"), result.map { it.key })
+    }
+
+    @Test fun repeatedCloudSourceKeepsTheLatestActualLocalPlaybackTime() {
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        val older = entry(17, "old", 100).let { it.copy(song = it.song.copy(source = source)) }
+        val newer = older.copy(key = "new", playedAt = 200)
+        assertEquals(listOf(newer), mergeHistoryEntries(null, listOf(older, newer)))
+    }
+
+    @Test fun privateHistoryIsVisibleOnlyToItsCapturedAccountAndIsNotDeletedByFiltering() {
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        val cloud = entry(17, "private", 100).let { it.copy(song = it.song.copy(source = source)) }
+        val catalog = entry(2, "catalog", 200)
+        val local = entry(3, "local", 300).let { it.copy(song = it.song.copy(isLocal = true)) }
+        val entries = listOf(cloud, catalog, local)
+        for (account in listOf(null, SessionIdentity(8, true, false), SessionIdentity(7, false, false), SessionIdentity(7, true, true))) {
+            assertEquals(listOf(catalog, local), ownedLocalHistoryEntries(entries, account))
+        }
+        assertEquals(entries, ownedLocalHistoryEntries(entries, SessionIdentity(7, true, false)))
+        assertEquals(3, entries.size)
+    }
+
+    @Test fun mismatchedCloudMetadataCannotBecomeAnOrdinaryVisibleHistoryEntry() {
+        val source = SongSourceIdentity(999, 88, 7, 18)
+        val malformed = entry(17, "wrong", 100).let { it.copy(song = it.song.copy(source = source)) }
+        assertEquals(emptyList<ListeningHistoryEntry>(), ownedLocalHistoryEntries(listOf(malformed), SessionIdentity(7, true, false)))
     }
 
     private fun entry(id: Long, key: String, playedAt: Long? = null) = ListeningHistoryEntry(

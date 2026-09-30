@@ -97,6 +97,8 @@ import com.ljyh.mei.ui.screen.cloud.CloudMusicViewModel
 import com.ljyh.mei.ui.screen.cloud.CloudMusicUiState
 import com.ljyh.mei.ui.screen.history.HistoryViewModel
 import com.ljyh.mei.ui.screen.history.HistoryUiState
+import com.ljyh.mei.ui.screen.history.ListeningHistoryEntry
+import com.ljyh.mei.ui.screen.history.toHistoryQueueEntry
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
@@ -481,7 +483,7 @@ fun LibraryMobileLayout(
                     }
                 }
 
-                LibraryPage.History -> libraryHistoryItems(historyState, playerConnection, query)
+                LibraryPage.History -> libraryHistoryItems(historyState, playerConnection, query, historyViewModel)
             }
 
             if (selectedPage == LibraryPage.Playlists && visibleAlbums.isNotEmpty()) {
@@ -1081,6 +1083,7 @@ private fun LazyListScope.libraryHistoryItems(
     state: HistoryUiState,
     playerConnection: PlayerConnection?,
     query: String,
+    viewModel: HistoryViewModel?,
 ) {
     val visibleHistory = state.items.filterIfSearching(query) { item ->
         item.song.title.containsQuery(query) ||
@@ -1129,14 +1132,14 @@ private fun LazyListScope.libraryHistoryItems(
                     )
                 },
                 onClick = {
-                    playerConnection?.playQueue(
+                    viewModel?.withCurrent(state, visibleHistory) { playerConnection?.playQueue(
                         ListQueue(
                             id = "library-history",
                             title = "History",
-                            items = visibleHistory.map { it.song.id.toString() to null },
+                            items = visibleHistory.map(ListeningHistoryEntry::toHistoryQueueEntry),
                             startIndex = index,
                         ),
-                    )
+                    ) }
                 },
             )
         }

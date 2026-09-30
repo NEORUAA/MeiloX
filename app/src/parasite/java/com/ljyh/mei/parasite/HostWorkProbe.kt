@@ -31,6 +31,8 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "cloud_history_closed" -> HostCloudHistoryProbe.closed(owner)
+                    "cloud_history_read" -> HostCloudHistoryProbe.read(owner)
                     "cloud_playback_closed" -> HostCloudPlaybackProbe.run()
                     "cloud_playlist_closed" -> HostCloudPlaylistProbe.run()
                     "cloud_favorite_read" -> kotlinx.coroutines.runBlocking {

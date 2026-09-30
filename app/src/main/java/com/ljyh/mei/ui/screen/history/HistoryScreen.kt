@@ -103,15 +103,15 @@ fun HistoryScreen(
                         )
                     },
                     onClick = {
-                        playerConnection?.playQueue(
+                        viewModel.withCurrent(state, historyList) { playerConnection?.playQueue(
                             ListQueue(
                                 id = "history",
                                 title = navController.context.getString(R.string.listening_history),
-                                items = historyList.map { it.song.id.toString() to null },
+                                items = historyList.map(ListeningHistoryEntry::toHistoryQueueEntry),
                                 startIndex = index,
                                 position = 0,
                             ),
-                        )
+                        ) }
                     },
                 )
             }

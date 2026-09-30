@@ -63,7 +63,6 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.sourceKey
 import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.api.GetSongUrlV1
-import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.di.repository.HistoryRepository
@@ -665,53 +664,30 @@ class MusicService : MediaLibraryService(),
     }
 
 
-    private suspend fun recordHistory(mediaItem: MediaItem, playedAt: Long) {
-        if (mediaItem.localConfiguration?.tag.let { it as? MediaMetadata }?.isPodcast == true) return
-        val metadata = mediaItem.mediaMetadata
-        val artistList = metadata.extras?.getStringArrayList("artist_list")
-            ?.filter { it.isNotBlank() }
-            ?.takeIf { it.isNotEmpty() }
-            ?: metadata.artist?.toString()
-                ?.split(Regex("\\s*[/,&、]\\s*"))
-                ?.map(String::trim)
-                ?.filter(String::isNotBlank)
-                ?.takeIf(List<String>::isNotEmpty)
-            ?: listOf("未知歌手")
-        val storedSong = songRepository.getSong(mediaItem.mediaId).firstOrNull()
-        val title = metadata.title?.toString().orEmpty().ifBlank {
-            storedSong?.title ?: "未知标题"
-        }
-        val album = metadata.albumTitle?.toString().orEmpty().ifBlank {
-            storedSong?.album ?: "未知专辑"
-        }
-        val cover = metadata.artworkUri?.toString().orEmpty().ifBlank {
-            storedSong?.cover.orEmpty()
-        }
-        val song = storedSong?.copy(
-            title = title,
-            artist = artistList,
-            album = album,
-            cover = cover,
-            duration = metadata.durationMs?.takeIf { it > 0 } ?: storedSong.duration,
-            updatedAt = System.currentTimeMillis(),
-        ) ?: Song(
-            id = mediaItem.mediaId,
-            title = title,
-            artist = artistList,
-            album = album,
-            cover = cover,
-            duration = metadata.durationMs ?: 0,
-        )
-        historyRepository.addToHistory(song, playedAt)
+    private suspend fun recordHistory(
+        mediaItem: MediaItem, playedAt: Long, storageId: String,
+        owner: com.ljyh.mei.data.session.SessionStamp?,
+    ) {
+        val stored = songRepository.getSong(storageId).firstOrNull()
+        val song = mediaItem.toLocalHistorySong(storageId, stored, System.currentTimeMillis())
+        historyRepository.addToHistory(song, playedAt, owner)
     }
 
     private fun recordPlaybackStart(
         mediaItem: MediaItem,
         startedAtMs: Long,
     ) {
-        scope.launchPlaybackHistoryPersistence {
+        val history = runCatching {
+            mediaItem.localHistoryStorageIdOrNull()?.let { id ->
+                val owner = SongSourceIdentity.cloudFromKeyOrNull(id)?.let { source ->
+                    accountSessions.snapshot().also { source.requireAccount(it.identity) }
+                }
+                id to owner
+            }
+        }.getOrNull()
+        if (history != null) scope.launchPlaybackHistoryPersistence {
             try {
-                recordHistory(mediaItem, startedAtMs)
+                recordHistory(mediaItem, startedAtMs, history.first, history.second)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

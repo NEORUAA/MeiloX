@@ -45,8 +45,8 @@ object AppModule {
         LocalPlaylistRepository(db.playlistDao())
 
     @Provides @Singleton
-    fun provideHistoryDao(database: AppDatabase): HistoryRepository =
-        HistoryRepository(database.historyDao(), database.songDao())
+    fun provideHistoryDao(database: AppDatabase, sessions: com.ljyh.mei.data.session.SessionStore): HistoryRepository =
+        HistoryRepository(database.historyDao(), database.songDao(), sessions)
 
     @Provides
     fun provideAlbumsDao(db: AppDatabase): AlbumsRepository =

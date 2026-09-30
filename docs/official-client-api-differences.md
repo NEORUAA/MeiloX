@@ -1516,6 +1516,54 @@ These are integration differences, not server API semantics.
   a separate source-preserving persistence adapter; paired release execution and final
   server statistics are not established by this identity correction.
 
+### API-026: Device-Local Cloud History Must Retain Source and Account Affinity
+
+- Recorded: 2026-10-01. Shared playback previously persisted the numeric MediaItem
+  entry ID as Room Song.id. Room mapping hashed nonnumeric IDs, history merging used
+  the numeric entry and both history click paths rebuilt ID-only placeholders. These
+  steps lost the cloud audio/file-owner/account tuple and could overwrite or replay
+  a catalog/download row with the same UI entry. Official remote recent history
+  (`/api/play-record/song/list`) is a separate contract; its present AccountSong model
+  has no qualified private-file source tuple. A matching title or numeric ID is not
+  evidence that a server row belongs to an own-cloud file.
+- Both runtimes now use the existing canonical source key as the string primary key
+  for new local cloud history only. The key retains entry, audio, file owner and
+  captured account; the original numeric entry stays in MediaMetadata.id. New cloud
+  rows retain exact milliseconds. Ordinary/local IDs, their existing duration units,
+  database version 21 and legacy rows are unchanged. No credentials, database migration,
+  historical rewrite or alternate remote history endpoint is introduced.
+- Playback captures the source's current SessionStamp before asynchronous persistence.
+  The repository checks cancellation and ownership before dispatch, before insertion
+  and after insertion inside the existing Room transaction. A changed session rolls
+  back both metadata replacement and its cascading history effects; cloud failures
+  cannot take the legacy split-write constraint fallback. Owned device-local metadata
+  remains available during recovery, matching the existing offline source policy;
+  this does not authorize a network request during recovery.
+- History publication filters private rows to their current account without deleting
+  foreign data. Account/recovery transitions cancel old remote work and reject late
+  results. Retained or substituted click callbacks must still match visible entries
+  and the captured session. Merging uses full source identity; cloud clicks pass their
+  complete MediaItem into the existing queue, avoiding catalog hydration. Ordinary
+  and local entries retain their original placeholder strategy. No layout, resource,
+  navigation, label or backend-specific frontend tree is added.
+- Malformed or unknown reserved cloud keys cannot be hashed into catalog IDs. They
+  remain stored but are excluded from history presentation/replay. Legacy numeric
+  rows are not inferred to be private files, so a new source-owned row may appear
+  beside an older same-title row. Native unmatched/private remote recent history
+  decoding and legacy source reconstruction remain unqualified; the visible distinction
+  is preferable to inventing affinity or hiding an incomplete mapping.
+- Verification: ten new shared JVM cases and twelve new closed device cases per
+  runtime cover full-source merge, stale/recovery/late results, retained clicks,
+  transaction rollback, malformed keys, duration and database reopen. The actual TV
+  process passes an isolated in-memory Room probe without rebinding AppGraph or calling
+  an SDK. Real cloud selection writes a source-owned local record, the existing
+  history tab replays it, and a read-only probe after process recreation confirms the
+  selected full source and exact duration in its 48-entry queue. The dual-runtime
+  checkpoint records normal-module restoration and final build/device checks.
+- This qualifies the new local cloud record/replay path, not server recent-history
+  source parity, audible output, real account-switch cooperation, cloud uploads,
+  final listening aggregation, production upgrade or paired signed release execution.
+
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 
 - Date: 2026-09-29. Standalone components use their own Application, registered Activity,

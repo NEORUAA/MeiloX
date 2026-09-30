@@ -21,6 +21,11 @@ import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.data.model.room.PlaybackHistory
 import com.ljyh.mei.data.model.room.Song
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.ljyh.mei.di.dao.AlbumsDao
 import com.ljyh.mei.di.dao.CachedLyricDao
 import com.ljyh.mei.di.dao.ColorDao
@@ -98,13 +103,27 @@ class LikeRepository @Inject constructor(private val likeDao: LikeDao) {
 @Singleton
 class HistoryRepository @Inject constructor(
     private val historyDao: HistoryDao,
-    private val songDao: SongDao
+    private val songDao: SongDao,
+    private val sessions: SessionStore,
 ) {
-    suspend fun addToHistory(song: Song, playedAt: Long = System.currentTimeMillis()) {
+    suspend fun addToHistory(song: Song, playedAt: Long = System.currentTimeMillis(), owner: SessionStamp? = null) {
+        val source = SongSourceIdentity.cloudFromKeyOrNull(song.id)?.also {
+            require(song.sourceType != com.ljyh.mei.data.model.room.SourceType.LOCAL && it.key == song.id)
+        }
+        val context = currentCoroutineContext()
+        val guard = {
+            context.ensureActive()
+            if (source != null) {
+                val captured = requireNotNull(owner) { "Cloud history needs a captured account" }
+                sessions.requireCurrent(captured)
+                source.requireAccount(captured.identity)
+            }
+        }
+        guard()
         try {
-            historyDao.addSongToHistory(song, playedAt)
+            historyDao.addSongToHistory(song, playedAt, guard)
         } catch (e: Exception) {
-            if (e is SQLiteConstraintException) {
+            if (e is SQLiteConstraintException && source == null) {
                 songDao.insertSongs(listOf(song))
                 historyDao.insertHistory(PlaybackHistory(songId = song.id, playedAt = playedAt))
             } else throw e

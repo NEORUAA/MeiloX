@@ -1269,6 +1269,95 @@ Local evidence: `/tmp/meilox-cloud-report-source-validation.log`,
 `/tmp/meilox-cloud-report-final-tv-home.png`. Generated artifacts, official source,
 private payloads, device logs and credentials are not committed. No push or merge.
 
+### D1/D4 Checkpoint: Source-Owned Local Cloud History Replay (2026-10-01)
+
+API-026 records the local/remote history distinction. This checkpoint advances the
+existing dual-runtime goal; it does not complete cloud or release acceptance.
+
+- New local cloud playback records use the existing canonical source string as their
+  Room primary key, preserving entry/audio/file-owner/account affinity and exact
+  millisecond duration. Ordinary/local mapping, schema version 21, original data and
+  completed download rows remain unchanged. No legacy row is guessed or rewritten.
+- Playback captures ownership before asynchronous persistence. Cancellation/current
+  session guards surround the existing transaction, including a post-insert check;
+  failure rolls back replaced metadata and cascading history. Cloud writes do not
+  take the ordinary split-write constraint fallback. This is device-local recording,
+  not a new backend report route or a remote account mutation.
+- Both unchanged history click paths provide full cloud MediaItems to the existing
+  queue while ordinary/local entries retain baseline hydration. Publication and
+  clicks enforce current account ownership, account/recovery transitions reject old
+  remote results, and merge identity distinguishes different private files with equal
+  entry IDs. Recovery retains owned device-local metadata for the established offline
+  policy but does not bypass remote source authorization. Foreign/malformed rows are
+  preserved on disk rather than silently deleted or converted into catalog songs.
+- Paired JVM validation passes 741 standalone tests in 90 suites and 801 parasite
+  tests in 96 suites, zero failures/errors/skips. Both debug/instrumentation and
+  unsigned minified release builds pass, including vital lint. Release APKs keep
+  production IDs and pass 16 KB ZIP alignment; standalone has no Xposed metadata and
+  parasite remains API 102, TV-only, hot reload off. Signing, release execution,
+  production upgrade and independent startup are not established by these checks.
+- Closed AVD fixtures pass 54 standalone and 55 parasite tests, including twelve new
+  source/Room/transaction/reopen/history-queue cases per runtime and the previous
+  cloud report, source, lyric, favorite and playlist cases. The initial history
+  fixture exposed a non-void Kotlin-inferred test signature, corrected to Unit before
+  acceptance. A post-restoration parasite attempt failed the platform process attach
+  timeout before tests began; its PID crash buffer was empty and the recorded rerun
+  passes all 55 cases. The attach failure's cause remains undetermined.
+- A separate in-memory Room/session probe inside the actual TV process passes source
+  roundtrip, exact duration, changed-account transaction rollback and ordinary row
+  preservation without rebinding AppGraph or invoking SDKs. Actual selection of the
+  user's uploaded `唯有追赶风的方向` creates a source-owned local record. Clicking
+  that record in the existing History tab builds its 48-entry queue and progresses
+  from zero through real playback. A read-only probe after process recreation verifies
+  selected index 0 still has the full source and exact 123,871 ms duration.
+- The ordinary module is rebuilt/installed/cold-started with APP true and all
+  HOST/RUNTIME/WORK probes false. Its restored history queue is paused without autoplay;
+  a further normal-module history click starts from zero and reaches 20,566 ms before
+  pausing at 20,784 ms. Existing expanded-player/list screenshots confirm the original
+  layout and transport state. Standalone's different Cookie account displays its own
+  history and retains its 1,517-entry queue/index 879, paused at 60,347 ms. No audible
+  output or native KRC/animation-wide acceptance is inferred from these observations.
+- Legacy numeric cloud-looking rows remain ordinary because their source cannot be
+  reconstructed safely. A same-title older row remains visible beside the new owned
+  record. Native private/unmatched remote recent-history source decoding is a separate
+  unfinished mapping; title matching or hiding the older row would not qualify it.
+- Final AVD state is awake, portrait, authenticated TV MeiloX Home, playback paused.
+  The official TV player is inactive STOPPED; both current-PID crash buffers are empty.
+  Accepted TV media row 820 is still TV-owned, not pending and 22,705,573 bytes. A newly
+  attached physical device is not operated: all subsequent ADB commands explicitly
+  select emulator-5554. No real favorite/playlist/social write, upload/delete, quota
+  download, account mutation, screen-off, global rotation or LSPosed scope change is
+  performed. Real playback alone may emit existing official SDK listening reports.
+- Remote private-history parity, native cloud origin/ancillary reporting fields,
+  nonempty native KRC timing, cloud upload/provider lifecycle, real authorized library
+  writes/account switching, TV microphone/PiP capability, production upgrades,
+  independent startup, paired signed release regression and server final aggregation
+  remain gates. D1/D2/D3/D4/D5/D6 are not marked complete.
+
+Local evidence: `/tmp/meilox-cloud-history-source-validation.log`,
+`/tmp/meilox-cloud-history-device-fixture-rebuild.log`,
+`/tmp/meilox-cloud-history-final-source-validation.log`,
+`/tmp/meilox-cloud-history-standalone-device.txt`,
+`/tmp/meilox-cloud-history-standalone-device-rerun.txt`,
+`/tmp/meilox-cloud-history-parasite-device-rerun.txt`,
+`/tmp/meilox-cloud-history-final-parasite-device.txt`,
+`/tmp/meilox-cloud-history-final-parasite-device-rerun.txt`,
+`/tmp/meilox-cloud-history-host-probe-build.log`,
+`/tmp/meilox-cloud-history-host-selected-probe-build.log`,
+`/tmp/meilox-cloud-history-host-closed-probe.log`,
+`/tmp/meilox-cloud-history-host-read-before-replay.log`,
+`/tmp/meilox-cloud-history-host-read-after-cold.log`,
+`/tmp/meilox-cloud-history-cold-restored.log`,
+`/tmp/meilox-cloud-history-normal-cold.log`,
+`/tmp/meilox-cloud-history-normal-replay-progress.log`,
+`/tmp/meilox-cloud-history-normal-paused.log`,
+`/tmp/meilox-cloud-history-tv-history.png`,
+`/tmp/meilox-cloud-history-tv-replay-playing.png`,
+`/tmp/meilox-cloud-history-standalone-history.png`,
+`/tmp/meilox-cloud-history-normal-player-paused.png` and
+`/tmp/meilox-cloud-history-final-tv-home.png`. Generated artifacts, private payloads,
+device logs, credentials and official source are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

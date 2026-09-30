@@ -245,7 +245,10 @@ internal val MediaItem.sourceKey: String
 
 
 fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {
-    val songId = id.removePrefix("local_").removePrefix("-").let { sid ->
+    val source = SongSourceIdentity.cloudFromKeyOrNull(id)?.also {
+        require(sourceType != com.ljyh.mei.data.model.room.SourceType.LOCAL && it.key == id)
+    }
+    val songId = source?.entryId ?: id.removePrefix("local_").removePrefix("-").let { sid ->
         sid.toLongOrNull() ?: sid.hashCode().toLong().let { if (it < 0) -it else it }
     }
     return MediaMetadata(
@@ -255,9 +258,10 @@ fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {
         artists = artist.map { name ->
             MediaMetadata.Artist(id = name.hashCode().toLong().let { if (it < 0) -it else it }, name = name)
         },
-        duration = duration * 1000,
+        duration = if (source != null) duration else duration * 1000,
         album = MediaMetadata.Album(id = album.hashCode().toLong().let { if (it < 0) -it else it }, title = album),
         isLocal = sourceType == com.ljyh.mei.data.model.room.SourceType.LOCAL,
+        source = source,
     )
 }
 
