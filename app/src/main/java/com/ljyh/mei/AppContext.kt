@@ -1,6 +1,5 @@
 package com.ljyh.mei
 
-import android.app.Application
 import android.content.Context
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -12,7 +11,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 
-class AppContext : Application(), SingletonImageLoader.Factory {
+class AppContext : com.ljyh.mei.runtime.RuntimeApplication(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         instance = this

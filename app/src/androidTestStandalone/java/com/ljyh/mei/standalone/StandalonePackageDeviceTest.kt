@@ -27,6 +27,17 @@ class StandalonePackageDeviceTest {
         assertNotNull(graph.sessions().snapshot())
     }
 
+    @Test fun applicationSelectsTheGatedDownloadFactoryInsteadOfTheDefaultStartupInitializer() {
+        val application = context.applicationContext as androidx.work.Configuration.Provider
+        assertTrue(application.workManagerConfiguration.workerFactory is StandaloneDownloadWorkerFactory)
+        val manager = androidx.work.WorkManager.getInstance(context) as androidx.work.impl.WorkManagerImpl
+        assertTrue(manager.configuration.workerFactory is StandaloneDownloadWorkerFactory)
+        val provider = context.packageManager.getProviderInfo(
+            ComponentName(context, "androidx.startup.InitializationProvider"), android.content.pm.PackageManager.GET_META_DATA,
+        )
+        assertFalse(provider.metaData?.containsKey("androidx.work.WorkManagerInitializer") == true)
+    }
+
     @Test fun apkDoesNotRegisterAModuleOrContainHostClasses() {
         ZipFile(context.applicationInfo.sourceDir).use { apk ->
             assertFalse(apk.entries().asSequence().any { it.name.startsWith("META-INF/xposed/") })

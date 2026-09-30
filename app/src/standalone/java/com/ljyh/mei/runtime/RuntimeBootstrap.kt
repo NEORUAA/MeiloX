@@ -12,6 +12,7 @@ object RuntimeBootstrap {
     fun initialize(context: Context) {
         AppGraph.initialize(context)
         val pendingCookie = runBlocking(Dispatchers.IO) { AppGraph.component.standaloneSessions().initialize() }
+        com.ljyh.mei.standalone.StandaloneDownloadRuntime.start(context, AppGraph.component.standaloneSessions())
         if (pendingCookie != null) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 AppGraph.component.standaloneAccounts().login(pendingCookie)

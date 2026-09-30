@@ -33,7 +33,11 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -109,18 +113,59 @@ class StandaloneDownloadWorkerDeviceTest {
         assertFalse(fixture.temp(id).exists())
     }
 
-    private fun worker(fixture: Fixture, id: UUID): DownloadWorker {
+    @Test fun startupPreparationAndCookieRecoveryCannotFailOrDispatchAPendingTask() = test(Scenario.SUCCESS) { fixture, id ->
+        coroutineScope {
+            val entered = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<Unit>()
+            val environments = AtomicInteger()
+            fixture.sessions.setRecoveryRequired(true)
+            val guarded = StandaloneDownloadWorker(context, parameters(id), false,
+                prepared = { entered.complete(Unit); gate.await() },
+                environment = { environments.incrementAndGet(); fixture.environment })
+            val job = async { guarded.doWork() }
+            entered.await()
+            assertEquals(0, environments.get())
+            assertEquals(0, fixture.reads.get())
+            gate.complete(Unit)
+            assertEquals(ListenableWorker.Result.retry(), job.await())
+            assertEquals(DownloadStatus.PENDING, fixture.db.downloadDao().getBySongId("1")?.status)
+            assertEquals(0, fixture.transfers.get())
+            fixture.sessions.setRecoveryRequired(false)
+            val resumed = StandaloneDownloadWorker(context, parameters(id), false, prepared = {}, environment = { fixture.environment })
+            assertEquals(ListenableWorker.Result.success(), resumed.doWork())
+            assertEquals(1, fixture.reads.get())
+            assertEquals(1, fixture.transfers.get())
+        }
+    }
+
+    @Test fun cancelingBeforePreparationCannotConstructAnEnvironmentOrChangeTheTask() = test(Scenario.SUCCESS) { fixture, id ->
+        coroutineScope {
+            val entered = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<Unit>()
+            val guarded = StandaloneDownloadWorker(context, parameters(id), false,
+                prepared = { entered.complete(Unit); gate.await() }, environment = { error("Must not construct a graph before preparation") })
+            val job = async { guarded.doWork() }
+            entered.await()
+            job.cancelAndJoin()
+            assertEquals(DownloadStatus.PENDING, fixture.db.downloadDao().getBySongId("1")?.status)
+            assertEquals(0, fixture.reads.get())
+            assertEquals(0, fixture.transfers.get())
+        }
+    }
+
+    private fun worker(fixture: Fixture, id: UUID) = DownloadWorker(context, parameters(id), fixture.environment)
+
+    private fun parameters(id: UUID): WorkerParameters {
         val executor = Executor { it.run() }
         val factory = object : WorkerFactory() {
             override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker? = null
         }
-        val parameters = WorkerParameters(id,
+        return WorkerParameters(id,
             workDataOf(DownloadWorker.KEY_SONG_ID to "1", DownloadWorker.KEY_OWNER_ID to 17L), emptyList(),
             WorkerParameters.RuntimeExtras(), 0, 0, executor, Dispatchers.Default,
             WorkManagerTaskExecutor(executor), factory,
             { _, _, _ -> Futures.immediateFuture(null) }, { _, _, _ -> Futures.immediateFuture(null) },
         )
-        return DownloadWorker(context, parameters, fixture.environment)
     }
 
     private fun test(scenario: Scenario, block: suspend (Fixture, UUID) -> Unit) = runBlocking(Dispatchers.IO) {

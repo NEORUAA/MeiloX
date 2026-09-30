@@ -1509,6 +1509,84 @@ These are integration differences, not server API semantics.
   scheduling, real account changes and signed-release upgrades remain unqualified.
   Confirming the source policy and preserving old rows do not complete those gates.
 
+#### Legacy Work Conversion and Startup Gate (2026-10-01)
+
+- Implemented standalone-only legacy work conversion and download startup coordination.
+  Standalone disables the default WorkManager startup initializer and provides its
+  gated factory through the flavor-owned Application base. The parasite Application
+  base remains an ordinary Application; its initializer and isolated host scheduler
+  configuration are unchanged. Common UI, components and Room schema remain shared.
+- Before asynchronous Cookie verification can change preferences, standalone freezes
+  the previous public account ID once in its own DataStore. This value is affinity,
+  not an authenticated session or copied credential. Private preference tests verify
+  that account preference replacement, logout-like removal and reopening cannot
+  overwrite it. Unknown/nonpositive affinity never becomes the next login's account.
+- The converter reads original `song_ids_json`, playlist and directory through the
+  WorkManager `WorkSpecDao`; public WorkInfo does not expose input Data. This restricted
+  read is isolated in one standalone adapter. Both the recorded `main` and current
+  checkout pin WorkManager 2.11.2, so this checkpoint does not introduce a library/schema
+  upgrade. Stored WorkManager Data is decoded structurally, never by raw blob/string
+  substitution or by copying the user's work database.
+- Matches require original unique work name/tags, one canonical string song identity,
+  one unambiguous work record, valid directory and known quality. Original playlist,
+  destination, song metadata and creation time become durable owner/request intent.
+  Pending/downloading work gets a fresh UUID, zero progress and no old URL/type/name;
+  paused/failed work keeps its state/progress. A terminal cancellation is treated as a
+  pause, not permission to redownload. Completed rows, song paths and files are not
+  rewritten or given fabricated publication receipts.
+- Room conversion commits before retiring old WorkSpecs. The factory prevents an old
+  request from entering the old implementation during this boundary, including an
+  unavailable/minified worker name recognized by its old input/tag contract. A crash
+  after Room commit can rerun retirement without changing UUID/affinity or confusing
+  our cancellation with a user pause. Existing shared orphan repair schedules the
+  converted request only after authentication resolves to its original public owner.
+- Modern standalone work waits for metadata preparation. Pending Cookie recovery
+  returns retry without failing the task, constructing a source request or publishing
+  media. Canceling before preparation leaves the row intact. The normal worker retains
+  its existing account-generation/transfer/publication guards once execution begins.
+  Preparation failure also retries without bypassing the gate; a later process startup
+  retries conversion. Authenticated session changes trigger shared queue recovery.
+- Unknown owner, absent/pruned/ambiguous WorkSpecs, malformed input or unsupported
+  quality cannot be reconstructed as authenticated work. Their entries remain visible
+  and unowned/failed (paused rows remain paused), old URLs are cleared and no automatic
+  request is scheduled. A fresh download intent through the existing menu is required;
+  the converter does not invent the original account or directory. This is an explicit
+  safety limit where historical metadata is unavailable, not hidden feature removal.
+- Nine new pure policy cases pass. All 676 standalone and 735 parasite JVM tests pass,
+  with no failures/errors/skips. On the rooted API 37/16 KB AVD, 23 selected standalone
+  device tests pass: eight recovery cases, seven complete Worker cases, four package/
+  graph/factory checks, three database migration cases and the native codec check.
+  Nineteen parasite queue/source/Worker regressions also pass, for 42 selected cases.
+- The recovery fixture upgrades independently created v17 tables with all five old
+  task states, associates UUID-named delayed WorkSpecs, preserves a completed fixture
+  path/bytes and checks reopen/idempotence. Other cases cover same/different/recovering
+  sessions, paused resume with original destination, missing/malformed/unknown metadata,
+  commit-before-cancel fault injection, and durable public affinity. A naturally
+  scheduled invalid old worker name reaches the gated factory's explicit retirement
+  result. Its input is synthetic; no source request or media transfer occurs.
+- Closed standalone Worker substitutes additionally verify waiting/retry and cancellation
+  before preparation, then actual publication after the fixture session recovers.
+  Room/WorkSpec/DataStore/media fixtures are removed by their UUID paths/tags; real
+  credentials, user work and accepted TV media are never used as those fixtures.
+  These tests do not prove a real owned download finishing across a device reboot.
+- One initial device assertion compared nullable Long ownership with Integer and was
+  corrected without production changes. The first parasite instrumentation attempt
+  failed the platform's 10-second process attach timeout before any tests began;
+  crash buffer was empty and the recorded rerun passed all 19 cases. Its underlying
+  cause remains undetermined; it is not classified as a proven download-code failure.
+- Both debug/instrumentation and unsigned minified release builds pass; release APKs
+  keep their production IDs, pass 16 KB ZIP alignment and retain zero/three Xposed
+  metadata entries. R8 retains the standalone provider/factory/converter/gate, while
+  standalone legacy-affinity/retirement strings are absent from parasite DEX. The
+  merged standalone manifest omits only WorkManager's initializer; parasite retains it.
+  Release package checks are not signed-upgrade or release-device acceptance.
+- Debug cold starts restore authenticated original Home and paused players at 60,347 ms
+  (standalone) and 94,813 ms (TV). The existing TV-owned published media row remains
+  22,705,573 bytes. No original standalone update, real download grant/transfer,
+  logout/account switch, upload, social write or screen-off action is performed.
+  Real production upgrade histories, provider grants, remaining paired behavior and
+  release qualification remain required; the overall dual-runtime goal is not complete.
+
 ### ABI-011: Asynchronous Cookie Recovery Must Not Cancel Local Queue Restoration
 
 - Date: 2026-09-30. Standalone cold-start device regression after real playback.

@@ -805,6 +805,76 @@ Local evidence: `/tmp/meilox-dual-download-backends-debug.log`,
 `/tmp/meilox-download-final-host-session.log` and
 `/tmp/meilox-download-final-crash.log`. None are committed.
 
+### D3/D5 Checkpoint: Legacy Work Conversion and Startup Coordination (2026-10-01)
+
+- Standalone now supplies an on-demand WorkManager configuration/factory through its
+  flavor-owned Application base; only its default WorkManager initializer is removed.
+  Parasite retains ordinary Application inheritance and its existing host scheduler.
+  Shared screens, navigation, components and Room version remain unchanged.
+- Freeze the pre-verification public account ID once before asynchronous Cookie login
+  can overwrite it. This is durable legacy affinity, not authentication or a Cookie
+  copy. The standalone converter recovers original unique-work input Data from the
+  pinned WorkManager 2.11.2 DAO, isolated from common/parasite consumers. The recorded
+  `main` uses the same dependency version; no WorkManager schema upgrade is introduced.
+- Legacy pending/downloading tasks with complete matching metadata receive fresh UUIDs,
+  original playlist/directory, old-account affinity and no cached URL. Paused/failed
+  states, song metadata and creation times survive; completed records/paths/files remain
+  untouched. Old canceled work stays paused. Room commits before retiring old work;
+  the gated factory prevents old implementations from executing across that boundary.
+- The preparation gate also protects modern downloads before graph/metadata readiness.
+  Cookie recovery retries without failing pending rows or obtaining a source. Shared
+  queue recovery runs when an authenticated session becomes available, repairs only
+  eligible same-account requests and rejects changed ownership. Explicit resume keeps
+  the recovered original destination rather than substituting current preferences.
+- Unknown affinity or absent/pruned/ambiguous/malformed metadata cannot recover an
+  original authorized intent. Those rows remain visible but unowned/failed (paused
+  stays paused), with no automatic dispatch or stale URL use. The existing download menu
+  can issue a fresh intent. The implementation does not invent lost owner/directory
+  data or silently assign old tasks to the account that logs in next. ABI-010 records
+  these policies and remaining acceptance limits.
+- Nine new standalone policy tests pass. Final paired JVM results are 676 standalone
+  tests in 86 suites and 735 parasite tests in 92 suites, with zero failures/errors/skips.
+  Both debug APKs and both instrumentation APKs build; `git diff --check` passes.
+- All 23 selected standalone and 19 parasite device cases pass. Recovery coverage uses
+  private v17 tables/files and UUID-named delayed work to verify conversion, completed
+  data preservation, reopen/idempotence, recovery/changed-account exclusion, explicit
+  paused resume, missing metadata, commit-before-cancel fault injection and durable
+  affinity. A naturally scheduled unavailable old worker name proves factory retirement.
+  Closed Worker cases prove preparation wait/cancel/retry followed by publication after
+  fixture recovery. All private Room/WorkSpec/DataStore/media fixtures are cleaned up.
+- One nullable-Long assertion was corrected; an initial parasite instrumentation process
+  hit Android's 10-second attach timeout before tests started. Its crash buffer was
+  empty, diagnostic output was retained and the scoped rerun passed all 19 tests.
+  The timeout's cause is not determined or attributed to a download implementation.
+- Both unsigned minified release APKs build and pass 16 KB ZIP alignment. Production IDs,
+  zero/three Xposed metadata entries and flavor isolation remain correct; standalone's
+  provider/factory/gate/converter are present under R8 and its legacy coordination
+  markers are absent from parasite. Merged manifests confirm standalone initializer
+  removal and parasite retention. This remains build/package, not release-device proof.
+- Both updated debug cold starts restore authenticated original Home and paused players
+  at 60,347/94,813 ms. The accepted TV-owned 22,705,573-byte publication remains intact.
+  No original standalone app update, real download authorization/transfer, logout,
+  account switch, upload, social write or screen-off action was performed.
+- Legacy conversion is implemented and synthetic upgrade/work gates now pass. Actual
+  signed production upgrades, real owned download/process-reboot completion, external
+  provider grants, earlier upgrade histories, framework-free launch, remaining business
+  differences/capabilities and final paired regression still require their own evidence.
+  D3-D6 and the overall goal remain incomplete; fixture acceptance does not replace them.
+
+Local evidence: `/tmp/meilox-legacy-download-debug.log`,
+`/tmp/meilox-legacy-download-device-build.log`,
+`/tmp/meilox-legacy-download-instrument-final-build.log`,
+`/tmp/meilox-legacy-download-final-jvm.log`,
+`/tmp/meilox-legacy-download-final-device.log`,
+`/tmp/meilox-legacy-download-parasite-final-device.log`,
+`/tmp/meilox-legacy-download-attach-diagnostic.log`,
+`/tmp/meilox-legacy-download-release.log`,
+`/tmp/meilox-legacy-download-standalone-cold.png`,
+`/tmp/meilox-legacy-download-standalone-session.log`,
+`/tmp/meilox-legacy-download-tv-cold.png`,
+`/tmp/meilox-legacy-download-tv-session.log` and
+`/tmp/meilox-legacy-download-final-crash.log`. None are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

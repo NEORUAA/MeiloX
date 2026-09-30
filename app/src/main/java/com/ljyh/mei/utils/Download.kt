@@ -65,6 +65,8 @@ object DownloadManager {
         managementScope.launch { queue(context).recover() }
     }
 
+    internal suspend fun recoverAndAwait(context: Context) = queue(context).recover()
+
     fun pauseSong(context: Context, songId: String, requestId: String) {
         managementScope.launch { queue(context).pauseSong(songId, requestId) }
     }
