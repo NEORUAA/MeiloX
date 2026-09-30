@@ -1372,6 +1372,16 @@ These are integration differences, not server API semantics.
   cooperation, embedded download tags and minified release execution remain open.
   Existing same-source lyric-priority/update behavior is deliberately retained; this
   entry does not claim fixes to inherited frontend behavior or full D4/D5 acceptance.
+- Follow-up source review: the pinned TV request reader retains `krc`, but its reviewed
+  lyric-controller display path parses common LRC; no native KRC-to-word parser was
+  identified in that path. The older local watch client's `C2220a` karaoke parser and
+  `FloatLyricView` supply a distinct historical format: word field one is a suspension,
+  not an absolute YRC timestamp. Its view computes start as the preceding cursor plus
+  suspension, end as start plus duration, and advances the cursor to end plus one ms.
+  This is evidence against blindly passing `klyric` to `YRCParser`, not proof that the
+  current TV cloud endpoint returns that watch format. These JADX names are analysis
+  references only, not added hook targets. A real nonempty cloud response and timing
+  qualification are still needed before declaring a native karaoke adapter complete.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

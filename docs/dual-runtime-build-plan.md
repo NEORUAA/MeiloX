@@ -1028,6 +1028,9 @@ or private lyric content is committed.
   Lyrics provider acceptance, real account-switch cooperation and real embedded tags
   remain required. Source ownership does not complete cloud parity, D4/D5/D6 or the
   overall dual-runtime goal. No functionality is hidden to substitute for acceptance.
+  Subsequent local source review finds historical watch KRC suspension/cumulative
+  timing differs from YRC. The reviewed pinned TV display path does not qualify that
+  format; API-022 records the evidence and no speculative parser conversion is applied.
 
 Local evidence: `/tmp/meilox-cloud-lyric-owner-final-validation.log`,
 `/tmp/meilox-cloud-lyric-owner-final-device-build.log`,
