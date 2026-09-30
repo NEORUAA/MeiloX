@@ -1,5 +1,6 @@
 package com.ljyh.mei.playback
 
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -18,7 +19,7 @@ internal class PlaybackHistoryReporter(
 ) {
     private data class ActivePlayback(
         val mediaId: String,
-        val songId: Long,
+        val songSource: SongSourceIdentity,
         val source: PlaybackHistorySource,
         val startedAtMs: Long,
         val owner: SessionStamp,
@@ -36,14 +37,28 @@ internal class PlaybackHistoryReporter(
         mediaId: String, songId: Long, source: PlaybackHistorySource, startedAtMs: Long,
         details: PlaybackReportDetails = PlaybackReportDetails(startedAtMs),
     ) {
-        if (songId <= 0 || source.sourceId <= 0 || startedAtMs <= 0) return
+        if (songId <= 0) return
+        recordStart(mediaId, SongSourceIdentity(songId), source, startedAtMs, details)
+    }
+
+    fun recordStart(
+        mediaId: String, songSource: SongSourceIdentity, source: PlaybackHistorySource, startedAtMs: Long,
+        details: PlaybackReportDetails = PlaybackReportDetails(startedAtMs),
+    ) {
+        if (source.sourceId <= 0 || startedAtMs <= 0) return
         require(details.startedAtMs == startedAtMs)
         val owner = runCatching { bridge.sessions.snapshot().also(bridge::requireOwner) }.getOrNull() ?: return
+        if (runCatching {
+                songSource.requireAccount(owner.identity)
+                require(mediaId == songSource.key) { "Mismatched playback identity" }
+                require(details.songSource == null || details.songSource == songSource)
+            }.isFailure) return
+        val capturedDetails = details.copy(songSource = songSource)
         synchronized(lock) {
             if (closed || activePlayback?.let { it.mediaId == mediaId && it.startedAtMs == startedAtMs } == true) return
-            val playback = ActivePlayback(mediaId, songId, source, startedAtMs, owner, details)
+            val playback = ActivePlayback(mediaId, songSource, source, startedAtMs, owner, capturedDetails)
             activePlayback = playback
-            enqueueLocked { bridge.submit("startplay", playback.fields(startedAtMs), owner, details) }
+            enqueueLocked { submit("startplay", playback.fields(startedAtMs), playback) }
         }
     }
 
@@ -58,7 +73,7 @@ internal class PlaybackHistoryReporter(
                 "time" to completed.playedDurationMs.coerceAtLeast(0) / 1_000,
                 "end" to completed.endReason,
             )
-            enqueueLocked { bridge.submit("play", fields, playback.owner, playback.details) }
+            enqueueLocked { submit("play", fields, playback) }
         }
     }
 
@@ -94,8 +109,13 @@ internal class PlaybackHistoryReporter(
         }
     }
 
+    private suspend fun submit(action: String, fields: Map<String, Any>, playback: ActivePlayback) {
+        bridge.requireReportSource(fields, playback.owner, playback.details)
+        bridge.submit(action, fields, playback.owner, playback.details)
+    }
+
     private fun ActivePlayback.fields(loggedAtMs: Long): Map<String, Any> = mapOf(
-        "type" to "song", "id" to songId, "source" to source.source,
+        "type" to "song", "id" to songSource.songId, "source" to source.source,
         "sourceId" to source.sourceId.toString(), "startlogtime" to startedAtMs / 1_000,
         "logtime" to loggedAtMs, "time" to 0L,
     )

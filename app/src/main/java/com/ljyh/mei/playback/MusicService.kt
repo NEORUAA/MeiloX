@@ -638,7 +638,7 @@ class MusicService : MediaLibraryService(),
         ) {
             val mediaItem = player.currentMediaItem
             val update = playbackHistorySession.update(
-                mediaId = mediaItem?.mediaId,
+                mediaId = mediaItem?.playbackHistoryKey,
                 isPlaying = player.isPlaying,
                 wallClockMs = System.currentTimeMillis(),
                 realtimeMs = SystemClock.elapsedRealtime(),
@@ -705,12 +705,6 @@ class MusicService : MediaLibraryService(),
         historyRepository.addToHistory(song, playedAt)
     }
 
-    private fun MediaItem.playbackHistorySongIdOrNull(): Long? {
-        val metadata = metadata ?: return null
-        if (metadata.isPodcast || metadata.isLocal) return null
-        return mediaId.toLongOrNull()?.takeIf { it > 0L }
-    }
-
     private fun recordPlaybackStart(
         mediaItem: MediaItem,
         startedAtMs: Long,
@@ -725,15 +719,15 @@ class MusicService : MediaLibraryService(),
             }
         }
 
-        val songId = mediaItem.playbackHistorySongIdOrNull() ?: return
-        val source = resolvePlaybackHistorySource(songId) ?: return
+        val songSource = mediaItem.playbackHistorySourceIdentityOrNull() ?: return
+        val source = resolvePlaybackHistorySource(songSource.songId) ?: return
         val metadata = mediaItem.metadata
         val artist = metadata?.artists?.map { it.name }?.filter(String::isNotBlank)
             ?.joinToString(", ").orEmpty()
             .ifBlank { mediaItem.mediaMetadata.artist?.toString().orEmpty() }
         playbackHistoryReporter.recordStart(
-            mediaId = mediaItem.mediaId,
-            songId = songId,
+            mediaId = songSource.key,
+            songSource = songSource,
             source = source,
             startedAtMs = startedAtMs,
             details = PlaybackReportDetails(
@@ -1012,7 +1006,7 @@ class MusicService : MediaLibraryService(),
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         recordPlaybackDuration(
             playbackHistorySession.onMediaItemTransition(
-                mediaId = mediaItem?.mediaId,
+                mediaId = mediaItem?.playbackHistoryKey,
                 reason = reason,
                 realtimeMs = SystemClock.elapsedRealtime(),
             ),

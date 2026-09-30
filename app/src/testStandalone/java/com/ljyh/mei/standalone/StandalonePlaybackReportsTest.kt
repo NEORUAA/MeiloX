@@ -1,6 +1,7 @@
 package com.ljyh.mei.standalone
 
 import com.google.gson.JsonParser
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.netease.NcblClientProfile
 import com.ljyh.mei.data.network.netease.NcblCredentials
 import com.ljyh.mei.data.network.netease.NcblDeviceInfo
@@ -160,6 +161,54 @@ class StandalonePlaybackReportsTest {
         assertEquals(1, fixture.ncblRequests.size)
     }
 
+    @Test fun cloudReportKeepsOriginalChannelsAndNeverSerializesTheInternalSourceKey() = runBlocking {
+        val fixture = Fixture()
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        val details = fixture.details.copy(songSource = source)
+        fixture.submit("startplay", details, songId = source.songId)
+        fixture.submit("play", details, songId = source.songId)
+        assertEquals(999L, fixture.contexts.single().song.id)
+        assertEquals(2, fixture.webRequests.size)
+        assertEquals(2, fixture.ncblRequests.size)
+        fixture.webRequests.forEach { request ->
+            val fields = weblogEvent(request).getAsJsonObject("json")
+            assertEquals(999L, fields.get("id").asLong)
+            assertEquals("list", fields.get("source").asString)
+            assertEquals("456", fields.get("sourceId").asString)
+            assertFalse(fields.toString().contains(source.key))
+            assertFalse(fields.toString().contains(source.downloadId))
+            assertFalse(fields.has("songSource"))
+            assertFalse(fields.has("userid"))
+        }
+    }
+
+    @Test fun directCloudBoundaryRejectsForeignAffinityAndEntryBodiesBeforeEitherTransport() = runBlocking {
+        val fixture = Fixture()
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        assertTrue(runCatching {
+            fixture.submit("startplay", fixture.details.copy(songSource = source.copy(accountId = 8)), songId = 999)
+        }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching {
+            fixture.submit("startplay", fixture.details.copy(songSource = source), songId = 17)
+        }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(fixture.webRequests.isEmpty())
+        assertTrue(fixture.ncblRequests.isEmpty())
+        assertTrue(fixture.contexts.isEmpty())
+    }
+
+    @Test fun differentCloudFilesWithTheSameAudioAndStartKeepSeparateNcblContexts() = runBlocking {
+        val fixture = Fixture()
+        val first = fixture.details.copy(songSource = SongSourceIdentity(999, 88, 7, 17), title = "First private file")
+        val second = first.copy(songSource = first.songSource!!.copy(cloudOwnerId = 89), title = "Second private file")
+        fixture.submit("startplay", first, songId = 999)
+        fixture.submit("startplay", second, songId = 999)
+        fixture.submit("play", first, songId = 999)
+        fixture.submit("play", second, songId = 999)
+        assertEquals(2, fixture.contexts.size)
+        assertEquals(4, fixture.ncblRequests.size)
+        assertEquals(listOf("First private file", "Second private file"), fixture.contexts.map { it.song.name })
+    }
+
     private class Fixture(
         webResponse: (Request) -> Response = { response(it, """{"code":200}""") },
         ncblResponse: (Request) -> Response = ::acceptedUpload,
@@ -192,9 +241,9 @@ class StandalonePlaybackReportsTest {
             reports::add,
         )
 
-        suspend fun submit(action: String, details: PlaybackReportDetails = this.details, owner: SessionStamp = this.owner) {
+        suspend fun submit(action: String, details: PlaybackReportDetails = this.details, owner: SessionStamp = this.owner, songId: Long = 123) {
             val fields = mapOf<String, Any>(
-                "type" to "song", "id" to 123L, "source" to "list", "sourceId" to "456",
+                "type" to "song", "id" to songId, "source" to "list", "sourceId" to "456",
                 "startlogtime" to details.startedAtMs / 1_000, "logtime" to details.startedAtMs + 50_000,
                 "time" to if (action == "play") 45L else 0L,
             ) + if (action == "play") mapOf("end" to "ui") else emptyMap()

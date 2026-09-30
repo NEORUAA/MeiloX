@@ -1190,6 +1190,85 @@ Local evidence: `/tmp/meilox-cloud-playlists-final-source-validation.log`,
 `/tmp/meilox-cloud-playlists-final-tv-home.png`. Generated artifacts, private payloads,
 credentials, device logs and official source are not committed. No push or merge.
 
+### D1/D4 Checkpoint: Source-Owned Cloud Playback Reports (2026-10-01)
+
+This is progress on the existing dual-runtime goal, not complete cloud, native reporting,
+server-statistics or release acceptance. API-025 records the identity/origin distinction.
+
+- The pinned TV APK's actual DEX confirms the song event `id` comes from MusicInfo's
+  `getFilterMusicId()`, whose remote match implementation uses the parsed audio ID.
+  Neither the cloud UI/deletion entry nor the playback file-owner tuple belongs in
+  this field. Native PlayExtraInfo origin/sourceId is a separate unfinished contract;
+  source type 50's `cloudSong` label alone does not qualify its caller/context.
+- Both shared player callbacks now feed the full source key to the existing active-time
+  timer. Reporter start captures the typed source, validates entry/key/account ownership
+  and keeps it through queued dispatch and completion matching. Both runtime sinks
+  reject foreign sources and entry-ID bodies before emitting/transmitting. Wire `id`
+  uses audio identity only; internal entry/file-owner/account fields never enter reports.
+- Standalone retains its original Cookie weblog/NCBL contracts. NCBL context storage
+  distinguishes different private files with equal audio IDs/start times, without
+  changing their protocol or importing TV fields. Parasite retains the official SDK
+  legacy/BI channels and their existing generation/duplicate ownership guards. No UI,
+  layout, resource, navigation, database schema or playback-origin redesign is made.
+- Paired validation passes: 731 standalone JVM tests in 89 suites and 791 parasite
+  tests in 95 suites, zero failures/errors/skips. Both debug/instrumentation and
+  unsigned minified release builds pass, including vital lint; both release APKs
+  pass 16 KB ZIP alignment and retain production application IDs. Standalone has no
+  Xposed metadata; parasite remains API 102, TV-only, hot reload off. Release execution,
+  signing/upgrade and independent startup are not established by package checks.
+- Closed AVD fixtures pass 42 standalone and 43 parasite tests, including five new
+  Media3/source/timer/report tests per runtime and the previous cloud playlist,
+  favorite, lyric and persistence fixtures. The normal parasite target is rerun after
+  probe restoration. Synthetic sinks do not send listening-statistics or account writes.
+- A debug-gated closed probe also passes inside the actual TV process. Its separate
+  synthetic report bridge/session validates audio-ID bodies, full-key matching,
+  account/recovery rejection and active seconds without rebinding AppGraph or invoking
+  the official SDK. The normal module is rebuilt/installed/cold-started afterwards;
+  packaged APP is true and HOST/RUNTIME/WORK probes are false. JVM suites are rerun
+  with the normal flags before that installation.
+- Actual official-account cloud reads display the user's uploaded
+  `唯有追赶风的方向` in the unchanged cloud tab. Selecting the existing row starts
+  its one-entry cloud queue from position zero. The 123,871 ms track reaches its
+  natural repeat transition; both official legacy `play` and BI `_pld` process 124
+  active seconds with the same captured start as their corresponding start events.
+  The next repeat receives a distinct start timestamp and is paused at 31,423 ms.
+  Existing loop mode is preserved, not toggled. This is actual playback/SDK-processing
+  evidence, not HTTP/business acceptance or final server history/aggregation proof.
+- AudioFlinger records the TV PID's active 48 kHz stereo PCM track with queued frames,
+  no track underruns and neither port nor internal mute set. The original expanded
+  player renders progress/transport state in screenshots. These engine/output-state
+  observations do not establish audible sound from this AVD, native KRC timing or
+  visualizer/all-device acceptance. No additional audible confirmation is requested.
+- The final AVD remains awake, portrait, authenticated MeiloX Home with playback
+  paused; the official TV player is inactive STOPPED. The accepted TV-owned media row
+  820 remains 22,705,573 bytes and not pending. Cloud files/playlists/favorites, download
+  quotas, uploads and social recipients are untouched; only real playback emits reports.
+  No screen-off, global orientation, system scope or framework Hook change is made.
+- Local history replay still loses cloud source metadata in its legacy Room mapping
+  and requires a bounded persistence adaptation next. Native cloud origin/ancillary
+  reporting fields, nonempty native KRC timing, real authorized library writes,
+  account-switch cooperation, production upgrades, independent startup and paired
+  release/device qualification remain gates. D1/D2/D3/D4/D5/D6 are not marked complete.
+
+Local evidence: `/tmp/meilox-cloud-report-source-validation.log`,
+`/tmp/meilox-cloud-report-normal-module-build.log`,
+`/tmp/meilox-cloud-report-standalone-device.log`,
+`/tmp/meilox-cloud-report-parasite-device.log`,
+`/tmp/meilox-cloud-report-final-parasite-device.log`,
+`/tmp/meilox-cloud-report-host-probe-build.log`,
+`/tmp/meilox-cloud-report-host-closed-probe.log`,
+`/tmp/meilox-cloud-report-real-playback-start.log`,
+`/tmp/meilox-cloud-report-real-playback-final.log`,
+`/tmp/meilox-cloud-report-real-sdk-start.log`,
+`/tmp/meilox-cloud-report-real-sdk-final.log`,
+`/tmp/meilox-cloud-report-audio-flinger.log`,
+`/tmp/meilox-cloud-report-standalone-ready.png`,
+`/tmp/meilox-cloud-report-tv-cloud-read.png`,
+`/tmp/meilox-cloud-report-tv-playing-a.png`,
+`/tmp/meilox-cloud-report-tv-playing-b-paused.png` and
+`/tmp/meilox-cloud-report-final-tv-home.png`. Generated artifacts, official source,
+private payloads, device logs and credentials are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

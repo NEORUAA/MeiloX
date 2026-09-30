@@ -5,6 +5,7 @@ import com.ljyh.mei.data.session.SessionStamp
 import java.io.IOException
 import com.ljyh.mei.playback.PlaybackReportSink
 import com.ljyh.mei.playback.PlaybackReportDetails
+import com.ljyh.mei.playback.requireReportSource
 import com.ljyh.mei.data.session.SessionStore
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +29,7 @@ class HostPlaybackReportBridge @Inject constructor(override val sessions: Sessio
 
     override suspend fun submit(action: String, fields: Map<String, Any>, owner: SessionStamp, details: PlaybackReportDetails) {
         require(action == "startplay" || action == "play")
-        requireOwner(owner)
+        requireReportSource(fields, owner, details)
         (backend ?: throw IOException("Official playback reporting is not ready")).emit(action, fields.toMap(), owner)
     }
 

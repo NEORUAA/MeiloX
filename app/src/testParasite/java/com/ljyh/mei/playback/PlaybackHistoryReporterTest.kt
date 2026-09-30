@@ -3,6 +3,7 @@ package com.ljyh.mei.playback
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.parasite.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -132,5 +133,19 @@ class PlaybackHistoryReporterTest {
         assertTrue(events.isEmpty())
         reporter.close()
         runCurrent()
+    }
+
+    @Test fun directHostBoundaryRejectsForeignCloudSourcesAndEntryIdBodies() = runTest {
+        val owner = sessions.snapshot()
+        val cloud = SongSourceIdentity(999, 88, 10, 17)
+        val details = PlaybackReportDetails(started, songSource = cloud)
+        assertTrue(runCatching { bridge.submit("startplay", mapOf("id" to 17L), owner, details) }
+            .exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { bridge.submit("startplay", mapOf("id" to 999L), owner,
+            details.copy(songSource = cloud.copy(accountId = 20))) }.exceptionOrNull() is com.ljyh.mei.data.session.SessionChangedException)
+        assertTrue(events.isEmpty())
+        bridge.submit("startplay", mapOf("id" to 999L), owner, details)
+        assertEquals(999L, events.single().fields["id"])
+        assertEquals(setOf("id"), events.single().fields.keys)
     }
 }

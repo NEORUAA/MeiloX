@@ -1476,6 +1476,46 @@ These are integration differences, not server API semantics.
   native privilege behavior, cloud playback-report IDs and paired release runtime
   qualification remain separate unfinished gates. No real playlist is modified.
 
+### API-025: Cloud Playback Reports Use Audio Identity, Not the UI Entry or File Tuple
+
+- Recorded: 2026-10-01. Shared MusicService previously took a report's song ID and
+  timer identity directly from MediaItem.mediaId. For cloud metadata that is the
+  UI/deletion entry; the audio, file owner and captured account can differ. A new
+  file under the same entry could also inherit the old timer/completion identity.
+- Pinned TV DEX: `com.netease.cloudmusic.module.player.m.q.a1` builds a song event
+  with `id=MusicInfo.getFilterMusicId()`. The remote MusicInfo implementation of
+  `getMatchedMusicId()` returns `getId()`, and `getFilterMusicId()` falls back to that
+  ID when no positive match is available. This is the parsed remote audio identity,
+  not the own-cloud deletion entry. The event builder does not encode the playback
+  `audioId_fileOwnerId` tuple or favorite-write `userid` into its `id` field. Local
+  matching uses separate native subclasses and remains outside song reporting here.
+- Shared adaptation: both player event callbacks use the full source key as an opaque
+  timer identity. Reporter start captures the typed source and checks key/source/account
+  consistency before queuing; dispatch and both runtime sink boundaries recheck the
+  captured session and source. Only the audio ID is serialized as `id`; entry/file-owner/
+  account fields and the internal key remain out of the wire body. A stale entry-only or
+  different-file completion cannot finish the currently selected private file. Existing
+  active-time accounting, pause/buffer exclusion and captured start time are retained.
+- Parasite still sends actual playback events through the official reporting SDK and
+  its existing legacy/BI ownership guards; it does not introduce a direct report route.
+  Standalone keeps its original Cookie weblog and NCBL channels. Its NCBL context key
+  now includes the internal source key so equal audio IDs/start times on different
+  private files do not overwrite each other. No TV file-owner parameter, marker or
+  credential transfer is added to the standalone report body.
+- Playback origin is a separate contract. Native `q.h1` uses PlayExtraInfo's log type;
+  `q.i1` uses its source context, not file/account identity. PlayExtraInfo maps source
+  type 50 to `cloudSong`, but a native cloud caller and its exact sourceId have not been
+  qualified. Shared code retains its existing `track`/audio-ID fallback instead of
+  inventing a sourceId or inferring every cloud file's playback origin. Native bitrate,
+  privilege, algorithm and other ancillary event fields also require separate parity
+  evidence; correcting `id` does not qualify the complete native reporting contract.
+- Verification is recorded in the cloud-report checkpoint of the dual-runtime plan.
+  Closed report sinks exercise source/account/queued-event ownership without sending
+  server statistics. Official processing, HTTP/business acceptance and later listening
+  history/aggregation are distinct evidence levels. Local history replay still requires
+  a separate source-preserving persistence adapter; paired release execution and final
+  server statistics are not established by this identity correction.
+
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 
 - Date: 2026-09-29. Standalone components use their own Application, registered Activity,

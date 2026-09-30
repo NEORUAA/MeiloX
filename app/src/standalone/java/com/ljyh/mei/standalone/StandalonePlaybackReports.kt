@@ -13,6 +13,7 @@ import com.ljyh.mei.di.PLAYBACK_HISTORY_PROFILE
 import com.ljyh.mei.di.readBoundedPlaybackResponseBody
 import com.ljyh.mei.playback.PlaybackReportSink
 import com.ljyh.mei.playback.PlaybackReportDetails
+import com.ljyh.mei.playback.requireReportSource
 import com.ljyh.mei.utils.log.logPlaybackHistory
 import java.io.IOException
 import javax.inject.Inject
@@ -38,7 +39,7 @@ internal class StandalonePlaybackReports internal constructor(
         ncbl: NeteaseClientLogClient,
     ) : this(sessions, transport.business, ncbl, { logPlaybackHistory(android.util.Log.INFO, "%s", it) })
 
-    private data class PlaybackKey(val owner: SessionStamp, val songId: Long, val startedAtMs: Long)
+    private data class PlaybackKey(val owner: SessionStamp, val sourceKey: String, val startedAtMs: Long)
     private val contextLock = Any()
     private val contexts = LinkedHashMap<PlaybackKey, NcblSessionContext>()
 
@@ -59,7 +60,7 @@ internal class StandalonePlaybackReports internal constructor(
         action: String, fields: Map<String, Any>, owner: SessionStamp, details: PlaybackReportDetails,
     ) = coroutineScope {
         require(action == "startplay" || action == "play")
-        requireOwner(owner)
+        requireReportSource(fields, owner, details)
         launch { submitChannel("weblog", owner) { submitWeblog(action, fields, owner) } }
         launch { submitChannel("ncbl", owner) { submitNcbl(action, fields, owner, details) } }
         Unit
@@ -102,7 +103,7 @@ internal class StandalonePlaybackReports internal constructor(
         action: String, fields: Map<String, Any>, owner: SessionStamp, details: PlaybackReportDetails,
     ): Boolean {
         val songId = (fields["id"] as? Number)?.toLong() ?: return false
-        val key = PlaybackKey(owner, songId, details.startedAtMs)
+        val key = PlaybackKey(owner, details.songSource?.key ?: songId.toString(), details.startedAtMs)
         val eventTimeMs = (fields["logtime"] as? Number)?.toLong() ?: return false
         if (action == "startplay") {
             val source = fields["source"] as? String ?: return false

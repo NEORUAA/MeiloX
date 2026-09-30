@@ -3,6 +3,7 @@ package com.ljyh.mei.playback
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.model.SongSourceIdentity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -38,7 +39,9 @@ class PlaybackReportSinkTest {
             assertTrue(events.isEmpty())
             gate.complete(Unit)
             runCurrent()
-            assertEquals(listOf("startplay" to first, "play" to first, "startplay" to second), events)
+            val capturedFirst = first.copy(songSource = SongSourceIdentity(1))
+            val capturedSecond = second.copy(songSource = SongSourceIdentity(2))
+            assertEquals(listOf("startplay" to capturedFirst, "play" to capturedFirst, "startplay" to capturedSecond), events)
         } finally { reporter.close(); runCurrent() }
     }
 
