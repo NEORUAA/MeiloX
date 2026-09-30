@@ -58,6 +58,30 @@ class DownloadSourceResolverTest {
         assertEquals("c51", requests.single().immerseType)
     }
 
+    @Test fun privateCloudGrantsUseTheFileOwnerAndReturnTheCloudEntryIdentity() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        assertEquals(12L, resolve(listOf(cloud.key)).sources.single().id)
+        assertEquals("999_88", requests.single().id)
+        requests.clear()
+        respond = { fixture(12) }
+        assertTrue(runCatching { resolve(listOf(cloud.key)) }.exceptionOrNull() is IOException)
+        assertEquals("999_88", requests.single().id)
+    }
+
+    @Test fun foreignCloudAffinityOrConflictingEntriesCannotSpendDownloadGrants() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        assertTrue(runCatching { resolve(listOf("1", cloud.copy(accountId = 18).key)) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { resolve(listOf(cloud.key, cloud.copy(cloudOwnerId = 89).key)) }.isFailure)
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test fun cloudDenialsStayBoundToEntryIdsWithoutPlaybackFallback() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        respond = { fixture(999) { getAsJsonObject("data").addProperty("code", -105) } }
+        assertEquals(mapOf("12" to -105), resolve(listOf(cloud.key)).rejectedCodes)
+        assertEquals(1, requests.size)
+    }
+
     @Test fun missingOptionalQualityOrExpiryIsNotInvented() = runTest {
         respond = { fixture { getAsJsonObject("data").apply { remove("level"); remove("expi") } } }
         val source = resolve().sources.single()

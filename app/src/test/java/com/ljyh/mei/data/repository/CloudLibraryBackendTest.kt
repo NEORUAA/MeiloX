@@ -73,6 +73,28 @@ class CloudLibraryBackendTest {
         assertEquals(50L, song.fileSize)
         assertEquals(320000, song.bitrate)
         assertEquals("https://example.test/cover", song.coverUrl)
+        assertEquals(com.ljyh.mei.data.model.SongSourceIdentity(999, 7, 7, 17), song.source)
+    }
+
+    @Test fun explicitCloudOwnersDoNotBecomeTheAuthenticatedAccount() = runTest {
+        reply = { json("""{"code":200,"count":1,"size":0,"maxSize":0,"data":[{
+            "songId":17,"userId":88,"simpleSong":{"id":999,"pc":{"uid":88}}}]}""") }
+        val song = backend.songs(owner).songs.single()
+        assertEquals(com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 7, 17), song.source)
+    }
+
+    @Test fun missingAudioAndInvalidOrConflictingOwnersCannotBecomeCatalogSources() = runTest {
+        for (row in listOf(
+            """{"songId":17}""", """{"songId":17,"simpleSong":{"id":0}}""",
+            """{"songId":17,"userId":0,"simpleSong":{"id":999}}""",
+            """{"songId":17,"simpleSong":{"id":999,"pc":{"uid":-1}}}""",
+            """{"songId":17,"simpleSong":{"id":999,"pc":[]}}""",
+            """{"songId":17,"simpleSong":{"id":999,"pc":88}}""",
+            """{"songId":17,"userId":7,"simpleSong":{"id":999,"pc":{"uid":88}}}""",
+        )) {
+            reply = { json("""{"code":200,"count":1,"size":0,"maxSize":0,"data":[$row]}""") }
+            assertTrue(runCatching { backend.songs(owner) }.isFailure)
+        }
     }
 
     @Test fun malformedEnvelopesCannotBecomeEmptySuccess() = runTest {
@@ -175,6 +197,6 @@ class CloudLibraryBackendTest {
 
     private fun json(text: String) = JsonParser.parseString(text).asJsonObject
     private fun page(ids: List<Long>, count: Int = ids.size, more: Boolean? = null): JsonObject = json(
-        """{"code":200,"count":$count,"size":20,"maxSize":100,"data":[${ids.joinToString { "{\"songId\":$it}" }}]}"""
+        """{"code":200,"count":$count,"size":20,"maxSize":100,"data":[${ids.joinToString { "{\"songId\":$it,\"simpleSong\":{\"id\":$it}}" }}]}"""
     ).apply { more?.let { addProperty("hasMore", it) } }
 }

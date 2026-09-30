@@ -84,6 +84,7 @@ data class CloudSong(
     val fileSize: Long,
     val bitrate: Int,
     val addTime: Long,
+    val source: com.ljyh.mei.data.model.SongSourceIdentity? = null,
 )
 
 data class CloudMusicPage(

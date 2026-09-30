@@ -875,6 +875,62 @@ Local evidence: `/tmp/meilox-legacy-download-debug.log`,
 `/tmp/meilox-legacy-download-tv-session.log` and
 `/tmp/meilox-legacy-download-final-crash.log`. None are committed.
 
+### D1/D3/D4 Checkpoint: Private-Cloud Playback and Durable Source Ownership (2026-10-01)
+
+- Added a shared credential-free source identity separating the cloud UI/deletion
+  entry, audio ID, file owner and authenticated account. Own-library parsing retains
+  explicit owners or the response's captured account fallback. Missing audio IDs,
+  malformed owners/metadata and conflicting source identities fail closed. API-020
+  records the pinned official model evidence and live response-shape observations.
+- The same existing frontend now forwards this identity through player loader keys,
+  AutoMix resolution, recovery, account-scoped caches, automatic cache and download
+  producers. No layout, control, navigation or page architecture was changed. Cloud
+  sources use owner tuples; ordinary numeric requests retain their prior behavior.
+  Parasite dedicated grants and standalone playback-link downloads stay separate.
+- Queue snapshot v3 and Room v21 persist source ownership across recreation/work
+  recovery. Old ordinary snapshots and old task data remain compatible; no cloud
+  identity is invented for old records. Local cloud playback requires matching
+  completed source/account metadata rather than adopting a colliding numeric file.
+- Paired JVM suites pass 688 standalone and 747 parasite tests (1,435 total), with zero
+  failures/errors/skips. Both debug/instrumentation APKs build. Selected AVD tests pass
+  32 standalone and 35 parasite cases, including source-key/metadata/snapshot boundaries,
+  cache affinity, queue recovery, closed Workers/publication, frozen v17 upgrades and
+  v20-to-v21 rollback/retry/reopen. One parasite run timed out while attaching before
+  executing tests; its scoped retry passed. No application crash was established.
+- Standalone's real Cookie account passes an opt-in cloud/player-metadata read; its
+  download adapter still obtains playback metadata without a dedicated quota request.
+  The official test account was empty until the user manually uploaded one song. Its
+  authenticated Library then displayed that entry, and the module played its 123,871 ms
+  timeline through natural repeat while the official player stayed inactive. A cloud
+  source survives queue persistence and occupies a separate byte-cache key; an active,
+  unmuted 48 kHz PCM track proves output-pipeline activity, not audible AVD sound.
+- After installing the final ordinary probe-disabled debug, an explicit original TV
+  launcher cold start displays portrait MeiloX with its official session intact. The
+  cloud queue restores one item at 41,740 ms, retaining its persisted cloud source key;
+  system media PLAY advances to 77,797 ms and PAUSE works. The emulator is left awake
+  on the authenticated cloud page with the module player paused. No system hook or
+  global rotation setting was changed.
+- Both unsigned R8 releases build and pass 16 KB ZIP alignment with production package
+  IDs retained and API 102 metadata confined to parasite. This is package/build proof,
+  not minified release-device acceptance. The accepted TV publication remains TV-owned,
+  published and 22,705,573 bytes. No original standalone app replacement, logout/account
+  change, real cloud download grant, upload/delete/social write or screen-off action
+  was performed by the agent.
+- This implements the source-identity portion, not complete private-cloud parity or
+  D4/D5/D6 acceptance. Cloud lyrics, favorite/playlist/reporting identity, source metadata
+  from other endpoints, unmatched/other-owner real files, real quota/transfer/provider
+  lifecycle, account switching and final paired minified release regression remain open.
+
+Local evidence: `/tmp/meilox-cloud-source-reviewed-validation.log`,
+`/tmp/meilox-cloud-source-reviewed-standalone-device.log`,
+`/tmp/meilox-cloud-source-reviewed-parasite-device.log`,
+`/tmp/meilox-cloud-source-reviewed-standalone-live.log`,
+`/tmp/meilox-cloud-source-new-upload-list.png`,
+`/tmp/meilox-cloud-source-new-upload-player-expanded.png`,
+`/tmp/meilox-cloud-source-cold-restored-cloud.png` and
+`/tmp/meilox-cloud-source-cache.db`. None are committed; no credential or signed URL
+is printed as evidence.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

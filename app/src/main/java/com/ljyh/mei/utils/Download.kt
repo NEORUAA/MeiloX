@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.data.session.SessionStamp
@@ -131,10 +132,14 @@ internal class DownloadQueue(
             val tasks = songs.distinctBy { it.songId }.map { info ->
                 require(info.songId.toLongOrNull()?.takeIf { it > 0 }?.toString() == info.songId)
                 require(MusicQuality.entries.any { it.text == info.quality })
+                val source = SongSourceIdentity.fromKey(info.sourceKey.ifEmpty { info.songId })
+                require(source.entryId.toString() == info.songId) { "Mismatched download source identity" }
+                source.requireAccount(owner.identity)
                 DownloadTask(
                     songId = info.songId,
                     requestId = UUID.randomUUID().toString(),
                     ownerId = owner.identity.userId,
+                    sourceKey = if (source.isCloud) source.key else "",
                     playlistName = playlistName,
                     downloadPath = downloadPath,
                     fileName = "",
@@ -194,7 +199,11 @@ internal class DownloadQueue(
                         DownloadStatus.FAILED, 0, System.currentTimeMillis())
                     return@forEach
                 }
-                task.requireExecutable(id, owner.identity.userId)
+                if (runCatching { task.requireExecutable(id, owner.identity.userId) }.isFailure) {
+                    db.downloadDao().updateOwnedProgress(task.songId, task.requestId, task.ownerId,
+                        DownloadStatus.FAILED, 0, System.currentTimeMillis())
+                    return@forEach
+                }
                 sessions.requireDownloadOwner(owner)
                 val work = manager.getWorkInfoById(id).await()
                 if (work == null) {
@@ -241,6 +250,7 @@ internal class DownloadQueue(
                     songCover = task.songCover,
                     duration = 0,
                     quality = task.quality,
+                    sourceKey = task.sourceKey,
                 )
             ),
             owner = owner,

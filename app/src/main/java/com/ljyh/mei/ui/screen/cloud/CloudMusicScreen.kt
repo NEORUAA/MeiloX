@@ -428,6 +428,7 @@ private fun CloudSong.asMediaMetadata() = MediaMetadata(
     artists = listOf(MediaMetadata.Artist(artist.hashCode().toLong(), artist)),
     duration = durationMs,
     album = MediaMetadata.Album(album.hashCode().toLong(), album),
+    source = source,
 )
 
 private fun formatBytes(value: Long): String = when {

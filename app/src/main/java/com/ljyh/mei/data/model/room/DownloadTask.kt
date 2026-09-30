@@ -23,4 +23,5 @@ data class DownloadTask(
     @ColumnInfo(defaultValue = "0") val ownerId: Long = 0,
     @ColumnInfo(defaultValue = "''") val playlistName: String = "",
     @ColumnInfo(defaultValue = "'Music/Mei'") val downloadPath: String = "Music/Mei",
+    @ColumnInfo(defaultValue = "''") val sourceKey: String = "",
 )

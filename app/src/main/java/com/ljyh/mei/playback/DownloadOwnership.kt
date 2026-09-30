@@ -3,6 +3,8 @@ package com.ljyh.mei.playback
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
@@ -14,10 +16,16 @@ import kotlinx.coroutines.job
 
 /** Durable identity is public account ID plus a unique request, never a session credential. */
 internal fun DownloadTask.requireExecutable(request: UUID, account: Long) {
+    val validSource = runCatching {
+        SongSourceIdentity.fromKey(sourceKey.ifEmpty { songId }).also {
+            require(it.entryId.toString() == songId)
+            it.requireAccount(SessionIdentity(account, true, false))
+        }
+    }.isSuccess
     if (requestId != request.toString() || ownerId <= 0 || ownerId != account ||
         songId.toLongOrNull()?.takeIf { it > 0 }?.toString() != songId ||
         status !in setOf(DownloadStatus.PENDING, DownloadStatus.DOWNLOADING) ||
-        MusicQuality.entries.none { it.text == quality }) {
+        MusicQuality.entries.none { it.text == quality } || !validSource) {
         throw CancellationException("Download request is no longer executable")
     }
 }

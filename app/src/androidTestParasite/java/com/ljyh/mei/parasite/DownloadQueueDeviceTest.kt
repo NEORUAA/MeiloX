@@ -92,6 +92,28 @@ class DownloadQueueDeviceTest {
         assertEquals(WorkInfo.State.CANCELLED, manager.getWorkInfoById(UUID.fromString(replacement.requestId)).await()?.state)
     }
 
+    @Test fun cloudSourceSurvivesPauseResumeAndMissingWorkRecoveryWithoutRebindingItsOwner() = test { fixture, queue, manager ->
+        val source = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 1)
+        val dao = fixture.database.downloadDao()
+        queue.enqueue(listOf(song.copy(sourceKey = source.key)), "Cloud", fixture.sessions.snapshot())
+        val first = checkNotNull(dao.getBySongId("1"))
+        assertEquals(source.key, first.sourceKey)
+        queue.pauseSong("1", first.requestId)
+        queue.resumeSong("1", "Cloud", first.requestId)
+        val resumed = checkNotNull(dao.getBySongId("1"))
+        assertEquals(source.key, resumed.sourceKey)
+        val workDb = WorkManagerImpl.getInstance(context).workDatabase
+        workDb.workSpecDao().delete(resumed.requestId)
+        queue.recover()
+        assertNotNull(manager.getWorkInfoById(UUID.fromString(resumed.requestId)).await())
+        assertEquals(source.key, dao.getBySongId("1")?.sourceKey)
+        fixture.account = 18
+        assertTrue(runCatching { queue.enqueue(listOf(song.copy(sourceKey = source.key)), "Cloud", fixture.sessions.snapshot()) }
+            .exceptionOrNull() is SessionChangedException)
+        assertEquals(resumed, dao.getBySongId("1"))
+        assertEquals(0, fixture.grants.get())
+    }
+
     @Test fun recoveryRepairsOnlyActiveOwnedMissingRequestsAndIsIdempotent() = test { fixture, queue, manager ->
         val dao = fixture.database.downloadDao()
         val active = fixture.task(UUID.randomUUID()).copy(status = DownloadStatus.DOWNLOADING)
@@ -158,6 +180,17 @@ class DownloadQueueDeviceTest {
         val task = checkNotNull(fixture.database.downloadDao().getBySongId("1"))
         assertEquals(DownloadStatus.FAILED, task.status)
         assertNull(manager.getWorkInfoById(UUID.fromString(task.requestId)).await())
+        assertEquals(0, fixture.grants.get())
+    }
+
+    @Test fun corruptedCloudAffinityCannotPoisonRecoveryOfOtherPendingTasks() = test { fixture, queue, manager ->
+        val invalid = fixture.task(UUID.randomUUID()).copy(sourceKey = "meilox-cloud-v1:1:999:88:18")
+        val valid = fixture.task(UUID.randomUUID()).copy(songId = "2")
+        fixture.database.downloadDao().insertAll(listOf(invalid, valid))
+        queue.recover()
+        assertEquals(DownloadStatus.FAILED, fixture.database.downloadDao().getBySongId("1")?.status)
+        assertNull(manager.getWorkInfoById(UUID.fromString(invalid.requestId)).await())
+        assertNotNull(manager.getWorkInfoById(UUID.fromString(valid.requestId)).await())
         assertEquals(0, fixture.grants.get())
     }
 }

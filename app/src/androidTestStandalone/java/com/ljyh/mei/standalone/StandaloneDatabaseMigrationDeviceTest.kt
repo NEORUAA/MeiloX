@@ -82,13 +82,13 @@ class StandaloneDatabaseMigrationDeviceTest {
 
     private fun database(fixture: Fixture, finalMigration: Migration = AppDatabase.MIGRATION_19_20) =
         Room.databaseBuilder(context, AppDatabase::class.java, fixture.name)
-            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19, finalMigration)
+            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19, finalMigration, AppDatabase.MIGRATION_20_21)
             .build()
 
     private suspend fun withMigratedDatabase(fixture: Fixture, block: suspend (AppDatabase) -> Unit) {
         val db = database(fixture)
         try {
-            db.openHelper.writableDatabase // Room validates the complete v20 schema here.
+            db.openHelper.writableDatabase // Room validates the complete v21 schema here.
             block(db)
         } finally {
             db.close()
@@ -97,7 +97,7 @@ class StandaloneDatabaseMigrationDeviceTest {
 
     private fun assertMigration(fixture: Fixture, db: AppDatabase) {
         val sqlite = db.openHelper.writableDatabase
-        assertEquals(20, sqlite.version)
+        assertEquals(21, sqlite.version)
         assertEquals(fixture.before, snapshot(fixture.before.mapValues { it.value.columns }) { sqlite.query(it) })
         for (table in listOf("account_playlist", "download_artifact")) {
             sqlite.query("SELECT COUNT(*) FROM `$table`").use {
@@ -136,6 +136,7 @@ class StandaloneDatabaseMigrationDeviceTest {
             assertEquals(0L, task.ownerId)
             assertEquals("", task.playlistName)
             assertEquals("Music/Mei", task.downloadPath)
+            assertEquals("", task.sourceKey)
             assertNull(db.downloadDao().getOwned(task.songId, "new-request", 17))
         }
         assertEquals(9, db.downloadDao().playbackCount(legacy.completedId))

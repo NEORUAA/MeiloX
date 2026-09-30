@@ -126,7 +126,7 @@ open class DownloadWorker internal constructor(
         check(updateTask(db, DownloadStatus.DOWNLOADING, 0) == 1)
         failureTitle = environment.sources.failureTitle
         val source = environment.sources.resolve(
-            listOf(songId), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
+            listOf(task.sourceKey.ifEmpty { songId }), MusicQuality.entries.single { it.text == task.quality }, owner).sources.singleOrNull()
             ?: throw IOException("Download source unavailable")
         requireTask(db)
         val root = task.downloadPath.trim().trim('/').ifBlank { "Music/Mei" }
@@ -214,4 +214,5 @@ data class SongDownloadInfo(
     val songCover: String,
     val duration: Long,
     val quality: String = "",
+    val sourceKey: String = "",
 )

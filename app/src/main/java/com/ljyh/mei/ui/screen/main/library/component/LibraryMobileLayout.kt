@@ -62,6 +62,7 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Playlist
@@ -860,8 +861,13 @@ private fun playDownloadedTask(
     )
 }
 
-private fun DownloadTask.toMediaMetadataOrNull(localSong: Song?): MediaMetadata? {
+internal fun DownloadTask.toMediaMetadataOrNull(localSong: Song?): MediaMetadata? {
     val id = songId.toLongOrNull() ?: return null
+    val source = if (sourceKey.isNotEmpty()) runCatching {
+        SongSourceIdentity.fromKey(sourceKey).also {
+            require(it.entryId == id && it.accountId == ownerId) { "Mismatched downloaded cloud identity" }
+        }
+    }.getOrNull() ?: return null else null
     val artistNames = localSong?.artist.orEmpty().ifEmpty {
         songArtist
         .split(Regex("[/、,;]"))
@@ -882,6 +888,7 @@ private fun DownloadTask.toMediaMetadataOrNull(localSong: Song?): MediaMetadata?
             id = albumTitle.hashCode().toUInt().toLong(),
             title = albumTitle,
         ),
+        source = source,
     )
 }
 
@@ -1059,6 +1066,7 @@ private fun LazyListScope.libraryCloudItems(
                             artists = listOf(MediaMetadata.Artist(item.artist.hashCode().toLong(), item.artist)),
                             duration = item.durationMs,
                             album = MediaMetadata.Album(item.album.hashCode().toLong(), item.album),
+                            source = item.source,
                         ).toMediaItem()
                         mediaItem.mediaId to mediaItem
                     }

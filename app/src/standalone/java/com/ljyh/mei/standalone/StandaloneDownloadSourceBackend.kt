@@ -5,6 +5,7 @@ import com.google.gson.annotations.SerializedName
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.DownloadSource
 import com.ljyh.mei.data.model.DownloadSources
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
@@ -41,10 +42,9 @@ internal suspend fun resolveStandaloneDownloadSources(
     owner: SessionStamp,
     now: () -> Long = System::currentTimeMillis,
 ): DownloadSources {
-    val requested = ids.map { raw ->
-        raw.trim().toLongOrNull()?.takeIf { it > 0 }?.toString()
-            ?: throw IllegalArgumentException("Invalid download song identity")
-    }.distinct()
+    val requested = ids.map(SongSourceIdentity::fromKey).distinct()
+    require(requested.map { it.entryId }.distinct().size == requested.size) { "Conflicting download identities" }
+    requested.forEach { it.requireAccount(owner.identity) }
     val found = linkedMapOf<String, DownloadSource>()
     val rejected = linkedMapOf<String, Int>()
     suspend fun requireOwner() {
@@ -53,23 +53,26 @@ internal suspend fun resolveStandaloneDownloadSources(
     }
     requireOwner()
     for (level in playbackQualityFallbacks(quality.text)) {
-        val missing = requested.filterNot(found::containsKey)
+        val missing = requested.filterNot { it.entryId.toString() in found }
         if (missing.isEmpty()) break
-        for (batch in missing.chunked(200)) {
+        // Responses only echo audio IDs, so distinct cloud owners must not share one batch.
+        val batches = missing.filterNot { it.isCloud }.chunked(200) + missing.filter { it.isCloud }.map(::listOf)
+        for (batch in batches) {
             requireOwner()
             val dispatchedAt = now()
-            val response = api.sources(GetSongUrlV1("[${batch.joinToString(",")}]", level), owner)
+            val response = api.sources(GetSongUrlV1(SongSourceIdentity.playerIds(batch), level), owner)
             requireOwner()
             if (response.code != 200) throw IOException("Standalone player request failed")
             val rows = response.data ?: throw IOException("Missing standalone player sources")
             val byId = linkedMapOf<String, StandalonePlayerSources.Data>()
             for (row in rows) {
                 val id = row?.id?.toString() ?: throw IOException("Missing standalone player identity")
-                if (id !in batch || byId.put(id, row) != null) throw IOException("Unexpected standalone player identity")
+                if (batch.none { it.songId.toString() == id } || byId.put(id, row) != null) throw IOException("Unexpected standalone player identity")
             }
-            if (byId.keys != batch.toSet()) throw IOException("Incomplete standalone player sources")
-            for (id in batch) {
-                val row = checkNotNull(byId[id])
+            if (byId.keys != batch.map { it.songId.toString() }.toSet()) throw IOException("Incomplete standalone player sources")
+            for (identity in batch) {
+                val id = identity.entryId.toString()
+                val row = checkNotNull(byId[identity.songId.toString()])
                 val code = row.code ?: throw IOException("Missing standalone player status")
                 if (code != 200 && code !in setOf(-103, -105, -120, -125, -130, -140, 404)) {
                     throw IOException("Standalone player authorization failed")
@@ -79,7 +82,7 @@ internal suspend fun resolveStandaloneDownloadSources(
                     rejected[id] = code
                     continue
                 }
-                found[id] = row.validated(id, quality.text, dispatchedAt, now())
+                found[id] = row.validated(identity.songId.toString(), quality.text, dispatchedAt, now()).copy(id = identity.entryId)
                 rejected.remove(id)
             }
         }
@@ -88,7 +91,7 @@ internal suspend fun resolveStandaloneDownloadSources(
     if (found.values.any { it.expiresAtMs?.let { deadline -> deadline <= now() } == true }) {
         throw IOException("Standalone source expired during resolution")
     }
-    return DownloadSources(requested.mapNotNull(found::get), rejected)
+    return DownloadSources(requested.mapNotNull { found[it.entryId.toString()] }, rejected)
 }
 
 private fun StandalonePlayerSources.Data.validated(

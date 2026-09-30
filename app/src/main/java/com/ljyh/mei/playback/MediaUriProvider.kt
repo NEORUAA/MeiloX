@@ -3,6 +3,9 @@ package com.ljyh.mei.playback
 import android.net.Uri
 import androidx.core.net.toUri
 import com.ljyh.mei.di.repository.SongRepository
+import com.ljyh.mei.di.repository.DownloadRepository
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.flow.firstOrNull
@@ -24,15 +27,22 @@ class MediaUriProvider @Inject constructor(
     private val urls: PlaybackUrlResolver,
     private val songRepository: SongRepository,
     private val sessions: SessionStore,
+    private val downloads: DownloadRepository? = null,
 ) {
     suspend fun resolveMediaUri(mediaId: String, quality: String): Uri =
         resolveMediaSource(mediaId, quality, sessions.snapshot()).uri
 
     internal suspend fun resolveMediaSource(mediaId: String, quality: String, owner: SessionStamp): ResolvedMediaSource {
         sessions.requireCurrent(owner)
+        val cloud = mediaId.takeIf { it.startsWith("meilox-cloud-v1:") }?.let(SongSourceIdentity::fromKey)
+        cloud?.requireAccount(owner.identity)
         val requestedQuality = normalizePlaybackQuality(quality)
-        val localPath = songRepository.getSong(mediaId).firstOrNull()?.path
-            ?: songRepository.getSong("local_$mediaId").firstOrNull()?.path
+        val localId = cloud?.entryId?.toString() ?: mediaId
+        val mayUseLocal = cloud == null || downloads?.getBySongId(localId)?.let { task ->
+            task.sourceKey == cloud.key && task.ownerId == cloud.accountId && task.status == DownloadStatus.COMPLETED
+        } == true
+        val localPath = if (mayUseLocal) songRepository.getSong(localId).firstOrNull()?.path
+            ?: songRepository.getSong("local_$localId").firstOrNull()?.path else null
         sessions.requireCurrent(owner)
         if (localPath != null) {
             if (localPath.startsWith("content://")) {

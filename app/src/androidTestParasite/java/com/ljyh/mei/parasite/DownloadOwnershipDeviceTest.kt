@@ -59,7 +59,7 @@ class DownloadOwnershipDeviceTest {
                 sqlite.version = 18
             }
             val migrated = Room.databaseBuilder(context, AppDatabase::class.java, name)
-                .addMigrations(AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20).build()
+                .addMigrations(AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20, AppDatabase.MIGRATION_20_21).build()
             try {
                 val old = checkNotNull(migrated.downloadDao().getBySongId("1"))
                 assertEquals(DownloadStatus.FAILED, old.status)

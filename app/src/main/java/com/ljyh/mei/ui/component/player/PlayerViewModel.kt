@@ -186,6 +186,7 @@ class PlayerViewModel @Inject constructor(
                                 songCover = metadata.coverUrl,
                                 duration = metadata.duration,
                                 quality = quality.text,
+                                sourceKey = metadata.source?.key.orEmpty(),
                             )
                         ),
                         playlistName = "单曲下载",

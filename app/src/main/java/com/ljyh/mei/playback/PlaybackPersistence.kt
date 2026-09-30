@@ -16,6 +16,9 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PLACEHOLDER_URI
 import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.data.model.sourceKey
+import com.ljyh.mei.data.model.SONG_SOURCE_EXTRA
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import kotlinx.coroutines.flow.first
@@ -54,7 +57,7 @@ internal fun PlaybackSnapshot.withCheckpoint(checkpoint: PlaybackCheckpoint?): P
 }
 
 data class PlaybackSnapshot(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val savedAtEpochMs: Long = System.currentTimeMillis(),
     val items: List<PlaybackItemSnapshot> = emptyList(),
     val currentIndex: Int = 0,
@@ -89,6 +92,7 @@ data class PlaybackItemSnapshot(
     val isPodcast: Boolean = false,
     val isLocal: Boolean = false,
     val isPlaceholder: Boolean = false,
+    val sourceKey: String? = null,
 )
 
 data class PlaybackArtistSnapshot(
@@ -181,7 +185,7 @@ class PlaybackPersistence(
         val encoded = context.dataStore.data.first()[PlaybackSnapshotKey] ?: return null
         return runCatching {
             gson.fromJson(encoded, PlaybackSnapshot::class.java)
-                ?.takeIf { it.schemaVersion in 1..2 }
+                ?.takeIf { it.schemaVersion in 1..3 }
                 ?.let { snapshot ->
                     val checkpoint = runCatching {
                         context.playbackProgressStore.data.first()[ProgressKey]
@@ -231,11 +235,17 @@ class PlaybackPersistence(
             isPodcast = domainMetadata?.isPodcast ?: false,
             isLocal = domainMetadata?.isLocal ?: false,
             isPlaceholder = placeholder,
+            sourceKey = if (domainMetadata?.source != null || displayMetadata.extras?.containsKey(SONG_SOURCE_EXTRA) == true) {
+                sourceKey
+            } else null,
         )
     }
 
     private fun PlaybackItemSnapshot.toMediaItem(): MediaItem {
         if (isPlaceholder) return createPlaceholder(mediaId)
+        val source = sourceKey?.let(SongSourceIdentity::fromKey)?.also {
+            require(it.entryId.toString() == mediaId) { "Mismatched saved cloud identity" }
+        }
 
         val resolvedArtists = artists
             .filter { it.name.isNotBlank() }
@@ -259,6 +269,7 @@ class PlaybackPersistence(
             tns = translatedName,
             isPodcast = isPodcast,
             isLocal = isLocal,
+            source = source,
         )
         val displayMetadata = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(domainMetadata.title)
@@ -269,6 +280,7 @@ class PlaybackPersistence(
             .setExtras(Bundle().apply {
                 putLong("duration", durationMs)
                 putStringArrayList("artist_list", ArrayList(resolvedArtists.map { it.name }))
+                source?.let { putString(SONG_SOURCE_EXTRA, it.key) }
             })
             .apply {
                 artworkUri.takeIf { it.isNotBlank() }?.let { setArtworkUri(Uri.parse(it)) }
@@ -277,7 +289,7 @@ class PlaybackPersistence(
         return MediaItem.Builder()
             .setMediaId(mediaId)
             .setUri(mediaId)
-            .setCustomCacheKey(mediaId)
+            .setCustomCacheKey(source?.key ?: mediaId)
             .setTag(domainMetadata)
             .setMediaMetadata(displayMetadata)
             .build()

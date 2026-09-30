@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
@@ -33,7 +34,7 @@ class CloudLibraryBackend @Inject constructor(
             val used = response.integer("size")?.takeIf { it >= 0 } ?: error("Missing cloud storage usage")
             val maximum = response.integer("maxSize")?.takeIf { it >= 0 } ?: error("Missing cloud storage capacity")
             for (row in data) {
-                val song = parseSong(row)
+                val song = parseSong(row, owner)
                 check(ids.add(song.id)) { "Cloud library pagination repeated a song" }
                 songs += song
             }
@@ -69,11 +70,20 @@ class CloudLibraryBackend @Inject constructor(
     }
 }
 
-private fun parseSong(element: JsonElement): CloudSong {
+private fun parseSong(element: JsonElement, owner: SessionStamp): CloudSong {
     val value = element.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: error("Invalid cloud library entry")
     // A catalog simpleSong ID is not evidence of the cloud entry's deletion identity.
     val id = value.integer("songId")?.takeIf { it > 0 } ?: error("Missing cloud song identity")
     val simple = value.objectValue("simpleSong")
+    val sourceId = simple?.integer("id")?.takeIf { it > 0 } ?: error("Missing cloud audio identity")
+    val privateCloud = simple?.get("pc")?.takeUnless(JsonElement::isJsonNull)?.let {
+        check(it.isJsonObject) { "Invalid private cloud metadata" }
+        it.asJsonObject
+    }
+    val explicitOwners = listOfNotNull(privateCloud?.explicitOwner("uid"), value.explicitOwner("userId"))
+    check(explicitOwners.distinct().size <= 1) { "Conflicting cloud file owners" }
+    // This endpoint lists the captured account's own files; do not consult a later session.
+    val cloudOwner = explicitOwners.firstOrNull() ?: owner.identity.userId
     val album = simple?.objectValue("al") ?: simple?.objectValue("album")
     val artists = sequenceOf("ar", "artists").mapNotNull { key ->
         simple?.get(key)?.takeIf(JsonElement::isJsonArray)?.asJsonArray?.takeIf { it.size() > 0 }
@@ -88,7 +98,13 @@ private fun parseSong(element: JsonElement): CloudSong {
         fileSize = (value.integer("fileSize") ?: 0).coerceAtLeast(0),
         bitrate = (value.integer("bitrate") ?: 0).coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
         addTime = (value.integer("addTime") ?: 0).coerceAtLeast(0),
+        source = SongSourceIdentity(sourceId, cloudOwner, owner.identity.userId, id),
     )
+}
+
+private fun JsonObject.explicitOwner(key: String): Long? {
+    if (!has(key) || get(key).isJsonNull) return null
+    return integer(key)?.takeIf { it > 0 } ?: error("Invalid cloud file owner")
 }
 
 private fun JsonObject.integer(key: String): Long? = get(key)?.takeIf(JsonElement::isJsonPrimitive)?.asString?.toLongOrNull()

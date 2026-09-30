@@ -85,6 +85,35 @@ class StandaloneDownloadSourceBackendTest {
         assertTrue(result.sources.all { it.requestedLevel == "sky" && it.level == "lossless" })
     }
 
+    @Test fun cloudSourcesAreIsolatedFromNumericCatalogBatchesAndEchoLogicalEntries() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        val other = cloud.copy(entryId = 13, cloudOwnerId = 89)
+        respond = { body -> fixture(if (body.ids == "[1]") listOf(1) else listOf(999)) }
+        val result = resolve(listOf(cloud.key, "1", other.key), MusicQuality.STANDARD)
+        assertEquals(listOf("[1]", "[\"999_88\"]", "[\"999_89\"]"), requests.map { it.ids })
+        assertEquals(listOf(12L, 1L, 13L), result.sources.map { it.id })
+    }
+
+    @Test fun cloudFallbacksRetainOwnerTupleAndDoNotAcceptEntryIdsAsAudioIds() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        respond = { body -> fixture(listOf(999)) {
+            if (body.level == "lossless") getAsJsonArray("data")[0].asJsonObject.addProperty("url", "")
+        } }
+        assertEquals(12L, resolve(listOf(cloud.key)).sources.single().id)
+        assertEquals(listOf("[\"999_88\"]", "[\"999_88\"]"), requests.map { it.ids })
+        requests.clear()
+        respond = { fixture(listOf(12)) }
+        assertTrue(runCatching { resolve(listOf(cloud.key)) }.exceptionOrNull() is IOException)
+        assertEquals(1, requests.size)
+    }
+
+    @Test fun invalidCloudAffinityOrDuplicateLogicalEntriesNeverDispatch() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 12)
+        assertTrue(runCatching { resolve(listOf("1", cloud.copy(accountId = 18).key)) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { resolve(listOf(cloud.key, cloud.copy(cloudOwnerId = 89).key)) }.isFailure)
+        assertTrue(requests.isEmpty())
+    }
+
     @Test fun trialsEmptyUrlsAndExplicitDenialsRemainRejectedAfterTheOriginalFallbacks() = runTest {
         for (edit in listOf<JsonObject.() -> Unit>(
             { addProperty("code", -105); remove("url") },

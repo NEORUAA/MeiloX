@@ -60,6 +60,8 @@ import com.ljyh.mei.constants.RepeatModeKey
 import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
+import com.ljyh.mei.data.model.sourceKey
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.network.api.ApiService
@@ -336,7 +338,7 @@ class MusicService : MediaLibraryService(),
                 val quality = context.dataStore[MusicQualityKey]
                     ?.lowercase(getDefault())
                     ?: MusicQuality.EXHIGH.text
-                mediaUriProvider.resolveMediaUri(item.mediaId, quality)
+                mediaUriProvider.resolveMediaUri(item.sourceKey, quality)
             },
         )
         audioPlayer = AudioPlayer(player) {
@@ -831,14 +833,16 @@ class MusicService : MediaLibraryService(),
             val owner = accountSessions.snapshot()
             accountSessions.requireCurrent(owner)
             val mediaId = dataSpec.key ?: error("No media key")
+            val cloud = mediaId.takeIf { it.startsWith("meilox-cloud-v1:") }?.let(SongSourceIdentity::fromKey)
+            cloud?.requireAccount(owner.identity)
             val quality = context.dataStore[MusicQualityKey]
                 ?.let(::normalizePlaybackQuality)
                 ?: MusicQuality.EXHIGH.text
-            val localFilePath = runBlocking {
+            val localFilePath = if (cloud == null) runBlocking {
                 val song = songRepository.getSong(mediaId).firstOrNull()
                     ?: songRepository.getSong("local_$mediaId").firstOrNull()
                 song?.path
-            }
+            } else null
             if (localFilePath != null) {
                 accountSessions.requireCurrent(owner)
                 val file = File(localFilePath)
@@ -958,8 +962,9 @@ class MusicService : MediaLibraryService(),
     private fun scheduleSourceRecovery(): Boolean {
         val mediaItem = player.currentMediaItem ?: return false
         val mediaId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return false
-        if (sourceRecoveryMediaId != mediaId) {
-            sourceRecoveryMediaId = mediaId
+        val sourceKey = mediaItem.sourceKey
+        if (sourceRecoveryMediaId != sourceKey) {
+            sourceRecoveryMediaId = sourceKey
             sourceRecoveryAttempts = 0
         }
         if (sourceRecoveryJob?.isActive == true) return true
@@ -977,14 +982,14 @@ class MusicService : MediaLibraryService(),
                     recoveryPositionMs,
                     sourceRecoveryAttempts,
                 )
-                mediaUriProvider.invalidate(mediaId)
+                mediaUriProvider.invalidate(sourceKey)
                 resetPlaybackSourcesForQualityChange()
                 val removedEntries = withContext(Dispatchers.IO) {
                     accountSessions.requirePlaybackSession(owner)
-                    removePlaybackEntries(CacheManager.getSimpleCache(context), mediaId, owner.identity)
+                    removePlaybackEntries(CacheManager.getSimpleCache(context), sourceKey, owner.identity)
                 }
                 accountSessions.requirePlaybackSession(owner)
-                if (player.currentMediaItem?.mediaId != mediaId) return@launch
+                if (player.currentMediaItem?.sourceKey != sourceKey) return@launch
 
                 Timber.tag("MusicService").d(
                     "Retrying refreshed source: id=%s removedCacheEntries=%s",

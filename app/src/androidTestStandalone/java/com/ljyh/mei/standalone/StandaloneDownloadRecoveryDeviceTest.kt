@@ -238,7 +238,7 @@ class StandaloneDownloadRecoveryDeviceTest {
             } else db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         }
         fun openDisk() = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20).build()
+            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20, AppDatabase.MIGRATION_20_21).build()
         val queue get() = DownloadQueue(context, db, sessions, manager, prefix) { task ->
             OneTimeWorkRequestBuilder<DownloadWorker>().setId(UUID.fromString(task.requestId))
                 .setInitialDelay(1, TimeUnit.DAYS).addTag(tag).addTag("download")

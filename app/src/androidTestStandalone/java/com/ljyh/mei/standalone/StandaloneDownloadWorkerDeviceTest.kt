@@ -71,6 +71,20 @@ class StandaloneDownloadWorkerDeviceTest {
             assertEquals(1, fixture.transfers.get())
         }
 
+    @Test fun cloudWorkerKeepsItsOwnerTupleUnderTheOriginalPlayerDownloadPolicy() = test(Scenario.SUCCESS) { fixture, id ->
+        val source = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 1)
+        fixture.audioId = 999
+        val dao = fixture.db.downloadDao()
+        dao.insert(requireNotNull(dao.getBySongId("1")).copy(sourceKey = source.key))
+        assertEquals(ListenableWorker.Result.success(), worker(fixture, id).doWork())
+        assertEquals(listOf("[\"999_88\"]"), fixture.sourceIds)
+        assertEquals(DownloadStatus.COMPLETED, dao.getBySongId("1")?.status)
+        assertEquals(source.key, dao.getBySongId("1")?.sourceKey)
+        assertNotNull(fixture.db.songDao().getSong("1").first()?.path)
+        assertEquals(1, fixture.reads.get())
+        assertEquals(1, fixture.transfers.get())
+    }
+
     @Test fun denialAndTrialSourcesCannotTransferOrPublish() = runBlocking(Dispatchers.IO) {
         for (scenario in listOf(Scenario.DENIED, Scenario.TRIAL)) {
             withFixture(scenario) { fixture, id ->
@@ -204,6 +218,8 @@ class StandaloneDownloadWorkerDeviceTest {
             override suspend fun write(account: StoredAccount) = Unit
         })
         val reads = AtomicInteger()
+        var audioId = 1L
+        val sourceIds = mutableListOf<String>()
         val transfers = AtomicInteger()
         val canceled = AtomicBoolean()
         val publication = DownloadPublication(db, AndroidDownloadMediaStore(context), context.packageName)
@@ -213,12 +229,14 @@ class StandaloneDownloadWorkerDeviceTest {
             .put("data".toByteArray()).putInt(32000).array()
         private val client = OkHttpClient.Builder().addInterceptor { chain ->
             check(chain.request().url.encodedPath == "/api/song/enhance/player/url/v1")
+            val buffer = okio.Buffer().also { chain.request().body!!.writeTo(it) }
+            sourceIds += com.google.gson.JsonParser.parseString(buffer.readUtf8()).asJsonObject.get("ids").asString
             reads.incrementAndGet()
             chain.proceed(chain.request())
         }.addInterceptor(NeteaseInterceptor { "fixture-device" }).addInterceptor { chain ->
             check(chain.request().header("Cookie").orEmpty().contains("MUSIC_U=fixture-cookie"))
             val row = JsonObject().apply {
-                addProperty("id", 1)
+                addProperty("id", audioId)
                 addProperty("code", if (scenario == Scenario.DENIED) -105 else 200)
                 addProperty("url", ADDRESS)
                 addProperty("type", "wav")

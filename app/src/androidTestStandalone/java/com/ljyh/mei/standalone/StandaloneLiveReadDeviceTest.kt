@@ -21,6 +21,28 @@ import org.junit.Test
 class StandaloneLiveReadDeviceTest {
     private val arguments get() = InstrumentationRegistry.getArguments()
 
+    @Test fun privateCloudSourcesUseTheCapturedAccountAndOriginalPlayerDownloadPolicy() = liveRead { owner ->
+        val sessions = AppGraph.component.standaloneSessions()
+        val calls = StandaloneTransport(sessions).business
+        val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
+        val page = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner)
+        assumeTrue("The account has no cloud entries", page.songs.isNotEmpty())
+        assertTrue("Cloud entries lost their account affinity", page.songs.all { it.source?.accountId == owner.identity.userId })
+        val song = page.songs.first()
+        val identity = requireNotNull(song.source)
+        val playback = com.ljyh.mei.playback.PlaybackUrlResolver(AppGraph.component.apiService(), sessions)
+            .resolve(identity.key, "standard", owner)
+        assertTrue("Cloud playback lost its source namespace", playback.cacheKey.startsWith(
+            com.ljyh.mei.playback.playbackCacheKeyPrefix(identity.key, playback.actualQuality, owner.identity)))
+        val result = AppGraph.component.downloadSources().resolve(
+            listOf(identity.key), com.ljyh.mei.constants.MusicQuality.STANDARD, owner)
+        val source = requireNotNull(result.sources.singleOrNull())
+        assertTrue("Cloud source did not retain the logical entry", source.id == song.id)
+        assertTrue("Cloud source has no verified media metadata", source.size > 0 && source.md5.matches(Regex("[a-f0-9]{32}")))
+        assertTrue("Cloud source was rejected", result.rejectedCodes.isEmpty())
+        // Do not print or transfer signed media URLs or spend a dedicated download grant.
+    }
+
     @Test fun downloadBackendObtainsACompleteSourceFromTheStandalonePlayerContract() = liveRead { owner ->
         val songId = positiveArgument("standaloneReadSongId")
         val result = AppGraph.component.downloadSources().resolve(

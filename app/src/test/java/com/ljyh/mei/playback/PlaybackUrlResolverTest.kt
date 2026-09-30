@@ -49,6 +49,35 @@ class PlaybackUrlResolverTest {
         assertEquals(2, calls.size)
     }
 
+    @Test fun cloudSourceRequestsUseTheFileOwnerAndValidateAudioRatherThanEntryIds() = runTest {
+        val cloud = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 1, 17)
+        response = { full(id = 999) }
+        val result = resolver.resolve(cloud.key, "standard", owner)
+        assertEquals("[\"999_88\"]", calls.single().first.ids)
+        assertTrue(result.cacheKey.startsWith(playbackCacheKeyPrefix(cloud.key, "exhigh", owner.identity)))
+        assertEquals(result, resolver.resolve(cloud.key, "standard", owner))
+        assertEquals(1, calls.size)
+        response = { full(id = 17) }
+        resolver.invalidate(cloud.key)
+        assertTrue(runCatching { resolver.resolve(cloud.key, "standard", owner) }.exceptionOrNull() is SourceNotFoundException)
+    }
+
+    @Test fun differentCloudOwnersNeverShareSignedOrPersistentSources() = runTest {
+        val first = com.ljyh.mei.data.model.SongSourceIdentity(123, 88, 1, 17)
+        val second = first.copy(cloudOwnerId = 89)
+        val a = resolver.resolve(first.key, "standard", owner)
+        val b = resolver.resolve(second.key, "standard", owner)
+        val catalog = resolve("standard")
+        assertEquals(3, calls.size)
+        assertEquals(3, listOf(a.cacheKey, b.cacheKey, catalog.cacheKey).distinct().size)
+    }
+
+    @Test fun cloudQueueFromAnotherAccountNeverRequestsACatalogFallback() = runTest {
+        val source = com.ljyh.mei.data.model.SongSourceIdentity(123, 88, 2, 17)
+        assertTrue(runCatching { resolver.resolve(source.key, "hires", owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(calls.isEmpty())
+    }
+
     @Test fun sameAccountReauthorizationCannotReuseSignedUrls() = runTest {
         resolve()
         sessions.invalidate()

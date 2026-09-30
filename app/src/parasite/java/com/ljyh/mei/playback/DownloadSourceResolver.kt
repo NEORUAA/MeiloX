@@ -4,6 +4,7 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.DownloadSource
 import com.ljyh.mei.data.model.DownloadSources
 import com.ljyh.mei.data.model.DownloadUrlResponse
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.api.GetDownloadUrl
 import com.ljyh.mei.parasite.HostDownloadApi
 import com.ljyh.mei.data.session.SessionStore
@@ -23,10 +24,9 @@ internal suspend fun resolveOfficialDownloadSources(
     owner: SessionStamp,
     now: () -> Long = System::currentTimeMillis,
 ): DownloadSources {
-    val requested = ids.map { value ->
-        value.trim().toLongOrNull()?.takeIf { it > 0 }?.toString()
-            ?: throw IllegalArgumentException("Invalid download song identity")
-    }.distinct()
+    val requested = ids.map(SongSourceIdentity::fromKey).distinct()
+    require(requested.map { it.entryId }.distinct().size == requested.size) { "Conflicting download identities" }
+    requested.forEach { it.requireAccount(owner.identity) }
     val sources = mutableListOf<DownloadSource>()
     val rejected = linkedMapOf<String, Int>()
     suspend fun requireOwner() {
@@ -39,7 +39,7 @@ internal suspend fun resolveOfficialDownloadSources(
         requireOwner()
         val dispatchedAt = now()
         // This suffix is the song's cloud owner, not the logged-in account ID.
-        val response = api.getDownloadUrl(GetDownloadUrl("${id}_0", quality.text), owner)
+        val response = api.getDownloadUrl(GetDownloadUrl(id.downloadId, quality.text), owner)
         requireOwner()
         if (response.code != 200) throw IOException("Official download request failed (${response.code})")
         val data = response.data ?: throw IOException("Missing official download source")
@@ -48,10 +48,10 @@ internal suspend fun resolveOfficialDownloadSources(
             if (code !in setOf(-103, -105, -120, -125, -130, -140, 404)) {
                 throw IOException("Official download authorization failed ($code)")
             }
-            rejected[id] = code
+            rejected[id.entryId.toString()] = code
             continue
         }
-        sources += data.validated(id, quality.text, dispatchedAt, now())
+        sources += data.validated(id.songId.toString(), quality.text, dispatchedAt, now()).copy(id = id.entryId)
     }
     requireOwner()
     if (sources.any { it.expiresAtMs != null && it.expiresAtMs <= now() }) {

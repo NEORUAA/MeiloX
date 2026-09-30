@@ -587,6 +587,33 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   A new opt-in device read test verifies a matching full, non-trial playback source
   with a usable lifetime through the actual graph's service. No download grant was
   requested. ABI-011 records the cold-restore failure found during this qualification.
+- Private-cloud source follow-up (2026-10-01): API-020 now retains separate cloud
+  entry, audio, file-owner and account-affinity identities. Playback sends the quoted
+  `audioId_fileOwnerId` tuple and validates the returned numeric audio ID, not the
+  deletion/UI entry ID. Ordinary standalone/catalog numeric requests and their quality
+  policy are unchanged. No cloud failure falls back to the ordinary entry ID.
+- The full source identity reaches MediaItem loader keys/platform extras, AutoMix,
+  source recovery and account-scoped byte caches. Queue snapshot v3 persists this
+  credential-free key and rejects malformed/conflicting keys on restore. Old v1/v2
+  ordinary snapshots remain readable; old private-cloud snapshots without source
+  identity cannot be qualified or retroactively assigned a file owner.
+- Cloud local-file reuse requires a completed task with the same source key and
+  account, including during session recovery. A numeric-ID collision or different
+  cloud owner cannot adopt an ordinary/other-owner file. Substitute tests cover distinct
+  entry/audio/file-owner/account IDs, loader boundaries, cache separation, snapshot
+  restore and account changes. The shared frontend/navigation is unchanged.
+- Live checks: standalone's existing Cookie account returned cloud entries and full
+  playback metadata through the original player route. After the user populated the
+  separate official test account, its cloud row rendered in the original Library and
+  played through a 123,871 ms timeline with natural repeat. Advancing MediaSession
+  positions, an active unmuted 48 kHz PCM output track and a distinct cloud byte-cache
+  key were observed; the official player stayed inactive. This is stream/output-pipeline
+  evidence, not audible-output or server-statistics acceptance. See the paired plan
+  checkpoint for cold-restore and final verification evidence.
+- Cloud lyric lookup (`cloud/lyric/get` with song/owner), favorite/playlist/reporting
+  library-ID mapping, private-cloud identities returned by other catalog endpoints,
+  real account switching and complete AutoMix/effects/release-runtime acceptance remain
+  separate work. Playing this one uploaded entry does not complete the cloud feature.
 
 ### API-016: Playback Reports Use the Native Official SDK
 
@@ -733,6 +760,31 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   stale-session rejection. Tests use temporary private files/databases and fake HTTP
   calls; no real grant, user media write, account change or complete live worker run
   occurred. The ordinary/release scheduler gate remains disabled.
+
+#### Private-Cloud Download Source Identity (2026-10-01)
+
+- New cloud tasks persist the full source key separately from logical `songId` and
+  authorization `ownerId`. Room v20-to-v21 adds only a default-empty `sourceKey` column;
+  it does not invent cloud owners, change old status/request/destination data or delete
+  media. The standalone frozen v17 upgrade path and injected-failure rollback/reopen
+  checks pass through v21; a separate v20 fixture covers all five task states.
+- Parasite workers request one dedicated grant with `id=audioId_fileOwnerId`, verify
+  its audio response ID and map the neutral result back to the logical entry. Standalone
+  still uses playback URLs and lower-quality fallback, retaining the same cloud tuple.
+  Cloud requests are isolated into single-source batches because responses echo only
+  audio IDs; ordinary batching remains unchanged. Conflicting entry identities and
+  foreign-account affinity fail before any grant or request.
+- Pause/resume, missing-work recovery, automatic cache and downloaded Library adapters
+  preserve source ownership. Corrupt tasks fail individually without preventing valid
+  recovery. Android Worker/publication tests use closed substitutes, including distinct
+  audio/file-owner/account identities, and clean up their own artifacts. The standalone
+  live cloud check reads player metadata only. No real private-cloud dedicated grant,
+  download quota or media publication is exercised by this checkpoint. The already
+  accepted TV-owned 22,705,573-byte download remains intact.
+- Cloud lyric/metadata tagging, actual private-cloud download permission/transfer,
+  provider/reboot lifecycle and minified release execution are not qualified by these
+  substitute tests. Legacy empty source keys retain their original numeric semantics;
+  no historical private-cloud affinity is inferred from a filename or current account.
 
 ## Runtime Boundary Notes
 
@@ -1221,6 +1273,20 @@ These are integration differences, not server API semantics.
   after ViewModel disposal. No real deletion/upload or
   quota-consuming download is used for these checks. Device/provider, actual private
   cloud playback, account switching and full cloud-feature acceptance remain separate.
+- Source follow-up (2026-10-01): cloud `songId` remains the deletion/UI entry while
+  positive `simpleSong.id` supplies the audio identity. Explicit `simpleSong.pc.uid`
+  and row `userId` must be positive and agree; malformed private-cloud metadata is
+  rejected. When this own-library route omits both owners, the fallback is the account
+  captured for that response, following the pinned `MusicInfo.getCloudSongUserId()`
+  own-account fallback, never an account read later during playback. Real standalone
+  samples omitted both owner fields. The file owner and authenticated account remain
+  independent fields even when their values happen to match.
+- Both cloud entry points now forward that identity into the existing player and
+  download actions without page/layout changes. API-015/017 describe subsequent source
+  validation, persistence and execution. The official test account was initially empty,
+  as confirmed by the user; that was not a read failure. The user then manually uploaded
+  one entry, which rendered and played on the AVD. No upload/delete request was performed
+  by the agent and no Cookie/session was copied between the two different accounts.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

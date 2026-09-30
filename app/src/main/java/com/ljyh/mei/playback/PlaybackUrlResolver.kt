@@ -1,6 +1,7 @@
 package com.ljyh.mei.playback
 
 import com.ljyh.mei.data.model.api.GetSongUrlV1
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
@@ -35,12 +36,14 @@ class PlaybackUrlResolver internal constructor(
     private val invalidation = sessions.onInvalidated { cache.clear() }
 
     internal suspend fun resolve(mediaId: String, quality: String, owner: SessionStamp): PlaybackUrl {
-        require((mediaId.toLongOrNull() ?: 0) > 0) { "Invalid playback song identity" }
+        val identity = SongSourceIdentity.fromKey(mediaId)
+        identity.requireAccount(owner.identity)
+        val sourceKey = identity.key
         val requested = normalizePlaybackQuality(quality)
         for (attempted in playbackQualityFallbacks(requested)) {
             currentCoroutineContext().ensureActive()
             sessions.requirePlaybackSession(owner)
-            val key = Key(mediaId, attempted, owner)
+            val key = Key(sourceKey, attempted, owner)
             cache[key]?.let { cached ->
                 if (cached.expiresAt > now()) {
                     sessions.requirePlaybackSession(owner)
@@ -50,7 +53,7 @@ class PlaybackUrlResolver internal constructor(
             }
             val started = now()
             val response = try {
-                api.getSongUrlV1(GetSongUrlV1("[$mediaId]", attempted), owner)
+                api.getSongUrlV1(GetSongUrlV1(SongSourceIdentity.playerIds(listOf(identity)), attempted), owner)
             } catch (error: CancellationException) { throw error }
             catch (error: SessionChangedException) { throw error }
             catch (error: Exception) { throw IOException("Official playback URL request failed", error) }
@@ -58,17 +61,17 @@ class PlaybackUrlResolver internal constructor(
             sessions.requirePlaybackSession(owner)
             if (response.code != 200) throw IOException("Song URL API returned code ${response.code}")
             if (response.data == null) throw IOException("Missing official playback sources")
-            val source = response.fullSourceFor(mediaId) ?: continue
+            val source = response.fullSourceFor(identity.songId.toString()) ?: continue
             val actual = effectivePlaybackQuality(source.level, attempted)
             val resolved = PlaybackUrl(
                 checkNotNull(source.url), actual,
-                playbackCacheKey(mediaId, actual, source.md5, source.size.toLong(), owner.identity),
+                playbackCacheKey(sourceKey, actual, source.md5, source.size.toLong(), owner.identity),
             )
             val ttl = source.expi?.coerceAtLeast(0)?.toLong()?.times(1_000) ?: 300_000L
             val entry = Entry(resolved, started + (ttl - 30_000L).coerceAtLeast(0))
             return sessions.withCurrent(owner) {
                 if (sessions.recoveryRequired.value) throw SessionChangedException()
-                for (level in setOf(requested, attempted, actual)) cache[Key(mediaId, level, owner)] = entry
+                for (level in setOf(requested, attempted, actual)) cache[Key(sourceKey, level, owner)] = entry
                 resolved
             }
         }

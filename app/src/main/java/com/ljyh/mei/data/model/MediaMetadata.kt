@@ -26,6 +26,7 @@ data class MediaMetadata(
     val tns:String?=null,
     val isPodcast: Boolean = false,
     val isLocal: Boolean = false,
+    val source: SongSourceIdentity? = null,
 ) {
     data class Artist(
         val id: Long,
@@ -203,9 +204,10 @@ fun createPlaceholder(id: String): MediaItem {
 
 @OptIn(UnstableApi::class)
 fun MediaMetadata.toMediaItem() = MediaItem.Builder()
+    .apply { source?.let { require(it.entryId == id) { "Mismatched media source identity" } } }
     .setMediaId(id.toString())
     .setUri(id.toString())
-    .setCustomCacheKey(id.toString())
+    .setCustomCacheKey(source?.key ?: id.toString())
     .setTag(this)
     .setMediaMetadata(
         androidx.media3.common.MediaMetadata.Builder()
@@ -215,6 +217,7 @@ fun MediaMetadata.toMediaItem() = MediaItem.Builder()
             .setAlbumTitle(album.title)
             .setMediaType(MEDIA_TYPE_MUSIC)
             .setArtworkUri(coverUrl.toUri())
+            .setExtras(source?.let { identity -> Bundle().apply { putString(SONG_SOURCE_EXTRA, identity.key) } })
             .build()
     )
     .build()
@@ -223,6 +226,22 @@ fun MediaMetadata.toMediaItem() = MediaItem.Builder()
 
 val MediaItem.metadata: MediaMetadata?
     get() = localConfiguration?.tag as? MediaMetadata
+
+internal const val SONG_SOURCE_EXTRA = "meilox_song_source"
+
+/** DataSpec keys carry source identity to loader threads without reading Player state. */
+@OptIn(UnstableApi::class)
+internal val MediaItem.sourceKey: String
+    get() = (localConfiguration?.customCacheKey
+        ?: mediaMetadata.extras?.getString(SONG_SOURCE_EXTRA)
+        ?: metadata?.source?.key
+        ?: mediaId).also { key ->
+        if (metadata?.isLocal != true && mediaId.toLongOrNull()?.let { it > 0 } == true) {
+            require(SongSourceIdentity.fromKey(key).entryId.toString() == mediaId) { "Mismatched song source identity" }
+            require(metadata?.source?.key?.let { it == key } != false &&
+                mediaMetadata.extras?.getString(SONG_SOURCE_EXTRA)?.let { it == key } != false) { "Conflicting song source identity" }
+        }
+    }
 
 
 fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {

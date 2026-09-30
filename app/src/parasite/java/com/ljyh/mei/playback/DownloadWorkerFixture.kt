@@ -48,6 +48,7 @@ internal class DownloadWorkerFixture(
     val database: AppDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build(),
     val songId: String = "1",
     captureNotifications: Boolean = true,
+    val cloudSource: com.ljyh.mei.data.model.SongSourceIdentity? = null,
 ) : Closeable {
     init { check(BuildConfig.DEBUG) }
     val sessions = HostSessionBridge()
@@ -65,12 +66,12 @@ internal class DownloadWorkerFixture(
             override fun sessionIdentity() = SessionIdentity(account, true, false)
             override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
                 check(path == "song/enhance/download/url/v1")
-                check(parameters == mapOf("id" to "${songId}_0", "level" to "standard", "immerseType" to "ste"))
+                check(parameters == mapOf("id" to (cloudSource?.downloadId ?: "${songId}_0"), "level" to "standard", "immerseType" to "ste"))
                 grants.incrementAndGet()
                 return object : HostPendingRequest {
                     override fun execute(): String {
                         val data = JsonObject().apply {
-                            addProperty("id", songId.toLong())
+                            addProperty("id", cloudSource?.songId ?: songId.toLong())
                             addProperty("code", if (scenario == DownloadWorkerScenario.DENIED) -105 else 200)
                             addProperty("url", ADDRESS)
                             addProperty("type", "wav")
@@ -105,6 +106,7 @@ internal class DownloadWorkerFixture(
         songId = songId, requestId = id.toString(), ownerId = 17, quality = "standard",
         songTitle = "MeiloX synthetic qualification", songArtist = "Test", songAlbum = "Test",
         playlistName = "MeiloX Test/$id", downloadPath = "Music",
+        sourceKey = cloudSource?.key.orEmpty(),
     )
 
     private fun syntheticCall(request: Request): Call {

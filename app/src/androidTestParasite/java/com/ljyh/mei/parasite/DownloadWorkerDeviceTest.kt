@@ -32,6 +32,21 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DownloadWorkerDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun cloudWorkerUsesThePersistedFileOwnerAndPublishesTheLogicalEntry() = runBlocking(Dispatchers.IO) {
+        val source = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 1)
+        val fixture = DownloadWorkerFixture(context, DownloadWorkerScenario.SUCCESS, cloudSource = source)
+        val id = UUID.randomUUID()
+        try {
+            fixture.database.downloadDao().insert(fixture.task(id))
+            assertEquals(ListenableWorker.Result.success(), worker(fixture, id).doWork())
+            assertEquals(DownloadStatus.COMPLETED, fixture.database.downloadDao().getBySongId("1")?.status)
+            assertEquals(source.key, fixture.database.downloadDao().getBySongId("1")?.sourceKey)
+            assertNotNull(fixture.database.songDao().getSong("1").first()?.path)
+            assertEquals(1, fixture.grants.get())
+            assertEquals(1, fixture.transfers.get())
+        } finally { fixture.cleanMedia(); fixture.close() }
+    }
     private val factory = object : WorkerFactory() {
         override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker? = null
     }
