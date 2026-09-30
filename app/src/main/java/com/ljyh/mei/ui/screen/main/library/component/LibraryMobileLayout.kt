@@ -549,7 +549,7 @@ fun LibraryMobileLayout(
             onAddToPlaylist = {
                 selectedDownloadTaskId = null
                 metadata?.let {
-                    currentOverlay = OverlayState.AddToPlaylist(it.id)
+                    currentOverlay = OverlayState.AddToPlaylist(it)
                 }
             },
             onPause = {

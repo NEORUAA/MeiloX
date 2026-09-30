@@ -31,6 +31,7 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "cloud_playlist_closed" -> HostCloudPlaylistProbe.run()
                     "cloud_favorite_read" -> kotlinx.coroutines.runBlocking {
                         val snapshot = com.ljyh.mei.playback.PlaybackPersistence(owner).load()
                         val key = checkNotNull(snapshot?.items?.singleOrNull()?.sourceKey)

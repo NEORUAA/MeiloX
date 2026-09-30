@@ -141,6 +141,46 @@ class StandaloneSongMutationBackendsTest {
         }
     }
 
+    @Test fun cloudTracksKeepCookieRouteAndImmeWithoutSendingEntryOrFileOwner() = runBlocking {
+        val wire = fixture()
+        val owner = wire.sessions.snapshot()
+        val cloud = SongSourceIdentity(999, 88, 7, 17)
+        for (op in listOf("add", "del")) {
+            assertEquals(200, wire.tracks.modifySources(op, 10,
+                listOf(cloud, SongSourceIdentity(2), cloud.copy(entryId = 18, cloudOwnerId = 89)), owner).code)
+            assertEquals("/api/playlist/manipulate/tracks", wire.originals.last().url.encodedPath)
+            assertEquals(owner, wire.originals.last().tag(SessionStamp::class.java))
+            assertEquals(JsonParser.parseString("""{"op":"$op","pid":"10","trackIds":"[\"999\",\"2\"]","imme":true}"""), wire.bodies.last())
+        }
+    }
+
+    @Test fun invalidForeignOrRecoveringCloudTrackBatchesNeverReachCookieSigning() = runBlocking {
+        val wire = fixture()
+        val owner = wire.sessions.snapshot()
+        val cloud = SongSourceIdentity(999, 88, 7, 17)
+        for (source in listOf(cloud.copy(accountId = 8), cloud.copy(accountId = 0), cloud.copy(songId = 0))) {
+            assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(SongSourceIdentity(2), source), owner) }.isFailure)
+        }
+        assertTrue(runCatching { wire.tracks.modifySources("add", 10, emptyList(), owner) }.isFailure)
+        wire.sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(cloud), owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(wire.originals.isEmpty())
+        assertTrue(wire.signed.isEmpty())
+    }
+
+    @Test fun cloudTrackSuccessCannotCrossCookieRecoveryOrAccountGeneration() = runBlocking {
+        for (recover in listOf(true, false)) {
+            val wire = fixture()
+            val owner = wire.sessions.snapshot()
+            wire.response = {
+                if (recover) wire.sessions.setRecoveryRequired(true) else wire.sessions.invalidate()
+                """{"code":200}"""
+            }
+            assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(SongSourceIdentity(999, 88, 7, 17)), owner) }.isFailure)
+            assertEquals(1, wire.signed.size)
+        }
+    }
+
     @Test fun staleOwnersCannotDispatchFavoriteOrTrackOperations() = runBlocking {
         val wire = fixture()
         val owner = wire.sessions.snapshot()
@@ -216,6 +256,6 @@ class StandaloneSongMutationBackendsTest {
         }
         private val retrofit = RetrofitModule.provideRetrofit(calls)
         val favorites = RuntimeBackendModule.songFavorites(StandaloneSongFavoritesBackend(retrofit))
-        val tracks = RuntimeBackendModule.playlistTracks(StandalonePlaylistTracksBackend(retrofit))
+        val tracks = RuntimeBackendModule.playlistTracks(StandalonePlaylistTracksBackend(retrofit, sessions))
     }
 }

@@ -57,8 +57,8 @@ class PlayerOverlayHandler(
     /**
      * 显示添加到播放列表弹窗
      */
-    fun showAddToPlaylist(mediaId: Long) {
-        _currentOverlay.value = OverlayState.AddToPlaylist(mediaId)
+    fun showAddToPlaylist(track: MediaMetadata) {
+        _currentOverlay.value = OverlayState.AddToPlaylist(track)
     }
 
     /**
@@ -133,7 +133,7 @@ class PlayerOverlayHandler(
         when (action) {
             MoreAction.ADD_TO_PLAYLIST -> {
                 mediaMetadata?.let {
-                    showAddToPlaylist(it.id)
+                    showAddToPlaylist(it)
                 }
             }
             MoreAction.SHARE -> {

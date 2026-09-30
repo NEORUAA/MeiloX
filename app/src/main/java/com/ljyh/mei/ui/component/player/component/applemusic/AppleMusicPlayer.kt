@@ -436,7 +436,7 @@ fun AppleMusicPlayer(
                                 onSleepTimerClick = { overlayHandler.showSleepTimer() },
                                 onAddToPlaylistClick = {
                                     mediaMetadata?.let {
-                                        overlayHandler.showAddToPlaylist(it.id)
+                                        overlayHandler.showAddToPlaylist(it)
                                     }
                                 },
                                 onDownloadClick = {

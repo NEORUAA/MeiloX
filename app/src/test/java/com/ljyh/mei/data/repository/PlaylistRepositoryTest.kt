@@ -2,6 +2,7 @@ package com.ljyh.mei.data.repository
 
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.PlaylistDetail
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.network.Resource
@@ -145,10 +146,10 @@ class PlaylistRepositoryTest {
         var dispatched = 0
         val source = repository { name, args ->
             dispatched++
-            if (name == "modify") {
+            if (name == "modifySources") {
                 assertEquals("add", args[0])
                 assertEquals(10L, args[1])
-                assertEquals(listOf(1L, 2L), args[2])
+                assertEquals(listOf(SongSourceIdentity(1), SongSourceIdentity(2)), args[2])
                 assertEquals(owner, args[3])
                 com.ljyh.mei.data.model.api.ManipulateTrackResult(502)
             } else {
@@ -174,6 +175,38 @@ class PlaylistRepositoryTest {
         assertTrue(runCatching { source.deletePlaylist("10", owner) }.exceptionOrNull() is CancellationException)
     }
 
+    @Test fun cloudTrackMutationsKeepFullSourcesUntilTheBackendBoundary() = runBlocking {
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        val sameAudio = cloud.copy(entryId = 18, cloudOwnerId = 89)
+        val source = repository { name, args ->
+            assertEquals("modifySources", name)
+            assertEquals(listOf(cloud, SongSourceIdentity(2), sameAudio), args[2])
+            assertEquals(owner, args[3])
+            com.ljyh.mei.data.model.api.ManipulateTrackResult(200)
+        }
+        for (op in listOf("add", "del")) {
+            assertTrue(source.manipulateTrack(op, "10", "${cloud.key},2,${cloud.key},${sameAudio.key}", owner) is Resource.Success)
+        }
+    }
+
+    @Test fun malformedForeignAndRecoveringCloudTracksCannotDispatch() = runBlocking {
+        val source = repository { _, _ -> error("Must not dispatch") }
+        for (key in listOf("meilox-cloud-v1:17:999:88:2", "meilox-cloud-v1:17:999:88:0",
+            "meilox-cloud-v1:17:999:88", "meilox-cloud-v1:17:0999:88:1")) {
+            assertTrue(source.manipulateTrack("add", "10", "1,$key", owner) is Resource.Error)
+        }
+        sessions.setRecoveryRequired(true)
+        assertTrue(source.manipulateTrack("add", "10", "meilox-cloud-v1:17:999:88:1", owner) is Resource.Error)
+    }
+
+    @Test fun recoveryAfterClosedCloudMutationCannotReturnSuccess() = runBlocking {
+        val source = repository { _, _ ->
+            sessions.setRecoveryRequired(true)
+            com.ljyh.mei.data.model.api.ManipulateTrackResult(200)
+        }
+        assertTrue(source.manipulateTrack("add", "10", "meilox-cloud-v1:17:999:88:1", owner) is Resource.Error)
+    }
+
     @Test fun trackMutationsRejectInvalidPlaylistsTracksAndStaleOwners() = runBlocking {
         val source = repository { _, _ -> error("Must not dispatch") }
         for (pid in listOf("bad", "0", "-1")) assertTrue(source.manipulateTrack("del", pid, "1", owner) is Resource.Error)
@@ -186,7 +219,7 @@ class PlaylistRepositoryTest {
     @Test fun trackMutationResultsRemainBusinessOutcomesAndCannotCrossAccounts() = runBlocking {
         for (code in listOf(200, 502, 500)) {
             val source = repository { name, args ->
-                assertEquals("modify", name)
+                assertEquals("modifySources", name)
                 assertEquals("del", args[0])
                 assertEquals(owner, args[3])
                 com.ljyh.mei.data.model.api.ManipulateTrackResult(code)

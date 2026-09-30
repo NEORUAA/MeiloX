@@ -1116,6 +1116,80 @@ Local evidence: `/tmp/meilox-cloud-favorites-final-source-validation.log`,
 credential, official source or private
 server payload is committed. API-023 and ABI-001 record the protocol/runtime differences.
 
+### D1/D4 Checkpoint: Source-Owned Cloud Playlist Mutations (2026-10-01)
+
+This is progress on the existing dual-runtime goal, not complete playlist, cloud,
+release or D4 acceptance. API-024 records the separate entry/audio/file-owner contract.
+
+- The pinned TV APK's actual DEX confirms the native add caller uses MusicInfo's audio
+  `getId()`. Its v1 playlist mutation body has quoted numeric track IDs, add-only
+  `reverse=true` and official security fields, but no favorite-style `userid` or
+  playback/download file-owner tuple. Standalone retains its original route and
+  `imme=true`; native remove callers and real cloud writes remain unqualified.
+- All existing shared add overlays now retain complete MediaMetadata. Player, track
+  menu and downloaded-item entry points share the original picker and ViewModel;
+  metadata entry/source matching is checked inside guarded mutations. The Repository
+  carries typed sources to each backend, validates every account affinity before
+  mapping distinct audio IDs, and never silently retries with a cloud deletion entry.
+  The existing remove flow also forwards metadata, without adding UI or navigation.
+- Pending recovery, stale account generations, malformed/foreign metadata, cancellation
+  and late results are guarded before dispatch and publication. Recovery clears the
+  owned picker and prevents old callbacks or Library refreshes. Existing duplicate,
+  partial and rejection outcomes remain business outcomes, not count comparisons.
+- Paired source validation passes: 721 standalone JVM tests in 88 suites and 783
+  parasite tests in 94 suites, zero failures/errors/skips. Both debug/instrumentation
+  and unsigned minified release builds pass, including release vital lint. Release
+  APKs retain their route-specific DTO fields, production IDs and 16 KB ZIP alignment.
+  Standalone has no Xposed metadata; parasite remains API 102, TV-only, hot reload off.
+  These package checks do not establish signed release execution or upgrade acceptance.
+- Closed AVD fixtures pass 37 standalone and 38 parasite cases, including six new
+  cloud-playlist tests per flavor plus existing favorite/lyric/source identity checks
+  and the parasite graph check. Both are rerun after the final picker recovery guard.
+  The first parasite attempt failed the platform process
+  attach timeout before any tests began; its PID crash buffer was empty. The recorded
+  rerun passed all 38 cases; the attach failure's underlying cause is not determined.
+- A debug-gated probe also passes inside the real TV process using a separate synthetic
+  transport/session, never rebinding AppGraph or sending official writes. It verifies
+  the production HostPlaylistTracksBackend, Body/Tag ownership, observed three-parameter
+  versus two-annotation slot repair, audio ID encoding, recovery rejection and 502
+  preservation. The normal probe-disabled module is rebuilt, installed and cold-started
+  afterwards; its packaged APP flag is true and HOST/RUNTIME/WORK probe flags are false.
+- Read-only screenshot checks on both actual debug runtimes show the existing player,
+  more-action sheet and owned playlist picker. The TV cloud track reaches the TV
+  account's picker; standalone displays only its different Cookie account's playlists.
+  Neither Select, Create, Like, Download nor transport controls are activated. The
+  sheets dismiss back to the original Home; no layout, resource or navigation change
+  is made. This is picker/rendering evidence, not real cloud-write acceptance.
+- Final AVD state is awake, portrait, authenticated TV MeiloX Home. TV's one-entry
+  cloud queue remains PAUSED at 78,338 ms; standalone remains PAUSED at 60,347 ms with
+  queue index 879. The official TV player is inactive STOPPED. Both current-PID crash
+  buffers are empty and accepted TV media row 820 remains TV-owned, not pending and
+  22,705,573 bytes. No remote account state, credentials, user-owned media, real playlist,
+  download grant or social recipient is mutated; no screen-off/global orientation/scope
+  change is performed.
+- Real add/remove/duplicate acceptance, native privilege behavior, cloud playback-report
+  IDs, native karaoke timing, account-switch cooperation, production standalone upgrade
+  histories, independent startup and paired release/device regression remain required.
+  The next bounded implementation work is cloud playback-report identity analysis;
+  no complete D1/D2/D3/D4/D5/D6 acceptance is inferred from this checkpoint.
+
+Local evidence: `/tmp/meilox-cloud-playlists-final-source-validation.log`,
+`/tmp/meilox-cloud-playlists-standalone-device.log`,
+`/tmp/meilox-cloud-playlists-parasite-device.log`,
+`/tmp/meilox-cloud-playlists-parasite-device-rerun.log`,
+`/tmp/meilox-cloud-playlists-final-standalone-device.log`,
+`/tmp/meilox-cloud-playlists-final-parasite-device.log`,
+`/tmp/meilox-cloud-playlists-host-probe-build.log`,
+`/tmp/meilox-cloud-playlists-host-closed-probe.log`,
+`/tmp/meilox-cloud-playlists-normal-module-build.log`,
+`/tmp/meilox-cloud-playlists-standalone-picker.png`,
+`/tmp/meilox-cloud-playlists-tv-cloud-player.png`,
+`/tmp/meilox-cloud-playlists-tv-cloud-menu.png`,
+`/tmp/meilox-cloud-playlists-tv-cloud-picker.png`,
+`/tmp/meilox-cloud-playlists-final-standalone-ready.png` and
+`/tmp/meilox-cloud-playlists-final-tv-home.png`. Generated artifacts, private payloads,
+credentials, device logs and official source are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

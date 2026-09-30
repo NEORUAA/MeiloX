@@ -160,6 +160,44 @@ class HostSongMutationBackendsTest {
         }
     }
 
+    @Test fun cloudTrackMutationsUseOnlyAudioIdsAndKeepTheTvOrderingContract() = runBlocking {
+        val wire = Wire()
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        for (op in listOf("add", "del")) {
+            assertEquals(200, wire.tracks.modifySources(op, 10,
+                listOf(cloud, SongSourceIdentity(2), cloud.copy(entryId = 18, cloudOwnerId = 89)), wire.bridge.sessions.snapshot()).code)
+            val expected = mapOf("op" to op, "pid" to "10", "trackIds" to "[\"999\",\"2\"]") +
+                if (op == "add") mapOf("reverse" to "true") else emptyMap()
+            assertEquals("v1/playlist/manipulate/tracks" to expected, wire.requests.last())
+        }
+    }
+
+    @Test fun cloudTrackValidationRejectsTheWholeBatchBeforeOfficialDispatch() = runBlocking {
+        val wire = Wire()
+        val owner = wire.bridge.sessions.snapshot()
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        for (source in listOf(cloud.copy(accountId = 2), cloud.copy(accountId = 0), cloud.copy(songId = 0))) {
+            assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(SongSourceIdentity(2), source), owner) }.isFailure)
+        }
+        assertTrue(runCatching { wire.tracks.modifySources("add", 10, emptyList(), owner) }.isFailure)
+        wire.bridge.sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(cloud), owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(wire.requests.isEmpty())
+    }
+
+    @Test fun cloudTrackSuccessCannotCrossRecoveryOrAccountGeneration() = runBlocking {
+        for (recover in listOf(true, false)) {
+            val wire = Wire()
+            val owner = wire.bridge.sessions.snapshot()
+            wire.response = {
+                if (recover) wire.bridge.sessions.setRecoveryRequired(true) else wire.bridge.sessions.invalidate()
+                """{"code":200}"""
+            }
+            assertTrue(runCatching { wire.tracks.modifySources("add", 10, listOf(SongSourceIdentity(999, 88, 1, 17)), owner) }.isFailure)
+            assertEquals(1, wire.requests.size)
+        }
+    }
+
     @Test fun obsoleteOwnersCannotDispatchFavoriteOrTrackOperations() = runBlocking {
         val wire = Wire()
         val owner = wire.bridge.sessions.snapshot()
@@ -189,6 +227,6 @@ class HostSongMutationBackendsTest {
         val bridge = HostRequestBridge(HostSessionBridge()).apply { bind(transport) }
         private val retrofit = RetrofitModule.provideRetrofit(HostCallFactory(bridge, Executor { it.run() }))
         val favorites = RuntimeBackendModule.songFavorites(HostSongFavoritesBackend(retrofit, bridge.sessions))
-        val tracks = RuntimeBackendModule.playlistTracks(HostPlaylistTracksBackend(retrofit))
+        val tracks = RuntimeBackendModule.playlistTracks(HostPlaylistTracksBackend(retrofit, bridge.sessions))
     }
 }

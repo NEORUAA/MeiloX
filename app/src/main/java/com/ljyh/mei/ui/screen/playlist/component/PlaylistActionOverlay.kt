@@ -62,7 +62,7 @@ fun PlaylistActionOverlay(
                 onSelectPlaylist = { selectedPlaylist ->
                     viewModel.addSongToPlaylist(
                         pid = selectedPlaylist.id,
-                        trackIds = overlay.mediaId.toString(),
+                        track = overlay.track,
                         owner = owner ?: return@AddToPlaylistSheet,
                     ) { outcome ->
                         val message = when (outcome) {
@@ -86,13 +86,13 @@ fun PlaylistActionOverlay(
                 isCreator = isCreator,
                 onDismiss = onDismiss,
                 onAddToPlaylist = {
-                    onUpdateOverlay(OverlayState.AddToPlaylist(overlay.track.id))
+                    onUpdateOverlay(OverlayState.AddToPlaylist(overlay.track))
                 },
                 onDownloadTrack = onDownloadTrack?.let { download -> { quality -> download(overlay.track, quality) } },
                 onDelete = {
                     if (owner != null) viewModel.deleteSongFromPlaylist(
                         playlistId.toString(),
-                        overlay.track.id.toString(),
+                        overlay.track,
                         owner = owner,
                     ) { deleted ->
                         if (deleted) {

@@ -7,6 +7,7 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.BaseMessageResponse
@@ -21,6 +22,8 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.PlaylistMutationSource
+import com.ljyh.mei.data.repository.parsePlaylistTrackSources
+import com.ljyh.mei.data.repository.requirePlaylistMutationOwner
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionChangedException
@@ -138,7 +141,7 @@ class PlaylistViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { sessions.snapshot() }.getOrNull()
+                val stamp = if (sessions.recoveryRequired.value) null else runCatching { sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     detailJob?.cancel()
                     collectionJob?.cancel()
@@ -171,7 +174,7 @@ class PlaylistViewModel internal constructor(
         _deletePlaylist.value = Resource.Loading
     }
 
-    fun captureActionSession(): SessionStamp? = runCatching { sessions.snapshot() }.getOrNull()
+    fun captureActionSession(): SessionStamp? = if (sessions.recoveryRequired.value) null else runCatching { sessions.snapshot() }.getOrNull()
 
     private fun clearDetail() {
         detailVersion++
@@ -261,12 +264,35 @@ class PlaylistViewModel internal constructor(
         trackIds: String,
         owner: SessionStamp,
         onComplete: (PlaylistTrackAddOutcome) -> Unit = {}
+    ) = addSongToPlaylistRequest(pid, owner, { trackIds }, onComplete)
+
+    fun addSongToPlaylist(
+        pid: String,
+        track: MediaMetadata,
+        owner: SessionStamp,
+        onComplete: (PlaylistTrackAddOutcome) -> Unit = {},
+    ) = addSongToPlaylistRequest(pid, owner, { playlistSourceKey(track) }, onComplete)
+
+    private fun playlistSourceKey(track: MediaMetadata): String {
+        val source = track.source ?: SongSourceIdentity(track.id)
+        require(source.entryId == track.id) { "Mismatched media source identity" }
+        return source.key
+    }
+
+    private fun addSongToPlaylistRequest(
+        pid: String,
+        owner: SessionStamp,
+        sourceKeys: () -> String,
+        onComplete: (PlaylistTrackAddOutcome) -> Unit,
     ) {
+        var keys = ""
         runMutation(owner, _manipulateTracks,
             validate = {
                 check(_picker.value.owner == owner && _picker.value.playlists.any { it.id == pid }) { "Playlist selection changed" }
+                keys = sourceKeys()
+                parsePlaylistTrackSources(keys, owner)
             },
-            request = { mutations.manipulateTrack("add", pid, trackIds, owner) },
+            request = { mutations.manipulateTrack("add", pid, keys, owner) },
             accepted = { it.code == 200 },
             onComplete = { onComplete(it.toPlaylistTrackAddOutcome()) },
         )
@@ -278,15 +304,32 @@ class PlaylistViewModel internal constructor(
         trackIds: String,
         owner: SessionStamp,
         onComplete: (Boolean) -> Unit = {}
+    ) = deleteSongFromPlaylistRequest(pid, owner, { trackIds }, onComplete)
+
+    fun deleteSongFromPlaylist(
+        pid: String,
+        track: MediaMetadata,
+        owner: SessionStamp,
+        onComplete: (Boolean) -> Unit = {},
+    ) = deleteSongFromPlaylistRequest(pid, owner, { playlistSourceKey(track) }, onComplete)
+
+    private fun deleteSongFromPlaylistRequest(
+        pid: String,
+        owner: SessionStamp,
+        sourceKeys: () -> String,
+        onComplete: (Boolean) -> Unit,
     ) {
         val detail = _playlistDetail.value
+        var keys = ""
         runMutation(owner, _manipulateTracks,
             validate = {
                 requireDetail(owner, detail)
                 val playlist = (detail as Resource.Success).data.playlist
                 check(playlist.Id.toString() == pid && playlist.creator.userId == owner.identity.userId) { "Playlist is not owned by this account" }
+                keys = sourceKeys()
+                parsePlaylistTrackSources(keys, owner)
             },
-            request = { mutations.manipulateTrack("del", pid, trackIds, owner) },
+            request = { mutations.manipulateTrack("del", pid, keys, owner) },
             accepted = { it.code == 200 },
             onComplete = { result ->
                 if (_playlistDetail.value === detail) {
@@ -301,6 +344,7 @@ class PlaylistViewModel internal constructor(
     }
     fun getAllMePlaylist(owner: SessionStamp) {
         val version = runCatching { sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 pickerVersion++
                 _picker.value = PlaylistPickerState(owner, loading = owner.identity.authenticated,
@@ -312,6 +356,7 @@ class PlaylistViewModel internal constructor(
         if (!owner.identity.authenticated) return
         pickerJob = viewModelScope.launch {
             fun publish(update: (PlaylistPickerState) -> PlaylistPickerState) = sessions.withCurrent(owner) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(detailLock) { if (pickerVersion == version) _picker.value = update(_picker.value) }
             }
             try {
@@ -363,8 +408,7 @@ class PlaylistViewModel internal constructor(
         mutationJob = viewModelScope.launch {
             try {
                 val result = try {
-                    sessions.requireCurrent(owner)
-                    check(owner.identity.authenticated) { "Official login is required" }
+                    sessions.requirePlaylistMutationOwner(owner)
                     validate()
                     request()
                 } catch (error: CancellationException) {
@@ -376,6 +420,7 @@ class PlaylistViewModel internal constructor(
                 }
                 currentCoroutineContext().ensureActive()
                 val published = sessions.withCurrent(owner) {
+                    if (sessions.recoveryRequired.value) throw SessionChangedException()
                     synchronized(detailLock) {
                         (actionVersion == version).also { current ->
                             if (current) {

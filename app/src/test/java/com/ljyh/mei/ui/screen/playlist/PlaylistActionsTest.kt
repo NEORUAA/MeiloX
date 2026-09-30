@@ -3,6 +3,9 @@ package com.ljyh.mei.ui.screen.playlist
 import androidx.lifecycle.ViewModelStore
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.PlaylistDetail
+import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.data.model.api.BaseMessageResponse
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
@@ -126,6 +129,31 @@ class PlaylistActionsTest {
         assertNull(model.picker.value.error)
     }
 
+    @Test fun recoveryRejectsPickerReadsBeforeTheObserverRunsAndAllowsAFreshRetry() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        sessions.setRecoveryRequired(true)
+        model.getAllMePlaylist(owner)
+        runCurrent()
+        assertTrue(reads.isEmpty())
+        assertTrue(syncs.isEmpty())
+        assertTrue(model.picker.value.playlists.isEmpty())
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        model.getAllMePlaylist(sessions.snapshot())
+        runCurrent()
+        assertEquals(listOf("10"), model.picker.value.playlists.map { it.id })
+        assertEquals(1, syncs.size)
+    }
+
+    @Test fun recoveryDuringClosedPickerRefreshCannotPublishRows() = checkModel { model, _ ->
+        sync = { sessions.setRecoveryRequired(true); Resource.Success(Unit) }
+        model.getAllMePlaylist(sessions.snapshot())
+        runCurrent()
+        assertTrue(model.picker.value.playlists.isEmpty())
+        assertNull(model.actionSession.value)
+        assertEquals(1, syncs.size)
+    }
+
     @Test fun guestCannotReadPickerOrCreate() = checkModel { model, _ ->
         identity = SessionIdentity(0, false, true)
         sessions.invalidate()
@@ -203,6 +231,64 @@ class PlaylistActionsTest {
         assertEquals(listOf(owner, owner), syncs)
     }
 
+    @Test fun cloudOverlayAndPickerForwardTheFullSourceRatherThanTheEntryId() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        model.getAllMePlaylist(owner)
+        runCurrent()
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        val overlay = OverlayState.AddToPlaylist(metadata(cloud))
+        assertEquals(cloud, overlay.track.source)
+        var outcome: PlaylistTrackAddOutcome? = null
+        model.addSongToPlaylist("10", overlay.track, owner) { outcome = it }
+        runCurrent()
+        assertEquals(listOf("add:10:${cloud.key}" to owner), calls)
+        assertEquals(PlaylistTrackAddOutcome.Added, outcome)
+    }
+
+    @Test fun invalidOrForeignCloudMetadataCannotCallTheMutationSource() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        model.getAllMePlaylist(owner)
+        runCurrent()
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        val invalid = listOf(metadata(cloud).copy(id = 18), metadata(cloud.copy(songId = 0)), metadata(cloud.copy(accountId = 2)))
+        for (track in invalid) {
+            model.addSongToPlaylist("10", track, owner)
+            runCurrent()
+        }
+        assertTrue(calls.isEmpty())
+        assertEquals(1, syncs.size)
+    }
+
+    @Test fun recoveryClearsCloudPickerAndCannotPublishALateClosedWrite() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        model.getAllMePlaylist(owner)
+        runCurrent()
+        val gate = CompletableDeferred<Resource<ManipulateTrackResult>>()
+        manipulate = { withContext(NonCancellable) { gate.await() } }
+        model.addSongToPlaylist("10", metadata(SongSourceIdentity(999, 88, 1, 17)), owner) { fail("Recovery callback") }
+        runCurrent()
+        sessions.setRecoveryRequired(true)
+        assertNull(model.captureActionSession())
+        runCurrent()
+        assertTrue(model.picker.value.playlists.isEmpty())
+        assertNull(model.actionSession.value)
+        gate.complete(Resource.Success(ManipulateTrackResult(200)))
+        runCurrent()
+        assertTrue(model.manipulateTracks.value is Resource.Loading)
+        assertEquals(1, calls.size)
+        assertEquals(1, syncs.size)
+    }
+
+    @Test fun recoveryBeforeCloudClickCannotDispatchEvenBeforeTheObserverRuns() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        model.getAllMePlaylist(owner)
+        runCurrent()
+        sessions.setRecoveryRequired(true)
+        model.addSongToPlaylist("10", metadata(SongSourceIdentity(999, 88, 1, 17)), owner) { fail("Recovery callback") }
+        runCurrent()
+        assertTrue(calls.isEmpty())
+    }
+
     @Test fun duplicateClicksDispatchOnceAndBusinessFailureDoesNotRefreshLibrary() = checkModel { model, _ ->
         val owner = sessions.snapshot()
         model.getAllMePlaylist(owner)
@@ -264,6 +350,21 @@ class PlaylistActionsTest {
         assertTrue(syncs.isEmpty())
     }
 
+    @Test fun ownedPlaylistDeleteKeepsCloudSourceAndRejectsMismatchedMetadata() = checkModel { model, _ ->
+        val owner = sessions.snapshot()
+        model.getPlaylistDetail("10")
+        runCurrent()
+        val cloud = SongSourceIdentity(999, 88, 1, 17)
+        var removed = false
+        model.deleteSongFromPlaylist("10", metadata(cloud), owner) { removed = it }
+        runCurrent()
+        assertTrue(removed)
+        assertEquals(listOf("del:10:${cloud.key}" to owner), calls)
+        model.deleteSongFromPlaylist("10", metadata(cloud).copy(id = 18), owner)
+        runCurrent()
+        assertEquals(1, calls.size)
+    }
+
     @Test fun createUsesPrivacyAndOwnerAndReportsAcceptanceDespiteRefreshFailure() = checkModel { model, _ ->
         sync = { Resource.Error("Offline") }
         val owner = sessions.snapshot()
@@ -313,4 +414,7 @@ class PlaylistActionsTest {
 
     private fun entry(id: String, author: String, liked: Boolean = false) = AccountPlaylist(
         Playlist(id, "Playlist $id", "", author, "Creator", "", 0), liked)
+
+    private fun metadata(source: SongSourceIdentity) = MediaMetadata(source.entryId, "Fixture", "", emptyList(), 1000,
+        MediaMetadata.Album(0, ""), source = source)
 }

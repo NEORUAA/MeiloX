@@ -1435,6 +1435,47 @@ These are integration differences, not server API semantics.
   playback-report identity, native cloud karaoke timing and complete cloud parity
   remain separate unfinished gates.
 
+### API-024: Cloud Playlist Mutations Must Retain Source Identity Until the Wire Boundary
+
+- Recorded: 2026-10-01. The original shared add-to-playlist overlay retained only
+  `MediaMetadata.id`. For own-cloud rows that is the UI/deletion entry, not necessarily
+  the audio identity. Passing it as an ordinary catalog track silently discarded the
+  file owner and captured account before the selected runtime could validate them.
+- Pinned TV DEX: `CollectMusicFragment$d$a.invokeSuspend` calls `MusicInfo.getId()`
+  and then `com.netease.cloudmusic.app.f0.b.M`; the private `R` method sends that
+  audio ID as a quoted numeric string in `trackIds` to `v1/playlist/manipulate/tracks`.
+  Its add body contains `op`, `pid`, `trackIds`, `reverse=true` and native `checkToken`.
+  Unlike API-023's favorite write, this controller does not send `userid`, an
+  `audioId_fileOwnerId` tuple, or the own-cloud row's deletion entry. MusicInfo parsing
+  assigns the remote song JSON's `id` to `getId()` and reads `pc.uid` separately.
+  These actual DEX names are analysis references, not new hook targets.
+- Shared adaptation: all existing player/menu/download add entry points forward the
+  original metadata through the same overlay and picker. ViewModel entry/source
+  validation occurs inside the guarded mutation, so malformed metadata cannot crash a
+  click or fall back to an entry ID. Repository batches retain typed credential-free
+  sources, reject every malformed/foreign source before dispatch, and preserve input
+  order. Both runtime adapters validate the captured account and map to distinct audio
+  IDs only at the wire boundary. Numeric compatibility methods represent ordinary
+  tracks only; cloud sources never use that fallback.
+- Parasite preserves the source-confirmed add route and `reverse=true`; security and
+  authentication stay in the host. Standalone preserves its original Cookie route
+  `playlist/manipulate/tracks` and `imme=true`, without importing TV ordering/security
+  fields. Neither backend serializes cloud entry/account/file-owner fields or retries
+  a write through another route. Same-audio entries/files collapse to one wire ID only
+  after every source's account affinity is validated.
+- The existing supplemental remove path also accepts typed source metadata but remains
+  unqualified as a native TV remove caller, as recorded in API-009. Business codes and
+  optional offline-ID metadata remain distinct outcomes. Pending recovery, stale
+  sessions, cancellation and late replies cannot publish an accepted mutation or an
+  obsolete callback. Recovery also clears the account-owned picker; no screen, layout,
+  icon, text, navigation or backend-specific frontend fork is added.
+- Verification is recorded in the cloud-playlist checkpoint of the dual-runtime plan.
+  The host-process probe uses its own synthetic transport/session, never rebinds the
+  real graph, and verifies the production adapter/Retrofit Body/Tag compatibility
+  without sending official writes. Real cloud add/remove/duplicate acceptance,
+  native privilege behavior, cloud playback-report IDs and paired release runtime
+  qualification remain separate unfinished gates. No real playlist is modified.
+
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 
 - Date: 2026-09-29. Standalone components use their own Application, registered Activity,

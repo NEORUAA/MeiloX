@@ -134,16 +134,13 @@ class PlaylistRepository(
     ): Resource<ManipulateTrackResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
-                sessions.requireCurrent(session)
-                check(session.identity.authenticated && !session.identity.anonymous) { "Sign-in required" }
+                sessions.requirePlaylistMutationOwner(session)
                 require(op == "add" || op == "del")
                 val playlistId = requireNotNull(pid.toLongOrNull()?.takeIf { it > 0 }) { "Invalid playlist identity" }
-                val ids = trackIds.split(",").map { raw ->
-                    requireNotNull(raw.trim().toLongOrNull()?.takeIf { it > 0 }) { "Invalid track identity" }
-                }.distinct()
-                playlistTracks.modify(op, playlistId, ids, session).also {
+                val sources = parsePlaylistTrackSources(trackIds, session)
+                playlistTracks.modifySources(op, playlistId, sources, session).also {
                     currentCoroutineContext().ensureActive()
-                    sessions.requireCurrent(session)
+                    sessions.requirePlaylistMutationOwner(session)
                 }
             }
         }

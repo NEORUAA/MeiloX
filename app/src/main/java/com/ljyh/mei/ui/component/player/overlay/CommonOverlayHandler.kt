@@ -195,7 +195,7 @@ fun CommonOverlayHandler(
                 anchorBounds = overlay.anchorBounds,
                 onShare = { overlayHandler.showShare(overlay.track) },
                 onDismiss = overlayHandler::dismiss,
-                onAddToPlaylist = { overlayHandler.showAddToPlaylist(overlay.track.id) },
+                onAddToPlaylist = { overlayHandler.showAddToPlaylist(overlay.track) },
                 onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
                 onCopyId = { setClipboard(context, overlay.track.id.toString(), "id") },
                 onCopyName = { setClipboard(context, overlay.track.title, "name") },

@@ -364,7 +364,7 @@ class HostCallFactoryTest {
         val bridge = bridge(backend)
         val api = retrofit(HostCallFactory(bridge)).create(ApiService::class.java)
         val owner = bridge.sessions.snapshot()
-        val tracks = HostPlaylistTracksBackend(retrofit(HostCallFactory(bridge)))
+        val tracks = HostPlaylistTracksBackend(retrofit(HostCallFactory(bridge)), bridge.sessions)
         tracks.modify("add", 10, listOf(1, 2), owner)
         assertEquals("v1/playlist/manipulate/tracks", backend.path)
         assertEquals(mapOf("op" to "add", "pid" to "10", "trackIds" to "[\"1\",\"2\"]", "reverse" to "true"), backend.parameters)
