@@ -1,6 +1,7 @@
 package com.ljyh.mei.standalone
 
 import com.google.gson.annotations.SerializedName
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.repository.SongFavoritesBackend
 import com.ljyh.mei.data.session.SessionStamp
 import javax.inject.Inject
@@ -12,7 +13,9 @@ import retrofit2.http.Tag
 internal class StandaloneSongFavoritesBackend @Inject constructor(retrofit: Retrofit) : SongFavoritesBackend {
     private val api = retrofit.create(StandaloneSongFavoritesApi::class.java)
 
-    override suspend fun isLiked(id: Long, owner: SessionStamp): Boolean {
+    override suspend fun isLiked(source: SongSourceIdentity, owner: SessionStamp): Boolean {
+        source.requireAccount(owner.identity)
+        val id = source.songId
         val response = api.check(mapOf("trackIds" to "[$id]"), owner)
         check(response.code == 200) { "Liked song query failed (${response.code})" }
         val ids = checkNotNull(response.ids) { "Missing liked song identities" }
@@ -20,8 +23,9 @@ internal class StandaloneSongFavoritesBackend @Inject constructor(retrofit: Retr
         return id in ids
     }
 
-    override suspend fun setLiked(id: Long, liked: Boolean, owner: SessionStamp): Boolean {
-        val response = api.update(StandaloneSongLike(trackId = id.toString(), like = liked), owner)
+    override suspend fun setLiked(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Boolean {
+        source.requireAccount(owner.identity)
+        val response = api.update(StandaloneSongLike(trackId = source.songId.toString(), like = liked), owner)
         check(response.code == 200) { "Song like failed (${response.code})" }
         check((response.playlistId ?: 0) > 0) { "Missing liked playlist" }
         return liked

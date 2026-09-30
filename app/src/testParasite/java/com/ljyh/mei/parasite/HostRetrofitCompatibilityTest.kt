@@ -23,4 +23,27 @@ class HostRetrofitCompatibilityTest {
         val truncated = emptyArray<Array<Annotation>>()
         assertSame(truncated, completeSuspendAnnotations(method, truncated))
     }
+
+    @Test fun extractedRuntimeApisRemainInTheExactModuleCompatibilityRegistry() {
+        val services = listOf(HostSongFavoritesApi::class.java, HostPlaylistTracksApi::class.java,
+            HostPlaylistCollectionApi::class.java, HostCatalogCollectionApi::class.java, HostDownloadApi::class.java)
+        services.forEach { service ->
+            assertTrue(HostRetrofitCompatibility.services.contains(service))
+            service.declaredMethods.forEach { method ->
+                assertEquals(kotlin.coroutines.Continuation::class.java, method.parameterTypes.last())
+                val original = method.parameterAnnotations
+                assertEquals(method.parameterCount, original.size)
+                val truncated = original.copyOfRange(0, original.size - 1)
+                val result = completeSuspendAnnotations(method, truncated)
+                assertEquals(method.parameterCount, result.size)
+                truncated.indices.forEach { index -> assertSame(truncated[index], result[index]) }
+                assertTrue(result.last().isEmpty())
+                assertSame(original, completeSuspendAnnotations(method, original))
+                val missingOwnedParameter = original.copyOfRange(0, original.size - 2)
+                assertSame(missingOwnedParameter, completeSuspendAnnotations(method, missingOwnedParameter))
+            }
+        }
+        assertEquals(11, HostRetrofitCompatibility.services.size)
+        assertFalse(HostRetrofitCompatibility.services.contains(String::class.java))
+    }
 }

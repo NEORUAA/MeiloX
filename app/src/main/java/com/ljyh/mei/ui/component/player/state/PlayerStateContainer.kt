@@ -130,7 +130,8 @@ fun rememberPlayerStateContainer(
             val result = container.checkSongLike.value
             val metadata = container.mediaMetadata.value
             metadata != null && !metadata.isLocal && !metadata.isPodcast &&
-                result.songId == metadata.id && result.liked == true
+                result.songId == metadata.id &&
+                result.sourceKey == (metadata.source?.key ?: metadata.id.toString()) && result.liked == true
         }
     }
 
@@ -141,7 +142,7 @@ fun rememberPlayerStateContainer(
         }
     }
     val metadata = container.mediaMetadata.value
-    LaunchedEffect(metadata?.id, metadata?.isLocal, metadata?.isPodcast) {
+    LaunchedEffect(metadata?.id, metadata?.source, metadata?.isLocal, metadata?.isPodcast) {
         playerViewModel.selectLikeSong(metadata)
     }
 

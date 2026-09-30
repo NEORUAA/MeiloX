@@ -1043,6 +1043,79 @@ Local evidence: `/tmp/meilox-cloud-lyric-owner-final-validation.log`,
 `/tmp/meilox-cloud-lyric-owner-standalone-home.png`. No device log, generated artifact,
 credential, official decompiled source or private lyric content is committed.
 
+### D1/D4 Checkpoint: Source-Owned Cloud Favorites (2026-10-01)
+
+- The shared favorite backend now receives the complete cloud source instead of the
+  logical UI/deletion entry ID. Ordinary numeric callers remain compatible. Remote
+  cloud favorite reads use the audio ID; TV writes additionally supply the separate
+  file owner in lowercase `userid`. Source/account affinity, cancellation and current
+  session are checked before dispatch and after results. Pending recovery also rejects
+  calls/results even if the generation or public account ID has not changed.
+- The standalone Cookie implementation retains its original single-track check and
+  `radio/like` compatibility write fields, using the audio rather than entry ID. It
+  does not import TV owner parameters, duplicate reconciliation or routes. Real Cookie
+  cloud-write behavior, particularly unmatched private files, remains unqualified.
+- Favorite selection retains logical entry ID plus the complete source key. A different
+  audio/file owner under the same entry clears/reloads star state and rejects old
+  results/clicks. Same-account renewal, foreign accounts, recovery and malformed sources
+  are covered. The shared player only forwards metadata/effect ownership; no controls,
+  page architecture, layout, icons, navigation or glass rendering are changed.
+- Pinned APK DEX confirms the official favorite task's `getMusicLibraryId()` and
+  `getCloudSongUserId()` arguments and the remote MusicInfo library/matched/filter-ID
+  chain. The original task's `canSub()` privilege gate is documented, not assumed to
+  be equivalent to this identity adapter. No new JADX-derived hook target is added.
+- A real host-process read exposed a separate backend integration regression: five
+  extracted Retrofit interfaces were absent from the existing suspend-annotation
+  compatibility registry. The exact module-class registry now includes favorites,
+  playlist tracks/collections, catalog collections and download authorization. It
+  still pads only one missing continuation slot; Body/Tag annotations, complete or
+  otherwise malformed arrays and unrelated/host methods remain untouched. Real host
+  logs confirm the two-parameter/one-slot case and the corrected cloud favorite read.
+- Final JVM results: 708 standalone tests across 88 suites and 770 parasite tests
+  across 94 suites pass, with zero failures/errors/skips. Paired debug, instrumentation
+  and unsigned minified release builds pass. Both release APKs retain their respective
+  favorite DTO fields/annotations and pass 16 KB ZIP alignment. Production package IDs
+  remain distinct; standalone has no Xposed metadata, and parasite scope is TV-only,
+  API 102, with hot reload disabled. Release execution remains a separate gate.
+- Selected AVD closed fixtures pass: 31 standalone and 32 parasite tests, including
+  six new cloud-favorite tests, the 16 source-owned lyric tests, nine cloud identity
+  tests and the parasite graph check. No fixture sends real mutations. One opt-in
+  standalone cloud-favorite server read passes under its existing Cookie account;
+  either liked Boolean is valid. An initial attempt timed out and is not counted as
+  acceptance; a fresh authenticated launch and staged library/favorite retry completed
+  in 9.029 s without changing credentials or account data.
+- The TV probe is debug-gated and reads only the persisted one-entry cloud source.
+  Shell delivery to the unexported carrier was denied; authorized root AVD delivery
+  reaches that carrier without changing its manifest or scope. The initial host read
+  failed during Retrofit call-adapter creation before dispatch; after registry repair,
+  source-owned/session-unchanged read acceptance is observed. This is not proof of
+  favorite write acceptance or of every registered feature's live business behavior.
+- The normal probe-disabled module is restored after qualification. Original launcher
+  cold start remains portrait authenticated MeiloX, the cloud queue stays paused at
+  78,338 ms and the official player remains inactive. Existing player views render the
+  cloud metadata and filled source-owned star without touching transport/favorite
+  controls. Standalone's cold authenticated Home also restores its queue at 60,347 ms
+  without autoplay. Both current-PID crash buffers are empty. The AVD remains awake;
+  accepted TV MediaStore row 820 remains 22,705,573 bytes, TV-owned and not pending.
+- Real favorite/playlist writes, cloud reporting IDs, privilege handling, native cloud
+  karaoke timing, account-switch cooperation and paired release/device lifecycle gates
+  remain open. No actual playback, download grant, upload/delete/social write, session
+  transfer, screen-off action, global orientation change, push or merge is performed.
+  This is a cloud-favorite ownership checkpoint, not complete D4/D5/D6 acceptance.
+
+Local evidence: `/tmp/meilox-cloud-favorites-final-source-validation.log`,
+`/tmp/meilox-cloud-favorites-final-device-build.log`,
+`/tmp/meilox-cloud-favorites-final-source-standalone-device.log`,
+`/tmp/meilox-cloud-favorites-final-source-parasite-device.log`,
+`/tmp/meilox-cloud-favorites-reviewed-standalone-live.log`,
+`/tmp/meilox-cloud-favorites-host-read-diagnostic.log`,
+`/tmp/meilox-cloud-favorites-host-registry-read.log`,
+`/tmp/meilox-cloud-favorites-host-expanded-stable.png`,
+`/tmp/meilox-cloud-favorites-final-standalone-ready.png` and
+`/tmp/meilox-cloud-favorites-final-tv-home.png`. No generated artifact, device log,
+credential, official source or private
+server payload is committed. API-023 and ABI-001 record the protocol/runtime differences.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

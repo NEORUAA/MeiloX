@@ -413,6 +413,8 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   account cache. Private-cloud library-ID/owner translation and FM queue semantics need
   separate migration; the original metadata does not yet carry those host fields.
   Podcasts and device-local files do not dispatch ordinary song-favorite requests.
+  API-023 subsequently adds private-cloud source selection and favorite argument
+  ownership; real cloud-write acceptance and privilege qualification remain open.
 
 #### Dual-Runtime Update (2026-09-30)
 
@@ -801,6 +803,16 @@ These are integration differences, not server API semantics.
   isolated module service interfaces. It leaves host methods and complete arrays alone.
 - Evidence: reflection-adapter unit tests and the corrected eight-operation Retrofit
   probe. See [Retrofit Transport Adaptation](official-client-parasite.md#retrofit-transport-adaptation).
+- Dual-runtime follow-up (2026-10-01): the extracted host favorite, playlist-track,
+  playlist-collection, catalog-collection and download Retrofit interfaces were absent
+  from that exact registry. A real host-process cloud-favorite read failed before
+  network dispatch at Retrofit's call-adapter creation; module-package instrumentation
+  and ordinary JVM fixtures did not reproduce the host-loaded annotation truncation.
+  These five explicit module interface classes are now registered alongside the six
+  original services. No package wildcard, host interface, global annotation rewrite
+  or additional framework scope is introduced. Tests preserve every Body/Tag slot,
+  pad only the single missing continuation slot and leave complete/malformed arrays
+  unchanged. Real collection writes/download grants are not inferred from this fix.
 
 ### ABI-002: Launcher Activity Replacement Is Separate From System Orientation
 
@@ -1382,6 +1394,46 @@ These are integration differences, not server API semantics.
   current TV cloud endpoint returns that watch format. These JADX names are analysis
   references only, not added hook targets. A real nonempty cloud response and timing
   qualification are still needed before declaring a native karaoke adapter complete.
+
+### API-023: Cloud Favorites Need the Audio Identity and File Owner
+
+- Recorded: 2026-10-01. The shared favorite selection still used the cloud UI/deletion
+  entry ID after API-020 introduced a separate audio/file-owner identity. A cloud entry
+  and its audio ID must not be treated as interchangeable or share star state merely
+  because their logical entry IDs match.
+- Pinned TV analysis: the ordinary favorite task calls `MusicInfo.getMusicLibraryId()`
+  and `getCloudSongUserId()`. For this remote `MusicInfo` path, library ID delegates to
+  filter/matched ID and ultimately `getId()`; it is not `CloudSong.songId`. Cloud file
+  owner comes from private-cloud metadata, with the official own-account fallback
+  already captured by API-020. Local-file matching is a separate path and remains
+  excluded from this remote favorite control. The TV task also checks `canSub()` before
+  writing; the current identity adapter does not qualify that privilege model.
+- `SongFavoritesBackend` now requires the full credential-free `SongSourceIdentity`.
+  Numeric compatibility methods construct only ordinary sources. The Repository
+  checks source/account affinity before dispatch and current session/cancellation after
+  returning; malformed and foreign sources never fall back to their numeric entry IDs.
+- Parasite reads retain the full `song/like/get` snapshot and compare its IDs with the
+  audio ID. Writes use `song/like` with `trackId=audioId`, lowercase `userid=fileOwnerId`
+  and Boolean `like`. Ordinary songs retain `userid=0`, not the authenticated account.
+  Host-generated referer/security fields remain in the pinned pipeline. Existing
+  502/404 reconciliation re-reads audio state without repeating the mutation or
+  dropping source/session ownership. Existing business failure rules remain unchanged.
+- Standalone keeps `song/like/check` with the audio ID in its single-track query, and
+  its original `radio/like` compatibility write with string `trackId`, `alg=itembased`
+  and string `time=3`. It validates source/account affinity but does not invent a TV
+  `userid` field or change routes. Real legacy Cookie cloud-write acceptance, especially
+  unmatched private files, is not established by a successful read or substitute test.
+- Shared player state retains logical entry ID for presentation and full source key
+  for selection/request ownership. Changing audio or file owner under the same entry
+  clears the previous star state, cancels work and rejects late results/old clicks.
+  Recovery and account invalidation clear state; a foreign account cannot query the
+  retained cloud selection. The existing controls, icons, layout and navigation are
+  unchanged; only metadata/effect ownership is forwarded through the shared frontend.
+- Validation and live-read evidence are recorded in the cloud-favorite checkpoint of
+  `dual-runtime-build-plan.md`. Real like/unlike writes are not automatically issued;
+  closed substitutes test both directions and reconciliation. Playlist identity,
+  playback-report identity, native cloud karaoke timing and complete cloud parity
+  remain separate unfinished gates.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

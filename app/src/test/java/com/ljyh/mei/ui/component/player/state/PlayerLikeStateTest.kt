@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.state
 
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerLikeSource
 import com.ljyh.mei.data.session.SessionStore
@@ -22,6 +23,8 @@ class PlayerLikeStateTest {
     private val reads = mutableListOf<Pair<Long, SessionStamp>>()
     private val writes = mutableListOf<Triple<Long, Boolean, SessionStamp>>()
     private val changes = mutableListOf<SessionStamp>()
+    private val readSources = mutableListOf<SongSourceIdentity>()
+    private val writeSources = mutableListOf<SongSourceIdentity>()
     private var read: suspend (Long) -> Resource<Boolean> = { Resource.Success(it == 10L) }
     private var write: suspend (Long, Boolean) -> Resource<Boolean> = { _, liked -> Resource.Success(liked) }
     private val source = object : PlayerLikeSource {
@@ -32,6 +35,14 @@ class PlayerLikeStateTest {
         override suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean> {
             writes += Triple(id, liked, owner)
             return write(id, liked)
+        }
+        override suspend fun checkSongLike(source: SongSourceIdentity, owner: SessionStamp): Resource<Boolean> {
+            readSources += source
+            return checkSongLike(source.songId, owner)
+        }
+        override suspend fun like(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Resource<Boolean> {
+            writeSources += source
+            return like(source.songId, liked, owner)
         }
     }
 
@@ -228,6 +239,100 @@ class PlayerLikeStateTest {
         runCurrent()
         assertEquals(false, state.state.value.liked)
         assertNull(state.state.value.error)
+        state.close()
+    }
+
+    @Test fun cloudSelectionUsesAudioIdentityButKeepsTheLogicalEntryAndCompleteSource() = runTest {
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
+        state.selectSource(cloud)
+        runCurrent()
+        assertEquals(listOf(cloud), readSources)
+        assertEquals(17L, state.state.value.songId)
+        assertEquals(cloud.key, state.state.value.sourceKey)
+        state.toggle(state.state.value)
+        runCurrent()
+        assertEquals(listOf(cloud), writeSources)
+        assertEquals(false, state.state.value.liked)
+        state.close()
+    }
+
+    @Test fun sameEntryWithDifferentCloudFileRejectsTheOldReadAndClick() = runTest {
+        val response = CompletableDeferred<Resource<Boolean>>()
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        val second = cloud.copy(songId = 20, cloudOwnerId = 89)
+        read = { if (it == 10L) withContext(NonCancellable) { response.await() } else Resource.Success(false) }
+        val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
+        state.selectSource(cloud)
+        runCurrent()
+        val stale = state.state.value
+        state.selectSource(second)
+        runCurrent()
+        response.complete(Resource.Success(true))
+        runCurrent()
+        assertEquals(17L, state.state.value.songId)
+        assertEquals(second.key, state.state.value.sourceKey)
+        assertEquals(false, state.state.value.liked)
+        state.toggle(stale)
+        runCurrent()
+        assertTrue(writes.isEmpty())
+        state.close()
+    }
+
+    @Test fun replacingOnlyCloudFileOwnerReloadsWithoutReusingTheOldFavoriteState() = runTest {
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
+        state.selectSource(cloud)
+        runCurrent()
+        val stale = state.state.value
+        state.selectSource(cloud.copy(cloudOwnerId = 89))
+        assertNull(state.state.value.liked)
+        runCurrent()
+        state.toggle(stale)
+        runCurrent()
+        assertEquals(listOf(cloud, cloud.copy(cloudOwnerId = 89)), readSources)
+        assertTrue(writes.isEmpty())
+        state.close()
+    }
+
+    @Test fun foreignCloudAccountsNeverReadOrWriteAndOwnedReauthorizationCanReload() = runTest {
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
+        state.selectSource(cloud.copy(accountId = 2))
+        runCurrent()
+        state.toggle(state.state.value)
+        runCurrent()
+        assertTrue(reads.isEmpty())
+        assertTrue(writes.isEmpty())
+        assertFalse(state.state.value.busy)
+        state.selectSource(cloud)
+        runCurrent()
+        val stale = state.state.value
+        sessions.invalidate()
+        assertNull(state.state.value.liked)
+        state.toggle(stale)
+        runCurrent()
+        assertEquals(listOf(cloud, cloud), readSources)
+        assertTrue(writes.isEmpty())
+        identity = SessionIdentity(2, true, false)
+        sessions.invalidate()
+        runCurrent()
+        assertNull(state.state.value.liked)
+        assertEquals(2, reads.size)
+        assertFalse(state.state.value.busy)
+        state.close()
+    }
+
+    @Test fun malformedCloudIdentityClearsWithoutDispatchingOrFallingBackToEntryId() = runTest {
+        val state = PlayerLikeState(backgroundScope, sessions, source, changes::add)
+        state.select(10)
+        runCurrent()
+        state.selectSource(SongSourceIdentity(20, 88, 0, 17))
+        runCurrent()
+        assertNull(state.state.value.songId)
+        assertNull(state.state.value.sourceKey)
+        assertNull(state.state.value.liked)
+        assertEquals(1, reads.size)
         state.close()
     }
 }

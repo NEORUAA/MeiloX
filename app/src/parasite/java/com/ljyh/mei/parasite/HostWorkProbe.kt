@@ -17,7 +17,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 
-/** Explicit debug commands: closed work substitutes or a read-only cloud lyric check. */
+/** Explicit debug commands: closed work substitutes or read-only cloud checks. */
 internal class HostWorkProbeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!BuildConfig.PARASITE_WORK_PROBE || intent.action != ACTION) return
@@ -31,6 +31,17 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "cloud_favorite_read" -> kotlinx.coroutines.runBlocking {
+                        val snapshot = com.ljyh.mei.playback.PlaybackPersistence(owner).load()
+                        val key = checkNotNull(snapshot?.items?.singleOrNull()?.sourceKey)
+                        val source = com.ljyh.mei.data.model.SongSourceIdentity.fromKey(key)
+                        check(source.isCloud)
+                        val session = AppGraph.component.sessions().snapshot()
+                        source.requireAccount(session.identity)
+                        AppGraph.component.songFavorites().isLiked(source, session)
+                        AppGraph.component.sessions().requireCurrent(session)
+                        report("cloud_favorite_read_passed source_owned=true session_unchanged=true no_mutation=true")
+                    }
                     "cloud_lyric_read" -> kotlinx.coroutines.runBlocking {
                         val snapshot = com.ljyh.mei.playback.PlaybackPersistence(owner).load()
                         val key = checkNotNull(snapshot?.items?.singleOrNull()?.sourceKey)
@@ -82,6 +93,9 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 }
             } catch (error: Exception) {
                 report("work_probe_failed type=${error.javaClass.simpleName}")
+                if (command == "cloud_favorite_read") error.stackTrace.take(8).forEach { frame ->
+                    report("cloud_favorite_probe_frame=${frame.className}.${frame.methodName}:${frame.lineNumber}")
+                }
             } finally { pending.finish() }
         }, "MeiloX-work-probe").start()
     }

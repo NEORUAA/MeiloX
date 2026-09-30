@@ -1,10 +1,12 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.api.SongLike
 import com.ljyh.mei.data.model.api.SongLikeIds
 import com.ljyh.mei.data.model.api.SongLikeResult
 import com.ljyh.mei.data.repository.SongFavoritesBackend
 import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStore
 import java.io.IOException
 import javax.inject.Inject
@@ -21,29 +23,38 @@ internal class HostSongFavoritesBackend @Inject constructor(
 ) : SongFavoritesBackend {
     private val api = retrofit.create(HostSongFavoritesApi::class.java)
 
-    override suspend fun isLiked(id: Long, owner: SessionStamp): Boolean {
+    override suspend fun isLiked(source: SongSourceIdentity, owner: SessionStamp): Boolean {
+        source.requireAccount(owner.identity)
+        requireOwner(owner)
         val response = api.snapshot(owner)
         currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(owner)
+        requireOwner(owner)
         check(response.code == 200) { "Official liked songs failed (${response.code})" }
         val ids = response.ids.orEmpty()
         check(ids.all { it > 0 }) { "Invalid official liked song identity" }
-        return id in ids
+        return source.songId in ids
     }
 
-    override suspend fun setLiked(id: Long, liked: Boolean, owner: SessionStamp): Boolean {
-        val response = api.update(SongLike(id, liked), owner)
+    override suspend fun setLiked(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Boolean {
+        source.requireAccount(owner.identity)
+        requireOwner(owner)
+        val response = api.update(SongLike(source.songId, liked, source.cloudOwnerId), owner)
         currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(owner)
+        requireOwner(owner)
         return when (response.code) {
             200 -> {
                 check((response.playlistId ?: 0) > 0) { "Missing official liked playlist" }
                 liked
             }
             // A completed host operation may still need an authoritative state read.
-            502, 404 -> isLiked(id, owner)
+            502, 404 -> isLiked(source, owner)
             else -> throw IOException("Official song like failed (${response.code})")
         }
+    }
+
+    private fun requireOwner(owner: SessionStamp) {
+        sessions.requireCurrent(owner)
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
     }
 }
 

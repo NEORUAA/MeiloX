@@ -28,6 +28,7 @@ interface AppComponent : RuntimeComponent {
     fun account(): AccountStore
     fun apiService(): ApiService
     fun songLyrics(): com.ljyh.mei.data.repository.SongLyricBackend
+    fun songFavorites(): com.ljyh.mei.data.repository.SongFavoritesBackend
     fun downloadSources(): com.ljyh.mei.playback.DownloadSourceBackend
     fun eapiService(): EApiService
     fun weapiService(): WeApiService

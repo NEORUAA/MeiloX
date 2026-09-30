@@ -445,8 +445,8 @@ class CloudLyricOwnershipDeviceTest {
         }
         private val weApi = proxy(WeApiService::class.java) { _, _ -> error("Unexpected legacy request") }
         private val favorites = object : SongFavoritesBackend {
-            override suspend fun isLiked(id: Long, owner: SessionStamp) = error("Unexpected favorite read")
-            override suspend fun setLiked(id: Long, liked: Boolean, owner: SessionStamp) = error("Unexpected favorite write")
+            override suspend fun isLiked(source: SongSourceIdentity, owner: SessionStamp) = error("Unexpected favorite read")
+            override suspend fun setLiked(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp) = error("Unexpected favorite write")
         }
         private val amClient = OkHttpClient.Builder().addInterceptor { chain ->
             amPaths += chain.request().url.encodedPath

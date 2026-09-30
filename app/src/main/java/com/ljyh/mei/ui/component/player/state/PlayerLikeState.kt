@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.state
 
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlayerLikeSource
 import com.ljyh.mei.data.session.SessionStore
@@ -24,6 +25,7 @@ data class PlayerLikeSnapshot(
     val liked: Boolean? = null,
     val busy: Boolean = false,
     val error: String? = null,
+    val sourceKey: String? = null,
 )
 
 /** Owns the original player's favorite control, independently of lyrics and playback. */
@@ -34,7 +36,7 @@ internal class PlayerLikeState(
     private val onChanged: (SessionStamp) -> Unit,
 ) : Closeable {
     private val lock = Any()
-    private var selectedId: Long? = null
+    private var selectedSource: SongSourceIdentity? = null
     private var revision = 0L
     private var request: Job? = null
     private val mutableState = MutableStateFlow(PlayerLikeSnapshot())
@@ -58,10 +60,14 @@ internal class PlayerLikeState(
     }
 
     fun select(songId: Long?) {
-        val id = songId?.takeIf { it > 0 }
+        selectSource(songId?.takeIf { it > 0 }?.let { SongSourceIdentity(it) })
+    }
+
+    fun selectSource(source: SongSourceIdentity?) {
+        val valid = source?.takeIf { runCatching { it.key }.isSuccess }
         synchronized(lock) {
-            if (selectedId == id) return
-            selectedId = id
+            if (selectedSource == valid) return
+            selectedSource = valid
             clear()
         }
         load()
@@ -69,7 +75,8 @@ internal class PlayerLikeState(
 
     private fun clear() {
         request?.cancel()
-        mutableState.value = PlayerLikeSnapshot(songId = selectedId, revision = ++revision)
+        mutableState.value = PlayerLikeSnapshot(songId = selectedSource?.entryId,
+            sourceKey = selectedSource?.key, revision = ++revision)
     }
 
     private fun load(notifyFailure: Boolean = false) {
@@ -87,21 +94,25 @@ internal class PlayerLikeState(
             sessions.withCurrent(owner) {
                 synchronized(lock) {
                     clear()
+                    val allowed = owner.identity.authenticated && !owner.identity.anonymous &&
+                        owner.identity.userId > 0 && runCatching {
+                            selectedSource?.requireAccount(owner.identity)
+                        }.isSuccess
                     state.value.copy(
                         owner = owner,
-                        busy = selectedId != null && owner.identity.authenticated,
-                        error = if (selectedId != null && !owner.identity.authenticated) "请先登录网易云" else null,
+                        busy = selectedSource != null && allowed,
+                        error = if (selectedSource != null && !allowed) "Sign-in or current cloud source required" else null,
                     ).also { mutableState.value = it }
                 }
             }
         }.getOrElse { return }
-        val id = selection.songId ?: return
-        if (!owner.identity.authenticated) {
+        val song = selection.sourceKey?.let { SongSourceIdentity.fromKey(it) } ?: return
+        if (selection.error != null) {
             if (notifyFailure) mutableMessages.tryEmit("请先登录网易云")
             return
         }
         request = scope.launch {
-            val result = fetch { source.checkSongLike(id, owner) }
+            val result = fetch { source.checkSongLike(song, owner) }
             publish(selection) {
                 resultState(it, result).also { next ->
                     if (notifyFailure && next.error != null) mutableMessages.tryEmit("读取收藏状态失败，请重试")
@@ -113,11 +124,12 @@ internal class PlayerLikeState(
     fun toggle(expected: PlayerLikeSnapshot) {
         if (sessions.recoveryRequired.value) return
         val owner = expected.owner ?: return
-        val id = expected.songId ?: return
+        val song = expected.sourceKey?.let { SongSourceIdentity.fromKey(it) } ?: return
         val accepted = runCatching {
             sessions.withCurrent(owner) {
                 synchronized(lock) {
-                    if (state.value != expected || expected.busy) false
+                    if (state.value != expected || expected.busy ||
+                        runCatching { song.requireAccount(owner.identity) }.isFailure) false
                     else {
                         mutableState.value = expected.copy(busy = true, error = null)
                         true
@@ -133,7 +145,7 @@ internal class PlayerLikeState(
             return
         }
         request = scope.launch {
-            val result = fetch { source.like(id, !previous, owner) }
+            val result = fetch { source.like(song, !previous, owner) }
             if (result is Resource.Success) runCatching { onChanged(owner) }
             publish(expected) {
                 resultState(it, result).also { next ->
@@ -168,7 +180,8 @@ internal class PlayerLikeState(
             sessions.withCurrent(owner) {
                 synchronized(lock) {
                     val current = state.value
-                    if (current.revision == expected.revision && current.owner == owner && current.songId == expected.songId) {
+                    if (current.revision == expected.revision && current.owner == owner &&
+                        current.sourceKey == expected.sourceKey) {
                         mutableState.value = update(current)
                     }
                 }

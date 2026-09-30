@@ -1,6 +1,7 @@
 package com.ljyh.mei.data.repository
 
 import com.ljyh.mei.data.model.Lyric
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.GetIntelligence
 import com.ljyh.mei.data.model.api.GetLyric
@@ -18,6 +19,7 @@ import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import android.util.Base64
 import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -36,6 +38,8 @@ import kotlin.coroutines.resume
 internal interface PlayerLikeSource {
     suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean>
     suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean>
+    suspend fun checkSongLike(source: SongSourceIdentity, owner: SessionStamp): Resource<Boolean>
+    suspend fun like(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Resource<Boolean>
 }
 
 class PlayerRepository(
@@ -147,12 +151,15 @@ class PlayerRepository(
 
 
     override suspend fun like(id: Long, liked: Boolean, owner: SessionStamp): Resource<Boolean> =
+        like(SongSourceIdentity(id), liked, owner)
+
+    override suspend fun like(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Resource<Boolean> =
         withContext(Dispatchers.IO) {
             safeApiCall {
-                requireLikeOwner(id, owner)
-                favorites.setLiked(id, liked, owner).also {
+                requireLikeOwner(source, owner)
+                favorites.setLiked(source, liked, owner).also {
                     currentCoroutineContext().ensureActive()
-                    sessions.requireCurrent(owner)
+                    requireLikeOwner(source, owner)
                 }
             }
         }
@@ -227,19 +234,23 @@ class PlayerRepository(
     }
 
     override suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean> =
-        withContext(Dispatchers.IO) { safeApiCall { readLike(id, owner) } }
+        checkSongLike(SongSourceIdentity(id), owner)
 
-    private suspend fun readLike(id: Long, owner: SessionStamp): Boolean {
-        requireLikeOwner(id, owner)
-        return favorites.isLiked(id, owner).also {
+    override suspend fun checkSongLike(source: SongSourceIdentity, owner: SessionStamp): Resource<Boolean> =
+        withContext(Dispatchers.IO) { safeApiCall { readLike(source, owner) } }
+
+    private suspend fun readLike(source: SongSourceIdentity, owner: SessionStamp): Boolean {
+        requireLikeOwner(source, owner)
+        return favorites.isLiked(source, owner).also {
             currentCoroutineContext().ensureActive()
-            sessions.requireCurrent(owner)
+            requireLikeOwner(source, owner)
         }
     }
 
-    private fun requireLikeOwner(id: Long, owner: SessionStamp) {
-        require(id > 0)
+    private fun requireLikeOwner(source: SongSourceIdentity, owner: SessionStamp) {
+        source.requireAccount(owner.identity)
         check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
         sessions.requireCurrent(owner)
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
     }
 }

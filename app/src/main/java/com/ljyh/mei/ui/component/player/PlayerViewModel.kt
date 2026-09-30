@@ -11,6 +11,7 @@ import com.ljyh.mei.constants.DownloadQualityKey
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.Intelligence
 import com.ljyh.mei.data.model.qq.u.SearchResult
@@ -76,7 +77,9 @@ class PlayerViewModel @Inject constructor(
 
     fun selectLikeSong(metadata: MediaMetadata?) {
         mediaMetadata = metadata
-        favorites.select(metadata?.takeUnless { it.isPodcast || it.isLocal }?.id)
+        favorites.selectSource(metadata?.takeUnless { it.isPodcast || it.isLocal }?.let {
+            (it.source ?: SongSourceIdentity(it.id)).takeIf { source -> source.entryId == it.id }
+        })
     }
 
     fun like(expected: PlayerLikeSnapshot) = favorites.toggle(expected)

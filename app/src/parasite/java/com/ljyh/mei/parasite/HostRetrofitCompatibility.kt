@@ -12,9 +12,12 @@ import kotlin.coroutines.Continuation
 
 /** Restore omitted continuation annotation slots observed when module DEX runs in the TV host. */
 internal object HostRetrofitCompatibility {
+    internal val services = setOf(ApiService::class.java, WeApiService::class.java, EApiService::class.java,
+        MeloXDirectService::class.java, AudioMatchService::class.java, QQMusicUApiService::class.java,
+        HostSongFavoritesApi::class.java, HostPlaylistTracksApi::class.java, HostPlaylistCollectionApi::class.java,
+        HostCatalogCollectionApi::class.java, HostDownloadApi::class.java)
+
     fun install(module: XposedModule, report: (String) -> Unit) {
-        val services = setOf(ApiService::class.java, WeApiService::class.java, EApiService::class.java,
-            MeloXDirectService::class.java, AudioMatchService::class.java, QQMusicUApiService::class.java)
         module.hook(Method::class.java.getMethod("getParameterAnnotations")).intercept { chain ->
             val result = chain.proceed()
             val method = chain.thisObject as Method

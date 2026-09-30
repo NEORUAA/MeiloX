@@ -1,5 +1,6 @@
 package com.ljyh.mei.data.repository
 
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.QQMusicUApiService
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
@@ -23,6 +24,7 @@ class PlayerLikesTest {
     private var afterCall: () -> Unit = {}
     private val reads = mutableListOf<Pair<Long, SessionStamp>>()
     private val writes = mutableListOf<Pair<Long, Boolean>>()
+    private val sources = mutableListOf<SongSourceIdentity>()
     private inline fun <reified T> unused(): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
     ) { _, _, _ -> error("Unexpected direct request") } as T
@@ -38,6 +40,14 @@ class PlayerLikesTest {
                 assertEquals(sessions.snapshot(), owner)
                 writes += id to liked
                 return write(liked).also { afterCall() }
+            }
+            override suspend fun isLiked(source: SongSourceIdentity, owner: SessionStamp): Boolean {
+                sources += source
+                return isLiked(source.songId, owner)
+            }
+            override suspend fun setLiked(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Boolean {
+                sources += source
+                return setLiked(source.songId, liked, owner)
             }
         })
 
@@ -93,5 +103,39 @@ class PlayerLikesTest {
         afterCall = { throw CancellationException() }
         assertTrue(runCatching { repository.like(10, true, owner) }.exceptionOrNull() is CancellationException)
         assertTrue(runCatching { repository.checkSongLike(10, owner) }.exceptionOrNull() is CancellationException)
+    }
+
+    @Test fun cloudFavoritesRetainAudioFileOwnerAndAccountRatherThanOnlyTheEntry() = runBlocking {
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        assertEquals(Resource.Success(true), repository.checkSongLike(cloud, owner))
+        assertEquals(Resource.Success(false), repository.like(cloud, false, owner))
+        assertEquals(listOf(cloud, cloud), sources)
+        assertEquals(listOf(10L to owner), reads)
+        assertEquals(listOf(10L to false), writes)
+    }
+
+    @Test fun foreignAndMalformedCloudSourcesDoNotDispatch() = runBlocking {
+        for (cloud in listOf(SongSourceIdentity(10, 88, 2, 17), SongSourceIdentity(10, 88, 0, 17),
+            SongSourceIdentity(0, 88, 1, 17), SongSourceIdentity(10, 0, 1, 17))) {
+            assertTrue(repository.checkSongLike(cloud, owner) is Resource.Error)
+            assertTrue(repository.like(cloud, true, owner) is Resource.Error)
+        }
+        assertTrue(sources.isEmpty())
+        assertTrue(reads.isEmpty())
+        assertTrue(writes.isEmpty())
+    }
+
+    @Test fun pendingRecoveryStopsDispatchAndRejectsResultsEvenWithoutAGenerationChange() = runBlocking {
+        val cloud = SongSourceIdentity(10, 88, 1, 17)
+        sessions.setRecoveryRequired(true)
+        assertTrue(repository.checkSongLike(cloud, owner) is Resource.Error)
+        assertTrue(repository.like(cloud, true, owner) is Resource.Error)
+        assertTrue(sources.isEmpty())
+        sessions.setRecoveryRequired(false)
+        afterCall = { sessions.setRecoveryRequired(true) }
+        assertTrue(repository.checkSongLike(cloud, owner) is Resource.Error)
+        sessions.setRecoveryRequired(false)
+        assertTrue(repository.like(cloud, true, owner) is Resource.Error)
+        assertEquals(listOf(cloud, cloud), sources)
     }
 }

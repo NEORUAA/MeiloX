@@ -21,6 +21,21 @@ import org.junit.Test
 class StandaloneLiveReadDeviceTest {
     private val arguments get() = InstrumentationRegistry.getArguments()
 
+    @Test fun privateCloudFavoritesReadTheAudioUnderTheExistingCookieAccount() = liveRead { owner ->
+        android.util.Log.i("MeiloX-live-read", "cloud_favorites_phase=library")
+        val sessions = AppGraph.component.standaloneSessions()
+        val calls = StandaloneTransport(sessions).business
+        val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
+        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner).songs.firstOrNull()
+        assumeTrue("The account has no cloud entries", song != null)
+        val source = requireNotNull(song?.source)
+        source.requireAccount(owner.identity)
+        android.util.Log.i("MeiloX-live-read", "cloud_favorites_phase=favorite")
+        AppGraph.component.songFavorites().isLiked(source, owner)
+        android.util.Log.i("MeiloX-live-read", "cloud_favorites_phase=complete no_mutation=true")
+        // Either boolean is valid. No favorite toggle, playlist write or credential output.
+    }
+
     @Test fun privateCloudLyricsUseTheSourceOwnerWithoutCatalogFallback() = liveRead { owner ->
         val sessions = AppGraph.component.standaloneSessions()
         val calls = StandaloneTransport(sessions).business

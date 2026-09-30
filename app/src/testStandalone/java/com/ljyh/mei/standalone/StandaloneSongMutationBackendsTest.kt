@@ -2,6 +2,7 @@ package com.ljyh.mei.standalone
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.session.SessionCallFactory
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
@@ -67,6 +68,47 @@ class StandaloneSongMutationBackendsTest {
         }
         assertEquals(5, wire.originals.size)
         assertTrue(wire.originals.all { it.url.encodedPath == "/api/radio/like" })
+    }
+
+    @Test fun cloudFavoritesKeepCookieRoutesButUseAudioRatherThanTheEntryId() = runBlocking {
+        val wire = fixture()
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        val owner = wire.sessions.snapshot()
+        wire.response = { """{"code":200,"ids":[999],"playlistId":100}""" }
+        assertTrue(wire.favorites.isLiked(source, owner))
+        assertEquals("/api/song/like/check", wire.originals.last().url.encodedPath)
+        assertEquals(JsonParser.parseString("""{"trackIds":"[999]"}"""), wire.bodies.last())
+        for (liked in listOf(true, false)) {
+            assertEquals(liked, wire.favorites.setLiked(source, liked, owner))
+            assertEquals("/api/radio/like", wire.originals.last().url.encodedPath)
+            assertEquals(owner, wire.originals.last().tag(SessionStamp::class.java))
+            assertEquals(JsonParser.parseString("""{"alg":"itembased","trackId":"999","like":$liked,"time":"3"}"""),
+                wire.bodies.last())
+        }
+    }
+
+    @Test fun cloudEntryCollisionIsNotAConfirmedFavorite() = runBlocking {
+        val wire = fixture()
+        wire.response = { """{"code":200,"ids":[17]}""" }
+        assertTrue(runCatching {
+            wire.favorites.isLiked(SongSourceIdentity(999, 88, 7, 17), wire.sessions.snapshot())
+        }.isFailure)
+    }
+
+    @Test fun invalidForeignAndStaleCloudFavoritesDoNotReachCookieSigning() = runBlocking {
+        val wire = fixture()
+        val owner = wire.sessions.snapshot()
+        for (source in listOf(SongSourceIdentity(999, 88, 8, 17), SongSourceIdentity(999, 88, 0, 17),
+            SongSourceIdentity(0, 88, 7, 17))) {
+            assertTrue(runCatching { wire.favorites.isLiked(source, owner) }.isFailure)
+            assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.isFailure)
+        }
+        wire.sessions.invalidate()
+        val source = SongSourceIdentity(999, 88, 7, 17)
+        assertTrue(runCatching { wire.favorites.isLiked(source, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(wire.originals.isEmpty())
+        assertTrue(wire.signed.isEmpty())
     }
 
     @Test fun playlistTrackChangesUseTheOriginalRouteAndImmeWithoutReverse() = runBlocking {

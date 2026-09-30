@@ -1,6 +1,7 @@
 package com.ljyh.mei.parasite
 
 import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.di.RetrofitModule
 import com.ljyh.mei.runtime.RuntimeBackendModule
@@ -70,6 +71,69 @@ class HostSongMutationBackendsTest {
         val wire = Wire()
         wire.response = { wire.bridge.sessions.invalidate(); """{"code":502}""" }
         assertTrue(runCatching { wire.favorites.setLiked(10, true, wire.bridge.sessions.snapshot()) }.exceptionOrNull() is IOException)
+        assertEquals(listOf("song/like"), wire.requests.map { it.first })
+    }
+
+    @Test fun cloudFavoriteWritesUseTheAudioAndFileOwnerNotTheEntryOrAccount() = runBlocking {
+        val wire = Wire()
+        val source = SongSourceIdentity(999, 88, 1, 17)
+        wire.response = { """{"code":200,"playlistId":100}""" }
+        for (liked in listOf(true, false)) {
+            assertEquals(liked, wire.favorites.setLiked(source, liked, wire.bridge.sessions.snapshot()))
+            assertEquals("song/like" to mapOf("trackId" to "999", "like" to liked.toString(), "userid" to "88"),
+                wire.requests.last())
+        }
+    }
+
+    @Test fun cloudSnapshotAndDuplicateWriteReconciliationUseTheAudioId() = runBlocking {
+        for (code in listOf(502, 404)) {
+            val wire = Wire()
+            val source = SongSourceIdentity(999, 88, 1, 17)
+            wire.response = { path -> if (path == "song/like") """{"code":$code}"""
+                else """{"code":200,"ids":[17]}""" }
+            assertFalse(wire.favorites.isLiked(source, wire.bridge.sessions.snapshot()))
+            assertFalse(wire.favorites.setLiked(source, true, wire.bridge.sessions.snapshot()))
+            assertEquals(listOf("song/like/get", "song/like", "song/like/get"), wire.requests.map { it.first })
+            wire.response = { """{"code":200,"ids":[999]}""" }
+            assertTrue(wire.favorites.isLiked(source, wire.bridge.sessions.snapshot()))
+        }
+    }
+
+    @Test fun foreignMalformedAndStaleCloudFavoritesCannotDispatch() = runBlocking {
+        val wire = Wire()
+        val owner = wire.bridge.sessions.snapshot()
+        for (source in listOf(SongSourceIdentity(999, 88, 2, 17), SongSourceIdentity(999, 88, 0, 17),
+            SongSourceIdentity(0, 88, 1, 17))) {
+            assertTrue(runCatching { wire.favorites.isLiked(source, owner) }.isFailure)
+            assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.isFailure)
+        }
+        wire.bridge.sessions.invalidate()
+        val source = SongSourceIdentity(999, 88, 1, 17)
+        assertTrue(runCatching { wire.favorites.isLiked(source, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(wire.requests.isEmpty())
+    }
+
+    @Test fun cloudAccountChangeAfterWriteCannotDispatchReconciliation() = runBlocking {
+        val wire = Wire()
+        wire.response = { wire.bridge.sessions.invalidate(); """{"code":502}""" }
+        assertTrue(runCatching {
+            wire.favorites.setLiked(SongSourceIdentity(999, 88, 1, 17), true, wire.bridge.sessions.snapshot())
+        }.exceptionOrNull() is IOException)
+        assertEquals(listOf("song/like"), wire.requests.map { it.first })
+    }
+
+    @Test fun pendingRecoveryCannotDispatchOrReconcileCloudFavorites() = runBlocking {
+        val wire = Wire()
+        val owner = wire.bridge.sessions.snapshot()
+        val source = SongSourceIdentity(999, 88, 1, 17)
+        wire.bridge.sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { wire.favorites.isLiked(source, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.exceptionOrNull() is SessionChangedException)
+        assertTrue(wire.requests.isEmpty())
+        wire.bridge.sessions.setRecoveryRequired(false)
+        wire.response = { wire.bridge.sessions.setRecoveryRequired(true); """{"code":502}""" }
+        assertTrue(runCatching { wire.favorites.setLiked(source, true, owner) }.exceptionOrNull() is IOException)
         assertEquals(listOf("song/like"), wire.requests.map { it.first })
     }
 
