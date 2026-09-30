@@ -96,7 +96,10 @@ internal class DownloadWorkerFixture(
         HostDownloadSourceBackend(Retrofit.Builder().baseUrl("https://music.163.com/").callFactory(HostCallFactory(requests))
             .addConverterFactory(GsonConverterFactory.create()).build(), sessions),
         client = { request -> syntheticCall(request) },
-        lyric = { _, _ -> "[00:00.00]Synthetic qualification" }, cover = { null },
+        lyric = { sourceKey, _ ->
+            check(sourceKey == (cloudSource?.key ?: songId))
+            "[00:00.00]Synthetic qualification"
+        }, cover = { null },
         publication = publication,
         notification = if (captureNotifications) { title, progress, ongoing -> notifications += Triple(title, progress, ongoing); Unit } else null,
         notifications = DownloadNotifications.qualification,

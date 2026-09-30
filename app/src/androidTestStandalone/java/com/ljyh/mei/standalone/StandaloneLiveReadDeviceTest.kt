@@ -21,6 +21,17 @@ import org.junit.Test
 class StandaloneLiveReadDeviceTest {
     private val arguments get() = InstrumentationRegistry.getArguments()
 
+    @Test fun privateCloudLyricsUseTheSourceOwnerWithoutCatalogFallback() = liveRead { owner ->
+        val sessions = AppGraph.component.standaloneSessions()
+        val calls = StandaloneTransport(sessions).business
+        val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
+        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner).songs.firstOrNull()
+        assumeTrue("The account has no cloud entries", song != null)
+        val result = AppGraph.component.songLyrics().lyrics(requireNotNull(song?.source).key, owner)
+        assertEquals("Cloud lyric read was not accepted", 200, result.code)
+        // Empty/no-lyric responses are valid; do not log private lyric text or mutate the account.
+    }
+
     @Test fun privateCloudSourcesUseTheCapturedAccountAndOriginalPlayerDownloadPolicy() = liveRead { owner ->
         val sessions = AppGraph.component.standaloneSessions()
         val calls = StandaloneTransport(sessions).business

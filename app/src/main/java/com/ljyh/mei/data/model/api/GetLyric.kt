@@ -36,4 +36,10 @@ data class GetLyricV1(
     val yrv: Int=0,
 )
 
+data class GetCloudLyric(
+    @SerializedName("songId") val songId: Long,
+    @SerializedName("userId") val userId: Long,
+    @SerializedName("kv") val kv: Int = 0,
+    @SerializedName("lv") val lv: Int = 0,
+)
 

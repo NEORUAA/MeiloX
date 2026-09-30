@@ -17,7 +17,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 
-/** Explicit debug commands only. No network, user media, credentials or account mutations. */
+/** Explicit debug commands: closed work substitutes or a read-only cloud lyric check. */
 internal class HostWorkProbeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!BuildConfig.PARASITE_WORK_PROBE || intent.action != ACTION) return
@@ -31,6 +31,15 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "cloud_lyric_read" -> kotlinx.coroutines.runBlocking {
+                        val snapshot = com.ljyh.mei.playback.PlaybackPersistence(owner).load()
+                        val key = checkNotNull(snapshot?.items?.singleOrNull()?.sourceKey)
+                        check(com.ljyh.mei.data.model.SongSourceIdentity.fromKey(key).isCloud)
+                        val session = AppGraph.component.sessions().snapshot()
+                        val result = AppGraph.component.songLyrics().lyrics(key, session)
+                        report("cloud_lyric_read_passed code=${result.code} lrc_present=${!result.lrc?.lyric.isNullOrBlank()} " +
+                            "karaoke_present=${!result.klyric?.lyric.isNullOrBlank()} no_download_grant=true")
+                    }
                     "foreground_enqueue", "foreground_bind", "foreground_status", "foreground_cancel_first",
                     "foreground_cancel", "foreground_cleanup" -> HostForegroundProbe.command(owner, command)
                     "download_enqueue", "download_enqueue_pair", "download_status", "download_cancel", "download_cleanup",

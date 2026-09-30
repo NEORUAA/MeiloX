@@ -78,6 +78,7 @@ class StandaloneDownloadWorkerDeviceTest {
         dao.insert(requireNotNull(dao.getBySongId("1")).copy(sourceKey = source.key))
         assertEquals(ListenableWorker.Result.success(), worker(fixture, id).doWork())
         assertEquals(listOf("[\"999_88\"]"), fixture.sourceIds)
+        assertEquals(listOf(source.key), fixture.lyricKeys)
         assertEquals(DownloadStatus.COMPLETED, dao.getBySongId("1")?.status)
         assertEquals(source.key, dao.getBySongId("1")?.sourceKey)
         assertNotNull(fixture.db.songDao().getSong("1").first()?.path)
@@ -220,6 +221,7 @@ class StandaloneDownloadWorkerDeviceTest {
         val reads = AtomicInteger()
         var audioId = 1L
         val sourceIds = mutableListOf<String>()
+        val lyricKeys = mutableListOf<String>()
         val transfers = AtomicInteger()
         val canceled = AtomicBoolean()
         val publication = DownloadPublication(db, AndroidDownloadMediaStore(context), context.packageName)
@@ -255,7 +257,7 @@ class StandaloneDownloadWorkerDeviceTest {
         }
         val environment = DownloadWorkerEnvironment(db, sessions,
             RuntimeBackendModule.downloadSources(StandaloneDownloadSourceBackend(RetrofitModule.provideRetrofit(calls), sessions)),
-            client = { request -> mediaCall(request) }, lyric = { _, _ -> null }, cover = { null },
+            client = { request -> mediaCall(request) }, lyric = { key, _ -> lyricKeys += key; null }, cover = { null },
             publication = publication, notification = { _, _, _ -> },
         )
         fun temp(id: UUID) = File(context.cacheDir, "download/$id.wav")

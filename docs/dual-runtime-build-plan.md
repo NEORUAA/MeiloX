@@ -931,6 +931,50 @@ Local evidence: `/tmp/meilox-cloud-source-reviewed-validation.log`,
 `/tmp/meilox-cloud-source-cache.db`. None are committed; no credential or signed URL
 is printed as evidence.
 
+### D1/D4 Checkpoint: Source-Aware Cloud Lyric Requests and Worker Preparation (2026-10-01)
+
+- Implemented shared `SongLyricBackend` over the selected runtime transport. Catalog
+  V1 keeps its body; private-cloud lyrics use the audio/file-owner identity, explicit
+  captured session and flat-string response adapter. Native `404` is no lyrics; null
+  fields are not pure music, and malformed/denied/network/stale results cannot fall
+  back to a catalog ID or another session. API-021 records the official difference.
+- Repository calls use the adapter. Both Workers now forward the durable full source
+  key to embedded-lyric preparation; AMLL uses the audio identity and official fallback
+  keeps file/account affinity. Native cloud karaoke is retained separately rather than
+  relabeled YRC. No screen, layout, resource or navigation change is part of this work.
+- Full paired JVM suites pass 697 standalone and 756 parasite cases (1,453 total),
+  zero failures/errors/skips. Debug/instrumentation builds pass; 17 selected standalone
+  and 14 parasite device tests pass against closed sources and private media fixtures.
+  Coverage includes exact cloud Retrofit parameters, session rejection and both actual
+  Worker implementations receiving the persisted key for lyric preparation.
+- One new standalone read-only cloud-lyric test passes using the isolated debug's
+  existing Cookie account. A gated host read on the user's persisted cloud queue also
+  passes through the official session/request bridge, with no LRC/karaoke text present.
+  No lyric upload, download grant/quota, real media tagging, login/logout, account change
+  or social write was used. The accepted TV-owned publication remains 22,705,573 bytes.
+- Both unsigned R8 releases build and pass 16 KB ZIP alignment; production identities
+  and parasite-only API 102 metadata remain correct. The normal debug/release host flags
+  disable the qualification command. Build/package proof is not release-device proof.
+- Reinstalled the normal probe-disabled module and cold-started the original TV
+  launcher: portrait authenticated MeiloX Home and the one-entry cloud queue restore
+  with the player paused at 78,338 ms. The official player remains inactive, the emulator
+  remains awake and the new host PID has no crash-buffer entries. Both release DEXes
+  retain all four typed cloud-lyric fields and their runtime Gson annotations.
+- The source-aware request/Worker portion is implemented, not the complete display
+  feature. Current/preloaded lyric state, memory/Room/QQ cache affinity, System Lyrics
+  publication, native karaoke timing/parser integration and real text rendering remain
+  open. The shared numeric-entry consumers have not been declared cloud-complete.
+  D1/D4/D5/D6 and the overall goal remain active; no feature is hidden as a substitute.
+
+Local evidence: `/tmp/meilox-cloud-lyric-verified-debug.log`,
+`/tmp/meilox-cloud-lyric-standalone-device.log`,
+`/tmp/meilox-cloud-lyric-parasite-device.log`,
+`/tmp/meilox-cloud-lyric-standalone-live.log`,
+`/tmp/meilox-cloud-lyric-host-read.log`, `/tmp/meilox-cloud-lyric-release.log`,
+`/tmp/meilox-cloud-lyric-final-debug.log` and `/tmp/meilox-cloud-lyric-final-home.png`.
+No generated artifact, device log, credential
+or private lyric content is committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

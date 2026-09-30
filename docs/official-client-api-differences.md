@@ -614,6 +614,8 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   library-ID mapping, private-cloud identities returned by other catalog endpoints,
   real account switching and complete AutoMix/effects/release-runtime acceptance remain
   separate work. Playing this one uploaded entry does not complete the cloud feature.
+  API-021 subsequently implements source-aware lyric requests and Worker propagation;
+  rendered/current/preloaded lyric state ownership still needs its own acceptance.
 
 ### API-016: Playback Reports Use the Native Official SDK
 
@@ -1287,6 +1289,52 @@ These are integration differences, not server API semantics.
   as confirmed by the user; that was not a read failure. The user then manually uploaded
   one entry, which rendered and played on the AVD. No upload/delete request was performed
   by the agent and no Cookie/session was copied between the two different accounts.
+
+### API-021: Private-Cloud Lyrics Have a Different Response Contract
+
+- Recorded: 2026-10-01. Ordinary MeiloX lyrics use `song/lyric/v1`, numeric `id` and
+  nested LRC/YRC/translation objects. The pinned TV cloud implementation requests
+  `cloud/lyric/get` with `songId`, `userId`, `kv=0` and `lv=0`, and reads flat `lrc`
+  and `krc` strings. Its own-cloud controller supplies the official account ID. Native
+  business `404` means no lyrics; other failures are not an empty successful lyric.
+  This analysis adds no hook using a JADX-generated alias or a new reflection target.
+- `SongLyricBackend` selects that cloud route from the previously persisted source
+  identity, retaining separate audio ID, file owner and authorization account. Own
+  sources have the captured account as file owner unless explicit metadata says otherwise.
+  Distinct file-owner/account tuples are covered by substitutes, not a real foreign-owner
+  file. Catalog V1 parameters remain unchanged. Both routes carry an explicit session
+  stamp through their already selected Cookie or official transport.
+- Cloud response parsing accepts only business `200` or explicit no-lyric `404`.
+  Missing/blank/null lyric strings remain absent; they do not prove pure music. Nested
+  catalog-shaped or malformed fields, denied/unknown status, HTTP/network failures,
+  cancellation, stale/recovery/foreign-account ownership are not no-lyric success.
+  There is no retry as a catalog song or under another session/transport. Native cloud
+  karaoke is retained in `klyric`, not mislabeled as catalog YRC or declared rendered.
+- Shared repository requests now use this adapter with one captured session. Workers
+  pass their full durable source key into embedded-lyric preparation rather than dropping
+  it to the logical entry ID. AMLL remains first and uses the audio ID; official fallback
+  preserves source affinity. Existing ordinary YRC/LRC precedence is unchanged; native
+  karaoke-only data can be retained as download text. No user-facing control/layout is
+  changed. End-to-end real cloud download/tag acceptance has not been performed.
+- All nine new shared backend cases pass in both variants. They exercise exact IDs,
+  session tags, catalog compatibility, karaoke retention, null/blank/no-lyric responses,
+  malformed/denied responses, cancellation/transport failures and late account changes.
+  Initial checked-exception injection was corrected to use the suspend continuation
+  rather than Java Proxy wrapping; production code was not changed to hide that failure.
+  An Android host substitute verifies exact route/payload plus stale-session rejection;
+  both existing closed Workers assert that the cloud key reaches lyric preparation.
+- Live read-only evidence: standalone's existing Cookie cloud account passes the new
+  opt-in lookup. An explicitly enabled debug host probe reads the persisted one-entry
+  cloud queue under the official session and returns an accepted result with no LRC or
+  karaoke text. Only result/presence booleans are logged, never identities, credentials
+  or lyric content. The probe neither uploads lyrics nor requests a download grant;
+  ordinary debug/release flags remain disabled after qualification.
+- Remaining: current/preloaded/manual-QQ/System Lyrics state and Room/in-memory cache
+  ownership must consume the complete cloud identity rather than numeric entry IDs.
+  Native cloud karaoke still needs verified parser/timing adaptation in the existing
+  merge path. Actual text/timing/rendering, real account switches, real embedded tags
+  and minified release execution are not proven by successful endpoint reads or closed
+  fixtures. This checkpoint is not full cloud-lyrics or D4/D5 acceptance.
 
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 

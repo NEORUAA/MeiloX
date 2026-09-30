@@ -27,6 +27,7 @@ import com.ljyh.mei.data.model.api.GetComment
 import com.ljyh.mei.data.model.api.GetIntelligence
 import com.ljyh.mei.data.model.api.GetLyric
 import com.ljyh.mei.data.model.api.GetLyricV1
+import com.ljyh.mei.data.model.api.GetCloudLyric
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSearch
 import com.ljyh.mei.data.model.api.GetSearchSuggest
@@ -89,6 +90,12 @@ interface ApiService {
         @Body body: GetLyricV1,
         @Tag expectedSession: SessionStamp? = null,
     ): Lyric
+
+    @POST("/api/cloud/lyric/get")
+    suspend fun getCloudLyric(
+        @Body body: GetCloudLyric,
+        @Tag expectedSession: SessionStamp,
+    ): com.google.gson.JsonObject
 
     /*
     * 获取用户歌单

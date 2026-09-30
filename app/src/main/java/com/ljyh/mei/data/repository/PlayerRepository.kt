@@ -4,7 +4,6 @@ import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.GetIntelligence
 import com.ljyh.mei.data.model.api.GetLyric
-import com.ljyh.mei.data.model.api.GetLyricV1
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.Intelligence
 import com.ljyh.mei.data.model.qq.u.GetLyricData
@@ -40,6 +39,7 @@ class PlayerRepository(
     private val weApiService: WeApiService,
     private val sessions: SessionStore,
     private val favorites: SongFavoritesBackend,
+    private val lyrics: SongLyricBackend = SongLyricBackend(apiService, sessions),
 ) : PlayerLikeSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
@@ -128,14 +128,10 @@ class PlayerRepository(
     }
 
 
-    suspend fun getLyricV1(id: String): Resource<Lyric> {
+    suspend fun getLyricV1(id: String, owner: SessionStamp = sessions.snapshot()): Resource<Lyric> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
-                apiService.getLyricV1(
-                    GetLyricV1(
-                        id = id
-                    )
-                )
+                lyrics.lyrics(id, owner)
             }
         }
     }

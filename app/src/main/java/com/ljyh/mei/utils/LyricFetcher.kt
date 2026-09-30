@@ -1,7 +1,7 @@
 package com.ljyh.mei.utils
 
 import com.ljyh.mei.data.model.Lyric
-import com.ljyh.mei.data.model.api.GetLyricV1
+import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.di.AppGraph
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.playback.requireDownloadOwner
@@ -22,20 +22,25 @@ object LyricFetcher {
         .connectionPool(DownloadWorker.getDownloadClient().connectionPool)
         .build()
 
-    suspend fun fetchBestLyric(songId: String, owner: SessionStamp): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchBestLyric(sourceKey: String, owner: SessionStamp): String? = withContext(Dispatchers.IO) {
         val sessions = AppGraph.component.sessions()
+        val source = SongSourceIdentity.fromKey(sourceKey)
+        source.requireAccount(owner.identity)
         sessions.requireDownloadOwner(owner)
-        val amll = fetchAMLL(songId)
+        val amll = fetchAMLL(source.songId.toString())
         sessions.requireDownloadOwner(owner)
         if (!amll.isNullOrBlank()) return@withContext amll
 
-        val netease = fetchNeteaseLyric(songId, owner)
+        val netease = fetchNeteaseLyric(source.key, owner)
         sessions.requireDownloadOwner(owner)
         val yrc = netease?.yrc?.lyric
         if (!yrc.isNullOrBlank()) return@withContext yrc
 
         val lrc = netease?.lrc?.lyric
         if (!lrc.isNullOrBlank()) return@withContext lrc
+
+        val karaoke = netease?.klyric?.lyric
+        if (!karaoke.isNullOrBlank()) return@withContext karaoke
 
         null
     }
@@ -59,7 +64,7 @@ object LyricFetcher {
 
     private suspend fun fetchNeteaseLyric(songId: String, owner: SessionStamp): Lyric? {
         return try {
-            AppGraph.component.apiService().getLyricV1(GetLyricV1(songId), owner)
+            AppGraph.component.songLyrics().lyrics(songId, owner)
         } catch (error: CancellationException) { throw error }
         catch (e: Exception) {
             AppGraph.component.sessions().requireDownloadOwner(owner)

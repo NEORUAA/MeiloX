@@ -138,7 +138,7 @@ open class DownloadWorker internal constructor(
         val temp = File(tempDir, "$id.${source.fileType}")
         try {
             failureTitle = "下载文件失败，请重试"
-            val lyric = async { environment.lyric(songId, owner) }
+            val lyric = async { environment.lyric(task.sourceKey.ifEmpty { songId }, owner) }
             val cover = async { if (task.songCover.isBlank()) null else environment.cover(task.songCover) }
             transferOfficialDownload(environment.client, source, temp, { requireTask(db); Unit }) { progress ->
                 check(updateTask(db, DownloadStatus.DOWNLOADING, progress) == 1)

@@ -16,6 +16,47 @@ import retrofit2.converter.gson.GsonConverterFactory
 /** Exercises the Android Retrofit boundary with a substitute backend, never the account or media store. */
 @RunWith(AndroidJUnit4::class)
 class DownloadSourceDeviceTest {
+    @Test fun privateCloudLyricsKeepTheirAudioFileOwnerAndSessionThroughTheHostTransport() = runBlocking {
+        val sessions = HostSessionBridge()
+        val requests = HostRequestBridge(sessions)
+        var calls = 0
+        var noLyrics = false
+        var invalidate = false
+        requests.bind(object : HostRequestBackend {
+            override fun sessionIdentity() = SessionIdentity(17, true, false)
+            override fun open(path: String, parameters: Map<String, String>): HostPendingRequest {
+                assertEquals("cloud/lyric/get", path)
+                assertEquals(mapOf("songId" to "999", "userId" to "88", "kv" to "0", "lv" to "0"), parameters)
+                calls++
+                return object : HostPendingRequest {
+                    override fun execute(): String {
+                        if (invalidate) sessions.invalidate()
+                        return if (noLyrics) """{"code":404}""" else """{"code":200,"lrc":"[00:01.00]Synthetic","krc":"native karaoke"}"""
+                    }
+                    override fun cancel() = Unit
+                    override fun close() = Unit
+                }
+            }
+        })
+        val api = Retrofit.Builder().baseUrl("https://music.163.com/")
+            .callFactory(HostCallFactory(requests)).addConverterFactory(GsonConverterFactory.create())
+            .build().create(ApiService::class.java)
+        val backend = com.ljyh.mei.data.repository.SongLyricBackend(api, sessions)
+        val key = com.ljyh.mei.data.model.SongSourceIdentity(999, 88, 17, 1).key
+        val owner = sessions.snapshot()
+        val lyrics = backend.lyrics(key, owner)
+        assertEquals("[00:01.00]Synthetic", lyrics.lrc?.lyric)
+        assertEquals("native karaoke", lyrics.klyric?.lyric)
+        assertNull(lyrics.yrc)
+        noLyrics = true
+        assertNull(backend.lyrics(key, owner).lrc)
+        invalidate = true
+        assertTrue(runCatching { backend.lyrics(key, owner) }.isFailure)
+        assertEquals(3, calls)
+        assertTrue(runCatching { backend.lyrics(key, owner) }.isFailure)
+        assertEquals(3, calls)
+    }
+
     @Test fun downloadLyricFallbackUsesTheOfficialTransportAndCapturedSession() = runBlocking {
         val sessions = HostSessionBridge()
         val requests = HostRequestBridge(sessions)
