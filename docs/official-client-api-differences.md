@@ -577,6 +577,16 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   and effects acceptance, and release runtime qualification. Stopping old sources is
   not a promise of synchronous removal of already-decoded audio frames. Substitute
   tests do not qualify real logout/account switching, audible quality, or server totals.
+- Standalone follow-up (2026-09-30): the Cookie-authenticated debug app played a
+  236,434 ms catalog source through its natural next-track transition. Pause retained
+  the 61,592 ms position; resume, background operation, screen-off playback and media
+  notification entry worked. The next song also resumed after changing the existing
+  quality menu from exhigh to standard without resetting its 18,615 ms position.
+  AudioFlinger identified an active, unmuted 44.1 kHz PCM track owned by standalone;
+  this is output-pipeline evidence, not confirmation of audible AVD sound or quality.
+  A new opt-in device read test verifies a matching full, non-trial playback source
+  with a usable lifetime through the actual graph's service. No download grant was
+  requested. ABI-011 records the cold-restore failure found during this qualification.
 
 ### API-016: Playback Reports Use the Native Official SDK
 
@@ -1373,8 +1383,21 @@ These are integration differences, not server API semantics.
   playback, release runtime or listening-history/statistics acceptance.
 - Follow-up (2026-09-30): after the user supplied standalone login credentials, the
   native smoke test passed on the API 37, 16 KB AVD. Packaged Zstd compress/decompress
-  and NCBL envelope encoding are now device-qualified. No reporting request or music
-  playback was performed; upload/server statistics and release runtime remain open.
+  and NCBL envelope encoding are now device-qualified. That checkpoint did not perform
+  reporting requests or music playback.
+- Playback follow-up (2026-09-30): actual standalone playback produced accepted
+  weblog start/end requests and NCBL `_plv`/`_pld` file receipts (HTTP/business 200),
+  retaining the same start timestamp across pause/resume. A separate authenticated
+  `/api/play-record/song/list` read found the selected song within the explicitly
+  bounded playback time window, using the existing recent-history decoder. The
+  opt-in test reads the server, not the local history database; it does not emit
+  synthetic play events or copy host credentials.
+- Timing remains unqualified: the observed NCBL end reported 257 active seconds
+  against a 236,434 ms source timeline. The shared elapsed-realtime counter is
+  unchanged from `main`; the cause of this AVD discrepancy has not been established.
+  Do not equate receipt acceptance or recent-history presence with accurate listening
+  duration, weekly totals, cross-day settlement or audible playback. Release runtime,
+  real account switching and paired reporting acceptance remain open.
 
 ### ABI-010: Legacy Standalone Work Inputs Do Not Carry Request Ownership
 
@@ -1398,6 +1421,35 @@ These are integration differences, not server API semantics.
   Parasite behavior and its already accepted real download are unchanged. No real
   request, file transfer, WorkManager mutation or AVD upgrade was performed for this
   audit. The conversion and persisted-data acceptance are not implemented or passed.
+
+### ABI-011: Asynchronous Cookie Recovery Must Not Cancel Local Queue Restoration
+
+- Date: 2026-09-30. Standalone cold-start device regression after real playback.
+  Standalone restores its persisted Cookie by asynchronous server verification.
+  During that recovery, shared `MusicService` invalidation canceled its local
+  `playbackRestoreJob`. There was no later restart of the job; cancellation before
+  coroutine entry also skipped its `finally`. Home regained its account but the
+  mini-player and persisted queue stayed absent. This was a runtime/session migration
+  conflict, not a layout or navigation defect.
+- Adaptation: account invalidation still stops the active source, queue construction,
+  preload, AutoMix and old reporting work, but no longer cancels the disk-only snapshot
+  read. A per-service restore policy captures the initial session and synchronously
+  marks invalidation. Only a still-current, recovery-free authorization may prepare
+  the primary restored source or honor saved autoplay; otherwise the same metadata,
+  queue order and position return unprepared and not playing. The existing Play
+  control prepares on explicit user action. A newer selected queue still wins over
+  the pending disk read, and service destruction still cancels that read.
+- Verification: nine shared JVM tests cover stable authentication/guest state, initial
+  and mid-read recovery, same-account renewal, account replacement, queued invalidation
+  and unavailable session readers. After updating only the isolated standalone debug
+  app, cold startup restored 1,517 entries at index 879 and position 35,153 ms without
+  autoplay. The existing mini-player then resumed explicitly and advanced to 59,712 ms.
+  No persistence schema, data path, resource, screen or control was changed.
+- Scope: this fixes the observed recovery/metadata conflict. It does not qualify
+  legacy production upgrades, private-cloud ownership, all FM/hydration requests,
+  exact listening-duration accounting, or signed release lifecycle behavior. The TV
+  app was not updated or restarted for this checkpoint; shared tests cover both flavors,
+  while a new in-host device pass remains part of paired regression.
 
 ## Adding an Entry
 

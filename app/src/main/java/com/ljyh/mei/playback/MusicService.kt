@@ -136,6 +136,7 @@ class MusicService : MediaLibraryService(),
     private var playbackSnapshotJob: Job? = null
     private var periodicSnapshotJob: Job? = null
     private var playbackRestoreJob: Job? = null
+    private lateinit var playbackRestorePolicy: PlaybackRestorePolicy
     private lateinit var playbackPersistence: PlaybackPersistence
     private var isRestoringPlayback = true
     private lateinit var connectivityManager: ConnectivityManager
@@ -357,12 +358,19 @@ class MusicService : MediaLibraryService(),
 
 
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
+        playbackRestorePolicy = PlaybackRestorePolicy(accountSessions)
         playbackInvalidation = accountSessions.onInvalidated {
+            playbackRestorePolicy.invalidate()
             playbackHistoryReporter.discardSession()
             scope.launch { invalidatePlaybackSession() }
         }
         scope.launch {
-            accountSessions.recoveryRequired.collect { if (it) invalidatePlaybackSession() }
+            accountSessions.recoveryRequired.collect {
+                if (it) {
+                    playbackRestorePolicy.invalidate()
+                    invalidatePlaybackSession()
+                }
+            }
         }
         mediaButtonStartup = componentRuntime.consumePlaybackResumeRequest()
         restorePlayerState()
@@ -400,7 +408,7 @@ class MusicService : MediaLibraryService(),
     }
 
     private fun invalidatePlaybackSession() {
-        playbackRestoreJob?.cancel()
+        // Keep the local metadata read alive; its policy suppresses stale source preparation.
         sourceRecoveryJob?.cancel()
         automaticCacheJob?.cancel()
         queueManager.invalidateSession()
@@ -451,8 +459,11 @@ class MusicService : MediaLibraryService(),
                         ?.let { player.setPlaybackOrder(it) }
                     player.shuffleModeEnabled = snapshot.shuffleModeEnabled && !snapshot.isFmMode
                     queueManager.restorePlaylistSource(snapshot.playlistSource)
-                    player.prepare()
-                    player.playWhenReady = snapshot.playWhenReady && !mediaButtonStartup
+                    player.playWhenReady = false
+                    playbackRestorePolicy.withCurrentAuthorization {
+                        player.prepare()
+                        player.playWhenReady = snapshot.playWhenReady && !mediaButtonStartup
+                    }
                     Timber.tag("MusicService").d(
                         "Restored playback snapshot -> items: ${restoredItems.size}, " +
                             "index: $restoredIndex, position: ${snapshot.positionMs}, " +

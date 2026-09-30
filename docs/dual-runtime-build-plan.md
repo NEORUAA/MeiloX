@@ -641,6 +641,75 @@ gates are qualified; this checkpoint changes only CI and documentation.
   `/tmp/meilox-standalone-cookie-restored.png` and
   `/tmp/meilox-standalone-cookie-final-home.png`; none are committed.
 
+### D3/D5 Checkpoint: Live Playback and Recovery-Safe Queue Restore (2026-09-30)
+
+- Used only the authenticated standalone debug package. A real catalog song reached
+  its natural next-track transition, with pause/resume, background/screen-off progress,
+  an active unmuted AudioFlinger track and media-notification re-entry observed. The
+  next song retained position across an exhigh-to-standard selection and resumed.
+  The AVD screen was explicitly awakened afterward; no audible-output claim is made.
+- Both standalone report channels accepted actual start/end events. A separate live
+  recent-history read matched the selected song and observation window. NCBL reported
+  257 active seconds for a 236,434 ms timeline, so precise duration/statistics acceptance
+  remains open; transport/file acceptance is not settlement proof. API-015 and ABI-009
+  record the evidence and limits. No fake listening event was submitted.
+- Added three explicitly opt-in `StandaloneLiveReadDeviceTest` checks for full playback
+  sources, standalone album/artist collection schemas and server recent history. They
+  use the existing isolated app login and never accept, print or duplicate a Cookie.
+  The playback read uses the graph's service; collection/history checks construct the
+  existing production adapters/factories with that same session store. They do not
+  replace the UI, test a second transport implementation or mutate collections.
+  Without `standaloneLiveReads=true`, all three report assumption skips before their
+  request bodies execute. This does not disable the app's ordinary session bootstrap.
+- Cold-start regression exposed a migration defect: asynchronous Cookie recovery
+  canceled the local playback snapshot read without retry. Local queue restoration now
+  survives invalidation; captured-session policy suppresses automatic primary source
+  preparation/playback after recovery or account changes. The existing Play action can
+  resume afterward. The original 1,517-entry queue, current item and 35,153 ms position
+  returned after update/restart, then explicit playback advanced to 59,712 ms. ABI-011
+  describes the lifecycle boundary. No UI, navigation or persisted schema changed.
+- Both debug APKs and instrumentation APKs build; 666 standalone and 731 parasite JVM
+  tests pass with no failures/errors/skips, including nine new shared restore-policy
+  cases. Shared cases execute in both variants. The new live read checks also passed
+  individually on the AVD, and their disabled-mode skips were verified explicitly.
+- Both final unsigned minified release APKs build and pass 16 KB ZIP alignment. Their
+  DEX retains the session-bound restore policy; production package IDs remain unchanged,
+  with zero Xposed metadata entries in standalone and three in parasite. All seven
+  selected standalone device tests pass on the final debug build (package/graph, native
+  codec and live reads). A final cold start restores the current song at 60,347 ms,
+  does not autoplay, displays the authenticated Home/mini-player and has no fatal
+  crash entries. Release build/package checks are not release-device acceptance.
+- The original standalone installation, TV process/session and accepted TV download
+  remain untouched. No upload, deletion, collection mutation or quota-consuming download
+  was performed. Legacy work conversion, framework-free startup, private-cloud owner
+  mapping, full dual-runtime behavior and release-device qualification remain open.
+
+Opt-in read-only invocation after authorized manual playback (all values are public
+song identity/timing, not credentials; the supplied epoch-ms window must already have
+ended and must contain that playback):
+
+```sh
+adb shell am instrument -w \
+  -e class com.ljyh.mei.standalone.StandaloneLiveReadDeviceTest \
+  -e standaloneLiveReads true \
+  -e standaloneReadSongId "$SONG_ID" \
+  -e standaloneHistorySinceMs "$PLAYBACK_SINCE_MS" \
+  -e standaloneHistoryUntilMs "$PLAYBACK_UNTIL_MS" \
+  com.neoruaa.meilox.standalone.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Local evidence: `/tmp/meilox-standalone-live-playback-reports.log`,
+`/tmp/meilox-standalone-live-reads-device.log`,
+`/tmp/meilox-standalone-live-reads-disabled-raw.log`,
+`/tmp/meilox-dual-playback-restore-debug.log`,
+`/tmp/meilox-dual-playback-restore-release.log`,
+`/tmp/meilox-standalone-playback-final-device.log`,
+`/tmp/meilox-standalone-playback-notification.png`,
+`/tmp/meilox-standalone-notification-entry.png`,
+`/tmp/meilox-standalone-standard-playing.png` and
+`/tmp/meilox-standalone-restore-fixed.png`, plus
+`/tmp/meilox-standalone-playback-final-home.png`. None are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
