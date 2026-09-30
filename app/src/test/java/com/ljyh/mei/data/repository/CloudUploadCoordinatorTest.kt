@@ -147,6 +147,33 @@ class CloudUploadCoordinatorTest {
         assertTrue(calls.isEmpty())
     }
 
+    @Test fun pendingRecoveryCannotAllocateEvenWithoutAGenerationChange() = runBlocking {
+        sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { upload() }.isFailure)
+        assertEquals(owner, sessions.snapshot())
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun recoveryAfterEveryResponseStopsTheRemainingPipeline() = runBlocking {
+        for (path in replies.keys) {
+            sessions.setRecoveryRequired(false)
+            val start = calls.size
+            after = { if (it == path) sessions.setRecoveryRequired(true) }
+            assertTrue(runCatching { upload() }.isFailure)
+            assertEquals(path, calls.drop(start).last().first)
+            assertEquals(owner, sessions.snapshot())
+        }
+        assertFalse(progress.any { it.first == it.second })
+    }
+
+    @Test fun recoveryDuringTransferRejectsProgressRegistrationAndPublication() = runBlocking {
+        transfer = { sessions.setRecoveryRequired(true) }
+        assertTrue(runCatching { upload() }.isFailure)
+        assertEquals(3, calls.size)
+        assertTrue(progress.isEmpty())
+        assertEquals(owner, sessions.snapshot())
+    }
+
     @Test fun snapshotCleanupOnlyRemovesOwnedInterruptedFiles() {
         val cache = temp.newFolder()
         val directory = prepareCloudUploadDirectory(cache)

@@ -27,7 +27,11 @@ class HostCloudBinaryUploader @Inject constructor(private val sessions: HostSess
 
     override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization, owner: SessionStamp, onProgress: (Long, Long) -> Unit) = withContext(Dispatchers.IO) {
         val context = currentCoroutineContext()
-        fun checkOwner() { context.ensureActive(); sessions.requireCurrent(owner) }
+        fun checkOwner() {
+            context.ensureActive()
+            sessions.requireCurrent(owner)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        }
         checkOwner()
         val upload = backend ?: throw IOException("Official file uploader is unavailable")
         val result = try {

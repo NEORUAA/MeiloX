@@ -152,4 +152,35 @@ class StandaloneCloudBinaryUploaderTest {
         assertTrue(operation.await().isFailure)
         assertEquals(0L, canceled.count)
     }
+
+    @Test fun pendingAndNewlyRequiredRecoveryNeverStartTheByteTransfer() = runBlocking {
+        sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { source.upload(file(), authorization, owner) { _, _ -> } }.isFailure)
+        assertTrue(requests.isEmpty())
+        sessions.setRecoveryRequired(false)
+        onRequest = { sessions.setRecoveryRequired(true) }
+        assertTrue(runCatching { source.upload(file(), authorization, owner) { _, _ -> } }.isFailure)
+        assertEquals(1, requests.size)
+        assertTrue(bytes.isEmpty())
+        assertEquals(owner, sessions.snapshot())
+    }
+
+    @Test fun recoveryWithoutInvalidationClosesABlockedCall() = runBlocking {
+        val entered = CountDownLatch(1)
+        val canceled = CountDownLatch(1)
+        val held = OkHttpClient.Builder().eventListener(object : EventListener() {
+            override fun canceled(call: Call) { canceled.countDown() }
+        }).addInterceptor {
+            entered.countDown()
+            check(canceled.await(5, TimeUnit.SECONDS)) { "Call was not canceled" }
+            throw IOException("Canceled fixture")
+        }.build()
+        val input = file()
+        val operation = async(Dispatchers.IO) { runCatching { StandaloneCloudBinaryUploader(sessions, held).upload(input, authorization, owner) { _, _ -> } } }
+        assertTrue(entered.await(5, TimeUnit.SECONDS))
+        sessions.setRecoveryRequired(true)
+        assertTrue(operation.await().isFailure)
+        assertEquals(0L, canceled.count)
+        assertEquals(owner, sessions.snapshot())
+    }
 }

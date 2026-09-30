@@ -33,7 +33,11 @@ internal class StandaloneCloudBinaryUploader internal constructor(
 
     override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization, owner: SessionStamp, onProgress: (Long, Long) -> Unit) = withContext(Dispatchers.IO) {
         val context = currentCoroutineContext()
-        fun checkOwner() { context.ensureActive(); sessions.requireCurrent(owner) }
+        fun checkOwner() {
+            context.ensureActive()
+            sessions.requireCurrent(owner)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        }
         checkOwner()
         val lookup = "https://wanproxy.127.net/lbs".toHttpUrl().newBuilder()
             .addQueryParameter("version", "1.0").addQueryParameter("bucketname", authorization.bucket).build()
@@ -45,6 +49,9 @@ internal class StandaloneCloudBinaryUploader internal constructor(
                 // Await cancellation closes the socket, including a blocked response read.
                 return kotlinx.coroutines.coroutineScope {
                     val cancellation = launchCancellation { call.cancel() }
+                    val recovery = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                        sessions.recoveryRequired.collect { if (it) call.cancel() }
+                    }
                     try {
                         checkOwner()
                         call.execute().use { response ->
@@ -54,7 +61,7 @@ internal class StandaloneCloudBinaryUploader internal constructor(
                             check(!source.request(65_537)) { "Cloud transfer response is too large" }
                             source.readUtf8().also { checkOwner() }
                         }
-                    } finally { cancellation.cancel() }
+                    } finally { recovery.cancel(); cancellation.cancel() }
                 }
             } catch (error: Exception) {
                 checkOwner()

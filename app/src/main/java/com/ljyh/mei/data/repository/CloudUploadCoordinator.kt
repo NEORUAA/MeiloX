@@ -87,6 +87,7 @@ class CloudUploadCoordinator @Inject constructor(
                 token.get("token")?.asString ?: error("Missing cloud file token"))
             binary.upload(file, authorization, owner) { sent, total ->
                 context.ensureActive()
+                requireOwner(owner)
                 check(total == file.size && sent in 0..total) { "Invalid cloud upload progress" }
                 sessions.withCurrent(owner) { onProgress(sent.coerceAtMost(total - 1), total) }
             }
@@ -106,5 +107,6 @@ class CloudUploadCoordinator @Inject constructor(
     private fun requireOwner(owner: SessionStamp) {
         check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
         sessions.requireCurrent(owner)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
     }
 }

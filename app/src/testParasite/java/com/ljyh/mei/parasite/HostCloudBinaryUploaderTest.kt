@@ -63,4 +63,23 @@ class HostCloudBinaryUploaderTest {
         source.bind { _, _, canceled, _ -> job.cancel(); assertTrue(canceled()); 1 }
         assertTrue(runCatching { withContext(job) { source.upload(file, authorization, owner) { _, _ -> } } }.exceptionOrNull() is CancellationException)
     }
+
+    @Test fun recoveryWithoutInvalidationPreventsDispatchAndCancelsSdkCallbacks() = runBlocking {
+        val source = HostCloudBinaryUploader(sessions)
+        var dispatched = 0
+        source.bind { _, _, canceled, progress ->
+            dispatched++
+            sessions.setRecoveryRequired(true)
+            assertTrue(canceled())
+            assertTrue(runCatching { progress(1, 3) }.isFailure)
+            1
+        }
+        sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { source.upload(file, authorization, owner) { _, _ -> error("Stale progress") } }.isFailure)
+        assertEquals(0, dispatched)
+        sessions.setRecoveryRequired(false)
+        assertTrue(runCatching { source.upload(file, authorization, owner) { _, _ -> error("Stale progress") } }.isFailure)
+        assertEquals(1, dispatched)
+        assertEquals(owner, sessions.snapshot())
+    }
 }

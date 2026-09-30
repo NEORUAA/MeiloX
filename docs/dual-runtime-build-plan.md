@@ -1358,6 +1358,98 @@ Local evidence: `/tmp/meilox-cloud-history-source-validation.log`,
 `/tmp/meilox-cloud-history-final-tv-home.png`. Generated artifacts, private payloads,
 device logs, credentials and official source are not committed. No push or merge.
 
+### D1/D4 Checkpoint: Session-Owned Cloud Provider Cancellation (2026-10-01)
+
+API-027 records provider and native SDK cancellation boundaries. This increment
+keeps the shared upload flow, original frontend, snapshot metadata and publication
+ordering; it does not qualify successful real cloud transfer or complete D4.
+
+- Shared file preparation now forwards the preparation job's CancellationSignal
+  to ContentResolver query/asset opening and closes its active descriptor/stream
+  on cancellation. Current job/account/recovery checks follow blocking operations,
+  copying, local metadata and MIME lookup. Prompt cancellation, provider denial,
+  copy failure and late-account rejection remove only the private snapshot, never
+  the selected source. Asset offset/length and existing tag/name/MIME fallbacks
+  remain intact; authorization and transfer use the same copied bytes and digest.
+- Recovery is checked independently of generation at coordinator business/progress
+  boundaries and both binary adapters. Standalone also observes recovery while
+  its OkHttp call is blocked and cancels that call. Parasite uses the official SDK's
+  existing cancellation/progress callbacks, without a standalone transport fallback,
+  retry or borrowed token. JVM substitutes cover recovery before dispatch, after
+  every business response, during transfer and while standalone response I/O blocks.
+- A test-APK-only platform Java provider generates one second of silent PCM WAV
+  audio in UUID-owned cache files. Actual ContentResolver IPC passes fifteen new
+  cases per runtime: byte/digest consistency, descriptor slices, denial/missing/empty/
+  broken sources, cooperative query/open cancellation, changed account and recovery,
+  late MIME results, source mutation after copying, business/transfer rejection,
+  interrupted transfer, missing metadata, denied MIME, uncooperative cancellation
+  after return and scoped interrupted-snapshot cleanup. Business and binary sinks
+  remain closed substitutes; no official authorization or real account write occurs.
+- The first Kotlin provider could not resolve Kotlin runtime classes in its separate
+  test-APK process. It was replaced with platform-only Java rather than adding a
+  production dependency. The first Java run exposed two test assumptions: read-only
+  ContentResolver asset opening uses the typed-asset overload, and a denied getType
+  can become null. The fixture now explicitly forwards that overload's signal, and
+  tests preserve the original audio/mpeg fallback. These initial failures do not
+  qualify production behavior; the corrected paired runs below are authoritative.
+- The pinned TV APK's actual uploader DEX checks digest cancellation before LBS or
+  source allocation/transfer. A temporary WORK-probe build inside the real TV process
+  invokes a fresh ServiceFacade-backed adapter without rebinding AppGraph: zero-byte
+  input returns -1; three synthetic bytes with an SDK digest cancellation callback
+  return -2, with zero progress callbacks. The recorded pass establishes reflection,
+  initialized uploader and pre-transfer cancellation, not successful upload. Inputs
+  use an invalid fixture token; no token allocation, LBS request, transfer or publish
+  is reached. The owned fixture file is deleted in finally.
+- Final source validation passes 746 standalone JVM tests in 90 suites and 805
+  parasite tests in 96 suites, zero failures/errors/skips. Both debug/instrumentation
+  and unsigned minified release builds pass, including vital lint. Both release APKs
+  pass 16 KB ZIP alignment and keep production IDs; the test provider is absent from
+  both release manifests. Standalone has no Xposed metadata; parasite is API 102,
+  TV-only, static scope, hot reload off. Signing/runtime/upgrade acceptance is not
+  established by these package checks.
+- Closed AVD regression passes 69 standalone and 70 parasite cases, combining the
+  provider cases with existing cloud source, history, reporting, lyric, favorite and
+  playlist tests. A second parasite run after restoring the ordinary module passes
+  all 70 again. The ordinary installed APK has APP true and HOST/RUNTIME/WORK false;
+  TV cold-starts into authenticated portrait MeiloX Home, with no autoplay. Its
+  48-entry queue/index 0 remains paused at 20,790 ms; standalone's different Cookie
+  account retains its 1,517-entry queue/index 879, paused at 60,347 ms. Home screenshots
+  and current-PID empty crash buffers support this limited restoration check, not
+  full visual/motion/audio acceptance. The official TV player is inactive STOPPED.
+- Accepted TV MediaStore row 820 remains TV-owned, not pending and 22,705,573 bytes.
+  No real upload/delete, favorite/playlist/social write, quota download, account
+  mutation, screen-off, physical-device operation, global orientation change or
+  LSPosed scope change is performed. Every ADB command selects emulator-5554.
+- CancellationSignal depends on provider/platform cooperation. MIME lookup has no
+  signal argument, and uncooperative provider reads or host SDK I/O may delay return;
+  post-return ownership checks are not a universal immediate interruption guarantee.
+  Real external provider grants/reboot/lifecycle, successful official transfer/progress,
+  expired NOS tokens and publication reconciliation remain open, as do private remote
+  history, native KRC/report metadata, authorized library/account mutations, TV
+  microphone/PiP capability, production upgrades, independent startup, paired signed
+  release regression and server aggregation. D1/D2/D3/D4/D5/D6 remain incomplete.
+
+Local evidence: `/tmp/meilox-cloud-provider-final-validation.log`,
+`/tmp/meilox-cloud-provider-standalone-final-device.log`,
+`/tmp/meilox-cloud-provider-parasite-final-device.log`,
+`/tmp/meilox-cloud-provider-sdk-probe-final-build.log`,
+`/tmp/meilox-cloud-provider-sdk-probe-current-pid.log`,
+`/tmp/meilox-cloud-provider-host-upload-dex.txt`,
+`/tmp/meilox-cloud-provider-host-digest-dex.txt`,
+`/tmp/meilox-cloud-provider-normal-module-final-build.log`,
+`/tmp/meilox-cloud-provider-normal-parasite-final-device.log`,
+`/tmp/meilox-cloud-provider-standalone-release-manifest.xml`,
+`/tmp/meilox-cloud-provider-parasite-release-manifest.xml`,
+`/tmp/meilox-cloud-provider-parasite-test-manifest.xml`,
+`/tmp/meilox-cloud-provider-standalone-final-media.txt`,
+`/tmp/meilox-cloud-provider-tv-final-media.txt`,
+`/tmp/meilox-cloud-provider-final-normal-tv.log`,
+`/tmp/meilox-cloud-provider-final-standalone-home.png` and
+`/tmp/meilox-cloud-provider-final-tv-home.png`. Initial fixture failures are preserved
+in the corresponding `fixture-crash`, `standalone-platform-fixture` and
+`parasite-platform-fixture` logs. Generated files, private payloads, credentials,
+official source and device logs are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

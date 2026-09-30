@@ -3,6 +3,7 @@ package com.ljyh.mei.data.repository
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.CancellationSignal
 import android.provider.OpenableColumns
 import com.google.gson.Gson
 import com.google.gson.JsonElement
@@ -63,8 +64,12 @@ import okhttp3.ResponseBody
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.io.File
+import java.io.Closeable
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -273,36 +278,57 @@ class MeloXRepository @Inject constructor(
         finally { file.file.delete() }
     }
 
-    private fun prepareCloudUploadFile(uri: Uri, checkCurrent: () -> Unit): CloudUploadFile {
-        checkCurrent()
+    private suspend fun prepareCloudUploadFile(uri: Uri, checkCurrent: () -> Unit): CloudUploadFile = suspendCancellableCoroutine { continuation ->
         val resolver = context.contentResolver
-        var filename: String? = null
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { filename = cursor.getString(it) }
-            }
+        val signal = CancellationSignal()
+        val opened = AtomicReference<Closeable?>()
+        // Provider IPC and the opened descriptor belong to this preparation job.
+        continuation.invokeOnCancellation {
+            signal.cancel()
+            runCatching { opened.get()?.close() }
         }
-        val safeFilename = filename?.takeIf(String::isNotBlank) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "music.mp3"
-        val snapshot = File.createTempFile("upload-", ".bin", uploadDirectory)
+        fun verify() {
+            if (!continuation.isActive) throw CancellationException("Cloud file preparation canceled")
+            signal.throwIfCanceled()
+            checkCurrent()
+        }
+        var snapshot: File? = null
         try {
+            verify()
+            var filename: String? = null
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null, signal)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { filename = cursor.getString(it) }
+                }
+            }
+            verify()
+            val safeFilename = filename?.takeIf(String::isNotBlank) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "music.mp3"
+            val copy = File.createTempFile("upload-", ".bin", uploadDirectory).also { snapshot = it }
             val digest = MessageDigest.getInstance("MD5")
-            resolver.openInputStream(uri)?.use { input ->
-                snapshot.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        checkCurrent()
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        if (read > 0) { digest.update(buffer, 0, read); output.write(buffer, 0, read) }
+            resolver.openAssetFileDescriptor(uri, "r", signal)?.use { asset ->
+                opened.set(asset)
+                verify()
+                asset.createInputStream().use { input ->
+                    opened.set(input)
+                    copy.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            verify()
+                            val read = input.read(buffer)
+                            verify()
+                            if (read < 0) break
+                            if (read > 0) { digest.update(buffer, 0, read); output.write(buffer, 0, read) }
+                        }
                     }
                 }
             } ?: error("The selected audio file cannot be opened")
-            check(snapshot.length() > 0) { "The selected audio file is empty or unavailable" }
-            checkCurrent()
+            opened.set(null)
+            check(copy.length() > 0) { "The selected audio file is empty or unavailable" }
+            verify()
             val fallbackName = safeFilename.substringBeforeLast('.', safeFilename)
             val retriever = MediaMetadataRetriever()
             val metadata = try {
-                retriever.setDataSource(snapshot.absolutePath)
+                retriever.setDataSource(copy.absolutePath)
                 Triple(
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
@@ -312,20 +338,27 @@ class MeloXRepository @Inject constructor(
                 if (error is CancellationException) throw error
                 null
             } finally { retriever.release() }
-            checkCurrent()
-            return CloudUploadFile(
-                file = snapshot,
+            verify()
+            val mime = resolver.getType(uri) ?: "audio/mpeg"
+            verify()
+            val prepared = CloudUploadFile(
+                file = copy,
                 filename = safeFilename,
                 extension = safeFilename.substringAfterLast('.', "mp3").lowercase(),
                 normalizedStem = fallbackName.filterNot(Char::isWhitespace).replace('.', '_').ifEmpty { "music" },
-                size = snapshot.length(),
+                size = copy.length(),
                 md5 = digest.digest().joinToString("") { "%02x".format(it) },
                 songName = metadata?.first?.takeIf(String::isNotBlank) ?: fallbackName,
                 artist = metadata?.second?.takeIf(String::isNotBlank) ?: "Unknown artist",
                 album = metadata?.third?.takeIf(String::isNotBlank) ?: "Unknown album",
-                mimeType = resolver.getType(uri) ?: "audio/mpeg",
+                mimeType = mime,
             )
-        } catch (error: Throwable) { snapshot.delete(); throw error }
+            // Prompt cancellation may reject the result after the blocking snapshot has completed.
+            continuation.resume(prepared) { _, rejected, _ -> rejected.file.delete() }
+        } catch (error: Throwable) {
+            snapshot?.delete()
+            continuation.resumeWithException(error)
+        } finally { opened.set(null) }
     }
 
     suspend fun privateConversations(offset: Int = 0, limit: Int = 50): List<PrivateConversation> =

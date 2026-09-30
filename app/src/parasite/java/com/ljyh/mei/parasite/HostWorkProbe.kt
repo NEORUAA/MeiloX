@@ -31,6 +31,7 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "cloud_upload_sdk_closed" -> HostCloudUploadProbe.run(owner)
                     "cloud_history_closed" -> HostCloudHistoryProbe.closed(owner)
                     "cloud_history_read" -> HostCloudHistoryProbe.read(owner)
                     "cloud_playback_closed" -> HostCloudPlaybackProbe.run()

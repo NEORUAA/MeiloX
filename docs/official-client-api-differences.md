@@ -1564,6 +1564,56 @@ These are integration differences, not server API semantics.
   source parity, audible output, real account-switch cooperation, cloud uploads,
   final listening aggregation, production upgrade or paired signed release execution.
 
+### API-027: Cloud Snapshot Preparation Has a Provider Cancellation Boundary
+
+- Recorded: 2026-10-01. Both runtimes still use API-019's one-owner upload coordinator
+  and private snapshot. The previous synchronous preparation checked cancellation
+  between reads but queried/opened ContentResolver without a CancellationSignal.
+  A provider blocked in those operations did not receive the preparation job's
+  cancellation. This is a shared runtime/session boundary, not a new cloud business
+  endpoint or a frontend redesign.
+- Preparation now connects a cancellable continuation to Android CancellationSignal
+  for query and asset-descriptor opening, and closes its active descriptor/stream on
+  cancellation. AssetFileDescriptor.createInputStream retains a provider's offset and
+  declared length. Owner/recovery/job checks follow query, opening, each read, local
+  metadata extraction and MIME lookup. A late result cannot reach allocation for a
+  changed account. Rejection, copy failure and prompt cancellation of a completed
+  result all remove the owned temporary copy; the selected URI is never rewritten.
+- Size, MD5, metadata and transfer continue to reference one snapshot. Filename/MIME
+  and missing-tag fallbacks, business phase ordering, token handling, runtime uploader
+  selection and publication semantics are unchanged. No persistent job, automatic
+  restart, saved picker authorization, cross-runtime URI/data transfer or new permission
+  is introduced. The existing picker/result ownership guard remains in place.
+- Recovery is checked independently of session generation at every coordinator
+  business/progress boundary and both binary adapters. A same-generation recovery
+  cannot allocate, register, publish or return transfer success. Standalone also
+  observes recovery while a NOS call is blocked and cancels that call; the host SDK
+  receives recovery through its existing cancellation/progress callbacks. Neither
+  flavor borrows another token, session or transport to recover.
+- On the current AVD, ContentResolver's read-only content opening uses the provider's
+  typed-asset overload. Cooperative provider tests forward its signal explicitly;
+  inheriting a default overload does not prove cancellation support. A denied MIME
+  lookup can be converted by the platform to null, retaining the original `audio/mpeg`
+  fallback after a separately authorized byte read. MIME lookup is not a read-permission
+  or account-authorization substitute.
+- The pinned TV APK's actual Uploader DEX hashes the file with `core.n.c.a()` cancellation
+  checks before source allocation/LBS/transfer. Zero length returns -1; digest cancellation
+  returns -2. A debug-only pre-transfer probe invokes the real ServiceFacade-backed
+  adapter with an empty file and an always-canceling SDK digest callback, synthetic
+  bytes and an invalid fixture token. This cannot qualify successful NOS transfer or
+  publication. No real token allocation, source file, account or completed download
+  is used as a substitute. Probe runtime evidence is recorded in the dual-runtime plan.
+- Device tests use a test-APK-only generated-audio provider and actual ContentResolver
+  IPC; coordinator/business/binary sinks are closed substitutes. Their manifest is
+  not part of either app APK. Synthetic denial and cancellation do not establish a
+  real external provider's persistent grants, reboot access or cooperation. Embedded
+  tag formats, successful official progress/transfer callbacks, expired NOS tokens,
+  live publication reconciliation and paired signed release remain separate gates.
+- CancellationSignal only works where the provider/platform supports it. MIME lookup
+  has no signal argument; an uncooperative provider/read or blocked official SDK I/O
+  may still delay return. Post-return ownership checks prevent continuation, but this
+  change does not claim immediate interruption of every provider or host network call.
+
 ### ABI-006: Component Attachment and Transport Factories Belong to the Runtime
 
 - Date: 2026-09-29. Standalone components use their own Application, registered Activity,
