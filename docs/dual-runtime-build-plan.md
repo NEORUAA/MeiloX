@@ -124,6 +124,18 @@ D1 and D2 may be split into smaller compilable commits. Existing verified host w
 not discarded or restarted. Further endpoint migration must use the dual-backend
 boundary rather than adding new mandatory `Host*` dependencies to common consumers.
 
+### Execution Priority Reset (2026-10-01)
+
+- The user considers the current cloud flow usable. Stop repeated cloud-only
+  investigation and do not resume the withdrawn private remote-history experiment.
+  Residual cloud gates remain on final acceptance; they are not silently completed.
+- Prioritize independent standalone startup, data-preserving standalone upgrade and
+  paired minified release execution. Reopen a cloud issue only for a reproduced
+  failure or a clearly identified mandatory acceptance gap, with bounded verification.
+- Creating a temporary framework-free AVD and replacing the original standalone
+  installation remain separate permission requests. Neither operation is performed
+  while awaiting the user's reply. Keep the existing rooted AVD running.
+
 ### D1 Checkpoint: Shared Session and Reporting Contracts (2026-09-29)
 
 - Extracted credential-free `SessionStore`, `SessionIdentity`, `SessionStamp` and
@@ -1449,6 +1461,42 @@ Local evidence: `/tmp/meilox-cloud-provider-final-validation.log`,
 in the corresponding `fixture-crash`, `standalone-platform-fixture` and
 `parasite-platform-fixture` logs. Generated files, private payloads, credentials,
 official source and device logs are not committed. No push or merge.
+
+### D5/D6 Checkpoint: Minified Parasite Runtime Smoke (2026-10-01)
+
+- Executed the existing R8 parasite release from `708c938c`, locally signed with the
+  installed module's development key. Signature verification and 16 KB ZIP alignment
+  pass. API 102, TV-only static scope and disabled hot reload remain in the signed APK.
+  This is local release-runtime evidence, not production signing or hosted CI proof.
+- A data-preserving module replacement and TV cold start restore authenticated portrait
+  MeiloX Home, artwork and the existing paused queue. The original expanded player
+  renders, starts real playback and continues after Home. AudioFlinger reports an
+  active, unmuted TV-owned track and increasing output frames while backgrounded.
+  These observations establish decoding/output activity, not audible acceptance.
+- The actual media notification returns to the same portrait MeiloX player in TV's
+  LoadingActivity. Playback is explicitly paused afterward: 48 queue entries, index 2,
+  position 22,307 ms, no session error. The official TV player remains inactive STOPPED;
+  the isolated standalone retains 1,517 entries/index 879, paused at 60,347 ms. The
+  current TV PID crash buffer is empty. Natural queue advancement during observation
+  is not a controlled consecutive-track or full playback/reporting regression.
+- No source/frontend change, new cloud test, quota download, account/library/social
+  mutation, original standalone update, device restart, screen-off or LSPosed scope
+  change is performed. All ADB commands select emulator-5554, never the physical device.
+  Leave the validated local-signed R8 module installed and playback paused.
+- Installed original standalone and current debug APKs share a development certificate;
+  the repository's older release APK has a different certificate. A future consented
+  AVD upgrade with the development key cannot qualify production-release compatibility.
+  Framework-free startup, real data-preserving upgrade, standalone R8 execution and
+  remaining paired business/lifecycle acceptance stay open. No milestone is completed
+  by this limited smoke test; existing paired tests/builds are not rerun for this
+  documentation-only checkpoint.
+
+Local evidence: `/tmp/meilox-minified-parasite-first-launch-2026-10-01.png`,
+`/tmp/meilox-minified-parasite-expanded-player-2026-10-01.png`,
+`/tmp/meilox-minified-parasite-background-audioflinger-2026-10-01.txt`,
+`/tmp/meilox-minified-parasite-notification-return-settled-2026-10-01.png` and
+`/tmp/meilox-minified-parasite-final-paused-2026-10-01.txt`. Generated APKs, recordings,
+logs and private data are not committed. No push, merge or remote release.
 
 ## Acceptance and Remaining Decisions
 
