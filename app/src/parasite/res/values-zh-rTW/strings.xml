@@ -1,0 +1,4 @@
+<resources>
+    <string name="netease_login_waiting">等待掃碼</string>
+    <string name="download_queue_unavailable">下載排程尚未就緒，請重新啟動宿主後再試</string>
+</resources>

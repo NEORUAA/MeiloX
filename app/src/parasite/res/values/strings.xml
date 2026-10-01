@@ -1,0 +1,4 @@
+<resources>
+    <string name="netease_login_waiting">Waiting for scan</string>
+    <string name="download_queue_unavailable">Download scheduler is not ready. Restart the host app and try again.</string>
+</resources>

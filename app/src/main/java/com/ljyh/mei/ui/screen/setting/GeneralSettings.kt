@@ -72,6 +72,7 @@ fun GeneralSettings() {
                 GeneralToggle(R.string.general_recognize_clipboard, R.string.general_recognize_clipboard_description, "document.on.clipboard", recognizeClipboard, setRecognizeClipboard)
             }
         }
+        neteaseAccountSettings()
     }
 }
 

@@ -426,7 +426,7 @@
     <string name="settings_account">帳號</string>
     <string name="netease_login">登入網易雲音樂</string>
     <string name="netease_login_detected">登入成功</string>
-    <string name="netease_login_waiting">等待掃碼</string>
+    <string name="netease_login_waiting">請在網頁中完成登入</string>
     <string name="netease_login_loading">正在載入二維碼</string>
     <string name="netease_login_confirming">等待授權確認</string>
     <string name="netease_login_expired">二維碼已過期</string>
@@ -617,7 +617,7 @@
     <string name="system_lyrics_enabled">啟用歌詞分享</string>
     <string name="system_lyrics_description">透過 Lyricon Provider 和 SuperLyricApi SDK 分享歌詞及播放狀態。</string>
     <string name="system_lyrics_usage">已接入 Lyricon Provider 和 SuperLyricApi SDK。</string>
-    <string name="download_queue_unavailable">下載排程尚未就緒，請重新啟動宿主後再試</string>
+    <string name="download_queue_unavailable">下載排程尚未就緒，請重新啟動應用程式後再試</string>
     <string name="download_session_changed">帳號工作階段已變更，請重新登入後下載</string>
     <string name="download_enqueue_failed">無法新增下載任務，請再試一次</string>
 </resources>

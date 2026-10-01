@@ -426,7 +426,7 @@
     <string name="settings_account">账号</string>
     <string name="netease_login">登录网易云音乐</string>
     <string name="netease_login_detected">登录成功</string>
-    <string name="netease_login_waiting">等待扫码</string>
+    <string name="netease_login_waiting">请在网页中完成登录</string>
     <string name="netease_login_loading">正在加载二维码</string>
     <string name="netease_login_confirming">等待授权确认</string>
     <string name="netease_login_expired">二维码已过期</string>
@@ -617,7 +617,7 @@
     <string name="system_lyrics_enabled">启用歌词共享</string>
     <string name="system_lyrics_description">通过 Lyricon Provider 和 SuperLyricApi SDK 共享歌词及播放状态。</string>
     <string name="system_lyrics_usage">已接入 Lyricon Provider 和 SuperLyricApi SDK。</string>
-    <string name="download_queue_unavailable">下载调度尚未就绪，请重启宿主后重试</string>
+    <string name="download_queue_unavailable">下载调度尚未就绪，请重启应用后重试</string>
     <string name="download_session_changed">账号会话已变化，请重新登录后下载</string>
     <string name="download_enqueue_failed">未能添加下载任务，请重试</string>
 </resources>

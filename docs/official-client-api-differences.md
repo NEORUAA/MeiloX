@@ -2008,6 +2008,34 @@ These are integration differences, not server API semantics.
   app was not updated or restarted for this checkpoint; shared tests cover both flavors,
   while a new in-host device pass remains part of paired regression.
 
+### ABI-012: Account Settings and Login Copy Belong to the Session Backend
+
+- Date: 2026-10-01. Dual-runtime review against `main` found that the module-only
+  removal of General settings' MUSIC_U export had also removed it from the restored
+  standalone APK. Shared waiting text still described QR scanning for WebView login;
+  download-scheduler errors told the standalone user to restart a host.
+- Original standalone contract: keep the existing Account group, export row, blank
+  Cookie disabled state and explicit clipboard action. Restore these from the original
+  General settings layout in a standalone-owned LazyListScope section. The shared page
+  invokes that section without reading credentials or maintaining a second page tree.
+  Parasite supplies no item: official credentials remain exclusively in the TV session.
+- Restore the original English, Simplified Chinese and Traditional Chinese WebView
+  waiting strings. Parasite resource overlays retain its existing QR waiting and host
+  restart text; standalone scheduler text names the app rather than an absent host.
+  No session storage, transport, navigation, signing or clipboard policy is changed.
+- Verification: 1,551 paired JVM tests pass, both debug/instrumentation and unsigned R8
+  builds pass, and matched debug package tests pass 5 standalone plus 4 parasite cases.
+  New device cases resolve the actual English login/runtime strings. Standalone's real
+  General screen shows the original export row; actual parasite R8 General has no
+  MUSIC_U node or Account export group. The export action is not clicked and no Cookie
+  is copied, printed or committed. This is not blank-state or clipboard-action device
+  acceptance, interactive WebView authentication, or production-upgrade qualification.
+- An initial debug-test/R8-target combination crashed in the test runner before tests
+  began: its unremapped Kotlin Intrinsics reference could not resolve (R8 mapping names
+  the target class `ns5`). That mismatched attempt is not release acceptance. The
+  matched debug rerun passes; the normal R8 host app separately cold-starts and renders.
+  No production keep rule or new dependency was added for the invalid test pairing.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

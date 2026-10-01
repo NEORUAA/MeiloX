@@ -21,6 +21,8 @@ Both retain the same navigation, screens, glass, player, AutoMix, effects, visua
 feature entries and shared resources. Login's backend-specific content is an intentional
 difference: the standalone WebView/Cookie flow and parasite official QR flow remain.
 Do not redesign either flow as part of extracting its backend boundary.
+Backend-owned account settings also preserve standalone's original explicit MUSIC_U
+export, while parasite never exposes official credentials through that shared page.
 
 Superseded requirements:
 
@@ -1498,6 +1500,52 @@ Local evidence: `/tmp/meilox-minified-parasite-first-launch-2026-10-01.png`,
 `/tmp/meilox-minified-parasite-final-paused-2026-10-01.txt`. Generated APKs, recordings,
 logs and private data are not committed. No push, merge or remote release.
 
+### D1/D3/D6 Checkpoint: Standalone Session Settings and Boundary Audit (2026-10-01)
+
+- ABI-012 records a dual-runtime restoration omission, not a new frontend redesign:
+  standalone regains its original General settings Account/MUSIC_U row and WebView
+  waiting copy. Parasite retains QR/host copy and has no credential-export section.
+  Flavor-owned leaf content keeps the existing shared page, layout and resource IDs.
+- Current shared production sources have no concrete parasite/standalone implementation
+  imports, libxposed imports or parasite build flags. Runtime-owned graph/bootstrap,
+  session/reporting, component and named transport bindings select each backend.
+  Paired contract tests pass: 746 standalone/90 suites and 805 parasite/96 suites,
+  zero failures, errors or skips. D1's backend-neutral dependency-boundary exit
+  condition is now met; business/session/device parity remains D3-D5 work.
+- Both debug/instrumentation and unsigned minified releases build successfully with
+  vital lint. Release alignment passes. The paired workflow suite passes its 26 local
+  cases and real SDK signing/identity/version/alignment fixtures for the rebuilt APKs,
+  including swapped/unsigned rejection and temporary-key cleanup. No production key,
+  remote CI, tag, upload, release or original standalone installation is touched.
+- Matched debug device package tests pass 5 standalone and 4 parasite cases, including
+  flavor-specific actual resource resolution. Standalone's unchanged General screen
+  renders the export row; actual local-signed parasite R8 General has no MUSIC_U export.
+  No credential export is clicked. The failed debug-test/R8-target attempt and its
+  test-runner Intrinsics resolution error are preserved separately, not counted as
+  passed release tests. No application keep rules are changed to accommodate it.
+- The previous R8 host package additionally renders search suggestions, artist results,
+  artist detail/artwork/hot songs, album results and a 15-track album detail through
+  existing UI. After installing the rebuilt R8 module, TV cold start again restores
+  authenticated portrait Home and its 48-entry/index-2 queue, paused at 22,312 ms.
+  Standalone retains 1,517 entries/index 879 at 60,347 ms; the official TV player is
+  inactive STOPPED. Current TV PID has no crash-buffer entries; accepted media row 820
+  remains TV-owned, published and 22,705,573 bytes. These are bounded smoke checks,
+  not full catalog, motion, audio, reporting, upgrade or paired release acceptance.
+- `main` remains `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The bounded integration
+  review identified historical UI-only commit `f0c55cac`; the user explicitly permits
+  retaining that glass-toggle fix. It is left unchanged as an approved exception,
+  with no further frontend fixes. The complete integration review remains open.
+
+Local evidence: `/tmp/meilox-session-settings-restoration-build-2026-10-01.log`,
+`/tmp/meilox-session-settings-standalone-package-tests-2026-10-01.log`,
+`/tmp/meilox-session-settings-parasite-matched-debug-package-tests-2026-10-01.log`,
+`/tmp/meilox-session-settings-release-instrumentation-crash-2026-10-01.txt`,
+`/tmp/meilox-session-settings-paired-signed-fixtures-2026-10-01.log`,
+`/tmp/meilox-session-settings-standalone-general-settled-2026-10-01.png`,
+`/tmp/meilox-session-settings-parasite-release-general-2026-10-01.png` and
+`/tmp/meilox-session-settings-final-tv-home-2026-10-01.png`. All remain local; no push
+or merge. This checkpoint does not reopen cloud investigation.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -1518,6 +1566,6 @@ logs and private data are not committed. No push, merge or remote release.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
 
-The dual-debug skeleton is now operational on the current AVD. D1/D3-D6 remain incomplete;
-the complete D2 independence gate and all final acceptance conditions still require the
-scoped evidence above to be supplemented, not inferred from successful compilation.
+The shared dependency-boundary D1 exit condition is met and the dual-debug skeleton is
+operational on the current AVD. D2's framework-free startup gate and D3-D6 remain open;
+final acceptance still requires the scoped evidence above, not compilation alone.

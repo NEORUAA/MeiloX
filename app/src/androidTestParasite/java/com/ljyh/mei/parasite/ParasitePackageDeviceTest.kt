@@ -2,7 +2,9 @@ package com.ljyh.mei.parasite
 
 import android.content.ComponentName
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ljyh.mei.R
 import java.util.zip.ZipFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -11,6 +13,18 @@ import org.junit.Test
 
 class ParasitePackageDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun sessionResourcesDescribeTheOfficialQrLoginAndHostRuntime() {
+        val configuration = Configuration(context.resources.configuration).apply {
+            setLocale(java.util.Locale.ENGLISH)
+        }
+        val localized = context.createConfigurationContext(configuration)
+        assertEquals("Waiting for scan", localized.getString(R.string.netease_login_waiting))
+        assertEquals(
+            "Download scheduler is not ready. Restart the host app and try again.",
+            localized.getString(R.string.download_queue_unavailable),
+        )
+    }
 
     @Test fun moduleHasNoStandaloneMusicComponentsOrLauncher() {
         assertEquals("com.neoruaa.meilox.parasite", context.packageName)
