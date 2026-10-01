@@ -1668,6 +1668,66 @@ Local-only evidence: `/tmp/meilox-listen-session-final-paired-build-2026-10-01.l
 `/tmp/meilox-listen-session-final-media-2026-10-01.txt`. Private UI content, logs,
 credentials, generated APKs and official source are not committed. No push or merge.
 
+### D3/D5/D6 Checkpoint: Standalone R8 Execution and Stable Checkpoints (2026-10-01)
+
+- A local-only Gradle init script redirects build output to `/tmp` and changes only
+  the validation `standaloneRelease` application ID to the existing isolated debug
+  package. Normal R8/resource shrinking and DEBUG=false remain enabled. The artifact
+  uses the existing development certificate and updates only that test installation
+  with `-r`, preserving UID 10254. No permanent flavor, production ID, signing policy
+  or build configuration is changed; the original standalone app remains untouched.
+- Before the checkpoint-only fix, actual R8 cold startup (568 ms) restores account,
+  artwork and a 1,517-entry queue. Original play controls resume decoding; MediaSession
+  is PLAYING with no error and AudioFlinger shows an active, unmuted 44.1 kHz output.
+  Output frame count advances by 12,510,912. Home-key background playback continues,
+  and the system media notification returns to the original expanded player. A six-
+  second capture sampled at 2 fps shows moving fluid background and advancing time,
+  not just a static screenshot. Natural shuffle advancement is observed; this is not
+  a controlled complete-track-from-zero or all-effects/performance qualification.
+- Standalone's original weblog and NCBL report paths receive successful server
+  responses, including NCBL start/end receipts. These prove request acceptance only,
+  not final listening statistics or audible output. The user cannot hear this AVD;
+  no new listening-confirmation request or audible-acceptance claim is made. The first
+  post-install WARM start and a notification UI-dump idle timeout are excluded from
+  cold-start and app-crash conclusions respectively.
+- Returning from R8 to debug exposed the real persistence omission recorded as
+  ABI-013. Only the shared checkpoint's seven JSON field names and verified legacy
+  aliases are stabilized; no UI, page architecture, queue policy or frontend bug is
+  changed. The fixed isolated R8 cold start (803 ms) retains paused metadata, then
+  brief play/pause writes canonical disk keys. Reinstalling latest ordinary debug and
+  cold starting (1,164 ms) preserves 1,517 entries/index 548 at 109,186 ms with no
+  auto-play. MediaSession NONE/speed 0 is the restored unprepared state, not PAUSED.
+- Nine new wire-contract tests pass per flavor. Latest full paired JVM suites pass
+  774 standalone tests/92 suites and 833 parasite tests/98 suites: 1,607 total with
+  zero failures/errors/skips. Both debug/instrumentation pairs and production R8
+  releases build with vital lint (5m 37s); fixed local-ID R8 also builds (3m 21s).
+  Both actual production DEX files retain canonical checkpoint fields and runtime
+  annotations. Paired real-SDK signing fixtures and 16 KB ZIP alignment checks pass.
+- Latest development-signed parasite R8 is reinstalled; TV cold start (1,473 ms)
+  displays portrait authenticated MeiloX Home. Its 48-entry queue/index 2 remains
+  paused at 22,312 ms; official TV playback remains STOPPED with an empty queue.
+  Current TV PID 14006 and standalone debug PID 13704 have empty crash buffers.
+  Accepted MediaStore row 820 stays published, TV-owned and 22,705,573 bytes. The
+  ordinary standalone debug build is restored and the AVD is left on TV MeiloX Home.
+- This adds minified standalone execution and cross-build persistence evidence, not
+  production-ID execution, production signing/upgrade, framework-free startup or full
+  paired release acceptance. The two pending device/upgrade permission requests are
+  not bypassed. Remaining capability, business and lifecycle gates stay open. No
+  cloud investigation, quota download, upload, real social action, emulator restart,
+  screen-off, physical-device operation or scope/orientation change is performed.
+  The user-approved historical `f0c55cac` frontend fix remains untouched.
+
+Local-only evidence: `/tmp/meilox-standalone-r8-validation-2026-10-01.init.gradle`,
+`/tmp/meilox-standalone-r8-validation-playback-2026-10-01.mp4`,
+`/tmp/meilox-checkpoint-wire-paired-build-2026-10-01.log`,
+`/tmp/meilox-checkpoint-wire-paired-signing-fixtures-2026-10-01.log`,
+`/tmp/meilox-checkpoint-wire-standalone-dex-2026-10-01.txt`,
+`/tmp/meilox-checkpoint-wire-parasite-dex-2026-10-01.txt`,
+`/tmp/meilox-checkpoint-wire-fixed-r8-progress-2026-10-01.txt`,
+`/tmp/meilox-checkpoint-wire-restored-debug-media-2026-10-01.txt` and
+`/tmp/meilox-checkpoint-wire-parasite-home-2026-10-01.png`. Private evidence, APKs,
+official source and credentials are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

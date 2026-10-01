@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.ljyh.mei.constants.PlaybackSnapshotKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PLACEHOLDER_URI
@@ -31,13 +32,21 @@ import timber.log.Timber
 private val Context.playbackProgressStore by preferencesDataStore(name = "playback_progress")
 private val ProgressKey = stringPreferencesKey("checkpoint")
 
+/** Stable disk keys; alternates match the verified pre-fix R8 checkpoint mapping. */
 internal data class PlaybackCheckpoint(
+    @field:SerializedName(value = "queueSavedAtEpochMs", alternate = ["a"])
     val queueSavedAtEpochMs: Long,
+    @field:SerializedName(value = "savedAtEpochMs", alternate = ["b"])
     val savedAtEpochMs: Long,
+    @field:SerializedName(value = "currentIndex", alternate = ["c"])
     val currentIndex: Int,
+    @field:SerializedName(value = "positionMs", alternate = ["d"])
     val positionMs: Long,
+    @field:SerializedName(value = "repeatMode", alternate = ["e"])
     val repeatMode: Int,
+    @field:SerializedName(value = "shuffleModeEnabled", alternate = ["f"])
     val shuffleModeEnabled: Boolean,
+    @field:SerializedName(value = "playWhenReady", alternate = ["g"])
     val playWhenReady: Boolean,
 )
 

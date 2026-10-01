@@ -2134,6 +2134,38 @@ These are integration differences, not server API semantics.
   accepted remotely. Paired real read-only page and release-package evidence is
   recorded separately in the matching dual-runtime checkpoint.
 
+### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
+
+- Recorded: 2026-10-01. This is a shared persistence boundary, not an official
+  endpoint difference. The local-only standalone R8 execution fixture restored and
+  played its queue, but replacing it with the ordinary debug build unexpectedly
+  resumed playback after an explicit pause. The progress checkpoint was rejected,
+  leaving the older full queue snapshot's playing state in effect.
+- The actual pre-fix R8 APK DEX and mapping rename the seven checkpoint fields to
+  `a` through `g`, respectively: `queueSavedAtEpochMs`, `savedAtEpochMs`,
+  `currentIndex`, `positionMs`, `repeatMode`, `shuffleModeEnabled`, `playWhenReady`.
+  Gson's default field-name contract therefore differed between minified and debug
+  readers. This mapping is verified for that artifact, not assumed for every older
+  release. Unrelated historical obfuscation mappings remain unqualified.
+- Both runtimes now write canonical keys using `@field:SerializedName`; alternates
+  accept only the verified pre-fix `a`-`g` mapping. Queue-epoch association and the
+  existing index, position and repeat-mode bounds still apply. Storage namespaces,
+  paths, full queue schema, restore policy, player behavior and frontend are unchanged.
+  Existing annotation-aware R8 rules suffice; no broader keep rule is added.
+- Verification: nine frozen JSON cases pass per debug flavor, covering canonical
+  writes/reads, legacy paused/playing reads, canonical rewriting, long precision,
+  unrelated queues and invalid values. Both actual production R8 DEX files retain
+  the seven canonical fields and their runtime-visible annotations. In the isolated
+  debug-ID R8 fixture, brief playback followed by pause writes canonical disk keys
+  with `playWhenReady=false`. A data-preserving replacement with ordinary debug and
+  cold start retains 1,517 entries, index 548 and position 109,186 ms without playing
+  (restored MediaSession NONE/speed 0, not an already prepared PAUSED player).
+- Limits: this fixture uses the existing development certificate and isolated debug
+  package. It proves this cross-build checkpoint contract, not production package
+  upgrade/signing compatibility, arbitrary legacy mappings, framework-free startup
+  or full paired release qualification. No original standalone data is copied or
+  modified. See the matching dual-runtime checkpoint for other execution evidence.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see
