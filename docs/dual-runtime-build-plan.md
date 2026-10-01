@@ -2223,6 +2223,56 @@ complete the full merge review, production upgrade, D3-D6 or the overall goal.
 Local-only evidence: `/tmp/meilox-standalone-transport-policy-*-2026-10-02*` and
 `/tmp/meilox-timeout-*-2026-10-02*`. Device logs, credentials and APKs are not committed.
 
+### D4/D5/D6 Checkpoint: Session-Owned Home Requests and Recovery (2026-10-02)
+
+This bounded backend/session repair is recorded under API-034. It does not change
+the homepage layout, navigation, player, original request body or cache policy, and
+does not complete real account-transition, full business or release acceptance.
+
+- Home Repository fetches now pass their triggering SessionStamp through a required
+  local Retrofit Tag. A replacement account or same-account reauthorization cannot
+  be borrowed at route creation. Recovery-required sessions reject cached/fresh reads
+  and cache publication; the ViewModel clears personalized success state and cancels
+  its request even if recovery changes without a generation transition. A valid
+  same-account cache remains reusable after recovery; explicit refresh still fetches.
+- Five new shared JVM cases cover the required route owner, initial/refresh/anonymous
+  owners and recovery behavior. The Tag assertion and three recovery cases fail before
+  their respective repairs. Final full suites pass 843 standalone cases/99 suites and
+  899 parasite cases/104 suites, with zero failures/errors/skips. Seven Android fixtures
+  per flavor also pass against the production Repository/body builder/Retrofit using
+  synthetic sessions, callbacks and isolated disposable cache directories. They cover
+  HTTP/business rejection, retry, cancellation and late-owner/recovery responses;
+  they make no server request or real account change. Parasite instrumentation needed
+  one retry after a system attach failure; its cause is not established.
+- The final paired debug/release/test-APK build and release vital lint pass in 1m 3s
+  (267 tasks). An earlier client-disconnected build was cancelled and is not counted
+  as successful. Both production R8 DEX files retain the required Tag and unchanged
+  POST route. Release preparation passes 41 fixtures plus real-SDK identity/signature,
+  version, 16 KB alignment and runtime-declaration checks; no remote CI is invoked.
+- Fresh development-signed parasite R8 SHA-256 is
+  `a0755c840e4b6dc014c649474820a31d11240dc5cfa0198c0ba1e4118c31c1eb`.
+  The existing isolated standalone R8 fixture builds in 2m 56s; its SHA-256 is
+  `ef71b07bb483405007fd29def5899e63874036749bdc2bffa6d4a9319032d05a`.
+  Both keep their verified package identities, existing development certificate and
+  16 KB alignment. Data-preserving installations restore the two existing accounts;
+  ordinary homepage pull-to-refresh updates displayed recommendations in both.
+  Settled screenshots are inspected. TV COLD startup is 10001 ms, standalone 1257 ms;
+  the TV result is not a startup-performance acceptance claim. No autoplay occurs.
+- Ordinary standalone debug is restored with the same identity/certificate, COLD
+  startup 1463 ms and unchanged account/UID 10254. Notification/microphone remain
+  ungranted. Final queues stay TV 6/index 1 at 55536 ms and standalone 7/index 1 at
+  145670 ms, both PAUSED/speed 0; original TV playback is STOPPED/queue 0. Both tested
+  R8 crash buffers and restored debug PID 25674 buffer are empty without clearing
+  historical logs. TV-owned published MediaStore row 820 remains 22,705,573 bytes.
+  The rooted AVD stays awake on TV MeiloX Home; original standalone data is untouched.
+- Real session expiry/recovery/account-switch cooperation, server-side cancellation,
+  recording/PiP, uploads/writes/quota use, framework-free startup, original-install
+  upgrade, playback-stall attribution and full merge review remain open. No credential
+  file, real account mutation or production-signing configuration is accessed.
+
+Local-only evidence: `/tmp/meilox-home-*-2026-10-02*`. Device logs, credentials and
+APKs are not committed. `git diff --check` passes before the scoped local commit.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

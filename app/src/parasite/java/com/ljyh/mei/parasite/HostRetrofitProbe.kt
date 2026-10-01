@@ -33,7 +33,7 @@ internal class HostRetrofitProbe(private val component: AppComponent, private va
                     report("retrofit=playback_url code=${source.code} data_present=${source.data.isNotEmpty()}")
                 }
                 report("retrofit=subcount code=${component.weapiService().getUserSubcount().code}")
-                val home = component.eapiService().getHomePageResourceShow(buildGetHomePageResourceShow("false"))
+                val home = component.eapiService().getHomePageResourceShow(buildGetHomePageResourceShow("false"), stamp)
                 report("retrofit=home code=${home.code} blocks_present=${home.data.blocks.isNotEmpty()}")
                 sessions.requireCurrent(stamp)
                 report("retrofit_complete session_unchanged=true")

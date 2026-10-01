@@ -2399,6 +2399,38 @@ These are integration differences, not server API semantics.
   TV's RECORD_AUDIO/PiP manifest gate is not solved by these owner guards. No helper,
   framework scope, host APK modification, recording or quota-consuming operation occurs.
 
+### API-034: Home Requests Must Keep the Feed's Triggering Session
+
+- Recorded: 2026-10-02. The original standalone homepage uses EAPI
+  `/eapi/link/page/rcmd/resource/show`; parasite normalizes that route into the official
+  SDK. The current homepage caches personalized blocks by public account identity and
+  validates results against a SessionStamp, but its Retrofit request did not carry that
+  stamp. An account change between cache lookup and route creation could therefore
+  borrow the replacement account for a request whose result was later rejected.
+- The same triggering owner now travels from Repository fetch through a required local
+  Retrofit Tag. It is not a business body field, query value or exported credential.
+  Standalone still signs through its own captured Cookie client; TV still uses the
+  official request bridge without direct fallback. The existing business body builder,
+  response model, cache names/day boundary, homepage layout and navigation are unchanged.
+  API-001's existing host-owned header/signing distinction remains separate.
+- Recovery-required sessions reject cached/fresh Repository reads and cache publication.
+  The ViewModel cancels its request and clears personalized success state even when the
+  recovery flag changes without a generation transition. Resolution can reuse a valid
+  same-account cache; explicit refresh still requests new data. Cancellation, stale
+  owners and same-account reauthorization do not publish late cache/UI results.
+- Regression evidence: the missing required Tag assertion fails before repair, and three
+  recovery Repository/ViewModel assertions also fail before their guards are added.
+  The final full JVM suites pass 843 standalone and 899 parasite cases. Seven matched
+  device fixtures per flavor exercise production Repository, body builder and Retrofit
+  with separate synthetic sessions/transport/cache directories: local-only Tag, stale
+  dispatch, recovery, late invalidation, HTTP/business failure, retry and cancellation.
+  These fixtures neither switch real accounts nor send a NetEase request.
+- Both current production release DEX files preserve the required Tag and unchanged
+  POST route. The paired build-plan checkpoint records real-account minified homepage
+  reads separately. Real login/logout/account-switch/expiry cooperation, complete home
+  failure behavior under official server conditions and full release acceptance remain
+  open; fixture cancellation does not establish server-side cancellation.
+
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 
 - Recorded: 2026-10-01. This is component/permission adaptation, not a new business

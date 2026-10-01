@@ -29,15 +29,21 @@ import kotlinx.coroutines.withContext
 class HomeRepository internal constructor(
     private val directory: File,
     private val sessions: SessionStore,
-    private val fetch: suspend (Boolean) -> List<Block>,
+    private val fetch: suspend (Boolean, SessionStamp) -> List<Block>,
     private val now: () -> Long = System::currentTimeMillis,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    constructor(api: EApiService, sessions: SessionStore) : this(
-        File(AppContext.instance.filesDir, "home_accounts"),
+    constructor(
+        api: EApiService,
+        sessions: SessionStore,
+        directory: File = File(AppContext.instance.filesDir, "home_accounts"),
+    ) : this(
+        directory,
         sessions,
-        { refresh ->
-            val response = api.getHomePageResourceShow(buildGetHomePageResourceShow(refresh = refresh.toString()))
+        { refresh, stamp ->
+            val response = api.getHomePageResourceShow(
+                buildGetHomePageResourceShow(refresh = refresh.toString()), stamp,
+            )
             if (response.code != 200) throw IOException("Official home request failed (${response.code})")
             response.data.blocks
         },
@@ -54,19 +60,19 @@ class HomeRepository internal constructor(
         stamp: SessionStamp,
         refresh: Boolean = false,
     ): Resource<List<Block>> = try {
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         val cached = if (refresh) null else withContext(ioDispatcher) {
             cacheMutex.withLock { readCache(stamp) }
         }
-        val blocks = cached ?: fetch(refresh).also {
+        val blocks = cached ?: fetch(refresh, stamp).also {
             currentCoroutineContext().ensureActive()
-            sessions.requireCurrent(stamp)
+            requireOwner(stamp)
             withContext(ioDispatcher) {
                 cacheMutex.withLock { writeCache(stamp, it) }
             }
         }
         currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         Resource.Success(blocks)
     } catch (error: CancellationException) {
         throw error
@@ -74,12 +80,12 @@ class HomeRepository internal constructor(
         throw error
     } catch (error: Exception) {
         currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         Resource.Error(error.message ?: "Official home request failed")
     }
 
     private fun readCache(stamp: SessionStamp): List<Block>? {
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         return try {
             val file = cacheFile(stamp)
             if (!file.isFile) return null
@@ -99,7 +105,7 @@ class HomeRepository internal constructor(
     }
 
     private suspend fun writeCache(stamp: SessionStamp, blocks: List<Block>) {
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         currentCoroutineContext().ensureActive()
         val file = cacheFile(stamp)
         var temporary: File? = null
@@ -109,11 +115,11 @@ class HomeRepository internal constructor(
             temporary = File.createTempFile("home-", ".tmp", directory)
             temporary.writeText(gson.toJson(CachedPage(now(), blocks)))
             currentCoroutineContext().ensureActive()
-            sessions.requireCurrent(stamp)
+            requireOwner(stamp)
             Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             replaced = true
             currentCoroutineContext().ensureActive()
-            sessions.requireCurrent(stamp)
+            requireOwner(stamp)
         } catch (error: CancellationException) {
             if (replaced) file.delete()
             throw error
@@ -125,6 +131,11 @@ class HomeRepository internal constructor(
         } finally {
             temporary?.delete()
         }
+    }
+
+    private fun requireOwner(stamp: SessionStamp) {
+        sessions.requireCurrent(stamp)
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
     }
 
     private fun cacheFile(stamp: SessionStamp): File {

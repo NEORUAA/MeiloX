@@ -51,7 +51,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun homePageResourceShow(refresh: Boolean = false) {
-        val stamp = runCatching { sessions.snapshot() }.getOrNull()
+        val stamp = if (sessions.recoveryRequired.value) null
+            else runCatching { sessions.snapshot() }.getOrNull()
         if (stamp == null) {
             requestVersion.incrementAndGet()
             requestJob?.cancel()
@@ -63,6 +64,7 @@ class HomeViewModel @Inject constructor(
         requestJob?.cancel()
         val version = runCatching {
             sessions.withCurrent(stamp) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     displayedSession = stamp
                     _homePageResourceShow.value = Resource.Loading
@@ -93,8 +95,8 @@ class HomeViewModel @Inject constructor(
         sessions.withCurrent(stamp) {
             synchronized(stateLock) {
                 if (requestVersion.get() == version) {
-                    displayedSession = stamp
-                    _homePageResourceShow.value = result
+                    displayedSession = stamp.takeUnless { sessions.recoveryRequired.value }
+                    _homePageResourceShow.value = if (sessions.recoveryRequired.value) pendingState() else result
                 }
             }
         }

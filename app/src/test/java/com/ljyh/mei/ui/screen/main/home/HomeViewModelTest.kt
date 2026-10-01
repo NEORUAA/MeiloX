@@ -53,7 +53,7 @@ class HomeViewModelTest {
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
         try {
-            val repository = HomeRepository(temporary.newFolder(), sessions, fetch,
+            val repository = HomeRepository(temporary.newFolder(), sessions, { refresh, _ -> fetch(refresh) },
                 { Instant.parse("2026-09-29T04:00:00Z").toEpochMilli() }, dispatcher)
             val model = HomeViewModel(repository, colors, sessions)
             store.put("home", model)
@@ -138,6 +138,28 @@ class HomeViewModelTest {
         transition.close()
         runCurrent()
         assertEquals("restored", model.name())
+    }
+
+    @Test fun recoveryWithoutATransitionClearsContentAndReloadsAfterResolution() {
+        var requests = 0
+        checkModel({ requests++; blocks("restored") }) { model, _ ->
+            sessions.bind { identity }
+            runCurrent()
+            assertEquals("restored", model.name())
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertTrue(model.homePageResourceShow.value is Resource.Error)
+            model.homePageResourceShow(refresh = true)
+            runCurrent()
+            assertEquals(1, requests)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals("restored", model.name())
+            assertEquals(1, requests)
+            model.homePageResourceShow(refresh = true)
+            runCurrent()
+            assertEquals(2, requests)
+        }
     }
 
     @Test fun networkFailureCanBeRetried() {
