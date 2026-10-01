@@ -2178,6 +2178,51 @@ Local-only evidence: `/tmp/meilox-paired-comments-*-2026-10-02*`, including stru
 UI snapshots, inspected PNGs, hashed pair counts, startup/media/package/crash checks,
 the isolated build log and focused build log. Raw evidence and APKs are not committed.
 
+### D3/D6 Checkpoint: Original Standalone Transport Budgets (2026-10-02)
+
+This bounded comparison with current `main` (`1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`)
+repairs a standalone restoration regression recorded under ABI-008. It does not
+complete the full merge review, production upgrade, D3-D6 or the overall goal.
+
+- Business connect/read/write and audio-match connect/read return from the migration's
+  accidental 15 seconds to the original 30 seconds. Audio-match write remains the
+  original default 10 seconds, with no total-call deadline on either client. NCBL's
+  original 15-second limits and no-retry/no-redirect policy remain unchanged. The same
+  client factories are used by production transport and the new policy tests; session
+  guards, captured credentials, TLS/redirect restrictions and official TV code are
+  unchanged. No shared frontend, navigation, player, manifest or CI edit is made.
+- The focused three-case suite first fails the two 30-second expectations against
+  the old 15-second configuration; NCBL passes unchanged. After repair, full paired
+  JVM suites pass: standalone 838 tests/99 suites and parasite 894 tests/104 suites,
+  with zero failures/errors/skips. Both debug and minified release builds plus release
+  vital lint pass in 2m 56s. Production-ID R8 constructor/builder DEX retains the
+  intended 30/15-second policies. Release preparation passes 41 fixtures and real-SDK
+  signature, identity, version, alignment and runtime-declaration checks, including
+  rejection of swapped, unsigned and missing-scope pairs; no remote CI is invoked.
+- Fresh isolated standalone R8 builds in 2m 13s using the existing local-only init
+  fixture. Its unchanged test ID, development v3 certificate and 16 KB alignment are
+  verified; SHA-256 is `c293dc8020e5ed28575a03a16425460522f010b381f87858f565cd0ed8043b29`.
+  Data-preserving installation cold-starts in 696 ms, restores the existing account
+  and displays live `HOYO` suggestions and `HOYO-MiX` artist results through ordinary
+  UI controls. Settled screenshots are inspected; no follow or playback action occurs.
+- Ordinary standalone debug is restored with the same test ID/certificate and no
+  storage reset; actual COLD startup is 1688 ms and the same account remains. UID
+  10254 and ungranted notification/microphone flags are preserved. Final queues stay
+  TV 6/index 1 at 55536 ms and standalone 7/index 1 at 145670 ms, both PAUSED/speed 0;
+  original TV playback stays STOPPED/queue 0. Standalone R8 PID 20871 and restored
+  debug PID 21541 crash buffers are empty without clearing historical buffers.
+  Published TV-owned MediaStore row 820 remains 22,705,573 bytes. The rooted AVD stays
+  awake on TV MeiloX Home; no original standalone installation or Cookie file is read.
+- No real recording, account mutation, upload, quota-consuming download or social
+  write occurs. Client-configuration/DEX proof is not slow-server timing evidence;
+  this repair does not qualify microphone recognition, server statistics, framework-
+  free startup, original-install upgrades or the separately observed playback stall.
+  Capability decisions, remaining business/release regression and full merge review
+  remain open. `git diff --check` passes before the scoped local commit.
+
+Local-only evidence: `/tmp/meilox-standalone-transport-policy-*-2026-10-02*` and
+`/tmp/meilox-timeout-*-2026-10-02*`. Device logs, credentials and APKs are not committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

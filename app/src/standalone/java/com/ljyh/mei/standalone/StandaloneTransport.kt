@@ -22,44 +22,50 @@ import okhttp3.Response
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+internal fun createStandaloneBusinessClient(): OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(30, TimeUnit.SECONDS)
+    .writeTimeout(30, TimeUnit.SECONDS)
+    // Never carry a captured Cookie to a redirected origin.
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .addInterceptor(NeteaseInterceptor())
+    .build()
+
+internal fun createStandaloneAudioMatchClient(): OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(30, TimeUnit.SECONDS)
+    .followRedirects(false)
+    .addInterceptor { chain ->
+        chain.proceed(chain.request().newBuilder().header("User-Agent", AndroidUserAgent).build())
+    }.build()
+
+internal fun createStandaloneClientLogClient(): OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.SECONDS)
+    .writeTimeout(15, TimeUnit.SECONDS)
+    .callTimeout(15, TimeUnit.SECONDS)
+    .retryOnConnectionFailure(false)
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .build()
+
 @Singleton
 internal class StandaloneTransport @Inject constructor(private val sessions: StandaloneSessionStore) {
-    private val signedClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        // Never carry a captured Cookie to a redirected origin.
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .addInterceptor(NeteaseInterceptor())
-        .build()
+    private val signedClient = createStandaloneBusinessClient()
 
     val business: Call.Factory = SessionCallFactory(sessions, signedClient) { request, owner ->
         validateBusinessRequest(request)
         request.newBuilder().tag(StandaloneCredentials::class.java, sessions.credentials(owner)).build()
     }
 
-    val audioMatch: Call.Factory = SessionCallFactory(sessions, OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(false)
-        .addInterceptor { chain ->
-            chain.proceed(chain.request().newBuilder().header("User-Agent", AndroidUserAgent).build())
-        }.build()) { request, _ ->
+    val audioMatch: Call.Factory = SessionCallFactory(sessions, createStandaloneAudioMatchClient()) { request, _ ->
         validateBusinessRequest(request)
         require(request.url.encodedPath == "/api/music/audio/match")
         request
     }
 
-    val clientLogs: Call.Factory = SessionCallFactory(sessions, OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(15, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false)
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()) { request, owner ->
+    val clientLogs: Call.Factory = SessionCallFactory(sessions, createStandaloneClientLogClient()) { request, owner ->
         sessions.requireAuthenticated(owner)
         require(request.method == "POST" && request.url.toString() == NCBL_UPLOAD_ENDPOINT)
         require(request.header("X-Music-U") == sessions.credentials(owner).musicU)

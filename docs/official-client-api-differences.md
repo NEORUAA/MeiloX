@@ -1789,6 +1789,27 @@ These are integration differences, not server API semantics.
   manual Cookie path and this account's read/recovery path, not interactive WebView
   authentication, logout/account switching, playback/reporting or release upgrades.
 
+#### Original Transport Timeout Budgets (2026-10-02)
+
+- Comparison with `main` at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29` found a
+  standalone restoration regression: business connect/read/write and audio-match
+  connect/read timeouts had changed from 30 seconds to 15. They now retain 30 seconds;
+  audio-match write remains OkHttp's original 10-second default. Neither client gains
+  a total-call deadline. Candidate Cookie verification uses the same business client.
+- NCBL retains its original 15-second connect/read/write/call limits, disabled retries
+  and redirects. Default TLS, captured session credentials, guarded dispatch/response
+  ownership and disabled signed redirects remain unchanged. The official TV pipeline,
+  QQ/media clients, signing algorithms and playback-URL download policy are untouched.
+- Three tests exercise the actual production client factories: two timeout assertions
+  fail before the repair and all three pass afterward. The audio-match UA/unsigned
+  request check ends in a synthetic interceptor without opening a socket. R8 constructor
+  and builder DEX retain the 30-second and 15-second policies. Paired full JVM suites,
+  debug/release builds and real-SDK package isolation checks pass; the build-plan
+  checkpoint records the isolated R8 device read and data-preserving debug restoration.
+- This establishes original configuration and ordinary read-path restoration, not
+  measured slow-server timing, actual microphone recognition, listening statistics,
+  production upgrades or a fix for the separately observed near-end playback stall.
+
 ### ABI-009: Standalone and Official Playback Reporting Stay Separate
 
 - Date: 2026-09-30. Dual-runtime scope supersedes API-016's module-only cleanup as a
