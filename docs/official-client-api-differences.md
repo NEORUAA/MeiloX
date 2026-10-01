@@ -2283,6 +2283,13 @@ These are integration differences, not server API semantics.
   account, transport/client context and server ranking causes are not distinguished.
   Confirmed UI input and source serialization alone do not prove the encrypted wire
   payload. No credentials or raw account responses are committed.
+- Focused source comparison (2026-10-02) against main
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29` confirms that GetSearch's request fields
+  and `/api/search/get/` route are unchanged; the added Retrofit Tag is local session
+  ownership, not another body parameter. The restored interceptor retains main's
+  payload/crypto logic with captured credentials replacing global Cookie reads.
+  This source evidence does not reproduce main's server results or establish the
+  cause; no search endpoint or frontend behavior is changed during the review.
 - Evidence: settled screenshots/UI XML from both minified runtimes and restored
   standalone debug; shared DTO, Repository and route inspection; five focused
   search/album/artist/podcast suites pass 68 cases per flavor. Fixture success does

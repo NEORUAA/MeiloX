@@ -17,6 +17,11 @@ PREPARE = STEPS.find { |step| step['id'] == 'prepare_apks' }.fetch('run')
 SIGN = STEPS.find { |step| step['id'] == 'sign_apks' }.fetch('run')
 FLAVORS = %w[standalone parasite].freeze
 APPLICATIONS = { 'standalone' => 'com.neoruaa.meilox', 'parasite' => 'com.neoruaa.meilox.parasite' }.freeze
+MODULE_FILES = {
+  '/META-INF/xposed/java_init.list' => "com.ljyh.mei.parasite.MeiloXModule\n",
+  '/META-INF/xposed/scope.list' => "com.netease.cloudmusic.tv\n",
+  '/META-INF/xposed/module.prop' => "minApiVersion=102\ntargetApiVersion=102\nstaticScope=true\nautoHotReload=false\n"
+}.freeze
 
 def check(condition, message)
   raise message unless condition
@@ -60,21 +65,37 @@ def test_built_apks
     check(status.success?, "Built pair preparation: #{stdout} #{stderr}")
     check(Dir[File.join(directory, 'release-apks/*.apk')].size == 2, 'Export both real signed APKs')
 
-    %w[swapped unsigned].each do |scenario|
+    missing_scope = File.join(directory, 'parasite-missing-scope.apk')
+    FileUtils.copy_file(environment.fetch('PARASITE_SIGNED_RELEASE_FILE'), missing_scope)
+    _, stderr, status = Open3.capture3('zip', '-qd', missing_scope, 'META-INF/xposed/scope.list')
+    check(status.success?, "Remove only the fixture scope: #{stderr}")
+    aligned = File.join(directory, 'parasite-missing-scope-aligned.apk')
+    build_tools = File.join(sdk, 'build-tools/37.0.0')
+    _, stderr, status = Open3.capture3(File.join(build_tools, 'zipalign'), '-P', '16', '4', missing_scope, aligned)
+    check(status.success?, "Align the altered fixture: #{stderr}")
+    _, stderr, status = Open3.capture3(File.join(build_tools, 'apksigner'), 'sign', '--ks', keystore,
+                                      '--ks-key-alias', 'fixture', '--ks-pass', 'pass:fixture-only', aligned)
+    check(status.success?, "Sign the altered fixture: #{stderr}")
+    _, stderr, status = Open3.capture3(File.join(build_tools, 'apksigner'), 'verify', aligned)
+    check(status.success?, "Altered fixture has a valid signature: #{stderr}")
+
+    %w[swapped unsigned missing-scope].each do |scenario|
       rejected = File.join(directory, scenario)
       FileUtils.mkdir_p(rejected)
       invalid = environment.dup
       if scenario == 'swapped'
         invalid['STANDALONE_SIGNED_RELEASE_FILE'], invalid['PARASITE_SIGNED_RELEASE_FILE'] =
           invalid['PARASITE_SIGNED_RELEASE_FILE'], invalid['STANDALONE_SIGNED_RELEASE_FILE']
-      else
+      elsif scenario == 'unsigned'
         invalid['PARASITE_SIGNED_RELEASE_FILE'] = File.join(ROOT, 'app/build/outputs/apk/parasite/release/app-parasite-release-unsigned.apk')
+      else
+        invalid['PARASITE_SIGNED_RELEASE_FILE'] = aligned
       end
       _, _, status = execute(PREPARE, rejected, invalid)
       check(!status.success? && Dir[File.join(rejected, 'release-apks/*.apk')].empty?, "Reject actual #{scenario} pair")
     end
   end
-  puts 'PASS built APKs: real SDK signature, identity, version, 16 KB alignment and rejected swapped/unsigned pairs'
+  puts 'PASS built APKs: real SDK signature, identity, version, 16 KB alignment, runtime declarations and rejected swapped/unsigned/missing-scope pairs'
   puts 'Temporary fixture keys/APKs removed; no production credentials, installation or upload used'
 end
 
@@ -157,8 +178,25 @@ def signed_fixture(directory)
       abort 'Missing 16 KB alignment check' unless ARGV[0...-1] == %w[-c -P 16 4]
       exit(JSON.parse(File.read(file)).fetch('aligned') ? 0 : 1)
     when 'apkanalyzer'
-      abort 'Wrong manifest command' unless ARGV.first == 'manifest'
-      puts JSON.parse(File.read(file)).fetch(ARGV[1])
+      document = JSON.parse(File.read(file))
+      case ARGV.first
+      when 'manifest'
+        puts document.fetch(ARGV[1])
+      when 'files'
+        if ARGV[1] == 'list'
+          abort 'Wrong file listing command' unless ARGV[0...-1] == %w[files list --files-only]
+          abort 'Synthetic file inspection failure' if document['files-list-failure']
+          puts ['/AndroidManifest.xml', *document.fetch('files').keys]
+        else
+          abort 'Wrong file read command' unless ARGV[0...-2] == %w[files cat --file]
+          print document.fetch('files').fetch(ARGV[-2]) { abort 'Missing declared module file' }
+        end
+      when 'dex'
+        abort 'Wrong module class check' unless ARGV[0...-1] == %w[dex code --class com.ljyh.mei.parasite.MeiloXModule]
+        exit(document.fetch('module-class') ? 0 : 1)
+      else
+        abort 'Unexpected analyzer command'
+      end
     else
       abort 'Unexpected SDK command'
     end
@@ -172,6 +210,8 @@ def signed_fixture(directory)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, JSON.generate('application-id' => APPLICATIONS.fetch(flavor),
                                   'version-name' => '1.54.6', 'version-code' => '11',
+                                  'files' => flavor == 'parasite' ? MODULE_FILES : {},
+                                  'module-class' => flavor == 'parasite',
                                   'signature' => true, 'aligned' => true))
     [flavor, path]
   end
@@ -301,6 +341,55 @@ end
     document[key] = value
     File.write(path, JSON.generate(document))
   end
+end
+
+MODULE_FILES.each_key do |entry|
+  test_prepare("missing #{entry}", valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    document.fetch('files').delete(entry)
+    File.write(path, JSON.generate(document))
+  end
+end
+{
+  'wrong entry class' => ['/META-INF/xposed/java_init.list', "com.example.WrongModule\n"],
+  'empty scope' => ['/META-INF/xposed/scope.list', ''],
+  'system framework scope' => ['/META-INF/xposed/scope.list', "com.netease.cloudmusic.tv\nandroid\n"],
+  'wrong API version' => ['/META-INF/xposed/module.prop', MODULE_FILES.fetch('/META-INF/xposed/module.prop').sub('targetApiVersion=102', 'targetApiVersion=101')],
+  'hot reload enabled' => ['/META-INF/xposed/module.prop', MODULE_FILES.fetch('/META-INF/xposed/module.prop').sub('autoHotReload=false', 'autoHotReload=true')]
+}.each do |name, (entry, content)|
+  test_prepare(name, valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    document.fetch('files')[entry] = content
+    File.write(path, JSON.generate(document))
+  end
+end
+test_prepare('declared module class absent from DEX', valid: false) do |paths, _|
+  path = paths.fetch('parasite')
+  document = JSON.parse(File.read(path))
+  document['module-class'] = false
+  File.write(path, JSON.generate(document))
+end
+FLAVORS.each do |flavor|
+  test_prepare("#{flavor} file inspection failure", valid: false) do |paths, _|
+    path = paths.fetch(flavor)
+    document = JSON.parse(File.read(path))
+    document['files-list-failure'] = true
+    File.write(path, JSON.generate(document))
+  end
+  test_prepare("#{flavor} legacy Xposed entry", valid: false) do |paths, _|
+    path = paths.fetch(flavor)
+    document = JSON.parse(File.read(path))
+    document.fetch('files')['/assets/xposed_init'] = "com.example.LegacyModule\n"
+    File.write(path, JSON.generate(document))
+  end
+end
+test_prepare('standalone Xposed declaration leak', valid: false) do |paths, _|
+  path = paths.fetch('standalone')
+  document = JSON.parse(File.read(path))
+  document.fetch('files')['/META-INF/xposed/module.prop'] = MODULE_FILES.fetch('/META-INF/xposed/module.prop')
+  File.write(path, JSON.generate(document))
 end
 
 test_signing(fail_signing: false)

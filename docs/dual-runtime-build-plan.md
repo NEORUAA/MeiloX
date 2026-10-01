@@ -2005,6 +2005,52 @@ Local-only evidence: `/tmp/meilox-paired-search-session-unit-2026-10-02.log`,
 UI/signature/package/launch/MediaSession/crash/preservation captures. Private
 screenshots, logs, APKs and credentials are not committed. No push or merge.
 
+### D6 Checkpoint: Release Runtime Declaration Gate (2026-10-02)
+
+- The existing signed-pair preparation step now inspects the actual APKs before
+  either export. Standalone rejects modern Xposed declarations; both variants reject
+  legacy `assets/xposed_init`. Parasite requires the canonical API 102 properties,
+  `staticScope=true`, `autoHotReload=false`, the exact TV-only scope and module entry.
+  SDK DEX inspection must also resolve that declared module class. Missing files,
+  failed inspection or invalid contents stop the pair without partial export.
+- Extend the existing workflow fixture suite, not a new release tool. It passes one
+  wiring check, 13 metadata cases, 23 signed-preparation cases and four signing/key
+  cleanup cases. The 14 added negative preparation cases cover declaration leaks,
+  missing entries, wrong API/entry/scope, hot reload, absent DEX entry and failed
+  inspection. Existing production secret bindings, signing identities, permissions,
+  artifact names and manual-only publication gate remain unchanged.
+- Run the same shell blocks with real SDK 37 tools against the built production-ID
+  release APKs and a temporary fixture certificate. Both packages pass signature,
+  version, 16 KB ZIP alignment and runtime-declaration checks. An altered copy of
+  parasite has only its scope entry removed, is realigned and freshly signed with
+  that fixture key; its valid signature does not bypass the declaration gate. The
+  actual swapped, unsigned and missing-scope pairs are rejected without exports.
+  Temporary keys/APKs are removed; no production credentials are accessed.
+- Both full JVM targets and all four debug/release assemble targets pass in
+  3m 48s, including paired release vital lint. Structured test XML records 799
+  standalone cases/95 suites and 858 parasite cases/101 suites, 1,657 total with
+  zero failures/errors/skips. Ruby syntax, YAML loading, workflow shell syntax and
+  `git diff --check` pass. Actionlint is unavailable locally in this turn; the older
+  actionlint result is not represented as a fresh check of these shell additions.
+- Focused pre-merge source review rechecks local main at
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, which is an ancestor of f02acb59.
+  Only the intentional login/account-settings frontend files exist in the two flavor
+  UI trees; no general screen copy is introduced. The standalone search route/input
+  DTO still match main, and its signer retains the original payload/crypto logic
+  with captured credentials replacing global Cookie reads. This does not resolve
+  API-032's live relevance difference or complete the 405-file branch review.
+- This increment changes CI/tests and acceptance records only. No app-source/UI,
+  installation, AVD, session, orientation, scope or media operation occurs. No remote
+  workflow, push, tag, release or merge is triggered. Production signing/upgrade,
+  framework-free execution, recording/PiP and complete device/business regression
+  remain gates; D6 and the overall goal are not complete.
+
+Local-only evidence: `/tmp/meilox-release-runtime-paired-build-2026-10-02.log`,
+`/tmp/meilox-release-runtime-unit-counts-2026-10-02.txt`,
+`/tmp/meilox-release-runtime-fixtures-2026-10-02.log` and
+`/tmp/meilox-release-runtime-real-sdk-fixtures-2026-10-02.log`. Run the existing
+workflow reproduction commands above; the real-APK case requires `zip` and SDK 37.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

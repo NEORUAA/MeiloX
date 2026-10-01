@@ -134,6 +134,27 @@ jobs:
             test "$("$analyzer" manifest application-id "$file")" = "$application_id"
             test "$("$analyzer" manifest version-name "$file")" = "$VERSION_NAME"
             test "$("$analyzer" manifest version-code "$file")" = "$VERSION_CODE"
+            local files
+            files="$("$analyzer" files list --files-only "$file")"
+            case "$files" in
+              *'/assets/xposed_init'*)
+                echo '::error::Legacy Xposed declaration is not supported'
+                return 1
+                ;;
+            esac
+            if [[ "$application_id" == com.neoruaa.meilox ]]; then
+              case "$files" in
+                *'/META-INF/xposed/'*)
+                  echo '::error::Standalone APK contains Xposed declarations'
+                  return 1
+                  ;;
+              esac
+            else
+              test "$("$analyzer" files cat --file /META-INF/xposed/java_init.list "$file")" = com.ljyh.mei.parasite.MeiloXModule
+              test "$("$analyzer" files cat --file /META-INF/xposed/scope.list "$file")" = com.netease.cloudmusic.tv
+              test "$("$analyzer" files cat --file /META-INF/xposed/module.prop "$file")" = $'minApiVersion=102\ntargetApiVersion=102\nstaticScope=true\nautoHotReload=false'
+              "$analyzer" dex code --class com.ljyh.mei.parasite.MeiloXModule "$file" > /dev/null
+            fi
           }
           verify_apk "$STANDALONE_SIGNED_RELEASE_FILE" com.neoruaa.meilox
           verify_apk "$PARASITE_SIGNED_RELEASE_FILE" com.neoruaa.meilox.parasite
