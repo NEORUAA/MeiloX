@@ -82,6 +82,11 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   result categories in the original pages. A bounded song-search scroll exposes more
   than the initial 30 rows. `SearchSessionTest` exercises merging all five categories
   without that metadata. See [Session-Owned Search](official-client-parasite.md#session-owned-search).
+- Paired minified execution (2026-10-02): both original result pages render all five
+  categories, expose 47 distinct visible song title/artist pairs and navigate through
+  artist/album/playlist/podcast detail and Back. This qualifies those read/navigation
+  paths, not all-category pagination or equivalent podcast relevance; API-032 retains
+  the separate observed relevance difference. No shared UI change is introduced.
 - Defensive compatibility, not a fully established server guarantee: optional category
   totals and `hasMore` determine paging when present; otherwise a full raw page permits
   another request. Offset uses raw response count, display rows deduplicate by ID, and
@@ -2254,6 +2259,34 @@ These are integration differences, not server API semantics.
   audible output, every hydration/shuffle continuation and complete paired release
   qualification remain separate gates. The earlier standalone near-end stall is not
   repaired or qualified by this FM check. No quota grant, upload or social write occurs.
+
+### API-032: Paired Podcast Search Relevance Remains Unqualified
+
+- Recorded: 2026-10-02. Shared input is `GetSearch(s="HOYO", type=1009,
+  limit=30, offset=0)` through `ApiService.search` at `/api/search/get/`.
+  The DTO retains explicit serialized `s`, `type`, `limit` and `offset` names.
+  Standalone keeps its original direct signing/transport; parasite normalizes the
+  route to `search/get` and uses the official session/request SDK. The common result
+  model reads `djRadios`; no alternate result category is fabricated.
+- Observed on the same AVD with two different existing accounts: parasite R8
+  starts with HOYO-MiX/HoYoFair-related radios. Isolated standalone R8 starts with a
+  broad hot-song radio and other weakly related rows despite confirmed `HOYO` input
+  and the selected Podcast tab. Ordinary standalone debug after restoration produces
+  the same broad leading rows. This is not established as an R8-only failure.
+- The selected radio detail in each runtime renders its cover, metadata and program
+  list, and Back preserves the Podcast result category. These paths demonstrate
+  response consumption/navigation, not complete query relevance or equivalent server
+  behavior. No program is played, subscribed to, downloaded or bulk-loaded here.
+- Adaptation: none at this checkpoint. Do not replace standalone's contract with a
+  TV-only route, hide/filter results or modify original pages to mask the observation.
+  Original-main reproduction and bounded request/server attribution remain open;
+  account, transport/client context and server ranking causes are not distinguished.
+  Confirmed UI input and source serialization alone do not prove the encrypted wire
+  payload. No credentials or raw account responses are committed.
+- Evidence: settled screenshots/UI XML from both minified runtimes and restored
+  standalone debug; shared DTO, Repository and route inspection; five focused
+  search/album/artist/podcast suites pass 68 cases per flavor. Fixture success does
+  not qualify live search relevance. See the paired-search build-plan checkpoint.
 
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 

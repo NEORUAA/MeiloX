@@ -1942,6 +1942,69 @@ Local-only evidence: `/tmp/meilox-fm-session-final-paired-build-2026-10-01.log`,
 DEX/UI/MediaSession/AudioFlinger/package/preservation captures. Private evidence,
 APKs, official source and credentials are not committed. No push or merge.
 
+### D4/D5/D6 Checkpoint: Paired Minified Search and Detail Navigation (2026-10-02)
+
+This is bounded read-only acceptance using the original shared pages, not complete
+search relevance, catalog pagination or D4-D6 qualification. No application source,
+screen tree, layout, navigation architecture or dependency is changed.
+
+- Reuse the paired artifacts from a0ea813d without rebuilding unchanged source.
+  Parasite R8 SHA-256 is
+  `d9ed15a9928fb34a7f562eba787251be5d949764db26557a453ce433ffda7008`.
+  The isolated debug-ID standalone R8 fixture SHA-256 is
+  `8a9bb58455c07cf2cfdb8d10b449aa2cf09a9f96316575feba261ea82975d626`;
+  v3 signature verification passes with the existing development certificate and
+  DEBUGGABLE is absent. This is not production signing or original-install upgrade
+  proof. Only the isolated standalone package is updated with `-r`.
+- Search discovery renders actual recommendation artwork and category entries in
+  both minified runtimes. Both display song/artist/album suggestions and accept the
+  committed `HOYO` query through the existing IME action. Standalone additionally
+  selects the HOYO-MiX artist suggestion and opens the matching Artist result tab.
+  Initial composing/transitional input is excluded; no keyboard settings are changed.
+- Both minified song searches expose 47 distinct fully visible title/artist pairs
+  across the initial snapshot and four bounded scrolls. Structured UI XML counting
+  excludes the header, mini-player and clipped rows; 47 exceeds PAGE_SIZE 30. Covers,
+  subtitles and the existing progressive header blur render. This does not qualify
+  pagination in every search category or the artist's entire album catalog.
+- All five result categories render in both runtimes. Artist, album, playlist and
+  podcast title rows enter their original detail pages; Back retains the originating
+  result category. Artist detail displays the existing biography, artwork and
+  catalog counts; the same selected album displays 102 songs and the selected
+  playlist displays 79 songs in both runtimes. Follow, collection, play and menu
+  write actions remain untouched. Settled screenshots exclude initial image
+  placeholders and one TV tab tap consumed during a return transition.
+- Podcast detail routing, artwork and program lists render, but search relevance is
+  not qualified: TV's `HOYO` results start with matching HOYO-MiX programs while
+  standalone starts with a broad hot-song radio and other weakly related entries.
+  Restored ordinary standalone debug reproduces the latter with confirmed `HOYO`
+  input. API-032 records the observation, unchanged DTO/route and attribution limits;
+  no endpoint substitution, client-side filtering or UI repair is introduced.
+- Rerun SearchSessionTest, AlbumSessionTest, ArtistSessionTest, PodcastSessionTest
+  and PodcastPagingTest for both debug flavors: five suites and 68 cases each,
+  136 total, zero failures/errors/skips; Gradle succeeds in four seconds. These
+  focused results do not replace the preceding full paired 1,657-case run, paired
+  build/vital-lint result, real-SDK signing fixtures or unexecuted acceptance gates.
+- Standalone R8 launches COLD in 686 ms and retains seven items/index 1 at
+  145,670 ms, state NONE/speed 0 without autoplay. Ordinary debug is restored with
+  `-r`; its initial UNKNOWN/0 start is excluded and a separate COLD launch takes
+  1,185 ms. Final debug PID 6214 has seven items/index 1 at 145,670 ms PAUSED;
+  TV PID 27271 retains six/index 1 at 55,536 ms PAUSED. Official TV playback remains
+  inactive STOPPED/empty. UID 10254, DEBUGGABLE and the original ungranted
+  notification/recording permissions are preserved/restored. Current app-PID crash
+  buffers are empty; the global buffer retains earlier automation/instrumentation
+  failures, which are not erased or misreported as current app crashes.
+- MediaStore row 820 remains TV-owned, published and 22,705,573 bytes. Root AVD
+  stays awake on portrait TV MeiloX Home. No production-app replacement, Cookie
+  read, data transfer, account mutation, quota download, upload, social action,
+  physical-device operation, reboot, screen-off or scope/orientation change occurs.
+  Framework-free startup, original-install upgrade, recording/PiP decisions, real
+  session transitions and the independently open near-end stall remain unresolved.
+
+Local-only evidence: `/tmp/meilox-paired-search-session-unit-2026-10-02.log`,
+`/tmp/meilox-paired-search-song-row-counts-2026-10-02.txt`, and same-prefix
+UI/signature/package/launch/MediaSession/crash/preservation captures. Private
+screenshots, logs, APKs and credentials are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
