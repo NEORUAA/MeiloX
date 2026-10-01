@@ -2,6 +2,7 @@ package com.ljyh.mei.data.repository
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionIdentity
@@ -19,6 +20,7 @@ import okhttp3.ResponseBody
 import org.junit.Assert.*
 import org.junit.Test
 import retrofit2.Response
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CloudLibraryBackendTest {
@@ -26,7 +28,9 @@ class CloudLibraryBackendTest {
     private val sessions = SessionStore().apply { bind { identity } }
     private val owner = sessions.snapshot()
     private val calls = mutableListOf<Triple<String, Map<String, Any>, SessionStamp?>>()
+    private val alternativeCalls = mutableListOf<Triple<String, Map<String, Any>, SessionStamp?>>()
     private var reply: suspend (Map<String, Any>) -> JsonObject = { page(emptyList()) }
+    private var alternativeReply: suspend (Map<String, Any>) -> JsonObject = { reply(it) }
     private val api = object : MeloXDirectService {
         override suspend fun post(path: String, body: Map<String, Any>, headers: Map<String, String>, expectedSession: SessionStamp?): JsonObject {
             assertTrue(headers.isEmpty())
@@ -35,7 +39,86 @@ class CloudLibraryBackendTest {
         }
         override suspend fun postPlaybackRaw(path: String, body: Map<String, Any>, headers: Map<String, String>): Response<ResponseBody> = error("Unexpected raw request")
     }
-    private val backend = CloudLibraryBackend(api, sessions)
+    private val eapi = object : MeloXDirectService {
+        override suspend fun post(path: String, body: Map<String, Any>, headers: Map<String, String>, expectedSession: SessionStamp?): JsonObject {
+            assertTrue(headers.isEmpty())
+            alternativeCalls += Triple(path, body, expectedSession)
+            return alternativeReply(body)
+        }
+        override suspend fun postPlaybackRaw(path: String, body: Map<String, Any>, headers: Map<String, String>): Response<ResponseBody> = error("Unexpected raw request")
+    }
+    private val backend = CloudLibraryBackend(api, sessions, eapi)
+
+    @Test fun failedReadAndDeleteRetryOnlyStandaloneWithTheSameBodyAndOwner() = runTest {
+        reply = { json("""{"code":403}""") }
+        alternativeReply = { page(emptyList()) }
+        val read = runCatching { backend.songs(owner) }
+        val delete = runCatching { backend.delete(owner, 17) }
+        if (BuildConfig.FLAVOR == "standalone") {
+            assertTrue(read.getOrThrow().songs.isEmpty())
+            delete.getOrThrow()
+            assertEquals(calls, alternativeCalls)
+        } else {
+            assertTrue(read.isFailure)
+            assertTrue(delete.isFailure)
+            assertTrue(alternativeCalls.isEmpty())
+        }
+        assertEquals(listOf("/api/v1/cloud/get", "/api/cloud/del"), calls.map { it.first })
+    }
+
+    @Test fun transportAndAlternativeFailuresAreTerminalAndAllowAFreshRetry() = runTest {
+        val primary = IOException("Synthetic primary failure")
+        val alternative = IOException("Synthetic alternative failure")
+        reply = { throw primary }
+        alternativeReply = { throw alternative }
+        assertSame(if (BuildConfig.FLAVOR == "standalone") alternative else primary,
+            runCatching { backend.songs(owner) }.exceptionOrNull())
+        assertEquals(1, calls.size)
+        assertEquals(if (BuildConfig.FLAVOR == "standalone") 1 else 0, alternativeCalls.size)
+        reply = { page(emptyList()) }
+        assertTrue(backend.songs(owner).songs.isEmpty())
+        assertEquals(2, calls.size)
+    }
+
+    @Test fun recoveryDuringAFailedRequestCannotReachTheAlternative() = runTest {
+        reply = { sessions.setRecoveryRequired(true); throw IOException("Synthetic failure") }
+        assertTrue(runCatching { backend.songs(owner) }.isFailure)
+        assertTrue(alternativeCalls.isEmpty())
+        sessions.setRecoveryRequired(false)
+        reply = { page(emptyList()) }
+        assertTrue(backend.songs(owner).songs.isEmpty())
+    }
+
+    @Test fun accountReplacementDuringAFailedRequestCannotBorrowTheNewAccount() = runTest {
+        val primary = IOException("Synthetic stale response")
+        reply = {
+            identity = SessionIdentity(8, true, false)
+            sessions.invalidate()
+            throw primary
+        }
+        val failure = runCatching { backend.delete(owner, 17) }.exceptionOrNull()
+        if (BuildConfig.FLAVOR == "standalone") assertTrue(failure is SessionChangedException)
+        else assertSame(primary, failure)
+        assertEquals(listOf(owner), calls.map { it.third })
+        assertTrue(alternativeCalls.isEmpty())
+    }
+
+    @Test fun canceledNonCooperativeFailureDoesNotRetryAfterCompletion() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<Unit>()
+        reply = {
+            started.complete(Unit)
+            withContext(NonCancellable) { response.await() }
+            json("""{"code":500}""")
+        }
+        val pending = async { backend.songs(owner) }
+        started.await()
+        pending.cancel()
+        response.complete(Unit)
+        pending.join()
+        assertTrue(pending.isCancelled)
+        assertTrue(alternativeCalls.isEmpty())
+    }
 
     @Test fun completeSnapshotUsesAllPagesUnderOneOwner() = runTest {
         reply = { body -> when (body["offset"]) {

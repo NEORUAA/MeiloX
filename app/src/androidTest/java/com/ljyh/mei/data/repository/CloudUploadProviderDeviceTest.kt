@@ -275,7 +275,7 @@ class CloudUploadProviderDeviceTest {
             }
         }
         private val repository = MeloXRepository(api, api, context, sessions,
-            CloudUploadCoordinator(api, api, sessions, binary), CloudLibraryBackend(api, sessions))
+            CloudUploadCoordinator(api, api, sessions, binary), CloudLibraryBackend(api, sessions, api))
         suspend fun upload() = repository.uploadCloudSong(owner, uri.toString()) { sent, total -> progress += sent to total }
         fun command(command: String) = resolver.call(base, command, id, null)!!
         fun status() = command("status")

@@ -30,7 +30,7 @@ class ListenTogetherRequestDeviceTest {
         CloudUploadCoordinator(eapi, weapi, sessions, object : CloudBinaryUploader {
             override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization,
                 owner: SessionStamp, onProgress: (Long, Long) -> Unit) = error("Unrelated upload")
-        }), CloudLibraryBackend(weapi, sessions),
+        }), CloudLibraryBackend(weapi, sessions, eapi),
     )
     private data class Request(val path: String, val body: Map<String, Any>, val owner: SessionStamp?, val headers: Map<String, String>)
     private class Transport : MeloXDirectService {

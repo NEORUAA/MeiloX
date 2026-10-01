@@ -231,7 +231,7 @@ class AccountReadDeviceTest {
         }
         val weapi = unused<MeloXDirectService>()
         val repository = MeloXRepository(eapi, weapi, InstrumentationRegistry.getInstrumentation().targetContext, sessions,
-            CloudUploadCoordinator(eapi, weapi, sessions, unused<CloudBinaryUploader>()), CloudLibraryBackend(weapi, sessions))
+            CloudUploadCoordinator(eapi, weapi, sessions, unused<CloudBinaryUploader>()), CloudLibraryBackend(weapi, sessions, eapi))
         fun profile() = json("""{"code":200,"profile":{"userId":17,"nickname":"Fixture"}}""")
     }
 

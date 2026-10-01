@@ -2553,12 +2553,28 @@ These are integration differences, not server API semantics.
   its expected map was corrected to retain original Int pagination, not production.
   Standalone's path rewrites survive production R8; both new R8 runtimes restore their
   existing account and display real subscribed podcasts without playback or writes.
-- Remaining bounded fidelity work: CloudLibraryBackend's list/delete requests and
-  CloudUploadCoordinator's binary NOS token allocation were extracted from main's
-  generic helper. Their signing modes are now restored, but their original standalone
-  WeAPI-to-EAPI retry has not yet been restored. Add the same owner/cancellation policy
-  at those backend boundaries, with substitute tests only; do not repeat cloud upload
-  experiments. Other real cooperation, full release and merge gates remain open.
+- Follow-up repair: CloudLibraryBackend's list/delete and CloudUploadCoordinator's
+  binary NOS token allocation now reuse the flavor policy to restore their original
+  standalone WeAPI-to-EAPI retry. Both attempts retain the original body and captured
+  owner, with cancellation/current/recovery guards before and after transport. The
+  host still makes one official request; its original SDK exception is not normalized
+  into the standalone alternative's precondition error. No credentials cross runtimes.
+- Explicit EAPI upload check, metadata allocation, registration and publication do not
+  gain retries, and binary transfer is not repeated. Completion still follows accepted
+  publication. Four targeted assertions fail before repair; nine shared and two
+  standalone tests cover business/HTTP failures, terminal alternatives, canceled late
+  responses, recovery and account replacement. Final JVM totals are 873 standalone
+  and 922 parasite, with zero failures/errors/skips. Production Retrofit/interceptor
+  fixtures verify the secondary EAPI signature and unchanged business payload without
+  sockets, followed by one substitute binary transfer only.
+- Sixty-one Android substitute cases pass per flavor, including real provider IPC
+  with synthetic authorization/files; opt-in live cloud fixtures are not run. Both
+  R8 runtimes cold-start and restore their distinct existing Home accounts. These
+  checks do not qualify real uploads, server-induced fallback or the complete session
+  matrix. A bounded audit of removed shared DTO transport fields finds the repaired
+  photo defaults, homepage fields already overwritten by the original EAPI encoder,
+  and an unused search DTO; no new gap is established by that audit. Other real
+  cooperation, original-install upgrade, full release and merge gates remain open.
 
 ## Adding an Entry
 

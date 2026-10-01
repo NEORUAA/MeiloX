@@ -26,7 +26,8 @@ class StandaloneLiveReadDeviceTest {
         val sessions = AppGraph.component.standaloneSessions()
         val calls = StandaloneTransport(sessions).business
         val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
-        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner).songs.firstOrNull()
+        val eapi = RetrofitModule.provideMeloXEapiService(RetrofitModule.provideRetrofit(calls))
+        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions, eapi).songs(owner).songs.firstOrNull()
         assumeTrue("The account has no cloud entries", song != null)
         val source = requireNotNull(song?.source)
         source.requireAccount(owner.identity)
@@ -40,7 +41,8 @@ class StandaloneLiveReadDeviceTest {
         val sessions = AppGraph.component.standaloneSessions()
         val calls = StandaloneTransport(sessions).business
         val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
-        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner).songs.firstOrNull()
+        val eapi = RetrofitModule.provideMeloXEapiService(RetrofitModule.provideRetrofit(calls))
+        val song = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions, eapi).songs(owner).songs.firstOrNull()
         assumeTrue("The account has no cloud entries", song != null)
         val result = AppGraph.component.songLyrics().lyrics(requireNotNull(song?.source).key, owner)
         assertEquals("Cloud lyric read was not accepted", 200, result.code)
@@ -51,7 +53,8 @@ class StandaloneLiveReadDeviceTest {
         val sessions = AppGraph.component.standaloneSessions()
         val calls = StandaloneTransport(sessions).business
         val api = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
-        val page = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions).songs(owner)
+        val eapi = RetrofitModule.provideMeloXEapiService(RetrofitModule.provideRetrofit(calls))
+        val page = com.ljyh.mei.data.repository.CloudLibraryBackend(api, sessions, eapi).songs(owner)
         assumeTrue("The account has no cloud entries", page.songs.isNotEmpty())
         assertTrue("Cloud entries lost their account affinity", page.songs.all { it.source?.accountId == owner.identity.userId })
         val song = page.songs.first()

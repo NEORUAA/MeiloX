@@ -8,6 +8,7 @@ import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.runtime.MeloXRequestPolicy
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.currentCoroutineContext
@@ -17,6 +18,7 @@ import kotlinx.coroutines.ensureActive
 class CloudLibraryBackend @Inject constructor(
     @param:Named("MeloXWeapi") private val api: MeloXDirectService,
     private val sessions: SessionStore,
+    @param:Named("MeloXEapi") private val eapi: MeloXDirectService,
 ) {
     suspend fun songs(owner: SessionStamp): CloudMusicPage {
         val songs = mutableListOf<CloudSong>()
@@ -57,16 +59,19 @@ class CloudLibraryBackend @Inject constructor(
     }
 
     private suspend fun request(owner: SessionStamp, path: String, body: Map<String, Any>): JsonObject {
-        check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
-        currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(owner)
-        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
-        val response = api.post(path, body, expectedSession = owner)
-        currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(owner)
-        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
-        check(response.integer("code") == 200L) { "Cloud request was not accepted" }
-        return response
+        suspend fun attempt(service: MeloXDirectService): JsonObject {
+            check(owner.identity.authenticated && !owner.identity.anonymous && owner.identity.userId > 0) { "Sign-in required" }
+            currentCoroutineContext().ensureActive()
+            sessions.requireCurrent(owner)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+            val response = service.post(path, body, expectedSession = owner)
+            currentCoroutineContext().ensureActive()
+            sessions.requireCurrent(owner)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+            check(response.integer("code") == 200L) { "Cloud request was not accepted" }
+            return response
+        }
+        return MeloXRequestPolicy.request({ attempt(api) }, { attempt(eapi) })
     }
 }
 

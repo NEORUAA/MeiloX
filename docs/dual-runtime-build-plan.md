@@ -2359,6 +2359,46 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   retry behavior in two extracted cloud adapter boundaries, to repair with substitutes
   without repeating upload experiments. Full D3-D6/merge acceptance remains open.
 
+### D3/D4/D5/D6 Checkpoint: Extracted Standalone Retry Restoration (2026-10-02)
+
+- ABI-015's two remaining extracted retry boundaries are repaired using the existing
+  flavor policy: cloud list/delete and binary NOS token allocation. Standalone retains
+  original WeAPI-to-EAPI behavior under one captured owner; parasite remains on one
+  official request with its original failure. Explicit EAPI upload phases and binary
+  transfer do not gain retries, and only accepted publication marks completion.
+  Parsing, bodies, database, shared UI/navigation and playback remain unchanged.
+- Four targeted assertions fail before repair. Final paired JVM suites pass 873
+  standalone and 922 parasite cases, zero failures/errors/skips. Production Retrofit/
+  signing fixtures validate business 403 and HTTP 503 alternatives without sockets,
+  preserving payload/owner and performing one synthetic binary transfer. Nine shared
+  and two standalone cases are added. Six device fixtures and three opt-in live-read
+  constructors are adapted; the live fixtures are not executed. A host SDK IOException
+  expectation is corrected in the test only; production host failures stay untouched.
+- Sixty-one Android substitute cases pass per flavor (122 total), including real
+  ContentResolver IPC with synthetic authorization/files. Paired debug/release/test
+  APK builds pass in 5m12s (255 tasks); isolated standalone R8 builds in 3m53s. The
+  release gate passes 41 fixtures plus actual SDK signing/identity/version/16KB/
+  declaration checks and rejects swapped, unsigned and missing-scope pairs.
+- Development-signed parasite R8 SHA256:
+  `ca305f68a7d6b31911992422549b3de914f025372f833f3d9d4767896d482a9f`.
+  Isolated standalone R8 SHA256:
+  `6944c8f9c7cb9d2a08898d13ae206af2c3b5d8e18a9d3e7c4e5a696a978fdfbe`.
+  Existing development certificate and 16KB alignment verify. Actual COLD starts take
+  6451ms (TV/PID 6218) and 849ms (isolated standalone/PID 7253). The first standalone
+  frame reports recovery required; a later screenshot shows restored account/feed and
+  the existing mini-player without intervention. Startup timing is not feed-load timing.
+- Ordinary standalone debug is restored with install-r and COLD starts in 2625ms
+  (PID 7711), displaying its existing account/feed/mini-player. UID 10254 and ungranted
+  microphone/notification flags remain unchanged. Scoped crash buffers are empty;
+  TV's module queue remains six tracks, PAUSED at 55536ms/speed 0. MediaStore row 820
+  retains TV ownership, 22705573 bytes and pending=0. No new playback, upload, delete,
+  download or social write occurs. The rooted AVD is not restarted or powered off and
+  returns awake to TV's portrait MeiloX Home.
+- Evidence stays in `/tmp/meilox-extracted-retry-*-2026-10-02*`; no APKs, credentials,
+  logs or official sources enter Git. These bounded source/wire repairs close the
+  extracted retry gap, not D3-D6 or merge acceptance. Framework-free startup, original
+  installation upgrade, capability decisions and full paired/server regression stay open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

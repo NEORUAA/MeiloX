@@ -1,25 +1,33 @@
 package com.ljyh.mei.data.repository
 
 import com.google.gson.JsonParser
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import java.io.IOException
 import java.io.File
-import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import retrofit2.Response
 
 class CloudUploadCoordinatorTest {
     @get:Rule val temp = TemporaryFolder()
-    private val sessions = SessionStore().apply { bind { SessionIdentity(7, true, false) } }
+    private var identity = SessionIdentity(7, true, false)
+    private val sessions = SessionStore().apply { bind { identity } }
     private val owner = sessions.snapshot()
     private val calls = mutableListOf<Triple<String, Map<String, Any>, SessionStamp>>()
+    private val protocols = mutableListOf<Boolean>()
     private val progress = mutableListOf<Pair<Long, Long>>()
     private var transferCount = 0
     private var after: (String) -> Unit = {}
@@ -30,15 +38,18 @@ class CloudUploadCoordinatorTest {
         "/api/upload/cloud/info/v2" to """{"code":200,"songId":101}""",
         "/api/cloud/pub/v2" to """{"code":200}""",
     )
-    private val api = Proxy.newProxyInstance(MeloXDirectService::class.java.classLoader,
-        arrayOf(MeloXDirectService::class.java)) { _, method, args ->
-        check(method.name == "post")
-        @Suppress("UNCHECKED_CAST")
-        calls += Triple(args[0] as String, args[1] as Map<String, Any>, args[3] as SessionStamp)
-        after(args[0] as String)
-        JsonParser.parseString(replies.getValue(args[0] as String)).asJsonObject
-    } as MeloXDirectService
-    private val source = CloudUploadCoordinator(api, api, sessions, object : CloudBinaryUploader {
+    private var replyFor: suspend (String, Map<String, Any>, Boolean) -> String = { path, _, _ -> replies.getValue(path) }
+    private fun api(eapi: Boolean) = object : MeloXDirectService {
+        override suspend fun post(path: String, body: Map<String, Any>, headers: Map<String, String>, expectedSession: SessionStamp?): com.google.gson.JsonObject {
+            assertTrue(headers.isEmpty())
+            calls += Triple(path, body, requireNotNull(expectedSession))
+            protocols += eapi
+            after(path)
+            return JsonParser.parseString(replyFor(path, body, eapi)).asJsonObject
+        }
+        override suspend fun postPlaybackRaw(path: String, body: Map<String, Any>, headers: Map<String, String>): Response<ResponseBody> = error("Unexpected raw request")
+    }
+    private val source = CloudUploadCoordinator(api(true), api(false), sessions, object : CloudBinaryUploader {
         override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization, owner: SessionStamp, onProgress: (Long, Long) -> Unit) {
             transferCount++
             assertEquals(sessions.snapshot(), owner)
@@ -54,6 +65,85 @@ class CloudUploadCoordinatorTest {
         return CloudUploadFile(file, "Test.mp3", "mp3", "Test", 3, "900150983cd24fb0d6963f7d28e17f72", "Test", "Artist", "Album", "audio/mpeg")
     }
     private suspend fun upload(stamp: SessionStamp = owner) = source.upload(file(), stamp) { sent, total -> progress += sent to total }
+
+    @Test fun failedBinaryAuthorizationRetriesOnlyStandaloneAndTransfersOnce() = runBlocking {
+        replyFor = { path, body, eapi ->
+            if (!eapi && path == "/api/nos/token/alloc" && body["bucket"] != "") """{"code":403}"""
+            else replies.getValue(path)
+        }
+        val result = runCatching { upload() }
+        if (BuildConfig.FLAVOR == "standalone") {
+            result.getOrThrow()
+            assertEquals(listOf(true, true, false, true, true, true), protocols)
+            assertEquals(calls[2], calls[3])
+            assertEquals(1, transferCount)
+            assertEquals(listOf(2L to 3L, 3L to 3L), progress)
+        } else {
+            assertTrue(result.isFailure)
+            assertEquals(listOf(true, true, false), protocols)
+            assertEquals(0, transferCount)
+            assertTrue(progress.isEmpty())
+        }
+        assertTrue(calls.all { it.third == owner })
+    }
+
+    @Test fun failedBinaryAuthorizationAlternativesDoNotLoopOrTransfer() = runBlocking {
+        val primary = IOException("Synthetic primary failure")
+        val alternative = IOException("Synthetic alternative failure")
+        replyFor = { path, body, eapi ->
+            if (path == "/api/nos/token/alloc" && body["bucket"] != "") throw if (eapi) alternative else primary
+            replies.getValue(path)
+        }
+        assertSame(if (BuildConfig.FLAVOR == "standalone") alternative else primary,
+            runCatching { upload() }.exceptionOrNull())
+        assertEquals(if (BuildConfig.FLAVOR == "standalone") 4 else 3, calls.size)
+        assertEquals(0, transferCount)
+        assertTrue(progress.isEmpty())
+    }
+
+    @Test fun recoveryReauthorizationAndReplacementDuringBinaryFailurePreventTheAlternative() = runBlocking {
+        for (change in listOf("reauthorization", "recovery", "replacement")) {
+            sessions.setRecoveryRequired(false)
+            val stamp = sessions.snapshot()
+            val before = calls.size
+            replyFor = { path, body, _ ->
+                if (path == "/api/nos/token/alloc" && body["bucket"] != "") {
+                    if (change == "recovery") sessions.setRecoveryRequired(true) else {
+                        if (change == "replacement") identity = SessionIdentity(8, true, false)
+                        sessions.invalidate()
+                    }
+                    throw IOException("Synthetic failure")
+                }
+                replies.getValue(path)
+            }
+            assertTrue(runCatching { upload(stamp) }.isFailure)
+            assertEquals(3, calls.size - before)
+            assertTrue(calls.drop(before).all { it.third == stamp })
+        }
+        assertEquals(0, transferCount)
+        assertTrue(progress.isEmpty())
+    }
+
+    @Test fun canceledNonCooperativeBinaryFailureCannotAllocateAnAlternative() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<Unit>()
+        replyFor = { path, body, _ ->
+            if (path == "/api/nos/token/alloc" && body["bucket"] != "") {
+                started.complete(Unit)
+                withContext(NonCancellable) { response.await() }
+                """{"code":403}"""
+            } else replies.getValue(path)
+        }
+        val pending = async { upload() }
+        started.await()
+        pending.cancel()
+        response.complete(Unit)
+        pending.join()
+        assertTrue(pending.isCancelled)
+        assertEquals(3, calls.size)
+        assertEquals(0, transferCount)
+        assertTrue(progress.isEmpty())
+    }
 
     @Test fun allPhasesUseOneOwnerAndOnlyPublishMarksComplete() = runBlocking {
         upload()

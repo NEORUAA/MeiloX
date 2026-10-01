@@ -2,6 +2,7 @@ package com.ljyh.mei.data.repository
 
 import com.google.gson.JsonObject
 import com.ljyh.mei.data.network.api.MeloXDirectService
+import com.ljyh.mei.runtime.MeloXRequestPolicy
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import java.io.File
@@ -79,7 +80,11 @@ class CloudUploadCoordinator @Inject constructor(
             ?: error("Missing cloud resource identity")
         if (needUpload) {
             val bucket = "jd-musicrep-privatecloud-audio-public"
-            val token = request(weapi, "/api/nos/token/alloc", tokenBody(bucket)).getAsJsonObject("result")
+            val body = tokenBody(bucket)
+            val token = MeloXRequestPolicy.request(
+                { request(weapi, "/api/nos/token/alloc", body) },
+                { request(eapi, "/api/nos/token/alloc", body) },
+            ).getAsJsonObject("result")
                 ?: error("Missing cloud file authorization")
             check(!token.has("bucket") || token.get("bucket").asString == bucket) { "Unexpected cloud upload bucket" }
             val authorization = CloudUploadAuthorization(bucket,

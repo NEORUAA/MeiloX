@@ -151,7 +151,7 @@ class MeloXDynamicRequestDeviceTest {
             CloudUploadCoordinator(eapi, weapi, sessions, object : CloudBinaryUploader {
                 override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization,
                     owner: SessionStamp, onProgress: (Long, Long) -> Unit) = error("Unexpected upload")
-            }), CloudLibraryBackend(weapi, sessions))
+            }), CloudLibraryBackend(weapi, sessions, eapi))
         suspend fun read() = repository.podcasts(owner, 5, 2, 20)
         fun success() = json("""{"code":200,"djRadios":[]}""")
     }

@@ -46,7 +46,7 @@ class SongWikiRequestDeviceTest {
         CloudUploadCoordinator(eapi, weapi, sessions, object : CloudBinaryUploader {
             override suspend fun upload(file: CloudUploadFile, authorization: CloudUploadAuthorization,
                 owner: SessionStamp, onProgress: (Long, Long) -> Unit) = error("Unrelated upload")
-        }), CloudLibraryBackend(weapi, sessions))
+        }), CloudLibraryBackend(weapi, sessions, eapi))
 
     @Test fun originalWikiPayloadAndPersonalizedMemoryMappingCarryOneOwner() = runBlocking {
         reply = { json("""{"code":200,"data":{"blocks":[
