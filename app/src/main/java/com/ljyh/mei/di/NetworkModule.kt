@@ -10,6 +10,7 @@ import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.api.MeloXDirectService
+import com.ljyh.mei.runtime.MeloXRequestPolicy
 import com.ljyh.mei.data.network.api.AudioMatchService
 import com.ljyh.mei.utils.log.NetworkLogInterceptor
 import dagger.Module
@@ -75,14 +76,14 @@ object RetrofitModule {
     @Singleton
     @Named("MeloXEapi")
     fun provideMeloXEapiService(retrofit: Retrofit): MeloXDirectService =
-        retrofit.create(MeloXDirectService::class.java)
+        MeloXRequestPolicy.service(retrofit.create(MeloXDirectService::class.java), useEapi = true)
 
     @Provides
     @Singleton
     @Named("MeloXWeapi")
     fun provideMeloXWeapiService(
         @Named("WeApiRetrofit") retrofit: Retrofit,
-    ): MeloXDirectService = retrofit.create(MeloXDirectService::class.java)
+    ): MeloXDirectService = MeloXRequestPolicy.service(retrofit.create(MeloXDirectService::class.java), useEapi = false)
 
     @Provides
     @Singleton

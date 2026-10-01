@@ -2314,6 +2314,51 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   backend-only repair. Original-install upgrade, framework-free startup, microphone/
   PiP, real cooperation and full release/merge gates remain open.
 
+### D3/D4/D5/D6 Checkpoint: Dynamic Standalone Signing Restoration (2026-10-02)
+
+- ABI-015's mode gap is repaired at the flavor-owned dynamic service boundary. The
+  standalone EAPI/WeAPI qualifiers rewrite logical paths to their original prefixes;
+  host qualifiers remain unwrapped official-SDK services. Typed APIs and raw playback
+  history retain their previous profiles. No frontend/resource/component changes occur.
+- The generic Repository helper restores standalone's original WeAPI-to-EAPI retry,
+  retaining the captured owner and rejecting cancellation, changed generation and
+  recovery before/after either attempt. Explicit account calls and the parasite helper
+  do not acquire generic retries. API-036 restores original photo form defaults only
+  in the standalone interceptor, not in the shared DTO or official signing metadata.
+- Three production-provider/interceptor assertions fail before repair. Final paired
+  JVM suites pass 862 standalone and 913 parasite cases, with zero failures/errors/
+  skips. Paired debug/release/test builds pass in 7m05s (255 tasks); the isolated
+  standalone R8 build passes in 4m26s. The release gate passes 41 fixtures plus real
+  SDK signing, identity, version, 16KB, declaration and malformed-pair checks.
+- Forty-six Android substitute cases pass per flavor (92 total), using actual
+  repositories for dynamic retry, account/library, social, Together and wiki reads.
+  No socket/contact/account/upload mutation occurs. One initial expected Map inferred
+  Long pagination literals; only the fixture was corrected to original Int types.
+  Final paired test-APK/unit rebuild passes in 13s. This is not live session-expiry or
+  real social/cooperating-account acceptance.
+- Final review makes the noncooperating cancellation case join its canceled child
+  before asserting no fallback. The revised test APKs build in 12s; both full 46-case
+  device suites pass again, including this stronger terminal-state assertion.
+- Development-signed parasite R8 SHA256:
+  `1dd63fa0bd2070897145dee387567345a6b8431afa46bf2c8d3b226298891704`.
+  Isolated standalone R8 SHA256:
+  `7789e8a0a2602ea5598f5bc7b2a2aafe4052adad686b1d61b0933f9989725fe0`.
+  Both verify with the existing development certificate and 16KB alignment. Actual
+  COLD starts take 3495ms (TV/PID 32123) and 2447ms (isolated standalone/PID 565).
+  Screenshots show their distinct restored account avatars and subscribed podcasts.
+  Production standalone R8 DEX retains both dynamic path rewrites. No forced live
+  server failure, individual photo wire success or full release playback is claimed.
+- Ordinary standalone debug is restored with install-r. After the final fixtures,
+  it COLD starts in 2634ms (PID 3169); the restored parasite R8 COLD starts in 1528ms
+  (TV PID 3331). UID 10254, ungranted microphone/notification flags, TV queue 6/55536ms
+  and standalone queue 7/145670ms are retained, with speed 0. Scoped crash buffers
+  are empty. MediaStore row 820 remains TV-owned, 22705573 bytes and pending=0. AVD
+  remains awake on TV's MeiloX Home; the emulator itself is not restarted or powered off.
+- Evidence stays in `/tmp/meilox-dynamic-transport-*-2026-10-02*`; no credentials,
+  APKs, logs or official sources enter Git. ABI-015 records the remaining original
+  retry behavior in two extracted cloud adapter boundaries, to repair with substitutes
+  without repeating upload experiments. Full D3-D6/merge acceptance remains open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

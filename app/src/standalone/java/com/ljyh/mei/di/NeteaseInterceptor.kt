@@ -360,7 +360,12 @@ class NeteaseInterceptor(
                 val formBodyBuilder = FormBody.Builder()
                 if (rawBody.isNotEmpty()) {
                     try {
-                        val map = gson.fromJson(rawBody, Map::class.java)
+                        val map = gson.fromJson(rawBody, Map::class.java).toMutableMap()
+                        if (originalRequest.url.encodedPath == "/api/user/photo/album/get") {
+                            // Restore legacy form metadata without passing it to the official SDK.
+                            map.putIfAbsent("header", "{}")
+                            map.putIfAbsent("e_r", true)
+                        }
                         for ((k, v) in map) formBodyBuilder.add(k.toString(), v.toString())
                     } catch (e: Exception) {}
                 }

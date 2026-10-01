@@ -74,6 +74,7 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 import com.ljyh.mei.di.ApplicationContext
+import com.ljyh.mei.runtime.MeloXRequestPolicy
 
 internal const val PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT =
     "https://interface.music.163.com/eapi/feedback/weblog"
@@ -770,11 +771,29 @@ class MeloXRepository @Inject constructor(
 
     private suspend fun request(
         path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp? = null,
-    ): JsonObject = validate(weapi.post(path, body, expectedSession = session))
+    ): JsonObject {
+        val owner = session ?: sessions.snapshot()
+        return MeloXRequestPolicy.request(
+            { requestOwned(weapi, path, body, owner) },
+            { requestOwned(eapi, path, body, owner) },
+        )
+    }
 
     private suspend fun requestEapi(
         path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp? = null,
-    ): JsonObject = validate(eapi.post(path, body, expectedSession = session))
+    ): JsonObject = requestOwned(eapi, path, body, session ?: sessions.snapshot())
+
+    private suspend fun requestOwned(service: MeloXDirectService, path: String, body: Map<String, Any>,
+        owner: SessionStamp): JsonObject {
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(owner)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        val response = service.post(path, body, expectedSession = owner)
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(owner)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        return validate(response)
+    }
 
     private fun validate(response: JsonObject): JsonObject {
         val code = response.int("code") ?: 200

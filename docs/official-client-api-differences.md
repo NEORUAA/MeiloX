@@ -2475,6 +2475,11 @@ These are integration differences, not server API semantics.
   only. Keep the common DTO and official SDK request free of module-owned signing
   metadata. This is a source/configuration fidelity gap, not an observed photo-server
   failure; photo wire acceptance is still unqualified.
+- Repair: the standalone API form encoder now supplies the original defaults only on
+  `/api/user/photo/album/get`. The shared DTO still contains userId/page only, and the
+  host never receives these module transport defaults. A production-provider/Retrofit/
+  interceptor JVM test fails before repair and passes after it; unrelated typed API
+  forms remain unchanged. No separate live photo-server acceptance is claimed.
 
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 
@@ -2531,6 +2536,29 @@ These are integration differences, not server API semantics.
   signed-request evidence. Keep parasite on its single official pipeline with no
   standalone/signature fallback. Do not copy frontend trees or alter business bodies
   to mask the gap. Full standalone restoration and merge acceptance remain open.
+- Repair: flavor-owned MeloXRequestPolicy binds the two dynamic service qualifiers to
+  their original path prefixes in standalone only. It does not change typed Retrofit
+  APIs or raw playback-history profile handling. Host qualifiers still return the
+  unwrapped SDK service. All consumers of these named services receive the restored
+  mode, including the extracted cloud adapters; no credentials cross runtimes.
+- The Repository's generic helper again retries validated WeAPI failures through EAPI
+  only in standalone. Both attempts retain one captured SessionStamp, with pre/post
+  cancellation/current/recovery checks. Cancellation, account replacement and
+  reauthorization cannot retry under a new account. Explicit account WeAPI/EAPI calls
+  do not acquire this generic retry behavior; the host never invokes the alternative.
+- Three production-provider/interceptor assertions fail before repair. Paired JVM
+  suites pass 862 standalone and 913 parasite cases. Forty-six Android substitute
+  cases pass per flavor, including actual Repository retry and late-response behavior.
+  An initial test's numeric Map inference incorrectly boxed offset/limit as Long;
+  its expected map was corrected to retain original Int pagination, not production.
+  Standalone's path rewrites survive production R8; both new R8 runtimes restore their
+  existing account and display real subscribed podcasts without playback or writes.
+- Remaining bounded fidelity work: CloudLibraryBackend's list/delete requests and
+  CloudUploadCoordinator's binary NOS token allocation were extracted from main's
+  generic helper. Their signing modes are now restored, but their original standalone
+  WeAPI-to-EAPI retry has not yet been restored. Add the same owner/cancellation policy
+  at those backend boundaries, with substitute tests only; do not repeat cloud upload
+  experiments. Other real cooperation, full release and merge gates remain open.
 
 ## Adding an Entry
 
