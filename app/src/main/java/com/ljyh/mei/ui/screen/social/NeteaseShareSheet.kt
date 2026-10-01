@@ -43,6 +43,10 @@ import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.model.melox.ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.data.repository.SocialSource
+import com.ljyh.mei.data.session.AccountStore
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.IosGroupedList
@@ -54,8 +58,10 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import javax.inject.Inject
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 private enum class NeteaseShareMode { Menu, PrivateMessage, Timeline }
@@ -65,59 +71,89 @@ data class NeteaseShareUiState(
     val isLoadingContacts: Boolean = false,
     val isSending: Boolean = false,
     val error: String? = null,
+    val session: SessionStamp? = null,
 )
 
-class NeteaseShareViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class NeteaseShareViewModel internal constructor(
+    private val repository: SocialSource,
+    accounts: AccountStore,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(NeteaseShareUiState())
-    val state = _state.asStateFlow()
+    @Inject constructor(repository: MeloXRepository, accounts: AccountStore) : this(repository as SocialSource, accounts)
+    private val owner = SocialSessionState(accounts.sessions, viewModelScope) { stamp, error ->
+        NeteaseShareUiState(session = stamp, error = error)
+    }
+    val state = owner.state
+    private var contactsRequested = false
+    private var contactsLoaded = false
+    private var loadJob: Job? = null
+    private var sendJob: Job? = null
+
+    init {
+        owner.observe {
+            loadJob?.cancel()
+            sendJob?.cancel()
+            contactsLoaded = false
+            if (it != null && contactsRequested) loadContacts()
+        }
+    }
 
     fun loadContacts() {
-        if (_state.value.contacts.isNotEmpty() || _state.value.isLoadingContacts) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoadingContacts = true, error = null)
-            runCatching {
-                val profile = repository.accountProfile()
-                repository.messageContacts(profile.id)
-            }.onSuccess {
-                _state.value = _state.value.copy(contacts = it, isLoadingContacts = false)
-            }.onFailure {
-                _state.value = _state.value.copy(isLoadingContacts = false, error = it.message)
+        contactsRequested = true
+        val stamp = owner.owner() ?: return
+        if (contactsLoaded || loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            try {
+                owner.publish(stamp, { it.copy(isLoadingContacts = true, error = null) })
+                val contacts = repository.messageContacts(stamp)
+                currentCoroutineContext().ensureActive()
+                owner.publish(stamp, { it.copy(contacts = contacts, isLoadingContacts = false) }) { contactsLoaded = true }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { owner.publish(stamp, { it.copy(isLoadingContacts = false, error = error.message) }) }
             }
         }
     }
 
     fun sendPrivate(
+        expected: NeteaseShareUiState,
         resource: ShareResource,
         recipients: Set<Long>,
         message: String,
         onSent: () -> Unit,
     ) {
-        if (recipients.isEmpty() || _state.value.isSending) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isSending = true, error = null)
-            runCatching { repository.sendPrivateResource(resource, recipients.toList(), message.trim()) }
-                .onSuccess {
-                    _state.value = _state.value.copy(isSending = false)
-                    onSent()
-                }
-                .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
+        val stamp = owner.owner()?.takeIf { it == expected.session } ?: return
+        val contacts = state.value.contacts.map(MessageContact::id).toSet()
+        if (!contactsLoaded || recipients.isEmpty() || !contacts.containsAll(recipients)) return
+        send(stamp, { repository.sendPrivateResource(stamp, resource, recipients.toList(), message.trim()) }, onSent)
+    }
+
+    fun shareTimeline(expected: NeteaseShareUiState, resource: ShareResource, message: String, onSent: () -> Unit) {
+        val stamp = owner.owner()?.takeIf { it == expected.session } ?: return
+        send(stamp, { repository.shareToTimeline(stamp, resource, message.trim()) }, onSent)
+    }
+
+    private fun send(stamp: SessionStamp, request: suspend () -> Unit, onSent: () -> Unit) {
+        if (state.value.isSending || sendJob?.isActive == true) return
+        sendJob = viewModelScope.launch {
+            try {
+                owner.publish(stamp, { it.copy(isSending = true, error = null) })
+                request()
+                currentCoroutineContext().ensureActive()
+                owner.publish(stamp, { it.copy(isSending = false) }, onSent)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { owner.publish(stamp, { it.copy(isSending = false, error = error.message) }) }
+            }
         }
     }
 
-    fun shareTimeline(resource: ShareResource, message: String, onSent: () -> Unit) {
-        if (_state.value.isSending) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isSending = true, error = null)
-            runCatching { repository.shareToTimeline(resource, message.trim()) }
-                .onSuccess {
-                    _state.value = _state.value.copy(isSending = false)
-                    onSent()
-                }
-                .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
-        }
-    }
+    override fun onCleared() { owner.close(); super.onCleared() }
 }
 
 @Composable
@@ -138,8 +174,8 @@ fun NeteaseShareSheet(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var mode by remember { mutableStateOf(NeteaseShareMode.Menu) }
-    var message by remember { mutableStateOf("") }
-    var selectedContactIds by remember { mutableStateOf(emptySet<Long>()) }
+    var message by remember(state.session) { mutableStateOf("") }
+    var selectedContactIds by remember(state.session) { mutableStateOf(emptySet<Long>()) }
 
     LaunchedEffect(mode) {
         if (mode == NeteaseShareMode.PrivateMessage) viewModel.loadContacts()
@@ -231,7 +267,7 @@ fun NeteaseShareSheet(
                         }
                         GlassButton(
                             onClick = {
-                                viewModel.sendPrivate(resource, selectedContactIds, message, onDismiss)
+                                viewModel.sendPrivate(state, resource, selectedContactIds, message, onDismiss)
                             },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = selectedContactIds.isNotEmpty() && !state.isSending,
@@ -241,7 +277,7 @@ fun NeteaseShareSheet(
                     NeteaseShareMode.Timeline -> {
                         ShareMessageField(message, { message = it }, R.string.share_say_something)
                         GlassButton(
-                            onClick = { viewModel.shareTimeline(resource, message, onDismiss) },
+                            onClick = { viewModel.shareTimeline(state, resource, message, onDismiss) },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !state.isSending,
                             emphasis = GlassEmphasis.Prominent,

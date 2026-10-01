@@ -2036,6 +2036,53 @@ These are integration differences, not server API semantics.
   matched debug rerun passes; the normal R8 host app separately cold-starts and renders.
   No production keep rule or new dependency was added for the invalid test pairing.
 
+### API-028: Social Identity and Requests Must Share One Session Owner
+
+- Baseline standalone social pages read `UserIdKey` from Cookie account preferences.
+  The official session deliberately does not persist that legacy field. Consequently,
+  a shared private-message page could treat the current user as ID 0, choose the wrong
+  conversation participant or classify an outgoing message as incoming in parasite.
+  Fetching a profile and then starting another unowned contact request could also join
+  two different authorizations across an account change.
+- Both runtimes now supply the same credential-free `SessionStamp` to `SocialSource`.
+  The existing Repository and selected flavor transports remain authoritative; there
+  is no copied official Cookie, new signing implementation or fallback. Supplemental
+  routes and their existing payloads are retained:
+
+  | Operation | Route and retained payload |
+  | --- | --- |
+  | Conversation list | `/api/msg/private/users`; `offset`, `limit`, `total` |
+  | Message history | `/api/msg/private/history`; recipient `userId`, `time`, `limit`, `total` |
+  | Contacts | `/api/user/getfollows/{captured session userId}`; `offset`, `limit`, `order` |
+  | Text/resource send | `/api/msg/private/send`; existing `type`, `msg`, serialized `userIds`, optional resource `id` |
+  | Timeline share | `/api/share/friends/resource`; existing `type`, `msg`, `id` |
+
+- Every request carries the captured stamp as Retrofit's expected-session tag. Guest,
+  anonymous, recovery-required and obsolete owners are rejected before dispatch; the
+  same owner and cancellation are checked after transport completion. All contact
+  pages use that identity, not a subsequently loaded profile. Standalone's original
+  EAPI/WeAPI factory selection remains; parasite uses the official pipeline for both.
+- Conversation, contact and share state clear synchronously on invalidation. Same-user
+  reauthorization also replaces the generation. Old results/errors and queued writes
+  cannot populate the replacement account; old send callbacks cannot clear its draft
+  or dismiss its sheet. UI participant/bubble ownership comes from the visible stamp.
+  Draft and recipient-selection lifetimes follow it. Layout, routes, controls, message
+  presentation, glass and share modes remain unchanged.
+- Verification: 19 shared JVM cases pass in each flavor, including noncancellable late
+  reads/writes, recovery, same-ID reauthorization, retained callbacks, recipient changes,
+  duplicate sends and failure/retry. Nine real-Repository Android cases pass per matched
+  debug flavor using only substitute transports, verifying tags, identity, route/body
+  mapping, guest/recovery/stale rejection, late acknowledgements and cancellation.
+  Real read-only UI additionally loads conversation and contact lists in standalone
+  debug and the locally signed parasite R8 package under their separate existing
+  accounts. No conversation is opened and no real social write is dispatched.
+- Limits: substitute send success is not server delivery acceptance. A request already
+  accepted by a server cannot be revoked by local invalidation. Real logout/relogin,
+  cooperating-account send/delivery and complete minified standalone qualification
+  remain separate gates. `ListenTogetherStore` still reads the legacy user preference
+  and has unstamped room sequences; this entry does not qualify or conceal that next
+  migration task. No room is created/joined for this checkpoint.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

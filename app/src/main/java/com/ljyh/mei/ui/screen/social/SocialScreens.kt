@@ -73,7 +73,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.model.melox.PrivateConversation
@@ -101,7 +100,6 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.setClipboard
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -111,8 +109,7 @@ import java.util.Locale
 fun ConversationsScreen(viewModel: ConversationsViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
-    val currentUserId by rememberPreference(UserIdKey, "")
-    val currentUser = currentUserId.toLongOrNull() ?: 0L
+    val currentUser = state.session?.identity?.userId ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
 
     IosPinnedListPage(
@@ -274,10 +271,9 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = viewMode
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = LocalContext.current
-    val currentUserId by rememberPreference(UserIdKey, "")
-    val currentUser = currentUserId.toLongOrNull() ?: 0L
+    val currentUser = state.session?.identity?.userId ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    var draft by remember { mutableStateOf("") }
+    var draft by remember(userId, state.session) { mutableStateOf("") }
     val defaultComposerHeight = LocalGlassDimensions.current.controlHeight
     var composerHeight by remember(defaultComposerHeight) { mutableStateOf(defaultComposerHeight) }
     val density = LocalDensity.current
@@ -305,7 +301,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = viewMode
         label = "messageContextMenuScrim",
     )
     LaunchedEffect(userId) { viewModel.load(userId) }
-    val send = { viewModel.send(draft) { draft = "" } }
+    val send = { viewModel.send(state, draft) { draft = "" } }
     val participantName = remember(state.messages, currentUser) {
         state.messages.asSequence()
             .mapNotNull { message ->
@@ -740,7 +736,7 @@ private fun ShareResource.toMediaMetadata() = MediaMetadata(
     album = MediaMetadata.Album(0, ""),
 )
 
-private fun PrivateConversation.participant(currentUserId: Long): MessageContact =
+internal fun PrivateConversation.participant(currentUserId: Long): MessageContact =
     fromUser?.takeIf { it.id != currentUserId }
         ?: toUser?.takeIf { it.id != currentUserId }
         ?: fromUser

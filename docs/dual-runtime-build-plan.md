@@ -1546,6 +1546,63 @@ Local evidence: `/tmp/meilox-session-settings-restoration-build-2026-10-01.log`,
 `/tmp/meilox-session-settings-final-tv-home-2026-10-01.png`. All remain local; no push
 or merge. This checkpoint does not reopen cloud investigation.
 
+### D4/D5/D6 Checkpoint: Social Session Ownership (2026-10-01)
+
+- The bounded merge audit found a concrete migration omission: shared private-message
+  pages still consumed standalone `UserIdKey`, which parasite does not store. API-028
+  records the correction and unchanged business routes. Conversation lists/history,
+  contacts, text/resource sending and timeline sharing now take a captured common
+  session; both flavor transports still own authentication and signing.
+- Existing social pages and share modes remain shared and retain their layout/routes.
+  No frontend problem from `main` is repaired. Public identity supplies participant
+  selection and outgoing-message classification; private state, drafts and selected
+  recipients clear on session replacement. Late results, stale callbacks and queued
+  writes cannot silently inherit the replacement authorization. Backend-specific
+  credentials never become common state.
+- Full paired JVM suites pass: 765 standalone/91 suites and 824 parasite/97 suites,
+  1,589 tests with zero failures/errors/skips. The 19 new social cases run in both.
+  On emulator-5554, each matched debug variant passes nine real-Repository/platform
+  JSON tests with substitute transports only. They verify request tags, preserved
+  bodies/routes, multi-page ownership, rejection and cancellation. No real contact
+  message, timeline publication, room creation, upload or download grant is attempted.
+- Both debug/instrumentation and minified releases build successfully with vital lint.
+  Both release packages pass 16 KB alignment. The paired signing workflow's 26 local
+  cases and rebuilt-APK real-SDK signing/identity/version/alignment/rejection fixtures
+  pass; temporary fixture keys/APKs are removed. No production key or remote workflow
+  is used, and no original standalone installation is modified.
+- Standalone debug cold startup (2,919 ms) restores its own account and paused queue;
+  the original private-message and contact lists load through Cookie transport. The
+  latest locally development-signed parasite R8 replaces only the module, then a
+  2,482 ms TV cold start restores authenticated portrait Home. Its same social lists
+  load through the official session without a Cookie preference dependency. Screenshots
+  confirm the unchanged page structure and visible results. Neither app opens a real
+  conversation or invokes a send/publish action; write paths are qualified only by
+  substitutes, not server delivery or cooperating-account acceptance.
+- Both players stay paused: standalone 1,517 entries/index 879 at 60,347 ms; parasite
+  48 entries/index 2 at 22,312 ms. The official TV session stays inactive STOPPED and
+  the current TV PID crash buffer is empty. Accepted TV MediaStore row 820 remains
+  published, TV-owned and 22,705,573 bytes. No emulator restart, screen-off, physical
+  device operation, scope change or cloud investigation is performed.
+- `main` still resolves to `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`; historical
+  glass-toggle exception remains untouched. This is an additional bounded integration
+  review, not full merge approval. The remaining legacy identity read in
+  `ListenTogetherStore.establish` can misclassify an official-room participant as its
+  creator, and its unstamped multi-request/player sequence needs a separate bounded
+  migration and substitute verification. Do not mark together-listening complete from
+  the social tests. Framework-free startup, original data-preserving upgrade, paired
+  full release execution and the existing remaining business/capability gates stay open.
+
+Local-only evidence: `/tmp/meilox-social-session-paired-build-2026-10-01.log`,
+`/tmp/meilox-social-session-standalone-repository-fixtures-2026-10-01.log`,
+`/tmp/meilox-social-session-parasite-repository-fixtures-2026-10-01.log`,
+`/tmp/meilox-social-session-paired-signing-fixtures-2026-10-01.log`,
+`/tmp/meilox-social-session-standalone-conversations-settled-2026-10-01.png`,
+`/tmp/meilox-social-session-standalone-contacts-settled-2026-10-01.png`,
+`/tmp/meilox-social-session-parasite-release-conversations-2026-10-01.png`,
+`/tmp/meilox-social-session-parasite-release-contacts-2026-10-01.png` and
+`/tmp/meilox-social-session-final-media-2026-10-01.txt`. Private UI content, logs,
+credentials, generated packages and official source are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

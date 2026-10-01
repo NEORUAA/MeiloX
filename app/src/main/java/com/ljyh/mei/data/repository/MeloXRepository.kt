@@ -100,7 +100,7 @@ class MeloXRepository @Inject constructor(
     private val sessions: SessionStore,
     private val cloudUploads: CloudUploadCoordinator,
     private val cloudLibrary: CloudLibraryBackend,
-) : PodcastSource, CloudMusicSource {
+) : PodcastSource, CloudMusicSource, SocialSource {
     private val uploadDirectory by lazy { prepareCloudUploadDirectory(context.cacheDir) }
 
     override suspend fun podcastHome(session: SessionStamp): PodcastHome = coroutineScope {
@@ -361,43 +361,49 @@ class MeloXRepository @Inject constructor(
         } finally { opened.set(null) }
     }
 
-    suspend fun privateConversations(offset: Int = 0, limit: Int = 50): List<PrivateConversation> =
-        request(
+    override suspend fun privateConversations(session: SessionStamp, offset: Int, limit: Int): List<PrivateConversation> =
+        socialRequest(
+            session,
             "/api/msg/private/users",
             mapOf("offset" to offset, "limit" to limit, "total" to "true"),
         ).array("msgs").mapNotNull(::parseConversation)
 
-    suspend fun privateMessages(userId: Long, before: Long = -1, limit: Int = 100): List<PrivateMessage> =
-        request(
+    override suspend fun privateMessages(session: SessionStamp, userId: Long, before: Long, limit: Int): List<PrivateMessage> =
+        socialRequest(
+            session,
             "/api/msg/private/history",
             mapOf("userId" to userId, "time" to before, "limit" to limit, "total" to "true"),
         ).array("msgs").mapNotNull(::parsePrivateMessage).sortedBy(PrivateMessage::time)
 
-    suspend fun sendPrivateText(message: String, userIds: List<Long>) {
-        require(userIds.isNotEmpty()) { "At least one recipient is required" }
-        requestEapi(
+    override suspend fun sendPrivateText(session: SessionStamp, message: String, userIds: List<Long>) {
+        require(userIds.isNotEmpty() && userIds.all { it > 0 }) { "Valid recipients are required" }
+        socialRequest(
+            session,
             "/api/msg/private/send",
             mapOf(
                 "type" to "text",
                 "msg" to message,
                 "userIds" to userIds.distinct().sorted().joinToString(",", "[", "]"),
             ),
+            useEapi = true,
         )
     }
 
-    suspend fun messageContacts(
-        userId: Long,
-        pageSize: Int = 100,
-        maximumCount: Int = 1_000,
+    override suspend fun messageContacts(
+        session: SessionStamp,
+        pageSize: Int,
+        maximumCount: Int,
     ): List<MessageContact> {
-        require(userId > 0) { "A valid NetEase user ID is required" }
+        requireSocialSession(session)
+        require(pageSize > 0 && maximumCount > 0) { "Positive contact limits are required" }
         val contacts = mutableListOf<MessageContact>()
         val loadedIds = mutableSetOf<Long>()
         var offset = 0
         var hasMore = true
         while (hasMore && contacts.size < maximumCount) {
-            val response = request(
-                "/api/user/getfollows/$userId",
+            val response = socialRequest(
+                session,
+                "/api/user/getfollows/${session.identity.userId}",
                 mapOf(
                     "offset" to offset,
                     "limit" to minOf(pageSize, maximumCount - contacts.size),
@@ -412,13 +418,15 @@ class MeloXRepository @Inject constructor(
         return contacts
     }
 
-    suspend fun sendPrivateResource(
+    override suspend fun sendPrivateResource(
+        session: SessionStamp,
         resource: ShareResource,
         userIds: List<Long>,
-        message: String = "",
+        message: String,
     ) {
-        require(userIds.isNotEmpty()) { "At least one recipient is required" }
-        requestEapi(
+        require(userIds.isNotEmpty() && userIds.all { it > 0 }) { "Valid recipients are required" }
+        socialRequest(
+            session,
             "/api/msg/private/send",
             mapOf(
                 "id" to resource.id,
@@ -426,15 +434,35 @@ class MeloXRepository @Inject constructor(
                 "type" to resource.kind.wireValue,
                 "userIds" to userIds.distinct().sorted().joinToString(",", "[", "]"),
             ),
+            useEapi = true,
         )
     }
 
-    suspend fun shareToTimeline(resource: ShareResource, message: String = "") {
+    override suspend fun shareToTimeline(session: SessionStamp, resource: ShareResource, message: String) {
         require(resource.kind != ShareResourceKind.Album) { "Albums cannot be shared to the NetEase timeline" }
-        requestEapi(
+        socialRequest(
+            session,
             "/api/share/friends/resource",
             mapOf("type" to resource.kind.wireValue, "msg" to message, "id" to resource.id),
+            useEapi = true,
         )
+    }
+
+    private fun requireSocialSession(session: SessionStamp): SessionStamp = session.also {
+        check(it.identity.authenticated && !it.identity.anonymous && it.identity.userId > 0) { "Sign-in required" }
+        sessions.requireCurrent(it)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+    }
+
+    private suspend fun socialRequest(
+        session: SessionStamp, path: String, body: Map<String, Any>, useEapi: Boolean = false,
+    ): JsonObject {
+        currentCoroutineContext().ensureActive()
+        requireSocialSession(session)
+        val response = (if (useEapi) eapi else weapi).post(path, body, expectedSession = session)
+        currentCoroutineContext().ensureActive()
+        requireSocialSession(session)
+        return validate(response)
     }
 
     suspend fun songWiki(songId: Long): SongWiki {
