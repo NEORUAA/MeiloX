@@ -1157,8 +1157,9 @@ These are integration differences, not server API semantics.
   `/weapi/resource/comment/floor/get` (`parentCommentId`, `threadId`, `limit`, `time`).
   Parasite passes these business parameters to the official generic pipeline as
   `v2/resource/comments` and `resource/comment/floor/get`. No TV-only endpoint
-  substitution, copied Cookie or standalone fallback was introduced. The restored
-  standalone transport has not been qualified against these shared contracts yet.
+  substitution, copied Cookie or standalone fallback was introduced. At this initial
+  checkpoint the restored standalone transport was not qualified; the paired read
+  checkpoint below adds scoped runtime evidence without qualifying the full matrix.
 - Both calls now carry the expected shared `SessionStamp` as a Retrofit request tag,
   not a serialized credential. Host transport tests verify normalized paths, parameters
   and rejection of obsolete owners before dispatch. The shared repository rejects
@@ -1200,6 +1201,40 @@ These are integration differences, not server API semantics.
   16 KB alignment; this does not qualify its runtime. The ordinary debug package is
   reinstalled with all probes disabled and cold-launches the original portrait Home.
   Runtime screenshots/logs remain local and are not committed.
+
+#### Paired Minified Read Check (2026-10-02)
+
+- The original player More > View Comments route reaches CommentScreen twice in the
+  existing TV R8 process. Isolated standalone R8 and restored ordinary debug both
+  return to Settings on their first activation and reach comments on their second.
+  Back returns to the underlying Settings page. Repeated-entry success does not
+  qualify first-entry reliability; the cause remains unestablished and no frontend,
+  navigation, endpoint or transport change is made to work around it.
+- Reads use the existing paused tracks and separate accounts, not a new queue:
+  TV `Écoute Chérie` displays 23,338 comments; standalone `Full Moon Serenade`
+  displays 421. These are point-in-time observations, not matching-account/server
+  equivalence or invariants. All three original sorts render data and continue beyond
+  the configured 20-row initial load. Fully visible nickname/content pairs are counted
+  with structured XML and SHA-256 deduplication; clipped/obscured pairs are excluded.
+
+| Runtime | Recommend | Hot | Time |
+| --- | ---: | ---: | ---: |
+| Parasite R8 | 31 | 23 | 43 |
+| Isolated standalone R8 | 28 | 21 | 43 |
+
+- TV also renders one complete single-reply thread and 45 distinct visible replies
+  from a thread labelled 98 replies. Standalone renders all six replies from a thread
+  labelled six. Both collapse back to zero reply text nodes. This proves rendered
+  continuation beyond the initial window, not captured wire cursors/request counts,
+  full traversal of every thread, absent-IP coverage on both backends, or live errors,
+  expired sessions and account switches. Earlier substitute-test evidence remains
+  separate from these live reads.
+- The focused four comment JVM suites pass 23 cases per flavor (46 total); ordinary
+  standalone debug, parasite release and the isolated standalone R8 build pass.
+  Runtime images/logs and hashed pair counts stay under `/tmp/meilox-paired-comments-*`.
+  No comment, like, account mutation, recording, playback, upload or download grant
+  is submitted. Development signing/test identity is not production upgrade acceptance;
+  full paired release/business regression and the overall goal remain open.
 
 ### API-019: Cloud File Transfer Is Separate From Business Authorization
 

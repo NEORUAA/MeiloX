@@ -2124,6 +2124,60 @@ Local-only evidence: `/tmp/meilox-recognition-wiki-*-2026-10-02*`,
 `/tmp/meilox-wiki-*-2026-10-02*` and `/tmp/meilox-recognition-*-2026-10-02*`.
 No raw device logs, screenshots, account responses or APKs are committed.
 
+### D4/D5/D6 Checkpoint: Paired Minified Comment Reads (2026-10-02)
+
+This read-only checkpoint extends API-018 beyond its original debug page carrier;
+it does not complete the comment failure/account matrix, D4-D6 or the overall goal.
+Application source, shared Compose pages, navigation, player, manifests, CI and
+probes are unchanged. No unrelated frontend repair or separate screen tree is added.
+
+- The current TV development-signed R8 module reads comments from the ordinary player
+  menu in the existing host process. Isolated standalone R8 reads through restored
+  Cookie transport. Tracks/accounts are deliberately preserved rather than replaced
+  to create a matching fixture: TV's `Écoute Chérie` shows 23,338 comments and
+  standalone's `Full Moon Serenade` shows 421 at observation time.
+- Original recommend/hot/time sorts all render and continue beyond the configured
+  initial 20 rows. Across the first viewport and four scrolls (five for time), structured
+  XML yields 31/23/43 distinct fully visible nickname/content pairs on TV and 28/21/43
+  on standalone. SHA-256 deduplication excludes clipped or mini-player-obscured pairs;
+  settled screenshots are inspected. These counts are UI continuation evidence, not
+  captured server cursors, precise request counts or identical account/server results.
+- TV displays a complete single-reply thread and 45 distinct visible reply pairs from
+  a thread labelled 98 replies; standalone displays all six replies of a six-reply
+  thread. Both existing collapse controls remove reply text nodes, without adding
+  retry controls or changing the original layout. Back returns to underlying Settings.
+- TV enters comments on two ordinary-menu activations in its existing process.
+  Standalone R8 and restored ordinary debug first return to Settings, then enter on
+  their second activation. This independently retains the ordinary-entry limitation:
+  first-entry reliability is not accepted, the cause is unestablished and repeat-entry
+  data success does not qualify it. No frontend/navigation workaround is introduced.
+- Fresh isolated standalone R8 builds in 5m 19s with the existing local-only init
+  fixture, preserving production output identities. Its test-ID APK passes v3 signature
+  verification with the existing development certificate and 16 KB alignment; SHA-256
+  is `ea808a35d0b28033cadd40521b1338ee34c7f7b6d2b71c19b9e6efe98fc6556f`.
+  Actual isolated R8 COLD startup is 706 ms. This does not qualify production signing,
+  original-install upgrade or framework-free execution on the rooted AVD.
+- Paired focused JVM comment model/repository/session/paging suites execute 23 cases
+  per flavor (46 total), with zero failures/errors/skips. `assembleStandaloneDebug`
+  and `assembleParasiteRelease` pass in the same seven-second run; these results are
+  distinct from the earlier full 1729-case suite. `git diff --check` passes.
+- Ordinary standalone debug is restored with `install -r`, without clearing storage;
+  actual COLD startup is 1308 ms, the existing account remains and repeated-menu
+  comments show 421. UID 10254 and ungranted notification/microphone permission flags
+  remain unchanged. TV stays PAUSED at 55536 ms with queue 6/index 1; standalone
+  restores NONE/speed 0 at 145670 ms with queue 7/index 1. Original TV playback stays
+  STOPPED/queue 0. No playback or media mutation occurs; TV-owned published MediaStore
+  row 820 remains 22,705,573 bytes. TV PID 13251, standalone R8 PID 16822 and restored
+  debug PID 19044 crash buffers are empty; historical buffers are not cleared.
+- The rooted AVD stays running and awake on TV MeiloX Home. No Cookie file is read,
+  credential/data transfer, recording, social write, upload or quota-consuming download
+  is performed. Live failure/account transitions, first-entry reliability, remaining
+  business/release regression, capability decisions and merge/upgrade gates stay open.
+
+Local-only evidence: `/tmp/meilox-paired-comments-*-2026-10-02*`, including structured
+UI snapshots, inspected PNGs, hashed pair counts, startup/media/package/crash checks,
+the isolated build log and focused build log. Raw evidence and APKs are not committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
