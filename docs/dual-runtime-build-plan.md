@@ -2471,6 +2471,60 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   this checkpoint does not complete production upgrade, framework-free execution,
   real server-induced fallback, full release/merge review or the overall goal.
 
+### D3/D6 Checkpoint: Legacy Library Preference Affinity (2026-10-02)
+
+- Rechecked main at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`; it is also the
+  merge base with starting HEAD `d267ac50`. This bounded continuation reviews the
+  public session/account/call wrappers, Room 17-to-21 models/migrations/DAOs, standalone
+  preference and legacy-work adapters, queue persistence/restore, download ownership/
+  publication, cache/source acquisition and selected library/player/lyric consumers.
+  It is not complete review of every changed feature, test, host hook or build file.
+- The review finds a concrete upgrade-consumption gap: original `UserPhotoKey` survives
+  disk writes but is no longer read by the shared per-account library. Standalone's
+  production account persistence now freezes original public affinity before the first
+  account replacement/removal and restores the photo during verified same-account
+  publication only. Existing scoped selections win; the old key is retained. Missing
+  identity, repeated replacement logins, logout and reopen cannot reassign that photo.
+  The affinity is not an authorization claim. No screen/layout, official session,
+  credential boundary, signing, playback engine or server endpoint changes.
+- Eight new real disk-backed JVM fixtures cover preference preservation and the
+  production persistence/controller boundary; five assertions fail before repair.
+  All eight pass after repair. Paired totals are 891 standalone/103 suites and 922
+  parasite/105 suites, zero failures/errors/skips. Shared cases are counted per variant.
+  Both debug/release/instrumentation builds pass in 3m19s (267 tasks); the local real-SDK
+  release gate passes identity/version/signature/declaration/16KB and invalid-pair checks.
+- Matched standalone debug target/test APKs pass all 16 selected AVD cases: five package/
+  graph, three frozen v17 database migration and eight legacy WorkManager recovery
+  fixtures. The latter retire only UUID-tagged synthetic work and clean their private
+  Room/WorkSpec/DataStore/media fixtures; no real source request or download is issued.
+  The original installation is not replaced. Ordinary isolated debug COLD startup takes
+  1545ms and its screenshot shows the existing account, Home feed and paused mini-player.
+- Isolated standalone R8 builds in 3m6s (55 tasks), retaining normal minification and
+  DEBUG=false while the previously documented local init script changes only its
+  validation package/build directory. Development-signed SHA256:
+  `49505da1a005dc689fcb958713ca1dd2261c800c4d32493dbe4b30198c0be8e5`.
+  SDK signature and 16KB alignment checks pass. An update-restored top Activity is not
+  counted as cold startup; the subsequent app-only force-stop/start is COLD at 949ms
+  (PID 13689). Its immediate capture shows recovery-required content, then a settled
+  capture restores the account/feed/seven-track queue without interaction. Both
+  captures are retained. Activity timing is not account/content readiness or a repair
+  of that transient UI. The scoped crash buffer is empty.
+- Ordinary debug is restored with install-r and COLD starts in 1435ms (PID 14185),
+  restoring its existing Home/account/queue. UID 10254 and ungranted notification/
+  microphone flags are unchanged. Final standalone state is PAUSED at 145670ms,
+  seven tracks; TV's module stays PAUSED at 55536ms, six tracks; both have speed 0
+  and no error. The official TV player stays STOPPED with an empty queue. Its
+  unchanged R8 host returns WARM in 352ms (PID 11165), showing portrait MeiloX Home.
+  Final scoped crash buffers are empty. MediaStore row 820 is still TV-owned,
+  22705573 bytes, pending=0. The rooted AVD stays awake and is not restarted or
+  screened off; no new play command, download grant, upload/delete or social action
+  is issued. Evidence stays under `/tmp/meilox-legacy-photo-*-2026-10-02*`, not Git.
+- This closes the confirmed original selection adapter gap under ABI-012, not the
+  actual original-install upgrade, URI grant retention, full cache/queue compatibility,
+  real account-switch matrix or full release/merge qualification. The framework-free
+  device and original-install upgrade permissions and TV capability decisions remain
+  pending; no cloud flow is reopened to substitute for those gates.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

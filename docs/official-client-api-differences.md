@@ -2142,6 +2142,37 @@ These are integration differences, not server API semantics.
   matched debug rerun passes; the normal R8 host app separately cold-starts and renders.
   No production keep rule or new dependency was added for the invalid test pairing.
 
+#### Legacy Library Selection Uses Verified Standalone Affinity (2026-10-02)
+
+- Merge review finds a standalone upgrade omission: original main reads the selected
+  library photo from `UserPhotoKey` (`userPhoto`), while the shared account-owned
+  library reads `official_user_photo_<userId>`. Preserving the old file/key alone does
+  not preserve the selection. This is preference adaptation, not a new photo endpoint
+  or frontend redesign; no Library screen/layout/resource is changed.
+- Standalone's existing account persistence freezes the old public account ID once,
+  before its first replacement or removal. It copies a nonblank legacy photo only
+  during verified publication of that same positive account and only if the scoped
+  key is absent. The old key is retained; an existing scoped value, including an
+  empty value, wins. Account writes and adaptation share one DataStore transaction.
+- Frozen identity is affinity, not authentication. Missing/invalid old identity never
+  acquires a later login; another account cannot inherit the photo after repeated
+  verification, logout or file reopen. Parasite owns separate module preferences
+  and receives no standalone migration or credentials.
+- Eight disk-backed JVM cases exercise the production persistence and a synthetic
+  login controller: original selection, replacement/repeated login, scoped overrides,
+  logout, unknown identity, missing/blank photo, reopen and rejected publication.
+  Five assertions fail before adaptation; all eight pass afterward. Current paired
+  totals are 891 standalone and 922 parasite tests, with zero failures/errors/skips.
+  All Cookie/account/URI values and files are fixtures, not user data or authorization.
+- Paired debug/R8/test builds and the actual SDK release gate pass. Sixteen matched
+  standalone Android package/v17-database/legacy-work fixture cases pass. An isolated
+  normal-minification R8 package restores the existing account/feed/paused queue;
+  its immediate recovery-required capture is retained separately from settled success.
+  Ordinary debug is restored, and TV's existing R8/data/download remain unchanged.
+- This closes the confirmed preference-consumption gap, not original-install upgrade,
+  production signing, live account switching, photo URI permissions or visual
+  qualification of an actual preserved user selection. Those remain separate gates.
+
 ### API-028: Social Identity and Requests Must Share One Session Owner
 
 - Baseline standalone social pages read `UserIdKey` from Cookie account preferences.
