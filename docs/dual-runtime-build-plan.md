@@ -1728,6 +1728,40 @@ Local-only evidence: `/tmp/meilox-standalone-r8-validation-2026-10-01.init.gradl
 `/tmp/meilox-checkpoint-wire-parasite-home-2026-10-01.png`. Private evidence, APKs,
 official source and credentials are not committed. No push or merge.
 
+### D5/D6 Checkpoint: Actual Playing-Task Removal and Notification Return (2026-10-01)
+
+- The unchanged source/artifacts from the preceding checkpoint are exercised on
+  emulator-5554: development-signed parasite R8 and the same isolated debug-ID
+  standalone R8 fixture. Actual identified Recents cards are swiped away while each
+  player is running; force-stop is not substituted for task removal. Settled Activity
+  stacks establish removal, excluding transitional snapshots with exiting windows.
+- Both foreground services survive with PLAYING MediaSessions and advancing progress.
+  TV uses the registered `LocalMusicMatchService` carrier; standalone uses its own
+  `MusicService`. Tapping the actual system media notification recreates portrait
+  MeiloX Home in a new task. The official TV session remains inactive STOPPED/empty.
+  ABI-003 records this bounded extension; no component or control code is changed.
+- Natural advancement occurs during playback, so unchanged indices are not claimed.
+  Both players are paused afterward. Ordinary standalone debug is restored with `-r`;
+  its cold start retains 1,517 entries/index 366 at 38,715 ms without autoplay (NONE,
+  speed 0). TV retains 48 entries/index 3 paused at 10,237 ms. Current debug PID 17275
+  and TV PID 14006 have empty crash buffers; MediaStore row 820 remains published,
+  TV-owned and 22,705,573 bytes. The rooted AVD remains awake on portrait TV MeiloX Home.
+- This qualifies the named task-removal/notification path only, not complete paired
+  release regression, standalone production signing/upgrade, process-death playback,
+  screen-off or audible acceptance. No new build is necessary for this evidence-only
+  increment: source and previously tested artifacts are unchanged. No original app
+  data, scope, orientation override, permission or real library/social state is altered.
+- Reinspection of the supplied TV manifest confirms no RECORD_AUDIO declaration and
+  zero PiP carriers. A scoped module-process recording/PiP helper is now explicitly
+  awaiting the user's decision; it is not implemented or treated as approved. The
+  framework-free AVD and original-install upgrade requests also remain pending.
+
+Local-only evidence: `/tmp/meilox-task-lifecycle-*2026-10-01*` contains identified
+Recents/notification screenshots, before/after Activity/service/MediaSession snapshots,
+manifest XML and final preservation checks. Private device evidence is not committed.
+Only acceptance documents change; no push, merge, emulator restart or physical-device
+operation is performed. The full goal and remaining milestone gates stay open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

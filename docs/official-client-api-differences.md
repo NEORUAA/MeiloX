@@ -882,10 +882,18 @@ These are integration differences, not server API semantics.
   AVD cold media-button resumption recreated the module service after `am stop-app`,
   with no Activity launch. The legacy session remained inactive and STOPPED while
   module play/pause/next/previous and buffering-time pause operated correctly.
+- Additional evidence (2026-10-01): actual Recents-card removal while playing passes
+  in the development-signed parasite R8 and the isolated debug-ID standalone R8
+  fixture. Settled Activity stacks no longer contain the removed task, while each
+  foreground service and PLAYING MediaSession persist with advancing progress. The
+  actual system media notification recreates portrait MeiloX Home in a new task, not
+  an official TV page. The official session stays inactive STOPPED with no queue.
+  This is task-removal/notification evidence, not process death or audible output;
+  standalone production identity/signing remains a separate qualification.
 - Remaining: this retires the verified media-session/receiver path, not every
   possible official widget, external playback intent, or reporting path. Slow-disk
   restoration, empty/corrupt stored queues, real Bluetooth peripherals, other OS
-  versions, release runtime, and audible output remain separately unqualified.
+  versions, broader release runtime, and audible output remain separately unqualified.
 
 ### ABI-004: WorkManager Components Are Not Installed in the Host
 
