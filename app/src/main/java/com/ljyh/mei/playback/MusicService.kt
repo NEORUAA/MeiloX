@@ -314,7 +314,7 @@ class MusicService : MediaLibraryService(),
             }
         })
 
-        queueManager = PlaybackQueueManager(player, apiService, weApiService, scope) {
+        queueManager = PlaybackQueueManager(player, apiService, weApiService, scope, accountSessions) {
             listenTogetherStore.state.value.room == null
         }
         scope.launch {
@@ -431,6 +431,7 @@ class MusicService : MediaLibraryService(),
     }
 
     private fun restorePlayerState() {
+        val fmOwner = runCatching { accountSessions.snapshot() }.getOrNull()
         playbackRestoreJob = scope.launch {
             try {
                 val restoredState = withContext(Dispatchers.IO) {
@@ -445,7 +446,7 @@ class MusicService : MediaLibraryService(),
                     val restoredItems = restoredState.second
                     val restoredIndex = snapshot.currentIndex.coerceIn(restoredItems.indices)
                     queueTitle = snapshot.queueTitle
-                    queueManager.isFmMode = snapshot.isFmMode
+                    queueManager.restoreFmMode(snapshot.isFmMode, fmOwner)
                     player.shuffleModeEnabled = false
                     player.setMediaItems(
                         restoredItems,
@@ -1014,9 +1015,7 @@ class MusicService : MediaLibraryService(),
         val threshold = 3 // 剩余少于3首时加载
 
         if (total - current <= threshold) {
-            scope.launch {
-                queueManager.fetchAndAppendFmRecommendations()
-            }
+            queueManager.requestFmRecommendations()
         }
     }
 

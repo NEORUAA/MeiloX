@@ -29,7 +29,7 @@ interface WeApiService {
     suspend fun getHighQualityPlaylist(@Body body: HighQualityPlaylist): HighQualityPlaylistResult
 
     @POST("/weapi/v1/radio/get")
-    suspend fun getRadio(@Body body: Map<String,String> = mapOf()): Radio
+    suspend fun getRadio(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): Radio
 
     @POST("/weapi/resource/comment/floor/get")
     suspend fun getFloorComment(@Body body: GetFloorComment, @Tag expectedSession: SessionStamp): FloorComment

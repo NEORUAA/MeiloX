@@ -205,10 +205,15 @@ class PlayerRepository(
         }
     }
 
-    suspend fun getRadio(): Resource<Radio>{
-        return withContext(Dispatchers.IO){
+    suspend fun getRadio(owner: SessionStamp): Resource<Radio> {
+        return withContext(Dispatchers.IO) {
             safeApiCall {
-                weApiService.getRadio()
+                requireIntelligenceOwner(owner)
+                val result = weApiService.getRadio(emptyMap(), owner)
+                currentCoroutineContext().ensureActive()
+                requireIntelligenceOwner(owner)
+                if (result.code != 200) throw IOException("FM request failed (${result.code})")
+                result
             }
         }
     }

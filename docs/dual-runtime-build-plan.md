@@ -1870,6 +1870,78 @@ AudioFlinger/notification/PendingIntent/package captures. The handled error is r
 in `/tmp/meilox-paired-timer-standalone-r8-runtime-log-2026-10-01.txt`; this private log,
 all screenshots/APKs and credentials remain outside Git. No push or merge.
 
+### D4/D5/D6 Checkpoint: Session-Owned Personal FM Queues (2026-10-01)
+
+- API-031 fixes a bounded backend continuation issue, not a frontend or playback-engine
+  repair. PlayerConnection captures the click's current session before scheduling.
+  QueueManager retains that owner across optional seed detail, FM activation, refill,
+  metadata hydration and queue/player publications. Recovery, account changes and
+  same-account reauthorization reject old work, including between insertion and play.
+  The current-generation refill owns its lazy Job reservation; an old finally cannot
+  clear a newer reservation. Queue replacement/release retire non-cooperative work.
+- The same SessionStore used by the service is passed into QueueManager. FM restore
+  captures its startup authorization before disk loading, without binding an old
+  continuation to a later account. Duplicate service/listener callbacks capture the
+  queue before dispatch and share one active refill. No backend reader executes under
+  the session publication monitor; device fixtures assert this boundary.
+- Original Home/library cards, pages, navigation, seed-first/no-seed rules, repeat and
+  shuffle rules, current-seed exclusion and refill thresholds are retained. Local trash
+  remains local only, now owned by its triggering queue/session; no native FM feedback
+  context, library mutation, UI repair, new controls or audio-engine change is introduced.
+- Latest paired JVM suites pass 799 standalone cases/95 suites and 858 parasite
+  cases/101 suites: 1,657 total with zero failures/errors/skips, including six new
+  Repository cases per flavor. Each latest matched debug runtime passes 14 new FM
+  and six existing heart queue-handoff cases on emulator-5554 (20 each). Synthetic
+  tests cover deferred start/refill, late seed/result, same-user reauthorization,
+  recovery/guest rejection, duplicate jobs, old-finally ownership, normal queue
+  replacement, reentrant insertion, restored ownership, local trash, rejection/release
+  and backend-reader lock boundaries. They do not exercise real account changes.
+- First post-update parasite instrumentation invocations fail to attach with no tests
+  executed. The bounded retries pass on the same matching latest APKs. Retain those
+  failed-attempt logs separately; do not count them as successes or infer startup
+  reliability from the retry. No app/frontend repair is made for this tooling result.
+- All paired debug/instrumentation/release targets build with vital lint (5m 17s).
+  Actual production R8 DEXes preserve Radio, Body/Tag slots and the FM POST route.
+  Paired real-SDK signature/metadata/16 KB checks and swapped/unsigned rejection
+  fixtures pass. Development-signed parasite R8 verifies v3/16 KB alignment and its
+  actual cold launch takes 3,962 ms; settled original authenticated portrait Home
+  displays, without an official playback queue. No production signing or upgrade is used.
+- Standalone debug cold launch takes 3,031 ms and its original private-roaming/FM card
+  starts three entries with advancing playback and an active unmuted 48 kHz track.
+  Parasite R8's corresponding card starts six entries; system next reaches index 1
+  with progressing playback/no MediaSession error and an active unmuted 48 kHz track.
+  The official TV session stays inactive STOPPED with zero entries.
+- Latest isolated debug-ID standalone R8 builds separately (4m 22s), retaining the
+  existing temporary external build-directory/ID override. Its v3 signature and
+  16 KB alignment pass, UID 10254 is unchanged and DEBUGGABLE is absent. Actual
+  652 ms cold launch restores three paused entries at 94,123 ms without autoplay.
+  Original Home FM starts four entries; system next reaches index 1 and triggers
+  refill to seven entries, with advancing playback/no error and an active unmuted
+  48 kHz track. This is isolated fixture evidence, not production-ID upgrade or
+  framework-free execution. Existing notification/recording permissions are unchanged.
+- Players are paused after testing and ordinary standalone debug is restored with `-r`.
+  Post-update UNKNOWN/0 starts are excluded from cold-start evidence. Final preservation
+  checks show seven standalone entries/index 1 at 145,670 ms, PAUSED/speed 0 without
+  autoplay after a separate 1,261 ms cold launch. TV retains six entries/index 1 at
+  55,536 ms paused. Final debug PID 29095 and TV PID 27271 have empty crash buffers;
+  UID 10254, DEBUGGABLE and original ungranted notification/recording permissions are
+  restored/preserved. Accepted MediaStore row 820 remains published, TV-owned and
+  22,705,573 bytes. Root AVD remains awake on portrait TV MeiloX Home; no
+  reboot/screen-off, physical-device operation, scope/orientation change, Cookie read,
+  quota download, upload, social action or original production-app replacement occurs.
+- This qualifies the stated FM continuation/read/play/next paths, not native FM
+  feedback, real login/logout/expiry, final listening statistics, audible output,
+  every placeholder/server-shuffle path or complete D4-D6 acceptance. Framework-free
+  startup, original-install upgrade and recording/PiP decisions remain pending. The
+  earlier standalone near-end stall remains independently open; f0c55cac is retained.
+
+Local-only evidence: `/tmp/meilox-fm-session-final-paired-build-2026-10-01.log`,
+`/tmp/meilox-fm-session-final-*-queue-fixtures-2026-10-01.log`,
+`/tmp/meilox-fm-session-paired-signing-fixtures-2026-10-01.log`,
+`/tmp/meilox-fm-session-standalone-r8-fixture-build-2026-10-01.log` and same-prefix
+DEX/UI/MediaSession/AudioFlinger/package/preservation captures. Private evidence,
+APKs, official source and credentials are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

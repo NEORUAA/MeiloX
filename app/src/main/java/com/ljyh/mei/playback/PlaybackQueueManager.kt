@@ -16,10 +16,14 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 @OptIn(UnstableApi::class)
@@ -35,6 +40,7 @@ class PlaybackQueueManager(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
     private val scope: CoroutineScope,
+    private val sessions: SessionStore,
     private val serverShuffleAllowed: () -> Boolean = { true },
 ) : Player.Listener {
 
@@ -43,7 +49,10 @@ class PlaybackQueueManager(
     private val loadingIds = ConcurrentHashMap.newKeySet<String>()
     private var activeQueueBuildJob: Job? = null
     private var queueBuildGeneration = 0L
-    private var activeFmGeneration: Long? = null
+    private data class FmRequest(val generation: Long, val owner: SessionStamp)
+    private var activeFmRequest: FmRequest? = null
+    private var startingFmRequest: FmRequest? = null
+    private var fmFetchJob: Job? = null
     var playlistSource: PlaylistQueueSource? = null
         private set
     private var serverShuffleJob: Job? = null
@@ -54,7 +63,7 @@ class PlaybackQueueManager(
 
     private val _isShuffleModeEnabled = MutableStateFlow(false)
     var isFmMode = false
-    private var isFetchingFm = false
+        private set
 
 
     init {
@@ -222,139 +231,133 @@ class PlaybackQueueManager(
         stablePlayer.setPlaybackOrder(prefix + ordered)
     }
 
-    fun startFmMode(seedItem: MediaItem) {
+    fun startFmMode(seedItem: MediaItem, owner: SessionStamp) {
+        startFmBuild(owner) { seedItem }
+    }
+
+    fun startFmModeById(seedId: String?, owner: SessionStamp) {
+        startFmBuild(owner) {
+            if (seedId == null) null else loadSongDetails(listOf(seedId), owner).firstOrNull()
+        }
+    }
+
+    private fun startFmBuild(owner: SessionStamp, seed: suspend () -> MediaItem?) {
+        requireFmOwner(owner)
         cancelActiveQueueBuild()
-        val generation = queueBuildGeneration
-        activeQueueBuildJob = scope.launch(Dispatchers.Main) {
+        val request = FmRequest(queueBuildGeneration, owner)
+        val job = scope.launch(Dispatchers.Main, start = CoroutineStart.LAZY) {
             try {
-                startFmPlayback(seedItem, generation)
+                requireFmBuild(request)
+                val item = seed()
+                currentCoroutineContext().ensureActive()
+                requireFmBuild(request)
+                startFmPlayback(item, request)
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: SessionChangedException) {
+                // Never use a retired seed to start a new account's FM request.
+            } catch (e: Exception) {
+                Log.e(TAG, "FM Start Error", e)
             } finally {
-                if (generation == queueBuildGeneration) {
+                if (request.generation == queueBuildGeneration) {
                     activeQueueBuildJob = null
                 }
             }
         }
+        activeQueueBuildJob = job
+        job.start()
     }
 
-    fun startFmModeById(seedId: String?) {
-        cancelActiveQueueBuild()
-        val generation = queueBuildGeneration
-        activeQueueBuildJob = scope.launch(Dispatchers.Main) {
-            try {
-                if (generation != queueBuildGeneration) return@launch
-                if (seedId == null) {
-                    startFmPlayback(null, generation)
-                } else {
-                    // 先加载这首歌的详情，再进入 FM；新播放请求会取消此 job。
-                    val details = loadSongDetails(listOf(seedId))
-                    currentCoroutineContext().ensureActive()
-                    if (generation != queueBuildGeneration) return@launch
-                    startFmPlayback(details.firstOrNull(), generation)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } finally {
-                if (generation == queueBuildGeneration) {
-                    activeQueueBuildJob = null
-                }
-            }
+    private fun startFmPlayback(seedItem: MediaItem?, request: FmRequest) {
+        sessions.withCurrent(request.owner) {
+            requireFmAuthorization(request.owner)
+            if (request.generation != queueBuildGeneration) throw SessionChangedException()
+            isFmMode = true
+            activeFmRequest = request
+            startingFmRequest = request
         }
-    }
-
-    private suspend fun startFmPlayback(seedItem: MediaItem?, generation: Long) {
-        if (generation != queueBuildGeneration) return
-
-        isFmMode = true
-        activeFmGeneration = generation
-        _queueState.value = QueueState.Loading("私人 FM")
-
-        if (seedItem != null) {
-            // 1. 准备播放器环境
-            player.stop()
-            player.clearMediaItems()
-            player.shuffleModeEnabled = false
-            _isShuffleModeEnabled.value = false
-            player.repeatMode = Player.REPEAT_MODE_ALL
-
-            // 2. 立即添加种子歌曲并播放 (保证 UI 立即显示正确的封面和标题)
-            player.addMediaItem(seedItem)
-            player.prepare()
-            player.play()
-
-            // 3. 异步获取 FM 推荐列表并追加
-            fetchAndAppendFmRecommendations(seedItem.mediaId)
-        } else {
-            // 没有种子时保留现有 FM 队列，只补充推荐歌曲。
-            fetchAndAppendFmRecommendations()
-        }
-    }
-
-    suspend fun fetchAndAppendFmRecommendations(currentId: String? = null) {
-        if (isFetchingFm) return
-        if (!isFmMode) return
-        val fmGeneration = activeFmGeneration ?: queueBuildGeneration.also {
-            activeFmGeneration = it
-        }
-        isFetchingFm = true
         try {
-            // 调用 FM 接口
-            val response = weApiService.getRadio(mapOf())
-            if (response.code == 200 && response.data.isNotEmpty()) {
+            publishFm(request) { _queueState.value = QueueState.Loading("私人 FM") }
+            if (seedItem != null) {
+                publishFm(request) { player.stop() }
+                publishFm(request) { player.clearMediaItems() }
+                publishFm(request) { player.shuffleModeEnabled = false; _isShuffleModeEnabled.value = false }
+                publishFm(request) { player.repeatMode = Player.REPEAT_MODE_ALL }
+                publishFm(request) { player.addMediaItem(seedItem) }
+                publishFm(request) { player.prepare() }
+                publishFm(request) { player.play() }
+            }
+        } finally {
+            if (startingFmRequest === request) startingFmRequest = null
+        }
+        // Without a seed the original queue is retained; only recommendations are appended.
+        requestFmRecommendations(seedItem?.mediaId)
+    }
 
-                // 过滤掉当前正在播放的 ID，防止重复
+    fun restoreFmMode(enabled: Boolean, owner: SessionStamp?) {
+        retireFmRequests()
+        isFmMode = enabled
+        if (enabled && owner != null && runCatching { requireFmOwner(owner) }.isSuccess) {
+            activeFmRequest = FmRequest(queueBuildGeneration, owner)
+        }
+    }
+
+    /** Capture the active queue before dispatch, including deferred service/listener callbacks. */
+    fun requestFmRecommendations(currentId: String? = null) {
+        val request = activeFmRequest ?: return
+        if (startingFmRequest === request || fmFetchJob != null) return
+        if (runCatching { requireFmCurrent(request) }.isFailure) return
+        lateinit var job: Job
+        job = scope.launch(Dispatchers.Main, start = CoroutineStart.LAZY) {
+            try {
+                requireFmCurrent(request)
+                val response = weApiService.getRadio(emptyMap(), request.owner)
+                currentCoroutineContext().ensureActive()
+                requireFmCurrent(request)
+                if (response.code != 200) throw IOException("FM request failed (${response.code})")
                 val items = response.data
                     .filter { it.id.toString() != currentId }
                     .map { it.toMediaMetadata().toMediaItem() }
-
-                withContext(Dispatchers.Main) {
-                    val regularBuildPending = activeQueueBuildJob != null &&
-                        fmGeneration != queueBuildGeneration
-                    if (!isFmMode || fmGeneration != activeFmGeneration || regularBuildPending) {
-                        return@withContext
-                    }
-                    // 追加到列表末尾
-                    player.addMediaItems(items)
-
-                    _queueState.value = QueueState.Playing("私人 FM", player.mediaItemCount)
-
-                    // 触发占位符检查（如果你 FM 接口返回的是简略信息需要补全详情的话）
-                    checkAndLoadMetadata()
+                if (items.isNotEmpty()) {
+                    publishFm(request) { player.addMediaItems(items) }
+                    publishFm(request) { _queueState.value = QueueState.Playing("私人 FM", player.mediaItemCount) }
+                    publishFm(request) { checkAndLoadMetadata() }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: SessionChangedException) {
+                // A late response belongs to its original account and queue, never a replacement.
+            } catch (e: Exception) {
+                Log.e(TAG, "FM Fetch Error", e)
+            } finally {
+                if (fmFetchJob === job) fmFetchJob = null
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "FM Fetch Error", e)
-        } finally {
-            isFetchingFm = false
         }
+        fmFetchJob = job
+        job.start()
     }
 
-
     fun fmTrashCurrent() {
-        if (!isFmMode) return
-
+        val request = activeFmRequest ?: return
         val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId ?: return
-
-        scope.launch {
+        scope.launch(Dispatchers.Main) {
             try {
-                // 1. 调用云音乐的“不喜欢”接口 (建议在 apiService 中实现)
-                // apiService.dislikeSong(currentId)
-
-                withContext(Dispatchers.Main) {
-                    // 2. 移除当前项，ExoPlayer 会自动切换到下一首
+                publishFm(request) {
+                    if (player.currentMediaItemIndex != currentIndex || player.currentMediaItem?.mediaId != currentId) {
+                        return@publishFm
+                    }
+                    // Preserve local removal only; do not invent official FM dislike context.
                     player.removeMediaItem(currentIndex)
-
-                    // 3. 如果移除后快没了，赶紧补充
+                }
+                publishFm(request) {
                     if (player.mediaItemCount - player.currentMediaItemIndex <= 2) {
-                        fetchAndAppendFmRecommendations()
+                        requestFmRecommendations()
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: SessionChangedException) {
             } catch (e: Exception) {
                 Log.e(TAG, "Trash failed", e)
             }
@@ -371,6 +374,7 @@ class PlaybackQueueManager(
         cancelServerShuffle()
         queueSelectionJob?.cancel()
         activeQueueBuildJob?.cancel()
+        retireFmRequests()
         val generation = ++queueBuildGeneration
         activeQueueBuildJob = scope.launch(Dispatchers.Main) {
             fun publish(action: () -> Unit) = publishQueue {
@@ -417,7 +421,7 @@ class PlaybackQueueManager(
                 }
 
                 // 2. 停止并重置
-                publish { isFmMode = false; activeFmGeneration = null; player.stop() }
+                publish { isFmMode = false; player.stop() }
                 publish { player.clearMediaItems() }
 
                 // 强制先关闭随机模式 必须先关掉，才能保证 setMediaItems 里的 index 是线性的、准确的
@@ -474,20 +478,19 @@ class PlaybackQueueManager(
         checkAndLoadMetadata()
 
         // --- 新增 FM 边界检查 ---
-        if (isFmMode) {
+        val request = activeFmRequest
+        if (request != null && runCatching { requireFmCurrent(request) }.isSuccess) {
             val currentIndex = player.currentMediaItemIndex
             val totalCount = player.mediaItemCount
 
             // 当播放到倒数第 2 首时，自动拉取新歌
             if (totalCount - currentIndex <= 2) {
-                scope.launch {
-                    fetchAndAppendFmRecommendations()
-                }
+                requestFmRecommendations()
             }
 
             // 可选：清理历史，防止内存溢出（保留当前和上一首，删除更早的）
             if (currentIndex > 5) {
-                player.removeMediaItems(0, currentIndex - 1)
+                runCatching { publishFm(request) { player.removeMediaItems(0, currentIndex - 1) } }
             }
         }
     }
@@ -512,8 +515,11 @@ class PlaybackQueueManager(
 
     private fun checkAndLoadMetadata(windowSize: Int = 3) {
         val generation = queueBuildGeneration
+        val fmRequest = activeFmRequest
+        if (isFmMode && fmRequest == null) return
         scope.launch(Dispatchers.Main) {
             if (generation != queueBuildGeneration) return@launch
+            if (fmRequest != null && runCatching { requireFmCurrent(fmRequest) }.isFailure) return@launch
             // 基础状态检查 确保线程存活且列表不为空
             if (!player.applicationLooper.thread.isAlive || player.mediaItemCount == 0) return@launch
 
@@ -575,7 +581,7 @@ class PlaybackQueueManager(
             // IO 线程加载数据
             val loadedItems = try {
                 withContext(Dispatchers.IO) {
-                    loadSongDetails(itemsNeedLoading)
+                    loadSongDetails(itemsNeedLoading, fmRequest?.owner)
                 }
             } catch (e: CancellationException) {
                 if (generation == queueBuildGeneration) loadingIds.removeAll(itemsNeedLoading.toSet())
@@ -586,6 +592,7 @@ class PlaybackQueueManager(
             }
 
             if (generation != queueBuildGeneration) return@launch
+            if (fmRequest != null && runCatching { requireFmCurrent(fmRequest) }.isFailure) return@launch
             // Also clear IDs omitted by a partial response; otherwise a failed entry would
             // remain marked forever and never be retried.
             loadingIds.removeAll(itemsNeedLoading.toSet())
@@ -610,7 +617,10 @@ class PlaybackQueueManager(
                         if (newItem != null) {
                             // 只有当它是占位符，或者我们要强制刷新时才替换
                             if (isPlaceholderMediaItem(currentItem)) {
-                                player.replaceMediaItem(index, newItem)
+                                if (fmRequest == null) player.replaceMediaItem(index, newItem)
+                                else if (runCatching { publishFm(fmRequest) { player.replaceMediaItem(index, newItem) } }.isFailure) {
+                                    return@launch
+                                }
                             }
                         }
                     }
@@ -656,14 +666,22 @@ class PlaybackQueueManager(
     }
 
 
-    private suspend fun loadSongDetails(ids: List<String>): List<MediaItem> {
+    private suspend fun loadSongDetails(ids: List<String>, owner: SessionStamp? = null): List<MediaItem> {
         return withContext(Dispatchers.IO) {
             try {
+                if (owner != null) requireFmOwner(owner)
                 val response = apiService.getSongDetail(
-                    com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(","))
+                    com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(",")), owner,
                 )
+                currentCoroutineContext().ensureActive()
+                if (owner != null) {
+                    requireFmOwner(owner)
+                    if (response.code != 200) throw IOException("FM seed request failed (${response.code})")
+                }
                 response.songs.map { it.toMediaItem() }
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: SessionChangedException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load song details", e)
@@ -696,7 +714,6 @@ class PlaybackQueueManager(
 
     fun invalidateSession() {
         cancelActiveQueueBuild()
-        activeFmGeneration = null
         isFmMode = false
         loadingIds.clear()
     }
@@ -707,7 +724,44 @@ class PlaybackQueueManager(
         playlistSource = null
         activeQueueBuildJob?.cancel()
         activeQueueBuildJob = null
+        retireFmRequests()
         queueBuildGeneration++
+    }
+
+    private fun requireFmOwner(owner: SessionStamp) {
+        sessions.requireCurrent(owner)
+        requireFmAuthorization(owner)
+    }
+
+    private fun requireFmAuthorization(owner: SessionStamp) {
+        if (sessions.recoveryRequired.value || !owner.identity.authenticated || owner.identity.anonymous ||
+            owner.identity.userId <= 0
+        ) throw SessionChangedException()
+    }
+
+    private fun requireFmBuild(request: FmRequest) {
+        requireFmOwner(request.owner)
+        if (request.generation != queueBuildGeneration) throw SessionChangedException()
+    }
+
+    private fun requireFmCurrent(request: FmRequest) {
+        requireFmBuild(request)
+        if (!isFmMode || activeFmRequest !== request) throw SessionChangedException()
+    }
+
+    private fun publishFm(request: FmRequest, action: () -> Unit) = sessions.withCurrent(request.owner) {
+        requireFmAuthorization(request.owner)
+        if (request.generation != queueBuildGeneration || !isFmMode || activeFmRequest !== request) {
+            throw SessionChangedException()
+        }
+        action()
+    }
+
+    private fun retireFmRequests() {
+        activeFmRequest = null
+        startingFmRequest = null
+        fmFetchJob?.cancel()
+        fmFetchJob = null
     }
 
     sealed class QueueState {

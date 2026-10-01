@@ -129,9 +129,11 @@ class PlayerConnection(
     }
 
     fun fmStart(firstSongId: String? = null) {
-
-        service.scope.launch {
-            service.queueManager.startFmModeById(firstSongId)
+        try {
+            val owner = service.accountSessions.snapshot()
+            service.queueManager.startFmModeById(firstSongId, owner)
+        } catch (_: java.io.IOException) {
+            // A retired/recovering session cannot start personalized playback.
         }
     }
 

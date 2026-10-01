@@ -2215,6 +2215,46 @@ These are integration differences, not server API semantics.
   mutation, quota download, upload or social operation is performed. Latest isolated
   standalone R8 execution is recorded in the matching build-plan checkpoint separately.
 
+### API-031: Personal FM Refills Must Keep Their Triggering Session and Queue
+
+- Recorded: 2026-10-01. Original FM seed/detail and refill requests did not carry an
+  explicit shared owner. Deferred service/listener launches could adopt a newer account;
+  an old refill's Boolean cleanup could also reopen a newer refill's reservation.
+- Retained request contract: `/api/v3/song/detail` for an optional seed and
+  `/weapi/v1/radio/get` with the original empty body for recommendations. Standalone
+  retains its original signing/transport. Parasite normalizes the latter to host path
+  `v1/radio/get` and uses the official session, signing and request SDK. It does not
+  copy credentials, invoke a native TV FM controller or fall back to standalone.
+- One captured SessionStamp now covers seed loading, FM activation, recommendations,
+  FM metadata hydration and short queue/player publications. Generation, authenticated
+  identity and recovery are checked before dispatch and after responses. Publication
+  checks between insertion, preparation and play; backend readers stay outside the
+  session monitor. Restored FM retains only its startup owner, never a later account.
+- Refill work captures the active FM queue synchronously, uses a lazy Job reservation
+  and releases only its own reservation. Queue replacement, invalidation and disposal
+  retire it; cancelled/non-cooperative results cannot append to a replacement queue.
+  Duplicate listener/service callbacks share one outstanding refill. Deferred local
+  trash and history cleanup also validate the triggering queue/session.
+- Original shared Home/library entries, layouts, seed-first playback, no-seed queue
+  retention, current-seed exclusion, repeat/shuffle rules and refill thresholds remain.
+  Trash still removes locally only. This does not implement or qualify native
+  `v1/radio/like`/dislike feedback; API-013's context distinction remains in force.
+- Verification: six Repository/proxy JVM cases per flavor; 14 new actual queue-manager
+  device cases per matched debug flavor, plus six existing heart-handoff cases. They
+  use synthetic identities, transports and players, with no login/library mutation.
+  Current production R8 DEXes retain the Radio DTO, Body/Tag slots and POST route.
+  Actual original Home actions start FM in standalone debug and both minified runtime
+  fixtures. TV shows six entries with successful next/playback; standalone R8 grows
+  from four to seven entries after next. Both have advancing MediaSessions, no
+  reported error and active unmuted 48 kHz AudioFlinger tracks. Official TV playback
+  remains inactive STOPPED/empty. Accounts and recommendation contents differ.
+- Limits: first post-update parasite instrumentation attempts fail to attach and execute
+  no cases; bounded retries of the latest matched APKs pass. This is not fresh-install
+  startup acceptance. Real reauthorization, expiry, server feedback/listening statistics,
+  audible output, every hydration/shuffle continuation and complete paired release
+  qualification remain separate gates. The earlier standalone near-end stall is not
+  repaired or qualified by this FM check. No quota grant, upload or social write occurs.
+
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 
 - Recorded: 2026-10-01. This is component/permission adaptation, not a new business

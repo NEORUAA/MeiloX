@@ -75,7 +75,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun currentOwnerStartsTheOriginalQueue() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         try {
             manager.playQueue(queue, publishQueue = publish)
             runCurrent()
@@ -87,7 +87,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun ordinaryQueuesKeepTheirDefaultPublicationPath() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         try {
             sessions.invalidate()
             manager.playQueue(queue)
@@ -99,7 +99,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun invalidationBeforeScheduledBuildPreventsAllPlayerMutations() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         try {
             manager.playQueue(queue, publishQueue = publish)
             sessions.invalidate()
@@ -110,7 +110,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun invalidationDuringInitialStatusPreventsQueueReplacement() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         val pending = CompletableDeferred<Queue.Status>()
         val delayed = object : Queue by queue { override suspend fun getInitialStatus() = pending.await() }
         try {
@@ -125,7 +125,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun reentrantInvalidationAfterReplacementCannotPrepareOrPlay() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         try {
             afterMutation = { if (it == "setMediaItems") sessions.invalidate() }
             manager.playQueue(queue, publishQueue = publish)
@@ -138,7 +138,7 @@ class IntelligenceQueueHandoffDeviceTest {
 
     @Test fun recoveryBeforeBuildCannotPrepareOrPlay() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope)
+        val manager = PlaybackQueueManager(player, unused<ApiService>(), unused<WeApiService>(), backgroundScope, sessions)
         try {
             manager.playQueue(queue, publishQueue = publish)
             sessions.setRecoveryRequired(true)
