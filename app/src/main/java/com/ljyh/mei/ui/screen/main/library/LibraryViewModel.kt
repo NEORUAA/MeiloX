@@ -65,7 +65,7 @@ class LibraryViewModel internal constructor(
 
     init {
         viewModelScope.launch {
-            accounts.state.map { it.session }.distinctUntilChanged().collect { refresh() }
+            accounts.state.map { it.session to it.recoveryRequired }.distinctUntilChanged().collect { refresh() }
         }
         viewModelScope.launch {
             source.collectionChanges.collect { stamp ->
@@ -145,10 +145,10 @@ class LibraryViewModel internal constructor(
                         }
                     }
                     launch {
-                        request(stamp, requestVersion, source::albums) { current, result -> current.copy(albums = result) }
+                        request(stamp, requestVersion, { source.albums(stamp) }) { current, result -> current.copy(albums = result) }
                     }
                     launch {
-                        request(stamp, requestVersion, { source.photos(stamp.identity.userId.toString()) }) { current, result ->
+                        request(stamp, requestVersion, { source.photos(stamp) }) { current, result ->
                             current.copy(photos = result)
                         }
                     }
@@ -168,6 +168,7 @@ class LibraryViewModel internal constructor(
     ) {
         try {
             accounts.sessions.requireCurrent(stamp)
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             val result = load()
             currentCoroutineContext().ensureActive()
             publish(stamp, requestVersion) { apply(it, result) }
@@ -183,7 +184,10 @@ class LibraryViewModel internal constructor(
     private fun publish(stamp: SessionStamp, requestVersion: Long, update: (LibraryUiState) -> LibraryUiState) {
         accounts.sessions.withCurrent(stamp) {
             synchronized(stateLock) {
-                if (version.get() == requestVersion) mutableState.update(update)
+                if (version.get() == requestVersion) {
+                    if (accounts.sessions.recoveryRequired.value) mutableState.value = LibraryUiState()
+                    else mutableState.update(update)
+                }
             }
         }
     }

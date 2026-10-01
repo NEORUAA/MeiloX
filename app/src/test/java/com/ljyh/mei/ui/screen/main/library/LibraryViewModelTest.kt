@@ -45,9 +45,11 @@ class LibraryViewModelTest {
         val cached = mutableMapOf<String, MutableStateFlow<List<AccountPlaylist>>>()
         val syncCalls = mutableListOf<String>()
         val likedOwners = mutableListOf<SessionStamp>()
+        val albumOwners = mutableListOf<SessionStamp>()
+        val photoOwners = mutableListOf<SessionStamp>()
         var sync: suspend (SessionStamp) -> Resource<Unit> = { Resource.Success(Unit) }
-        var albums: suspend () -> Resource<UserAlbumList> = { Resource.Success(UserAlbumList(emptyList(), 0, false, 0, 200)) }
-        var photos: suspend (String) -> Resource<AlbumPhoto> = {
+        var albums: suspend (SessionStamp) -> Resource<UserAlbumList> = { Resource.Success(UserAlbumList(emptyList(), 0, false, 0, 200)) }
+        var photos: suspend (SessionStamp) -> Resource<AlbumPhoto> = {
             Resource.Success(AlbumPhoto(200, AlbumPhoto.Data(AlbumPhoto.Data.Page("", false, 0), emptyList(), 0), ""))
         }
         var liked: suspend (String) -> Resource<List<MediaMetadata>> = { Resource.Success(emptyList()) }
@@ -56,8 +58,14 @@ class LibraryViewModelTest {
             syncCalls += stamp.identity.userId.toString()
             return sync.invoke(stamp)
         }
-        override suspend fun albums() = albums.invoke()
-        override suspend fun photos(accountId: String) = photos.invoke(accountId)
+        override suspend fun albums(stamp: SessionStamp): Resource<UserAlbumList> {
+            albumOwners += stamp
+            return albums.invoke(stamp)
+        }
+        override suspend fun photos(stamp: SessionStamp): Resource<AlbumPhoto> {
+            photoOwners += stamp
+            return photos.invoke(stamp)
+        }
         override suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>> {
             likedOwners += stamp
             return liked.invoke(playlistId)
@@ -113,6 +121,8 @@ class LibraryViewModelTest {
             assertFalse(model.state.value.playlistsLoading)
             assertFalse(model.state.value.likedSongsLoading)
             assertEquals(listOf(sessions.snapshot()), source.likedOwners.distinct())
+            assertEquals(listOf(sessions.snapshot()), source.albumOwners.distinct())
+            assertEquals(listOf(sessions.snapshot()), source.photoOwners.distinct())
         }
     }
 
@@ -134,6 +144,36 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test fun lateAlbumAndPhotoReadsCannotReplaceTheNextAccountsResults() {
+        val oldAlbums = CompletableDeferred<Resource<UserAlbumList>>()
+        val oldPhotos = CompletableDeferred<Resource<AlbumPhoto>>()
+        source.albums = { owner ->
+            if (owner.identity.userId == 1L) withContext(NonCancellable) { oldAlbums.await() }
+            else Resource.Success(UserAlbumList(emptyList(), 2, false, 0, 200))
+        }
+        source.photos = { owner ->
+            if (owner.identity.userId == 1L) withContext(NonCancellable) { oldPhotos.await() }
+            else Resource.Error("Current photo fixture")
+        }
+        checkModel { model, _ ->
+            try {
+                runCurrent()
+                val old = sessions.snapshot()
+                sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+                runCurrent()
+                assertEquals(listOf(old, sessions.snapshot()), source.albumOwners.distinct())
+                assertEquals(listOf(old, sessions.snapshot()), source.photoOwners.distinct())
+            } finally {
+                oldAlbums.complete(Resource.Success(UserAlbumList(emptyList(), 1, false, 0, 200)))
+                oldPhotos.complete(Resource.Error("Old photo fixture"))
+                runCurrent()
+            }
+            assertEquals("2", model.state.value.userId)
+            assertEquals(2, (model.state.value.albums as Resource.Success).data.count)
+            assertEquals(Resource.Error("Current photo fixture"), model.state.value.photos)
+        }
+    }
+
     @Test fun logoutNeverSynchronizesAnAnonymousAccount() {
         source.playlists("1").value = listOf(playlist("private"))
         checkModel { model, _ ->
@@ -144,6 +184,27 @@ class LibraryViewModelTest {
             runCurrent()
             assertEquals(LibraryUiState(), model.state.value)
             assertEquals(requests, source.syncCalls.size)
+        }
+    }
+
+    @Test fun recoveryWithoutAGenerationChangeRetiresTheLibraryUntilResolution() {
+        source.playlists("1").value = listOf(playlist("private", true))
+        source.liked = { Resource.Success(listOf(song(1))) }
+        checkModel { model, _ ->
+            runCurrent()
+            val owner = sessions.snapshot()
+            val requests = source.syncCalls.size
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(LibraryUiState(), model.state.value)
+            model.refresh()
+            runCurrent()
+            assertEquals(requests, source.syncCalls.size)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(listOf(song(1)), model.state.value.likedSongs)
+            assertTrue(source.syncCalls.size > requests)
         }
     }
 

@@ -196,11 +196,12 @@ class MeloXRepository @Inject constructor(
         return SearchDiscovery(recommendations)
     }
 
-    suspend fun accountProfile(): AccountProfile {
-        val response = runCatching { requestEapi("/api/w/nuser/account/get") }
+    suspend fun accountProfile(session: SessionStamp): AccountProfile {
+        val response = runCatching { accountRequest(session, "/api/w/nuser/account/get", emptyMap(), useEapi = true) }
             .getOrElse { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                requestEapi("/api/nuser/account/get")
+                if (error is com.ljyh.mei.data.session.SessionChangedException) throw error
+                accountRequest(session, "/api/nuser/account/get", emptyMap(), useEapi = true)
             }
         return parseAccountProfile(response.objectOrNull("profile"))
             ?: error("NetEase account profile is unavailable")

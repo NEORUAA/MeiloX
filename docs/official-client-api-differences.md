@@ -2431,6 +2431,51 @@ These are integration differences, not server API semantics.
   failure behavior under official server conditions and full release acceptance remain
   open; fixture cancellation does not establish server-side cancellation.
 
+### API-035: Account Profile and Library Reads Keep Their Triggering Owner
+
+- Recorded: 2026-10-02. Profile reads retain the original logical primary/secondary
+  account paths and empty business body. Both attempts now carry the same required
+  SessionStamp; stale/cancelled attempts do not select a newer account for the fallback.
+  This secondary business path is not a fallback to standalone from the official host.
+- Library album reads formerly took a fresh snapshot inside the Repository, while photo
+  reads supplied an account ID but no Retrofit owner. Both now receive the ViewModel's
+  triggering stamp; every album page and photo request carries a required local Tag.
+  Photo account ID is derived from that stamp. Original business fields, album cursor
+  progression and default photo page (size 10 with null cursor omitted) are retained.
+- Recovery without a generation change now stops profile/library network reads and
+  rejects late publication. Account presentation removes the online profile and marks
+  authorization unavailable, but retains a still-current public stamp for owned offline
+  history. It does not retain credentials or grant network authorization. Library
+  observes recovery as well as generation; resolution reloads the current account.
+- Four new assertions fail before repair. Final paired JVM suites pass 851 standalone
+  and 907 parasite cases, including existing recovery/offline-history preservation.
+  Returning the pending account without its public stamp initially broke that offline
+  regression; retaining the validated stamp repairs it without changing History UI.
+  Required photo/album tags and their routes survive both production R8 DEX files.
+- Twelve Android substitute cases pass per flavor, using the real repositories and
+  Retrofit requests without server or database writes. They cover the profile's
+  secondary path, album pagination, photo payload, invalid/recovering owners,
+  cancellation, late responses and retry. An initial fixture incorrectly expected an
+  empty photo cursor; only that assertion was corrected to match main's omitted null.
+- The build-plan checkpoint records Android fixtures and real-account reads separately.
+  Real expiry/logout/account-switch cooperation, complete server failures and release
+  acceptance remain open. The independent effective-signing regression in ABI-015
+  also remains open; this owner repair is not proof of restored EAPI/WeAPI wire modes.
+
+### API-036: Standalone Photo Metadata Is Not Host Business Data
+
+- Recorded: 2026-10-02. Original main's GetUserPhotoAlbum includes `header="{}"`
+  and `e_r=true` in addition to userId/page. The migration removed those transport
+  fields from the shared DTO to avoid replacing the official SDK's signing metadata.
+- The standalone photo route remains `/api/user/photo/album/get`, with no explicit
+  crypto header. Its original API form encoder does not inject those removed fields.
+  Therefore restoring the original interceptor alone does not restore this payload.
+  API-035 preserves the business fields, not the missing standalone transport fields.
+- Required next work: restore these two defaults at the standalone transport boundary
+  only. Keep the common DTO and official SDK request free of module-owned signing
+  metadata. This is a source/configuration fidelity gap, not an observed photo-server
+  failure; photo wire acceptance is still unqualified.
+
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 
 - Recorded: 2026-10-01. This is component/permission adaptation, not a new business
@@ -2465,6 +2510,27 @@ These are integration differences, not server API semantics.
   the cause. Empty crash buffers do not erase this handled player error. No engine/UI
   repair is included in this checkpoint. Natural end-of-track, process-loss timer
   behavior, audible output and complete release playback remain unqualified.
+
+### ABI-015: Dynamic Standalone Requests Lost Their Signing Labels
+
+- Recorded: 2026-10-02. Bounded source comparison with current main
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29` confirms that the original MeloX helper
+  rewrites logical `/api/` paths to `/weapi/` or `/eapi/`; the WeAPI helper can retry
+  through EAPI. Those prefixes select the original standalone interceptor's mode.
+- The host migration removed those rewrites/retries appropriately for the official
+  SDK, which owns its signing (API-001). Dual-runtime restoration did not restore an
+  equivalent standalone boundary: both named direct services still receive the same
+  standalone business Call.Factory, and the named Retrofit service alone does not
+  choose crypto. A dynamic `/api/` request without a control header therefore selects
+  plain API form handling instead of its original intended EAPI/WeAPI signing.
+- This is a confirmed source/configuration fidelity gap, not proof of a particular
+  server failure. SearchResult API-032 uses the separate unchanged typed API search
+  route; this finding does not establish the cause of its observed relevance difference.
+- Required next work: restore the original standalone dynamic mode and retry semantics
+  at the flavor-owned boundary with captured-session/cancellation tests and actual
+  signed-request evidence. Keep parasite on its single official pipeline with no
+  standalone/signature fallback. Do not copy frontend trees or alter business bodies
+  to mask the gap. Full standalone restoration and merge acceptance remain open.
 
 ## Adding an Entry
 

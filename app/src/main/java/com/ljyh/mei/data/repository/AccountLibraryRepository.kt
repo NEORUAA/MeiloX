@@ -24,8 +24,8 @@ internal interface AccountLibrarySource {
     val collectionChanges: Flow<SessionStamp>
     fun playlists(accountId: String): Flow<List<AccountPlaylist>>
     suspend fun sync(stamp: SessionStamp): Resource<Unit>
-    suspend fun albums(): Resource<UserAlbumList>
-    suspend fun photos(accountId: String): Resource<AlbumPhoto>
+    suspend fun albums(stamp: SessionStamp): Resource<UserAlbumList>
+    suspend fun photos(stamp: SessionStamp): Resource<AlbumPhoto>
     suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>>
 }
 
@@ -47,9 +47,9 @@ class AccountLibraryRepository @Inject constructor(
 
     override suspend fun sync(stamp: SessionStamp): Resource<Unit> = safeApiCall {
         check(stamp.identity.authenticated)
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         val accountId = stamp.identity.userId.toString()
-        val response = users.getAllUserPlaylists(accountId, stamp) { sessions.requireCurrent(stamp) }
+        val response = users.getAllUserPlaylists(accountId, stamp) { requireOwner(stamp) }
         val playlists = when (response) {
             is Resource.Success -> response.data.playlist
             is Resource.Error -> throw java.io.IOException(response.message)
@@ -68,37 +68,43 @@ class AccountLibraryRepository @Inject constructor(
         val coroutine = currentCoroutineContext()
         local.replaceAccountPlaylists(accountId, entries) {
             coroutine.ensureActive()
-            sessions.requireCurrent(stamp)
+            requireOwner(stamp)
         }
         coroutine.ensureActive()
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
     }
 
-    override suspend fun albums(): Resource<UserAlbumList> {
-        val stamp = sessions.snapshot()
-        return users.getAlbumList(stamp) { sessions.requireCurrent(stamp) }
-    }
-    override suspend fun photos(accountId: String) = users.getPhotoAlbum(accountId)
+    override suspend fun albums(stamp: SessionStamp): Resource<UserAlbumList> =
+        users.getAlbumList(stamp) { requireOwner(stamp) }
+
+    override suspend fun photos(stamp: SessionStamp): Resource<AlbumPhoto> =
+        users.getPhotoAlbum(stamp.identity.userId.toString(), stamp) { requireOwner(stamp) }
 
     override suspend fun likedSongs(playlistId: String, stamp: SessionStamp): Resource<List<MediaMetadata>> = safeApiCall {
         check(stamp.identity.authenticated) { "Official login is required" }
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         val accountId = stamp.identity.userId.toString()
         check(local.getAccountPlaylists(accountId).first().any {
             it.isLiked && it.playlist.id == playlistId && it.playlist.author == accountId
         }) { "Liked playlist does not belong to this account" }
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         val songs = when (val response = remote.getPlaylistDetail(playlistId, stamp)) {
             is Resource.Success -> {
                 check(response.data.playlist.creator.userId == stamp.identity.userId) { "Liked playlist owner changed" }
-                sessions.requireCurrent(stamp)
+                requireOwner(stamp)
                 remote.getCompletePlaylistTracks(response.data, stamp)
             }
             is Resource.Error -> throw java.io.IOException(response.message)
             Resource.Loading -> error("Unexpected pending liked playlist response")
         }
         currentCoroutineContext().ensureActive()
-        sessions.requireCurrent(stamp)
+        requireOwner(stamp)
         songs
+    }
+
+    private fun requireOwner(stamp: SessionStamp) {
+        sessions.requireCurrent(stamp)
+        check(stamp.identity.authenticated && !stamp.identity.anonymous) { "Sign-in required" }
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
     }
 }

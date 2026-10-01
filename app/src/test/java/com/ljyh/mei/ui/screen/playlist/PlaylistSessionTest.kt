@@ -169,8 +169,8 @@ class PlaylistSessionTest {
                         sessions.requireCurrent(stamp)
                         return Resource.Error("Library refresh failed")
                     }
-                    override suspend fun albums() = error("Unused albums")
-                    override suspend fun photos(accountId: String) = error("Unused photos")
+                    override suspend fun albums(stamp: SessionStamp) = error("Unused albums")
+                    override suspend fun photos(stamp: SessionStamp) = error("Unused photos")
                     override suspend fun likedSongs(playlistId: String, stamp: SessionStamp) = error("Unused liked songs")
                 })
             store.put("playlist", model)

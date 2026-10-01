@@ -13,6 +13,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
+import com.ljyh.mei.data.session.SessionStamp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -59,21 +60,25 @@ class UserRepository(private val apiService: ApiService,private val eApiService:
             page.copy(playlist = playlists.values.toList(), more = false)
         }
     }
-    suspend fun getPhotoAlbum(id: String): Resource<AlbumPhoto> {
+    suspend fun getPhotoAlbum(id: String, session: SessionStamp, validate: () -> Unit = {}): Resource<AlbumPhoto> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
+                currentCoroutineContext().ensureActive()
+                validate()
                 val response = apiService.getUserPhotoAlbum(
                     GetUserPhotoAlbum(
                         userId = id
-                    )
+                    ), session,
                 )
+                currentCoroutineContext().ensureActive()
+                validate()
                 if (response.code != 200) throw IOException("Official photo request failed (${response.code})")
                 response
             }
         }
     }
 
-    suspend fun getAlbumList(session: com.ljyh.mei.data.session.SessionStamp? = null, validate: () -> Unit = {}): Resource<UserAlbumList> {
+    suspend fun getAlbumList(session: SessionStamp, validate: () -> Unit = {}): Resource<UserAlbumList> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
                 val albums = linkedMapOf<Long, UserAlbumList.Data>()

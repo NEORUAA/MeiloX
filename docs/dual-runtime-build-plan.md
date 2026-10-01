@@ -2273,6 +2273,47 @@ does not complete real account-transition, full business or release acceptance.
 Local-only evidence: `/tmp/meilox-home-*-2026-10-02*`. Device logs, credentials and
 APKs are not committed. `git diff --check` passes before the scoped local commit.
 
+### D3/D4/D5/D6 Checkpoint: Account and Library Read Ownership (2026-10-02)
+
+- Profile primary/secondary reads retain one captured owner. Album pagination and
+  photos now carry required local SessionStamp tags, derived from the triggering
+  account rather than a later snapshot. Recovery without a generation change stops
+  network reads and late publication. A validated public identity remains available
+  for existing owned offline history, without granting online authorization.
+- No layout, navigation, player, database schema or shared DTO transport fields change.
+  Eight shared JVM cases were added. Four assertions fail before repair; final suites
+  pass 851 standalone and 907 parasite cases with no failures/errors/skips. An initial
+  offline-history regression was repaired in AccountStore, not hidden by changing the
+  existing History test. See API-035 for the exact ownership contract.
+- Twelve Android substitute cases pass per flavor (24 total), using production
+  repositories/Retrofit with synthetic responses and no socket/database/account
+  mutation. The photo cursor assertion was corrected against original main; its
+  nullable cursor is omitted, not an empty string. These are not real account-change
+  or server-expiry acceptance tests.
+- Paired debug/release/test builds pass in 5m44s; the isolated standalone R8 fixture
+  builds in 3m31s. The final test-APK rebuild passes in 13s. The release declaration
+  gate passes 41 fixtures and real SDK signing/identity/16KB checks. Required album
+  and photo Retrofit tags survive both production R8 DEX files.
+- Development-signed parasite R8 SHA256:
+  `e09fd5ad91b0111cb2139872cfe3cf66dd4dc4c9ac55ad5233ed948076a4005b`.
+  Isolated standalone R8 SHA256:
+  `ee1f02cf0734f1583596751e53b05dd857ebb5ab42d99fc6e4aa1706ea6c080c`.
+  Actual COLD starts take 4640ms (TV) and 728ms (isolated standalone). Screenshots
+  show restored account avatars, settled liked songs and existing library playlists.
+  This does not prove every photo/album wire route or full release acceptance.
+- The ordinary standalone debug APK is restored with install-r. A later settled COLD
+  start takes 1824ms (PID 29845); the immediate post-install UNKNOWN launch is not used
+  as cold-start evidence. UID 10254 and ungranted notification/microphone flags remain
+  unchanged. Queues retain TV 6 items at 55536ms (PAUSED) and standalone 7 at 145670ms
+  (NONE after cold restore, speed 0). Scoped crash buffers are empty. MediaStore row
+  820 retains 22705573 bytes, TV ownership and pending=0. The rooted AVD stays awake
+  on TV's portrait MeiloX Home; no emulator restart, new playback or quota use occurs.
+- Local evidence: `/tmp/meilox-account-read-*-2026-10-02*`. No APKs, logs, credentials
+  or official sources are committed. ABI-015 (dynamic signing/retry restoration) and
+  API-036 (standalone photo metadata) are confirmed open fidelity gaps for the next
+  backend-only repair. Original-install upgrade, framework-free startup, microphone/
+  PiP, real cooperation and full release/merge gates remain open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

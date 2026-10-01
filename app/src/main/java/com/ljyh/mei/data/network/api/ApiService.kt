@@ -109,7 +109,7 @@ interface ApiService {
     @POST("/api/album/sublist")
     suspend fun getCollectAlbumList(
         @Body body: GetAlbumList,
-        @Tag expectedSession: SessionStamp? = null,
+        @Tag expectedSession: SessionStamp,
     ): UserAlbumList
 
     @POST("/api/v1/album/{id}")
@@ -141,7 +141,7 @@ interface ApiService {
     ): SongUrl
 
     @POST("/api/user/photo/album/get")
-    suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum): AlbumPhoto
+    suspend fun getUserPhotoAlbum(@Body body: GetUserPhotoAlbum, @Tag expectedSession: SessionStamp): AlbumPhoto
 
     @POST("/api/playlist/create")
     suspend fun createPlaylist(@Body body: CreatePlaylist, @Tag expectedSession: SessionStamp): CreatePlaylistResult

@@ -10,17 +10,33 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionIdentity
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.http.Tag
 
 class UserRepositoryPagingTest {
+    private val owner = SessionStamp(1, SessionIdentity(42, true, false))
+    private val owners = mutableListOf<SessionStamp>()
+    @Test fun photoRouteRequiresTheTriggeringSessionTag() {
+        val method = ApiService::class.java.methods.single { it.name == "getUserPhotoAlbum" }
+        assertTrue(method.parameterTypes.indices.any { index ->
+            method.parameterTypes[index] == SessionStamp::class.java &&
+                method.parameterAnnotations[index].any { it is Tag }
+        })
+    }
+
     private inline fun <reified T> api(noinline invoke: (String, Any?) -> Any?): T = Proxy.newProxyInstance(
         T::class.java.classLoader, arrayOf(T::class.java),
-    ) { _, method, args -> invoke(method.name, args?.firstOrNull()) } as T
+    ) { _, method, args ->
+        owners += args.orEmpty().filterIsInstance<SessionStamp>()
+        invoke(method.name, args?.firstOrNull())
+    } as T
 
     private fun repository(invoke: (String, Any?) -> Any?) = UserRepository(
         api<ApiService>(invoke), api<EApiService> { _, _ -> error("Unexpected EAPI") },
@@ -70,14 +86,15 @@ class UserRepositoryPagingTest {
             offsets += request.offset
             if (request.offset == "0") albums(listOf(1, 2), true) else albums(listOf(3), false)
         }
-        val result = repository.getAlbumList() as Resource.Success
+        val result = repository.getAlbumList(owner) as Resource.Success
         assertEquals(listOf(1L, 2L, 3L), result.data.data.map { it.id })
         assertEquals(listOf("0", "2"), offsets)
+        assertEquals(listOf(owner, owner), owners)
     }
 
     @Test fun stalledAlbumPaginationFails() = runBlocking {
         val repository = repository { _, _ -> albums(emptyList(), true) }
-        assertTrue(repository.getAlbumList() is Resource.Error)
+        assertTrue(repository.getAlbumList(owner) is Resource.Error)
     }
 
     @Test fun requestCancellationPropagatesRatherThanBecomingAnErrorResource() = runBlocking {
@@ -101,6 +118,27 @@ class UserRepositoryPagingTest {
 
     @Test fun rejectedPhotoResponsesDoNotExposeMissingDataToComposition() = runBlocking {
         val repository = repository { _, _ -> Gson().fromJson("{\"code\":403}", AlbumPhoto::class.java) }
-        assertTrue(repository.getPhotoAlbum("42") is Resource.Error)
+        assertTrue(repository.getPhotoAlbum("42", owner) is Resource.Error)
+        assertEquals(listOf(owner), owners)
+    }
+
+    @Test fun photoValidationRejectsAnOldResponseAndBlocksTheNextDispatch() = runBlocking {
+        var valid = true
+        var requests = 0
+        val repository = repository { _, _ ->
+            requests++
+            valid = false
+            Gson().fromJson("""{"code":200,"data":{"records":[]}}""", AlbumPhoto::class.java)
+        }
+        repeat(2) {
+            assertTrue(repository.getPhotoAlbum("42", owner) { check(valid) { "Session changed" } } is Resource.Error)
+        }
+        assertEquals(1, requests)
+        assertEquals(listOf(owner), owners)
+    }
+
+    @Test fun photoCancellationIsNotConvertedToAnErrorResource() = runBlocking {
+        val repository = repository { _, _ -> throw CancellationException("Canceled photo") }
+        assertTrue(runCatching { repository.getPhotoAlbum("42", owner) }.exceptionOrNull() is CancellationException)
     }
 }

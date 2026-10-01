@@ -27,6 +27,63 @@ class AccountStoreTest {
     private fun profile(id: Long, name: String = "Account $id") =
         AccountProfile(id, name, null, null, null, null, null, null, null, null)
 
+    @Test fun recoveryWithoutAGenerationChangeClearsProfileAndDefersReads() = runTest {
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
+        var loads = 0
+        val store = AccountStore(sessions, { loads++; profile(1) }, backgroundScope)
+        try {
+            runCurrent()
+            val owner = sessions.snapshot()
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(owner, store.state.value.session)
+            assertNull(store.state.value.profile)
+            assertTrue(store.state.value.recoveryRequired)
+            assertFalse(store.state.value.authenticated)
+            assertThrows(IOException::class.java) { store.requireAuthenticated() }
+            store.refresh()
+            runCurrent()
+            assertEquals(1, loads)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(profile(1), store.state.value.profile)
+            assertEquals(2, loads)
+        } finally { store.close() }
+    }
+
+    @Test fun recoveryRaisedByTheResponseCannotPublishTheProfile() = runTest {
+        val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
+        val store = AccountStore(sessions, {
+            sessions.setRecoveryRequired(true)
+            profile(1)
+        }, backgroundScope)
+        try {
+            runCurrent()
+            assertNull(store.state.value.profile)
+            assertTrue(store.state.value.recoveryRequired)
+            assertFalse(store.state.value.loading)
+        } finally { store.close() }
+    }
+
+    @Test fun profileReadsCarryTheStoreSnapshotThroughAccountReplacement() = runTest {
+        var identity = SessionIdentity(1, true, false)
+        val sessions = SessionStore().apply { bind { identity } }
+        val owners = mutableListOf<SessionStamp>()
+        val store = AccountStore(sessions, { owner ->
+            owners += owner
+            profile(owner.identity.userId)
+        }, backgroundScope)
+        try {
+            runCurrent()
+            val first = sessions.snapshot()
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+            runCurrent()
+            assertEquals(listOf(first, sessions.snapshot()), owners)
+            assertEquals(profile(2), store.state.value.profile)
+        } finally { store.close() }
+    }
+
     @Test fun unresolvedAuthorizationClearsProfileAndKeepsSignInAvailable() = runTest {
         val sessions = SessionStore().apply { bind { SessionIdentity(1, true, false) } }
         val store = AccountStore(sessions, { profile(1) }, backgroundScope)

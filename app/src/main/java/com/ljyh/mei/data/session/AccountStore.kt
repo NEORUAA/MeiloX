@@ -26,7 +26,7 @@ data class AccountState(
     val profileUnavailable: Boolean = false,
     val recoveryRequired: Boolean = false,
 ) {
-    val authenticated: Boolean get() = session?.identity?.authenticated == true
+    val authenticated: Boolean get() = !recoveryRequired && session?.identity?.authenticated == true
     val userId: String get() = if (authenticated) session!!.identity.userId.toString() else ""
 }
 
@@ -34,7 +34,7 @@ data class AccountState(
 @Singleton
 class AccountStore internal constructor(
     val sessions: SessionStore,
-    private val loadProfile: suspend () -> AccountProfile,
+    private val loadProfile: suspend (SessionStamp) -> AccountProfile,
     scope: CoroutineScope,
 ) : Closeable {
     @Inject constructor(sessions: SessionStore, repository: MeloXRepository) : this(
@@ -56,10 +56,14 @@ class AccountStore internal constructor(
                 mutableState.value = pendingState()
                 return@collectLatest
             }
+            if (sessions.recoveryRequired.value) {
+                runCatching { publish(pendingState(stamp)) }
+                return@collectLatest
+            }
             try {
                 publish(AccountState(session = stamp, loading = stamp.identity.authenticated))
-                if (!stamp.identity.authenticated) return@collectLatest
-                val profile = loadProfile()
+                if (!stamp.identity.authenticated || sessions.recoveryRequired.value) return@collectLatest
+                val profile = loadProfile(stamp)
                 currentCoroutineContext().ensureActive()
                 if (profile.id != stamp.identity.userId) throw IOException("Account profile does not match session")
                 publish(AccountState(stamp, profile, loading = false))
@@ -75,19 +79,23 @@ class AccountStore internal constructor(
 
     fun refresh() { refreshes.update { it + 1 } }
 
-    private fun pendingState(): AccountState {
+    private fun pendingState(stamp: SessionStamp? = null): AccountState {
         val recoveryRequired = sessions.recoveryRequired.value
         return AccountState(
+            session = stamp,
             loading = !recoveryRequired, profileUnavailable = recoveryRequired, recoveryRequired = recoveryRequired,
         )
     }
 
     fun requireAuthenticated(): SessionStamp = sessions.snapshot().also {
-        if (!it.identity.authenticated) throw IOException("Sign-in required")
+        if (sessions.recoveryRequired.value) throw IOException("Session recovery is required")
+        if (!it.identity.authenticated || it.identity.anonymous) throw IOException("Sign-in required")
     }
 
     private fun publish(next: AccountState) {
-        sessions.withCurrent(requireNotNull(next.session)) { mutableState.value = next }
+        sessions.withCurrent(requireNotNull(next.session)) {
+            mutableState.value = if (sessions.recoveryRequired.value) pendingState(next.session) else next
+        }
     }
 
     override fun close() {
