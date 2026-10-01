@@ -1820,6 +1820,56 @@ Local-only evidence: `/tmp/meilox-intelligence-session-paired-build-2026-10-01.l
 MediaSession/AudioFlinger captures with the same prefix. No private evidence, APKs,
 official source or credentials are committed. No push or merge.
 
+### D5/D6 Checkpoint: Paired R8 Sleep-Timer and Notification Paths (2026-10-01)
+
+This is bounded execution evidence for the existing timer, not a frontend change or
+complete D5/D6 acceptance. ABI-014 records the runtime component differences.
+
+- Reused the current development-signed parasite R8 and the temporary isolated
+  debug-ID standalone R8 fixture from the preceding checkpoint. Standalone signature
+  verification passes; its package retains UID 10254 with DEBUGGABLE absent. Its
+  separate actual cold start takes 720 ms. The original production app is not updated.
+- From the original full-player More Actions entry, each runtime starts five minutes,
+  continues playback in the background and returns through its actual timer notification.
+  The TV sheet decreases from 4:58 to 0:46; standalone permission recovery/re-entry
+  shows 3:14 then 1:56 against the same cutoff. Neither path restarts its deadline.
+  Captured active unmuted 48 kHz AudioFlinger tracks belong to the tested runtime.
+- At expiry, TV is PAUSED at 29,191 ms/index 1 with 149 items; standalone is PAUSED
+  at 128,687 ms/index 25 with 150 items. Natural advancement/shuffle occurred, so an
+  unchanged track/index is not asserted. Both remove notification 1002 and render
+  the original sheet's Off state. Official TV playback remains inactive STOPPED,
+  with an empty queue throughout.
+- TV's actual notification cancel action reaches its playback carrier, clears the
+  timer and leaves playback running. Standalone's action is qualified separately
+  while paused: an end-of-track timer posts, the system action reaches its own
+  MusicService, notification 1002 disappears and the sheet shows Off. Natural
+  end-of-track completion and standalone cancel-while-playing remain unaccepted.
+- Standalone originally lacked POST_NOTIFICATIONS. The timer runs while its original
+  permission dialog is unanswered; allowing that dialog posts only the remaining
+  countdown. After testing, pm revoke and clear-permission-flags restore ungranted
+  permission with the original USER_SENSITIVE flags. Normal debug is restored via a
+  data-preserving update; separate cold start (1,603 ms) restores 150 items/index 128
+  at 216,702 ms, NONE/speed 0 without autoplay. TV is paused at 134,084 ms/index 1.
+- Keep a distinct failure: resuming standalone near the second track's end after
+  expiry stalls at 129,910 ms and reports Media3's 30-second no-progress error.
+  Next/play recovers, but this does not qualify seamless pause/resume. The retained
+  log's R8 map ID matches the fixture; AudioPlayer, StableDeckPlayer and SleepTimer
+  have no diff against current main, with Media3 1.10.1 unchanged. Baseline reproduction
+  and attribution remain open; do not silently repair unrelated engine behavior or
+  count the handled ERROR as an empty-crash-buffer success.
+- Focused existing SleepTimer JVM cases pass eight per flavor. All four debug/release
+  APK targets build (4m 51s); no application source, UI, manifest or dependency changes
+  are made. Final standalone R8/debug and TV crash buffers are empty. MediaStore row
+  820 remains TV-owned, published and 22,705,573 bytes. Root AVD stays awake with the
+  parasite R8 installed; no restart, system scope/rotation change, quota grant, account
+  mutation, upload or social write is performed. D2-D6 and the full goal remain open.
+
+Local-only evidence: `/tmp/meilox-paired-timer-unit-2026-10-01.log`,
+`/tmp/meilox-paired-timer-build-2026-10-01.log`, and same-prefix UI/MediaSession/
+AudioFlinger/notification/PendingIntent/package captures. The handled error is retained
+in `/tmp/meilox-paired-timer-standalone-r8-runtime-log-2026-10-01.txt`; this private log,
+all screenshots/APKs and credentials remain outside Git. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -1839,6 +1889,9 @@ official source or credentials are committed. No push or merge.
   writes still require the previously stated user cooperation/authorization boundaries.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
   findings separately; do not fold them into backend or flavor commits.
+- The observed standalone R8 near-end pause/resume stall remains an unqualified
+  playback regression. Preserve the successful timer evidence separately from that
+  failure and establish reproduction/attribution before any scoped repair.
 
 The shared dependency-boundary D1 exit condition is met and the dual-debug skeleton is
 operational on the current AVD. D2's framework-free startup gate and D3-D6 remain open;

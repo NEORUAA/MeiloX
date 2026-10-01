@@ -2215,6 +2215,41 @@ These are integration differences, not server API semantics.
   mutation, quota download, upload or social operation is performed. Latest isolated
   standalone R8 execution is recorded in the matching build-plan checkpoint separately.
 
+### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
+
+- Recorded: 2026-10-01. This is component/permission adaptation, not a new business
+  endpoint. Both builds retain the original SleepTimer, sheet, options and notification
+  implementation. Countdown state lives in the music service; notifications do not
+  own the deadline or pause playback themselves.
+- Standalone contract: the posting package owns channel `sleep_timer`, notification
+  1002, its MainActivity content intent and MusicService cancel intent. On the isolated
+  debug-ID R8 fixture, POST_NOTIFICATIONS was initially ungranted. The five-minute
+  timer and background playback started without its status notification. Granting
+  through the original system dialog posted the remaining countdown without resetting
+  the deadline. The permission and its original flags were restored after testing.
+- Parasite mapping: the posting UID/package is TV, while the status icon resolves
+  from the installed module APK. Actual system PendingIntent records route content to
+  `com.netease.cloudmusic.app.LoadingActivity` and CANCEL_SLEEP_TIMER to the existing
+  `com.netease.cloudmusic.service.LocalMusicMatchService` carrier. No module-only
+  component is submitted as an installed TV component; no package metadata or system
+  scope is changed.
+- Device evidence: five-minute timers in parasite R8 and isolated standalone R8
+  expire during background playback, publish PAUSED/speed 0 and remove notification
+  1002. Actual notification clicks return to the original portrait player; screenshots
+  show the decreasing active deadline, then Off after expiry. The TV notification
+  cancel action is sent to its carrier, removes the timer and leaves playback running.
+  Standalone's actual cancel action reaches its own service and clears the end-of-track
+  timer while paused; this is not cancel-while-playing or natural end-of-track proof.
+- Limits: eight existing timer JVM cases pass per flavor, and paired debug/release
+  builds pass. During a separate standalone resume-after-expiry/cancel setup, Media3
+  reports `Player stuck playing with no progress for 30000 ms` near the next track's
+  end. ERROR at 129,910 ms is retained as an open playback regression; next/play
+  recovers another queue item. AudioPlayer, StableDeckPlayer and SleepTimer match
+  current main, and both use Media3 1.10.1, but no baseline reproduction establishes
+  the cause. Empty crash buffers do not erase this handled player error. No engine/UI
+  repair is included in this checkpoint. Natural end-of-track, process-loss timer
+  behavior, audible output and complete release playback remain unqualified.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see
