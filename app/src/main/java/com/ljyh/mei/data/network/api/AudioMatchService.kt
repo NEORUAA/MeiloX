@@ -1,8 +1,10 @@
 package com.ljyh.mei.data.network.api
 
 import com.google.gson.JsonObject
+import com.ljyh.mei.data.session.SessionStamp
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Tag
 
 interface AudioMatchService {
     @GET("/api/music/audio/match")
@@ -13,5 +15,6 @@ interface AudioMatchService {
         @Query("rawdata") fingerprint: String,
         @Query("times") times: Int = 1,
         @Query("decrypt") decrypt: Int = 1,
+        @Tag expectedSession: SessionStamp,
     ): JsonObject
 }

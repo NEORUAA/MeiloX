@@ -2051,6 +2051,79 @@ Local-only evidence: `/tmp/meilox-release-runtime-paired-build-2026-10-02.log`,
 `/tmp/meilox-release-runtime-real-sdk-fixtures-2026-10-02.log`. Run the existing
 workflow reproduction commands above; the real-APK case requires `zip` and SDK 37.
 
+### D4/D5 Checkpoint: Session-Owned Recognition and Song Wiki Reads (2026-10-02)
+
+This increment closes two request/state ownership gaps, not the TV microphone/PiP
+gate or complete D4-D6 acceptance. API-033 records the wire and runtime distinctions.
+
+- Recognition captures one SessionStamp before recording and carries it through
+  fingerprint generation, Retrofit Tag and result publication. Account invalidation
+  clears results immediately and cancels work; recovery/binding never starts recording
+  automatically. Same-account stop/restart retains results without allowing the old
+  job's cancellation cleanup to overwrite a replacement job.
+- Song wiki requires the caller's owner for its unchanged EAPI body/route. Personalized
+  memories are cached only for that session/song. Account changes clear the old page
+  state before the new session reloads; song changes and cancellation reject late
+  responses. Anonymous reads and original same-session cache behavior are preserved.
+- Shared Compose page bodies, navigation, recorder/fingerprint implementation, assets,
+  player and source-set boundaries are unchanged. No frontend tree is copied or redesigned.
+- Tests cover the actual Retrofit query/Tag, original candidate conversion, each
+  preprocessing stage, account generations, recovery, anonymous/unready sessions,
+  late non-cooperative work, stop/restart, continuous merge/cap, retry and disposal.
+  Two additional identity-reader-failure tests first reproduce retained Matching/owner
+  state and uncaught IOException; publication now fails closed and permits explicit retry.
+- Paired matched-debug AVD instrumentation executes the real wiki Repository with
+  synthetic transports/platform parsing: seven tests per flavor pass. It checks the
+  exact EAPI payload, FIRST_LISTEN/TOTAL_PLAY conversion, stale owners, anonymous reads,
+  recovery, business rejection and non-cooperative cancellation. No official account
+  request, recording, upload, download grant or social mutation is sent by these fixtures.
+- AVD read-only smoke before the final reader-failure repair: development-signed TV R8
+  cold start is 2748 ms; isolated standalone debug cold start is 2135 ms. Both retain
+  their separate existing accounts. Original More Actions -> Song Wiki navigation
+  renders TV's populated `Écoute Chérie` wiki and standalone's empty `Full Moon Serenade`
+  page on repeated activation. First activations return to existing root pages; the
+  final standalone retry also returns to Settings. Cause/timing is not established,
+  and first-entry reliability is not qualified by repeat-entry success. No navigation
+  or frontend repair is made; API-033 retains this observation separately from reads.
+  Both Settings -> Recognition pages render Ready/default six seconds with unchanged
+  choices and controls; Start, similar-song playback and contribution links are untouched.
+- Paused checkpoints remain TV queue 6/index 1/55536 ms and standalone queue 7/index
+  1/145670 ms (NONE/speed 0 after this cold restore); no autoplay or new playback occurs.
+  Original TV player remains STOPPED with an empty queue. Current TV/standalone PID
+  crash buffers are empty; historical automation/instrumentation crashes are retained.
+  Standalone UID 10254 and ungranted POST_NOTIFICATIONS/RECORD_AUDIO flags are unchanged;
+  accepted MediaStore row 820 is still TV-owned, published and 22,705,573 bytes.
+- Final source validation after the reader-failure repair: full JVM suites pass 835
+  cases in 98 standalone suites and 894 cases in 104 parasite suites (1729 total),
+  with zero failures/errors/skips. Three new suites contribute 36 cases per flavor.
+  Paired debug/release/AndroidTest builds and release vital lint pass in 5m 13s;
+  the release-contract checker also passes its real-SDK signature, identity, version,
+  16 KB alignment, modern declaration and swapped/unsigned/missing-scope rejection
+  fixtures. Both current release DEX files retain all six audio Query fields, the
+  required local owner Tag and the original GET route. `git diff --check` passes.
+- Final matched-debug wiki device fixtures are rerun on both freshly installed debug
+  targets: seven cases each pass (0.028/0.034 s test execution, not application startup).
+  The parasite is then restored to the latest development-signed R8 artifact, v3-signed
+  with certificate SHA-256
+  `2a02b8d6f6f25067a95b685c9f9cf79d97cba2d4999d1a550a720931c8310243`
+  and verified for 16 KB alignment. APK SHA-256:
+  `b326a9c21334e19b35f169b8489295b65c6ccbb7d191e10e1858be023fa1caff`.
+  This is a local development artifact, not production signing/upgrade qualification.
+- Final actual COLD startup is 2863 ms for TV and 2137 ms for isolated standalone debug.
+  Both recognition pages again render Ready/default six seconds after the repair;
+  settled screenshots are inspected without starting recording. Both queues/checkpoints
+  remain intact and ultimately PAUSED/speed 0; no autoplay occurs. TV PID 13251 and
+  standalone PID 13506 crash buffers are empty. UID/permission flags and media row 820
+  are rechecked unchanged. The rooted AVD stays running, awake and on the TV MeiloX UI.
+- Live recording/match success, real account transitions/personalized memories,
+  framework-free execution, original-install upgrade, remaining business/release
+  regression and merge review remain gates. The standalone near-end stall and API-032
+  search relevance are not repaired or qualified by this checkpoint.
+
+Local-only evidence: `/tmp/meilox-recognition-wiki-*-2026-10-02*`,
+`/tmp/meilox-wiki-*-2026-10-02*` and `/tmp/meilox-recognition-*-2026-10-02*`.
+No raw device logs, screenshots, account responses or APKs are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

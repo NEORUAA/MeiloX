@@ -465,12 +465,19 @@ class MeloXRepository @Inject constructor(
         return validate(response)
     }
 
-    suspend fun songWiki(songId: Long): SongWiki {
+    suspend fun songWiki(songId: Long, session: SessionStamp): SongWiki {
         require(songId > 0) { "A valid song ID is required" }
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(session)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
         val response = requestEapi(
             "/api/song/play/about/block/page",
             mapOf("songId" to songId),
+            session,
         )
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(session)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
         val blocks = response.objectOrNull("data")?.array("blocks")
             .orEmpty()
             .mapNotNull { it.objectValue() }
@@ -601,7 +608,11 @@ class MeloXRepository @Inject constructor(
             similarSongs = similarSongs,
             relatedPlaylists = relatedPlaylists,
             contributionUrl = contributionUrl,
-        )
+        ).also {
+            currentCoroutineContext().ensureActive()
+            sessions.requireCurrent(session)
+            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+        }
     }
 
     override suspend fun listenTogetherStatus(session: SessionStamp): ListenTogetherStatus {

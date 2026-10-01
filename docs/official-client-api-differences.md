@@ -2295,6 +2295,54 @@ These are integration differences, not server API semantics.
   search/album/artist/podcast suites pass 68 cases per flavor. Fixture success does
   not qualify live search relevance. See the paired-search build-plan checkpoint.
 
+### API-033: Recognition and Song Wiki Reads Need Their Triggering Session
+
+- Recorded: 2026-10-02. Recognition retains GET `/api/music/audio/match` and its
+  original `sessionId="0123456789abcdef"`, `algorithmCode="shazam_v2"`, `duration`,
+  `rawdata`, `times=1` and `decrypt=1` fields. That `sessionId` is the existing
+  fingerprint-protocol field, not an account ID, Cookie or shared SessionStamp.
+  The new required Retrofit Tag stays local and is not another query parameter.
+- Standalone keeps its existing public audio-match transport without copying a Cookie
+  into this request. Parasite keeps the official HostCallFactory/session/request SDK;
+  no direct NetEase transport or standalone fallback is introduced. Both capture the
+  owner before recording, rather than silently borrowing whichever account is current
+  after recording/fingerprinting finishes. Anonymous recognition remains eligible.
+- Song wiki retains EAPI `/api/song/play/about/block/page` with only `songId` in
+  the business body and the existing block/model conversion. The response can include
+  personalized FIRST_LISTEN/TOTAL_PLAY memories, so a song-ID-only cache is insufficient.
+  The Repository now requires an explicit owner before dispatch and after parsing;
+  the ViewModel clears private data synchronously on invalidation and reloads the
+  selected song for the replacement session. Anonymous wiki reads remain eligible.
+- Recording, fingerprinting and matching are canceled on session changes/recovery.
+  Recovery never automatically opens the microphone. Request revisions reject old
+  cancellation cleanup, non-cooperative late results/errors and old wiki loads, even
+  under the same account's reauthorization. Temporary identity-reader failures clear
+  state rather than escaping from state publication; explicit retry remains available.
+- Original recognition phases, 3/6/9-second options, continuous nine-second windows,
+  newest-first deduplication and 50-result cap are unchanged. Recorder, DSP, fingerprint
+  assets, permission launcher, Compose page bodies and navigation are not modified.
+- Device scope: actual wiki Repository tests use synthetic transports and identities,
+  not real account changes. TV R8 reads for `Écoute Chérie` display tags, French/BPM 92
+  attributes and similar songs; standalone debug for `Full Moon Serenade` displays the
+  original empty state. Different songs/accounts do not prove identical server results
+  or that the latter response contains no unsupported blocks. Both original recognition
+  pages initialize at Ready; Start is never pressed and permissions are unchanged.
+- Verification: paired full JVM suites pass 835 standalone/894 parasite cases. The
+  three new suites contribute 36 cases per flavor; real Retrofit serialization is
+  captured with a synthetic response and no socket dispatch. Fresh matched-debug wiki
+  instrumentation passes seven cases per flavor. Paired debug/release builds, release
+  vital lint, real-SDK packaging/signing/isolation fixtures and diff checks pass.
+  Both release DEX files retain the six Query fields, required local Tag and GET route.
+- Navigation observation: the first More Actions -> Wiki activation returned to an
+  existing root page on both runtimes; repeated activation reached the wiki. The final
+  standalone retry also returned to Settings. Timing/navigation attribution is open,
+  and repeat-entry success does not qualify first-entry reliability. Page bodies and
+  navigation are unchanged; no unrelated frontend repair is made in this checkpoint.
+- Limits: live microphone/fingerprint/match acceptance, personalized-memory reads under
+  real account changes and complete minified standalone wiki coverage remain open.
+  TV's RECORD_AUDIO/PiP manifest gate is not solved by these owner guards. No helper,
+  framework scope, host APK modification, recording or quota-consuming operation occurs.
+
 ### ABI-014: Sleep-Timer Notifications Belong to the Posting Runtime
 
 - Recorded: 2026-10-01. This is component/permission adaptation, not a new business

@@ -4,17 +4,24 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.ljyh.mei.data.model.melox.RecognizedSong
 import com.ljyh.mei.data.network.api.AudioMatchService
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class SongRecognitionRepository @Inject constructor(
     private val service: AudioMatchService,
+    private val sessions: SessionStore,
 ) {
-    suspend fun match(fingerprint: String, duration: Int): List<RecognizedSong> {
+    suspend fun match(fingerprint: String, duration: Int, session: SessionStamp): List<RecognizedSong> {
         require(fingerprint.isNotBlank())
         require(duration in 1..15)
-        val response = service.match(duration = duration, fingerprint = fingerprint)
+        requireSession(session)
+        val response = service.match(duration = duration, fingerprint = fingerprint, expectedSession = session)
+        requireSession(session)
         val code = response.primitiveString("code")?.toIntOrNull() ?: 200
         check(code in 200..299) { "NetEase audio match failed ($code)" }
         return response.objectOrNull("data")
@@ -22,6 +29,13 @@ class SongRecognitionRepository @Inject constructor(
             .orEmpty()
             .mapNotNull(::parseCandidate)
             .distinctBy(RecognizedSong::id)
+            .also { requireSession(session) }
+    }
+
+    private suspend fun requireSession(session: SessionStamp) {
+        currentCoroutineContext().ensureActive()
+        sessions.requireCurrent(session)
+        check(!sessions.recoveryRequired.value) { "Session recovery is required" }
     }
 
     private fun parseCandidate(element: JsonElement): RecognizedSong? {

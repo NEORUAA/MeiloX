@@ -40,6 +40,8 @@ import com.ljyh.mei.data.model.melox.SongWikiMemoryKind
 import com.ljyh.mei.data.model.melox.SongWikiSongReference
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassCard
@@ -55,8 +57,14 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import java.text.NumberFormat
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class SongWikiUiState(
@@ -64,24 +72,97 @@ data class SongWikiUiState(
     val isLoading: Boolean = false,
     val wiki: SongWiki? = null,
     val error: String? = null,
+    val session: SessionStamp? = null,
 )
 
-class SongWikiViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class SongWikiViewModel internal constructor(
+    private val loadWiki: suspend (Long, SessionStamp) -> SongWiki,
+    private val sessions: SessionStore,
 ) : ViewModel() {
+    @Inject constructor(repository: MeloXRepository, sessions: SessionStore) : this(repository::songWiki, sessions)
+
     private val _state = MutableStateFlow(SongWikiUiState())
     val state = _state.asStateFlow()
+    private val lock = Any()
+    private var revision = 0L
+    private var requestedId: Long? = null
+    private var loadJob: Job? = null
+    private val invalidation = sessions.onInvalidated { generation ->
+        synchronized(lock) {
+            if ((_state.value.session?.generation ?: -1) < generation) clear()
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, recovery -> recovery }.collect { recovery ->
+                val owner = if (recovery) null else runCatching { sessions.snapshot() }.getOrNull()
+                if (owner == null) synchronized(lock) { clear() }
+                else if (_state.value.session != owner) synchronized(lock) { requestedId }?.let(::load)
+            }
+        }
+    }
+
+    private fun clear() {
+        revision++
+        loadJob?.cancel()
+        loadJob = null
+        _state.value = SongWikiUiState(songId = requestedId,
+            error = if (sessions.recoveryRequired.value) "Session recovery is required" else null)
+    }
 
     fun load(songId: Long) {
-        if (_state.value.songId == songId && _state.value.wiki != null) return
-        viewModelScope.launch {
-            _state.value = SongWikiUiState(songId = songId, isLoading = true)
-            runCatching { repository.songWiki(songId) }
-                .onSuccess { _state.value = SongWikiUiState(songId = songId, wiki = it) }
-                .onFailure {
-                    _state.value = SongWikiUiState(songId = songId, error = it.message)
+        synchronized(lock) { requestedId = songId }
+        if (sessions.recoveryRequired.value) return
+        val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
+        val job = runCatching {
+            sessions.withCurrent(owner) {
+                synchronized(lock) {
+                    if (sessions.recoveryRequired.value || (_state.value.songId == songId && _state.value.session == owner &&
+                            (_state.value.wiki != null || _state.value.isLoading))) return@synchronized null
+                    clear()
+                    val expected = revision
+                    _state.value = SongWikiUiState(songId = songId, isLoading = true, session = owner)
+                    viewModelScope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            currentCoroutineContext().ensureActive()
+                            sessions.requireCurrent(owner)
+                            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+                            val wiki = loadWiki(songId, owner)
+                            currentCoroutineContext().ensureActive()
+                            publish(owner, expected, SongWikiUiState(songId = songId, wiki = wiki, session = owner))
+                        } catch (error: CancellationException) {
+                            publish(owner, expected, SongWikiUiState(songId = songId, session = owner))
+                            throw error
+                        } catch (error: Exception) {
+                            publish(owner, expected, SongWikiUiState(songId = songId, error = error.message, session = owner))
+                        } finally {
+                            synchronized(lock) { if (revision == expected) loadJob = null }
+                        }
+                    }.also { loadJob = it }
                 }
+            }
+        }.getOrNull()
+        job?.start()
+    }
+
+    private fun publish(owner: SessionStamp, expected: Long, value: SongWikiUiState) {
+        try {
+            sessions.withCurrent(owner) {
+                synchronized(lock) {
+                    if (revision == expected) {
+                        if (sessions.recoveryRequired.value) clear() else _state.value = value
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            synchronized(lock) { if (revision == expected) clear() }
         }
+    }
+
+    override fun onCleared() {
+        invalidation.close()
+        synchronized(lock) { clear() }
     }
 }
 
