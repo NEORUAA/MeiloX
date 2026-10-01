@@ -1789,6 +1789,43 @@ These are integration differences, not server API semantics.
   manual Cookie path and this account's read/recovery path, not interactive WebView
   authentication, logout/account switching, playback/reporting or release upgrades.
 
+#### Original Candidate Account Verification Alternative (2026-10-02)
+
+- Bounded comparison with current main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`
+  confirms that both original WebView completion and manual Cookie login use the
+  account-profile helper: EAPI `/api/w/nuser/account/get`, then EAPI
+  `/api/nuser/account/get` after a failed first request. The private candidate verifier
+  initially retained only the first route. A first-route failure could therefore deny
+  standalone login/recovery even when the original alternative would succeed. This is
+  a source-contract regression, not an observed failure of the user's live account.
+- The standalone verifier now restores exactly one alternative through the existing
+  flavor request policy. Both requests use `{}`, original EAPI signing, the same private
+  candidate Cookie and captured public stamp. A positive parsed account identity is
+  still required before publication. Original 2xx business-code validation, omitted
+  code compatibility and `NetEase user` default nickname are restored. Accepted but
+  missing/invalid profiles do not trigger an alternative, matching main's parse order.
+- Cancellation, changed owner or changed recovery state prevents alternative dispatch
+  or account publication. A recovery already pending at verification start remains
+  allowed: blocking all recovery-state requests would prevent persisted Cookie
+  verification itself. Failed alternatives cannot overwrite the active credentials;
+  durable publication remains in the existing latest-attempt controller/session store.
+  Official QR login/session/request code, UI controls and transport budgets are unchanged.
+- Three targeted assertions fail before restoration. Ten production-verifier/signing
+  JVM cases cover HTTP/business/transport/JSON failure, terminal alternatives, original
+  success/default mapping, pending recovery, changed accounts/recovery, stale owners
+  and canceled noncooperative completion. All responses and credentials are synthetic;
+  the terminal interceptor opens no socket. Existing account-publication race tests
+  remain separate. Live server-induced fallback, WebView authorization, expiry/logout/
+  account switching and original-install upgrade still require their own evidence.
+- Final paired JVM suites pass 883 standalone and 922 parasite cases, with no
+  failures/errors/skips; both release artifacts and real-SDK release gates pass. The
+  isolated standalone R8 and restored ordinary debug cold-start their existing account
+  and Home, without entering a Cookie or switching accounts. Five standalone and four
+  matched-debug parasite package/device cases pass. Initial runner/R8 classpath and
+  post-install attach failures are excluded, not counted as executed test success.
+  The build-plan checkpoint records hashes, runtime evidence and data-preservation
+  checks separately from the still-unqualified live alternative/failure matrix.
+
 #### Original Transport Timeout Budgets (2026-10-02)
 
 - Comparison with `main` at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29` found a

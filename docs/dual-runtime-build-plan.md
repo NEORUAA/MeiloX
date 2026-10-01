@@ -126,6 +126,23 @@ D1 and D2 may be split into smaller compilable commits. Existing verified host w
 not discarded or restarted. Further endpoint migration must use the dual-backend
 boundary rather than adding new mandatory `Host*` dependencies to common consumers.
 
+### Current Exit-Gate Summary (2026-10-02)
+
+Historical checkpoints below record bounded evidence, not additional milestones.
+The latest acceptance state is:
+
+| Step | Established evidence | Remaining exit gates |
+| --- | --- | --- |
+| D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
+| D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
+| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable Room/legacy-work upgrades verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
+| D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved near-end playback failure attribution |
+| D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
+
+Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
+server acceptance, or mark the overall goal complete while these exit gates remain.
+
 ### Execution Priority Reset (2026-10-01)
 
 - The user considers the current cloud flow usable. Stop repeated cloud-only
@@ -2399,13 +2416,70 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   extracted retry gap, not D3-D6 or merge acceptance. Framework-free startup, original
   installation upgrade, capability decisions and full paired/server regression stay open.
 
+### D3/D5/D6 Checkpoint: Candidate Verification and Shared-Resource Propagation (2026-10-02)
+
+- Rechecked main at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The inventory at
+  starting HEAD `abda09ad` contains 419 changed paths. This bounded review covers
+  Application/Activity bootstrap, ViewModel factory/navigation, typed request labels,
+  extracted collection bindings, interceptor selection and standalone login. It finds
+  the private verifier's missing original account alternative (ABI-008), now repaired.
+  It is not a complete review of all changed feature, persistence or playback paths.
+- Candidate verification restores EAPI `/api/w/nuser/account/get` then one EAPI
+  `/api/nuser/account/get`, retaining `{}`, candidate credentials and the captured
+  stamp until publication. Original success-code/default-profile handling is restored;
+  invalid accepted profiles do not cause another request. Recovery already pending
+  at verification start is allowed, while changed recovery/account/cancellation fences
+  both dispatch and commit. Official login/session code and UI/layout are unchanged.
+- Three production-verifier assertions fail before repair. Ten new standalone wire/
+  controller cases pass without sockets or real authorization changes. Final paired
+  JVM totals are 883 standalone/102 suites and 922 parasite/105 suites, zero failures/
+  errors/skips. Paired debug/release/instrumentation builds pass in 4m14s; isolated
+  standalone R8 builds in 9m31s. Final paired rebuild, including stronger session-error
+  assertions and final imports, passes in 6m48s (267 tasks). The release gate passes
+  41 fixtures plus actual SDK signing/identity/version/declaration/16KB checks.
+- Five standalone and four parasite matched-debug package/device tests pass. An
+  initial debug-runner/R8-target mismatch fails in AndroidX's application factory on
+  missing `kotlin.jvm.internal.Intrinsics` before executing tests; the first matched
+  post-install attempt fails to attach. Both are retained as unqualified harness
+  attempts. With settled matching debug targets, both suites pass; no app/R8 rule
+  change is made to suppress the failures. The original parasite R8 is restored.
+- Flavor-owned `ui/` sources contain only the intentional login/account-settings split;
+  common navigation and the image-loader implementation are retained. Actual package
+  resource reads compare the new shared `netease_logout_error` and
+  `account_profile_unavailable` values against their single `src/main` XML source in
+  default/zh/zh-rTW across both debug and R8 artifacts: 24 checks pass, including after
+  the final rebuild. No temporary or permanent frontend edit/copy is needed. This
+  qualifies shared-resource propagation, not complete pixel or interaction parity.
+- Isolated development-signed standalone R8 SHA256:
+  `e4f27acaac1ed5d2f73303a0663ea451b377297fb96a266f92dc6f2bff1106ba`.
+  Its package remains the isolated debug identity, with the existing development
+  certificate and 16KB alignment. COLD startup takes 5124ms (PID 9757), restoring
+  the existing account/feed/mini-player. Ordinary debug is restored with install-r
+  and COLD starts in 1498ms (PID 10931). Restored unchanged parasite R8 cold-starts
+  TV in 3026ms (PID 11165); screenshots show portrait Home and distinct account avatars.
+- UID 10254 and ungranted microphone/notification flags are retained. Standalone's
+  seven-track queue is NONE at 145670ms/speed 0; the module's six-track TV queue is
+  PAUSED at 55536ms/speed 0. Official TV playback is separately STOPPED with no queue.
+  Current standalone/TV crash buffers are empty; the harness failures above are not
+  erased. MediaStore row 820 remains TV-owned, 22705573 bytes and pending=0. No new
+  playback, upload, deletion, download/quota or social action occurs. The rooted AVD
+  is never stopped/restarted/screened off and is left awake on TV's MeiloX Home.
+- Evidence stays in `/tmp/meilox-login-fallback-*-2026-10-02*`,
+  `/tmp/meilox-shared-resource-pair*-2026-10-02.log` and the local merge inventory.
+  No credentials, APKs, device logs or official sources enter Git. The exit-gate
+  summary above separates established evidence from remaining D2-D6 requirements;
+  this checkpoint does not complete production upgrade, framework-free execution,
+  real server-induced fallback, full release/merge review or the overall goal.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
   session, packaging and runtime tests. Check account generations, cancellation,
   expired sessions, failed recovery and late responses for both implementations.
-- Verify that a single shared UI/resource modification is included by both build
-  variants. Do not create permanent duplicate screen trees as a demonstration.
+- Shared-resource propagation is verified by 24 actual debug/R8 APK values from one
+  shared source (checkpoint above). Keep subsequent UI/resources single-source; do
+  not create permanent duplicate screen trees as a demonstration. Resource inheritance
+  alone does not qualify complete visual or interaction parity.
 - Preserve current CI semantics: pushes build artifacts, manual dispatch publishes;
   extend them to two unambiguous signed artifacts without triggering a remote run now.
 - Keep interface differences and evidence in

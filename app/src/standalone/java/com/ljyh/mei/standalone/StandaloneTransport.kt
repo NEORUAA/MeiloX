@@ -1,16 +1,21 @@
 package com.ljyh.mei.standalone
 
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.ljyh.mei.constants.AndroidUserAgent
 import com.ljyh.mei.data.network.netease.NCBL_UPLOAD_ENDPOINT
 import com.ljyh.mei.data.session.SessionCallFactory
+import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.di.NeteaseInterceptor
+import com.ljyh.mei.runtime.MeloXRequestPolicy
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -51,8 +56,11 @@ internal fun createStandaloneClientLogClient(): OkHttpClient = OkHttpClient.Buil
     .build()
 
 @Singleton
-internal class StandaloneTransport @Inject constructor(private val sessions: StandaloneSessionStore) {
-    private val signedClient = createStandaloneBusinessClient()
+internal class StandaloneTransport internal constructor(
+    private val sessions: StandaloneSessionStore,
+    private val signedClient: OkHttpClient,
+) {
+    @Inject constructor(sessions: StandaloneSessionStore) : this(sessions, createStandaloneBusinessClient())
 
     val business: Call.Factory = SessionCallFactory(sessions, signedClient) { request, owner ->
         validateBusinessRequest(request)
@@ -74,27 +82,47 @@ internal class StandaloneTransport @Inject constructor(private val sessions: Sta
 
     suspend fun verify(musicU: String, owner: SessionStamp): StoredAccount {
         require(isValidMusicU(musicU))
-        val candidate = SessionCallFactory(sessions, signedClient)
-        val request = Request.Builder()
-            .url("https://interface.music.163.com/api/w/nuser/account/get")
-            .header("X-Netease-Crypto", "eapi")
-            .tag(SessionStamp::class.java, owner)
-            .tag(StandaloneCredentials::class.java, StandaloneCredentials(musicU))
-            .post("{}".toRequestBody("application/json".toMediaType()))
-            .build()
-        return candidate.newCall(request).await().use { response ->
-            if (!response.isSuccessful) throw IOException("Standalone account verification failed")
-            val json = JsonParser.parseString(response.body.string()).asJsonObject
-            if (json.get("code")?.asInt != 200) throw IOException("Standalone account verification rejected")
-            val profile = json.getAsJsonObject("profile") ?: throw IOException("Account profile is unavailable")
-            val userId = profile.get("userId")?.asLong ?: 0
-            if (userId <= 0) throw IOException("Account identity is unavailable")
+        sessions.requireCurrent(owner)
+        val recoveryAtStart = sessions.recoveryRequired.value
+        fun requireOwner() {
             sessions.requireCurrent(owner)
-            StoredAccount(
-                musicU, userId, profile.get("nickname")?.asString.orEmpty(),
-                profile.get("avatarUrl")?.takeUnless { it.isJsonNull }?.asString,
-            )
+            if (sessions.recoveryRequired.value != recoveryAtStart) throw SessionChangedException()
         }
+        val candidate = SessionCallFactory(sessions, signedClient)
+        suspend fun request(path: String): JsonObject {
+            currentCoroutineContext().ensureActive()
+            requireOwner()
+            val request = Request.Builder()
+                .url("https://interface.music.163.com$path")
+                .header("X-Netease-Crypto", "eapi")
+                .tag(SessionStamp::class.java, owner)
+                .tag(StandaloneCredentials::class.java, StandaloneCredentials(musicU))
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .build()
+            return candidate.newCall(request).await().use { response ->
+                if (!response.isSuccessful) throw IOException("Standalone account verification failed")
+                val json = JsonParser.parseString(response.body.string()).asJsonObject
+                currentCoroutineContext().ensureActive()
+                requireOwner()
+                val code = runCatching { json.get("code")?.asString?.toIntOrNull() }.getOrNull() ?: 200
+                if (code !in 200..299) throw IOException("Standalone account verification rejected")
+                json
+            }
+        }
+        val json = MeloXRequestPolicy.request(
+            { request("/api/w/nuser/account/get") },
+            { request("/api/nuser/account/get") },
+        )
+        val profile = json.get("profile")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: throw IOException("Account profile is unavailable")
+        fun field(name: String): String? = runCatching {
+            profile.get(name)?.takeUnless { it.isJsonNull }?.asString
+        }.getOrNull()
+        val userId = field("userId")?.toLongOrNull() ?: 0
+        if (userId <= 0) throw IOException("Account identity is unavailable")
+        currentCoroutineContext().ensureActive()
+        requireOwner()
+        return StoredAccount(musicU, userId, field("nickname") ?: "NetEase user", field("avatarUrl"))
     }
 
     private fun validateBusinessRequest(request: Request) {
