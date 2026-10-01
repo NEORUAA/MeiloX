@@ -113,20 +113,19 @@ fun HomeScreen(
     val device = rememberDeviceInfo()
     val glassColors = LocalGlassColors.current
     val playerConnection = LocalPlayerConnection.current
-    val intelligenceList by playerViewModel.intelligenceList.collectAsState()
-    val intelligenceFirstSong by playerViewModel.songDetail.collectAsState()
+    val intelligencePlayback by playerViewModel.intelligencePlayback.collectAsState()
 
     // Consume the one-shot intelligence-mode result at screen scope. A block item can leave and
     // re-enter LazyColumn composition while the screen remains alive, so it must not own playback.
-    LaunchedEffect(intelligenceList, intelligenceFirstSong, playerConnection) {
+    LaunchedEffect(intelligencePlayback, playerConnection) {
         val connection = playerConnection ?: return@LaunchedEffect
-        val songs = when (val result = intelligenceList) {
+        val songs = when (val result = intelligencePlayback.recommendations) {
             is Resource.Success -> result.data.data
             is Resource.Error,
             Resource.Loading -> return@LaunchedEffect
         }
 
-        val firstSong = when (val result = intelligenceFirstSong) {
+        val firstSong = when (val result = intelligencePlayback.seed) {
             is Resource.Success -> result.data.songs.firstOrNull()
             is Resource.Error -> null
             Resource.Loading -> return@LaunchedEffect
@@ -141,20 +140,20 @@ fun HomeScreen(
                 ?.let { item -> items.add(0, item) }
         }
 
-        if (items.isNotEmpty()) {
-            Timber.tag("IntelligenceList").d("Playing ${songs.size} songs")
-            connection.playQueue(
-                ListQueue(
-                    id = "intelligence-${System.currentTimeMillis()}",
-                    title = "心动模式",
-                    items = items.map { it.mediaId to it },
-                    startIndex = 0,
-                    position = 0
+        playerViewModel.consumeIntelligencePlayback(intelligencePlayback) { owner ->
+            if (items.isNotEmpty()) {
+                Timber.tag("IntelligenceList").d("Playing ${songs.size} songs")
+                connection.playQueue(
+                    ListQueue(
+                        id = "intelligence-${System.currentTimeMillis()}",
+                        title = "心动模式",
+                        items = items.map { it.mediaId to it },
+                        startIndex = 0,
+                        position = 0
+                    ), expectedSession = owner,
                 )
-            )
+            }
         }
-
-        playerViewModel.consumeIntelligencePlayback()
     }
 
     // 滚动到顶部逻辑

@@ -180,7 +180,7 @@ interface ApiService {
     suspend fun getArtistSongs(@Body body: GetArtistSong, @Path("id") id: String, @Tag expectedSession: SessionStamp): ArtistSong
 
     @POST("/api/playmode/intelligence/list")
-    suspend fun getIntelligenceList(@Body body: GetIntelligence): Intelligence
+    suspend fun getIntelligenceList(@Body body: GetIntelligence, @Tag expectedSession: SessionStamp): Intelligence
 
     @POST("/api/v2/resource/comments")
     suspend fun getComment(@Body body: GetComment, @Tag expectedSession: SessionStamp): Comment

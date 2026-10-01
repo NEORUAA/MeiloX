@@ -2174,6 +2174,47 @@ These are integration differences, not server API semantics.
   or full paired release qualification. No original standalone data is copied or
   modified. See the matching dual-runtime checkpoint for other execution evidence.
 
+### API-030: Intelligence Playback Must Retain the Seed's Session Until Queue Commit
+
+- Recorded: 2026-10-01. The original Home heart-mode action fetched seed song detail
+  and then recommendations without passing one owner through both calls. Transport
+  pinning at call creation did not cover the sequence: the second call could adopt a
+  replacement authorization, and an already delivered result could later start playback.
+- Both runtimes retain the original supplemental routes and DTOs: seed
+  `/api/v3/song/detail` and `/api/playmode/intelligence/list`, with `c`,
+  `type=fromPlayOne`, `playlistId`, `startMusicId` and `count=1`. Standalone retains
+  its existing crypto/transport; parasite uses the official session/transport, without
+  a copied Cookie or standalone fallback. This does not claim a native TV heart-mode
+  controller with an identical internal request sequence.
+- The shared source now requires one captured `SessionStamp`. Repository checks before
+  and after each request reject guests, recovery, stale generations, malformed IDs and
+  non-200 business responses. A shared one-shot state holder keeps seed, list and owner
+  together, clears synchronously on invalidation and rejects late/cancelled results.
+  Same-account reauthorization, replacement clicks, recovery and disposal retire work.
+  The original seed-failure/list-only fallback is retained for the same valid owner.
+- Home preserves its original card, page layout and seed-first queue assembly. It
+  claims the visible result once and passes the captured owner through PlayerConnection
+  into deferred queue construction. Short queue/player publications revalidate it,
+  including between replacement, prepare and play; ordinary callers retain their
+  unowned/default queue path. Heart-mode items are already hydrated, so this handoff
+  does not add an unrelated metadata request. This is not a blanket qualification of
+  every FM, placeholder or server-shuffle continuation.
+- Verification: 12 state and seven real-Repository/proxy cases pass per JVM flavor.
+  Each matched debug runtime passes six actual queue-manager/platform-item device
+  cases, including deferred status and reentrant invalidation after replacement.
+  Fixtures never access a real account or network. Actual production R8 DEXes retain
+  Body/Tag slots and the supplemental POST route. The original Home card also starts
+  a real 149-item heart queue in parasite R8 and a 150-item queue in standalone debug;
+  advancing MediaSession progress and active unmuted AudioFlinger tracks confirm the
+  playback path. Latest isolated debug-ID standalone R8 also starts a 150-item heart
+  queue through that same card with advancing playback and an active unmuted track.
+  The official TV player stays inactive STOPPED with an empty queue.
+- Limits: device evidence uses two different existing accounts, not equal recommendation
+  content. Controlled account-switch acceptance, complete-track/statistics aggregation,
+  audible output and full paired release qualification remain separate gates. No library
+  mutation, quota download, upload or social operation is performed. Latest isolated
+  standalone R8 execution is recorded in the matching build-plan checkpoint separately.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

@@ -366,27 +366,33 @@ class PlaybackQueueManager(
         queue: Queue,
         startInShuffleMode: Boolean = false,
         playWhenReady: Boolean = true,
+        publishQueue: (() -> Unit) -> Unit = { it() },
     ) {
         cancelServerShuffle()
         queueSelectionJob?.cancel()
         activeQueueBuildJob?.cancel()
         val generation = ++queueBuildGeneration
         activeQueueBuildJob = scope.launch(Dispatchers.Main) {
+            fun publish(action: () -> Unit) = publishQueue {
+                if (generation != queueBuildGeneration) throw CancellationException("Queue request retired")
+                action()
+            }
             try {
                 if (generation != queueBuildGeneration) return@launch
-                _queueState.value = QueueState.Loading(queue.title ?: "加载中")
+                publish { _queueState.value = QueueState.Loading(queue.title ?: "加载中") }
 
                 val status = queue.getInitialStatus()
+                publish { }
                 val allIds = status.ids
 
                 if (allIds.isEmpty()) {
-                    _queueState.value = QueueState.Empty
+                    publish { _queueState.value = QueueState.Empty }
                     return@launch
                 }
 
                 val startIndex = status.mediaItemIndex
                 if (startIndex !in allIds.indices) {
-                    _queueState.value = QueueState.Error("播放位置无效")
+                    publish { _queueState.value = QueueState.Error("播放位置无效") }
                     return@launch
                 }
 
@@ -397,7 +403,7 @@ class PlaybackQueueManager(
                 if (selectedItem == null) {
                     Log.e(TAG, "Unable to hydrate selected item ${allIds[startIndex].first}")
                     if (generation == queueBuildGeneration) {
-                        _queueState.value = QueueState.Error("当前歌曲加载失败")
+                        publish { _queueState.value = QueueState.Error("当前歌曲加载失败") }
                     }
                     return@launch
                 }
@@ -411,47 +417,42 @@ class PlaybackQueueManager(
                 }
 
                 // 2. 停止并重置
-                isFmMode = false
-                activeFmGeneration = null
-                player.stop()
-                player.clearMediaItems()
+                publish { isFmMode = false; activeFmGeneration = null; player.stop() }
+                publish { player.clearMediaItems() }
 
                 // 强制先关闭随机模式 必须先关掉，才能保证 setMediaItems 里的 index 是线性的、准确的
-                player.shuffleModeEnabled = false
-                _isShuffleModeEnabled.value = false
+                publish { player.shuffleModeEnabled = false; _isShuffleModeEnabled.value = false }
 
                 // 设置列表并直接跳转 此时 shuffle 是 false，所以 status.mediaItemIndex 绝对对应 list 里的第 N 个
-                player.setMediaItems(mediaItems, startIndex, status.position.toLong())
-                playlistSource = queue.playlistSource
-                serverShuffleRequested = false
+                publish { player.setMediaItems(mediaItems, startIndex, status.position.toLong()) }
+                publish { playlistSource = queue.playlistSource; serverShuffleRequested = false }
 
-                player.repeatMode = Player.REPEAT_MODE_ALL
-                player.prepare()
+                publish { player.repeatMode = Player.REPEAT_MODE_ALL }
+                publish { player.prepare() }
 
                 // 如果需要，再开启随机 此时当前播放的歌曲已经定下来了，ExoPlayer 只会打乱"后面"的歌
                 if (startInShuffleMode) {
-                    (player as? StableDeckPlayer)?.setPlaybackOrder(
+                    publish { (player as? StableDeckPlayer)?.setPlaybackOrder(
                         listOf(startIndex) + mediaItems.indices.filter { it != startIndex }.shuffled(),
-                    )
-                    player.shuffleModeEnabled = true
-                    _isShuffleModeEnabled.value = true
+                    ) }
+                    publish { player.shuffleModeEnabled = true; _isShuffleModeEnabled.value = true }
                 }
 
-                player.playWhenReady = playWhenReady
-                if (startInShuffleMode) requestServerShuffle()
+                publish { player.playWhenReady = playWhenReady }
+                publish { if (startInShuffleMode) requestServerShuffle() }
 
-                _queueState.value = QueueState.Playing(queue.title ?: "播放列表", allIds.size)
+                publish { _queueState.value = QueueState.Playing(queue.title ?: "播放列表", allIds.size) }
 
                 // 6. 触发懒加载
                 // 因为当前歌曲已经是 RealItem 了，这个方法会自动跳过当前歌曲，去加载下一首
-                checkAndLoadMetadata()
+                publish { checkAndLoadMetadata() }
 
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (generation != queueBuildGeneration) return@launch
                 Log.e(TAG, "playQueue Error", e)
-                _queueState.value = QueueState.Error(e.message ?: "播放错误")
+                runCatching { publish { _queueState.value = QueueState.Error(e.message ?: "播放错误") } }
             } finally {
                 if (generation == queueBuildGeneration) {
                     activeQueueBuildJob = null

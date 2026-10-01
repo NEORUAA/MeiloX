@@ -23,6 +23,8 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.extensions.currentMetadata
 import com.ljyh.mei.extensions.getCurrentQueueIndex
@@ -134,14 +136,28 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue, shuffle: Boolean? = null) {
+    fun playQueue(queue: ListQueue, shuffle: Boolean? = null, expectedSession: SessionStamp? = null) {
+        val publish: (() -> Unit) -> Unit = { action ->
+            if (expectedSession == null) action() else service.accountSessions.withCurrent(expectedSession) {
+                if (service.accountSessions.recoveryRequired.value) throw SessionChangedException()
+                action()
+            }
+        }
         // 判断当前 UI 上的模式是否是随机模式
         val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
-        service.queueTitle = queue.title
-        queueTitle.value = queue.title
+        publish {
+            service.queueTitle = queue.title
+            queueTitle.value = queue.title
+        }
         // 调用新的 playQueue 方法，传入随机意图
         service.scope.launch {
-            service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle)
+            try {
+                publish {
+                    service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle, publishQueue = publish)
+                }
+            } catch (_: SessionChangedException) {
+                // A retired personalized result must not start work for the replacement account.
+            }
         }
     }
     fun playNext(item: MediaItem) = playNext(listOf(item))

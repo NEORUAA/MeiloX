@@ -1762,6 +1762,64 @@ manifest XML and final preservation checks. Private device evidence is not commi
 Only acceptance documents change; no push, merge, emulator restart or physical-device
 operation is performed. The full goal and remaining milestone gates stay open.
 
+### D4/D5/D6 Checkpoint: Session-Owned Intelligence Playback (2026-10-01)
+
+- The bounded integration review finds the original heart-mode seed/list sequence
+  unstamped. API-030 records the fix: one captured authorization for both requests,
+  before/after Repository checks, business-code validation and a session-owned one-shot
+  result. Invalidation clears it synchronously; cancelled or late work cannot publish,
+  start a second request under a new owner or consume a retired visible result.
+- Original Home card/navigation/layout, seed-first assembly and same-owner seed-failure
+  fallback are unchanged. The playback owner survives deferred PlayerConnection and
+  queue-manager work. Publications validate between queue replacement, preparation
+  and play, including reentrant invalidation. Existing unowned ordinary queue callers
+  preserve their default path. No new page, hidden feature or frontend repair is added.
+- Latest paired JVM suites pass 793 standalone tests/94 suites and 852 parasite
+  tests/100 suites: 1,645 total with zero failures/errors/skips. New coverage is 12 state
+  and seven Repository cases per flavor. Each matched debug runtime on emulator-5554
+  passes six new actual queue-manager/platform-item cases using only synthetic data,
+  players and transports. No fixture logs in/out or contacts the official service.
+- Both debug/instrumentation pairs and production R8 releases build with vital lint
+  (4m 40s). Paired real-SDK signing/metadata/rejection fixtures and both 16 KB alignment
+  checks pass. Actual production DEXes retain the new Body/Tag slots and heart POST
+  route. No production signing credential, remote CI or original standalone upgrade is
+  used. Probe configuration and API 102 TV-only module boundaries are unchanged.
+- Latest development-signed parasite R8 cold start (2,965 ms) displays the original
+  authenticated portrait Home. Its original heart card creates a 149-entry queue and
+  starts its seed with advancing progress/no MediaSession error. Standalone debug cold
+  start (1,276 ms) restores its separate Cookie account; the same original card creates
+  a 150-entry queue and starts its own seed. Each has an active unmuted AudioFlinger
+  track. Queue content differs by account; identical recommendation content is not
+  asserted. The official TV player remains inactive STOPPED with an empty queue.
+- Latest isolated debug-ID standalone R8 builds (1m 54s), verifies its development
+  signature/16 KB alignment and retains UID 10254 with DEBUGGABLE absent. Cold start
+  (699 ms) restores the paused queue; its actual original heart card again produces
+  150 entries and starts the seed, with advancing progress and an active unmuted
+  AudioFlinger track. R8 PID 11467 has an empty crash buffer. This fixture retains the
+  previously documented temporary ID override, not a production signing/upgrade claim.
+- Both players are paused after testing. Ordinary standalone debug is restored; the
+  first post-update UNKNOWN/0 start is excluded from cold-start evidence. A subsequent
+  actual cold start (1,471 ms) preserves 150 entries/index 0 at 22,917 ms without
+  autoplay (NONE/speed 0). TV preserves 149 entries/index 0 paused at 33,182 ms.
+  Final debug PID 12143 and TV PID 10342 have empty crash buffers. Accepted MediaStore
+  row 820 remains published, TV-owned and 22,705,573 bytes. The rooted AVD is left
+  awake on portrait TV MeiloX Home with latest parasite R8 installed.
+- Real click/transport/playback evidence complements, but does not replace, synthetic
+  account-change and deferred-publication tests. It does not prove controlled real
+  reauthorization, complete-track listening statistics, audible output or all FM/shuffle
+  paths. No account/library mutation, quota download/upload, social write, cloud
+  investigation, emulator restart/screen-off, scope change or physical-device operation
+  occurs. Framework-free startup, original-install upgrade and recording/PiP decisions
+  remain pending; no full milestone or the goal is marked complete.
+
+Local-only evidence: `/tmp/meilox-intelligence-session-paired-build-2026-10-01.log`,
+`/tmp/meilox-intelligence-session-standalone-queue-fixtures-2026-10-01.log`,
+`/tmp/meilox-intelligence-session-parasite-queue-fixtures-2026-10-01.log`,
+`/tmp/meilox-intelligence-session-paired-signing-fixtures-2026-10-01.log`, both
+`/tmp/meilox-intelligence-session-*-api-dex-2026-10-01.txt` and actual Home/player/
+MediaSession/AudioFlinger captures with the same prefix. No private evidence, APKs,
+official source or credentials are committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

@@ -12,8 +12,6 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.SongSourceIdentity
-import com.ljyh.mei.data.model.Tracks
-import com.ljyh.mei.data.model.api.Intelligence
 import com.ljyh.mei.data.model.qq.u.SearchResult
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.model.weapi.Radio
@@ -24,6 +22,9 @@ import com.ljyh.mei.data.repository.AccountLibraryRepository
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.ui.component.player.state.PlayerLikeSnapshot
 import com.ljyh.mei.ui.component.player.state.PlayerLikeState
+import com.ljyh.mei.ui.component.player.state.IntelligencePlaybackState
+import com.ljyh.mei.ui.component.player.state.IntelligencePlaybackSnapshot
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.MoreAction
@@ -31,9 +32,6 @@ import com.ljyh.mei.ui.model.SortOrder
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.lyric.LyricManager
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -63,14 +61,8 @@ class PlayerViewModel @Inject constructor(
     val likeMessages = favorites.messages
 
 
-    private val _intelligenceList = MutableStateFlow<Resource<Intelligence>>(Resource.Loading)
-    val intelligenceList: StateFlow<Resource<Intelligence>> = _intelligenceList
-
-
-    private val _songDetail = MutableStateFlow<Resource<Tracks>>(Resource.Loading)
-    val songDetail: StateFlow<Resource<Tracks>> = _songDetail
-
-    private var intelligenceJob: Job? = null
+    private val intelligence = IntelligencePlaybackState(viewModelScope, sessions, repository)
+    val intelligencePlayback = intelligence.state
 
 
     var mediaMetadata: MediaMetadata? = null
@@ -86,6 +78,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         favorites.close()
+        intelligence.close()
         super.onCleared()
     }
 
@@ -121,37 +114,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun startIntelligenceMode(id: String, playlistId: String, startSongId: String) {
-        intelligenceJob?.cancel()
-        intelligenceJob = viewModelScope.launch {
-            _songDetail.value = Resource.Loading
-            _intelligenceList.value = Resource.Loading
-
-            // Fetch the seed song before publishing the list result so the UI can build one
-            // complete queue instead of reacting to two independently completing requests.
-            val songDetailResult = repository.getSongDetail(startSongId)
-            currentCoroutineContext().ensureActive()
-            _songDetail.value = songDetailResult
-
-            val intelligenceListResult =
-                repository.getIntelligenceList(id, playlistId, startSongId)
-            currentCoroutineContext().ensureActive()
-            _intelligenceList.value = intelligenceListResult
-        }
+        intelligence.start(id, playlistId, startSongId)
     }
 
-    fun consumeIntelligencePlayback() {
-        _intelligenceList.value = Resource.Loading
-        _songDetail.value = Resource.Loading
-    }
-
-    fun getSongDetail(id:String){
-        viewModelScope.launch {
-            _songDetail.value = Resource.Loading
-            val result = repository.getSongDetail(id)
-            Timber.tag("songDetail").d("getSongDetail: $result")
-            _songDetail.value = result
-        }
-    }
+    fun consumeIntelligencePlayback(expected: IntelligencePlaybackSnapshot, play: (SessionStamp) -> Unit) =
+        intelligence.consume(expected, play)
 
     fun downloadSong(metadata: MediaMetadata, context: android.content.Context, requestedQuality: MusicQuality? = null) {
         val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return

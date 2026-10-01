@@ -42,6 +42,11 @@ internal interface PlayerLikeSource {
     suspend fun like(source: SongSourceIdentity, liked: Boolean, owner: SessionStamp): Resource<Boolean>
 }
 
+internal interface PlayerIntelligenceSource {
+    suspend fun getSongDetail(id: String, owner: SessionStamp): Resource<Tracks>
+    suspend fun getIntelligenceList(id: String, playlistId: String, startSongId: String, owner: SessionStamp): Resource<Intelligence>
+}
+
 class PlayerRepository(
     private val qqMusicUApiService: QQMusicUApiService,
     private val apiService: ApiService,
@@ -53,7 +58,7 @@ class PlayerRepository(
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
-) : PlayerLikeSource {
+) : PlayerLikeSource, PlayerIntelligenceSource {
 
     suspend fun searchNew(keyword: String): Resource<SearchResult> {
         return withContext(Dispatchers.IO) {
@@ -209,28 +214,46 @@ class PlayerRepository(
     }
 
 
-    suspend fun getIntelligenceList(id: String, playlistId: String, startSongId:String): Resource<Intelligence>{
+    override suspend fun getIntelligenceList(id: String, playlistId: String, startSongId: String, owner: SessionStamp): Resource<Intelligence> {
         return withContext(Dispatchers.IO){
             safeApiCall {
-                apiService.getIntelligenceList(
+                requireIntelligenceOwner(owner)
+                require((id.toLongOrNull() ?: 0) > 0 && (playlistId.toLongOrNull() ?: 0) > 0 &&
+                    (startSongId.toLongOrNull() ?: 0) > 0)
+                val result = apiService.getIntelligenceList(
                     GetIntelligence(
                         songId = id,
                         playlistId = playlistId,
                         startMusicId = startSongId
-                    )
+                    ), owner,
                 )
+                currentCoroutineContext().ensureActive()
+                requireIntelligenceOwner(owner)
+                if (result.code != 200) throw IOException("Intelligence request failed (${result.code})")
+                result
             }
         }
     }
 
-    suspend fun getSongDetail(id: String): Resource<Tracks>{
+    override suspend fun getSongDetail(id: String, owner: SessionStamp): Resource<Tracks> {
         return withContext(Dispatchers.IO){
             safeApiCall {
-                apiService.getSongDetail(
-                    GetSongDetails(id)
-                )
+                requireIntelligenceOwner(owner)
+                require((id.toLongOrNull() ?: 0) > 0)
+                val result = apiService.getSongDetail(GetSongDetails(id), owner)
+                currentCoroutineContext().ensureActive()
+                requireIntelligenceOwner(owner)
+                if (result.code != 200) throw IOException("Seed song request failed (${result.code})")
+                result
             }
         }
+    }
+
+    private fun requireIntelligenceOwner(owner: SessionStamp) {
+        sessions.requireCurrent(owner)
+        if (sessions.recoveryRequired.value || !owner.identity.authenticated ||
+            owner.identity.anonymous || owner.identity.userId <= 0
+        ) throw IOException("Current account required")
     }
 
     override suspend fun checkSongLike(id: Long, owner: SessionStamp): Resource<Boolean> =
