@@ -100,7 +100,7 @@ class MeloXRepository @Inject constructor(
     private val sessions: SessionStore,
     private val cloudUploads: CloudUploadCoordinator,
     private val cloudLibrary: CloudLibraryBackend,
-) : PodcastSource, CloudMusicSource, SocialSource {
+) : PodcastSource, CloudMusicSource, SocialSource, ListenTogetherSource {
     private val uploadDirectory by lazy { prepareCloudUploadDirectory(context.cacheDir) }
 
     override suspend fun podcastHome(session: SessionStamp): PodcastHome = coroutineScope {
@@ -362,14 +362,14 @@ class MeloXRepository @Inject constructor(
     }
 
     override suspend fun privateConversations(session: SessionStamp, offset: Int, limit: Int): List<PrivateConversation> =
-        socialRequest(
+        accountRequest(
             session,
             "/api/msg/private/users",
             mapOf("offset" to offset, "limit" to limit, "total" to "true"),
         ).array("msgs").mapNotNull(::parseConversation)
 
     override suspend fun privateMessages(session: SessionStamp, userId: Long, before: Long, limit: Int): List<PrivateMessage> =
-        socialRequest(
+        accountRequest(
             session,
             "/api/msg/private/history",
             mapOf("userId" to userId, "time" to before, "limit" to limit, "total" to "true"),
@@ -377,7 +377,7 @@ class MeloXRepository @Inject constructor(
 
     override suspend fun sendPrivateText(session: SessionStamp, message: String, userIds: List<Long>) {
         require(userIds.isNotEmpty() && userIds.all { it > 0 }) { "Valid recipients are required" }
-        socialRequest(
+        accountRequest(
             session,
             "/api/msg/private/send",
             mapOf(
@@ -394,14 +394,14 @@ class MeloXRepository @Inject constructor(
         pageSize: Int,
         maximumCount: Int,
     ): List<MessageContact> {
-        requireSocialSession(session)
+        requireAccountSession(session)
         require(pageSize > 0 && maximumCount > 0) { "Positive contact limits are required" }
         val contacts = mutableListOf<MessageContact>()
         val loadedIds = mutableSetOf<Long>()
         var offset = 0
         var hasMore = true
         while (hasMore && contacts.size < maximumCount) {
-            val response = socialRequest(
+            val response = accountRequest(
                 session,
                 "/api/user/getfollows/${session.identity.userId}",
                 mapOf(
@@ -425,7 +425,7 @@ class MeloXRepository @Inject constructor(
         message: String,
     ) {
         require(userIds.isNotEmpty() && userIds.all { it > 0 }) { "Valid recipients are required" }
-        socialRequest(
+        accountRequest(
             session,
             "/api/msg/private/send",
             mapOf(
@@ -440,7 +440,7 @@ class MeloXRepository @Inject constructor(
 
     override suspend fun shareToTimeline(session: SessionStamp, resource: ShareResource, message: String) {
         require(resource.kind != ShareResourceKind.Album) { "Albums cannot be shared to the NetEase timeline" }
-        socialRequest(
+        accountRequest(
             session,
             "/api/share/friends/resource",
             mapOf("type" to resource.kind.wireValue, "msg" to message, "id" to resource.id),
@@ -448,20 +448,20 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    private fun requireSocialSession(session: SessionStamp): SessionStamp = session.also {
+    private fun requireAccountSession(session: SessionStamp): SessionStamp = session.also {
         check(it.identity.authenticated && !it.identity.anonymous && it.identity.userId > 0) { "Sign-in required" }
         sessions.requireCurrent(it)
         check(!sessions.recoveryRequired.value) { "Session recovery is required" }
     }
 
-    private suspend fun socialRequest(
+    private suspend fun accountRequest(
         session: SessionStamp, path: String, body: Map<String, Any>, useEapi: Boolean = false,
     ): JsonObject {
         currentCoroutineContext().ensureActive()
-        requireSocialSession(session)
+        requireAccountSession(session)
         val response = (if (useEapi) eapi else weapi).post(path, body, expectedSession = session)
         currentCoroutineContext().ensureActive()
-        requireSocialSession(session)
+        requireAccountSession(session)
         return validate(response)
     }
 
@@ -604,8 +604,8 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    suspend fun listenTogetherStatus(): ListenTogetherStatus {
-        val data = request("/api/listen/together/status/get").objectOrNull("data")
+    override suspend fun listenTogetherStatus(session: SessionStamp): ListenTogetherStatus {
+        val data = accountRequest(session, "/api/listen/together/status/get", emptyMap()).objectOrNull("data")
         return ListenTogetherStatus(
             isInRoom = data?.boolean("inRoom") ?: false,
             room = data?.objectOrNull("roomInfo")?.let(::parseRoom),
@@ -613,30 +613,35 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    suspend fun createListenTogetherRoom(): ListenTogetherRoom {
-        val response = requestEapi("/api/listen/together/room/create", mapOf("refer" to "songplay_more"))
+    override suspend fun createListenTogetherRoom(session: SessionStamp): ListenTogetherRoom {
+        val response = accountRequest(session, "/api/listen/together/room/create", mapOf("refer" to "songplay_more"), useEapi = true)
         return response.objectOrNull("data")?.objectOrNull("roomInfo")?.let(::parseRoom)
             ?: error("NetEase did not return a Listen Together room")
     }
 
-    suspend fun checkListenTogetherRoom(roomId: String): Pair<Boolean, String?> {
-        val data = requestEapi(
+    override suspend fun checkListenTogetherRoom(session: SessionStamp, roomId: String): Pair<Boolean, String?> {
+        val data = accountRequest(
+            session,
             "/api/listen/together/room/check",
             mapOf("roomId" to roomId),
+            useEapi = true,
         ).objectOrNull("data")
         return (data?.boolean("joinable") ?: false) to data?.string("status")
     }
 
-    suspend fun acceptListenTogetherRoom(roomId: String, inviterId: String): ListenTogetherRoom {
-        val response = requestEapi(
+    override suspend fun acceptListenTogetherRoom(session: SessionStamp, roomId: String, inviterId: String): ListenTogetherRoom {
+        val response = accountRequest(
+            session,
             "/api/listen/together/play/invitation/accept",
             mapOf("refer" to "inbox_invite", "roomId" to roomId, "inviterId" to inviterId),
+            useEapi = true,
         )
         return response.objectOrNull("data")?.objectOrNull("roomInfo")?.let(::parseRoom)
             ?: error("NetEase did not return the accepted room")
     }
 
-    suspend fun reportListenTogetherCommand(
+    override suspend fun reportListenTogetherCommand(
+        session: SessionStamp,
         roomId: String,
         command: ListenTogetherCommand,
         progressMs: Long,
@@ -655,16 +660,20 @@ class MeloXRepository @Inject constructor(
                 "clientSeq" to clientSequence,
             ),
         ).toString()
-        requestEapi(
+        accountRequest(
+            session,
             "/api/listen/together/play/command/report",
             mapOf("roomId" to roomId, "commandInfo" to commandInfo),
+            useEapi = true,
         )
     }
 
-    suspend fun listenTogetherPlayback(roomId: String): ListenTogetherPlaybackSnapshot {
-        val data = requestEapi(
+    override suspend fun listenTogetherPlayback(session: SessionStamp, roomId: String): ListenTogetherPlaybackSnapshot {
+        val data = accountRequest(
+            session,
             "/api/listen/together/sync/playlist/get",
             mapOf("roomId" to roomId),
+            useEapi = true,
         ).objectOrNull("data")
         val playlist = data?.objectOrNull("playlist")
         val playMode = playlist?.string("playMode")
@@ -700,9 +709,9 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    suspend fun reportListenTogetherPlaylist(
+    override suspend fun reportListenTogetherPlaylist(
+        session: SessionStamp,
         roomId: String,
-        userId: Long,
         version: Long,
         displaySongIds: List<Long>,
         randomSongIds: List<Long>,
@@ -710,25 +719,29 @@ class MeloXRepository @Inject constructor(
         val playlist = JSONObject(
             mapOf(
                 "commandType" to "REPLACE",
-                "version" to listOf(mapOf("userId" to userId, "version" to version)),
+                "version" to listOf(mapOf("userId" to session.identity.userId, "version" to version)),
                 "anchorSongId" to "",
                 "anchorPosition" to -1,
                 "randomList" to randomSongIds.map(Long::toString),
                 "displayList" to displaySongIds.map(Long::toString),
             ),
         ).toString()
-        requestEapi(
+        accountRequest(
+            session,
             "/api/listen/together/sync/list/command/report",
             mapOf("roomId" to roomId, "playlistParam" to playlist),
+            useEapi = true,
         )
     }
 
-    suspend fun sendListenTogetherHeartbeat(
+    override suspend fun sendListenTogetherHeartbeat(
+        session: SessionStamp,
         roomId: String,
         songId: Long,
         isPlaying: Boolean,
         progressMs: Long,
-    ): Int? = requestEapi(
+    ): Int? = accountRequest(
+        session,
         "/api/listen/together/heartbeat",
         mapOf(
             "roomId" to roomId,
@@ -736,10 +749,11 @@ class MeloXRepository @Inject constructor(
             "playStatus" to if (isPlaying) "PLAY" else "PAUSE",
             "progress" to progressMs.coerceAtLeast(0),
         ),
+        useEapi = true,
     ).objectOrNull("data")?.int("timeSpan")
 
-    suspend fun endListenTogetherRoom(roomId: String) {
-        requestEapi("/api/listen/together/end/v2", mapOf("roomId" to roomId))
+    override suspend fun endListenTogetherRoom(session: SessionStamp, roomId: String) {
+        accountRequest(session, "/api/listen/together/end/v2", mapOf("roomId" to roomId), useEapi = true)
     }
 
     private suspend fun request(

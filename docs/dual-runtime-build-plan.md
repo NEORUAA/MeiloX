@@ -1603,6 +1603,71 @@ Local-only evidence: `/tmp/meilox-social-session-paired-build-2026-10-01.log`,
 `/tmp/meilox-social-session-final-media-2026-10-01.txt`. Private UI content, logs,
 credentials, generated packages and official source are not committed. No push or merge.
 
+### D4/D5/D6 Checkpoint: Together Room Session Ownership (2026-10-01)
+
+- API-029 records the bounded migration found by the preceding integration audit.
+  `ListenTogetherStore` no longer reads standalone `UserIdKey` or substitutes the
+  creator as the local user. Public runtime identity determines participant/creator
+  role, invitation inviter and playlist-version ownership. Nine Repository operations
+  and supplementary song-detail pages carry the same captured authorization.
+- Standalone retains the original business routes, WeAPI/EAPI selection and room
+  payloads; parasite uses its official session/transport for those supplemental routes.
+  There is no copied Cookie, standalone fallback or new native TV room-controller
+  assumption. No original page, entry, glass control or queue/shuffle mapping is removed.
+  Existing actions capture their visible session/room; manually edited invitation state
+  follows the session while incoming navigation invitations remain available.
+- Each room action, monitor and queued player report belongs to a session generation,
+  room-work generation and player attachment. Invalidation clears room state
+  synchronously and cancels the entire old job tree. Late check/accept/create/playback
+  results, detail-page continuations, delayed reports, detached listeners and old end
+  callbacks cannot continue under the replacement owner. Short player publications
+  also guard reentrant invalidation between queue replacement, prepare, seek and play.
+  A retiring monitor's network error cannot publish into or crash the new session.
+- Latest full paired JVM suites pass: standalone 765/91 suites and parasite 824/97
+  suites, 1,589 tests with zero failures/errors/skips. Each matched debug runtime on
+  emulator-5554 passes 23 new Store/platform cases, nine new real-Repository/platform
+  JSON cases and nine existing social Repository regression cases: 41 per flavor.
+  The fixture-only Android coroutine-test dependency supplies deterministic timing;
+  production dependencies are unchanged. Rooms, API transports and players are
+  synthetic; no actual creation, invitation acceptance, heartbeat or command is sent.
+- Both latest debug/instrumentation APK pairs and minified releases build successfully
+  with vital lint (5m 52s). Both release APKs pass 16 KB alignment. Signing fixtures,
+  workflow wiring and real-SDK rebuilt-APK identity/version/signature/alignment checks
+  pass, including swapped/unsigned-pair rejection and temporary fixture-key cleanup.
+  The locally development-signed parasite R8 package retains API 102, TV-only static
+  scope and disabled hot reload; standalone contains no modern module declaration.
+  No production signing credential, original standalone upgrade or remote CI is used.
+- Standalone debug cold startup (5,040 ms) restores its separate Cookie account and
+  paused queue. The locally signed latest parasite R8 replaces only the module;
+  TV cold startup (2,634 ms) restores authenticated portrait MeiloX Home. Original
+  Together pages render in both with create/input/paste/join controls and no room.
+  Screenshots qualify this unchanged read-only page structure, not real cooperative
+  room behavior or startup performance. No create/join/end button is invoked.
+- Both queues remain paused and unchanged: standalone 1,517 entries/index 879 at
+  60,347 ms; parasite 48 entries/index 2 at 22,312 ms. The official TV player remains
+  inactive STOPPED with an empty queue. Current TV PID 7122 has an empty crash buffer.
+  Accepted TV MediaStore row 820 remains published, TV-owned and 22,705,573 bytes.
+  The AVD is left on portrait TV MeiloX Home with the R8 module installed. Only the
+  task-owned temporary UI XML is removed; no emulator restart, screen-off, physical
+  device operation, orientation override change or LSPosed scope change is performed.
+- `main` remains `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The user explicitly
+  permits retaining historical glass-toggle fix `f0c55cac`; its four files remain
+  untouched. This checkpoint closes the identified Together ownership omission, not
+  Together server/cooperating-account acceptance or full D4-D6 qualification. The
+  existing framework-free startup, original data-preserving upgrade, paired full
+  release execution, capability and remaining business/lifecycle gates stay open.
+  Do not restart cloud investigation as a prerequisite for these next gates.
+
+Local-only evidence: `/tmp/meilox-listen-session-final-paired-build-2026-10-01.log`,
+`/tmp/meilox-listen-session-standalone-final-fixtures-2026-10-01.log`,
+`/tmp/meilox-listen-session-parasite-final-fixtures-2026-10-01.log`,
+`/tmp/meilox-listen-session-paired-signing-fixtures-2026-10-01.log`,
+`/tmp/meilox-listen-session-standalone-page-2026-10-01.png`,
+`/tmp/meilox-listen-session-parasite-release-page-2026-10-01.png`,
+`/tmp/meilox-listen-session-final-tv-home-2026-10-01.png` and
+`/tmp/meilox-listen-session-final-media-2026-10-01.txt`. Private UI content, logs,
+credentials, generated APKs and official source are not committed. No push or merge.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

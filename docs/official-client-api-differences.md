@@ -2079,9 +2079,60 @@ These are integration differences, not server API semantics.
 - Limits: substitute send success is not server delivery acceptance. A request already
   accepted by a server cannot be revoked by local invalidation. Real logout/relogin,
   cooperating-account send/delivery and complete minified standalone qualification
-  remain separate gates. `ListenTogetherStore` still reads the legacy user preference
-  and has unstamped room sequences; this entry does not qualify or conceal that next
-  migration task. No room is created/joined for this checkpoint.
+  remain separate gates. At this checkpoint `ListenTogetherStore` still read the
+  legacy user preference and had unstamped room sequences; API-029 subsequently
+  adapts that ownership path. Neither entry qualifies real room cooperation. No room
+  is created/joined for this checkpoint.
+
+### API-029: Together Rooms and Player Commands Need a Runtime Session Owner
+
+- Recorded: 2026-10-01. The original shared Store read standalone `UserIdKey` and
+  substituted `room.creatorId` when that preference was absent. Official login does
+  not write that preference, so a participant could be classified as the creator;
+  invitation and playlist-version ownership could also use the wrong identity.
+  Room requests and supplementary song-detail pages did not retain one authorization
+  across their asynchronous sequence.
+- `ListenTogetherSource` now takes a credential-free `SessionStamp` for all nine
+  operations. The existing Repository retains the original supplemental contracts:
+
+  | Operation | Route and retained contract |
+  | --- | --- |
+  | Status | `/api/listen/together/status/get`; `data.inRoom`, optional `roomInfo` |
+  | Create/check | `/api/listen/together/room/create`, `/api/listen/together/room/check`; original `refer`/`roomId` |
+  | Accept | `/api/listen/together/play/invitation/accept`; `refer`, `roomId`, `inviterId` |
+  | Playback | `/api/listen/together/sync/playlist/get`; display/random list and original command mapping |
+  | Playlist report | `/api/listen/together/sync/list/command/report`; serialized `playlistParam`, version owned by the captured user |
+  | Command report | `/api/listen/together/play/command/report`; serialized `commandInfo`, sequence/progress/play status |
+  | Heartbeat/end | `/api/listen/together/heartbeat`, `/api/listen/together/end/v2`; original room/song/progress parameters |
+
+- Standalone keeps its original WeAPI status/EAPI other-operation selection. Parasite
+  passes these supplemental requests through the official transport and session, not
+  a copied Cookie or standalone fallback. This table is an adaptation of the existing
+  business contract, not evidence of equivalent native TV room-controller behavior.
+- Requests are tagged with the captured stamp, checked before and after transport,
+  and reject guests, recovery-required sessions, stale generations and cancellation.
+  Role, invitation inviter and playlist version use its public user ID. The Store
+  additionally owns each action, monitor and player-event report by session generation,
+  room-work generation and attached player; invalidation synchronously clears room
+  state and cancels that job tree. A late check cannot accept under a new authorization,
+  and late playback/detail results cannot seek, prepare or play the replacement player.
+- Existing page architecture, controls, glass, queue/shuffle mapping and invitation
+  parsing stay shared. Actions capture the visible session/room; manually edited
+  invitation state resets with the session while the incoming navigation seed remains
+  available. No hidden feature, new page or unrelated frontend repair is introduced.
+- Verification: each matched debug flavor passes 23 Store/platform cases and nine
+  real-Repository/platform JSON cases on emulator-5554. They cover all route tags and
+  retained payloads, role/inviter/version ownership, queue/shuffle/progress mapping,
+  same-ID reauthorization, late check/create/accept/playback results, detail-page
+  interruption, retired listeners, queued reports, duplicate actions, local end
+  failure, monitor retirement/recovery and reentrant player invalidation. Nine social
+  Repository regression cases also pass per flavor after the shared helper rename.
+  Fixtures use only synthetic rooms/transports/players; no real room is involved.
+- Limits: real room creation/join/end, heartbeat or playback-command acceptance is not
+  qualified for this increment. Substitute success does not prove cooperating-account
+  synchronization or server acceptance, and cancellation cannot undo a write already
+  accepted remotely. Paired real read-only page and release-package evidence is
+  recorded separately in the matching dual-runtime checkpoint.
 
 ## Adding an Entry
 

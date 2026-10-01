@@ -52,7 +52,7 @@ fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherSt
     val initialInvitation = remember(navController) {
         navController.previousBackStackEntry?.savedStateHandle?.remove<String>("listen_invitation").orEmpty()
     }
-    var invitationText by remember(initialInvitation) { mutableStateOf(initialInvitation) }
+    var invitationText by remember(initialInvitation, state.session) { mutableStateOf(initialInvitation) }
 
     IosPinnedListPage(
         title = stringResource(R.string.listen_together),
@@ -92,7 +92,7 @@ fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherSt
                                 Text(stringResource(R.string.listen_invite), modifier = Modifier.padding(start = 8.dp))
                             }
                         }
-                        GlassButton(onClick = store::end, emphasis = GlassEmphasis.Prominent) {
+                        GlassButton(onClick = { store.end(state) }, emphasis = GlassEmphasis.Prominent) {
                             Text(stringResource(R.string.listen_end))
                         }
                     }
@@ -100,7 +100,7 @@ fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherSt
             }
         } ?: run {
             item {
-                GlassButton(onClick = store::create, modifier = Modifier.fillMaxWidth(), emphasis = GlassEmphasis.Prominent) {
+                GlassButton(onClick = { store.create(state.session) }, modifier = Modifier.fillMaxWidth(), emphasis = GlassEmphasis.Prominent) {
                     Text(stringResource(R.string.listen_create))
                 }
             }
@@ -127,7 +127,7 @@ fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherSt
                             Text(stringResource(R.string.listen_paste_invitation), modifier = Modifier.padding(start = 8.dp))
                         }
                         GlassButton(
-                            onClick = { store.joinInvitation(invitationText) },
+                            onClick = { store.joinInvitation(invitationText, state.session) },
                             enabled = invitationText.isNotBlank(),
                             emphasis = GlassEmphasis.Prominent,
                             modifier = Modifier.fillMaxWidth(),
