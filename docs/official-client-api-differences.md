@@ -1301,6 +1301,29 @@ These are integration differences, not server API semantics.
   with app-only stops and no AVD restart. Logs/screenshots stay outside Git. No work
   carrier, UI, class-loader, network or cache repair is inferred from these timings.
 
+#### Finite Startup Trace Boundary (2026-10-03)
+
+- A historical 20s trace describes a different fast TV launch (PID 14025,
+  2140.796ms platform slice), not the slow milestone records. A fresh finite 60s
+  capture at source checkpoint `dde5c5a2` separately starts ordinary parasite R8
+  and isolated standalone debug; both are paused beforehand, without test runners
+  or concurrent launch commands. Local official Perfetto parsing reports no nonzero
+  error/warning or ftrace-loss stats. Raw traces and exports are not uploaded or committed.
+- TV/standalone COLD TotalTime is 2587/1656ms. bindApplication is 905.218/786.764ms;
+  its nested APK open slice is 378.626/677.100ms. First post-resume frames are
+  626.397/599.623ms. Nested Compose initialization/measurement is present in both,
+  but these fast samples do not explain the old 14-16s launches or failed attachment.
+  Different artifact build types do not establish comparative release performance.
+- There is no exclusive traced phase for official Application.onCreate versus the
+  module graph initialization, so makeApplication and gaps between safe milestones
+  cannot be assigned to either implementation. No class-loader, network, cache,
+  work-carrier, shared frontend or playback repair is inferred from this capture.
+- Both settled original portrait Home screens and non-autoplay queues are inspected;
+  TV returns to foreground, native TV playback remains inactive, published media and
+  the original standalone installation are unchanged. Exact phases, fingerprints,
+  preservation checks and evidence locations are in the dual-runtime plan. This is
+  bounded startup evidence, not a closed stability or full runtime acceptance gate.
+
 ### API-018: Comment Reads Need Query-Owned Cursors and Optional Reply Metadata
 
 - Date: 2026-09-29. Original standalone contracts are `/api/v2/resource/comments`

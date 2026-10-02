@@ -3588,6 +3588,67 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   Only emulator-5554 is used, screen-on, without an AVD restart. Whitelisted traces,
   screenshots and artifacts remain outside Git; no account/permission write is added.
 
+#### Finite Platform Trace Analysis (2026-10-03)
+
+- The previously collected 20.000700s TV trace parses without nonzero error/warning
+  stats. PID 14025's platform launch slice is 2140.796ms, bindApplication 951.134ms,
+  makeApplication 82.997ms and first post-resume frame 466.084ms. It is a different,
+  fast launch, not the PID 4492 milestone log or evidence explaining the 14-16s cases.
+- At source checkpoint `dde5c5a2`, one additional bounded capture uses the awake
+  emulator-5554, app-only stops while both queues are paused, and sequential ordinary
+  TV/isolated-standalone cold starts. No instrumentation fixture, rebuild, installation,
+  AVD restart, playback action, permission or account write is introduced. The installed
+  artifacts are independently hashed: parasite R8
+  `bacec67217bee6422967eb5d241b208d4c5de593bbd1a7f5250314e2fd32633c`,
+  isolated standalone ordinary debug
+  `605a98fde598e40ce40104c81b18a8871c02edd348bfe383b0fb192fd3891992`.
+  Different build types mean these samples are not a paired R8 performance comparison.
+- `atrace -b 16384 -t 60` captures am/wm/gfx/view/dalvik/sched/binder_driver with only
+  the two application cmdlines enabled. It completes normally; tracing_on returns to
+  zero. Local official Perfetto Trace Processor v58.2 imports the 60.000844s trace
+  without nonzero error/warning stats or ftrace-loss stats. No trace is uploaded.
+
+  | Measured phase (ms) | TV PID 30232 | Isolated standalone PID 30567 |
+  | --- | --- | --- |
+  | `am start -W` COLD TotalTime | 2587 | 1656 |
+  | Platform launching slice | 2580.369 | 1644.806 |
+  | ActivityThreadMain | 410.058 | 12.090 |
+  | bindApplication | 905.218 | 786.764 |
+  | APK open slice within bindApplication | 378.626 | 677.100 |
+  | makeApplication within bindApplication | 87.436 | 2.823 |
+  | activityStart | 141.957 | 60.076 |
+  | activityResume | 27.307 | 12.493 |
+  | First post-resume Choreographer frame | 626.397 | 599.623 |
+
+- Nested slices must not be added to their parents. The standalone's earlier 1.267ms
+  frame precedes activityStart and is not the content frame. The first post-resume
+  traversal contains Compose initialization (73.331/75.947ms) and measurement
+  (360.433/296.748ms), with nested movable-content insertion (232.594/209.819ms).
+  During the launching slices, main-thread Running totals are 1939.030/1355.368ms;
+  sleep totals are 484.327/190.775ms. Neither sample contains the old multi-second
+  gap. These fast samples do not attribute an intermittent slow launch or failed
+  process attachment to host, module, framework, network or shared UI. Existing
+  source does not separately trace official Application.onCreate and module graph
+  initialization; makeApplication is not either one's exclusive duration.
+- Settled screenshots show original portrait Home, covers and glass in both runtimes.
+  TV returns to foreground with the same PID (HOT, TotalTime 1231ms), retains Prelude
+  PAUSED at 178897ms and eleven entries; native TV stays inactive/STOPPED with no queue.
+  Standalone retains Full Moon Serenade NONE/unprepared at 143811ms, speed zero and
+  seven entries. Both have null playback error and no autoplay. Published MediaStore
+  row 820 remains TV-owned, pending=0 and 22705573 bytes; the original production
+  standalone package path is unchanged. No new decoding/audio acceptance is inferred.
+- Raw trace (SHA-256
+  `b70547a49024b6432271ab74c6e40a3ebca0796e5ceba680a8a7496d7da988ea`),
+  SQLite export, phase/state summaries, start logs and screenshots stay under
+  `/tmp/meilox-paired-cold-*2026-10-03*`, outside Git. This is a documentation-only
+  qualification increment, not a startup fix. Slow-launch/attach attribution and
+  all existing D2-D6 exit gates remain open; normal starts are not repeatedly run
+  until a desired failure occurs. ABI-005 records the runtime evidence boundary.
+- Validation: the local real-SDK `dual_runtime_release_test.rb --built-apks` gate
+  has 56 PASS lines and exits zero; `git diff --check` passes. No app source changes,
+  new unit/device fixture run or APK rebuild is needed for this documentation-only
+  increment. Previously built APK checks are not substituted for startup acceptance.
+
 ### D3/D6 Checkpoint: Creation-Owned WebView Candidate Retry (2026-10-02)
 
 - The standalone restoration's `lastAttemptedCookie` marker permanently skipped an
