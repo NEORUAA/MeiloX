@@ -3442,6 +3442,24 @@ These are integration differences, not server API semantics.
   Optional live-PiP graph assertions are added to the harness but are not exercised
   in this follow-up. This is the named bootstrap/binding boundary, not proof of the
   full PiP/permission matrix or replacement for the earlier real-window evidence.
+- OEM confirmation deadline follow-up (2026-10-03): the original standalone PiP
+  path stays inside its Activity, whereas the TV helper requires HyperOS app-to-app
+  confirmation. Before this fix, 24.471 seconds elapse between confirmation creation
+  and helper onCreate; the helper then finishes by app request after 108ms without
+  entering pinned mode. The host's 20-second unconnected-endpoint deadline explains
+  this sequence; there is no separate timeout log proving that attribution alone.
+- The parasite-only deadline is now a finite 120 seconds. Caller/session checks,
+  Binder lifetime cleanup, standalone behavior and shared rendering are unchanged.
+  A regression assertion fails with the old value and passes with the new value.
+  On the matching installed R8 build, selecting only "Allow this time" after a
+  46.768-second confirmation-to-onCreate interval enters real native pinned mode.
+  No permanent HyperOS launch allowance is selected or bypassed.
+- Native menu taps and a dismissal swipe still do not expose or close the window.
+  The module helper process is force-stopped solely to clean up this test; TV stays
+  alive and paused, with no pinned helper remaining. This is not native menu/close
+  acceptance. Both R8 builds, 1087 freshly executed parasite JVM cases, the retained
+  1074 standalone cases and 79 local release gates pass. The original light-theme
+  lyric readability issue remains outside this backend migration.
 
 ## Adding an Entry
 

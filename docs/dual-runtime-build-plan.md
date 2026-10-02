@@ -182,7 +182,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
-| Module microphone and PiP helpers | All nine helper source bodies, shared recognition capture/ViewModel and host PiP source reviewed; manifest/runtime registration, permission-result wiring, fingerprint asset interception and original PiP-render extraction hunks inspected | No new migration defect established in this source scope; existing permission, motion, Binder/action and host-death evidence stays bounded |
+| Module microphone and PiP helpers | All nine helper source bodies, shared recognition capture/ViewModel and host PiP source reviewed; manifest/runtime registration, permission-result wiring, fingerprint asset interception and original PiP-render extraction hunks inspected | The later live OEM launch-confirmation timeout is fixed and verified below; existing permission, motion, Binder/action and host-death evidence stays bounded |
 | Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe, Social/Library and six catalog-navigation-family repairs, with bounded FindMusic, Search, AccountHome, Podcast and Wiki native callbacks, are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; the 13 catalog-navigation entries have source/JVM guards and bounded native coverage, not complete page integration, unchanged-body or full runtime acceptance |
 
 #### Reconciled Page and Runtime-Carrier Inventory
@@ -4621,6 +4621,56 @@ playlist/component/PlaylistActionOverlay.kt
   remaining real-account, capability or full merge/runtime gates.
 - `git diff --check` passes. Production code/APKs are unchanged; the preceding
   paired JVM/build/release checks are retained, not represented as new executions.
+
+## Parasite PiP OEM Confirmation Deadline (2026-10-03)
+
+- This is a bounded helper-launch repair, not a shared UI or player redesign.
+  API-038 records why the standalone in-Activity path has no equivalent launch
+  confirmation. The pre-fix HyperOS confirmation/helper timestamps differ by
+  24.471 seconds; the helper finishes after 108ms, with no native pinned task.
+  That is consistent with the host endpoint's 20-second activation timeout.
+- Only the parasite activation deadline changes to 120 seconds. The new two-case
+  regression checks the observed delay and a finite ceiling; its delay assertion
+  fails before the fix. Existing trust, account ownership, replacement/death and
+  endpoint cleanup paths are preserved. No new frontend architecture is introduced.
+- The paired unit/release command succeeds in 2m52s (163 tasks: 26 executed,
+  137 up-to-date), including both vital lint tasks. The parasite suite freshly
+  executes 1087 cases in 115 suites with zero failures/errors/skips; standalone's
+  retained, up-to-date reports contain 1074 cases in 111 suites, also all passing.
+  `ruby .github/tests/dual_runtime_release_test.rb --built-apks` passes all 79
+  local gates, including actual-SDK and malformed-package negative scenarios.
+- A development-signed parasite R8 APK is installed with `adb install -r`, without
+  uninstalling or clearing either client. Its SHA-256 is
+  `0e8fbdeb6bf1acfb2a9febffd75aaf6020e289e05e79eef4147cbe082cc6086b`.
+  TV PID 12431's executed API 102 code marker matches the new R8 map ID
+  `17d8ce30c001536a75b6c183f51db95d039d11dcdf8aec0e7766c09076dc741d`.
+  The original standalone installation is not replaced.
+- The ordinary player menu opens HyperOS confirmation. Only "Allow this time" is
+  selected after a deliberate delay; 46.768 seconds elapse from confirmation
+  creation to helper onCreate. The helper enters real pinned mode and renders the
+  shared cover/lyrics window rather than finishing immediately. Screenshots are
+  retained outside Git under `/tmp/meilox-pip-activation-after-2026-10-03.png` and
+  `/tmp/meilox-pip-native-menu-final-2026-10-03.png`.
+- Native menu controls remain unavailable to the tested tap; one dismissal swipe
+  also leaves the pinned task present. Testing stops there. Force-stopping only
+  the helper package cleans up the window; no native menu/close success is claimed.
+  TV remains alive and PAUSED/error null at 156037ms, original standalone remains
+  PAUSED/error null at 81766ms, and native TV is STOPPED at zero. No host crash entry
+  or pinned helper remains. The existing light-theme readability issue is unchanged.
+- Both updated R8 APKs are signed with the previously verified production key;
+  SDK verification, unchanged unsigned ZIP payload and the exact workflow
+  preparation gates pass. The current pair supersedes the earlier build above:
+  standalone SHA-256
+  `44e118213123cfb7954475a6b422feb0b50d5a5b42d8f1fe07250a81d145152e`,
+  parasite SHA-256
+  `ff1942d8e182a3eb90af56210057fc0164bfbde66f10fb78c40876cb675b5d00`.
+  Artifacts and credential-free `verification.json` stay outside Git under
+  `/tmp/meilox-production-pair-2026-10-03-20261003-60132-ag86cq`.
+  No production-signed APK is installed over the development-signed AVD apps.
+- Passed checkpoints are not reopened. Framework-free/production-upgrade and
+  cooperating-account acceptance await the already requested user decisions;
+  the other explicitly unqualified matrix items above are not silently marked
+  complete. No additional test loop, remote CI, push, merge or release is started.
 
 ## Acceptance and Remaining Decisions
 

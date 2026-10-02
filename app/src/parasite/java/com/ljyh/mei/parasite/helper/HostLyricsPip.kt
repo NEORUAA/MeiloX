@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object HostLyricsPip {
+    // OEM launch confirmation may outlive a short IPC connection timeout.
+    internal const val ACTIVATION_TIMEOUT_MILLIS = 120_000L
     private var active: Endpoint? = null
 
     fun enter(activity: Activity, source: LyricsPipSource) {
@@ -33,7 +35,7 @@ internal object HostLyricsPip {
         private val death = IBinder.DeathRecipient { main.post { close() } }
         private val activationTimeout = Runnable { if (peer == null) close() }
 
-        init { main.postDelayed(activationTimeout, 20_000L) }
+        init { main.postDelayed(activationTimeout, ACTIVATION_TIMEOUT_MILLIS) }
 
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code == INTERFACE_TRANSACTION) { reply?.writeString(LyricsPipProtocol.DESCRIPTOR); return true }
