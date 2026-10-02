@@ -270,6 +270,101 @@ class AlbumSessionTest {
         assertTrue(model.state.value.detail is Resource.Success)
     }
 
+    @Test fun pendingAnonymousRecoveryBlocksReadsAndResumesTheLatestAlbumWithoutChangingTheStamp() {
+        identity = SessionIdentity(0, false, false)
+        sessions.setRecoveryRequired(true)
+        checkModel { model, _ ->
+            val owner = sessions.snapshot()
+            model.getAlbumDetail("10")
+            model.getAlbumDetail("20")
+            runCurrent()
+            assertTrue(source.reads.isEmpty())
+            assertTrue(source.collectionReads.isEmpty())
+            assertNull(model.state.value.session)
+            assertTrue(model.state.value.detail is Resource.Error)
+
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(listOf(owner to "20"), source.reads)
+            assertTrue(source.collectionReads.isEmpty())
+            assertEquals(20L, (model.state.value.detail as Resource.Success).data.album.id)
+        }
+    }
+
+    @Test fun recoveryWithoutATransitionImmediatelyRejectsActionsAndRetiresLoadedContent() = checkModel { model, _ ->
+        model.getAlbumDetail("10")
+        runCurrent()
+        val owner = sessions.snapshot()
+        sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { model.requireCurrent(owner, "10") }.isFailure)
+        assertTrue(runCatching { model.resolveDownloadSources(listOf("1"), MusicQuality.STANDARD, owner, "10") }.isFailure)
+        model.toggleCollection()
+        runCurrent()
+        assertTrue(source.urlOwners.isEmpty())
+        assertTrue(source.mutations.isEmpty())
+        assertNull(model.state.value.session)
+        assertNull(model.state.value.collected)
+        assertFalse(model.state.value.changingCollection)
+        assertTrue(model.state.value.detail is Resource.Error)
+        model.getAlbumDetail("20")
+        runCurrent()
+        assertEquals(1, source.reads.size)
+
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(owner, sessions.snapshot())
+        assertEquals(listOf(owner to "10", owner to "20"), source.reads)
+        assertEquals(20L, (model.state.value.detail as Resource.Success).data.album.id)
+    }
+
+    @Test fun recoveryRetiresNonCooperativeAlbumAndCollectionReads() {
+        val detail = CompletableDeferred<AlbumDetail>()
+        val collection = CompletableDeferred<Boolean>()
+        source.detail = { _, _ -> withContext(NonCancellable) { Resource.Success(detail.await()) } }
+        source.collection = { _, _ -> withContext(NonCancellable) { Resource.Success(collection.await()) } }
+        checkModel { model, _ ->
+            try {
+                model.getAlbumDetail("10")
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+            } finally {
+                detail.complete(album("10"))
+                collection.complete(true)
+                runCurrent()
+            }
+            assertNull(model.state.value.session)
+            assertNull(model.state.value.collected)
+            assertTrue(model.state.value.detail is Resource.Error)
+        }
+    }
+
+    @Test fun recoveryRetiresAnInFlightCollectionWriteWithoutNotifyingTheLibrary() {
+        val mutation = CompletableDeferred<BaseResponse>()
+        source.mutate = { _, _, _ -> withContext(NonCancellable) { Resource.Success(mutation.await()) } }
+        checkModel { model, _ ->
+            try {
+                model.getAlbumDetail("10")
+                runCurrent()
+                model.toggleCollection()
+                runCurrent()
+                assertEquals(1, source.mutations.size)
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+            } finally {
+                mutation.complete(BaseResponse(200))
+                runCurrent()
+            }
+            assertNull(model.state.value.session)
+            assertNull(model.state.value.collected)
+            assertNull(model.state.value.mutation)
+            assertFalse(model.state.value.changingCollection)
+            assertTrue(model.state.value.detail is Resource.Error)
+            assertTrue(notifications.isEmpty())
+        }
+    }
+
     @Test fun staleUrlResolutionCannotBeReturnedForANewSession() {
         val pending = CompletableDeferred<Unit>()
         source.urls = { withContext(NonCancellable) { pending.await(); Resource.Success(DownloadSources(emptyList())) } }

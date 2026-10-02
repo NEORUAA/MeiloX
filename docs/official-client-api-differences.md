@@ -2734,6 +2734,18 @@ These are integration differences, not server API semantics.
   MeiloX Home with existing queues paused. Real startup Cookie expiry/account
   cooperation, API-032 relevance, full
   minified lifecycle and production upgrade remain distinct unqualified gates.
+- Album consumer follow-up: the same readable-stamp assumption also retains album
+  presentation/actions during pending recovery. Four added JVM cases fail before
+  repair, including non-cooperative reads and a late collection notification.
+  AlbumDetailViewModel now retires pending reads/writes/content and fences captured
+  actions and publication, retaining the latest album for same-stamp resumption.
+  The transport was already guarded; these fixtures do not establish real pending
+  requests escaping that transport. Endpoints and the existing UI remain unchanged.
+  Paired suites pass 1841 cases (19 album cases each); two Android substitutes pass
+  per flavor with synthetic sessions/sources and no real collection/download writes.
+  Both production R8 builds/vital lint and the real-SDK release gate pass; the updated
+  development-signed module cold-launches portrait MeiloX Home. That bootstrap does
+  not qualify real recovery, an actual collection write or full paired release parity.
 
 ## Adding an Entry
 

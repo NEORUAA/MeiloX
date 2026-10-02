@@ -62,7 +62,8 @@ class AlbumDetailViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { sessions.snapshot() }.getOrNull()
+                val stamp = if (sessions.recoveryRequired.value) null
+                    else runCatching { sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     loadJob?.cancel()
                     mutationJob?.cancel()
@@ -81,9 +82,11 @@ class AlbumDetailViewModel internal constructor(
 
     fun getAlbumDetail(id: String) {
         loadedId = id
+        if (sessions.recoveryRequired.value) return
         val stamp = runCatching { sessions.snapshot() }.getOrNull() ?: return
         val requestVersion = runCatching {
             sessions.withCurrent(stamp) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     // A read started during a write can observe the pre-mutation server state.
                     if (state.value.id == id && state.value.session == stamp && state.value.changingCollection) {
@@ -102,6 +105,7 @@ class AlbumDetailViewModel internal constructor(
         loadJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val (detail, collected) = coroutineScope {
                     val detail = async { repository.getAlbumDetail(id, stamp).valueOrThrow() }
                     val collection = async {
@@ -131,6 +135,7 @@ class AlbumDetailViewModel internal constructor(
         if (current.detail !is Resource.Success || current.changingCollection) return
         val requestVersion = runCatching {
             sessions.withCurrent(stamp) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     if (state.value != current) null
                     else if (!stamp.identity.authenticated) {
@@ -146,6 +151,7 @@ class AlbumDetailViewModel internal constructor(
         mutationJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val result = repository.setAlbumCollection(id, !before, stamp).valueOrThrow()
                 check(result.code == 200) { "Album collection request failed (${result.code})" }
                 currentCoroutineContext().ensureActive()
@@ -179,6 +185,7 @@ class AlbumDetailViewModel internal constructor(
 
     fun requireCurrent(stamp: SessionStamp, id: String) {
         sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (state.value.session != stamp || state.value.id != id || state.value.detail !is Resource.Success) {
                     throw CancellationException("Album changed")
@@ -197,6 +204,7 @@ class AlbumDetailViewModel internal constructor(
 
     private fun publish(stamp: SessionStamp, requestVersion: Long, update: (AlbumDetailState) -> AlbumDetailState): Boolean =
         sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 (version == requestVersion).also { if (it) mutableState.value = update(state.value) }
             }
