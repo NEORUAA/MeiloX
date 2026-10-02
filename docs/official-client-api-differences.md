@@ -3101,6 +3101,18 @@ These are integration differences, not server API semantics.
   callbacks or the other five families. The test-only addition does not change the
   current production R8 pair; separate ready AccountHome/ranking reads are not an
   attributed listening-statistics increment.
+- Search native follow-up (2026-10-02): the original landing recommendation and
+  artist/album/playlist/podcast result rows each pass five cases in both debug
+  flavors. Actual retained ClickableElement callbacks reject same-stamp rerenders,
+  account replacement, same-account reauthorization and same-stamp recovery; fresh
+  guest/current callbacks navigate using the original routes. The same DTO objects
+  persist across replacement. These are closed sessions/sources with fail-closed
+  inactive-overlay dependencies and no graph, credentials, network or real player.
+  All 25 cases pass per flavor on the rooted AVD; fresh SearchSessionTest also passes
+  27 cases each. No endpoint, production source or R8 artifact changes. This narrows
+  only SearchLanding/non-song SearchResult callback integration; AccountHome,
+  Podcast list and SongWiki native callbacks, pointer input, real account/expiry and
+  complete minified lifecycle acceptance remain separate gates.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 
