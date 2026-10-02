@@ -4190,6 +4190,53 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   `/tmp/meilox-runtime-code-marker-*-2026-10-03.*`; no logs/APKs are committed.
   Main is rechecked at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`.
 
+#### Full Paired JVM Gate and AVD Upgrade Candidate (2026-10-03)
+
+- Frozen production source is `8ff63f75`; main is still
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The unfiltered planned command
+  `:app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest` succeeds in
+  1m06s (56 tasks: two executed, 54 up-to-date). XML totals are 1063 standalone
+  cases/109 suites and 1070 parasite cases/111 suites, all with zero failures,
+  errors or skips. These are the full current JVM suites, not a sum of earlier
+  filtered runs. They do not substitute for device, upgrade or real-server gates.
+- Read-only SDK inspection of the original AVD standalone APK confirms package
+  com.neoruaa.meilox/versionCode 11 and development certificate SHA256
+  `2a02b8d6f6f25067a95b685c9f9cf79d97cba2d4999d1a550a720931c8310243`.
+  Its pulled APK hash matches the device:
+  `7d0233bca7734e8e0141eee2e99c9db5820f2be599420ff91e7fb514b99067b9`.
+  No app-private data or supplied Cookie is read. The original install path and
+  device APK hash are rechecked unchanged after preparing the candidate.
+- The current standalone unsigned R8 APK remains
+  `768d7cc2fa7180719d084e17975eb292d1026abdaf5ec3381d8cae1ec364e251`.
+  A local candidate is signed with that same AVD development certificate, keeps
+  the original package/versionCode, is non-debuggable, and passes signature and
+  16KB alignment checks. Candidate SHA256 is
+  `c80c81722532a270390167e2a8d6ade6d573b1993dd6b869259d0070fad5c5c9`;
+  path: `/tmp/meilox-production-id-upgrade-candidate-2026-10-03.apk`.
+- This establishes a matching-signature test candidate, not a successful upgrade.
+  The repository's older release APK instead has certificate SHA256
+  `03bc4bbc1e9b3b2bfad4e8712ccbc964546a2648ec6992d697875270d2b1a737`.
+  Development signing cannot qualify that production-release identity; no release
+  secret is accessed. Original-install backup/upgrade permission is requested with
+  the database-migration risk made explicit. No backup, installation, downgrade,
+  uninstallation, data clearing or account authorization is performed while waiting.
+- The existing workflow's exact prepare_apks shell block also succeeds locally on
+  this real standalone candidate and the existing signed parasite R8 artifact.
+  It checks signatures, identities, versions, 16KB alignment, runtime declarations
+  and parasite Parcelable wire identities, then exports the actual two files to
+  `/tmp/meilox-actual-validation-pair-2026-10-03-20261003-5896-od5i00/release-apks/`:
+  MeiloX-standalone.apk has the candidate hash above; MeiloX-parasite.apk has
+  `5ae79a5ea23305818a22ca6e470b04dc50bd01306c46090f4638b67d9489db85`.
+  Output hashes match their inputs. These are development-signed local validation
+  artifacts; no upload, tag, release, push, remote CI or user-app update is invoked.
+- Logs and the read-only pulled original APK remain outside Git under
+  `/tmp/meilox-full-paired-unit-8ff63f75-2026-10-03.log`,
+  `/tmp/meilox-actual-validation-pair-preparation-2026-10-03.log` and
+  `/tmp/meilox-original-readonly-signature-2026-10-03.apk`.
+  No source/UI/CI policy is changed. Framework-free startup, original data-preserving
+  upgrade, production signing, real authorization/cooperation and remaining D2-D6
+  runtime/source acceptance remain open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
