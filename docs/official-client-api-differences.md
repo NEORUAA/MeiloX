@@ -2707,6 +2707,34 @@ These are integration differences, not server API semantics.
   This is native/minified codec evidence on the rooted 16KB AVD, not full reporting,
   statistics, framework-free execution, production upgrade or complete release proof.
 
+### ABI-018: Pending Cookie Recovery Can Retain an Anonymous Public Stamp
+
+- Recorded: 2026-10-02. StandaloneSessionStore.initialize ends its initialization
+  transition after exposing an anonymous stamp; a saved Cookie keeps recoveryRequired
+  true until separate candidate verification succeeds. TV's HostAuthorizationGuard
+  instead retains its transition lease while official login/recovery is unresolved.
+  A readable/unchanged SessionStamp is therefore not sufficient evidence of readiness.
+- Shared search results, suggestions and discovery observed recovery but only retired
+  state when snapshot failed or the stamp changed. Three JVM cases reproduce dispatch,
+  retained content/cache and late-result publication while recovery remains required.
+  This is a dual-runtime session-adapter gap, not an original main frontend cleanup.
+- Repair: both existing search ViewModels gate dispatch/publication and retire work,
+  cache and displayed results independently of generation. Explicit retries remain
+  blocked; the latest query/type/input resumes once recovery clears. Ready guest
+  search, original endpoints/signing, debounce, pagination and page layout remain
+  unchanged. No guard is added to the candidate-verification route or host login API.
+- Paired JVM suites pass 1833 cases, including 19 search cases each. Two Android
+  substitute cases pass per flavor using actual ViewModels with synthetic sessions,
+  without sockets/credentials/real account changes. Both production R8 artifacts
+  build, and the 41 workflow fixtures plus real-SDK built-pair gate pass. Separate
+  development-signed minified runtimes display suggestions and Coldplay artist results
+  through the unchanged UI using their persisted accounts; no follow is requested.
+  This ready-state consumption does not reproduce real pending-Cookie recovery.
+  Ordinary standalone debug is restored; the rooted AVD remains awake at TV-hosted
+  MeiloX Home with existing queues paused. Real startup Cookie expiry/account
+  cooperation, API-032 relevance, full
+  minified lifecycle and production upgrade remain distinct unqualified gates.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

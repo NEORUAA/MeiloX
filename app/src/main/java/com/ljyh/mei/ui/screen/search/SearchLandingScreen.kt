@@ -96,7 +96,8 @@ class SearchDiscoveryViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { sessions.snapshot() }.getOrNull()
+                val stamp = if (sessions.recoveryRequired.value) null
+                    else runCatching { sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     job?.cancel()
                     synchronized(stateLock) {
@@ -113,10 +114,19 @@ class SearchDiscoveryViewModel internal constructor(
     )
 
     fun refresh() {
-        val stamp = runCatching { sessions.snapshot() }.getOrNull() ?: return
+        val stamp = if (sessions.recoveryRequired.value) null
+            else runCatching { sessions.snapshot() }.getOrNull()
         job?.cancel()
+        if (stamp == null) {
+            synchronized(stateLock) {
+                version++
+                _state.value = pendingState()
+            }
+            return
+        }
         val requestVersion = runCatching {
             sessions.withCurrent(stamp) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     _state.value = if (state.value.session == stamp) state.value.copy(loading = true, error = false)
                         else SearchDiscoveryState(session = stamp)
@@ -127,6 +137,7 @@ class SearchDiscoveryViewModel internal constructor(
         job = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val discovery = load(stamp)
                 currentCoroutineContext().ensureActive()
                 publish(stamp, requestVersion) { SearchDiscoveryState(session = stamp, loading = false, discovery = discovery) }
@@ -142,6 +153,7 @@ class SearchDiscoveryViewModel internal constructor(
 
     private fun publish(stamp: SessionStamp, requestVersion: Long, update: (SearchDiscoveryState) -> SearchDiscoveryState) {
         sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) { if (version == requestVersion) _state.value = update(state.value) }
         }
     }

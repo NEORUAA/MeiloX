@@ -143,6 +143,29 @@ The latest acceptance state is:
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
 server acceptance, or mark the overall goal complete while these exit gates remain.
 
+### Merge Review Coverage (2026-10-02)
+
+The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
+`c920799a` plus the search-recovery repair below. Source review is separate from
+the remaining exit gates above. Resume open groups instead of repeating qualified
+groups unless their source changes or a new failure is reproduced.
+
+| Group | Bounded review evidence | Status |
+| --- | --- | --- |
+| Flavor/manifest/dependencies/R8, network providers and signing | Original standalone transport/codec restoration and host-only call boundaries reviewed; native R8 evidence is recorded below | Reviewed at source level; production upgrade/runtime gates remain separate |
+| Bootstrap, ViewModel factory and navigation | Graph/context injection, 29 unscoped provider bindings and owner/key lifecycle reviewed; navigation body matches main except its comment | Reviewed at source level; factory lifecycle tests remain paired |
+| Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Reviewed at source level; actual playback/reporting acceptance remains separate |
+| Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
+| Remaining business/repository/ViewModel, database/download and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
+
+Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
+TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
+sleep timer/notification/sheet, system lyric publisher/access, QQ API/QRC/TTML parsers,
+player background/lyric/slider/shader components, equalizer settings and recognition
+fingerprint assets. AutoMix changes only the optional prepare flag used when retiring
+authorization. This is source-preservation evidence, not audible-output, visual/motion
+parity or attribution of the open near-end playback failure.
+
 ### Execution Priority Reset (2026-10-01)
 
 - The user considers the current cloud flow usable. Stop repeated cloud-only
@@ -2643,6 +2666,50 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   No real playback/download/upload/social request, credential read/copy, frontend
   change or host/system-scope change is part of the probe. Evidence remains local in
   `/tmp/meilox-r8-ncbl-*-2026-10-02*` and `/tmp/meilox-merge-audit-*-2026-10-02*`.
+
+### D3/D5/D6 Checkpoint: Search Recovery Independent of Session Generation (2026-10-02)
+
+- Standalone initialization can end its transition with an anonymous public stamp
+  while a saved Cookie still awaits verification. Unlike the host login fence, this
+  recovery state does not require snapshot() to fail or a new generation. Search
+  results/suggestions/discovery incorrectly relied on the stamp alone. Three added
+  JVM cases fail before repair, including late non-cooperative responses. ABI-018
+  records the runtime distinction; no endpoint/signing/pagination body changes.
+- Both shared search ViewModels now retire results/cache/jobs while recovery is
+  required, reject explicit retries and check recovery before dispatch/publication.
+  The latest query/type/input is retained and resumes after recovery, even with the
+  same stamp. Ready guest search, debounce, existing pages/layouts and navigation
+  remain unchanged; candidate Cookie verification is not blocked or modified.
+- Fresh paired JVM runs pass 908 standalone and 925 parasite cases (1833 total),
+  including 19 search cases per variant. Both debug/test APK pairs build. Two new
+  Android substitute cases pass per variant on the existing rooted AVD (0.175s and
+  0.123s): pending anonymous recovery and non-cooperative result/suggestion/discovery
+  retirement. These instantiate actual Android ViewModels with synthetic sessions;
+  they do not use credentials, real accounts, sockets or authorization changes.
+- Both production R8 artifacts build with vital lint in 3m53s. All 41 release workflow
+  fixtures and the actual-SDK built-pair signature/identity/version/declaration/16KB
+  gate pass. The isolated-ID standalone R8 validation build passes in 3m18s; it is
+  not production-ID or production-signing execution.
+- Development-signed minified artifacts are preserving-installed in their isolated
+  module/test packages. Both existing search UIs show suggestions and Coldplay artist
+  results from their separate persisted accounts. No follow action is taken. Runtime
+  SHA-256: parasite `663ff9f0cf8a088c0fe727792089c0e49e5caa3e54530bcad460bb96e618823c`;
+  isolated standalone `17aa904f91350a24e98d895b767eabeaccffa98442855de89263bc7c55cb857c`.
+  This qualifies bounded ready-state R8 search consumption, not real recovery/expiry
+  or the complete release lifecycle matrix.
+- The ordinary standalone debug APK is restored with a preserving install. Both
+  portrait Home screens are checked; the foreground is TV-hosted MeiloX Home. Their
+  queues remain paused at 145670ms (standalone, seven entries) and 55536ms (parasite,
+  six entries), with null session errors. Original TV playback is STOPPED/empty.
+  Current app crash buffers are empty. MediaStore row 820 retains its TV owner,
+  22705573-byte size and pending=0; notification/microphone permissions are unchanged.
+  The rooted AVD stays running/awake; original standalone installation/data is untouched.
+- Framework-free startup,
+  original-install upgrade, real expiry/account switching, full release acceptance
+  and the remaining merge groups are not qualified by these fixtures. The current
+  repair neither reopens cloud/download investigation nor changes frontend behavior
+  unrelated to session recovery. Evidence stays under
+  `/tmp/meilox-search-recovery-*-2026-10-02*`, not Git.
 
 ## Acceptance and Remaining Decisions
 

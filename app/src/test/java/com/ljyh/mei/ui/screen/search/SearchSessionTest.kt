@@ -355,6 +355,118 @@ class SearchSessionTest {
         }
     }
 
+    @Test fun pendingStandaloneCookieRecoveryCannotLoadGuestSearchOrDiscovery() {
+        identity = SessionIdentity(0, false, false)
+        sessions.setRecoveryRequired(true)
+        var discoveries = 0
+        discovery = { discoveries++; discovery(it.identity.userId) }
+        checkModels { search, landing, _ ->
+            val owner = sessions.snapshot()
+            search.onSearchInit("music", 1)
+            search.updateInputQuery("music")
+            landing.refresh()
+            advanceTimeBy(301)
+            runCurrent()
+            assertTrue(source.requests.isEmpty())
+            assertTrue(source.suggestions.isEmpty())
+            assertEquals(0, discoveries)
+            assertNull(search.state.value.session)
+            assertTrue(search.state.value.result is Resource.Error)
+            assertTrue(search.searchSuggest.value is Resource.Error)
+            assertTrue(landing.state.value.error)
+            assertFalse(landing.state.value.loading)
+            assertNull(landing.state.value.discovery)
+
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            advanceTimeBy(301)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(listOf(1L), search.songIds())
+            assertEquals(1, source.requests.size)
+            assertEquals(1, source.suggestions.size)
+            assertEquals(1, discoveries)
+            assertFalse(landing.state.value.error)
+        }
+    }
+
+    @Test fun recoveryWithoutGenerationChangeRetiresResultsAndBlocksExplicitRetries() {
+        var discoveries = 0
+        discovery = { discoveries++; discovery(it.identity.userId) }
+        checkModels { search, landing, _ ->
+            search.onSearchInit("music", 1)
+            search.updateInputQuery("music")
+            advanceTimeBy(301)
+            runCurrent()
+            assertEquals(listOf(1L), search.songIds())
+            val owner = sessions.snapshot()
+            val requests = source.requests.size
+            val suggestions = source.suggestions.size
+            val discoveryRequests = discoveries
+
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertNull(search.state.value.session)
+            assertTrue(search.state.value.result is Resource.Error)
+            assertNull(landing.state.value.discovery)
+            assertTrue(landing.state.value.error)
+            search.onTabChange(SearchType.Playlist)
+            search.onSearchInit("latest", 1000)
+            search.updateInputQuery("latest")
+            landing.refresh()
+            advanceTimeBy(301)
+            runCurrent()
+            assertEquals(requests, source.requests.size)
+            assertEquals(suggestions, source.suggestions.size)
+            assertEquals(discoveryRequests, discoveries)
+            assertTrue(search.state.value.result is Resource.Error)
+            assertTrue(search.searchSuggest.value is Resource.Error)
+
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            advanceTimeBy(301)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(requests + 1, source.requests.size)
+            assertEquals("latest", source.requests.last().query)
+            assertEquals(1000, source.requests.last().type)
+            assertEquals(suggestions + 1, source.suggestions.size)
+            assertEquals("latest", source.suggestions.last().second)
+            assertEquals(discoveryRequests + 1, discoveries)
+            assertTrue(search.state.value.result is Resource.Success)
+        }
+    }
+
+    @Test fun recoveryRetiresNonCooperativeResultsSuggestionsAndDiscovery() {
+        val result = CompletableDeferred<SearchResult>()
+        val suggestion = CompletableDeferred<SearchSuggest>()
+        val personalized = CompletableDeferred<SearchDiscovery>()
+        checkModels { search, landing, _ ->
+            source.search = { withContext(NonCancellable) { Resource.Success(result.await()) } }
+            source.suggest = { withContext(NonCancellable) { Resource.Success(suggestion.await()) } }
+            discovery = { withContext(NonCancellable) { personalized.await() } }
+            try {
+                search.onSearchInit("music", 1)
+                search.updateInputQuery("music")
+                landing.refresh()
+                advanceTimeBy(301)
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+            } finally {
+                result.complete(page(listOf(99)))
+                suggestion.complete(suggestion("stale"))
+                personalized.complete(discovery(99))
+                runCurrent()
+            }
+            assertTrue(search.state.value.result is Resource.Error)
+            assertTrue(search.searchSuggest.value is Resource.Error)
+            assertNull(landing.state.value.discovery)
+            assertFalse(landing.state.value.loading)
+            assertTrue(landing.state.value.error)
+        }
+    }
+
     @Test fun discoveryFailurePreservesOnlyCurrentSessionContentAndCanRetry() {
         checkModels { _, landing, _ ->
             discovery = { error("Offline") }

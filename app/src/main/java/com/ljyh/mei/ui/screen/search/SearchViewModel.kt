@@ -58,7 +58,8 @@ class SearchViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { sessions.snapshot() }.getOrNull()
+                val stamp = if (sessions.recoveryRequired.value) null
+                    else runCatching { sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     synchronized(stateLock) { resetSession(null) }
                     resultJob?.cancel()
@@ -80,10 +81,14 @@ class SearchViewModel internal constructor(
         resultVersion++
         suggestionVersion++
         resultCache.clear()
-        val pending = if (sessions.recoveryRequired.value) Resource.Error("Official session recovery is required") else Resource.Loading
+        val pending = pendingResult()
         mutableState.value = SearchResultsState(session = stamp, query = state.value.query, type = state.value.type, result = pending)
         mutableSuggestions.value = pending
     }
+
+    private fun pendingResult(): Resource<Nothing> = if (sessions.recoveryRequired.value) {
+        Resource.Error("Official session recovery is required")
+    } else Resource.Loading
 
     fun updateInputQuery(query: String) {
         synchronized(stateLock) {
@@ -101,6 +106,7 @@ class SearchViewModel internal constructor(
             mutableState.value = SearchResultsState(
                 session = state.value.session, query = keyword,
                 type = SearchType.entries.firstOrNull { it.type == type && it != SearchType.History } ?: SearchType.Song,
+                result = pendingResult(),
             )
         }
         fetchResults()
@@ -110,7 +116,8 @@ class SearchViewModel internal constructor(
         if (type == SearchType.History) return
         synchronized(stateLock) {
             if (state.value.type == type) return
-            mutableState.value = SearchResultsState(session = state.value.session, query = state.value.query, type = type)
+            mutableState.value = SearchResultsState(session = state.value.session, query = state.value.query,
+                type = type, result = pendingResult())
         }
         fetchResults()
     }
@@ -123,10 +130,15 @@ class SearchViewModel internal constructor(
 
     private fun fetchResults(append: Boolean = false) {
         resultJob?.cancel()
+        if (sessions.recoveryRequired.value) {
+            synchronized(stateLock) { resetSession(null) }
+            return
+        }
         val current = state.value
         val stamp = current.session ?: return
         val version = runCatching {
             sessions.withCurrent(stamp) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     resultVersion++
                     if (!append) {
@@ -143,6 +155,7 @@ class SearchViewModel internal constructor(
         resultJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val response = repository.search(stamp, current.query, current.type.type, PAGE_SIZE, offset)
                 currentCoroutineContext().ensureActive()
                 when (response) {
@@ -183,6 +196,7 @@ class SearchViewModel internal constructor(
 
     private fun publish(stamp: SessionStamp, version: Long, update: (SearchResultsState) -> SearchResultsState) {
         sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (resultVersion == version) mutableState.value = update(state.value)
             }
@@ -192,15 +206,17 @@ class SearchViewModel internal constructor(
     private fun fetchSuggestions() {
         suggestionJob?.cancel()
         val (query, version) = synchronized(stateLock) {
-            mutableSuggestions.value = Resource.Loading
+            mutableSuggestions.value = pendingResult()
             inputQuery to ++suggestionVersion
         }
+        if (sessions.recoveryRequired.value) return
         val stamp = state.value.session ?: return
         if (query.isBlank()) return
         suggestionJob = viewModelScope.launch {
             try {
                 delay(300)
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val response = repository.searchSuggest(stamp, query)
                 currentCoroutineContext().ensureActive()
                 val checked = if (response is Resource.Success && response.data.code != 200) {
@@ -219,6 +235,7 @@ class SearchViewModel internal constructor(
 
     private fun publishSuggestions(stamp: SessionStamp, version: Long, result: Resource<SearchSuggest>) {
         sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (suggestionVersion == version) mutableSuggestions.value = result
             }
