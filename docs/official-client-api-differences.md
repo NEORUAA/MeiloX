@@ -2570,6 +2570,35 @@ These are integration differences, not server API semantics.
   Real expiry/logout/account-switch cooperation, complete server failures and release
   acceptance remain open. The independent effective-signing regression in ABI-015
   also remains open; this owner repair is not proof of restored EAPI/WeAPI wire modes.
+- Follow-up review on 2026-10-02 finds the same missing owner in active account detail,
+  account playlist, listening-rank and recent-history reads. All four now require the
+  triggering SessionStamp. AccountHome passes its published account stamp; History
+  passes its refresh stamp; both attempts of the original detail-path fallback retain
+  the owner. The shared dynamic request helpers no longer accept an omitted owner.
+  Business paths/fields and standalone signing/retry versus official-host dispatch
+  remain unchanged; the second detail business route is not a standalone transport.
+- Listening-rank presentation/cache now belongs to a session generation and target
+  user/period. Invalidation, recovery and account transitions retire its request and
+  cached rows; old responses and retained queue callbacks cannot populate or replay
+  replacement data. Public guest reads, both time periods, refresh and same-session
+  caching remain available. The original page, controls and queue body are retained.
+- Eleven ranking JVM cases and an additional history-owner assertion pass in both
+  variants. Seven additional AccountReadDeviceTest cases execute actual Repository,
+  Retrofit providers and session-bound substitute calls: exact original business
+  tuples/local-only tags, secondary detail path, stale/recovering/transition owners,
+  route-creation races, late responses, HTTP/business failure/retry and cancellation.
+  With the retained account and generic dynamic-request fixtures, 28 Android cases
+  pass per flavor (0.758s standalone, 0.717s parasite); the full JVM pair passes
+  951 standalone plus 974 parasite cases. No fixture changes real accounts, opens a
+  network socket, writes databases or establishes official-server statistics.
+- Both production R8 artifacts and all 42 local real-SDK release checks pass. The
+  ordinary parasite R8 is restored with development signing and portrait Home
+  startup. Both its shared MainActivity and standalone debug consume their existing
+  accounts' detail/playlists and switch weekly/all-time rank reads through the
+  original UI without playback or a probe activity. This qualifies bounded TV R8
+  read consumption, not new listening-statistics acceptance or updated standalone
+  R8/production-ID execution; the full paired account/history and real authorization
+  matrices remain separate.
 
 ### API-036: Standalone Photo Metadata Is Not Host Business Data
 

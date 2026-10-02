@@ -208,14 +208,17 @@ class MeloXRepository @Inject constructor(
             ?: error("NetEase account profile is unavailable")
     }
 
-    suspend fun accountDetail(userId: Long): AccountDetail {
+    suspend fun accountDetail(userId: Long, session: SessionStamp): AccountDetail {
+        require(userId > 0)
         val response = try {
-            validate(weapi.post("/weapi/v1/user/detail/$userId"))
+            requestOwned(weapi, "/weapi/v1/user/detail/$userId", emptyMap(), session)
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
+            if (error is com.ljyh.mei.data.session.SessionChangedException) throw error
             requestEapi(
                 "/api/w/v1/user/detail/$userId",
                 mapOf("all" to true, "userId" to userId),
+                session,
             )
         }
         val profile = parseAccountProfile(response.objectOrNull("profile"))
@@ -228,26 +231,29 @@ class MeloXRepository @Inject constructor(
         )
     }
 
-    suspend fun accountPlaylists(userId: Long, limit: Int = 2_000): List<AccountPlaylist> =
+    suspend fun accountPlaylists(userId: Long, session: SessionStamp, limit: Int = 2_000): List<AccountPlaylist> =
         request(
             "/api/user/playlist",
             mapOf("uid" to userId, "limit" to limit.coerceIn(1, 2_000), "offset" to 0, "includeVideo" to true),
+            session,
         ).array("playlist").mapNotNull(::parseAccountPlaylist)
 
-    suspend fun userPlayRecords(userId: Long, allTime: Boolean): List<UserPlayRecord> {
+    suspend fun userPlayRecords(userId: Long, allTime: Boolean, session: SessionStamp): List<UserPlayRecord> {
         val response = request(
             "/api/v1/play/record",
             mapOf("uid" to userId, "type" to if (allTime) 0 else 1),
+            session,
         )
         return response.array(if (allTime) "allData" else "weekData")
             .mapNotNull(::parseUserPlayRecord)
             .filter { it.song.id > 0 }
     }
 
-    suspend fun recentSongs(limit: Int = 100): List<AccountSong> {
+    suspend fun recentSongs(session: SessionStamp, limit: Int = 100): List<AccountSong> {
         val response = request(
             "/api/play-record/song/list",
             mapOf("limit" to limit.coerceIn(1, 100)),
+            session,
         )
         return response.objectOrNull("data")
             ?.array("list")
@@ -770,18 +776,17 @@ class MeloXRepository @Inject constructor(
     }
 
     private suspend fun request(
-        path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp? = null,
+        path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp,
     ): JsonObject {
-        val owner = session ?: sessions.snapshot()
         return MeloXRequestPolicy.request(
-            { requestOwned(weapi, path, body, owner) },
-            { requestOwned(eapi, path, body, owner) },
+            { requestOwned(weapi, path, body, session) },
+            { requestOwned(eapi, path, body, session) },
         )
     }
 
     private suspend fun requestEapi(
-        path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp? = null,
-    ): JsonObject = requestOwned(eapi, path, body, session ?: sessions.snapshot())
+        path: String, body: Map<String, Any> = emptyMap(), session: SessionStamp,
+    ): JsonObject = requestOwned(eapi, path, body, session)
 
     private suspend fun requestOwned(service: MeloXDirectService, path: String, body: Map<String, Any>,
         owner: SessionStamp): JsonObject {

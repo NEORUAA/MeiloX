@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`a82272fd` plus the log-sharing adaptation below. Source review is separate from
+`ae50555c` plus the account-record ownership adaptation below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -160,6 +160,7 @@ groups unless their source changes or a new failure is reproduced.
 | Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
 | Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
 | Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
+| Active account/detail/rank/history reads | Required dynamic owner tuples, generation-owned rank cache and retained queue callbacks reviewed and covered by paired tests below; original page/control bodies preserved | Listed consumers reviewed at source level; real account/expiry and complete runtime acceptance remain separate |
 | Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
@@ -2911,6 +2912,52 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   paired account/lifecycle/release qualification and remaining semantic merge groups
   stay open. Local evidence is `/tmp/meilox-log-share-*-2026-10-02*`; no device logs,
   credentials, official sources or APKs are committed.
+
+### D3/D4/D5/D6 Checkpoint: Account Detail and Record Request Ownership (2026-10-02)
+
+- Semantic merge review finds omitted owners in active account-detail, account-playlist,
+  listening-rank and recent-history calls. The Repository now requires their triggering
+  stamp, including both original detail routes. AccountHome and History pass the stamp
+  they already use to publish results. Dynamic request helpers cannot silently take a
+  later snapshot. API-035 is extended in place with this boundary and verification.
+- ListeningRankViewModel follows the existing session-owned consumer pattern: request,
+  target user, period, cache and click callbacks are generation-owned; invalidation
+  clears cached rows synchronously and recovery defers the remembered read. Retired
+  jobs cannot publish late results. Guest/public reads, same-owner caching, refresh,
+  both time periods and the original queue builder remain available. No layout,
+  navigation, resources, player/AutoMix/effects or unrelated main-only UI bug is changed.
+- Eleven ranking JVM cases and one additional history-owner case pass per variant.
+  The full pair passes 951 standalone and 974 parasite tests (1925), with zero
+  failures/errors/skips. The 19 account and nine generic dynamic-request Android
+  substitutes pass in both variants: 28 cases in 0.758s standalone and 0.717s parasite.
+  They use production Repository/Retrofit/provider/session guards but terminal fake
+  transports and synthetic identities, with no socket, database or account writes.
+- The first standalone instrumentation attempt fails to attach before Application;
+  system termination and an empty PID-scoped Java crash buffer are checked before
+  app-only retry. The retry runs all 28 cases successfully. No AVD restart, power,
+  timeout, global orientation or permission configuration is changed.
+- The final paired JVM/debug/AndroidTest/production R8 build succeeds in 4m39s
+  (267 tasks); all 42 real-SDK release checks pass. The ordinary probe-disabled
+  parasite R8 is development-signed and restored preserving data, with SHA-256
+  `28ce8eb86903a14b0381f839e0325022464109ffd7d762e25600e7fd6ebc0198`.
+  TV cold startup succeeds in 2756ms and its portrait MeiloX Home is inspected;
+  its PID-scoped Java crash buffer is empty. Its ordinary shared MainActivity
+  account page consumes real detail/playlist reads, and weekly/all-time rankings
+  load and switch through the original navigation, not a probe activity.
+  Standalone debug cold startup succeeds in 5872ms and consumes those same read
+  views through its unchanged UI. Neither flow starts playback. These show
+  pre-existing account records, not acceptance of this task's listening reports.
+  This qualifies the bounded TV R8 account/rank reads, not updated standalone R8,
+  production-ID execution or the complete paired account/history matrix.
+- The existing paused queues retain 55536ms/6 entries for parasite and 145670ms/7
+  entries for standalone, both error-null. Original TV playback remains stopped.
+  MediaStore row 820 retains size 22705573, TV ownership and pending=0. Standalone
+  notification/microphone permissions remain denied and the rooted AVD stays awake.
+- This closes a concrete source/contract gap, not the remaining real login/expiry,
+  cooperating social/Together, production upgrade/signing, framework-free startup,
+  full lifecycle/release and semantic merge gates. Evidence remains local under
+  `/tmp/meilox-account-read-*-2026-10-02*`; no credentials, device logs, official source
+  or artifacts enter Git.
 
 ## Acceptance and Remaining Decisions
 

@@ -65,11 +65,14 @@ import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.data.session.AccountStore
 import com.ljyh.mei.data.session.AccountState
 import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.di.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -130,8 +133,8 @@ class AccountHomeViewModel @Inject constructor(
                 val profile = account.profile ?: return@collectLatest
                 try {
                     val next = coroutineScope {
-                        val detail = async { runCatching { repository.accountDetail(profile.id) }.getOrNull() }
-                        val playlists = async { runCatching { repository.accountPlaylists(profile.id) }.getOrDefault(emptyList()) }
+                        val detail = async { runCatching { repository.accountDetail(profile.id, stamp) }.getOrNull() }
+                        val playlists = async { runCatching { repository.accountPlaylists(profile.id, stamp) }.getOrDefault(emptyList()) }
                         AccountHomeState(
                             profile,
                             detail.await()?.takeIf { it.profile.id == profile.id },
@@ -333,31 +336,112 @@ data class ListeningRankState(
     val records: List<UserPlayRecord> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
+    val userId: Long? = null,
+    val session: SessionStamp? = null,
+    val revision: Long = 0,
 )
 
-class ListeningRankViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class ListeningRankViewModel internal constructor(
+    private val loadRecords: suspend (Long, Boolean, SessionStamp) -> List<UserPlayRecord>,
+    private val sessions: SessionStore,
 ) : ViewModel() {
-    private val cache = mutableMapOf<ListeningPeriod, List<UserPlayRecord>>()
+    @Inject constructor(repository: MeloXRepository, sessions: SessionStore) : this(repository::userPlayRecords, sessions)
+    private val cache = mutableMapOf<Pair<Long, ListeningPeriod>, List<UserPlayRecord>>()
     private val _state = MutableStateFlow(ListeningRankState())
     val state: StateFlow<ListeningRankState> = _state
+    private val lock = Any()
+    private var revision = 0L
+    private var requested: Pair<Long, ListeningPeriod>? = null
+    private var loadJob: Job? = null
+    private val invalidation = sessions.onInvalidated { generation ->
+        synchronized(lock) {
+            if ((state.value.session?.generation ?: -1) < generation) clear()
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, recovery -> recovery }.collect { recovery ->
+                val owner = if (recovery) null else runCatching { sessions.snapshot() }.getOrNull()
+                if (owner == null) synchronized(lock) { clear() }
+                else if (state.value.session != owner) synchronized(lock) { requested }?.let { load(it.first, it.second) }
+            }
+        }
+    }
+
+    private fun clear() {
+        loadJob?.cancel()
+        loadJob = null
+        cache.clear()
+        _state.value = ListeningRankState(
+            period = requested?.second ?: state.value.period,
+            loading = false, userId = requested?.first, revision = ++revision,
+            error = if (sessions.recoveryRequired.value) "Session recovery is required" else null,
+        )
+    }
 
     fun load(userId: Long, period: ListeningPeriod, force: Boolean = false) {
-        if (!force && cache.containsKey(period)) {
-            _state.value = ListeningRankState(period, cache.getValue(period), loading = false)
-            return
-        }
-        viewModelScope.launch {
-            _state.value = _state.value.copy(period = period, loading = true, error = null)
-            runCatching { repository.userPlayRecords(userId, period == ListeningPeriod.AllTime) }
-                .onSuccess {
-                    cache[period] = it
-                    _state.value = ListeningRankState(period, it, loading = false)
+        synchronized(lock) { requested = userId to period }
+        if (sessions.recoveryRequired.value) return
+        val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
+        val job = runCatching {
+            sessions.withCurrent(owner) {
+                synchronized(lock) {
+                    if (sessions.recoveryRequired.value) return@synchronized null
+                    if (state.value.session != owner) clear()
+                    if (!force && state.value.userId == userId && state.value.period == period && state.value.loading) return@synchronized null
+                    loadJob?.cancel()
+                    val key = userId to period
+                    val cached = cache[key].takeUnless { force }
+                    val expected = ListeningRankState(
+                        period, cached ?: state.value.records.takeIf { state.value.userId == userId }.orEmpty(),
+                        loading = cached == null, userId = userId, session = owner, revision = ++revision,
+                    )
+                    _state.value = expected
+                    if (cached != null) { loadJob = null; return@synchronized null }
+                    viewModelScope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            currentCoroutineContext().ensureActive()
+                            sessions.requireCurrent(owner)
+                            check(!sessions.recoveryRequired.value) { "Session recovery is required" }
+                            val records = loadRecords(userId, period == ListeningPeriod.AllTime, owner)
+                            currentCoroutineContext().ensureActive()
+                            withCurrent(expected) {
+                                cache[key] = records
+                                _state.value = expected.copy(records = records, loading = false)
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            withCurrent(expected) { _state.value = expected.copy(loading = false, error = error.message) }
+                        } finally {
+                            synchronized(lock) { if (revision == expected.revision) loadJob = null }
+                        }
+                    }.also { loadJob = it }
                 }
-                .onFailure {
-                    _state.value = _state.value.copy(loading = false, error = it.message)
+            }
+        }.getOrNull()
+        job?.start()
+    }
+
+    fun withCurrent(expected: ListeningRankState, action: () -> Unit) {
+        val owner = expected.session ?: return
+        runCatching {
+            sessions.withCurrent(owner) {
+                synchronized(lock) {
+                    val current = state.value
+                    if (!sessions.recoveryRequired.value && current.revision == expected.revision &&
+                        current.session == owner && current.userId == expected.userId && current.period == expected.period &&
+                        current.records == expected.records) action()
                 }
+            }
         }
+    }
+
+    override fun onCleared() {
+        invalidation.close()
+        synchronized(lock) { clear() }
+        super.onCleared()
     }
 }
 
@@ -446,7 +530,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = viewMo
                                 )
                             }
                         },
-                        onClick = {
+                        onClick = { viewModel.withCurrent(state) {
                             playerConnection?.playQueue(
                                 ListQueue(
                                     id = "account-rank-${state.period.name}",
@@ -455,7 +539,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = viewMo
                                     startIndex = index,
                                 ),
                             )
-                        },
+                        } },
                     )
                 }
             }

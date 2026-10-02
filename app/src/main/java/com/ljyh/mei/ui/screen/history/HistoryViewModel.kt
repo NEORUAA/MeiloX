@@ -40,11 +40,11 @@ data class HistoryUiState(
 
 class HistoryViewModel internal constructor(
     private val localRepository: HistoryRepository,
-    private val loadRecent: suspend () -> List<AccountSong>,
+    private val loadRecent: suspend (SessionStamp) -> List<AccountSong>,
     private val accounts: AccountStore,
 ) : ViewModel() {
     @Inject constructor(localRepository: HistoryRepository, remoteRepository: MeloXRepository, accounts: AccountStore) :
-        this(localRepository, { remoteRepository.recentSongs() }, accounts)
+        this(localRepository, { owner -> remoteRepository.recentSongs(owner) }, accounts)
     private val _state = MutableStateFlow(HistoryUiState(isRefreshing = true))
     val state: StateFlow<HistoryUiState> = _state
 
@@ -98,7 +98,7 @@ class HistoryViewModel internal constructor(
             publish()
             try {
                 accounts.sessions.requireCurrent(stamp)
-                val songs = loadRecent()
+                val songs = loadRecent(stamp)
                 val entries = songs.map(AccountSong::toListeningHistoryEntry)
                 currentCoroutineContext().ensureActive()
                 accounts.sessions.withCurrent(stamp) {

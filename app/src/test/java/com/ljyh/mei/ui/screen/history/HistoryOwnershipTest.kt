@@ -8,6 +8,7 @@ import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.session.AccountStore
 import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.di.dao.HistoryDao
 import com.ljyh.mei.di.dao.SongDao
@@ -144,6 +145,18 @@ class HistoryOwnershipTest {
         }
     }
 
+    @Test fun remoteHistoryReceivesItsTriggeringSessionAcrossReauthorization() = runTest {
+        withFixture { f ->
+            runCurrent()
+            val first = f.sessions.snapshot()
+            assertEquals(listOf(first), f.owners)
+            f.sessions.invalidate()
+            runCurrent()
+            assertEquals(listOf(first, f.sessions.snapshot()), f.owners)
+            assertNotEquals(f.owners.first(), f.owners.last())
+        }
+    }
+
     private suspend fun TestScope.withFixture(block: suspend (Fixture) -> Unit) {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val fixture = Fixture(this)
@@ -165,8 +178,9 @@ class HistoryOwnershipTest {
             AccountProfile(identity.userId, "Fixture", null, null, null, null, null, null, null, null)
         }, scope.backgroundScope)
         var calls = 0
+        val owners = mutableListOf<SessionStamp>()
         var loadRecent: suspend () -> List<AccountSong> = { emptyList() }
-        val model = HistoryViewModel(HistoryRepository(dao, unused, sessions), { calls++; loadRecent() }, accounts)
+        val model = HistoryViewModel(HistoryRepository(dao, unused, sessions), { owner -> owners += owner; calls++; loadRecent() }, accounts)
         private val store = ViewModelStore().apply { put("history", model) }
         fun close() { store.clear(); accounts.close() }
     }

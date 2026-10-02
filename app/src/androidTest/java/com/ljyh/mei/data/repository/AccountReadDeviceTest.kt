@@ -3,6 +3,7 @@ package com.ljyh.mei.data.repository
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
@@ -37,6 +38,110 @@ import org.junit.Test
 
 /** Production account/library reads with synthetic sessions and transports; no server or DB writes. */
 class AccountReadDeviceTest {
+    @Test fun dynamicAccountReadsKeepOriginalBusinessFieldsAndTheTriggeringOwner() = runBlocking {
+        val f = DynamicFixture()
+        for (action in listOf("detail", "playlists", "week", "all", "recent")) f.read(action)
+        val prefix = if (BuildConfig.FLAVOR == "standalone") "/weapi" else "/api"
+        assertEquals(listOf("/weapi/v1/user/detail/17", "$prefix/user/playlist", "$prefix/v1/play/record",
+            "$prefix/v1/play/record", "$prefix/play-record/song/list"), f.requests.map { it.url.encodedPath })
+        assertEquals(listOf(emptySet<String>(), setOf("uid", "limit", "offset", "includeVideo"),
+            setOf("uid", "type"), setOf("uid", "type"), setOf("limit")), f.requests.map { fields(it).keySet() })
+        assertEquals(17L, fields(f.requests[1]).get("uid").asLong)
+        assertEquals(2000, fields(f.requests[1]).get("limit").asInt)
+        assertEquals(0, fields(f.requests[1]).get("offset").asInt)
+        assertTrue(fields(f.requests[1]).get("includeVideo").asBoolean)
+        assertEquals(1, fields(f.requests[2]).get("type").asInt)
+        assertEquals(0, fields(f.requests[3]).get("type").asInt)
+        assertEquals(100, fields(f.requests[4]).get("limit").asInt)
+        assertTrue(f.created.all { it.tag(SessionStamp::class.java) == f.owner })
+        assertTrue(f.requests.all { it.tag(SessionStamp::class.java) == f.owner && it.method == "POST" &&
+            it.header("Cookie") == null && it.header("Authorization") == null && it.url.query == null })
+    }
+
+    @Test fun originalDetailFallbackRetainsTheOwnerAndSupplementalBody() = runBlocking {
+        val f = DynamicFixture()
+        f.reply = { if (it.url.encodedPath.startsWith("/weapi/")) """{"code":403}""" else f.success() }
+        f.read("detail")
+        assertEquals(listOf("/weapi/v1/user/detail/17",
+            if (BuildConfig.FLAVOR == "standalone") "/eapi/w/v1/user/detail/17" else "/api/w/v1/user/detail/17"),
+            f.requests.map { it.url.encodedPath })
+        assertEquals(setOf("all", "userId"), fields(f.requests.last()).keySet())
+        assertEquals(17L, fields(f.requests.last()).get("userId").asLong)
+        assertTrue(fields(f.requests.last()).get("all").asBoolean)
+        assertTrue(f.requests.all { it.tag(SessionStamp::class.java) == f.owner })
+    }
+
+    @Test fun staleRecoveringAndTransitioningDynamicAccountReadsNeverCreateRoutes() = runBlocking {
+        for (action in listOf("detail", "playlists", "week", "recent")) for (state in listOf("stale", "recovery", "transition")) {
+            val f = DynamicFixture()
+            val transition = if (state == "transition") f.sessions.beginTransition() else null
+            try {
+                if (state == "stale") f.sessions.invalidate()
+                if (state == "recovery") f.sessions.setRecoveryRequired(true)
+                assertTrue(runCatching { f.read(action) }.isFailure)
+                assertTrue(f.created.isEmpty())
+                assertTrue(f.requests.isEmpty())
+            } finally { transition?.close() }
+        }
+    }
+
+    @Test fun dynamicAccountRouteCreationCannotBorrowANewGeneration() = runBlocking {
+        for (action in listOf("detail", "playlists", "week", "recent")) for (replace in listOf(false, true)) {
+            val f = DynamicFixture()
+            f.onCreate = { if (replace) f.identity = SessionIdentity(18, true, false); f.sessions.invalidate() }
+            assertTrue(runCatching { f.read(action) }.exceptionOrNull() is SessionChangedException)
+            assertEquals(f.owner, f.created.single().tag(SessionStamp::class.java))
+            assertTrue(f.requests.isEmpty())
+        }
+    }
+
+    @Test fun lateDynamicAccountResponsesCannotSucceedOrReachAnAlternative() = runBlocking {
+        for (action in listOf("detail", "playlists", "week", "recent")) for (change in listOf("replace", "reauthorize", "recovery")) {
+            val f = DynamicFixture()
+            f.onEnqueue = { call, callback ->
+                if (change == "recovery") f.sessions.setRecoveryRequired(true)
+                else { if (change == "replace") f.identity = SessionIdentity(18, true, false); f.sessions.invalidate() }
+                callback.onResponse(call, f.response(call.request(), f.success()))
+            }
+            assertTrue(runCatching { f.read(action) }.isFailure)
+            assertEquals(1, f.created.size)
+            assertEquals(1, f.requests.size)
+        }
+    }
+
+    @Test fun dynamicAccountHttpAndBusinessFailuresRetainRuntimeRetrySemantics() = runBlocking {
+        for (action in listOf("detail", "playlists", "week", "recent")) for (httpFailure in listOf(false, true)) {
+            val f = DynamicFixture()
+            f.httpCode = if (httpFailure) 503 else 200
+            f.reply = { """{"code":403}""" }
+            assertTrue(runCatching { f.read(action) }.isFailure)
+            val attempts = if (action == "detail" || BuildConfig.FLAVOR == "standalone") 2 else 1
+            assertEquals(attempts, f.requests.size)
+            f.httpCode = 200
+            f.reply = { f.success() }
+            f.read(action)
+            assertEquals(attempts + 1, f.requests.size)
+            assertTrue(f.requests.all { it.tag(SessionStamp::class.java) == f.owner })
+        }
+    }
+
+    @Test fun canceledDynamicAccountReadsDiscardLateCallbacksWithoutRetry() = runBlocking {
+        for (action in listOf("detail", "playlists", "week", "recent")) {
+            val f = DynamicFixture()
+            val started = CompletableDeferred<Unit>()
+            var pending: Pair<Call, Callback>? = null
+            f.onEnqueue = { call, callback -> pending = call to callback; started.complete(Unit) }
+            val result = async { f.read(action) }
+            started.await()
+            result.cancel()
+            result.join()
+            val (call, callback) = requireNotNull(pending)
+            callback.onResponse(call, f.response(call.request(), f.success()))
+            assertTrue(result.isCancelled)
+            assertEquals(1, f.requests.size)
+        }
+    }
+
     @Test fun profileAndItsOriginalFallbackKeepTheSameOwner() = runBlocking {
         val f = ProfileFixture()
         assertEquals(17L, f.repository.accountProfile(f.owner).id)
@@ -210,6 +315,43 @@ class AccountReadDeviceTest {
             assertTrue(result.isCancelled)
             assertEquals(1, f.requests.size)
         }
+    }
+
+    private class DynamicFixture {
+        var identity = SessionIdentity(17, true, false)
+        val sessions = SessionStore().apply { bind { identity } }
+        val owner = sessions.snapshot()
+        val created = mutableListOf<Request>()
+        val requests = mutableListOf<Request>()
+        var onCreate: () -> Unit = {}
+        var httpCode = 200
+        var reply: (Request) -> String = { success() }
+        var onEnqueue: (Call, Callback) -> Unit = { call, callback -> callback.onResponse(call, response(call.request(), reply(call.request()))) }
+        private val client = OkHttpClient()
+        private val bound = SessionCallFactory(sessions, Call.Factory { request ->
+            requests += request
+            object : Call by client.newCall(request) {
+                override fun execute(): Response = error("Unexpected blocking request")
+                override fun enqueue(responseCallback: Callback) = onEnqueue(this, responseCallback)
+            }
+        })
+        private val calls = Call.Factory { request -> created += request; onCreate(); bound.newCall(request) }
+        private val eapi = RetrofitModule.provideMeloXEapiService(RetrofitModule.provideRetrofit(calls))
+        private val weapi = RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(calls))
+        val repository = MeloXRepository(eapi, weapi, InstrumentationRegistry.getInstrumentation().targetContext, sessions,
+            CloudUploadCoordinator(eapi, weapi, sessions, unused<CloudBinaryUploader>()), CloudLibraryBackend(weapi, sessions, eapi))
+        suspend fun read(action: String) {
+            when (action) {
+                "detail" -> assertEquals(17L, repository.accountDetail(17, owner).profile.id)
+                "playlists" -> assertTrue(repository.accountPlaylists(17, owner).isEmpty())
+                "week", "all" -> assertTrue(repository.userPlayRecords(17, action == "all", owner).isEmpty())
+                "recent" -> assertTrue(repository.recentSongs(owner).isEmpty())
+                else -> error("Unknown closed fixture")
+            }
+        }
+        fun success() = """{"code":200,"profile":{"userId":17,"nickname":"Fixture"},"playlist":[],"weekData":[],"allData":[],"data":{"list":[]}}"""
+        fun response(request: Request, text: String) = Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+            .code(httpCode).message("Fixture").body(text.toResponseBody("application/json".toMediaType())).build()
     }
 
     private class ProfileFixture {
