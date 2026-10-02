@@ -181,6 +181,17 @@ jobs:
               test "$("$analyzer" files cat --file /META-INF/xposed/scope.list "$file")" = com.netease.cloudmusic.tv
               test "$("$analyzer" files cat --file /META-INF/xposed/module.prop "$file")" = $'minApiVersion=102\ntargetApiVersion=102\nstaticScope=true\nautoHotReload=false'
               "$analyzer" dex code --class com.ljyh.mei.parasite.MeiloXModule "$file" > /dev/null
+              local state_type state_code
+              for state_type in \
+                androidx.compose.runtime.ParcelableSnapshotMutableFloatState \
+                androidx.compose.runtime.ParcelableSnapshotMutableIntState \
+                androidx.compose.runtime.ParcelableSnapshotMutableLongState \
+                androidx.compose.runtime.ParcelableSnapshotMutableState \
+                androidx.compose.runtime.snapshots.SnapshotStateList; do
+                state_code="$("$analyzer" dex code --class "$state_type" "$file")"
+                grep -Fxq '.implements Landroid/os/Parcelable;' <<< "$state_code"
+                grep -Fxq '.field public static final CREATOR:Landroid/os/Parcelable$Creator;' <<< "$state_code"
+              done
             fi
           }
           verify_apk "$STANDALONE_SIGNED_RELEASE_FILE" com.neoruaa.meilox

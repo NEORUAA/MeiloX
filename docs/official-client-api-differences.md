@@ -3273,6 +3273,30 @@ These are integration differences, not server API semantics.
   compatibility remain unqualified. Ordinary updates still require host restart;
   this does not authorize generic state clearing, hot reload or unrelated frontend
   repairs. No credentials, official sources, APKs or device logs are committed.
+- Offline wire-identity follow-up: SDK retrace with the matching R8 map places the
+  PID 1681 failure in Compose's DisposableSaveableStateRegistry Bundle-to-map read.
+  Actual pre-rule APK DEX also proves incompatible alias reuse: old `z99` writes
+  an Object via Parcel.writeValue plus an integer policy; new `z99` is the Long
+  state and its CREATOR reads a long. The Float/Int/Long/generic state aliases shift
+  from `w99/x99/y99/z99` to `x99/y99/z99/aa9`. This demonstrates a real wire-name
+  hazard; the failed Bundle's exact contents were not captured, so it does not
+  establish that this was the sole cause of that crash.
+- Parasite-only R8 rules now retain the four ParcelableSnapshotMutable*State names
+  and SnapshotStateList. Existing CREATOR rules remain, shrinking is allowed, and
+  release minification stays enabled. This prevents those five wire identities
+  from being reassigned to other types in later builds. Host/module ReportFragment
+  isolation stays unchanged, including the module's distinct `v` name. Standalone R8 rules,
+  dependencies and shared frontend are untouched. Old obfuscated task names are
+  not retroactively migrated; module update still requires host restart.
+- The existing CI signed-pair verifier now rejects any missing/renamed state type,
+  non-Parcelable class or wrong platform CREATOR field in parasite only. Seven
+  negative fixtures and the actual unsigned/signed APK checks pass: 64 local PASS
+  lines in total, with temporary fixture keys removed and no remote run. The new
+  APK is installed preserving module data, then the host is restarted normally.
+  Its same-APK task 1392, saved at 4692 bytes, restores the original detail and rows
+  after PID 7400 is killed and new PID 8142 starts. Inspected screenshots and the
+  empty current-PID crash buffer qualify that scenario; paused position 178897ms
+  and 11 queue entries persist. Full cross-artifact restoration remains unqualified.
 
 ## Adding an Entry
 

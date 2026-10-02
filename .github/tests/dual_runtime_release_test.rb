@@ -23,6 +23,13 @@ MODULE_FILES = {
   '/META-INF/xposed/scope.list' => "com.netease.cloudmusic.tv\n",
   '/META-INF/xposed/module.prop' => "minApiVersion=102\ntargetApiVersion=102\nstaticScope=true\nautoHotReload=false\n"
 }.freeze
+PARASITE_SAVED_STATE_TYPES = %w[
+  androidx.compose.runtime.ParcelableSnapshotMutableFloatState
+  androidx.compose.runtime.ParcelableSnapshotMutableIntState
+  androidx.compose.runtime.ParcelableSnapshotMutableLongState
+  androidx.compose.runtime.ParcelableSnapshotMutableState
+  androidx.compose.runtime.snapshots.SnapshotStateList
+].freeze
 
 def check(condition, message)
   raise message unless condition
@@ -30,6 +37,15 @@ end
 
 def test_built_apks
   sdk = ENV.fetch('ANDROID_HOME')
+  analyzer = File.join(sdk, 'cmdline-tools/latest/bin/apkanalyzer')
+  parasite = File.join(ROOT, 'app/build/outputs/apk/parasite/release/app-parasite-release-unsigned.apk')
+  PARASITE_SAVED_STATE_TYPES.each do |name|
+    stdout, stderr, status = Open3.capture3(analyzer, 'dex', 'code', '--class', name, parasite)
+    check(status.success? && stdout.include?('.implements Landroid/os/Parcelable;') &&
+          stdout.match?(/\.field public static final CREATOR:Landroid\/os\/Parcelable\$Creator;/),
+          "Preserve parasite saved-state Parcelable name and CREATOR for #{name}: #{stderr}")
+  end
+  puts 'PASS built APK: stable parasite Compose saved-state Parcelable names and platform CREATOR fields'
   Dir.mktmpdir('meilox-release-pair-') do |directory|
     outputs = File.join(directory, 'outputs')
     stdout, stderr, status = execute(METADATA, ROOT, 'GITHUB_OUTPUT' => outputs, 'GITHUB_RUN_NUMBER' => '42')
@@ -219,8 +235,12 @@ def signed_fixture(directory)
           print document.fetch('files').fetch(ARGV[-2]) { abort 'Missing declared module file' }
         end
       when 'dex'
-        abort 'Wrong module class check' unless ARGV[0...-1] == %w[dex code --class com.ljyh.mei.parasite.MeiloXModule]
-        exit(document.fetch('module-class') ? 0 : 1)
+        abort 'Wrong class inspection command' unless ARGV[0...-2] == %w[dex code --class]
+        name = ARGV[-2]
+        if name == 'com.ljyh.mei.parasite.MeiloXModule'
+          exit(document.fetch('module-class') ? 0 : 1)
+        end
+        print document.fetch('saved-state-classes', {}).fetch(name) { abort 'Missing saved-state class' }
       else
         abort 'Unexpected analyzer command'
       end
@@ -240,6 +260,9 @@ def signed_fixture(directory)
                                   'manifest' => manifest_fixture(flavor),
                                   'files' => flavor == 'parasite' ? MODULE_FILES : {},
                                   'module-class' => flavor == 'parasite',
+                                  'saved-state-classes' => flavor == 'parasite' ? PARASITE_SAVED_STATE_TYPES.to_h { |name|
+                                    [name, ".implements Landroid/os/Parcelable;\n.field public static final CREATOR:Landroid/os/Parcelable$Creator;\n"]
+                                  } : {},
                                   'signature' => true, 'aligned' => true))
     [flavor, path]
   end
@@ -398,6 +421,26 @@ test_prepare('declared module class absent from DEX', valid: false) do |paths, _
   document = JSON.parse(File.read(path))
   document['module-class'] = false
   File.write(path, JSON.generate(document))
+end
+PARASITE_SAVED_STATE_TYPES.each do |name|
+  test_prepare("renamed saved-state class #{name}", valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    classes = document.fetch('saved-state-classes')
+    classes['obfuscated'] = classes.delete(name)
+    File.write(path, JSON.generate(document))
+  end
+end
+{ 'not Parcelable' => ['.implements Landroid/os/Parcelable;', '.implements Ljava/io/Serializable;'],
+  'wrong CREATOR type' => ['CREATOR:Landroid/os/Parcelable$Creator;', 'CREATOR:Ljava/lang/Object;'] }.each do |name, (from, to)|
+  test_prepare("saved-state class #{name}", valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    classes = document.fetch('saved-state-classes')
+    type = 'androidx.compose.runtime.ParcelableSnapshotMutableState'
+    classes[type] = classes.fetch(type).sub(from, to)
+    File.write(path, JSON.generate(document))
+  end
 end
 FLAVORS.each do |flavor|
   test_prepare("#{flavor} file inspection failure", valid: false) do |paths, _|

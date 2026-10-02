@@ -4000,6 +4000,47 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   This closes only the reproduced host Fragment conflict and named same-artifact
   recreation scenarios; cross-artifact restore and all other D2-D6 gates remain open.
 
+#### Stable Parcelable Wire Identities (2026-10-03)
+
+- Offline analysis of the preserved PID 1681 crash uses the matching R8 map and
+  SDK retrace, locating Compose's saved-state Bundle-to-map read. Actual pre-rule
+  APK DEX confirms alias `z99` changes from generic state (writeValue plus policy)
+  to Long state (readLong); primitive aliases also shift. This is demonstrated
+  Parcelable wire-identity incompatibility, not proof of the failed Bundle's exact
+  contents or of a sole cause. ABI-021 records that distinction.
+- Two parasite-only keepnames rules retain the four Compose mutable-state
+  Parcelables and SnapshotStateList without disabling release minification or
+  resource shrinking.
+  Module ReportFragment remains its distinct `v`; its host isolation adapter is
+  unchanged. No shared frontend, standalone R8 rule, dependency or manifest changes.
+- The existing CI signed-pair preparation checks each of those five actual DEX
+  classes, its Parcelable interface and platform CREATOR field. Seven negative
+  fixtures cover each renamed class, a non-Parcelable type and a wrong CREATOR.
+  The new actual-APK gate fails on the pre-rule artifact as expected and passes
+  after the build. `ruby -c` and all 64 local release checks pass; no remote CI runs.
+  ParasiteRelease builds in 3m44s; signature and 16KB alignment pass with the existing
+  development certificate. Standalone's unsigned artifact remains unchanged at
+  `bdd08b9503c310ade417508af5125039008c02be55cddfff289077bdc936f50a`.
+- New parasite unsigned SHA-256:
+  `e0408a11e931701bb417ebd67974e25dac6294715476ce44dee31af07c23c3df`;
+  signed validation SHA-256:
+  `d5c9667b2c1b3854ca39fafa9902d603cfbfeadb4e3588628db87fcb7cebce03`.
+  Its installed hash matches. Preserving install followed by the documented host
+  restart reaches original portrait Home in PID 7400 (COLD, 5107ms). Original
+  subscribed detail is then saved in STOPPED task 1392 (4692 bytes); background
+  `am kill` removes PID 7400 without an APK change. New PID 8142 restores the same
+  task/detail/artwork/92-program rows (COLD, 1658ms); before/after screenshots are
+  inspected and both current-PID crash buffers are empty. These launch samples are
+  not a timing fix or attribution of earlier startup timeouts. MeiloX remains
+  paused at 178897ms with 11 entries; native TV remains stopped/inactive and empty.
+  No playback, quota-consuming test download, subscription/account mutation or
+  Cookie import is initiated.
+- TV is returned to original portrait Home paused. Evidence remains outside Git at
+  `/tmp/meilox-r8-stable-parcelable-*2026-10-03*` and the preserved lifecycle trace
+  paths above. No old alias migration or generic Bundle clearing is introduced;
+  cold update restart remains required. Same-artifact recreation and future naming
+  guards do not qualify full cross-artifact task restoration or the other D2-D6 gates.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

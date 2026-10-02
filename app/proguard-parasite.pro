@@ -11,3 +11,8 @@
 }
 
 -keep class com.ljyh.mei.parasite.MeiloXModule { public <init>(); }
+
+# Android saves Parcelable class names in the host task. Keep these wire identities
+# stable so another R8 build cannot select an unrelated state type's CREATOR.
+-keepnames class androidx.compose.runtime.ParcelableSnapshotMutable*State
+-keepnames class androidx.compose.runtime.snapshots.SnapshotStateList
