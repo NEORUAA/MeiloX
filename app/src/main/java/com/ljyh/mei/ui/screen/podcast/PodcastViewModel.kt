@@ -113,23 +113,38 @@ class PodcastViewModel internal constructor(
     }
 
     fun withCurrent(expected: PodcastUiState, podcastId: Long, action: () -> Unit) {
+        dispatchCurrent(expected) { stamp ->
+            val visible = if (expected.selectedTab == PodcastTab.Subscriptions) {
+                if (!stamp.identity.authenticated || stamp.identity.anonymous || stamp.identity.userId <= 0) {
+                    return@dispatchCurrent
+                }
+                expected.subscribedPodcasts
+            } else {
+                val recommendations = if (expected.selectedCategoryId == null) {
+                    expected.home?.personalized.orEmpty()
+                } else expected.categoryPodcasts
+                recommendations + expected.home?.featured.orEmpty()
+            }
+            if (visible.any { it.id == podcastId }) action()
+        }
+    }
+
+    fun withCurrentSubscription(expected: PodcastUiState, podcastId: Long, action: () -> Unit) {
+        // Library consumes subscriptions independently of the podcast screen's selected tab.
+        dispatchCurrent(expected) { stamp ->
+            if (!stamp.identity.authenticated || stamp.identity.anonymous || stamp.identity.userId <= 0 ||
+                !expected.subscriptionsLoaded) return@dispatchCurrent
+            if (expected.subscribedPodcasts.any { it.id == podcastId }) action()
+        }
+    }
+
+    private fun dispatchCurrent(expected: PodcastUiState, action: (SessionStamp) -> Unit) {
         val stamp = expected.session ?: return
         runCatching {
             accounts.sessions.withCurrent(stamp) {
                 synchronized(stateLock) {
                     if (accounts.sessions.recoveryRequired.value || state.value !== expected) return@synchronized
-                    val visible = if (expected.selectedTab == PodcastTab.Subscriptions) {
-                        if (!stamp.identity.authenticated || stamp.identity.anonymous || stamp.identity.userId <= 0) {
-                            return@synchronized
-                        }
-                        expected.subscribedPodcasts
-                    } else {
-                        val recommendations = if (expected.selectedCategoryId == null) {
-                            expected.home?.personalized.orEmpty()
-                        } else expected.categoryPodcasts
-                        recommendations + expected.home?.featured.orEmpty()
-                    }
-                    if (visible.any { it.id == podcastId }) action()
+                    action(stamp)
                 }
             }
         }

@@ -126,7 +126,7 @@ D1 and D2 may be split into smaller compilable commits. Existing verified host w
 not discarded or restarted. Further endpoint migration must use the dual-backend
 boundary rather than adding new mandatory `Host*` dependencies to common consumers.
 
-### Current Exit-Gate Summary (2026-10-02)
+### Current Exit-Gate Summary (2026-10-03)
 
 Historical checkpoints below record bounded evidence, not additional milestones.
 The latest acceptance state is:
@@ -3794,6 +3794,75 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   reproduction and a scoped migration repair remain open; no original layout change
   is authorized by this observation. Existing D2-D6 real-account, upgrade, capability,
   framework-free, server and playback/startup-attribution gates remain open.
+
+### D3/D5/D6 Checkpoint: Library Subscription Navigation Ownership (2026-10-03)
+
+- The separate LibraryMobileLayout subscription row recorded above is reproduced
+  using its original rendered ClickableElement callback and navigator, with synthetic
+  identities and closed sources. Before production changes, a corrected two-case run
+  passes ready-state navigation but fails account replacement: the retired callback
+  enters `podcast/91` instead of remaining at the fixture root. An earlier fixture
+  teardown failure is corrected by disposing content before clearing its default
+  model store; it is not attributed to production behavior.
+- Library requests subscriptions without selecting PodcastTab.Subscriptions. A
+  tab-based guard would therefore break valid Library clicks. Its original row now
+  calls PodcastViewModel.withCurrentSubscription, checking the exact rendered state,
+  current authenticated session, recovery, loaded subscriptions and membership.
+  Existing podcast-screen dispatch shares only the session/state gate and retains
+  its tab/category membership policy. Routes, layout, controls, endpoints, DTOs,
+  backend bindings and playback are unchanged. This repairs migration-owned account
+  intent, not a main-only frontend issue.
+- Five new focused JVM cases cover independent discovery/subscription membership,
+  refresh/removal, same-stamp recovery/reauthorization, replacement/logout and clearing.
+  PodcastSessionTest passes 45 cases per flavor, zero failures/errors/skips. The
+  paired debug/test build passes in 37s (160 tasks).
+- Library adds nine original-layout native cases per flavor: current/default-tab
+  navigation, guest policy, replacement, reauthorization, recovery, equal immediate
+  refresh, pending refresh, removal and clearing. The existing 27 original-podcast
+  cases also pass after the shared gate extraction. Final serial execution passes
+  36 cases in parasite (175.657s) and 36 in standalone (317.392s). A prior overlapping
+  scheduling attempt and separate failed-attach/process-crashed startup attempts
+  are excluded from acceptance. They remain separate logs, not silently counted as
+  successful tests or attributed to this business change. The long test times do
+  not qualify startup or rendering performance. Standalone fixture bootstrap is
+  offline; parasite fixtures run in the module process, not the TV host. Inactive
+  overlays use explicit models and fail-closed dependencies, with no production graph,
+  player connection, credentials or real transport.
+- Both production R8 artifacts build in 4m38s (107 tasks), including vital lint;
+  all 56 local real-SDK release/signing/identity/version/declaration/16KB gates pass.
+  Unsigned standalone SHA-256 is
+  `bdd08b9503c310ade417508af5125039008c02be55cddfff289077bdc936f50a`,
+  parasite `37539bce4ec3f80db6cf8392574bba145f03a0417d0044a0b564b2ce257e1633`.
+  The compatible development-signed parasite is
+  `bacec67217bee6422967eb5d241b208d4c5de593bbd1a7f5250314e2fd32633c`;
+  signature/alignment and its installed hash match. API 102 metadata retains static
+  TV-only scope and disabled hot reload. No framework hook is added.
+- The ordinary isolated standalone debug installation remains current, SHA-256
+  `605a98fde598e40ce40104c81b18a8871c02edd348bfe383b0fb192fd3891992`.
+  Its app-only cold start reports 12318ms. With its existing account, the original
+  Library shows seven subscribed rows; an actual pointer click opens the first
+  detail with artwork, a 2515-program total and visible rows. This is current debug
+  positive read/navigation evidence, not a newly installed standalone R8 artifact,
+  all-program pagination, real account transitions or production-ID upgrade.
+- The new parasite R8 module is preserving-installed and the TV app is restarted.
+  Its cold start reports 4695ms and shows portrait original MeiloX Home/glass. An
+  actual Library subscription-row click opens the original detail with artwork,
+  a 92-program total and visible rows. These samples do not resolve intermittent
+  startup failure or qualify retired callbacks in R8. Both players remain PAUSED at
+  their prior positions (TV 178897ms; standalone 143811ms), speed zero and null error;
+  native TV remains STOPPED/empty. No playback, subscription mutation, upload/download
+  quota, social write, supplied Cookie-file access or account authorization is invoked.
+- Original standalone's package path and TV-owned MediaStore row 820 (22705573 bytes,
+  pending=0) remain unchanged. Only emulator-5554 is used; no AVD restart, second-device
+  access, permission change, framework/global rotation change, merge or push occurs.
+  Logs, screenshots and APKs remain outside Git under `/tmp/meilox-library-*`.
+  Main is rechecked at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`.
+  TV is returned to the original portrait Home paused; all execution handles finish
+  before the scoped commit.
+- This closes the recorded Library subscription-row source/debug callback scope,
+  not full Library action integration or the D2-D6 upgrade, capability, real-account,
+  lifecycle, server and playback/startup-attribution exit gates. The full goal remains
+  open; no milestone is marked complete by these bounded tests.
 
 ## Acceptance and Remaining Decisions
 

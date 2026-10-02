@@ -721,7 +721,9 @@ private fun LazyListScope.libraryPodcastItems(
                     )
                 },
                 onClick = {
-                    Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                    viewModel.withCurrentSubscription(state, podcast.id) {
+                        Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                    }
                 },
             )
         }

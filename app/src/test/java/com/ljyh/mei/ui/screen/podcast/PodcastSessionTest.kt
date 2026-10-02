@@ -117,6 +117,114 @@ class PodcastSessionTest {
         }
     }
 
+    @Test fun librarySubscriptionNavigationIsIndependentOfDiscoveryMembership() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(3))) }
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.refreshSubscriptions()
+            runCurrent()
+            val current = list.state.value
+            assertEquals(PodcastTab.Discover, current.selectedTab)
+            val visited = mutableListOf<Long>()
+            list.withCurrentSubscription(current, 1) { visited += 1 }
+            list.withCurrentSubscription(current, 2) { visited += 2 }
+            list.withCurrentSubscription(current, 3) { visited += 3 }
+            list.withCurrent(current, 1) { visited += 1 }
+            assertEquals(listOf(1L), visited)
+        }
+    }
+
+    @Test fun librarySubscriptionNavigationRejectsRefreshingAndRemovedOwners() {
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.refreshSubscriptions()
+            runCurrent()
+            val displayed = list.state.value
+            var navigations = 0
+            source.subscriptions = { PodcastPage(listOf(podcast(2)), false, 1) }
+            list.refreshSubscriptions()
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            runCurrent()
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            list.withCurrentSubscription(list.state.value, 1) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrentSubscription(list.state.value, 2) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun librarySubscriptionNavigationRejectsSameStampRecoveryAndReauthorization() {
+        val row = podcast(1)
+        source.subscriptions = { PodcastPage(listOf(row), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.refreshSubscriptions()
+            runCurrent()
+            val displayed = list.state.value
+            var navigations = 0
+            sessions.setRecoveryRequired(true)
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            runCurrent()
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(displayed.session, list.state.value.session)
+            assertSame(row, list.state.value.subscribedPodcasts.single())
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrentSubscription(list.state.value, 1) { navigations++ }
+            val reauthorized = list.state.value
+            sessions.invalidate()
+            list.withCurrentSubscription(reauthorized, 1) { navigations++ }
+            runCurrent()
+            list.withCurrentSubscription(reauthorized, 1) { navigations++ }
+            assertEquals(1, navigations)
+            list.withCurrentSubscription(list.state.value, 1) { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun librarySubscriptionNavigationCannotSurviveAnAccountReplacementOrLogout() {
+        val row = podcast(1)
+        source.subscriptions = { PodcastPage(listOf(row), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.refreshSubscriptions()
+            runCurrent()
+            val displayed = list.state.value
+            var navigations = 0
+            sessions.beginTransition().use { identity = identity.copy(userId = 2) }
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            runCurrent()
+            assertSame(row, list.state.value.subscribedPodcasts.single())
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrentSubscription(list.state.value, 1) { navigations++ }
+            val replacement = list.state.value
+            sessions.beginTransition().use { identity = SessionIdentity(0, false, true) }
+            list.withCurrentSubscription(replacement, 1) { navigations++ }
+            runCurrent()
+            list.withCurrentSubscription(list.state.value, 1) { navigations++ }
+            assertTrue(list.state.value.subscribedPodcasts.isEmpty())
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun clearingTheViewModelRetiresItsLibrarySubscriptionOwner() {
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        checkModels { list, _, store ->
+            runCurrent()
+            list.refreshSubscriptions()
+            runCurrent()
+            val displayed = list.state.value
+            store.clear()
+            var navigations = 0
+            list.withCurrentSubscription(displayed, 1) { navigations++ }
+            assertEquals(0, navigations)
+        }
+    }
+
     @Test fun identicalDiscoveryRefreshHasAnObservablePresentationOwner() {
         val home = PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(1)))
         source.home = { home }

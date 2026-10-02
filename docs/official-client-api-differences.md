@@ -3135,6 +3135,19 @@ These are integration differences, not server API semantics.
   obsolete callbacks in R8, complete program pagination or real account transitions.
   LibraryMobileLayout's separate direct subscribed-row dispatch remains an uncovered
   source-review finding; it is not silently qualified by PodcastScreen's fixture.
+- Library subscription-owner follow-up (2026-10-03): that separate original row
+  reproduces obsolete navigation after a synthetic account replacement. Library
+  loads subscriptions while PodcastUiState.selectedTab remains Discover, so blindly
+  applying the podcast screen's tab-based membership gate would reject valid clicks.
+  Its unchanged row now uses a subscription-specific dispatch gate: exact rendered
+  state, current authenticated session, recovery, loaded list and member ID. The
+  original podcast screen retains its own tab/category policy through the common
+  session/state check. This is consumer/session adaptation, not a different server
+  endpoint or a main-only UI repair. PodcastSessionTest passes 45 cases per flavor;
+  nine original-Library and 27 original-podcast native cases pass serially per flavor.
+  Current ordinary standalone debug and parasite R8 additionally pass real ready-row
+  pointer navigation without playback or writes. Full Library integration, obsolete
+  R8 callbacks, real account transitions and remaining plan gates stay unqualified.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 
