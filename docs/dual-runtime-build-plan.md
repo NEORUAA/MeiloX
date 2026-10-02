@@ -4237,6 +4237,49 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   upgrade, production signing, real authorization/cooperation and remaining D2-D6
   runtime/source acceptance remain open.
 
+#### Latest Standalone R8 Account Read Qualification (2026-10-03)
+
+- Frozen production source remains `8ff63f75`; no UI, backend or build-policy edit
+  follows the full paired JVM gate above. The existing temporary init script builds
+  StandaloneRelease with the isolated com.neoruaa.meilox.standalone.debug identity
+  and a separate `/tmp` output directory. R8/resource shrinking remain enabled,
+  the merged application is non-debuggable, and no module/probe/instrumentation
+  declaration is added. The build passes in 4m55s (55 tasks: 36 executed, 19 up-to-date).
+- The development-signed validation APK passes SDK signature/16KB alignment checks.
+  Its local/device SHA256 is
+  `b42c0b0e171719256ab9a7a2dd892ecc089f0cc5e578b9e1210c37dcf78775b9`;
+  R8 map ID is `4bd85e771b698eed70dced6a49a113c047c4a8e50495dad9a45b3bc0670ad512`.
+  Only the isolated test package is updated preserving data. A normal task launch
+  reports COLD/1686ms in new PID 17933; installed APK identity/hash are checked.
+- Actual shared UI navigation displays the existing account profile/detail and
+  playlist list, account refresh, weekly and all-time listening ranks, all-time
+  refresh, and account-playlist detail with artwork and visible song rows. Screenshots
+  and structured UI trees are inspected. No rank/song/play control, subscription,
+  social action, download or upload is invoked. This closes the latest standalone
+  R8 account-read gap left by the earlier TV R8/standalone debug checkpoint, not
+  complete paging, fresh authorization, account switching, failure coverage or
+  subsequent server reporting/statistics. The PID-scoped crash buffer is empty.
+- During this read-only R8 run, the restored standalone queue remains seven entries
+  at 143811ms, speed zero/error null, with unprepared NONE state; it is not claimed
+  as prepared playback acceptance. Preserving reinstall of the original test debug
+  APK is checked at SHA256
+  `175a7f9ee345be9ff62b3b1e5cd94e2159f13f2dc98d87cd12f1d344362063ac`.
+  PID 18551 displays Home, has an empty crash buffer and reports the same seven-entry
+  queue PAUSED at 143811ms. TV PID 16061 returns to inspected portrait Home, retaining
+  11 entries PAUSED at 178897ms; native TV remains inactive/STOPPED with an empty queue.
+- One final UI dump encounters transient ADB offline state. Its stale tree is not
+  accepted; a fresh successful dump identifies the TV package, and the unchanged
+  TV PID plus screenshot/media state are rechecked without restarting the AVD.
+  The original standalone APK remains at the recorded install path/hash `7d0233bc...`;
+  TV-owned MediaStore 820 remains 22705573 bytes/pending=0. Both production unsigned
+  APK hashes above are unchanged. No original-install upgrade, Cookie access,
+  permission/framework/global-orientation change or official API-contract change
+  is performed. The pending D2-D6 exit gates remain open.
+- Evidence stays outside Git under `/tmp/meilox-latest-r8-account-*-2026-10-03.*`,
+  `/tmp/meilox-latest-r8-rank-*-2026-10-03.*` and
+  `/tmp/meilox-latest-standalone-r8-read-build-2026-10-03.log`.
+  No credentials, screenshots, raw logs or APKs are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
