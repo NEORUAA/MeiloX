@@ -2590,6 +2590,60 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   upgrade, first offline Cookie recovery, production signing, full release playback
   or merge review. Broader D2-D6 gates and pending device/capability decisions remain.
 
+### D3/D6 Checkpoint: Target-Only R8 Reporting Codec Qualification (2026-10-02)
+
+- The merge-review base remains main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`
+  against `48a98999`: 425 changed paths, including 135 app test files. Inventory is
+  not semantic review. This pass reviews flavor/manifest/dependency/R8 declarations,
+  shared and flavor network providers, signing restoration, download-source selection,
+  and the host identity/call/request boundaries; the complete branch review is open.
+- Original standalone NcblCodec, NcblPayload and RSA implementations match main.
+  The interceptor retains original signing behavior with captured standalone
+  credentials; shared non-session artwork/device helpers remain shared. Standalone
+  selects the player URL for downloads; parasite selects the official download grant.
+  Host qualifiers have no standalone signing/retry fallback or credential export.
+- The removed blanket Zstd keep rule is investigated, not presumed defective. The
+  pinned AAR has no consumer rules; generic native-method rules preserve JNI names,
+  and R8 rewrites AutoCloseBase's field updater. An Android-platform test runner now
+  loads only the fingerprint-checked target APK and its packaged arm64 native library.
+  It bypasses application initialization and uses mapping-derived codec/member names,
+  so debug AndroidX/test implementations cannot substitute for minified code.
+- Actual isolated development-signed R8 APK SHA256
+  `674bd81d6a1eae960b74e3565787bb8ff46f80faa2057d7033d8e823c0f1c796`
+  passes 32 native Zstd compressions and 32 NCBL v3 encodings, checking frame/header
+  accounting and fresh UUIDs. A wrong SHA256 is rejected before encoding. No extra
+  production keep rule or business-code change is necessary for this verified path.
+- The probe is opt-in only: build the standalone instrumentation APK with
+  `-PstandaloneR8CodecProbe=true`, install it over its test package, then use
+  `am instrument -w -r` with `apkSha256`, `codecClass`, `codecInstance`, `codecEncode`
+  and `compressMethod` from the exact tested APK/mapping. Only the isolated standalone
+  package is accepted. The runner is
+  `com.ljyh.mei.standalone.StandaloneR8NcblInstrumentation`; normal builds retain
+  AndroidJUnitRunner. Restore the ordinary test/debug APKs afterward. No production
+  package, test runner or application identity is replaced to execute this probe.
+- Default runner restoration passes six device cases: native compression round trip,
+  NCBL encoding, graph/bootstrap, WorkManager factory, resources and package isolation.
+  Paired JVM results remain 905 standalone and 922 parasite cases, with zero failures,
+  errors or skips; unchanged unit-test tasks are reused, not represented as fresh runs.
+- Both production R8 releases build with vital lint in 8m32s. Forty-one release
+  workflow fixtures and the actual SDK signature/identity/version/declaration/16KB
+  gate pass, including swapped/unsigned/missing-scope rejection and fixture-key cleanup.
+  Both production APKs contain neither test Instrumentation nor the new probe class;
+  the ordinary standalone test APK registers AndroidJUnitRunner again.
+- Ordinary standalone debug is restored with preserving install-r. Its inspected
+  portrait Home retains the distinct existing account/feed and mini-player; the
+  MediaSession is PAUSED at 145670ms, speed 0, error=null. TV returns HOT to inspected
+  portrait MeiloX Home with PID 18932 unchanged, module playback PAUSED at 55536ms
+  and official playback STOPPED. Standalone PID 22502's crash buffer is empty.
+  Existing TV-owned MediaStore row 820 stays 22705573 bytes, pending=0. The rooted
+  AVD remains running and awake; no global rotation or framework hook is introduced.
+- This qualifies the packaged minified encoder on the existing rooted 16KB AVD,
+  not full reporting dispatch, server acceptance/statistics, audible playback,
+  framework-free startup, production signing/upgrade or complete D3/D6 acceptance.
+  No real playback/download/upload/social request, credential read/copy, frontend
+  change or host/system-scope change is part of the probe. Evidence remains local in
+  `/tmp/meilox-r8-ncbl-*-2026-10-02*` and `/tmp/meilox-merge-audit-*-2026-10-02*`.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

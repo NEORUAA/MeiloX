@@ -35,6 +35,9 @@ android {
         create("standalone") {
             dimension = "runtime"
             proguardFiles("proguard-standalone.pro")
+            if (providers.gradleProperty("standaloneR8CodecProbe").orNull == "true") {
+                testInstrumentationRunner = "com.ljyh.mei.standalone.StandaloneR8NcblInstrumentation"
+            }
         }
         create("parasite") {
             dimension = "runtime"

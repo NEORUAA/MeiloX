@@ -2685,6 +2685,28 @@ These are integration differences, not server API semantics.
   and an unused search DTO; no new gap is established by that audit. Other real
   cooperation, original-install upgrade, full release and merge gates remain open.
 
+### ABI-017: Standalone Native Reporting Needs Target-Only R8 Evidence
+
+- Recorded: 2026-10-02. Standalone owns the original NCBL v3/Zstd encoder; parasite
+  uses official host reporting and does not package the standalone codec/JNI library.
+  Encoding success is separate from transport acceptance and later listening statistics.
+- Merge review finds the original blanket Zstd keep rule absent after source-set
+  extraction. The pinned 1.5.7-20 AAR has no consumer rules, but the actual R8 mapping
+  retains JNI names under the shared native-method rules and rewrites the reflective
+  AutoCloseBase lock updater. This alone does not qualify native execution.
+- The opt-in standalone test Instrumentation verifies the installed isolated APK's
+  SHA256 and uses a fresh target-only PathClassLoader/native path. Mapping-derived
+  members are invoked without linking debug app/AndroidX classes or bootstrapping
+  account/network/work initialization. It is never registered in a production APK.
+- The existing development-signed isolated R8 artifact passes 32 native compressions
+  and 32 NCBL encodings with frame/header accounting and distinct UUIDs; a mismatched
+  SHA256 is rejected. Ordinary debug tests additionally pass compression/decompression
+  and package/bootstrap checks after restoring the default test runner. The verified
+  encoding path needs no additional production keep rule.
+- No credentials, real report, upload, download grant or social operation is used.
+  This is native/minified codec evidence on the rooted 16KB AVD, not full reporting,
+  statistics, framework-free execution, production upgrade or complete release proof.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see
