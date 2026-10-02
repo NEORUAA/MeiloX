@@ -1,15 +1,20 @@
 package com.ljyh.mei.parasite
 
+import android.app.Activity
+import android.app.Fragment
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.media3.common.util.Util
 import com.ljyh.mei.BuildConfig
+import com.ljyh.mei.MainActivity
 import com.ljyh.mei.playback.MusicService
 import io.github.libxposed.api.XposedModule
 
@@ -28,7 +33,35 @@ internal object HostAppComponentHooks {
         }
     }
 
-    fun install(module: XposedModule, context: Context, report: (String) -> Unit) {
+    @Suppress("DEPRECATION")
+    fun install(module: XposedModule, context: Context, hostLoader: ClassLoader, report: (String) -> Unit) {
+        val hostFragment = hostLoader.loadClass(HostComponentMapping.HOST_REPORT_FRAGMENT)
+        check(Fragment::class.java.isAssignableFrom(hostFragment) &&
+            hostFragment.classLoader !== MainActivity::class.java.classLoader)
+        val inject = hostFragment.getDeclaredMethod("injectIfNeededIn", Activity::class.java)
+        module.hook(inject).intercept { chain ->
+            val activity = chain.getArg(0) as Activity
+            if (HostComponentMapping.ownsModuleActivity(activity.packageName, activity.javaClass, MainActivity::class.java)) {
+                null
+            } else chain.proceed()
+        }
+        // Old tasks may already contain the host's platform Fragment. Restore only that
+        // exact class through its owning loader; keep module saved state and classes isolated.
+        module.hook(Fragment::class.java.getMethod("instantiate", Context::class.java, String::class.java, Bundle::class.java))
+            .intercept { chain ->
+                val owner = chain.getArg(0) as Context
+                if (!HostComponentMapping.restoresLegacyReportFragment(
+                        owner.packageName, owner.javaClass, MainActivity::class.java, chain.getArg(1) as? String,
+                    )) return@intercept chain.proceed()
+                val legacyContext = object : ContextWrapper(owner) {
+                    override fun getClassLoader(): ClassLoader = hostFragment.classLoader!!
+                }
+                val result = chain.proceed(chain.args.toTypedArray().also { it[0] = legacyContext })
+                report("app_legacy_report_fragment_restored isolated_loader=true")
+                result
+            }
+        report("app_lifecycle_hooks_ready host_report_injection_isolated=true")
+
         // Media3 also constructs PendingIntents internally, outside our Context wrapper.
         PendingIntent::class.java.declaredMethods.filter {
             it.name in setOf("getActivity", "getService", "getForegroundService") &&

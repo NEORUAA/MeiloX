@@ -9,6 +9,14 @@ internal object HostComponentMapping {
     const val SERVICE = "com.netease.cloudmusic.service.LocalMusicMatchService"
     const val MODULE_ACTIVITY = "com.ljyh.mei.MainActivity"
     const val MODULE_SERVICE = "com.ljyh.mei.playback.MusicService"
+    const val HOST_REPORT_FRAGMENT = "androidx.lifecycle.ReportFragment"
+
+    fun ownsModuleActivity(packageName: String?, actual: Class<*>, expected: Class<*>): Boolean =
+        packageName == HostIdentity.PACKAGE && actual === expected
+
+    fun restoresLegacyReportFragment(
+        packageName: String?, actual: Class<*>, expected: Class<*>, fragmentName: String?,
+    ): Boolean = ownsModuleActivity(packageName, actual, expected) && fragmentName == HOST_REPORT_FRAGMENT
 
     fun target(packageName: String?, className: String?): String? {
         if (packageName != HostIdentity.PACKAGE) return null

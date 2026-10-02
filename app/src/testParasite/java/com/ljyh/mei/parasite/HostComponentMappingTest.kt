@@ -7,6 +7,47 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostComponentMappingTest {
+    private class ModuleActivity
+    private class OtherActivity
+
+    @Test fun lifecycleIsolationRequiresTheExactModuleClassInTheHost() {
+        val expected = ModuleActivity::class.java
+        assertTrue(HostComponentMapping.ownsModuleActivity(HostIdentity.PACKAGE, expected, expected))
+        listOf(null, "another.package", "${HostIdentity.PACKAGE}.other").forEach { packageName ->
+            assertFalse(HostComponentMapping.ownsModuleActivity(packageName, expected, expected))
+        }
+        assertFalse(HostComponentMapping.ownsModuleActivity(HostIdentity.PACKAGE, OtherActivity::class.java, expected))
+    }
+
+    @Test fun aSameNamedClassFromAnotherLoaderCannotAcquireModuleLifecycle() {
+        val expected = ModuleActivity::class.java
+        val bytes = requireNotNull(expected.getResourceAsStream("/${expected.name.replace('.', '/')}.class"))
+            .use { it.readBytes() }
+        val other = object : ClassLoader(expected.classLoader) {
+            fun defineCopy(): Class<*> = defineClass(expected.name, bytes, 0, bytes.size)
+        }.defineCopy()
+        assertEquals(expected.name, other.name)
+        assertFalse(HostComponentMapping.ownsModuleActivity(HostIdentity.PACKAGE, other, expected))
+        assertFalse(HostComponentMapping.restoresLegacyReportFragment(
+            HostIdentity.PACKAGE, other, expected, HostComponentMapping.HOST_REPORT_FRAGMENT,
+        ))
+    }
+
+    @Test fun legacyRestoreDoesNotBorrowTheHostLoaderForAnyOtherFragment() {
+        val expected = ModuleActivity::class.java
+        assertTrue(HostComponentMapping.restoresLegacyReportFragment(
+            HostIdentity.PACKAGE, expected, expected, HostComponentMapping.HOST_REPORT_FRAGMENT,
+        ))
+        listOf(null, "", "androidx.lifecycle.v", "com.netease.cloudmusic.HostFragment",
+            "${HostComponentMapping.HOST_REPORT_FRAGMENT}Other").forEach { name ->
+            assertFalse(HostComponentMapping.restoresLegacyReportFragment(HostIdentity.PACKAGE, expected, expected, name))
+        }
+        assertFalse(HostComponentMapping.restoresLegacyReportFragment("another.package", expected, expected,
+            HostComponentMapping.HOST_REPORT_FRAGMENT))
+        assertFalse(HostComponentMapping.restoresLegacyReportFragment(HostIdentity.PACKAGE, OtherActivity::class.java,
+            expected, HostComponentMapping.HOST_REPORT_FRAGMENT))
+    }
+
     @Test fun onlyExplicitModuleComponentsInTheHostAreMapped() {
         assertEquals(HostComponentMapping.LAUNCHER,
             HostComponentMapping.target(HostIdentity.PACKAGE, HostComponentMapping.MODULE_ACTIVITY))

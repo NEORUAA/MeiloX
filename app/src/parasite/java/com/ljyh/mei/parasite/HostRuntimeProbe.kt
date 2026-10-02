@@ -127,7 +127,9 @@ internal object HostRuntimeProbe {
             mediaOwnership = ProbeMediaOwnership(com.ljyh.mei.di.AppGraph.component.sessions(),
                 CoroutineScope(SupervisorJob() + Dispatchers.Default))
         }
-        if (BuildConfig.PARASITE_APP_ENABLED) HostAppComponentHooks.install(module, applicationContext, report)
+        if (BuildConfig.PARASITE_APP_ENABLED) {
+            HostAppComponentHooks.install(module, applicationContext, application.classLoader, report)
+        }
         if (BuildConfig.PARASITE_APP_ENABLED) {
             HostWorkManager.install(module, applicationContext, report)
             HostWorkForeground.install(module, applicationContext, application.classLoader, report)

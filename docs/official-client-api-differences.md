@@ -3239,6 +3239,41 @@ These are integration differences, not server API semantics.
   Application, runner and live-read/package test classes. Actual production startup
   and full paired regression remain separate, as recorded in the dual-runtime plan.
 
+### ABI-021: Host Lifecycle Fragments Must Not Enter the Module's Saved Task
+
+- Recorded: 2026-10-03. This is a runtime/classloader contract, not a business API
+  difference. Standalone owns its Application and AndroidX lifecycle classes.
+  Parasite retains TV's Application, whose `LifecycleDispatcher` also injects a
+  host `androidx.lifecycle.ReportFragment` into module MainActivity. The exact
+  TV 1.1.80 APK DEX confirms the static `injectIfNeededIn(Activity)` entry point;
+  no JADX alias is used as a hook name.
+- Reproduction: same-APK minified TV task is stopped with saved state, then its
+  background process is killed without force-stopping/removing the task. New
+  Activity PID 31849 fails with ClassNotFoundException during platform Fragment
+  restoration: the module loader does not contain that unrenamed host class.
+  The later service-only process is not successful UI recovery.
+- Adaptation: suppress only host ReportFragment injection for the verified TV
+  package and exact module MainActivity Class object. Same-named classes from other
+  loaders and all official/foreign activities are excluded. For legacy state, only
+  that activity's exact host ReportFragment name uses a temporary ContextWrapper
+  with its owning host loader during platform instantiation. ModuleContext,
+  saved Bundle and other classes are not rebound or discarded. Host API-29+
+  ProcessLifecycleOwner callbacks, module lifecycle, API 102 and TV-only scope
+  remain unchanged. Standalone and shared frontend code are not modified.
+- Verification: 19 focused mapping/storage/Work JVM cases pass, including package,
+  class identity and legacy-name rejection; both R8 builds and all 56 local real-SDK
+  release gates pass. Fixed same-APK TV task 1389 restores original detail/rows
+  in new PID 3450; isolated standalone R8 task 1390 does likewise in PID 5225.
+  Inspected before/after screenshots, saved-task records, new process IDs, empty
+  current-PID crash buffers and unchanged paused/unprepared queues qualify those
+  bounded scenarios. Ordinary standalone debug is preserving-restored afterward.
+- Separate failure: old TV task 1388 retained across different minified module APKs
+  passes the Fragment phase but crashes in new PID 1681 during Compose saved-state
+  decoding (`Bad magic number for Bundle: 0x37`). Its cause and full cross-artifact
+  compatibility remain unqualified. Ordinary updates still require host restart;
+  this does not authorize generic state clearing, hot reload or unrelated frontend
+  repairs. No credentials, official sources, APKs or device logs are committed.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

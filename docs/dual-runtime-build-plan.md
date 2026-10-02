@@ -137,7 +137,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable database/work/preference/cache upgrade fixtures verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved near-end playback failure and intermittent process-start timeout attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes for parasite and isolated standalone R8 after the host lifecycle isolation repair below | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved cross-R8 old-task Bundle failure, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -248,6 +248,14 @@ Later module/probe/service owner changes are covered by the `de14777e` checkpoin
 the Activity and meter did not change. The original dependency inspection read
 HostIdentity, HostComponentMapping, HostPlaybackHooks and AppGraph fully, but only
 selected ModuleContext/Work hook sections. It does not qualify all host SDK internals.
+The 2026-10-03 follow-up reads complete ModuleContext, ModuleStorage,
+HostWorkManager/HostWorkPolicy, HostWorkForeground/HostWorkForegroundPolicy,
+HostAppComponentHooks, HostComponentRuntime (including HostLogShareFiles),
+HostComponentMapping, HostMediaButtons, HostPlaybackHooks and HostRuntimeProbe,
+plus common ComponentRuntime and StandaloneComponentRuntime. The changed
+MainActivity initialization, graph binding, disposal and restoration sections are
+reviewed separately. This closes the named context/Work/component source-review
+gap, not all host SDK internals, full page integration or runtime acceptance.
 The audit's retained account intents, logout and diagnostic offer findings have
 their scoped repairs below. Social/Library navigation is repaired at `d962a931`;
 AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and SongWiki
@@ -3925,6 +3933,73 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   lifecycle, server and playback/startup-attribution exit gates. The full goal remains
   open; no milestone is marked complete by these bounded tests.
 
+### D5/D6 Checkpoint: Isolated Host Lifecycle and Saved-Task Recreation (2026-10-03)
+
+- A real same-APK parasite R8 failure is reproduced without resetting the system
+  task: TV task 1386 stops with saved state (3980 bytes), its process is killed
+  while backgrounded, and recreated PID 31849 crashes in platform Fragment restore
+  with ClassNotFoundException for `androidx.lifecycle.ReportFragment`. PID 31966
+  subsequently starts a service; its existence is not restored-Activity success.
+- TV's exact APK DEX confirms `LifecycleDispatcher` invokes the host's static
+  `ReportFragment.injectIfNeededIn(Activity)`. This Application callback inserts
+  a host-owned Fragment into module MainActivity; the module-only loader cannot
+  restore that name after death. Module R8 has its own `androidx.lifecycle.v`.
+  This is a parasite classloader/lifecycle conflict, not a layout or backend
+  endpoint change; ABI-021 records the runtime difference.
+- The module skips only that host injection for the exact module MainActivity
+  Class object in the verified TV package. Official/foreign activities keep their
+  original behavior. A narrow platform Fragment restore adapter borrows the host
+  loader only for that exact activity and legacy host Fragment name. It neither
+  discards saved state nor adds a general host-loader fallback. The host's distinct
+  API-29+ ProcessLifecycleOwner callbacks remain installed. API 102, TV-only scope,
+  disabled hot reload, official Application and existing direction configuration
+  are unchanged; no system-framework scope or global rotation change is made.
+- Cross-artifact experiment is **not qualified**: task 1388 retains 3980-byte state
+  from the old minified APK across module replacement. New PID 1681 gets past the
+  platform Fragment phase but crashes at first Compose attachment while reading
+  saved state: `IllegalStateException: Bad magic number for Bundle: 0x37`.
+  Its cause is not conclusively attributed. This does not prove full legacy-task
+  restoration or justify a shared frontend repair. Ordinary module updates retain
+  the documented host force-stop/restart procedure; hot reload stays disabled.
+- After that ordinary restart, the fixed APK creates TV task 1389 with the module's
+  own `v` report Fragment. The original subscribed-podcast detail is opened, task
+  state reaches STOPPED/saved (3956 bytes), and `am kill` removes PID 2331.
+  Recreated PID 3450 restores the same task and original detail with artwork,
+  92-program total and rows; settled before/after screenshots are inspected.
+  LaunchState is COLD, TotalTime 2007ms, and the current-PID crash buffer is empty.
+  MeiloX remains paused at 178897ms with 11 queue entries; native TV stays inactive,
+  stopped with an empty queue. No playback or subscription write is triggered.
+- The latest isolated standalone R8 also passes same-APK saved-task recreation:
+  task 1390 is STOPPED/saved (3856 bytes), PID 4484 is killed, and new PID 5225
+  restores that same task and the original 2515-program detail/artwork/rows.
+  TotalTime is 1644ms; current-PID crash buffer is empty. Its seven-entry queue
+  remains unprepared at 143811ms, speed zero and no error. Existing persisted
+  session is reused; no Cookie file import or production-ID upgrade occurs.
+- Builds pass: focused parasite unit tests plus assembleParasiteRelease (3m59s)
+  and isolated standaloneRelease R8 (5m59s). All 19 focused mapping/storage/Work
+  tests pass without failures/errors/skips, including foreign-package, wrong-class,
+  same-name/different-loader and exact legacy-name rejection. The local real-SDK
+  `dual_runtime_release_test.rb --built-apks` gate passes all 56 checks. Both
+  validation APK signatures and 16KB zip alignment pass with existing development
+  signing; this does not qualify production signing or the original-install upgrade.
+- Signed validation SHA-256: parasite
+  `e3309814300d5c0e455fead5266cf8ece9f6ec7a93a23f9ed4e0664011f0a7da`;
+  isolated standalone R8
+  `d9ca81fd4114ce057167993939486226035db91aed74276df0b7d540860ff100`.
+  Installed hashes match. The unchanged production standalone unsigned artifact is
+  `bdd08b9503c310ade417508af5125039008c02be55cddfff289077bdc936f50a`;
+  fixed parasite unsigned is
+  `275c21c3803e51433d864f87308890b04ac3f82f8f093e17ad9eff01204c4a74`.
+- The isolated standalone is preserving-restored to its ordinary debug APK
+  `605a98fde598e40ce40104c81b18a8871c02edd348bfe383b0fb192fd3891992`
+  after testing, without autoplay. The original production standalone package path
+  remains unchanged; MediaStore 820 remains TV-owned, 22705573 bytes, pending zero.
+  TV is returned to original portrait Home paused. Logs, XML, screenshots, DEX
+  output and validation artifacts stay under `/tmp/meilox-r8-lifecycle-*2026-10-03*`
+  outside Git. Main remains `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`.
+  This closes only the reproduced host Fragment conflict and named same-artifact
+  recreation scenarios; cross-artifact restore and all other D2-D6 gates remain open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -3949,6 +4024,10 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
 - The observed standalone R8 near-end pause/resume stall remains an unqualified
   playback regression. Preserve the successful timer evidence separately from that
   failure and establish reproduction/attribution before any scoped repair.
+- Preserving old task state across different parasite R8 APKs fails in Bundle
+  decoding as recorded above. Same-APK process recreation passes; these are distinct
+  scenarios. No generic saved-state clearing or shared frontend repair is authorized
+  by the unresolved cross-artifact failure.
 
 The shared dependency-boundary D1 exit condition is met and the dual-debug skeleton is
 operational on the current AVD. D2's framework-free startup gate and D3-D6 remain open;
