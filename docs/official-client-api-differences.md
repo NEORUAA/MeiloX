@@ -96,6 +96,10 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   its mutation mutex; a login committing first cannot turn the queued logout into
   logout of the new account. Credential/WebView cleanup and official logout remain
   owned by their original backends. No real account logout is performed by fixtures.
+- The standalone WebView failed-candidate retry/creation-owner correction is recorded
+  in the [ABI-008 retry follow-up](#creation-owned-webview-candidate-retry-2026-10-02).
+  It does not change the official QR state machine or qualify real
+  WebView/QR authorization, expiry/logout or account-switch acceptance.
 
 ### API-004: Search Metadata Is Optional
 
@@ -1923,9 +1927,10 @@ These are integration differences, not server API semantics.
   client. Default TLS validation replaces the original debug trust-all configuration;
   signed redirects are disabled. QQ/artwork/media paths are not redirected through TV.
 - Original WebView/manual Cookie controls and layout are restored in the standalone
-  source set, with Dagger bindings instead of Hilt. WebView polling only reports verified
-  success and does not repeatedly submit an unchanged rejected Cookie. The parasite
-  QR page, common navigation, player and glass components are unchanged.
+  source set, with Dagger bindings instead of Hilt. At the initial restoration,
+  WebView polling only reports verified success but permanently suppresses an
+  unchanged rejected Cookie; the retry correction below supersedes that behavior.
+  The parasite QR page, common navigation, player and glass components are unchanged.
 - Standalone weblog start/end events are wired to the common playback lifecycle, using
   the original EAPI playback-history profile. NCBL, expired-session recovery behavior,
   real account transitions, authenticated request coverage and listening statistics are
@@ -1951,6 +1956,43 @@ These are integration differences, not server API semantics.
   the original standalone installation/data were read or replaced. This qualifies the
   manual Cookie path and this account's read/recovery path, not interactive WebView
   authentication, logout/account switching, playback/reporting or release upgrades.
+
+#### Creation-Owned WebView Candidate Retry (2026-10-02)
+
+- A failed private verification must not permanently suppress the same WebView
+  Cookie. The existing page now uses a poller that retries failed unchanged values
+  after five seconds, observes changed values on the next tick and reports verified
+  success only. Page controls/layout, official QR logic and both transports are retained.
+- Each poller/controller captures its first readable creation owner once. Initial
+  unreadable transitions wait at 500ms intervals without reading WebView Cookies;
+  after capture, a retired owner never rebases to another login and ends observation.
+  Failed verification remains retryable while ownership is current. Standalone
+  controller/store checks occur atomically before incrementing attempts, so an
+  obsolete automatic observer cannot invalidate a newer login.
+- The original manual sheet pauses/cancels automatic polling. Manual priority and
+  mutual exclusion are precommit only: cancellation cannot undo an already-started
+  durable commit. A held-writer fixture preserves valid A's linearized publication
+  and rejects manual B's old fixed owner without verifying/writing B. No rollback,
+  credential copy or all-stage manual-priority promise is added.
+- Fresh closed coroutine/store/transport coverage passes 63 cases: 27 poller,
+  16 standalone store, ten candidate transport and ten shared store. The initial
+  14-case repair's missed external-owner regressions fail three added cases; two
+  later initial-transition WebView/manual failures expose the one-time readiness
+  gap. Corrections precede the fresh run; intermediate passes do not qualify final
+  behavior. Synthetic credentials/transports/persistence do not establish real
+  WebView/QR authorization, expiry/logout/account switching, native UI interaction
+  or complete release lifecycle. Artifact/runtime scope is recorded in the plan.
+  The shared SessionStore production implementation is unchanged; its existing
+  ten cases are rerun as contract coverage, not presented as a new shared-store repair.
+- Final-source production R8 builds/local release gates pass. The installed/pulled
+  isolated standalone R8 is fingerprinted and reaches original Home after excluding
+  Android's package-update wrapper from cold-start proof; a subsequent genuine cold
+  start retains its unprepared non-autoplay queue. Final parasite R8 and restored
+  ordinary standalone debug also retain original Home and existing player/data states.
+  The slow TV launch remains unattributed, not a startup fix. Exact artifacts/timings/
+  restoration are in the plan; these Home checks do not exercise new WebView retry,
+  interactive authorization, QR login, logout/expiry/account changes or full release
+  lifecycle. No real Cookie-file import or new authorization is performed.
 
 #### Original Candidate Account Verification Alternative (2026-10-02)
 

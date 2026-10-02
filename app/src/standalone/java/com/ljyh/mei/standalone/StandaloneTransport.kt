@@ -156,10 +156,14 @@ class StandaloneAccountController internal constructor(
     @Inject internal constructor(sessions: StandaloneSessionStore, transport: StandaloneTransport) :
         this(sessions, transport::verify)
 
-    suspend fun login(musicU: String): Boolean {
+    suspend fun login(musicU: String): Boolean = loginAttempt(musicU, null)
+
+    suspend fun login(musicU: String, expected: SessionStamp): Boolean = loginAttempt(musicU, expected)
+
+    private suspend fun loginAttempt(musicU: String, expected: SessionStamp?): Boolean {
         if (!isValidMusicU(musicU)) return false
         return try {
-            val attempt = sessions.beginLogin()
+            val attempt = if (expected == null) sessions.beginLogin() else sessions.beginLogin(expected)
             val account = verify(musicU, attempt.owner)
             sessions.commitLogin(attempt, account)
             true

@@ -82,6 +82,28 @@ class StandaloneSessionStoreTest {
         assertEquals(22, sessions.snapshot().identity.userId)
     }
 
+    @Test fun expectedLoginOwnerKeepsLatestAttemptWinsSemantics() = runTest {
+        val sessions = StandaloneSessionStore(MemoryPersistence(StoredAccount("", 0))).also { it.initialize() }
+        val owner = sessions.snapshot()
+        val old = sessions.beginLogin(owner)
+        val recent = sessions.beginLogin(owner)
+        expectSessionChanged { sessions.commitLogin(old, StoredAccount("old", 11)) }
+        sessions.commitLogin(recent, StoredAccount("recent", 22))
+        assertEquals(22L, sessions.snapshot().identity.userId)
+    }
+
+    @Test fun staleExpectedLoginDoesNotRetireANewSessionsPendingAttempt() = runTest {
+        val sessions = verifiedSessions(MemoryPersistence(StoredAccount("cookie-A", 11)))
+        val retained = sessions.snapshot()
+        sessions.commitLogin(sessions.beginLogin(), StoredAccount("cookie-B", 22))
+        val currentOwner = sessions.snapshot()
+        val pending = sessions.beginLogin(currentOwner)
+        expectSessionChanged { sessions.beginLogin(retained) }
+        sessions.commitLogin(pending, StoredAccount("renewed-B", 22))
+        assertEquals(22L, sessions.snapshot().identity.userId)
+        assertEquals("renewed-B", sessions.credentials(sessions.snapshot()).musicU)
+    }
+
     @Test fun logoutPreventsLateVerificationFromRestoringTheAccount() = runTest {
         val disk = MemoryPersistence(StoredAccount("cookie-A", 11))
         val sessions = verifiedSessions(disk)

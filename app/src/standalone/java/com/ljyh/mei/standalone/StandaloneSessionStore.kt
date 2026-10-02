@@ -76,6 +76,10 @@ class StandaloneSessionStore @Inject internal constructor(
 
     internal fun beginLogin(): LoginAttempt = LoginAttempt(attempts.incrementAndGet(), snapshot())
 
+    internal fun beginLogin(expected: SessionStamp): LoginAttempt = withCurrent(expected) {
+        LoginAttempt(attempts.incrementAndGet(), expected)
+    }
+
     internal suspend fun commitLogin(attempt: LoginAttempt, account: StoredAccount) = mutations.withLock {
         require(account.userId > 0 && isValidMusicU(account.musicU))
         currentCoroutineContext().ensureActive()

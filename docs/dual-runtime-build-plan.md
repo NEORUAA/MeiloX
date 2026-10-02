@@ -156,6 +156,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Group | Bounded review evidence | Status |
 | --- | --- | --- |
 | Flavor/manifest/dependencies/R8, network providers and signing | Original standalone transport/codec restoration and host-only call boundaries reviewed; native R8 evidence is recorded below | Reviewed at source level; production upgrade/runtime gates remain separate |
+| Flavor login/session boundaries | Full bodies of the six files named below reviewed at `d55c`, plus the 30-line HostSessionBridge contract; poller/login integration and changed standalone controller/store sections reviewed in the retry follow-up | Named source scope reviewed; closed retry/publication tests do not qualify real WebView/QR authorization, expiry/logout/account switching or all login dependencies |
 | Bootstrap, ViewModel factory and navigation | Graph/context injection, 29 unscoped provider bindings and owner/key lifecycle reviewed; navigation body matches main except its comment | Reviewed at source level; factory lifecycle tests remain paired |
 | Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence, catalog/Home/library/search/podcast/recognition/wiki/message song handoff and owned offline-history policy, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Listed paths reviewed at source level; full lifecycle, continuation and actual playback/reporting acceptance remain separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
@@ -254,6 +255,26 @@ follow-up repairs the other six audited families (13 entries) at bounded source/
 scope and adds native FindMusic callback cases. Retained original-row callbacks for
 the other five families and real account/expiry behavior remain separate gates.
 No duplicate frontend tree or new page architecture is added.
+
+#### Flavor Login Review Scope
+
+The six full-body reads are limited to these files; they do not imply complete
+host SDK, WebView, graph or platform behavior review:
+
+```text
+app/src/standalone/java/com/ljyh/mei/ui/screen/account/NeteaseLoginScreen.kt
+app/src/parasite/java/com/ljyh/mei/ui/screen/account/NeteaseLoginScreen.kt
+app/src/parasite/java/com/ljyh/mei/parasite/HostLoginController.kt
+app/src/parasite/java/com/ljyh/mei/parasite/TvHostLoginBackend.kt
+app/src/standalone/java/com/ljyh/mei/standalone/StandaloneTransport.kt
+app/src/standalone/java/com/ljyh/mei/standalone/StandaloneSessionStore.kt
+```
+
+`app/src/parasite/java/com/ljyh/mei/parasite/HostSessionBridge.kt` is separately
+reviewed as a 30-line forwarding contract. The subsequent retry correction reviews
+the new WebCookieLoginPoller, its login-screen integration and changed standalone
+controller/store sections, not every unchanged dependency or real
+authentication transition. Exact code/test/runtime evidence remains separated below.
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
 TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
@@ -425,9 +446,10 @@ semantics remain under audit; factory selection alone is not dual-backend parity
   registered Activity/service components without module Contexts or carrier routing.
 - Restored the baseline WebView/manual Cookie page without changing layout or navigation.
   Only the ViewModel/backend bindings and success handling change. A detected WebView
-  Cookie is verified before the page reports success, and the same rejected value is not
-  repeatedly retried by the polling loop. No credential is copied from TV or the original
-  standalone installation into the debug app.
+  Cookie is verified before the page reports success. At this initial checkpoint the
+  polling loop suppressed an unchanged rejected value permanently; the bounded retry
+  correction below fixes that source-adaptation gap. No credential is copied from TV
+  or the original standalone installation into the debug app.
 - `StandaloneSessionStore` owns credentials and persists successful login atomically.
   Saved Cookie/UserId pairs are not treated as proof of identity: startup verifies the
   saved Cookie privately before publishing an authenticated session. Candidate login
@@ -3563,6 +3585,85 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   framework-free execution, production upgrade and the remaining D2-D6 gates stay open.
   Only emulator-5554 is used, screen-on, without an AVD restart. Whitelisted traces,
   screenshots and artifacts remain outside Git; no account/permission write is added.
+
+### D3/D6 Checkpoint: Creation-Owned WebView Candidate Retry (2026-10-02)
+
+- The standalone restoration's `lastAttemptedCookie` marker permanently skipped an
+  unchanged Cookie after failed private verification. A transient verification failure
+  could therefore prevent the existing WebView page from recovering. The extracted
+  poller now retries a failed same value after five seconds, observes a changed value
+  on the next tick, and reports success only when verification returns true. This
+  corrects a dual-backend login/session adaptation, not a main frontend cleanup.
+- Retries retain the poller/controller's first readable creation owner, never
+  rebinding after retirement. Initial unreadable transitions wait at 500ms intervals
+  without reading WebView Cookies until that first owner is available. A no-longer-current
+  owner ends observation; failed verification remains retryable while ownership is
+  current. Standalone controller/store validation uses atomic `withCurrent` before
+  incrementing the attempt counter, so a stale observer cannot cancel or replace a
+  newer login. The official QR logic, credential ownership, signing and page layout/
+  controls remain unchanged; no official Cookie is copied into standalone.
+- Opening the original manual sheet pauses/cancels automatic polling; mutual
+  exclusion and manual priority apply before commit. They cannot revoke a durable
+  commit already started. A held persistence case proves that the earlier valid A
+  commit may complete, while manual B carrying its retired fixed owner fails closed
+  without verifying/writing B. No transaction rollback or automatic owner rebasing
+  is added, and all-stage manual priority is not claimed.
+- A fresh closed run passes 63 cases: WebCookieLoginPollerTest 27,
+  StandaloneSessionStoreTest 16, StandaloneAccountTransportTest 10 and shared
+  SessionStoreTest 10. These use synthetic credentials/sessions and controlled
+  coroutine/persistence/transport behavior, not real authorization. The initial
+  14-case dedup repair missed three external-owner regressions; their failing tests
+  lead to fencing. Two later initial-transition WebView/manual failures lead to
+  one-time readiness capture. Intermediate passes/artifacts are not final evidence.
+- Final source/test fingerprints remain unchanged across the build. Both production
+  R8 artifacts build in 1m20s (107 tasks); all 56 real-SDK local release gates pass
+  in 38.14s. Unsigned standalone SHA-256 is
+  `cf12ad02d072cf6daa62dfe5891264452e6fc25273abaa50b355153cad4465c2`;
+  parasite is `e747628d1392f4387f3b40a1d0d56aafa74e83039a9d5131b6ce850420fc6ba6`.
+  The final local isolated standalone R8 builds in 2m15s (55 tasks), SHA-256
+  `0bf241904c715747d513e807e631b79f1f40083ca69679248c3cbd0d8bc4a448`;
+  ordinary-debug restoration builds in 9s (41 tasks), SHA-256
+  `c934b45531c0efa67850077a87b375bc5d39874a0fa1c2e56d0447ba92df9b95`.
+  Isolated R8 and ordinary debug use the unchanged compatible development certificate,
+  pass 16KB alignment and keep probes disabled; R8 is v3-signed and debug v2-signed.
+  No middle artifact is substituted for this final source. Existing shared SessionStore
+  production code is unchanged; its ten contract tests are rerun, not a new store repair.
+- Final isolated R8 is preserving-installed and its pulled SHA-256 matches the final
+  isolated artifact above. Android's PackageUpdateActivity catches the first start:
+  UNKNOWN(0)/WaitTime 4ms with the update screen, not cold-start proof. Observation
+  confirms that process subsequently enters MainActivity; no timeout triggers an
+  AVD restart. After the wrapper finishes, app-only cold start reports 537ms/539ms
+  (TotalTime/WaitTime, PID 9506), retaining Full Moon Serenade NONE/unprepared at
+  143811ms, seven entries, speed 0 and null error without autoplay. The intermediate
+  wrapper process's PAUSED state is not substituted for this final cold state.
+- Final signed/pulled parasite SHA-256 is
+  `24895a8dac4f428b82954ffe057b90f200243a224552074ae9e83bcacbca0d4f`,
+  non-debuggable/probe-disabled, with unchanged development certificate and passing
+  16KB alignment. Module-only preserving install and TV app-only cold start report
+  14923ms/14955ms (PID 9861). Logged milestones are process 21:37:50.444, loaded
+  21:37:51.429, verified 21:37:54.010, Activity 21:37:54.920, platform launch
+  21:38:01.853, service instance 21:38:04.847 and service-created 21:38:05.710.
+  Activity-to-service-instance is 9.927s, versus 0.863s to service-created; these
+  observations do not attribute the slow launch or establish reliability. Settled
+  original portrait Home/glass retains Prelude PAUSED at 178897ms, eleven entries
+  and null error, with native TV STOPPED and no queue. Current-PID AndroidRuntime
+  error lines are zero, not proof of every failure path or complete release behavior.
+- Ordinary standalone debug is then preserving-restored from the final debug artifact
+  above; app-only cold start reports 1222ms/1227ms (PID 10705), retaining the same
+  Full Moon Serenade NONE/unprepared position/queue without autoplay or player error.
+  TV returns to front HOT at 480ms/481ms in the same PID 9861; this is not cold-start
+  reliability. The final portrait Home/glass/paused state is inspected. Production
+  standalone's original package path is unchanged; MediaStore row 820 remains
+  TV-owned, pending=0 and 22705573 bytes. No AVD restart/screen-off, second device,
+  framework/global rotation change, real Cookie-file access, authorization/logout,
+  permission/quota/social write or new playback is performed. Home smoke does not
+  exercise interactive WebView authentication. Logs/screenshots/APKs remain outside
+  Git; all capture processes finish before the checkpoint is recorded.
+- Original login pages may be inspected without authorizing a real transition;
+  no WebView/QR login, logout, new account, Cookie-file import or real expiry matrix
+  is accepted here. ABI-008 is extended in place, with API-003 retaining the official
+  state-machine distinction. Existing D2-D6 upgrade/framework-free/capability/account/
+  lifecycle and real-server gates remain open.
 
 ## Acceptance and Remaining Decisions
 

@@ -59,8 +59,8 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -70,25 +70,23 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = viewModel()) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var detected by remember { mutableStateOf(false) }
     var showCookieLoginSheet by remember { mutableStateOf(false) }
+    val cookieLogin = remember(viewModel) {
+        WebCookieLoginPoller(isOwnerCurrent = viewModel::isLoginOwnerCurrent)
+    }
     val cookieManager = remember { CookieManager.getInstance() }
     val bottomPadding = LocalPlayerAwareWindowInsets.current
         .asPaddingValues()
         .calculateBottomPadding()
 
-    LaunchedEffect(webView) {
-        var lastAttemptedCookie: String? = null
-        while (webView != null && !detected) {
-            val cookieHeader = cookieManager.getCookie("https://music.163.com").orEmpty()
-            val musicU = cookieHeader.split(';')
-                .map(String::trim)
-                .firstOrNull { it.startsWith("MUSIC_U=") }
-                ?.substringAfter('=')
-                ?.takeIf(String::isNotBlank)
-            if (musicU != null && musicU != lastAttemptedCookie) {
-                lastAttemptedCookie = musicU
-                detected = viewModel.completeLogin(musicU)
-            }
-            delay(500)
+    LaunchedEffect(webView, showCookieLoginSheet) {
+        if (webView != null && !detected && !showCookieLoginSheet) {
+            val succeeded = cookieLogin.poll(
+                readMusicU = {
+                    musicUFromCookieHeader(cookieManager.getCookie("https://music.163.com").orEmpty())
+                },
+                verify = viewModel::completeLogin,
+            )
+            if (succeeded) detected = true
         }
     }
 
@@ -136,7 +134,10 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = viewModel()) {
 
         if (!detected && !showCookieLoginSheet) {
             GlassButton(
-                onClick = { showCookieLoginSheet = true },
+                onClick = {
+                    cookieLogin.pauseForManualLogin()
+                    showCookieLoginSheet = true
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(
@@ -159,8 +160,11 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = viewModel()) {
 
     if (showCookieLoginSheet) {
         NeteaseCookieLoginSheet(
-            onDismiss = { showCookieLoginSheet = false },
-            onSubmit = viewModel::loginWithCookie,
+            onDismiss = {
+                cookieLogin.resumeWebLogin()
+                showCookieLoginSheet = false
+            },
+            onSubmit = { musicU -> cookieLogin.loginManually(musicU, viewModel::loginWithCookie) },
             onLoginSuccess = {
                 showCookieLoginSheet = false
                 detected = true
@@ -339,9 +343,32 @@ private fun NeteaseCookieLoginSheet(
 
 class NeteaseLoginViewModel @Inject internal constructor(
     private val accounts: com.ljyh.mei.standalone.StandaloneAccountController,
+    private val sessions: com.ljyh.mei.standalone.StandaloneSessionStore,
 ) : ViewModel() {
-    suspend fun completeLogin(musicU: String): Boolean = accounts.login(musicU)
-    suspend fun loginWithCookie(musicU: String): Boolean = accounts.login(musicU)
+    private var loginOwner = try { sessions.snapshot() } catch (_: IOException) { null }
+
+    fun isLoginOwnerCurrent(): Boolean? {
+        // Wait for the first readable owner, but never rebind a retired page.
+        val owner = loginOwner ?: try {
+            sessions.snapshot().also { loginOwner = it }
+        } catch (_: IOException) {
+            return null
+        }
+        return try {
+            sessions.requireCurrent(owner)
+            true
+        } catch (_: IOException) {
+            false
+        }
+    }
+
+    suspend fun completeLogin(musicU: String): Boolean = loginWithCookie(musicU)
+
+    suspend fun loginWithCookie(musicU: String): Boolean {
+        if (isLoginOwnerCurrent() != true) return false
+        val owner = loginOwner ?: return false
+        return accounts.login(musicU, owner)
+    }
 }
 
 fun logoutNetease(context: android.content.Context, expected: com.ljyh.mei.data.session.SessionStamp) {
