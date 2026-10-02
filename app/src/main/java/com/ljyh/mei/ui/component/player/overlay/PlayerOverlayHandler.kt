@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -22,6 +23,8 @@ import com.ljyh.mei.ui.component.player.enterFloatingLyricsPip
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.ljyh.mei.ui.navigation.MeiNavigator
+import com.ljyh.mei.ui.glass.GlassColors
+import com.ljyh.mei.ui.glass.LocalGlassColors
 
 /**
  * 播放器弹窗处理器
@@ -32,7 +35,8 @@ class PlayerOverlayHandler(
     private val stateContainer: PlayerStateContainer,
     val playlistViewModel: PlaylistViewModel,
     private val navController: MeiNavigator,
-    private val context: android.content.Context
+    private val context: android.content.Context,
+    private val pipColors: () -> GlassColors,
 ) {
     private val _currentOverlay = mutableStateOf<OverlayState>(OverlayState.None)
     val currentOverlay: State<OverlayState> = _currentOverlay
@@ -161,7 +165,7 @@ class PlayerOverlayHandler(
             }
             MoreAction.PICTURE_IN_PICTURE -> {
                 dismiss()
-                enterFloatingLyricsPip(context, stateContainer.isPlaying.value)
+                enterFloatingLyricsPip(context, stateContainer.isPlaying.value, stateContainer, pipColors)
             }
             MoreAction.BOTTOM_ACTION -> {
                 showBottomAction()
@@ -203,13 +207,15 @@ fun rememberOverlayHandler(
     navController: MeiNavigator
 ): PlayerOverlayHandler {
     val context = LocalContext.current
+    val pipColors = rememberUpdatedState(LocalGlassColors.current)
 
     return remember(stateContainer) {
         PlayerOverlayHandler(
             stateContainer = stateContainer,
             playlistViewModel = playlistViewModel,
             navController = navController,
-            context = context
+            context = context,
+            pipColors = { pipColors.value },
         )
     }
 }

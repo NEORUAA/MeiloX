@@ -10,6 +10,8 @@ import java.io.File
 
 /** Platform attachment and media-control integration supplied by the selected runtime. */
 interface ComponentRuntime {
+    val usesLyricsPipHelper: Boolean get() = false
+    fun enterLyricsPip(activity: Activity, source: LyricsPipSource) = source.close()
     fun recognitionCapture(context: Context): RecognitionCapture = PlatformRecognitionCapture(context)
     fun wrapComponent(base: Context): Context
     fun activityCreated(activity: Activity, restored: Boolean)

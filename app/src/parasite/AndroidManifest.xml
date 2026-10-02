@@ -14,5 +14,14 @@
             android:name=".parasite.helper.MicrophoneCaptureService"
             android:exported="true"
             android:foregroundServiceType="microphone" />
+        <activity
+            android:name=".parasite.helper.LyricsPipActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" />
+        <receiver android:name=".parasite.helper.LyricsPipActionReceiver" android:exported="false" />
     </application>
 </manifest>

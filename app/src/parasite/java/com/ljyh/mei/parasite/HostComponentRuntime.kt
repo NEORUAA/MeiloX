@@ -10,6 +10,8 @@ import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.runtime.ComponentRuntime
 import com.ljyh.mei.recognition.RecognitionCapture
 import com.ljyh.mei.parasite.helper.HostRecognitionCapture
+import com.ljyh.mei.parasite.helper.HostLyricsPip
+import com.ljyh.mei.runtime.LyricsPipSource
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -31,6 +33,12 @@ class HostComponentRuntime internal constructor(
     override fun recognitionCapture(context: Context): RecognitionCapture {
         require(enabled && context.packageName == HostIdentity.PACKAGE) { "Recognition requires the verified host runtime" }
         return HostRecognitionCapture(context)
+    }
+
+    override val usesLyricsPipHelper: Boolean get() = enabled
+    override fun enterLyricsPip(activity: Activity, source: LyricsPipSource) {
+        require(enabled && activity.packageName == HostIdentity.PACKAGE) { "PiP requires the verified host runtime" }
+        HostLyricsPip.enter(activity, source)
     }
 
     override fun activityCreated(activity: Activity, restored: Boolean) {

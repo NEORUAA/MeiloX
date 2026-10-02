@@ -3372,6 +3372,35 @@ These are integration differences, not server API semantics.
   host APK, framework scope and global rotation settings are not modified. Dedicated
   PiP support and full denial/expiry/process-death/device matrix remain open.
 
+### API-038: PiP Capability Belongs to the Registered Activity, Not Injected UI
+
+- Recorded: 2026-10-03. Original standalone registers MainActivity with PiP support;
+  the pinned official TV APK registers no PiP-capable Activity. Injecting MeiloX's
+  Activity implementation does not change that installed manifest capability. Native
+  [Android PiP support](https://developer.android.com/develop/ui/views/picture-in-picture)
+  must belong to a registered carrier, so the user-authorized module Activity owns
+  the window rather than altering host metadata or framework scope.
+- The shared player-menu entry, backdrop/content components and lyric selection are
+  retained for both runtimes. Standalone remains direct MainActivity PiP. Parasite
+  transfers only platform snapshots and a Binder lifetime to its no-launcher helper;
+  official session, lyric requests, artwork fetching and playback stay in TV.
+- Caller package/UID and the pinned TV signer/version are checked. Host commands use
+  the captured account generation. The module receiver is private, its per-window
+  PendingIntents are immutable, and destruction/invalidation/death/timeout release
+  resources; stale actions cannot target a replacement window or account.
+- Both R8 builds, 2159 paired JVM cases, vital lint, installed-R8 native ownership
+  checks and 79 local signed-pair gates pass. Actual RemoteActions play/next/previous/
+  pause the hosted player and ignore closed-window replay. Consecutive production
+  frames show changing primary/translated/next lyrics and cover rendering; host
+  process death closes the helper and normal relaunch restores a paused queue.
+- This is not full PiP/device acceptance. The HyperOS AVD's system-menu controls are
+  not exposed by tested taps in either runtime, so native expand/close/menu clicks
+  remain unqualified. One prompted app-to-app launch leaves playback paused; prompt
+  attribution and the full denial/account/configuration matrix remain open. The
+  original standalone light-theme readability issue is reproduced and recorded,
+  without changing its frontend styling. No host repack, credentials, official
+  sources, device logs, global rotation changes or framework hooks are introduced.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

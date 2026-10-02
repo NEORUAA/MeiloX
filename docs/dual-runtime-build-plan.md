@@ -151,7 +151,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4 | Separate production-release signing compatibility; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone helper and paired real fingerprint/match paths verified on HyperOS 4 | Complete paired lifecycle/permission/regression matrix; authorized TV PiP helper implementation; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -4445,6 +4445,63 @@ playlist/component/PlaylistActionOverlay.kt
   broader permission/process-death acceptance and known-source recognition accuracy
   remain separate; this checkpoint does not close all D2-D6 gates.
 
+## Module PiP Helper and Shared Lyrics Rendering (2026-10-03)
+
+- The pinned TV manifest has no PiP-capable Activity. The authorized module helper
+  owns only a native PiP window and private RemoteAction receiver; it has no launcher,
+  playback service, account identity, Cookie or backend graph. TV still owns the
+  player, lyric requests, settings, artwork loading and official session. API-038
+  records this platform component boundary.
+- Standalone retains its original MainActivity PiP path. Both windows call the same
+  extracted content/backdrop components and text-selection function, without changing
+  their layouts, colors, padding, sizes, preference semantics or player-menu entry.
+  Future shared-renderer edits therefore apply to both APKs; no duplicate lyric
+  screen tree or alternate music application is introduced.
+- Across processes, only platform Bundles, bounded Bitmaps, a lifetime Binder and
+  three integer commands are passed. The helper verifies the actual TV result caller
+  and pinned signer/version; the host endpoint verifies the module UID. Session
+  invalidation, Activity destruction, endpoint replacement, peer death and activation
+  timeout release the source. Timed-out queued host operations are removed. Private
+  immutable PendingIntents have per-window identities and stop acting after close.
+- Paired suites pass 1074 standalone and 1085 parasite cases, with zero failures,
+  errors or skips. Both production-ID R8 artifacts and vital lint pass. The local
+  real-SDK signed-pair verifier reports 79 PASS lines, including eight new negative
+  PiP-helper declarations; temporary fixture signing material is removed. No remote
+  CI, release, merge or push is performed.
+- Development-signed standalone SHA-256 is
+  `3e698fac38622a8de856181e3ff75cb9bfd04c6f6d25ad9732bb9422108d0d26`;
+  parasite is `00e45ab0ee38962c3e4eaed266858df4e22062b7b1c474aad168fb9f8837b2b5`.
+  Both are preserving-installed and their installed hashes match. TV PIDs 21033
+  and 25742 execute R8 map ID
+  `3272c2faba8232e55095f21607584efae41547d51ec3132b0daed6315fde7095`,
+  separately confirming intended code execution rather than only installed resources.
+- Native Java/platform-only instrumentation passes helper capability/ownership,
+  no-launcher and microphone caller checks against the installed minified APK.
+  An optional normal-menu Activity monitor discovers the actual R8 PiP factory by
+  its Android signature and sends its real immutable PendingIntents. External media
+  snapshots verify PLAYING, item 2-to-3-to-2 changes, PAUSED, and no state change on
+  closed-window replay. Native TV stays STOPPED/empty; original standalone stays
+  paused. This proves the action channel, not a system-menu button click.
+- In production execution, 24 consecutive frames show Nod-Krai advancing from
+  approximately 3s to 38s with different primary/translated/next lines and a rendered
+  cover. Killing host PID 21033 removes the helper's pinned Activity; restarting the
+  official launcher retains the session and paused queue in PID 25742. Direct shell
+  launch without the required TV result caller does not leave a helper window.
+  The temporary TV dark-theme preference is restored to Follow System.
+- Limits remain explicit: native PiP controls cannot be exposed by the tested taps
+  in either standalone or helper windows on this HyperOS AVD. Expand/close/menu
+  interaction therefore remains unqualified. Standalone also reproduces the original
+  light-theme white-text/white-card readability problem; its shared styling is not
+  repaired in this backend migration. The HyperOS app-launch confirmation is
+  respected; one prompted launch leaves playback paused, with normal playback
+  resumed for the consecutive-frame capture. Cause/all prompt paths are unqualified.
+- An initial instrumented action probe fails while connecting/disconnecting native
+  UiAutomation in test PID 22741. The final probe avoids UiAutomation/permission
+  adoption and uses external state snapshots instead. This test-harness failure is
+  kept separate from ordinary R8 helper execution and does not authorize production
+  framework hooks or new permissions. Logs, APKs and screenshots remain outside Git
+  under `/tmp/meilox-pip-*`; no audio or credentials are committed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -4459,8 +4516,9 @@ playlist/component/PlaylistActionOverlay.kt
 - Keep interface differences and evidence in
   [Official Client API Differences](official-client-api-differences.md), distinguishing
   standalone contract, official-host contract, shared mapping and verification limits.
-- The TV microphone/PiP implementation gate remains open. Dedicated module helper
-  components are now authorized; invoking the standalone APK, sharing credentials,
+- Dedicated TV microphone/PiP helpers are implemented with bounded live evidence
+  above; full permission/lifecycle and native PiP-menu interaction gates remain open.
+  Invoking the standalone APK as a helper, sharing credentials,
   hiding features, changing LSPosed scope or rewriting host metadata is not authorized.
 - Real login/logout/account switching, quota-consuming downloads/uploads and social
   writes still require the previously stated user cooperation/authorization boundaries.

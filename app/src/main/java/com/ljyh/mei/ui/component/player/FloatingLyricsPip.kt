@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +43,9 @@ import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.playback.PlayerConnection
+import com.ljyh.mei.di.AppGraph
+import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
+import com.ljyh.mei.ui.glass.GlassColors
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.utils.rememberPreference
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
@@ -52,8 +54,15 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-fun enterFloatingLyricsPip(context: Context, isPlaying: Boolean) {
+fun enterFloatingLyricsPip(context: Context, isPlaying: Boolean, state: PlayerStateContainer, colors: () -> GlassColors) {
     val activity = context as? Activity ?: return
+    val runtime = AppGraph.component.runtime()
+    if (runtime.usesLyricsPipHelper) {
+        runCatching { FloatingLyricsPipSource(activity, state, colors) }.getOrNull()?.let { source ->
+            runCatching { runtime.enterLyricsPip(activity, source) }.onFailure { source.close() }
+        }
+        return
+    }
     activity.enterPictureInPictureMode(floatingLyricsPipParams(activity, isPlaying))
 }
 
@@ -119,14 +128,15 @@ fun FloatingLyricsPipScreen(
         }
     }
 
-    val lines = lyricData.lyricLine.lines
-    val activeIndex = lines.indexOfLast { position >= it.start }.coerceAtLeast(0)
-    val activeLine = lines.getOrNull(activeIndex)
-    val nextLine = lines.getOrNull(activeIndex + 1)
-    val title = activeLine?.primaryText()?.takeIf(String::isNotBlank)
-        ?: metadata?.title
-        ?: context.getString(R.string.lyrics_waiting)
+    val (title, translation, next) = floatingLyricsPipText(
+        lyricData.lyricLine.lines, position, metadata?.title ?: context.getString(R.string.lyrics_waiting),
+        showsTranslation, showsNextLine,
+    )
+    FloatingLyricsPipContent(title, translation, next, fontScale)
+}
 
+@Composable
+fun FloatingLyricsPipContent(title: String, translation: String?, next: String?, fontScale: Float) {
     Box(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
         GlassCard(Modifier.fillMaxWidth()) {
             Column(
@@ -145,42 +155,55 @@ fun FloatingLyricsPipScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                activeLine?.translationText()
-                    ?.takeIf { showsTranslation && it.isNotBlank() }
-                    ?.let {
-                        Text(
-                            text = it,
-                            color = Color.White.copy(alpha = .74f),
-                            fontSize = (12f * fontScale).sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                nextLine?.primaryText()
-                    ?.takeIf { showsNextLine && it.isNotBlank() }
-                    ?.let {
-                        Text(
-                            text = it,
-                            color = Color.White.copy(alpha = .48f),
-                            fontSize = (11f * fontScale).sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
+                translation?.let {
+                    Text(
+                        text = it,
+                        color = Color.White.copy(alpha = .74f),
+                        fontSize = (12f * fontScale).sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                next?.let {
+                    Text(
+                        text = it,
+                        color = Color.White.copy(alpha = .48f),
+                        fontSize = (11f * fontScale).sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
     }
 }
 
+internal fun floatingLyricsPipText(
+    lines: List<ISyncedLine>, position: Long, fallback: String, showsTranslation: Boolean, showsNext: Boolean,
+): Triple<String, String?, String?> {
+    val index = lines.indexOfLast { position >= it.start }.coerceAtLeast(0)
+    val active = lines.getOrNull(index)
+    return Triple(
+        active?.primaryText()?.takeIf(String::isNotBlank) ?: fallback,
+        active?.translationText()?.takeIf { showsTranslation && it.isNotBlank() },
+        lines.getOrNull(index + 1)?.primaryText()?.takeIf { showsNext && it.isNotBlank() },
+    )
+}
+
 @Composable
 fun FloatingLyricsPipBackdrop(playerConnection: PlayerConnection) {
     val metadata by playerConnection.mediaMetadata.collectAsState()
+    FloatingLyricsPipBackdrop(metadata?.coverUrl)
+}
+
+@Composable
+fun FloatingLyricsPipBackdrop(cover: Any?) {
     Box(Modifier.fillMaxSize().background(Color(0xFF151217))) {
         AsyncImage(
-            model = metadata?.coverUrl,
+            model = cover,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
@@ -195,13 +218,13 @@ fun FloatingLyricsPipBackdrop(playerConnection: PlayerConnection) {
     }
 }
 
-private fun ISyncedLine.primaryText(): String = when (this) {
+internal fun ISyncedLine.primaryText(): String = when (this) {
     is KaraokeLine -> syllables.joinToString("") { it.content }
     is SyncedLine -> content
     else -> ""
 }
 
-private fun ISyncedLine.translationText(): String? = when (this) {
+internal fun ISyncedLine.translationText(): String? = when (this) {
     is KaraokeLine -> translation
     is SyncedLine -> translation
     else -> null

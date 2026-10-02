@@ -160,21 +160,24 @@ jobs:
                 }
               else
                 helpers = {
-                  "com.ljyh.mei.parasite.helper.MicrophonePermissionActivity" => "activity",
-                  "com.ljyh.mei.parasite.helper.MicrophoneCaptureService" => "service"
+                  "com.ljyh.mei.parasite.helper.MicrophonePermissionActivity" => ["activity", "true"],
+                  "com.ljyh.mei.parasite.helper.MicrophoneCaptureService" => ["service", "true"],
+                  "com.ljyh.mei.parasite.helper.LyricsPipActivity" => ["activity", "true"],
+                  "com.ljyh.mei.parasite.helper.LyricsPipActionReceiver" => ["receiver", "false"]
                 }
                 abort "Parasite APK registers an independent launcher or module component" if components.any? { |node|
                   launcher.call(node) || (node.attributes["android:name"].to_s.start_with?("com.ljyh.mei.") &&
-                    helpers[node.attributes["android:name"]] != node.name)
+                    helpers[node.attributes["android:name"]]&.first != node.name)
                 }
-                helpers.each { |name, kind|
+                helpers.each { |name, (kind, exported)|
                   matches = components.select { |node| node.attributes["android:name"] == name }
                   abort "Parasite helper is missing or unavailable" unless application.attributes["android:enabled"] != "false" &&
                     matches.length == 1 && matches.first.name == kind && matches.first.attributes["android:enabled"] != "false" &&
-                    matches.first.attributes["android:exported"] == "true" && matches.first.get_elements("intent-filter").empty?
+                    matches.first.attributes["android:exported"] == exported && matches.first.get_elements("intent-filter").empty?
                 }
-                microphone = components.find { |node| node.attributes["android:name"] == helpers.keys.last }
-                permission = components.find { |node| node.attributes["android:name"] == helpers.keys.first }
+                microphone = components.find { |node| node.attributes["android:name"] == "com.ljyh.mei.parasite.helper.MicrophoneCaptureService" }
+                permission = components.find { |node| node.attributes["android:name"] == "com.ljyh.mei.parasite.helper.MicrophonePermissionActivity" }
+                pip = components.find { |node| node.attributes["android:name"] == "com.ljyh.mei.parasite.helper.LyricsPipActivity" }
                 enum = lambda { |value, label, number|
                   value == label || (begin Integer(value, 0) == number; rescue ArgumentError, TypeError; false; end)
                 }
@@ -183,6 +186,9 @@ jobs:
                   %w[android.permission.RECORD_AUDIO android.permission.FOREGROUND_SERVICE_MICROPHONE].all? { |name|
                     document.get_elements("manifest/uses-permission").any? { |node| node.attributes["android:name"] == name }
                   }
+                abort "Parasite PiP capability declaration differs" unless pip.attributes["android:supportsPictureInPicture"] == "true" &&
+                  pip.attributes["android:resizeableActivity"] == "true" && pip.attributes["android:excludeFromRecents"] == "true" &&
+                  enum.call(pip.attributes["android:screenOrientation"], "portrait", 1)
               end
             ' "$application_id"
             local files

@@ -175,6 +175,8 @@ def manifest_fixture(flavor)
     <<~XML
       <activity android:name="com.ljyh.mei.parasite.helper.MicrophonePermissionActivity" android:exported="true" android:excludeFromRecents="true" android:screenOrientation="portrait"/>
       <service android:name="com.ljyh.mei.parasite.helper.MicrophoneCaptureService" android:exported="true" android:foregroundServiceType="microphone"/>
+      <activity android:name="com.ljyh.mei.parasite.helper.LyricsPipActivity" android:exported="true" android:excludeFromRecents="true" android:screenOrientation="portrait" android:supportsPictureInPicture="true" android:resizeableActivity="true"/>
+      <receiver android:name="com.ljyh.mei.parasite.helper.LyricsPipActionReceiver" android:exported="false"/>
     XML
   end
   <<~XML
@@ -503,6 +505,30 @@ end
   }],
   'parasite microphone permission missing' => ['parasite', ->(xml) {
     xml.elements['manifest/uses-permission'].remove
+  }],
+  'parasite PiP helper missing' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].remove
+  }],
+  'parasite PiP helper disabled' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].attributes['android:enabled'] = 'false'
+  }],
+  'parasite PiP helper non-exported' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].attributes['android:exported'] = 'false'
+  }],
+  'parasite PiP capability missing' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].attributes['android:supportsPictureInPicture'] = 'false'
+  }],
+  'parasite PiP helper exposed in recents' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].attributes['android:excludeFromRecents'] = 'false'
+  }],
+  'parasite PiP helper landscape' => ['parasite', ->(xml) {
+    xml.elements["manifest/application/activity[@android:name='com.ljyh.mei.parasite.helper.LyricsPipActivity']"].attributes['android:screenOrientation'] = 'landscape'
+  }],
+  'parasite PiP receiver missing' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/receiver'].remove
+  }],
+  'parasite PiP receiver exported' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/receiver'].attributes['android:exported'] = 'true'
   }],
   'standalone helper microphone permission leak' => ['standalone', ->(xml) {
     xml.root.add_element('uses-permission', 'android:name' => 'android.permission.FOREGROUND_SERVICE_MICROPHONE')
