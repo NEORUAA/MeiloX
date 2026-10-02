@@ -84,7 +84,7 @@ fun PodcastScreen(
     viewModel: PodcastViewModel = viewModel(),
     isNavigationTab: Boolean = false,
 ) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current
     val bottomPadding = insets.asPaddingValues().calculateBottomPadding()
@@ -171,7 +171,11 @@ fun PodcastScreen(
                             if (state.selectedCategoryId == null) R.string.podcast_for_you else R.string.podcast_category,
                         ),
                         podcasts = visible,
-                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(it.toString()) } },
+                        onClick = { id ->
+                            viewModel.withCurrent(state, id) {
+                                Screen.PodcastDetail.navigate(navController) { addPath(id.toString()) }
+                            }
+                        },
                     )
                 }
             }
@@ -180,7 +184,11 @@ fun PodcastScreen(
                     PodcastSection(
                         title = stringResource(R.string.podcast_featured),
                         podcasts = featured,
-                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(it.toString()) } },
+                        onClick = { id ->
+                            viewModel.withCurrent(state, id) {
+                                Screen.PodcastDetail.navigate(navController) { addPath(id.toString()) }
+                            }
+                        },
                     )
                 }
             }
@@ -240,7 +248,9 @@ fun PodcastScreen(
                                 )
                             },
                             onClick = {
-                                Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                                viewModel.withCurrent(state, podcast.id) {
+                                    Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                                }
                             },
                         )
                     }

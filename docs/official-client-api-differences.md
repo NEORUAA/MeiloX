@@ -2992,10 +2992,40 @@ These are integration differences, not server API semantics.
   or removed/refreshed resources also retire the callback. LibraryViewModelTest
   passes 19 cases per flavor; combined with the social follow-up, 84 focused JVM
   cases pass without failures/errors/skips. There is no new full-Library native
-  fixture or real account-switch acceptance. The source audit still leaves
+  fixture or real account-switch acceptance. At that checkpoint the source audit left
   AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and
-  SongWiki navigation callback families open; Social/Library success is not a
-  declaration that every shared page action is qualified.
+  SongWiki navigation callback families open; the follow-up below records their
+  later source/JVM repair, not complete shared-page action qualification.
+- Remaining catalog-navigation follow-up (2026-10-02): those six families now guard
+  13 existing entries with the rendered state and current session/recovery. Cached
+  search tabs receive new state identities; FindMusic publishes its existing load
+  generation as a read-only owner and matches category/resource/member at dispatch.
+  Podcast checks the displayed tab/member and retires state on clearing. Wiki also
+  checks the requested song and exact related playlist or contribution URL.
+- AccountHome's original parallel reads remain behind a narrow loader/error seam.
+  A publication-only revision and private refresh flow prevent identical account/
+  resource reloads from reviving callbacks when AccountStore conflates equal state.
+  The original refresh still runs; success/error matches the exact loading state,
+  so an earlier non-cooperative reload cannot overwrite it. Current profile matching
+  uses value equality while internal/rendered state, session/authentication and
+  recovery gates stay strict. No endpoint, URL, page architecture, control or song
+  playback is changed; ready public guest browsing remains available.
+- Thirty-eight added JVM cases per flavor pass within eight fresh focused suites:
+  156 standalone and 156 parasite, zero failures/errors/skips. Failed compilation
+  and account refresh/profile-matching iterations are corrected before that run,
+  not treated as successful evidence. This is source/closed-JVM qualification, not
+  actual retained Composable-row callbacks for all six families, real expiry/account
+  switching, native writes or complete minified UI/lifecycle acceptance. Artifact
+  and device scope are recorded separately in the dual-runtime build plan.
+- FindMusic then passes six native original-screen rendered-callback cases per
+  debug flavor, including owner-only reactive rebinding for structurally unchanged
+  cached category content. Obsolete callbacks are rejected and newly rendered ones
+  can navigate. The source, public sessions and coverless rows are in-memory with
+  no AppGraph/account/network dispatch. This narrows the callback integration gate
+  for FindMusic only; it does not qualify pointer input, real accounts, minified stale
+  callbacks or the other five families. The test-only addition does not change the
+  current production R8 pair; separate ready AccountHome/ranking reads are not an
+  attributed listening-statistics increment.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 

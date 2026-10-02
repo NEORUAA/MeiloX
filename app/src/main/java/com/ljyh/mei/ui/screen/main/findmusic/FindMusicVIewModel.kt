@@ -33,6 +33,8 @@ class FindMusicViewModel internal constructor(
 
     private val _highQualityPlaylist = MutableStateFlow<Resource<HighQualityPlaylistResult>>(Resource.Loading)
     val highQualityPlaylist = _highQualityPlaylist.asStateFlow()
+    private val _playlistOwner = MutableStateFlow<Pair<SessionStamp, Int>?>(null)
+    val playlistOwner = _playlistOwner.asStateFlow()
     private val _playlistCache = mutableMapOf<String, HighQualityPlaylistResult>()
     private val stateLock = Any()
     private var dataSession: SessionStamp? = null
@@ -63,6 +65,7 @@ class FindMusicViewModel internal constructor(
     private fun resetSession(owner: SessionStamp?) {
         loadGeneration++
         dataSession = owner
+        _playlistOwner.value = null
         _playlistCache.clear()
         _highQualityPlaylist.value = if (sessions.recoveryRequired.value) {
             Resource.Error("Official session recovery is required")
@@ -75,8 +78,25 @@ class FindMusicViewModel internal constructor(
     fun onCategorySelected(cat: String) {
         val category = normalizeCategory(cat)
 
-        _selectedCategory.value = category
+        synchronized(stateLock) { _selectedCategory.value = category }
         loadCategoryData(category)
+    }
+
+    fun withCurrent(
+        owner: Pair<SessionStamp, Int>?, expected: Resource<HighQualityPlaylistResult>, category: String,
+        playlistId: Long, action: () -> Unit,
+    ) {
+        if (owner == null || expected !is Resource.Success) return
+        val (stamp, generation) = owner
+        runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (!sessions.recoveryRequired.value && dataSession == stamp && loadGeneration == generation &&
+                        _highQualityPlaylist.value === expected && _selectedCategory.value == category &&
+                        requestedCategory == category && expected.data.playlists.any { it.id == playlistId }) action()
+                }
+            }
+        }
     }
 
     /**
@@ -101,7 +121,8 @@ class FindMusicViewModel internal constructor(
                 if (dataSession != owner) resetSession(owner)
                 val previous = if (forceRefresh) null else _playlistCache[category]
                 _highQualityPlaylist.value = previous?.let { Resource.Success(it) } ?: Resource.Loading
-                ++loadGeneration to (previous != null)
+                _playlistOwner.value = owner to ++loadGeneration
+                loadGeneration to (previous != null)
             }
         } }.getOrNull() ?: return
         if (cached) return
@@ -136,7 +157,7 @@ class FindMusicViewModel internal constructor(
 
     override fun onCleared() {
         invalidation.close()
-        synchronized(stateLock) { loadGeneration++; _playlistCache.clear() }
+        synchronized(stateLock) { loadGeneration++; _playlistOwner.value = null; _playlistCache.clear() }
         super.onCleared()
     }
 }

@@ -131,6 +131,179 @@ class PodcastSessionTest {
         }
     }
 
+    @Test fun currentGuestNavigationKeepsPersonalizedFeaturedAndCategoryBrowsing() {
+        identity = SessionIdentity(0, false, true)
+        source.home = { PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(1))) }
+        source.category = { listOf(podcast(3)) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val home = list.state.value
+            val visited = mutableListOf<Long>()
+            list.withCurrent(home, 1) { visited += 1 }
+            list.withCurrent(home, 2) { visited += 2 }
+            list.withCurrent(home, 3) { visited += 3 }
+            assertEquals(listOf(1L, 2L), visited)
+            list.selectCategory(7)
+            runCurrent()
+            val category = list.state.value
+            list.withCurrent(category, 1) { visited += 1 }
+            list.withCurrent(category, 2) { visited += 2 }
+            list.withCurrent(category, 3) { visited += 3 }
+            assertEquals(listOf(1L, 2L, 2L, 3L), visited)
+            assertTrue(source.subscriptionOffsets.isEmpty())
+        }
+    }
+
+    @Test fun retainedDiscoveryAndSubscriptionNavigationCannotCrossAReplacementAccount() {
+        source.home = { PodcastHome(emptyList(), emptyList(), listOf(podcast(1))) }
+        source.subscriptions = { PodcastPage(listOf(podcast(2)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val discovery = list.state.value
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            val subscriptions = list.state.value
+            var navigations = 0
+            val discoveryClick = { list.withCurrent(discovery, 1) { navigations++ } }
+            val subscriptionClick = { list.withCurrent(subscriptions, 2) { navigations++ } }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+            runCurrent()
+            discoveryClick()
+            subscriptionClick()
+            assertEquals(0, navigations)
+            list.withCurrent(list.state.value, 2) { navigations++ }
+            assertEquals(1, navigations)
+            list.selectTab(PodcastTab.Discover)
+            list.withCurrent(list.state.value, 1) { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedPodcastNavigationCannotCrossSameAccountReauthorization() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(1)), emptyList()) }
+        source.subscriptions = { PodcastPage(listOf(podcast(2)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val discovery = list.state.value
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            val subscriptions = list.state.value
+            var navigations = 0
+            sessions.invalidate()
+            runCurrent()
+            list.withCurrent(discovery, 1) { navigations++ }
+            list.withCurrent(subscriptions, 2) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrent(list.state.value, 2) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPodcastNavigationRejectsRecoveryWithoutChangingTheStamp() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(1)), emptyList()) }
+        source.subscriptions = { PodcastPage(listOf(podcast(2)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val discovery = list.state.value
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            val subscriptions = list.state.value
+            var navigations = 0
+            val onClick = {
+                list.withCurrent(discovery, 1) { navigations++ }
+                list.withCurrent(subscriptions, 2) { navigations++ }
+            }
+            sessions.setRecoveryRequired(true)
+            onClick()
+            runCurrent()
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(subscriptions.session, sessions.snapshot())
+            onClick()
+            assertEquals(0, navigations)
+            list.withCurrent(list.state.value, 2) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPodcastNavigationRejectsChangedCategoriesAndTabs() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(1))) }
+        source.category = { listOf(podcast(it)) }
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val home = list.state.value
+            var navigations = 0
+            list.selectCategory(3)
+            runCurrent()
+            val category = list.state.value
+            list.withCurrent(home, 1) { navigations++ }
+            list.withCurrent(category, 1) { navigations++ }
+            list.selectCategory(4)
+            runCurrent()
+            list.withCurrent(category, 3) { navigations++ }
+            val current = list.state.value
+            list.withCurrent(current, 4) { navigations++ }
+            assertEquals(1, navigations)
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            list.withCurrent(current, 4) { navigations++ }
+            val subscriptions = list.state.value
+            list.withCurrent(subscriptions, 4) { navigations++ }
+            list.withCurrent(subscriptions, 1) { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedPodcastNavigationRejectsRefreshedAndRemovedDiscoveryResources() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(1))) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val displayed = list.state.value
+            var navigations = 0
+            source.home = { PodcastHome(emptyList(), listOf(podcast(3)), emptyList()) }
+            list.refresh()
+            runCurrent()
+            list.withCurrent(displayed, 1) { navigations++ }
+            list.withCurrent(displayed, 2) { navigations++ }
+            list.withCurrent(list.state.value, 2) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrent(list.state.value, 3) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedSubscriptionNavigationRejectsRemovedAndRefreshedRows() {
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            val displayed = list.state.value
+            var navigations = 0
+            source.subscriptions = { PodcastPage(listOf(podcast(2)), false, 1) }
+            list.refreshSubscriptions()
+            runCurrent()
+            list.withCurrent(displayed, 1) { navigations++ }
+            list.withCurrent(list.state.value, 1) { navigations++ }
+            assertEquals(0, navigations)
+            list.withCurrent(list.state.value, 2) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun clearingTheViewModelRetiresItsLastRenderedPodcastNavigation() {
+        source.home = { PodcastHome(emptyList(), listOf(podcast(1)), emptyList()) }
+        checkModels { list, _, store ->
+            runCurrent()
+            val displayed = list.state.value
+            store.clear()
+            var navigations = 0
+            list.withCurrent(displayed, 1) { navigations++ }
+            assertEquals(0, navigations)
+        }
+    }
+
     @Test fun retainedSubscriptionCallbackCannotWriteForAReplacementAccount() = checkModels { _, detail, _ ->
         detail.load(1)
         runCurrent()

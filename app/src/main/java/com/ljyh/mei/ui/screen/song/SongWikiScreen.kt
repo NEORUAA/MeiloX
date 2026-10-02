@@ -110,6 +110,28 @@ class SongWikiViewModel internal constructor(
             error = if (sessions.recoveryRequired.value) "Session recovery is required" else null)
     }
 
+    fun withPlaylist(expected: SongWikiUiState, songId: Long, playlistId: Long, action: () -> Unit) =
+        withCurrent(expected, songId) {
+            if (expected.wiki?.relatedPlaylists?.any { it.id == playlistId } == true) action()
+        }
+
+    fun withContribution(expected: SongWikiUiState, songId: Long, url: String, action: () -> Unit) =
+        withCurrent(expected, songId) {
+            if (expected.wiki?.contributionUrl == url) action()
+        }
+
+    private fun withCurrent(expected: SongWikiUiState, songId: Long, action: () -> Unit) {
+        val owner = expected.session ?: return
+        runCatching {
+            sessions.withCurrent(owner) {
+                synchronized(lock) {
+                    if (!sessions.recoveryRequired.value && _state.value === expected &&
+                        requestedId == songId && expected.songId == songId && expected.wiki != null) action()
+                }
+            }
+        }
+    }
+
     fun load(songId: Long) {
         synchronized(lock) { requestedId = songId }
         if (sessions.recoveryRequired.value) return
@@ -312,7 +334,9 @@ fun SongWikiScreen(
                                 } else null,
                                 symbolName = "chevron.right",
                                 onClick = {
-                                    Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                                    viewModel.withPlaylist(state, songId, playlist.id) {
+                                        Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                                    }
                                 },
                             )
                         }
@@ -321,7 +345,7 @@ fun SongWikiScreen(
                 wiki.contributionUrl?.let { url ->
                     item {
                         GlassButton(
-                            onClick = { uriHandler.openUri(url) },
+                            onClick = { viewModel.withContribution(state, songId, url) { uriHandler.openUri(url) } },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             SfIcon("square.and.pencil", null, size = 19.dp)

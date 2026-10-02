@@ -113,6 +113,17 @@ class SearchDiscoveryViewModel internal constructor(
         loading = !sessions.recoveryRequired.value, error = sessions.recoveryRequired.value,
     )
 
+    fun withCurrent(expected: SearchDiscoveryState, action: () -> Unit) {
+        val stamp = expected.session ?: return
+        runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (!sessions.recoveryRequired.value && state.value === expected) action()
+                }
+            }
+        }
+    }
+
     fun refresh() {
         val stamp = if (sessions.recoveryRequired.value) null
             else runCatching { sessions.snapshot() }.getOrNull()
@@ -198,7 +209,7 @@ private val searchCategories = listOf(
 
 @Composable
 fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val podcastsEnabled by rememberPreference(PodcastsEnabledKey, true)
@@ -261,7 +272,9 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = viewModel()) {
                     ) {
                         items(discovery.recommendations, key = SearchDiscoveryPlaylist::id) { playlist ->
                             SearchRecommendationCard(playlist) {
-                                Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                                viewModel.withCurrent(state) {
+                                    Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                                }
                             }
                         }
                     }

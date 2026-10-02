@@ -105,9 +105,32 @@ class PodcastViewModel internal constructor(
     }
 
     fun selectTab(tab: PodcastTab) {
-        mutableState.update { it.copy(selectedTab = tab) }
+        synchronized(stateLock) { mutableState.update { it.copy(selectedTab = tab) } }
         if (tab == PodcastTab.Subscriptions) ensureSubscriptionsLoaded()
         else if (state.value.home == null) refreshDiscover()
+    }
+
+    fun withCurrent(expected: PodcastUiState, podcastId: Long, action: () -> Unit) {
+        val stamp = expected.session ?: return
+        runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (accounts.sessions.recoveryRequired.value || state.value !== expected) return@synchronized
+                    val visible = if (expected.selectedTab == PodcastTab.Subscriptions) {
+                        if (!stamp.identity.authenticated || stamp.identity.anonymous || stamp.identity.userId <= 0) {
+                            return@synchronized
+                        }
+                        expected.subscribedPodcasts
+                    } else {
+                        val recommendations = if (expected.selectedCategoryId == null) {
+                            expected.home?.personalized.orEmpty()
+                        } else expected.categoryPodcasts
+                        recommendations + expected.home?.featured.orEmpty()
+                    }
+                    if (visible.any { it.id == podcastId }) action()
+                }
+            }
+        }
     }
 
     fun refresh() {
@@ -238,8 +261,11 @@ class PodcastViewModel internal constructor(
 
     override fun onCleared() {
         invalidation.close()
-        discoveryVersion.incrementAndGet()
-        subscriptionVersion.incrementAndGet()
+        synchronized(stateLock) {
+            discoveryVersion.incrementAndGet()
+            subscriptionVersion.incrementAndGet()
+            mutableState.value = pendingState()
+        }
         super.onCleared()
     }
 }

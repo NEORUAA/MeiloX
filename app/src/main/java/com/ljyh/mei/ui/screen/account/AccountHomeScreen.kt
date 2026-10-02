@@ -23,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -93,6 +92,7 @@ data class AccountHomeState(
     val error: String? = null,
     val requiresLogin: Boolean = false,
     val session: SessionStamp? = null,
+    val revision: Long = 0,
 )
 
 internal fun AccountHomeState.forAccount(account: AccountState): AccountHomeState =
@@ -102,39 +102,53 @@ internal fun AccountHomeState.forAccount(account: AccountState): AccountHomeStat
         session = account.session,
     )
 
-class AccountHomeViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class AccountHomeViewModel internal constructor(
     private val accounts: AccountStore,
-    @param:ApplicationContext private val context: Context,
+    private val loadDetail: suspend (Long, SessionStamp) -> AccountDetail,
+    private val loadPlaylists: suspend (Long, SessionStamp) -> List<AccountPlaylist>,
+    private val profileUnavailable: () -> String,
 ) : ViewModel() {
+    @Inject constructor(
+        repository: MeloXRepository,
+        accounts: AccountStore,
+        @ApplicationContext context: Context,
+    ) : this(
+        accounts,
+        repository::accountDetail,
+        { userId, stamp -> repository.accountPlaylists(userId, stamp) },
+        { context.getString(R.string.account_profile_unavailable) },
+    )
+
     private val _state = MutableStateFlow(AccountHomeState())
+    private val refreshes = MutableStateFlow(0L)
+    private val stateLock = Any()
+    private var revision = 0L
     val state: StateFlow<AccountHomeState> = combine(_state, accounts.state) { state, account ->
         state.forAccount(account)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountHomeState())
 
     init {
         viewModelScope.launch {
-            accounts.state.collectLatest { account ->
+            combine(accounts.state, refreshes) { account, _ -> account }.collectLatest { account ->
                 val initial = AccountHomeState(
                     profile = account.profile,
                     loading = account.loading || account.profile != null,
-                    error = if (account.profileUnavailable) context.getString(R.string.account_profile_unavailable) else null,
+                    error = if (account.profileUnavailable) profileUnavailable() else null,
                     requiresLogin = account.recoveryRequired || (account.session != null && !account.authenticated),
                     session = account.session,
                 )
                 val stamp = account.session
                 if (stamp == null) {
-                    _state.value = initial
+                    publish(initial)
                     return@collectLatest
                 }
-                if (runCatching { accounts.sessions.withCurrent(stamp) { _state.value = initial } }.isFailure) {
-                    return@collectLatest
-                }
+                val expected = runCatching { accounts.sessions.withCurrent(stamp) { publish(initial) } }
+                    .getOrNull() ?: return@collectLatest
                 val profile = account.profile ?: return@collectLatest
                 try {
                     val next = coroutineScope {
-                        val detail = async { runCatching { repository.accountDetail(profile.id, stamp) }.getOrNull() }
-                        val playlists = async { runCatching { repository.accountPlaylists(profile.id, stamp) }.getOrDefault(emptyList()) }
+                        val detail = async { runCatching { loadDetail(profile.id, stamp) }.getOrNull() }
+                        val playlists = async { runCatching { loadPlaylists(profile.id, stamp) }.getOrDefault(emptyList()) }
                         AccountHomeState(
                             profile,
                             detail.await()?.takeIf { it.profile.id == profile.id },
@@ -144,7 +158,11 @@ class AccountHomeViewModel @Inject constructor(
                         )
                     }
                     currentCoroutineContext().ensureActive()
-                    accounts.sessions.withCurrent(stamp) { _state.value = next }
+                    accounts.sessions.withCurrent(stamp) {
+                        synchronized(stateLock) {
+                            if (_state.value === expected) publish(next)
+                        }
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: SessionChangedException) {
@@ -152,7 +170,11 @@ class AccountHomeViewModel @Inject constructor(
                 } catch (_: Exception) {
                     runCatching {
                         accounts.sessions.withCurrent(stamp) {
-                            _state.value = _state.value.copy(loading = false, error = context.getString(R.string.account_profile_unavailable))
+                            synchronized(stateLock) {
+                                if (_state.value === expected) {
+                                    publish(expected.copy(loading = false, error = profileUnavailable()))
+                                }
+                            }
                         }
                     }
                 }
@@ -160,12 +182,48 @@ class AccountHomeViewModel @Inject constructor(
         }
     }
 
-    fun refresh() = accounts.refresh()
+    private fun publish(next: AccountHomeState): AccountHomeState =
+        synchronized(stateLock) {
+            // Equal refreshed data must still retire callbacks from the previous render.
+            next.copy(revision = ++revision).also { _state.value = it }
+        }
+
+    fun withCurrent(expected: AccountHomeState, action: () -> Unit) {
+        val stamp = expected.session ?: return
+        val profile = expected.profile ?: return
+        if (expected.requiresLogin || !stamp.identity.authenticated || stamp.identity.anonymous ||
+            profile.id != stamp.identity.userId || expected.detail?.profile?.id?.let { it != profile.id } == true) return
+        runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    val account = accounts.state.value
+                    if (!accounts.sessions.recoveryRequired.value && !account.recoveryRequired &&
+                        account.session == stamp && account.authenticated && account.profile == profile &&
+                        _state.value === expected && state.value === expected) action()
+                }
+            }
+        }
+    }
+
+    fun refresh() {
+        accounts.refresh()
+        val stamp = runCatching { accounts.requireAuthenticated() }.getOrNull() ?: return
+        runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (!accounts.sessions.recoveryRequired.value) {
+                        publish(_state.value)
+                        refreshes.value++
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
 fun AccountHomeScreen(viewModel: AccountHomeViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
@@ -195,8 +253,10 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = viewModel()) {
                         detail = state.detail,
                         playlistCount = state.playlists.size,
                         onRankings = {
-                            Screen.AccountListeningRank.navigate(navController) {
-                                addPath(displayedProfile.id.toString())
+                            viewModel.withCurrent(state) {
+                                Screen.AccountListeningRank.navigate(navController) {
+                                    addPath(displayedProfile.id.toString())
+                                }
                             }
                         },
                     )
@@ -257,7 +317,9 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = viewModel()) {
                         )
                     },
                     onClick = {
-                        Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                        viewModel.withCurrent(state) {
+                            Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                        }
                     },
                 )
             }

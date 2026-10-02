@@ -123,6 +123,7 @@ fun SearchResultScreen(
                     data = result.data,
                     type = selectedType,
                     navController = navController,
+                    withCurrent = { action -> viewModel.withCurrent(state, action) },
                     onSongMore = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
                     onSongClick = { songs, index ->
                         val owner = state.session ?: return@SearchResultList
@@ -206,6 +207,7 @@ fun LazyListScope.SearchResultList(
     data: SearchResult,
     type: SearchType,
     navController: MeiNavigator,
+    withCurrent: (() -> Unit) -> Unit,
     onSongMore: (MediaMetadata, Rect) -> Unit,
     onSongClick: (List<SearchResult.Result.Song>, Int) -> Unit,
 ) {
@@ -284,7 +286,9 @@ fun LazyListScope.SearchResultList(
                         artist = artist,
                         showTopSeparator = index > 0,
                         onClick = {
-                            Screen.Artist.navigate(navController) { addPath(artist.id.toString()) }
+                            withCurrent {
+                                Screen.Artist.navigate(navController) { addPath(artist.id.toString()) }
+                            }
                         },
                     )
                 }
@@ -321,7 +325,9 @@ fun LazyListScope.SearchResultList(
                             )
                         },
                         onClick = {
-                            Screen.Album.navigate(navController) { addPath(album.id.toString()) }
+                            withCurrent {
+                                Screen.Album.navigate(navController) { addPath(album.id.toString()) }
+                            }
                         },
                     )
                 }
@@ -355,7 +361,9 @@ fun LazyListScope.SearchResultList(
                             )
                         },
                         onClick = {
-                            Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                            withCurrent {
+                                Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                            }
                         },
                     )
                 }
@@ -391,7 +399,9 @@ fun LazyListScope.SearchResultList(
                             )
                         },
                         onClick = {
-                            Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                            withCurrent {
+                                Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                            }
                         },
                     )
                 }

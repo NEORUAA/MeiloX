@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.ljyh.mei.data.model.melox.SongWiki
 import com.ljyh.mei.data.model.melox.SongWikiMemoryItem
 import com.ljyh.mei.data.model.melox.SongWikiMemoryKind
+import com.ljyh.mei.data.model.melox.SongWikiPlaylistReference
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
@@ -231,6 +232,137 @@ class SongWikiSessionTest {
         }
     }
 
+    @Test fun currentAnonymousNavigationKeepsPlaylistAndContributionBrowsingBoundToTheSong() {
+        identity = SessionIdentity(0, false, true)
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/wiki/10") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            model.withPlaylist(displayed, 10, 1) { navigations++ }
+            model.withContribution(displayed, 10, "https://example.invalid/wiki/10") { navigations++ }
+            model.withPlaylist(displayed, 10, 2) { navigations++ }
+            model.withPlaylist(displayed, 20, 1) { navigations++ }
+            model.withContribution(displayed, 10, "https://example.invalid/wiki/20") { navigations++ }
+            model.withContribution(displayed, 20, "https://example.invalid/wiki/10") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedWikiNavigationCannotCrossAReplacementAccount() {
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/wiki") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            val onClick = {
+                model.withPlaylist(displayed, 10, 1) { navigations++ }
+                model.withContribution(displayed, 10, "https://example.invalid/wiki") { navigations++ }
+            }
+            sessions.beginTransition().use { identity = SessionIdentity(18, true, false) }
+            runCurrent()
+            onClick()
+            assertEquals(0, navigations)
+            model.withPlaylist(model.state.value, 10, 1) { navigations++ }
+            model.withContribution(model.state.value, 10, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedWikiNavigationCannotCrossSameAccountReauthorization() {
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/wiki") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            sessions.invalidate()
+            runCurrent()
+            model.withPlaylist(displayed, 10, 1) { navigations++ }
+            model.withContribution(displayed, 10, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(0, navigations)
+            model.withPlaylist(model.state.value, 10, 1) { navigations++ }
+            model.withContribution(model.state.value, 10, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedWikiNavigationRejectsRecoveryWithTheSameOwner() {
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/wiki") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            val onClick = {
+                model.withPlaylist(displayed, 10, 1) { navigations++ }
+                model.withContribution(displayed, 10, "https://example.invalid/wiki") { navigations++ }
+            }
+            sessions.setRecoveryRequired(true)
+            onClick()
+            runCurrent()
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(displayed.session, model.state.value.session)
+            onClick()
+            assertEquals(0, navigations)
+            model.withPlaylist(model.state.value, 10, 1) { navigations++ }
+            model.withContribution(model.state.value, 10, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedWikiNavigationRejectsAChangedSongEvenWithIdenticalRelatedResources() {
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/wiki") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            model.withPlaylist(displayed, 20, 1) { navigations++ }
+            model.withContribution(displayed, 20, "https://example.invalid/wiki") { navigations++ }
+            model.load(20)
+            runCurrent()
+            model.withPlaylist(displayed, 10, 1) { navigations++ }
+            model.withContribution(displayed, 10, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(0, navigations)
+            model.withPlaylist(model.state.value, 20, 1) { navigations++ }
+            model.withContribution(model.state.value, 20, "https://example.invalid/wiki") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedWikiNavigationRejectsRemovedPlaylistsAndChangedContributionUrlsAfterReload() {
+        reply = { _, _ -> navigationWiki(1, "https://example.invalid/old") }
+        checkModel { model, _ ->
+            model.load(10)
+            runCurrent()
+            val displayed = model.state.value
+            var navigations = 0
+            reply = { _, _ -> navigationWiki(2, "https://example.invalid/new") }
+            model.load(20)
+            runCurrent()
+            model.load(10)
+            runCurrent()
+            model.withPlaylist(displayed, 10, 1) { navigations++ }
+            model.withContribution(displayed, 10, "https://example.invalid/old") { navigations++ }
+            val current = model.state.value
+            model.withPlaylist(current, 10, 1) { navigations++ }
+            model.withContribution(current, 10, "https://example.invalid/old") { navigations++ }
+            assertEquals(0, navigations)
+            model.withPlaylist(current, 10, 2) { navigations++ }
+            model.withContribution(current, 10, "https://example.invalid/new") { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
     private fun wiki(memory: String) = SongWiki(listOf(SongWikiMemoryItem(memory, SongWikiMemoryKind.FirstListen)),
         emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
+
+    private fun navigationWiki(playlistId: Long, url: String) = wiki("navigation").copy(
+        relatedPlaylists = listOf(SongWikiPlaylistReference(playlistId, "Playlist", null, 0)),
+        contributionUrl = url,
+    )
 }

@@ -32,7 +32,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,8 +69,9 @@ fun FindMusicScreen(
     isNavigationTab: Boolean = false,
 ) {
     val navController = LocalNavController.current
-    val playlistState by viewModel.highQualityPlaylist.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val playlistState = viewModel.highQualityPlaylist.collectAsState().value
+    val selectedCategory = viewModel.selectedCategory.collectAsState().value
+    val playlistOwner = viewModel.playlistOwner.collectAsState().value
     val listState = rememberLazyGridState()
     val collapseProgress = rememberIosGridCollapseProgress(listState)
     val title = titleOverride ?: stringResource(R.string.app_tab_explore)
@@ -106,7 +106,11 @@ fun FindMusicScreen(
                     categories = viewModel.categories,
                     selectedCategory = selectedCategory,
                     onCategorySelected = viewModel::onCategorySelected,
-                    onPlaylistClick = { id -> Screen.PlayList.navigate(navController) { addPath(id.toString()) } },
+                    onPlaylistClick = { id ->
+                        viewModel.withCurrent(playlistOwner, state, selectedCategory, id) {
+                            Screen.PlayList.navigate(navController) { addPath(id.toString()) }
+                        }
+                    },
                 )
                 is Resource.Error -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),

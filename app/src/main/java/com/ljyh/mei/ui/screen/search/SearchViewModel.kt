@@ -90,6 +90,17 @@ class SearchViewModel internal constructor(
         Resource.Error("Official session recovery is required")
     } else Resource.Loading
 
+    fun withCurrent(expected: SearchResultsState, action: () -> Unit) {
+        val stamp = expected.session ?: return
+        runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (!sessions.recoveryRequired.value && state.value === expected) action()
+                }
+            }
+        }
+    }
+
     fun updateInputQuery(query: String) {
         synchronized(stateLock) {
             if (inputQuery == query) return
@@ -142,7 +153,8 @@ class SearchViewModel internal constructor(
                 synchronized(stateLock) {
                     resultVersion++
                     if (!append) {
-                        mutableState.value = resultCache[current.type] ?: current.copy(result = Resource.Loading)
+                        // A cached tab must not revive callbacks from its previous render.
+                        mutableState.value = resultCache[current.type]?.copy() ?: current.copy(result = Resource.Loading)
                     } else {
                         mutableState.value = current.copy(loadingMore = true, loadMoreError = null)
                     }

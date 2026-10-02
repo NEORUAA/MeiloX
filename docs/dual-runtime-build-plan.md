@@ -147,7 +147,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The page and
 runtime-carrier audit below was performed at `7327e7d2`; subsequent scoped reviews
-and repairs are recorded through `de14777e` and the rendered-navigation checkpoint
+and repairs are recorded through `d962a931` and the catalog-navigation follow-up
 below. This reconciles earlier grouped coverage, including the `20ce19f1` handoff
 review; it does not claim a fresh full-body audit of every current file. Source
 review is separate from the remaining exit gates above. Resume open groups instead
@@ -167,7 +167,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
-| Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe repairs and current Social/Library navigation guards are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; six remaining navigation-callback families, unchanged page bodies and complete test/runtime semantics are not declared qualified |
+| Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe, Social/Library and six catalog-navigation-family repairs, with bounded FindMusic native callbacks, are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; the 13 catalog-navigation entries have source/JVM guards, not complete page integration, unchanged-body or test/runtime semantic acceptance |
 
 #### Reconciled Page and Runtime-Carrier Inventory
 
@@ -248,10 +248,12 @@ the Activity and meter did not change. The original dependency inspection read
 HostIdentity, HostComponentMapping, HostPlaybackHooks and AppGraph fully, but only
 selected ModuleContext/Work hook sections. It does not qualify all host SDK internals.
 The audit's retained account intents, logout and diagnostic offer findings have
-their scoped repairs below. Social/Library navigation is repaired in this checkpoint;
+their scoped repairs below. Social/Library navigation is repaired at `d962a931`;
 AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and SongWiki
-callbacks remain six concrete audit families (13 entries), not an implicitly closed
-page-integration gate. No duplicate frontend tree or new page architecture is added.
+follow-up repairs the other six audited families (13 entries) at bounded source/JVM
+scope and adds native FindMusic callback cases. Retained original-row callbacks for
+the other five families and real account/expiry behavior remain separate gates.
+No duplicate frontend tree or new page architecture is added.
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
 TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
@@ -3362,7 +3364,8 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   This is not a cold-frame sequence, rotation or repeated-start reliability claim.
   MediaStore row 820 remains TV-owned, pending=0 and 22705573 bytes; the original
   production standalone package/data is untouched. API-028 and ABI-018 record the
-  session-consumer distinction; six other navigation families remain open above.
+  session-consumer distinction. At this checkpoint six other navigation families
+  remained open; their later scoped repair is recorded below.
 - Current ordinary standalone debug cold-starts after its offline fixture in 11603ms,
   restoring Full Moon Serenade PAUSED at 143811ms, speed 0, null error and seven
   queue entries. The inspected portrait Home retains original glass controls; TV
@@ -3423,6 +3426,83 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   and `/tmp/meilox-standalone-r8-validation-*`. ABI-014 is extended in place; all
   production-upgrade, framework-free, real-account, capability and full-regression
   gates in the current exit summary remain open.
+
+### D3/D4/D5/D6 Checkpoint: Remaining Catalog Navigation Owners (2026-10-02)
+
+- This follows `d962a931` without changing the original page architecture. The six
+  previously open families cover 13 existing entries: AccountHome rank/playlist,
+  FindMusic playlist, SearchLanding recommendation, four non-song SearchResult
+  kinds, three Podcast list sections and SongWiki playlist/contribution. Routes,
+  URLs, endpoints, layout, controls, song playback and public guest browsing remain
+  unchanged. Authentication is still required for account and subscription content.
+- Search/discovery rows capture rendered values and gate exact state, session and
+  recovery at dispatch; a copied cached search tab cannot revive an old callback.
+  FindMusic exposes the existing load generation as a read-only session/generation
+  pair, collected by the existing screen so same-category cache re-entry captures
+  the new owner. Dispatch also matches resource identity, category and playlist ID.
+- AccountHome keeps its original concurrent detail/playlist loads behind a narrow
+  loader/error seam. A publication-only revision retires structurally equal renders;
+  a private refresh flow also reloads after AccountStore's same-profile refresh is
+  conflated. The existing refresh still calls AccountStore.refresh and immediately
+  retires old callbacks. Success/error publication pins the exact loading state,
+  rejecting a non-cooperative earlier reload. Navigation requires the displayed
+  profile to match the current account by value, exact internal/rendered state,
+  current authentication/session and readiness; it does not rely on profile pointers.
+- Podcast navigation checks exact rendered state, selected tab and visible member;
+  clearing the ViewModel retires presentation. SongWiki checks the current request's
+  song, related playlist membership or exact contribution URL. These gates adapt
+  session-owned consumer dispatch, not a second transport or a frontend cleanup.
+- Paired debug/AndroidTest builds and fresh focused JVM suites pass in 16s (160 tasks).
+  Per flavor: SearchSessionTest 27, AccountHomeViewModelTest 9, AccountHomeStateTest 4,
+  FindMusicSessionTest 18, PodcastSessionTest 37, SongWikiSessionTest 19,
+  SocialSessionTest 23 and LibraryViewModelTest 19: 156 each, 312 total, with zero
+  failures/errors/skips. The repair adds 38 cases per flavor. An initial secondary-
+  constructor qualifier compilation failure and two then one account test failures
+  expose the refresh/profile-matching gaps; corrections precede the successful fresh
+  run. They are not runtime flakiness or counted as successful attempts.
+- FindMusicNavigationOwnerDeviceTest passes six cases in standalone (8.618s) and
+  six in parasite (7.847s), both on their first attempt. The original screen's actual
+  debug rendered callbacks
+  reject old owners and accept new callbacks, including cached same-category re-entry
+  where only the reactive owner changes. Public sessions/source and coverless rows
+  are closed fixtures, without AppGraph, real accounts or network. This is callback
+  ownership, not pointer hit-testing or minified stale-callback behavior. The paired
+  AndroidTest build passes in 16s (114 tasks); this test-only addition leaves both
+  production artifact hashes below unchanged.
+- Both current production R8 artifacts build in 3m47s (107 tasks); all 56 local
+  real-SDK release gates pass. Unsigned standalone SHA-256 is
+  `e7b86cc28244f5c00e18135bd1dbebb2acde8b35ffb8e34ccf2b57d32e49cec5`;
+  parasite is `b7e04631fd4131aa6fdcfda5cb557bfa777a468a6b14c810a940aa5686d3a071`.
+  Development-signed parasite SHA-256 is
+  `94fb482ed23917ab863573bfa130b2b6d9894bca1456ef4953641dbacd7fa66c`,
+  with the unchanged compatible development key and passing 16KB alignment.
+  Module-only preserving installation and app-only TV cold start succeed in 14679ms
+  (PID 29938). The inspected settled screenshot shows portrait Home and paused
+  Prelude; the original Settings -> AccountHome pointer entry loads the current
+  profile and playlist rows through the new constructor, and its original rank
+  button loads recent-week rows. This is ready-content/navigation, not an attributed
+  listening-count increment: no pre-play ranking baseline is captured. It is not
+  repeated-start reliability, obsolete callback behavior or full current paired R8
+  execution; standalone R8 is not updated for this pass. The target is non-debuggable
+  and the scoped PID has no AndroidRuntime stack; that does not qualify every failure.
+- After native fixtures, current signed parasite R8 and ordinary standalone debug
+  are preserving-restored. Standalone cold start succeeds in 11996ms, retaining
+  Full Moon Serenade at 143811ms and seven entries, NONE/unprepared, speed 0 and null
+  error without autoplay; this is not a PAUSED/decoding claim. TV app-only cold start
+  succeeds in 16389ms (PID 32457), retaining Prelude PAUSED at 178897ms, null error
+  and eleven entries; native TV stays STOPPED with no queue. The settled screenshot
+  shows original portrait Home/glass mini-player/navigation. Both slow starts remain
+  unqualified for reliability. The original production standalone package path is
+  unchanged; MediaStore row 820 remains TV-owned, pending=0 and 22705573 bytes. No
+  AVD restart, second-device interaction, framework hook/global rotation change,
+  new authorization/Cookie import, permission grant or social/quota write occurs.
+- FindMusic's native cases do not qualify retained original-row callbacks for the
+  other five families; AccountHome's current R8 positive entries remain a separate
+  ready-state check. Real account/expiry, failure/page integration, minified lifecycle,
+  original-install upgrade, framework-free execution, recording/PiP and cooperating-
+  account gates remain open. ABI-018 is extended in place; no cloud/download rerun
+  or real write fills these gates. Native logs stay outside Git at
+  `/tmp/meilox-public-navigation-{standalone,parasite}-native-2026-10-02.log`.
 
 ## Acceptance and Remaining Decisions
 

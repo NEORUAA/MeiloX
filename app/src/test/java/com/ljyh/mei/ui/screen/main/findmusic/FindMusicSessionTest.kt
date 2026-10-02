@@ -1,7 +1,9 @@
 package com.ljyh.mei.ui.screen.main.findmusic
 
 import androidx.lifecycle.ViewModelStore
+import com.google.gson.Gson
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
+import com.ljyh.mei.data.model.weapi.Playlists
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.HighQualityPlaylistSource
 import com.ljyh.mei.data.session.SessionIdentity
@@ -225,8 +227,143 @@ class FindMusicSessionTest {
         assertEquals(2, requests.size)
     }
 
+    @Test fun currentPublicPlaylistNavigationRequiresTheRenderedCategoryAndResource() {
+        identity = SessionIdentity(0, false, true)
+        read = { _, _, _ -> navigationResult(1) }
+        withModel { model, _ ->
+            runCurrent()
+            val displayed = model.highQualityPlaylist.value
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            model.withCurrent(owner, displayed, "全部", 1) { navigations++ }
+            model.withCurrent(owner, displayed, "全部", 2) { navigations++ }
+            model.withCurrent(owner, displayed, "ACG", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPlaylistNavigationCannotCrossAReplacementAccountEvenWhenTheSourceReusesItsResult() {
+        val result = navigationResult(1)
+        read = { _, _, _ -> result }
+        withModel { model, _ ->
+            runCurrent()
+            val displayed = model.highQualityPlaylist.value
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            val onClick = { model.withCurrent(owner, displayed, "全部", 1) { navigations++ } }
+            sessions.beginTransition().use { identity = SessionIdentity(18, true, false) }
+            runCurrent()
+            assertSame(displayed, model.highQualityPlaylist.value)
+            onClick()
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value, result, "全部", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPlaylistNavigationCannotCrossSameAccountReauthorization() {
+        val result = navigationResult(1)
+        read = { _, _, _ -> result }
+        withModel { model, _ ->
+            runCurrent()
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            val onClick = { model.withCurrent(owner, result, "全部", 1) { navigations++ } }
+            sessions.invalidate()
+            runCurrent()
+            onClick()
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value, result, "全部", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPlaylistNavigationRejectsRecoveryWithTheSameStampAndReusedResource() {
+        val result = navigationResult(1)
+        read = { _, _, _ -> result }
+        withModel { model, _ ->
+            runCurrent()
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            val onClick = { model.withCurrent(owner, result, "全部", 1) { navigations++ } }
+            sessions.setRecoveryRequired(true)
+            onClick()
+            runCurrent()
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(owner!!.first, sessions.snapshot())
+            assertSame(result, model.highQualityPlaylist.value)
+            onClick()
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value, result, "全部", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPlaylistNavigationRejectsChangedCategoriesAndCachedReturnsToTheSameCategory() {
+        val result = navigationResult(1)
+        read = { _, _, _ -> result }
+        withModel { model, _ ->
+            runCurrent()
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            val onClick = { model.withCurrent(owner, result, "全部", 1) { navigations++ } }
+            model.onCategorySelected("ACG")
+            runCurrent()
+            onClick()
+            model.onCategorySelected("全部")
+            runCurrent()
+            onClick()
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value,
+                model.highQualityPlaylist.value, "全部", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun retainedPlaylistNavigationRejectsARefreshThatRemovesTheResource() {
+        read = { _, _, _ -> navigationResult(1) }
+        withModel { model, _ ->
+            runCurrent()
+            val displayed = model.highQualityPlaylist.value
+            val owner = model.playlistOwner.value
+            var navigations = 0
+            read = { _, _, _ -> navigationResult(2) }
+            model.loadCategoryData("全部", forceRefresh = true)
+            runCurrent()
+            model.withCurrent(owner, displayed, "全部", 1) { navigations++ }
+            val current = model.highQualityPlaylist.value
+            model.withCurrent(model.playlistOwner.value, current, "全部", 1) { navigations++ }
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value, current, "全部", 2) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun selectingTheCachedCategoryPublishesANewOwnerEvenWhenItsResourceDoesNotEmit() {
+        val result = navigationResult(1)
+        read = { _, _, _ -> result }
+        withModel { model, _ ->
+            runCurrent()
+            val owner = model.playlistOwner.value
+            model.onCategorySelected("全部")
+            runCurrent()
+            assertSame(result, model.highQualityPlaylist.value)
+            assertNotEquals(owner, model.playlistOwner.value)
+            assertEquals(1, requests.size)
+            var navigations = 0
+            model.withCurrent(owner, result, "全部", 1) { navigations++ }
+            assertEquals(0, navigations)
+            model.withCurrent(model.playlistOwner.value, result, "全部", 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
     companion object {
         private fun success(marker: Int) = Resource.Success(HighQualityPlaylistResult(200, 0, false, emptyList(), marker))
+        private fun navigationResult(id: Long) = Resource.Success(HighQualityPlaylistResult(
+            200, 0, false, listOf(Gson().fromJson("{\"id\":$id}", Playlists::class.java)), 1,
+        ))
         private fun resultMarker(model: FindMusicViewModel) = (model.highQualityPlaylist.value as Resource.Success).data.total
     }
 }

@@ -84,6 +84,175 @@ class SearchSessionTest {
         }
     }
 
+    @Test fun currentGuestDiscoveryAndNonSongResultNavigationRemainAvailable() {
+        identity = SessionIdentity(0, false, true)
+        checkModels { search, landing, _ ->
+            var navigations = 0
+            landing.navigationAction { navigations++ }.invoke()
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            listOf(SearchType.Artist, SearchType.Album, SearchType.Playlist, SearchType.Podcast).forEach {
+                search.onTabChange(it)
+                runCurrent()
+                search.navigationAction { navigations++ }.invoke()
+            }
+            assertEquals(5, navigations)
+        }
+    }
+
+    @Test fun retainedSearchAndDiscoveryNavigationRejectAReplacementAccount() {
+        checkModels { search, landing, _ ->
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            var navigations = 0
+            val oldSearch = search.navigationAction { navigations++ }
+            val oldDiscovery = landing.navigationAction { navigations++ }
+            sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            runCurrent()
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            landing.navigationAction { navigations++ }.invoke()
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedSearchAndDiscoveryNavigationRejectSameAccountReauthorization() {
+        checkModels { search, landing, _ ->
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            var navigations = 0
+            val oldSearch = search.navigationAction { navigations++ }
+            val oldDiscovery = landing.navigationAction { navigations++ }
+            val oldOwner = sessions.snapshot()
+            sessions.invalidate()
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            runCurrent()
+            assertEquals(oldOwner.identity, sessions.snapshot().identity)
+            assertNotEquals(oldOwner, sessions.snapshot())
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            landing.navigationAction { navigations++ }.invoke()
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun recoveryBlocksRetainedSearchAndDiscoveryNavigationBeforeObserversRun() {
+        checkModels { search, landing, _ ->
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            var navigations = 0
+            val oldSearch = search.navigationAction { navigations++ }
+            val oldDiscovery = landing.navigationAction { navigations++ }
+            val owner = sessions.snapshot()
+            sessions.setRecoveryRequired(true)
+            assertEquals(owner, sessions.snapshot())
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            runCurrent()
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            oldSearch()
+            oldDiscovery()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            landing.navigationAction { navigations++ }.invoke()
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun queryReplacementRejectsRetainedResultNavigationWithinTheSameSession() {
+        checkModels { search, _, _ ->
+            search.onSearchInit("old", SearchType.Artist.type)
+            runCurrent()
+            var navigations = 0
+            val old = search.navigationAction { navigations++ }
+            val owner = sessions.snapshot()
+            search.onSearchInit("new", SearchType.Artist.type)
+            old()
+            assertEquals(0, navigations)
+            runCurrent()
+            assertEquals(owner, search.state.value.session)
+            old()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun returningToACachedTabDoesNotResurrectRetainedResultNavigation() {
+        checkModels { search, _, _ ->
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            val rendered = search.state.value
+            var navigations = 0
+            val old = search.navigationAction { navigations++ }
+            search.onTabChange(SearchType.Album)
+            old()
+            assertEquals(0, navigations)
+            runCurrent()
+            search.onTabChange(SearchType.Artist)
+            runCurrent()
+            assertEquals(rendered, search.state.value)
+            assertNotSame(rendered, search.state.value)
+            assertSame(rendered.result, search.state.value.result)
+            old()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            assertEquals(1, navigations)
+            assertEquals(2, source.requests.size)
+        }
+    }
+
+    @Test fun appendedResultsRejectRetainedResultNavigationWithoutChangingTheOwner() {
+        source.search = { Resource.Success(page(listOf(if (it.offset == 0) 1L else 2L), it.type, total = 2)) }
+        checkModels { search, _, _ ->
+            search.onSearchInit("music", SearchType.Artist.type)
+            runCurrent()
+            var navigations = 0
+            val old = search.navigationAction { navigations++ }
+            val owner = search.state.value.session
+            search.loadMore()
+            old()
+            assertEquals(0, navigations)
+            runCurrent()
+            assertEquals(owner, search.state.value.session)
+            assertEquals(2, (search.state.value.result as Resource.Success).data.itemCount(SearchType.Artist))
+            old()
+            assertEquals(0, navigations)
+            search.navigationAction { navigations++ }.invoke()
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun refreshingDiscoveryRejectsRetainedRecommendationsBeforeAndAfterReload() {
+        checkModels { _, landing, _ ->
+            var navigations = 0
+            val old = landing.navigationAction { navigations++ }
+            val owner = landing.state.value.session
+            discovery = { discovery(2) }
+            landing.refresh()
+            old()
+            assertEquals(0, navigations)
+            runCurrent()
+            assertEquals(owner, landing.state.value.session)
+            assertEquals(2L, landing.state.value.discovery!!.recommendations.single().id)
+            old()
+            assertEquals(0, navigations)
+            landing.navigationAction { navigations++ }.invoke()
+            assertEquals(1, navigations)
+        }
+    }
+
     @Test fun lateQueryCannotReplaceTheNewQueryOrPopulateItsCache() {
         val old = CompletableDeferred<SearchResult>()
         source.search = { request -> Resource.Success(
@@ -500,6 +669,14 @@ class SearchSessionTest {
     }
 
     private companion object {
+        fun SearchViewModel.navigationAction(action: () -> Unit): () -> Unit {
+            val rendered = state.value
+            return { withCurrent(rendered, action) }
+        }
+        fun SearchDiscoveryViewModel.navigationAction(action: () -> Unit): () -> Unit {
+            val rendered = state.value
+            return { withCurrent(rendered, action) }
+        }
         fun SearchViewModel.songIds() = (state.value.result as Resource.Success).data.result.songs.orEmpty().map { it.id }
         fun page(ids: List<Long>, type: Int = 1, total: Int = ids.size): SearchResult {
             val (field, count) = when (type) {
