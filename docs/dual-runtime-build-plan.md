@@ -161,7 +161,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence, catalog/Home/library/search/podcast/recognition/wiki/message song handoff and owned offline-history policy, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Listed paths reviewed at source level; full lifecycle, continuation and actual playback/reporting acceptance remain separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
-| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
+| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below; the seven complete catalog page/list/menu bodies named in the latest consumer review are now inspected | Listed consumer ownership and named page integration reviewed at source level; remaining catalog/UI integration and actual account/server matrices remain open |
 | Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained; the named dynamic transport adapter scope below is now reviewed | Named declaration/adapter source scope reviewed; complete Repository/page consumer integration and real business acceptance remain separate |
 | Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
 | Active account/detail/rank/history reads | Required dynamic owner tuples, generation-owned rank cache and retained queue callbacks reviewed and covered by paired tests below; original page/control bodies preserved | Listed consumers reviewed at source level; real account/expiry and complete runtime acceptance remain separate |
@@ -4279,6 +4279,50 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   `/tmp/meilox-latest-r8-rank-*-2026-10-03.*` and
   `/tmp/meilox-latest-standalone-r8-read-build-2026-10-03.log`.
   No credentials, screenshots, raw logs or APKs are committed.
+
+#### Catalog Page Consumer Review (2026-10-03)
+
+Review checkout is `e4d1b124`, against unchanged main
+`1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. Production source still matches
+`8ff63f75`; the intervening diff contains only this plan. Complete bodies of the
+following seven files, not only their changed hunks, are read. Prefix:
+`app/src/main/java/com/ljyh/mei/ui/screen/`.
+
+```text
+album/AlbumDetailScreen.kt
+artist/ArtistScreen.kt
+artist/ArtistSongsScreen.kt
+playlist/PlaylistScreen.kt
+playlist/CommonSongListScreen.kt
+playlist/component/StandaloneTrackActionOverlay.kt
+playlist/component/PlaylistActionOverlay.kt
+```
+
+- The four page diffs against main are also inspected. Shared field mapping,
+  collection state/mutation consumption, queue session handoff, playlist detail
+  identity, chunked song-detail loading, selection/download-dialog lifetimes,
+  menu/picker ownership and retained original controls are traced through the
+  common list/overlay. The artist helper/unavailable states already exist in main;
+  nullable payload adaptation does not introduce a new page architecture here.
+- Supporting reads are limited to the owner/publication helpers in AlbumDetail,
+  Artist, ArtistSongs and Playlist ViewModels, PlaylistViewModel's action/detail
+  invalidation, PlayerViewModel's download method and the closed
+  PlaylistOverlayOwnerDeviceTest. They are not a new full-body audit of every
+  ViewModel/repository, a native test run or proof of every possible UI interleaving.
+  No new defect or source/UI/API-contract change is established in this scope.
+- The unfiltered paired JVM command passes in 6s with all 56 tasks up to date.
+  Current XML still contains 1063 standalone/1070 parasite cases, with zero
+  failures/errors/skips; the six related factory/album/artist/playlist session,
+  action and paging suites account for 98 cases per flavor. These reuse the
+  previously executed unchanged-source results, not 196 new executions or full
+  Compose integration coverage. The command log stays outside Git at
+  `/tmp/meilox-catalog-consumer-source-review-jvm-2026-10-03.log`.
+- This closes the named page-body source-review gap, not the full catalog audit
+  or D2-D6 exit gates. No APK rebuild/install, device action, account mutation,
+  quota grant, credential access, main merge or remote operation is performed.
+  Other page integrations and real authorization/failure/cooperation acceptance
+  remain separate; resume unreviewed scopes rather than re-reading these seven
+  unchanged bodies as new qualification.
 
 ## Acceptance and Remaining Decisions
 
