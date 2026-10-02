@@ -152,6 +152,113 @@ class PlaylistSessionTest {
         assertTrue(model.everyDay.value is Resource.Error)
     }
 
+    @Test fun pendingAnonymousRecoveryBlocksExplicitReadsAndResumesTheLatestPlaylist() {
+        identity = SessionIdentity(0, false, false)
+        sessions.setRecoveryRequired(true)
+        checkModel { model, _ ->
+            val owner = sessions.snapshot()
+            model.getPlaylistDetail("10")
+            model.getPlaylistDetail("20")
+            runCurrent()
+            assertTrue(source.reads.isEmpty())
+            assertNull(model.detailSession.value)
+            assertTrue(model.playlistDetail.value is Resource.Error)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(listOf("20" to owner), source.reads)
+            assertEquals(20L, (model.playlistDetail.value as Resource.Success).data.playlist.Id)
+        }
+    }
+
+    @Test fun recoveryImmediatelyRejectsCapturedDetailsDailyTracksAndRawTrackReads() = checkModel { model, _ ->
+        model.getPlaylistDetail("10")
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        val owner = sessions.snapshot()
+        val detail = model.playlistDetail.value
+        val daily = model.everyDay.value
+        sessions.setRecoveryRequired(true)
+        assertTrue(runCatching { model.requireDetail(owner, detail) }.isFailure)
+        assertTrue(model.dailyTracks(owner, daily).isEmpty())
+        assertEquals("", model.userId)
+        assertTrue(runCatching { model.getSongDetails(listOf("1"), owner) }.isFailure)
+        assertTrue(unexpected.isEmpty())
+    }
+
+    @Test fun explicitRetriesAfterRecoveryResetCannotReadAndResumeUnderTheSameStamp() = checkModel { model, _ ->
+        model.getPlaylistDetail("10")
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        val owner = sessions.snapshot()
+        sessions.setRecoveryRequired(true)
+        runCurrent()
+        model.getPlaylistDetail("20")
+        model.getEveryDayRecommendSongs()
+        runCurrent()
+        assertEquals(1, source.reads.size)
+        assertEquals(1, source.dailyReads.size)
+        assertNull(model.detailSession.value)
+        assertNull(model.dailySession.value)
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(owner, sessions.snapshot())
+        assertEquals(listOf("10" to owner, "20" to owner), source.reads)
+        assertEquals(listOf(owner, owner), source.dailyReads)
+    }
+
+    @Test fun recoveryBetweenReservationAndDispatchStopsPlaylistAndDailyRequests() = checkModel { model, _ ->
+        model.getPlaylistDetail("10")
+        model.getEveryDayRecommendSongs()
+        sessions.setRecoveryRequired(true)
+        runCurrent()
+        assertTrue(source.reads.isEmpty())
+        assertTrue(source.dailyReads.isEmpty())
+        assertTrue(touches.isEmpty())
+    }
+
+    @Test fun recoveryBetweenCollectionReservationAndDispatchCannotWrite() = checkModel { model, _ ->
+        model.getPlaylistDetail("10")
+        runCurrent()
+        model.subscribePlaylist("10")
+        sessions.setRecoveryRequired(true)
+        runCurrent()
+        assertTrue(source.writes.isEmpty())
+        assertNull(model.collected.value)
+        assertTrue(model.subscribePlaylist.value is Resource.Loading)
+    }
+
+    @Test fun pendingRetriesAndNonCooperativeReadsCannotRepopulateRetiredResults() {
+        val detail = CompletableDeferred<Resource<PlaylistDetail>>()
+        val daily = CompletableDeferred<Resource<com.ljyh.mei.data.model.weapi.EveryDaySongs>>()
+        source.read = { id -> if (id == "10") withContext(NonCancellable) { detail.await() } else Resource.Success(detail(id)) }
+        var dailyCalls = 0
+        source.daily = { if (dailyCalls++ == 0) withContext(NonCancellable) { daily.await() } else Resource.Success(dailySongs(2)) }
+        checkModel { model, _ ->
+            try {
+                model.getPlaylistDetail("10")
+                model.getEveryDayRecommendSongs()
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+                model.getPlaylistDetail("20")
+                model.getEveryDayRecommendSongs()
+                runCurrent()
+            } finally {
+                detail.complete(Resource.Success(detail("10")))
+                daily.complete(Resource.Success(dailySongs(1)))
+                runCurrent()
+            }
+            assertEquals(1, source.reads.size)
+            assertEquals(1, source.dailyReads.size)
+            assertNull(model.detailSession.value)
+            assertNull(model.dailySession.value)
+            assertTrue(model.playlistDetail.value is Resource.Error)
+            assertTrue(model.everyDay.value is Resource.Loading)
+            assertTrue(touches.isEmpty())
+        }
+    }
+
     private fun checkModel(check: suspend TestScope.(PlaylistViewModel, ViewModelStore) -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()

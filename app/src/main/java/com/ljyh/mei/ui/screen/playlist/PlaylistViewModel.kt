@@ -72,7 +72,7 @@ class PlaylistViewModel internal constructor(
         localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository, apiService: ApiService,
         sessions: SessionStore, library: com.ljyh.mei.data.repository.AccountLibraryRepository,
     ) : this(repository, repository, repository, localPlaylistRepository, apiService, sessions, library)
-    val userId: String get() = runCatching { sessions.snapshot().identity.takeIf { it.authenticated }?.userId?.toString().orEmpty() }.getOrDefault("")
+    val userId: String get() = if (sessions.recoveryRequired.value) "" else runCatching { sessions.snapshot().identity.takeIf { it.authenticated }?.userId?.toString().orEmpty() }.getOrDefault("")
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
     private val _detailSession = MutableStateFlow<SessionStamp?>(null)
@@ -190,8 +190,10 @@ class PlaylistViewModel internal constructor(
 
     fun getPlaylistDetail(id: String) {
         requestedId = id
+        if (sessions.recoveryRequired.value) return
         val stamp = runCatching { sessions.snapshot() }.getOrNull() ?: return
         val version = runCatching { sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 if (loadedId == id && _detailSession.value == stamp && changingCollection) {
                     refreshAfterCollection = true
@@ -209,6 +211,7 @@ class PlaylistViewModel internal constructor(
         detailJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val result = pageSource.getPlaylistDetail(id, stamp)
                 if (result is Resource.Success) {
                     check(result.data.code == 200 && result.data.playlist.Id.toString() == id) { "Invalid official playlist detail" }
@@ -238,10 +241,12 @@ class PlaylistViewModel internal constructor(
     }
 
     private fun publishDetail(stamp: SessionStamp, version: Long, update: () -> Unit): Boolean = sessions.withCurrent(stamp) {
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
         synchronized(detailLock) { (detailVersion == version).also { if (it) update() } }
     }
 
     fun requireDetail(stamp: SessionStamp, detail: Resource<PlaylistDetail>) = sessions.withCurrent(stamp) {
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
         synchronized(detailLock) {
             if (_detailSession.value != stamp || _playlistDetail.value !== detail || detail !is Resource.Success) {
                 throw CancellationException("Playlist changed")
@@ -397,6 +402,7 @@ class PlaylistViewModel internal constructor(
         onComplete: (Resource<T>) -> Unit,
     ) {
         val version = runCatching { sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 if (_actionSession.value != owner || mutationRunning) null else {
                     mutationRunning = true
@@ -444,8 +450,10 @@ class PlaylistViewModel internal constructor(
 
     fun getEveryDayRecommendSongs() {
         dailyRequested = true
+        if (sessions.recoveryRequired.value) return
         val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
         val version = runCatching { sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 clearDaily()
                 _dailySession.value = owner
@@ -455,11 +463,13 @@ class PlaylistViewModel internal constructor(
         dailyJob?.cancel()
         dailyJob = viewModelScope.launch {
             fun publish(result: Resource<EveryDaySongs>) = sessions.withCurrent(owner) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(detailLock) { if (dailyVersion == version) _everyDay.value = result }
             }
             try {
                 check(owner.identity.authenticated) { "Official login is required" }
                 sessions.requireCurrent(owner)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val result = pageSource.getEveryDayRecommendSongs(owner)
                 currentCoroutineContext().ensureActive()
                 publish(result)
@@ -488,6 +498,7 @@ class PlaylistViewModel internal constructor(
     fun dailyTracks(owner: SessionStamp?, result: Resource<EveryDaySongs>): List<MediaMetadata> {
         if (owner == null || result !is Resource.Success) return emptyList()
         return runCatching { sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 check(_dailySession.value == owner && _everyDay.value === result)
                 result.data.data.dailySongs.distinctBy { it.id }.map { it.toMediaMetadata() }
@@ -531,6 +542,7 @@ class PlaylistViewModel internal constructor(
         val before = _collected.value ?: return
         val output = if (collected) _subscribePlaylist else _unSubscribePlaylist
         val version = runCatching { sessions.withCurrent(stamp) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 val detail = (_playlistDetail.value as? Resource.Success)?.data?.playlist
                 if (changingCollection || loadedId != id || detail == null || before == collected) null
@@ -548,6 +560,7 @@ class PlaylistViewModel internal constructor(
         collectionJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 val result = if (collected) pageSource.subscribePlaylist(id, stamp) else pageSource.unSubscribePlaylist(id, stamp)
                 currentCoroutineContext().ensureActive()
                 val accepted = publishDetail(stamp, version) {
@@ -602,17 +615,21 @@ class PlaylistViewModel internal constructor(
 
     suspend fun resolveDownloadSources(ids: List<String>, quality: MusicQuality, owner: SessionStamp) =
         sessions.requireCurrent(owner).let {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             repository.getDownloadSources(ids, quality, owner).also {
                 currentCoroutineContext().ensureActive()
                 sessions.requireCurrent(owner)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
             }
         }
 
     suspend fun getSongDetails(ids: List<String>, owner: SessionStamp = sessions.snapshot()): Tracks {
         sessions.requireCurrent(owner)
+        if (sessions.recoveryRequired.value) throw SessionChangedException()
         return apiService.getSongDetail(GetSongDetails(c = ids.joinToString(",")), owner).also {
             currentCoroutineContext().ensureActive()
             sessions.requireCurrent(owner)
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
             check(it.code == 200) { "Playlist tracks failed (${it.code})" }
         }
     }

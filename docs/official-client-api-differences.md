@@ -2746,6 +2746,21 @@ These are integration differences, not server API semantics.
   Both production R8 builds/vital lint and the real-SDK release gate pass; the updated
   development-signed module cold-launches portrait MeiloX Home. That bootstrap does
   not qualify real recovery, an actual collection write or full paired release parity.
+- Library consumer follow-up: playlist explicit retries, captured detail/daily-track
+  actions and raw reads also assumed that a readable stamp was ready. Both podcast
+  consumers retained discovery/subscriptions/detail and bulk-program caches under
+  that assumption. Twelve new JVM cases fail before repair, covering initial
+  anonymous recovery, queued dispatch, immediate cache/actions, forced retries and
+  non-cooperative reads/writes. The shared consumers now fence reservation, dispatch
+  and publication and retire pending work/content; latest playlist/detail and daily
+  intent resume after same-stamp recovery. Endpoints, signing, raw pagination offsets,
+  candidate verification, download policy and existing UI/navigation are unchanged.
+  Paired suites pass 1865 cases (24 playlist and 26 podcast cases per flavor). Three
+  Android substitutes pass per flavor using private sessions and closed synthetic
+  sources, with no sockets/credentials/real writes. The real tagged transport was
+  already guarded: these reproductions establish consumer gaps, not real pending
+  requests escaping it. Artifact/bootstrap qualification and remaining real-account
+  gates are recorded in the dual-runtime plan.
 
 ## Adding an Entry
 

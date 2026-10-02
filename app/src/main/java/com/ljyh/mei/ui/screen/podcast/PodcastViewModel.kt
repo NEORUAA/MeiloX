@@ -85,7 +85,7 @@ class PodcastViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(accounts.sessions.changes, accounts.sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
+                val stamp = if (accounts.sessions.recoveryRequired.value) null else runCatching { accounts.sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     discoveryJob?.cancel()
                     subscriptionJob?.cancel()
@@ -121,6 +121,7 @@ class PodcastViewModel internal constructor(
     }
 
     private fun refreshDiscover() {
+        if (accounts.sessions.recoveryRequired.value) return
         val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull() ?: return
         discoveryJob?.cancel()
         val version = prepare(stamp, discoveryVersion) { it.copy(isLoading = true, error = null, selectedCategoryId = null) } ?: return
@@ -197,6 +198,7 @@ class PodcastViewModel internal constructor(
     private fun prepare(stamp: SessionStamp, counter: AtomicLong, update: (PodcastUiState) -> PodcastUiState): Long? =
         runCatching {
             accounts.sessions.withCurrent(stamp) {
+                if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     val current = state.value.takeIf { it.session == stamp }
                         ?: PodcastUiState(session = stamp, selectedTab = state.value.selectedTab)
@@ -208,6 +210,7 @@ class PodcastViewModel internal constructor(
 
     private fun publish(stamp: SessionStamp, counter: AtomicLong, version: Long, update: (PodcastUiState) -> PodcastUiState) {
         accounts.sessions.withCurrent(stamp) {
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (counter.get() == version) mutableState.update(update)
             }
@@ -220,6 +223,7 @@ class PodcastViewModel internal constructor(
     ) {
         try {
             accounts.sessions.requireCurrent(stamp)
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             val value = load()
             currentCoroutineContext().ensureActive()
             publish(stamp, counter, version) { success(it, value) }
@@ -278,7 +282,7 @@ class PodcastDetailViewModel internal constructor(
     init {
         viewModelScope.launch {
             combine(accounts.sessions.changes, accounts.sessions.recoveryRequired) { _, _ -> Unit }.collect {
-                val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
+                val stamp = if (accounts.sessions.recoveryRequired.value) null else runCatching { accounts.sessions.snapshot() }.getOrNull()
                 if (stamp == null) {
                     loadJob?.cancel()
                     moreJob?.cancel()
@@ -298,6 +302,7 @@ class PodcastDetailViewModel internal constructor(
         currentCoroutineContext().ensureActive()
         val stamp = checkNotNull(state.value.session)
         val (version, detail, cached) = accounts.sessions.withCurrent(stamp) {
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (loadedId != id || state.value.session != stamp) throw CancellationException("Podcast changed")
                 Triple(generation.get(), checkNotNull(state.value.detail), allProgramsCache)
@@ -320,6 +325,7 @@ class PodcastDetailViewModel internal constructor(
         }
         currentCoroutineContext().ensureActive()
         accounts.sessions.withCurrent(stamp) {
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (generation.get() != version || loadedId != id) throw CancellationException("Podcast changed")
                 allProgramsCache = programs
@@ -329,8 +335,9 @@ class PodcastDetailViewModel internal constructor(
     }
 
     fun load(id: Long, force: Boolean = false) {
-        val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
         loadedId = id
+        if (accounts.sessions.recoveryRequired.value) return
+        val stamp = runCatching { accounts.sessions.snapshot() }.getOrNull()
         if (stamp == null) return
         if (!force && state.value.session == stamp && state.value.detail?.podcast?.id == id) return
         loadJob?.cancel()
@@ -338,6 +345,7 @@ class PodcastDetailViewModel internal constructor(
         subscriptionJob?.cancel()
         val version = runCatching {
             accounts.sessions.withCurrent(stamp) {
+                if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
                     val previous = state.value
                     allProgramsCache = null
@@ -412,11 +420,13 @@ class PodcastDetailViewModel internal constructor(
 
     private fun checkCurrent(stamp: SessionStamp, version: Long, id: Long) {
         accounts.sessions.requireCurrent(stamp)
+        if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
         if (generation.get() != version || loadedId != id) throw CancellationException("Podcast changed")
     }
 
     private fun publish(stamp: SessionStamp, version: Long, update: (PodcastDetailUiState) -> PodcastDetailUiState): Boolean =
         accounts.sessions.withCurrent(stamp) {
+            if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
                 if (generation.get() != version) false else {
                     mutableState.update(update)

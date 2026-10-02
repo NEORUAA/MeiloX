@@ -49,9 +49,21 @@ class PodcastSessionTest {
         val programOffsets = mutableListOf<Int>()
         val writes = mutableListOf<Pair<Long, Boolean>>()
         val requestedSessions = mutableListOf<SessionStamp>()
-        override suspend fun podcastHome(session: SessionStamp) = home().also { requestedSessions += session }
-        override suspend fun podcasts(session: SessionStamp, categoryId: Long, offset: Int, limit: Int) = category(categoryId)
-        override suspend fun podcastDetail(session: SessionStamp, id: Long, offset: Int, limit: Int) = detail(id)
+        var homeCalls = 0
+        val categories = mutableListOf<Long>()
+        val details = mutableListOf<Long>()
+        override suspend fun podcastHome(session: SessionStamp): PodcastHome {
+            homeCalls++
+            return home().also { requestedSessions += session }
+        }
+        override suspend fun podcasts(session: SessionStamp, categoryId: Long, offset: Int, limit: Int): List<Podcast> {
+            categories += categoryId
+            return category(categoryId)
+        }
+        override suspend fun podcastDetail(session: SessionStamp, id: Long, offset: Int, limit: Int): PodcastDetail {
+            details += id
+            return detail(id)
+        }
         override suspend fun podcastPrograms(session: SessionStamp, id: Long, offset: Int, limit: Int): PodcastProgramPage {
             requestedSessions += session
             programOffsets += offset
@@ -437,6 +449,162 @@ class PodcastSessionTest {
             assertNull(detail.state.value.detail)
             runCurrent()
             assertEquals(2L, detail.allPrograms(1).single().id)
+        }
+    }
+
+    @Test fun pendingAnonymousRecoveryBlocksDiscoveryAndDetailsAndResumesTheLatestId() {
+        identity = SessionIdentity(0, false, false)
+        sessions.setRecoveryRequired(true)
+        checkModels { list, detail, _ ->
+            val owner = sessions.snapshot()
+            runCurrent()
+            list.refresh()
+            list.selectCategory(1)
+            detail.load(1)
+            detail.load(2, true)
+            runCurrent()
+            assertEquals(0, source.homeCalls)
+            assertTrue(source.categories.isEmpty())
+            assertTrue(source.details.isEmpty())
+            assertNull(list.state.value.session)
+            assertNull(detail.state.value.detail)
+            assertEquals("Official session recovery is required", list.state.value.error)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(1, source.homeCalls)
+            assertEquals(listOf(2L), source.details)
+            assertEquals(2L, detail.state.value.detail!!.podcast.id)
+        }
+    }
+
+    @Test fun recoveryImmediatelyRejectsTheBulkCacheAndRetiresSubscriptionPresentation() {
+        source.subscriptions = { PodcastPage(listOf(podcast(1)), false, 1) }
+        source.detail = { PodcastDetail(podcast(it), listOf(program(it)), false, 1) }
+        checkModels { list, detail, _ ->
+            runCurrent()
+            list.selectTab(PodcastTab.Subscriptions)
+            detail.load(1)
+            runCurrent()
+            assertEquals(1L, detail.allPrograms(1).single().id)
+            val owner = sessions.snapshot()
+            sessions.setRecoveryRequired(true)
+            assertTrue(runCatching { detail.allPrograms(1) }.isFailure)
+            detail.toggleSubscription()
+            list.selectCategory(1)
+            runCurrent()
+            assertTrue(source.writes.isEmpty())
+            assertTrue(source.categories.isEmpty())
+            assertNull(list.state.value.home)
+            assertTrue(list.state.value.subscribedPodcasts.isEmpty())
+            assertNull(detail.state.value.detail)
+            detail.load(2, true)
+            list.refreshSubscriptions()
+            runCurrent()
+            assertEquals(listOf(1L), source.details)
+            assertEquals(listOf(0), source.subscriptionOffsets)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(owner, sessions.snapshot())
+            assertEquals(PodcastTab.Subscriptions, list.state.value.selectedTab)
+            assertEquals(listOf(0, 0), source.subscriptionOffsets)
+            assertEquals(2L, detail.allPrograms(2).single().id)
+        }
+    }
+
+    @Test fun recoveryRetiresNonCooperativeDiscoverySubscriptionAndDetailResponses() {
+        val home = CompletableDeferred<PodcastHome>()
+        val category = CompletableDeferred<List<Podcast>>()
+        val subscriptions = CompletableDeferred<PodcastPage>()
+        val detail = CompletableDeferred<PodcastDetail>()
+        source.home = { withContext(NonCancellable) { home.await() } }
+        source.category = { withContext(NonCancellable) { category.await() } }
+        source.subscriptions = { withContext(NonCancellable) { subscriptions.await() } }
+        source.detail = { withContext(NonCancellable) { detail.await() } }
+        checkModels { list, model, _ ->
+            try {
+                runCurrent()
+                list.selectCategory(1)
+                list.ensureSubscriptionsLoaded()
+                model.load(1)
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+            } finally {
+                home.complete(PodcastHome(emptyList(), listOf(podcast(1)), emptyList()))
+                category.complete(listOf(podcast(1)))
+                subscriptions.complete(PodcastPage(listOf(podcast(1)), false, 1))
+                detail.complete(PodcastDetail(podcast(1), listOf(program(1)), false, 1))
+                runCurrent()
+            }
+            assertNull(list.state.value.session)
+            assertNull(list.state.value.home)
+            assertTrue(list.state.value.categoryPodcasts.isEmpty())
+            assertTrue(list.state.value.subscribedPodcasts.isEmpty())
+            assertNull(model.state.value.session)
+            assertNull(model.state.value.detail)
+            assertFalse(model.state.value.isLoading)
+        }
+    }
+
+    @Test fun recoveryDuringBulkPagingCannotReturnOrCacheTheLatePage() {
+        val page = CompletableDeferred<PodcastProgramPage>()
+        source.detail = { PodcastDetail(podcast(it), listOf(program(1)), true, 2) }
+        source.programs = { withContext(NonCancellable) { page.await() } }
+        checkModels { _, detail, _ ->
+            detail.load(1)
+            runCurrent()
+            val bulk = async { runCatching { detail.allPrograms(1) } }
+            try {
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+            } finally {
+                page.complete(PodcastProgramPage(listOf(program(2)), false, 2))
+                runCurrent()
+            }
+            assertTrue(bulk.await().isFailure)
+            assertEquals(listOf(1), source.programOffsets)
+            assertNull(detail.state.value.detail)
+        }
+    }
+
+    @Test fun recoveryRetiresTheSubscriptionWriteAndBlocksForceReloadUntilReady() {
+        val write = CompletableDeferred<Unit>()
+        source.mutation = { _, _ -> withContext(NonCancellable) { write.await() } }
+        checkModels { _, detail, _ ->
+            try {
+                detail.load(1)
+                runCurrent()
+                detail.toggleSubscription()
+                runCurrent()
+                sessions.setRecoveryRequired(true)
+                runCurrent()
+                detail.load(2, true)
+                runCurrent()
+            } finally { write.complete(Unit); runCurrent() }
+            assertEquals(listOf(1L), source.details)
+            assertEquals(listOf(1L to false), source.writes)
+            assertNull(detail.state.value.detail)
+            assertFalse(detail.state.value.isUpdatingSubscription)
+            sessions.setRecoveryRequired(false)
+            runCurrent()
+            assertEquals(listOf(1L, 2L), source.details)
+            assertTrue(detail.state.value.detail!!.podcast.isSubscribed)
+        }
+    }
+
+    @Test fun recoveryBetweenReservationAndDispatchCannotLoadACategoryOrWriteASubscription() {
+        checkModels { list, detail, _ ->
+            runCurrent()
+            detail.load(1)
+            runCurrent()
+            list.selectCategory(1)
+            detail.toggleSubscription()
+            sessions.setRecoveryRequired(true)
+            runCurrent()
+            assertTrue(source.categories.isEmpty())
+            assertTrue(source.writes.isEmpty())
         }
     }
 

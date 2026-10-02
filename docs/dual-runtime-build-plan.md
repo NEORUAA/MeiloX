@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`882c8a9d` plus the album-recovery repair below. Source review is separate from
+`792d01b5` plus the library-consumer recovery repair below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -157,7 +157,8 @@ groups unless their source changes or a new failure is reproduced.
 | Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Reviewed at source level; actual playback/reporting acceptance remains separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
-| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album recovery repair is verified below | Partial: playlist explicit reads/actions and both podcast consumers still need same-stamp recovery reproductions; actual account/server matrices remain open |
+| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist and both podcast recovery repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
+| Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
 | Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
@@ -2757,6 +2758,43 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
 - Full release/device acceptance, real expiry/account switching, production upgrade,
   framework-free execution and the remaining merge review are still open. Local
   evidence is `/tmp/meilox-album-recovery-*-2026-10-02*`; no device logs are committed.
+
+### D3/D5/D6 Checkpoint: Playlist and Podcast Recovery (2026-10-02)
+
+- ABI-018's readable-stamp/pending-Cookie distinction also affects explicit playlist
+  retries/captured actions and both podcast consumers. All 12 new JVM reproductions
+  fail before repair. Two shared source files now guard reservation, dispatch,
+  publication and captured cache/actions while retaining latest playlist/detail and
+  daily intent for same-stamp recovery. No endpoint, signing, download semantics,
+  pagination cursor, page architecture, layout or player-engine change is included.
+- Fresh paired suites pass 924 standalone and 941 parasite cases (1865 total),
+  including 24 playlist and 26 podcast cases per flavor. Both debug/test pairs build
+  in 10s. LibraryRecoveryDeviceTest passes three actual-Android ViewModel substitutes
+  per flavor (0.146s standalone, 1.160s parasite retry), using private sessions,
+  closed dependencies and synthetic sources: no credentials, sockets, real account
+  changes, collection writes or download grants. This does not establish a real
+  transport escape or qualify the real expiry/account/server matrix.
+- The first parasite instrumentation attempt ends before the runner with
+  `failed to attach` (PID 31456); its scoped Java crash buffer is empty. An app-only
+  module force-stop and one bounded retry succeed. No application/AVD cause is
+  attributed, and the rooted AVD is not restarted or powered off.
+- Both production R8 artifacts and vital lint pass in 9m25s; all 41 release workflow
+  fixtures and the real-SDK built-pair gate pass. The current development-signed
+  parasite R8 APK passes signature/16KB alignment checks, is preserving-installed,
+  and cold-launches portrait TV-hosted MeiloX Home through LoadingActivity in
+  10072ms. SHA-256:
+  `fe2e45ab52d5c2fd60f8db511836532e991ee1d42668e6681db92e24d2946abc`.
+  This qualifies bootstrap only, not full paired minified execution or a real
+  pending-Cookie/official-recovery/collection/download test of this increment.
+- Ordinary standalone debug and current TV-hosted Home screenshots are checked.
+  Existing queues remain paused at 145670ms/seven entries and 55536ms/six entries,
+  with null errors; the original TV player is STOPPED/empty. Current PID-scoped
+  Java crash buffers are empty, media row 820 retains its size/owner/published state,
+  and standalone notification/microphone permissions remain ungranted. The rooted
+  AVD remains awake; original standalone installation/data are untouched.
+- Remaining original-upgrade, framework-free execution, paired runtime/account
+  matrices and full semantic merge review stay open. Local evidence is
+  `/tmp/meilox-library-recovery-*-2026-10-02*`; no device logs are committed.
 
 ## Acceptance and Remaining Decisions
 
