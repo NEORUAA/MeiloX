@@ -4382,6 +4382,29 @@ playlist/component/PlaylistActionOverlay.kt
   original-install upgrade, cross-R8 task restoration or the remaining D2-D6 gates.
   APKs are copied unchanged, so no rebuild or new unit-test execution is claimed.
 
+## Preserving Original-ID Upgrade on HyperOS 4 (2026-10-03)
+
+- The user authorized a private APK/CE/DE/external-data backup followed by
+  `adb install -r`; no uninstall or data clear is performed. The restricted backup
+  is under `~/.local/share/meilox-avd-migration/2026-10-03/original-preserving-upgrade`.
+- Both APKs use the same development certificate (`2a02b8d6...`). The installed
+  production-ID R8 candidate is `com.neoruaa.meilox`, SHA-256
+  `c80c81722532a270390167e2a8d6ade6d573b1993dd6b869259d0070fad5c5c9`.
+  Its installed file hash is verified independently after installation.
+- The loaded database migrates from version 17 to 21 with `integrity_check=ok`.
+  All 150 song rows and every old row in albums, artists, playlist membership,
+  likes and download tasks remain unchanged in their original columns. All 22
+  playlist IDs remain; refreshed timestamps and two cover/count values differ,
+  so playlist row equality is not claimed. Account identity, Home, the paused
+  queue track and both completed download rows are observed in the actual UI.
+- PID-scoped crash capture contains no fatal exception. This qualifies the
+  development-signed original-install upgrade, not compatibility with the separate
+  production release certificate, audible playback or full lifecycle acceptance.
+  Application source is unchanged; existing JVM results are not new executions.
+- The user also authorized parasite-only microphone authorization/capture and
+  PiP helper components. They must have no music launcher, host credentials or
+  backend implementation; business work remains in the verified TV process.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -4396,9 +4419,9 @@ playlist/component/PlaylistActionOverlay.kt
 - Keep interface differences and evidence in
   [Official Client API Differences](official-client-api-differences.md), distinguishing
   standalone contract, official-host contract, shared mapping and verification limits.
-- The TV microphone/PiP manifest gate remains unresolved. Producing a standalone APK
-  does not authorize invoking it as a parasite helper, sharing credentials, hiding
-  features, changing LSPosed scope or rewriting host package metadata.
+- The TV microphone/PiP implementation gate remains open. Dedicated module helper
+  components are now authorized; invoking the standalone APK, sharing credentials,
+  hiding features, changing LSPosed scope or rewriting host metadata is not authorized.
 - Real login/logout/account switching, quota-consuming downloads/uploads and social
   writes still require the previously stated user cooperation/authorization boundaries.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
