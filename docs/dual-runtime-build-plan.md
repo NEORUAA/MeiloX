@@ -168,7 +168,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
-| Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe, Social/Library and six catalog-navigation-family repairs, with bounded FindMusic and Search native callbacks, are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; the 13 catalog-navigation entries have source/JVM guards and bounded native coverage, not complete page integration, unchanged-body or full runtime acceptance |
+| Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe, Social/Library and six catalog-navigation-family repairs, with bounded FindMusic, Search, AccountHome, Podcast and Wiki native callbacks, are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; the 13 catalog-navigation entries have source/JVM guards and bounded native coverage, not complete page integration, unchanged-body or full runtime acceptance |
 
 #### Reconciled Page and Runtime-Carrier Inventory
 
@@ -252,10 +252,10 @@ The audit's retained account intents, logout and diagnostic offer findings have
 their scoped repairs below. Social/Library navigation is repaired at `d962a931`;
 AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and SongWiki
 follow-up repairs the other six audited families (13 entries) at bounded source/JVM
-scope and adds native FindMusic callback cases. The later Search checkpoint qualifies
-recommendation and four non-song result callbacks with closed native fixtures.
-Retained original-row callbacks for AccountHome, Podcast list and SongWiki, and real
-account/expiry behavior remain separate gates.
+scope and adds native FindMusic callback cases. Later paired closed native checkpoints
+qualify Search recommendation/four non-song results, AccountHome rankings/playlist,
+Podcast's three list sections and SongWiki playlist/contribution callbacks. These are
+the named families, not complete shared-page coverage or real account/expiry behavior.
 No duplicate frontend tree or new page architecture is added.
 
 #### Flavor Login Review Scope
@@ -3710,6 +3710,90 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   retained-callback coverage and the existing D2-D6 production-upgrade, framework-free,
   real-account, capability, lifecycle and server gates remain open. No cloud/download
   flow is repeated and no real write substitutes for those gates.
+
+### D3/D5/D6 Checkpoint: Observable Podcast and Remaining Catalog Callbacks (2026-10-02)
+
+- Closed native tests render the original AccountHomeScreen, PodcastScreen and
+  SongWikiScreen, retaining concrete ClickableElement callbacks through the original
+  navigator. AccountHome covers rankings/playlist; Podcast covers recommendation,
+  featured and subscription rows; Wiki covers related playlist/contribution. The
+  contribution UriHandler only records fixture.invalid locally and never opens a
+  browser. No real account, credential, transport, subscription mutation or player
+  service is used. Explicit models and fail-closed fallback factories keep the
+  production graph out of these fixtures.
+- AccountHome adds 18 cases per flavor: ready authenticated and guest policy,
+  replacement account, reauthorization, same-stamp recovery, identical resources,
+  changed profile, removed playlist and pending refresh. Wiki adds 18 cases per
+  flavor: ready authenticated/guest, replacement account, reauthorization, recovery,
+  same-content song reentry, pending replacement song, removed target and clearing.
+  These two page implementations are unchanged.
+- Podcast initially fails nine of 24 standalone cases. Removing an inappropriate
+  hidden-discovery readiness requirement and relocating lazy rows after tab reentry
+  does not eliminate those failures. The corrected observation shows a present row
+  and ready data but rendered-state reference mismatch. Three new JVM reproductions
+  fail for structurally equal immediate discovery/subscription reloads and category
+  reentry. The migration's exact-state dispatch guard therefore needs observable
+  publication ownership; weakening the test or guard would leave visible callbacks
+  retired after equal reads.
+- PodcastUiState gains only a presentation revision. Every PodcastViewModel state
+  publication advances it under the existing stateLock. Session ownership, request
+  versions, recovery, membership checks, endpoints, business DTOs, routes, original controls
+  and layout remain unchanged. Three immediate-equal-content native cases are added,
+  producing 27 podcast cases per flavor; gated refresh, tab reentry, clearing and
+  guest discovery/private-subscription policy remain covered. This is migration
+  integration, not a main-only UI cleanup or playback-engine change.
+- Fresh paired focused JVM suites pass 72 cases each (AccountHomeState 4,
+  AccountHomeViewModel 9, PodcastSession 40, SongWikiSession 19), zero failures,
+  errors or skips. Debug and AndroidTest builds pass in 18s (160 tasks). The new
+  native suites pass 63 cases in standalone (105.530s) and 63 in parasite (99.794s),
+  including 27 podcast cases each. Installed standalone test-APK hash matches the
+  locally built artifact. Failed native attempts and the three failing-before-fix
+  JVM cases are retained separately, not counted as accepted evidence.
+- The paired AndroidTest/production R8 build passes in 7m40s (221 tasks), including
+  vital lint. All 56 local real-SDK release/signing/identity/version/declaration/16KB
+  gates pass. Unsigned standalone SHA-256 is
+  `69ae0df48f966a2a7a7a7c44c9e436987ad1c8337e758b482ec37231e01b8d49`,
+  parasite `86f8dc7fe210a88a22f9eeea7004676ea16acb38374180acff51ad37c111b0c7`.
+  Both R8 mappings retain the presentation revision. Development-signed parasite
+  SHA-256 is `d7e45aea486a5faee4198417c8a953ad18ed8a095fa4fa3e9d01710def907f0d`,
+  with the existing compatible certificate and passing 16KB alignment. Its installed
+  hash matches. Module-only preserving installation and TV app-only cold start succeed
+  in 4416ms (PID 22069), displaying original portrait Home/glass and paused Prelude
+  at 178897ms, eleven entries and null error; native TV stays STOPPED/empty. This
+  single startup sample does not attribute or resolve the previous slow-start gap.
+- With its existing official account, the minified TV runtime displays a real
+  subscribed podcast in the original Library tab. A pointer click opens its original
+  detail page with artwork, a 92-program total and visible program rows; no playback
+  or subscription action is invoked. This is positive read/navigation evidence, not
+  retired Library-row ownership or completion of all 92 program reads.
+- A separate isolated-ID standalone R8 artifact builds in 3m48s (55 tasks), signed
+  SHA-256 `4ae1761d0e90e0a519230ac76aae80a71edb52ad5f511bcbe163d8f78aec44e2`.
+  It remains non-debuggable and 16KB-aligned with the compatible development key;
+  installed hash matches. Its app-only cold start reports 846ms (PID 22966), retaining
+  Full Moon Serenade NONE/unprepared at 143811ms, seven entries, speed zero and null
+  error. The existing standalone account displays seven subscribed podcast rows;
+  a pointer click opens an original detail page with artwork, a 2515-program total
+  and visible rows. This does not qualify production-ID upgrade/signing, all 2515
+  programs, actual playback or real account transitions. No Cookie-file import or
+  official credential copy occurs.
+- Ordinary standalone debug is preserving-restored, installed hash
+  `6ccbc6be8e258d5e54e01ccffaec4c8663dc7c358f26bf5820d37bca6465474a`.
+  The settled session is PAUSED/prepared at 143811ms, seven entries, speed zero and
+  null error without a playback action. TV returns in the existing PID 22069 and
+  retains its paused position/queue. Production standalone's original package path
+  and TV-owned MediaStore row 820 (22705573 bytes, pending=0) remain unchanged.
+  No AVD restart/screen-off, second-device access, permissions, real authorization,
+  upload/download/social/subscription write or framework/global rotation change
+  is performed. Logs, APKs and screenshots remain outside Git under
+  `/tmp/meilox-catalog-*`; all execution handles finish before commit.
+- This closes only the named debug callback-family test scopes, not pointer input,
+  destination data, real authorization or full R8
+  lifecycle. The LibraryMobileLayout libraryPodcastItems direct subscription-row
+  dispatch is a separate source-review finding: it still lacks a rendered-owner
+  guard and is not covered by the original PodcastScreen fixture. Captured-row
+  reproduction and a scoped migration repair remain open; no original layout change
+  is authorized by this observation. Existing D2-D6 real-account, upgrade, capability,
+  framework-free, server and playback/startup-attribution gates remain open.
 
 ## Acceptance and Remaining Decisions
 

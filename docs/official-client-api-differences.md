@@ -3113,6 +3113,28 @@ These are integration differences, not server API semantics.
   only SearchLanding/non-song SearchResult callback integration; AccountHome,
   Podcast list and SongWiki native callbacks, pointer input, real account/expiry and
   complete minified lifecycle acceptance remain separate gates.
+- Observable podcast-presentation follow-up (2026-10-02): the exact rendered-state
+  guard added by the migration can reject the currently visible row after an equal
+  immediate reload. Closed native execution exposes nine failures after fixture
+  readiness is corrected: the row exists but Compose retains an equal old state
+  object. Three new JVM cases fail before repair for identical discovery/subscription
+  reloads and category reentry. PodcastViewModel now assigns a monotonically
+  increasing presentation revision under its existing lock for every publication,
+  so equal backend content still rebinds callbacks without weakening session/recovery
+  checks. Endpoints, DTOs, layout, routes, controls and playback are unchanged; this is
+  migration consumer integration, not an original main frontend repair. The paired
+  PodcastSessionTest suites pass 40 cases each. Bounded native/artifact evidence is
+  recorded in the dual-runtime plan; real account/server and full lifecycle gates
+  remain separate.
+- Paired original-screen follow-up: AccountHome rankings/playlist, Podcast's three
+  list sections and Wiki playlist/contribution pass 63 closed native cases per debug
+  flavor (18/27/18). URI contribution dispatch stays local; real subscriptions and
+  credentials are not mutated. Both current minified runtimes additionally read
+  existing subscribed podcasts and open original detail pages without playback or
+  subscription writes. This qualifies positive ready-state reads/navigation, not
+  obsolete callbacks in R8, complete program pagination or real account transitions.
+  LibraryMobileLayout's separate direct subscribed-row dispatch remains an uncovered
+  source-review finding; it is not silently qualified by PodcastScreen's fixture.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 

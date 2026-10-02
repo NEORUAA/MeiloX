@@ -44,6 +44,7 @@ data class PodcastUiState(
     val subscriptionOffset: Int = 0,
     val subscriptionsError: String? = null,
     val subscriptionsLoadMoreError: String? = null,
+    val revision: Long = 0,
 ) {
     val authenticated: Boolean get() = session?.identity?.authenticated == true
 }
@@ -67,6 +68,7 @@ class PodcastViewModel internal constructor(
     private val mutableState = MutableStateFlow(PodcastUiState())
     val state = mutableState.asStateFlow()
     private val stateLock = Any()
+    private var presentationRevision = 0L
     private val discoveryVersion = AtomicLong()
     private val subscriptionVersion = AtomicLong()
     private var discoveryJob: Job? = null
@@ -77,7 +79,7 @@ class PodcastViewModel internal constructor(
             if ((state.value.session?.generation ?: -1) < revision) {
                 discoveryVersion.incrementAndGet()
                 subscriptionVersion.incrementAndGet()
-                mutableState.value = pendingState()
+                publishState(pendingState())
             }
         }
     }
@@ -92,7 +94,7 @@ class PodcastViewModel internal constructor(
                     synchronized(stateLock) {
                         discoveryVersion.incrementAndGet()
                         subscriptionVersion.incrementAndGet()
-                        mutableState.value = pendingState()
+                        publishState(pendingState())
                     }
                 } else if (state.value.session != stamp) {
                     discoveryJob?.cancel()
@@ -105,7 +107,7 @@ class PodcastViewModel internal constructor(
     }
 
     fun selectTab(tab: PodcastTab) {
-        synchronized(stateLock) { mutableState.update { it.copy(selectedTab = tab) } }
+        synchronized(stateLock) { publishState(state.value.copy(selectedTab = tab)) }
         if (tab == PodcastTab.Subscriptions) ensureSubscriptionsLoaded()
         else if (state.value.home == null) refreshDiscover()
     }
@@ -218,6 +220,11 @@ class PodcastViewModel internal constructor(
             error = error, subscriptionsError = error)
     }
 
+    private fun publishState(next: PodcastUiState) {
+        // Equal completed reads must still rebind the rendered callback owner.
+        mutableState.value = next.copy(revision = ++presentationRevision)
+    }
+
     private fun prepare(stamp: SessionStamp, counter: AtomicLong, update: (PodcastUiState) -> PodcastUiState): Long? =
         runCatching {
             accounts.sessions.withCurrent(stamp) {
@@ -225,7 +232,7 @@ class PodcastViewModel internal constructor(
                 synchronized(stateLock) {
                     val current = state.value.takeIf { it.session == stamp }
                         ?: PodcastUiState(session = stamp, selectedTab = state.value.selectedTab)
-                    mutableState.value = update(current)
+                    publishState(update(current))
                     counter.incrementAndGet()
                 }
             }
@@ -235,7 +242,7 @@ class PodcastViewModel internal constructor(
         accounts.sessions.withCurrent(stamp) {
             if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(stateLock) {
-                if (counter.get() == version) mutableState.update(update)
+                if (counter.get() == version) publishState(update(state.value))
             }
         }
     }
@@ -264,7 +271,7 @@ class PodcastViewModel internal constructor(
         synchronized(stateLock) {
             discoveryVersion.incrementAndGet()
             subscriptionVersion.incrementAndGet()
-            mutableState.value = pendingState()
+            publishState(pendingState())
         }
         super.onCleared()
     }

@@ -29,6 +29,8 @@ import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -112,6 +114,69 @@ class PodcastSessionTest {
             assertTrue(list.state.value.authenticated)
             assertEquals(listOf(1L), list.state.value.subscribedPodcasts.map { it.id })
             assertTrue(list.state.value.subscriptionsLoaded)
+        }
+    }
+
+    @Test fun identicalDiscoveryRefreshHasAnObservablePresentationOwner() {
+        val home = PodcastHome(emptyList(), listOf(podcast(2)), listOf(podcast(1)))
+        source.home = { home }
+        checkModels { list, _, _ ->
+            runCurrent()
+            val before = list.state.value
+            list.refresh()
+            runCurrent()
+            val current = list.state.value
+            assertEquals(before.session, current.session)
+            assertSame(before.home, current.home)
+            assertNotEquals("Equal content must not suppress the replacement render", before, current)
+            var navigations = 0
+            list.withCurrent(before, 1) { navigations++ }
+            list.withCurrent(current, 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun identicalSubscriptionRefreshHasAnObservablePresentationOwner() {
+        val row = podcast(1)
+        source.subscriptions = { PodcastPage(listOf(row), false, 1) }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.selectTab(PodcastTab.Subscriptions)
+            runCurrent()
+            val before = list.state.value
+            list.refreshSubscriptions()
+            runCurrent()
+            val current = list.state.value
+            assertEquals(before.session, current.session)
+            assertSame(before.subscribedPodcasts.single(), current.subscribedPodcasts.single())
+            assertNotEquals("Equal subscriptions must not suppress the replacement render", before, current)
+            var navigations = 0
+            list.withCurrent(before, 1) { navigations++ }
+            list.withCurrent(current, 1) { navigations++ }
+            assertEquals(1, navigations)
+        }
+    }
+
+    @Test fun identicalCategoryReentryHasAnObservablePresentationOwner() {
+        val rows = listOf(podcast(1))
+        source.category = { rows }
+        checkModels { list, _, _ ->
+            runCurrent()
+            list.selectCategory(7)
+            runCurrent()
+            val before = list.state.value
+            list.selectCategory(null)
+            runCurrent()
+            list.selectCategory(7)
+            runCurrent()
+            val current = list.state.value
+            assertEquals(before.session, current.session)
+            assertSame(before.categoryPodcasts, current.categoryPodcasts)
+            assertNotEquals("Equal category reentry must not suppress the replacement render", before, current)
+            var navigations = 0
+            list.withCurrent(before, 1) { navigations++ }
+            list.withCurrent(current, 1) { navigations++ }
+            assertEquals(1, navigations)
         }
     }
 
