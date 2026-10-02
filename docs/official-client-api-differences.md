@@ -56,6 +56,12 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   publication is deferred outside the session monitor, and old/null cleanup cannot
   erase a newer offer. Ordinary production playback still uses MusicService and
   ordinary probe flags stay disabled; this does not qualify live prototype audio.
+- Source-review follow-up (2026-10-03): the named dynamic transport adapters,
+  Retrofit providers and Repository request helpers retain the API-001/ABI-015
+  separation. Focused regression passes 52 parasite and 29 standalone cases with
+  no failures/errors/skips; no new defect or live request is established. See
+  [Dynamic Transport Adapter Review](dual-runtime-build-plan.md#dynamic-transport-adapter-review-2026-10-03)
+  for the exact source scope and still-open consumer/runtime gates.
 
 ### API-002: Parsed JSON Is Not an HTTP Envelope
 

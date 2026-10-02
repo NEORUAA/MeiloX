@@ -162,7 +162,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
 | Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
-| Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
+| Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained; the named dynamic transport adapter scope below is now reviewed | Named declaration/adapter source scope reviewed; complete Repository/page consumer integration and real business acceptance remain separate |
 | Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
 | Active account/detail/rank/history reads | Required dynamic owner tuples, generation-owned rank cache and retained queue callbacks reviewed and covered by paired tests below; original page/control bodies preserved | Listed consumers reviewed at source level; real account/expiry and complete runtime acceptance remain separate |
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
@@ -4040,6 +4040,29 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   paths above. No old alias migration or generic Bundle clearing is introduced;
   cold update restart remains required. Same-artifact recreation and future naming
   guards do not qualify full cross-artifact task restoration or the other D2-D6 gates.
+
+#### Dynamic Transport Adapter Review (2026-10-03)
+
+- Reviewed at `ae23efb0` against unchanged main
+  `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`: full bodies of ApiService,
+  WeApiService, EApiService, MeloXDirectService, both flavor MeloXRequestPolicy
+  implementations, RuntimeBackendModule (parasite), HostRetrofitCompatibility,
+  HostCallFactory, HostRequestBridge and TvHostRequestBackend. The RetrofitModule
+  provider section and MeloXRepository's request/accountRequest/requestOwned/validate
+  and raw-report envelope sections are reviewed separately, not claimed as full files.
+- Logical prefixes normalize only at the host adapter; standalone dynamic qualifiers
+  retain their original signing labels and finite fallback. Captured session tags
+  remain transport metadata, ambiguous parameters/credential overrides are rejected,
+  and cancellation or retired generations cannot retry under another account.
+  The host's synthetic response preserves business codes and does not establish a
+  real HTTP status. No new defect or source change is established in this scope.
+- Focused Gradle regression passes in 13s: 52 parasite and 29 standalone cases,
+  zero failures/errors/skips. This covers the named transport, bridge, annotation,
+  provider, signing, session-call and retry suites. Production compile prerequisites
+  are up to date; no APK is rebuilt, installed or exercised for this source review.
+- Existing real-device evidence is retained without repeating cloud/download/startup
+  tests. Full Repository/page integration, live authorization/failure/cooperation,
+  original-install upgrade and remaining D2-D6 runtime gates are still open.
 
 ## Acceptance and Remaining Decisions
 
