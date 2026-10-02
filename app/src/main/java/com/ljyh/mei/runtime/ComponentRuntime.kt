@@ -4,10 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.media.session.MediaSession
 import android.net.Uri
+import com.ljyh.mei.recognition.PlatformRecognitionCapture
+import com.ljyh.mei.recognition.RecognitionCapture
 import java.io.File
 
 /** Platform attachment and media-control integration supplied by the selected runtime. */
 interface ComponentRuntime {
+    fun recognitionCapture(context: Context): RecognitionCapture = PlatformRecognitionCapture(context)
     fun wrapComponent(base: Context): Context
     fun activityCreated(activity: Activity, restored: Boolean)
     val deferMediaButtonsUntilRestored: Boolean

@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen.recognition
 
 import android.Manifest
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -59,7 +60,10 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = viewModel()) {
     val recognitionTitle = stringResource(R.string.song_recognition)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) viewModel.start() }
+    ) { granted -> viewModel.permissionResult(granted) }
+    val helperLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.permissionResult(it.resultCode == Activity.RESULT_OK, it.data)
+    }
 
     IosPinnedListPage(
         title = recognitionTitle,
@@ -104,7 +108,11 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = viewModel()) {
                     GlassButton(
                         onClick = {
                             if (state.isWorking) viewModel.stop()
-                            else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            else {
+                                val helper = viewModel.preparePermission()
+                                if (helper == null) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                else helperLauncher.launch(helper)
+                            }
                         },
                         emphasis = GlassEmphasis.Prominent,
                     ) {

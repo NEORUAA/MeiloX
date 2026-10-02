@@ -6,6 +6,8 @@ import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.recognition.RecognitionDuration
+import com.ljyh.mei.recognition.RecognitionCapture
+import com.ljyh.mei.recognition.RecognitionRecording
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -32,6 +34,7 @@ class SongRecognitionSessionTest {
     private var generate: suspend (FloatArray) -> String = { "fixture" }
     private var match: suspend (String, Int, SessionStamp) -> List<RecognizedSong> = { _, _, _ -> listOf(song(1)) }
     private var released = 0
+    private var capture: RecognitionCapture? = null
 
     private fun checkModel(ownerStore: SessionStore = sessions,
         block: suspend TestScope.(SongRecognitionViewModel, ViewModelStore) -> Unit) = runTest {
@@ -41,7 +44,7 @@ class SongRecognitionSessionTest {
             val model = SongRecognitionViewModel(ownerStore,
                 { seconds -> records += seconds; record(seconds) }, { samples -> generate(samples) },
                 { fingerprint, seconds, owner -> matches += Triple(fingerprint, seconds, owner); match(fingerprint, seconds, owner) },
-                { released++ })
+                { released++ }, capture)
             store.put("recognition", model)
             runCurrent()
             block(model, store)
@@ -49,6 +52,64 @@ class SongRecognitionSessionTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun permissionResultCannotStartRecordingForAReplacementAccount() = checkModel { model, _ ->
+        model.preparePermission()
+        identity = SessionIdentity(18, true, false)
+        sessions.invalidate()
+        model.permissionResult(true)
+        runCurrent()
+        assertTrue(records.isEmpty())
+        assertEquals(RecognitionPhase.Ready, model.state.value.phase)
+    }
+
+    @Test fun deniedPermissionNeverStartsRecording() = checkModel { model, _ ->
+        model.preparePermission()
+        model.permissionResult(false)
+        runCurrent()
+        assertTrue(records.isEmpty())
+    }
+
+    @Test fun grantedPermissionPinsTheOriginalAccount() = checkModel { model, _ ->
+        model.preparePermission()
+        model.permissionResult(true)
+        runCurrent()
+        assertEquals(RecognitionPhase.Results, model.state.value.phase)
+        assertEquals(17L, matches.single().third.identity.userId)
+    }
+
+    @Test fun recordingLeaseClosesOnStopWithoutClosingAReplacementLease() {
+        val oldSamples = CompletableDeferred<FloatArray>()
+        val newSamples = CompletableDeferred<FloatArray>()
+        var opened = 0
+        val closed = mutableListOf<Int>()
+        capture = object : RecognitionCapture {
+            override fun open(): RecognitionRecording {
+                val id = ++opened
+                return object : RecognitionRecording {
+                    override suspend fun record(seconds: Int): FloatArray =
+                        if (id == 1) withContext(NonCancellable) { oldSamples.await() } else newSamples.await()
+                    override fun close() { closed += id }
+                }
+            }
+        }
+        checkModel { model, _ ->
+            model.start()
+            runCurrent()
+            model.stop()
+            model.start()
+            runCurrent()
+            assertEquals(2, opened)
+            oldSamples.complete(floatArrayOf(1f))
+            runCurrent()
+            assertEquals(listOf(1), closed)
+            assertEquals(RecognitionPhase.Listening, model.state.value.phase)
+            newSamples.complete(floatArrayOf(1f))
+            runCurrent()
+            assertEquals(listOf(1, 2), closed)
+            assertEquals(RecognitionPhase.Results, model.state.value.phase)
         }
     }
 

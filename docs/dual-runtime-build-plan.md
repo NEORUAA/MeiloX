@@ -149,9 +149,9 @@ The latest acceptance state is:
 | --- | --- | --- |
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
-| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable database/work/preference/cache upgrade fixtures verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
+| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4 | Separate production-release signing compatibility; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes for parasite and isolated standalone R8 after the host lifecycle isolation repair below | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone helper and paired real fingerprint/match paths verified on HyperOS 4 | Complete paired lifecycle/permission/regression matrix; authorized TV PiP helper implementation; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -4404,6 +4404,46 @@ playlist/component/PlaylistActionOverlay.kt
 - The user also authorized parasite-only microphone authorization/capture and
   PiP helper components. They must have no music launcher, host credentials or
   backend implementation; business work remains in the verified TV process.
+
+## Module Microphone Helper and Paired Recognition (2026-10-03)
+
+- Shared recognition layout, navigation, durations, DSP and result presentation stay
+  single-source. Standalone keeps its own permission/AudioRecord path; parasite uses
+  a module-owned authorization Activity and microphone foreground Service. Module
+  startup does not initialize the host graph, session or business request adapters.
+- Helper authorization checks the framework-reported activity caller and the pinned
+  TV UID/version/current signer. Every recording/close transaction rechecks the UID.
+  One-use grants, bounded reliable pipes, per-job leases, Binder death, cancellation
+  and idle expiry handle resource ownership without transferring any credentials.
+- Live recording exposed a host-WebView difference: `android_asset` resolves against
+  the official APK. Three allowlisted fingerprint assets are now served from the
+  selected runtime AssetManager at an intercepted local HTTPS origin; no network
+  fetch or official APK modification is used. See API-037 in the differences ledger.
+- Actual parasite R8 execution matches map ID
+  `b04802b867c7e1b0bf41c7cf8919f0512503926d37978c5112cbd3846c14ffdb`.
+  The signed APK SHA-256 is
+  `51d808f49abab5548213bd2f211dc63892797b1438f3d1ed07815cea495cd7c4`.
+  A 3-second window returns NoMatch; continuous recognition completes a 9-second
+  window with a server candidate, then cancellation stops its second window.
+  AudioFlinger identifies module UID 10311, microphone foreground type is 0x80,
+  and the service/notification disappear after Stop. Candidate accuracy is not
+  established against a known reference recording. Raw audio is not saved.
+- The latest original-ID standalone R8 APK is installed preserving data, SHA-256
+  `9e1f57cf343f520d23f8638599acab3532b95759e8871804b1780709d38acd8d`.
+  Its account/paused queue remain; its own UID 10309 records 3 seconds and the original
+  public match transport returns NoMatch. Both inspected pages retain the original
+  layout; current host/standalone PID crash buffers contain no fatal exception.
+- Full paired JVM execution passes 1069 standalone/1080 parasite cases. Both R8
+  APKs and vital lint build successfully. Signed-pair fixtures/real-SDK tests pass,
+  including a strict helper allowlist, permission/type isolation and numeric SDK
+  manifest enum handling; no remote workflow is run. The native Java instrumentation
+  passes installed-R8 manifest ownership/no-launcher/untrusted-Binder checks.
+  The earlier debug AndroidX runner could not link R8-renamed Kotlin classes; that
+  failed runner is not counted as application or test acceptance.
+- TV-only LSPosed scope, official APK and rotation configuration remain unchanged.
+  HyperOS app-to-app confirmation is respected, not bypassed. PiP implementation,
+  broader permission/process-death acceptance and known-source recognition accuracy
+  remain separate; this checkpoint does not close all D2-D6 gates.
 
 ## Acceptance and Remaining Decisions
 

@@ -44,6 +44,9 @@ android {
             dimension = "runtime"
             applicationId = "com.neoruaa.meilox.parasite"
             proguardFiles("proguard-parasite.pro")
+            if (providers.gradleProperty("parasiteHelperBoundaryProbe").orNull == "true") {
+                testInstrumentationRunner = "com.ljyh.mei.parasite.MicrophoneR8Instrumentation"
+            }
         }
     }
 

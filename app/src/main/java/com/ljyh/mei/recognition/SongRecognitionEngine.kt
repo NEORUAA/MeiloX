@@ -13,6 +13,8 @@ import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import androidx.annotation.Keep
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellableContinuation
@@ -171,9 +173,19 @@ class NeteaseFingerprintGenerator(context: Context) {
         prepared = deferred
         webView = WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
-            settings.allowFileAccess = true
+            settings.allowFileAccess = false
             addJavascriptInterface(bridge, BRIDGE_NAME)
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse {
+                    // WebView's android_asset loader uses the host APK, not ModuleContext's assets.
+                    val asset = fingerprintAssetPath(request.url.scheme, request.url.host, request.url.path)
+                    return if (asset != null) WebResourceResponse(
+                        if (asset.endsWith(".html")) "text/html" else "text/javascript",
+                        "UTF-8", applicationContext.assets.open(asset),
+                    ) else WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", emptyMap(),
+                        java.io.ByteArrayInputStream(ByteArray(0)))
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     if (!deferred.isCompleted) deferred.complete(Unit)
                 }
@@ -188,7 +200,7 @@ class NeteaseFingerprintGenerator(context: Context) {
                     }
                 }
             }
-            loadUrl("file:///android_asset/audio_fingerprint/index.html")
+            loadUrl("https://meilox.invalid/audio_fingerprint/index.html")
         }
         return deferred
     }
@@ -227,5 +239,12 @@ class NeteaseFingerprintGenerator(context: Context) {
 
     private companion object {
         const val BRIDGE_NAME = "NeteaseFingerprintBridge"
+    }
+}
+
+internal fun fingerprintAssetPath(scheme: String?, host: String?, path: String?): String? {
+    if (scheme != "https" || host != "meilox.invalid") return null
+    return path?.removePrefix("/")?.takeIf {
+        it in setOf("audio_fingerprint/index.html", "audio_fingerprint/afp.js", "audio_fingerprint/afp.wasm.js")
     }
 }

@@ -8,6 +8,8 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.runtime.ComponentRuntime
+import com.ljyh.mei.recognition.RecognitionCapture
+import com.ljyh.mei.parasite.helper.HostRecognitionCapture
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -25,6 +27,11 @@ class HostComponentRuntime internal constructor(
 
     override fun wrapComponent(base: Context): Context =
         if (enabled && base.packageName == HostIdentity.PACKAGE) wrap(base) else base
+
+    override fun recognitionCapture(context: Context): RecognitionCapture {
+        require(enabled && context.packageName == HostIdentity.PACKAGE) { "Recognition requires the verified host runtime" }
+        return HostRecognitionCapture(context)
+    }
 
     override fun activityCreated(activity: Activity, restored: Boolean) {
         if (enabled && activity.packageName == HostIdentity.PACKAGE) {

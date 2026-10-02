@@ -3343,6 +3343,35 @@ These are integration differences, not server API semantics.
   matches its signed artifact. Inspected Home and empty PID crash buffer qualify
   only this matching-code launch. No old task compatibility or timing fix is claimed.
 
+### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
+
+- Recorded: 2026-10-03. The official TV manifest does not declare RECORD_AUDIO;
+  the module manifest permission does not extend the TV UID. Dedicated module
+  authorization/capture helpers are authorized by the user. Standalone retains its
+  original native permission and AudioRecord path; shared recognition UI/navigation,
+  DSP, duration options and result mapping are unchanged.
+- Parasite checks the actual result caller, pinned TV version/signer and Binder UID,
+  consumes a one-use nonce, and transfers bounded 8 kHz float samples through a
+  reliable platform pipe. The module foreground service starts from its visible
+  authorization Activity, following [Android while-in-use restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start).
+  Cancellation, per-operation cleanup, death and timeout stop recording. Helpers
+  have no launcher, login implementation, Cookie, account identity or backend graph.
+  Fingerprinting and HostCallFactory/official audio-match requests remain in TV.
+- Live capture then failed with ERR_FILE_NOT_FOUND: host WebView resolves
+  `file:///android_asset/` against the official APK despite wrapped module resources.
+  A local intercepted HTTPS origin serves only index.html, afp.js and afp.wasm.js
+  from the selected runtime AssetManager. Other origins/paths return 404; file access
+  is disabled. The same source works in standalone without extra dependencies.
+- Installed parasite R8 completes 3-second NoMatch and continuous nine-second
+  matching with a returned candidate. Stop cancels the next active recording and
+  removes its foreground service/notification. Standalone R8 uses its own UID and
+  original public transport for a successful three-second NoMatch flow. Server
+  candidates are not a known-source accuracy test; no original audio is persisted.
+- Paired JVM suites, both R8 builds/vital lint, native installed-R8 security checks
+  and real-SDK signed-pair gates pass. HyperOS launch confirmation is respected;
+  host APK, framework scope and global rotation settings are not modified. Dedicated
+  PiP support and full denial/expiry/process-death/device matrix remain open.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

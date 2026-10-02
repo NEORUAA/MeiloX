@@ -172,10 +172,15 @@ def manifest_fixture(flavor)
       <service android:name="com.ljyh.mei.playback.MusicService"/>
     XML
   else
-    ''
+    <<~XML
+      <activity android:name="com.ljyh.mei.parasite.helper.MicrophonePermissionActivity" android:exported="true" android:excludeFromRecents="true" android:screenOrientation="portrait"/>
+      <service android:name="com.ljyh.mei.parasite.helper.MicrophoneCaptureService" android:exported="true" android:foregroundServiceType="microphone"/>
+    XML
   end
   <<~XML
     <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+      #{flavor == 'parasite' ? '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>' : ''}
       <application android:name="com.ljyh.mei.AppContext">#{components}</application>
     </manifest>
   XML
@@ -480,6 +485,27 @@ end
   }],
   'parasite own playback component leak' => ['parasite', ->(xml) {
     xml.elements['manifest/application'].add_element('service', 'android:name' => 'com.ljyh.mei.playback.MusicService')
+  }],
+  'parasite microphone helper missing' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/service'].remove
+  }],
+  'parasite microphone helper disabled' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/service'].attributes['android:enabled'] = 'false'
+  }],
+  'parasite microphone helper non-exported' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/service'].attributes['android:exported'] = 'false'
+  }],
+  'parasite microphone helper wrong type' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/service'].attributes['android:foregroundServiceType'] = 'dataSync'
+  }],
+  'parasite permission helper exposed in recents' => ['parasite', ->(xml) {
+    xml.elements['manifest/application/activity'].attributes['android:excludeFromRecents'] = 'false'
+  }],
+  'parasite microphone permission missing' => ['parasite', ->(xml) {
+    xml.elements['manifest/uses-permission'].remove
+  }],
+  'standalone helper microphone permission leak' => ['standalone', ->(xml) {
+    xml.root.add_element('uses-permission', 'android:name' => 'android.permission.FOREGROUND_SERVICE_MICROPHONE')
   }],
   'standalone host diagnostic component leak' => ['standalone', ->(xml) {
     xml.elements['manifest/application'].add_element('receiver', 'android:name' => 'com.ljyh.mei.parasite.HostWorkProbeReceiver')
