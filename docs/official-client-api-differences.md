@@ -1264,6 +1264,39 @@ These are integration differences, not server API semantics.
   release runtime open. The ordinary build is restored with probes disabled; the user's
   existing real file remains published and unchanged. No real grant was requested.
 
+#### Bounded Same-Artifact Startup Timing (2026-10-02)
+
+- The current ordinary parasite R8 remains the same installed artifact. App-only
+  cold launches report 14679ms (PID 29938), 16389ms (PID 32457) and 3295ms (PID 4492).
+  Platform launch/display events agree with those TotalTime results. The last settled
+  Home is original portrait/glass with an unchanged paused queue and inactive native
+  TV player. Home-return keeps the PID and reports UNKNOWN(0), task brought to front,
+  WaitTime 94ms; it is not WARM-launch or first-frame evidence.
+- The two slow traces spend 7.695s/8.462s from the Activity milestone to the service
+  instance, versus 0.968s/1.355s from service instance to service-created. Service
+  initialization therefore does not explain the full launch gap. Host onCreate
+  precedes module initialization, and loaded-to-verified mixes host/module/OS work.
+  The Activity milestone is before setContent, service-created does not establish
+  complete queue restoration, and all three first-draw events precede service completion.
+  None establishes complete content/playback readiness, attribution or a startup fix.
+- Latest isolated-ID standalone R8 separately cold-starts in 515ms, retaining
+  existing account/Home/glass and an unprepared, non-autoplay queue. Its same-PID
+  Home-return reports UNKNOWN(0), WaitTime 20ms; this does not establish WARM-launch
+  or first-frame duration. Non-debuggable/development-certificate/16KB checks and
+  preserving install/pull identity qualify that local fixture, not production-ID
+  upgrade, framework-free execution, new playback or complete paired runtime behavior.
+  Its original Settings account entry and rank button also load settled account/
+  recent-week content; without a pre-play baseline, this is read/navigation evidence,
+  not an attributed listening-statistics increment. Production installation and
+  the TV-owned published media row are unchanged; exact fingerprint/preservation
+  evidence is recorded in the plan.
+- Whitelisted failed-attach records for TV PID 13579, standalone PID 15761 and module
+  fixture PID 27061 remain failures, not successful-launch evidence. No common cause
+  is established and later success does not close startup stability. The build plan
+  records exact timestamps/artifact identity; only the awake emulator-5554 is used,
+  with app-only stops and no AVD restart. Logs/screenshots stay outside Git. No work
+  carrier, UI, class-loader, network or cache repair is inferred from these timings.
+
 ### API-018: Comment Reads Need Query-Owned Cursors and Optional Reply Metadata
 
 - Date: 2026-09-29. Original standalone contracts are `/api/v2/resource/comments`

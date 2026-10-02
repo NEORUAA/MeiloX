@@ -3504,6 +3504,66 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   or real write fills these gates. Native logs stay outside Git at
   `/tmp/meilox-public-navigation-{standalone,parasite}-native-2026-10-02.log`.
 
+### D3/D5/D6 Checkpoint: Same-Artifact Startup Timing Boundaries (2026-10-02)
+
+- The installed ordinary parasite R8 is unchanged from the `d55c` source checkpoint,
+  SHA-256 `94fb482ed23917ab863573bfa130b2b6d9894bca1456ef4953641dbacd7fa66c`.
+  An app-only TV force-stop/start on the awake existing rooted AVD gives COLD
+  TotalTime 3295ms and WaitTime 3299ms (PID 4492). The matching platform launch event
+  at 20:22:06.800 reports 3295ms. Settled original portrait Home/glass retains Prelude
+  PAUSED at 178897ms, eleven entries and null error; native TV stays STOPPED with no
+  queue. Home-return keeps PID 4492 and reports UNKNOWN(0), task brought to front,
+  WaitTime 94ms. That is not a WARM launch or a measured first-frame duration.
+- Three same-artifact traces have these logged milestones; times are trace timestamps,
+  not individually instrumented phase durations:
+
+  | Milestone | PID 29938 | PID 32457 | PID 4492 |
+  | --- | --- | --- | --- |
+  | Process start | 19:15:40.847 | 19:42:38.294 | 20:22:03.720 |
+  | Module loaded | 19:15:42.780 | 19:42:41.796 | 20:22:04.637 |
+  | Verified | 19:15:47.872 | 19:42:45.635 | 20:22:05.847 |
+  | Activity milestone | 19:15:48.823 | 19:42:48.268 | 20:22:06.076 |
+  | Platform launch/display event | 19:15:54.697 | 19:42:54.232 | 20:22:06.800 |
+  | Service instance milestone | 19:15:56.518 | 19:42:56.730 | 20:22:06.895 |
+  | Service-created milestone | 19:15:57.486 | 19:42:58.085 | 20:22:06.995 |
+  | Reported TotalTime | 14679ms | 16389ms | 3295ms |
+
+- In the two slow launches, Activity-to-service-instance gaps are 7.695s and 8.462s,
+  while service-instance-to-created intervals are 0.968s and 1.355s. This narrows the
+  service initialization explanation; it does not explain the entire launch delay
+  or identify class loading, network, cache, host, module or OS as its cause. Host
+  onCreate precedes module initialization; loaded-to-verified mixes those lifetimes.
+  The Activity milestone precedes setContent; service-created is not complete queue
+  restoration. All three platform first-draw events precede service completion, so
+  none is a complete shared-UI/playback readiness measurement or a startup fix.
+- A separate latest `d55c` standalone R8 is preserving-installed and pulled back
+  under the isolated debug ID, non-debuggable, with the unchanged development
+  certificate and passing 16KB alignment. Its installed/pulled SHA-256 is
+  `58f59b9356ec7773e77d68965e9c700923bc9f55d49effd83168df25bf03c22a`.
+  Its app-only cold start has TotalTime
+  515ms/WaitTime 518ms (PID 5163); process start at 20:25:03.997 and platform launch
+  event at 20:25:04.490 correlate with the reported 515ms. Settled original Home
+  restores existing account/content/glass and seven entries, Full Moon Serenade
+  NONE/unprepared at 143811ms, speed 0 and null error without autoplay. Home-return
+  keeps that PID, UNKNOWN(0), WaitTime 20ms, not a WARM launch or first-frame measure.
+  This is isolated minified startup/state, not new playback/decoding, production-ID
+  preserving upgrade, framework-free execution or full paired runtime acceptance.
+- The isolated R8 original Settings account row opens AccountHome, and its original
+  rank button opens settled recent-week content; both screenshots are inspected.
+  These are read/navigation checks with the existing account, not a new playback
+  session or an attributed statistics increment without a pre-play baseline.
+  The original production standalone package path remains unchanged and MediaStore
+  row 820 is again TV-owned, pending=0 and 22705573 bytes. At this capture, isolated
+  R8 remains installed and TV is background-paused; ordinary-debug restoration is
+  not yet claimed.
+- Failed attach observations remain separate: TV PID 13579 at 16:20:09.722
+  (10.166s after process start), standalone PID 15761 at 16:50:01.489 (10.004s),
+  and module fixture PID 27061 at 18:38:49.247. Successful later launches do not erase
+  them or establish a common cause. ABI-005 is extended in place; startup reliability,
+  framework-free execution, production upgrade and the remaining D2-D6 gates stay open.
+  Only emulator-5554 is used, screen-on, without an AVD restart. Whitelisted traces,
+  screenshots and artifacts remain outside Git; no account/permission write is added.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
