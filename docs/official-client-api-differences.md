@@ -3325,6 +3325,23 @@ These are integration differences, not server API semantics.
   after PID 7400 is killed and new PID 8142 starts. Inspected screenshots and the
   empty current-PID crash buffer qualify that scenario; paused position 178897ms
   and 11 queue entries persist. Full cross-artifact restoration remains unqualified.
+- Executed-code follow-up: stable-name task 1395 retains 4692-byte state across a
+  preserving module update, but PID 14306 fails in MainDispatcherLoader with the
+  missing-Main-dispatcher error after app_activity_created restored=true. Its R8
+  frame ID belongs to the older APK even though the installed SHA256 belongs to
+  the newer source-recovery APK. This is not qualified execution of the intended
+  updated DEX, nor evidence that its dependencies or saved-state decoding failed.
+- The existing module-loaded log now includes code_source from a stack frame.
+  Match its observed R8 map ID to actual tested DEX metadata separately from APK
+  hash/signature/resources. Debug filenames and unknown markers do not prove a
+  revision. No dispatcher replacement, coroutine rule change, state clearing or
+  additional hook/scope is introduced. The precise loader/resource cause and full
+  cross-APK restoration remain open; ordinary TV restart restores paused Home.
+- Marker verification passes 15 focused JVM cases, the parasite R8 build and all
+  64 paired local release checks. PID 16061's actual code_source exactly matches
+  its tested APK's SDK DEX metadata and R8 mapping ID; the installed hash separately
+  matches its signed artifact. Inspected Home and empty PID crash buffer qualify
+  only this matching-code launch. No old task compatibility or timing fix is claimed.
 
 ## Adding an Entry
 

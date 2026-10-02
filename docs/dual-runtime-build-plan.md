@@ -137,7 +137,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable database/work/preference/cache upgrade fixtures verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes for parasite and isolated standalone R8 after the host lifecycle isolation repair below | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved cross-R8 old-task Bundle failure, near-end playback failure and intermittent process-start timeout attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes for parasite and isolated standalone R8 after the host lifecycle isolation repair below | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -4123,6 +4123,72 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
 - This changes backend source-recovery ownership only; it does not redesign pages,
   playback controls, DSP, AutoMix, source authorization or quality/cache policy.
   ABI/API evidence is recorded in API-015. Full D2-D6 acceptance remains open.
+
+#### Executed Code Identity During Module Replacement (2026-10-03)
+
+- A bounded update experiment uses the existing development-signed, stable-name
+  parasite APK `d5c9667b2c1b3854ca39fafa9902d603cfbfeadb4e3588628db87fcb7cebce03`
+  and source-recovery APK
+  `b26fd83023549bf36b5e39e45472f23023aa82624b1cfada1dffc20a6737e727`.
+  Both have package com.neoruaa.meilox.parasite/versionCode 11 and the same existing
+  development certificate. No APK is repackaged or re-signed for this experiment.
+- Original subscribed-podcast detail, artwork and 92-program rows are inspected in
+  PID 13665. Task 1395 reaches STOPPED with 4692-byte saved state. `am kill` removes
+  that background process; the task retains its state with app=null before and
+  after preserving module installation. No post-update host force-stop occurs
+  before attempting that task's restoration.
+- Restoration fails: PID 14306 logs app_activity_created restored=true, then crashes
+  in MainDispatcherLoader initialization with the missing-Main-dispatcher error;
+  Compose subsequently encounters its failed class initializer. The later PID 14621
+  is not UI recovery. The task disappears and the inspected screen is the launcher.
+  `am start -W` reports UNKNOWN/WaitTime 2060ms, not a successful COLD timing sample.
+- Installed APK SHA256 matches the newer source-recovery artifact, but the failure
+  frames carry R8 map ID
+  `f8b575b416e7f91c74df8a187c0b025e271fae6ac9ef9e7948d1bc988d2d8524`.
+  SDK DEX inspection associates that ID with the older APK; the installed APK's
+  dispatcher class instead carries
+  `3637ef95a38e6b8d60242b938831b0eb6d770c450fca9d39df2100161e7fb19d`.
+  Therefore this is not qualified execution of the intended newer DEX. APK presence
+  alone does not prove that LSPosed has refreshed its executed module code.
+- Both APKs contain the MainDispatcherFactory service entry, and the newer DEX
+  contains the implementing Android dispatcher factory. The recorded error does
+  not justify adding a dependency, changing global dispatcher properties or
+  overriding coroutine/R8 rules. Its precise resource-loading cause remains open.
+- The existing module-loaded log now reports the first stack frame's code_source.
+  For the inspected R8 format this exposes its executing map ID; in debug it is
+  only a source filename, not a revision identifier. This diagnostic does not
+  authenticate the APK, identify all resources or alter eligibility/hooks/lifecycle.
+  Future R8 runtime qualification must compare it with the tested APK's actual DEX
+  metadata, alongside the existing installed-hash/signature/resource checks.
+- Ordinary force-stop/restart of TV afterward displays the original portrait Home
+  in PID 15083 (COLD, 5223ms), with an empty PID-scoped crash buffer. MeiloX retains
+  11 queue entries PAUSED at 178897ms; native TV is inactive/STOPPED at zero/empty.
+  Standalone remains PAUSED at 143811ms with seven entries. This is recovery to the
+  usable test state, not a successful cross-APK restore or old failure attribution.
+- Evidence stays outside Git under `/tmp/meilox-cross-r8-*-2026-10-03.*`. No playback,
+  account/session mutation, quota download, subscription write, supplied Cookie
+  access, permission/framework/global-rotation change or AVD restart is performed.
+  Legacy pre-rule Bundle compatibility and the full D2-D6 exit gates remain open.
+- The marker's final source passes 15 parasite mapping/storage/Work JVM cases with
+  zero failures/errors/skips and ParasiteRelease in 3m48s (83 tasks: 21 executed,
+  62 up-to-date), including R8 and lintVital. All 64 local real-SDK paired release
+  checks pass; temporary fixture keys/APKs are removed, and no remote CI is invoked.
+- Final unsigned parasite SHA256 is
+  `9397f55a71bb55a901c608fd05574b42102ee1a459ae33ead27098ee7c22a709`.
+  Its development-signed artifact/device SHA256 is
+  `5ae79a5ea23305818a22ca6e470b04dc50bd01306c46090f4638b67d9489db85`,
+  with successful signature/16KB alignment checks. Standalone's unsigned SHA256
+  remains `768d7cc2fa7180719d084e17975eb292d1026abdaf5ec3381d8cae1ec364e251`.
+- After the ordinary preserving update/host restart, PID 16061 reports code_source
+  `r8-map-id-020077de3aa68755d9e29c79c66cfccf98fda510b24cae9b3267a885beb69979`.
+  An exact comparison passes against both the final R8 mapping header and the SDK
+  DEX source metadata of MeiloXModule. COLD startup is 5241ms; its inspected Home
+  screenshot and empty PID-scoped crash buffer qualify this matching-code launch,
+  not a timing fix or cross-APK task restore. The same paused queues and inactive
+  native TV player remain; the original standalone install path and TV-owned
+  MediaStore 820 (22705573 bytes/pending=0) are unchanged. Evidence stays under
+  `/tmp/meilox-runtime-code-marker-*-2026-10-03.*`; no logs/APKs are committed.
+  Main is rechecked at `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`.
 
 ## Acceptance and Remaining Decisions
 

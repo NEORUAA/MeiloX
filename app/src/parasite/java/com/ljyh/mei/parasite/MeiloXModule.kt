@@ -21,7 +21,9 @@ class MeiloXModule : XposedModule() {
         eligibleProcess = !param.isSystemServer && param.processName == HostIdentity.PACKAGE &&
             apiVersion >= 102
         if (eligibleProcess) {
-            report("loaded api=$apiVersion framework=$frameworkName version=$frameworkVersion")
+            // A replaced APK can precede framework DEX refresh; identify executed code separately.
+            val codeSource = Throwable().stackTrace.firstOrNull()?.fileName ?: "unknown"
+            report("loaded api=$apiVersion framework=$frameworkName version=$frameworkVersion code_source=$codeSource")
         }
     }
 
