@@ -45,7 +45,7 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 
 @Composable
 fun ListenTogetherScreen(store: ListenTogetherStore = viewModel<ListenTogetherStoreHolder>().store) {
-    val state by store.state.collectAsState()
+    val state = store.state.collectAsState().value
     val navController = LocalNavController.current
     val context = LocalContext.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()

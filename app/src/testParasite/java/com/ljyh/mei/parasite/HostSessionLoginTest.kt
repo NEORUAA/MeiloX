@@ -99,4 +99,39 @@ class HostSessionLoginTest {
         sessions.bindLogin(backend)
         assertThrows(IllegalStateException::class.java) { sessions.bindLogin(backend) }
     }
+
+    @Test fun retainedLogoutCannotMutateAReplacementReauthorizedOrRecoveringAccount() {
+        for (change in listOf("replacement", "reauthorization", "recovery")) {
+            var identity = SessionIdentity(1, true, false)
+            val sessions = HostSessionBridge().apply { bind { identity } }
+            var logouts = 0
+            sessions.bindLogin(object : HostLoginBackend<Bitmap> {
+                override fun open(emit: (HostLoginState<Bitmap>) -> Unit): Closeable = Closeable {}
+                override fun logout() { logouts++ }
+            })
+            val rendered = sessions.snapshot()
+            when (change) {
+                "replacement" -> identity = identity.copy(userId = 2)
+                "reauthorization" -> sessions.invalidate()
+                else -> sessions.setRecoveryRequired(true)
+            }
+            val current = sessions.snapshot()
+            assertThrows(SessionChangedException::class.java) { sessions.logout(rendered) }
+            assertEquals(0, logouts)
+            assertEquals(current, sessions.snapshot())
+        }
+    }
+
+    @Test fun currentRenderedLogoutInvokesTheOfficialBackendOnce() {
+        val sessions = HostSessionBridge().apply { bind { SessionIdentity(1, true, false) } }
+        var logouts = 0
+        sessions.bindLogin(object : HostLoginBackend<Bitmap> {
+            override fun open(emit: (HostLoginState<Bitmap>) -> Unit): Closeable = Closeable {}
+            override fun logout() { logouts++ }
+        })
+        val rendered = sessions.snapshot()
+        sessions.logout(rendered)
+        assertEquals(1, logouts)
+        assertEquals(rendered.generation + 2, sessions.snapshot().generation)
+    }
 }

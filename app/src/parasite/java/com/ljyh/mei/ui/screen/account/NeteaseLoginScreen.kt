@@ -128,8 +128,8 @@ class NeteaseLoginViewModel @Inject constructor(sessions: HostSessionBridge) : V
     override fun onCleared() = login.close()
 }
 
-fun logoutNetease(context: Context) {
-    runCatching { AppGraph.component.hostRequests().sessions.logout() }.onFailure {
+fun logoutNetease(context: Context, expected: com.ljyh.mei.data.session.SessionStamp) {
+    runCatching { AppGraph.component.hostRequests().sessions.logout(expected) }.onFailure {
         Toast.makeText(context, R.string.netease_logout_error, Toast.LENGTH_SHORT).show()
     }
 }

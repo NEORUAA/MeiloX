@@ -150,6 +150,48 @@ class StandaloneSessionStoreTest {
         assertFalse(StandaloneCredentials("secret-cookie").toString().contains("secret-cookie"))
     }
 
+    @Test fun retainedLogoutCannotClearAReplacementReauthorizedOrRecoveringAccount() = runTest {
+        for (change in listOf("replacement", "reauthorization", "recovery")) {
+            val disk = MemoryPersistence(StoredAccount("cookie-A", 11))
+            val sessions = verifiedSessions(disk)
+            val rendered = sessions.snapshot()
+            when (change) {
+                "replacement" -> sessions.commitLogin(sessions.beginLogin(), StoredAccount("cookie-B", 22))
+                "reauthorization" -> sessions.commitLogin(sessions.beginLogin(), StoredAccount("renewed", 11))
+                else -> sessions.setRecoveryRequired(true)
+            }
+            disk.writes = 0
+            val saved = disk.account
+            val current = sessions.snapshot()
+            var clearedWeb = false
+            expectSessionChanged { sessions.logout(rendered) { clearedWeb = true } }
+            assertFalse(clearedWeb)
+            assertEquals(0, disk.writes)
+            assertSame(saved, disk.account)
+            assertEquals(current, sessions.snapshot())
+        }
+    }
+
+    @Test fun queuedLogoutKeepsItsOwnerWhileAnotherLoginCommits() = runTest {
+        val disk = MemoryPersistence(StoredAccount("cookie-A", 11))
+        val sessions = verifiedSessions(disk)
+        val rendered = sessions.snapshot()
+        val written = CompletableDeferred<Unit>()
+        disk.beforeWrite = { written.await() }
+        val login = async { sessions.commitLogin(sessions.beginLogin(), StoredAccount("cookie-B", 22)) }
+        runCurrent()
+        var clearedWeb = false
+        val logout = async { expectSessionChanged { sessions.logout(rendered) { clearedWeb = true } } }
+        runCurrent()
+        written.complete(Unit)
+        login.await()
+        logout.await()
+        assertFalse(clearedWeb)
+        assertEquals("cookie-B", disk.account.musicU)
+        assertEquals(1, disk.writes)
+        assertEquals(22, sessions.snapshot().identity.userId)
+    }
+
     private suspend fun expectSessionChanged(block: suspend () -> Unit) {
         try { block() } catch (_: SessionChangedException) { return }
         fail("Expected a stale login to be rejected")

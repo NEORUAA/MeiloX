@@ -344,10 +344,10 @@ class NeteaseLoginViewModel @Inject internal constructor(
     suspend fun loginWithCookie(musicU: String): Boolean = accounts.login(musicU)
 }
 
-fun logoutNetease(context: android.content.Context) {
+fun logoutNetease(context: android.content.Context, expected: com.ljyh.mei.data.session.SessionStamp) {
     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main.immediate).launch {
         try {
-            com.ljyh.mei.di.AppGraph.component.standaloneSessions().logout {
+            com.ljyh.mei.di.AppGraph.component.standaloneSessions().logout(expected) {
                 kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
                     CookieManager.getInstance().removeAllCookies {
                         CookieManager.getInstance().flush()

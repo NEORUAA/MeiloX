@@ -3,6 +3,7 @@ package com.ljyh.mei.parasite
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ljyh.mei.data.session.SessionChangedException
 import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -23,6 +24,7 @@ class HostCapabilityProbeDeviceTest {
         assertEquals(PATHS, f.backend.dispatched.map { it.path })
         assertTrue(f.backend.executed.get() in (PATHS.size - 1)..PATHS.size)
         assertEquals(listOf(PLAYABLE), f.playable)
+        assertEquals(listOf(f.bridge.sessions.snapshot()), f.playableOwners)
         assertEquals(1, f.backend.canceled.get())
         assertEquals(listOf("request_cancel observed_running=true worker_finished=true rejected=true"),
             f.reports.filter { it.startsWith("request_cancel") })
@@ -80,6 +82,23 @@ class HostCapabilityProbeDeviceTest {
         }
     }
 
+    @Test fun aReplacementBeforeOfferingTheUrlCannotRecaptureItsOwner() {
+        val f = Fixture()
+        val resolvedBy = f.bridge.sessions.snapshot()
+        f.onReport = { message ->
+            if (message.startsWith("playback code=")) {
+                f.backend.identity = SessionIdentity(42, true, false)
+                f.bridge.sessions.invalidate()
+            }
+        }
+        f.run()
+
+        assertEquals(listOf(PLAYABLE), f.playable)
+        assertEquals(listOf(resolvedBy), f.playableOwners)
+        assertNotEquals(resolvedBy, f.bridge.sessions.snapshot())
+        assertTrue(f.reports.any { it.startsWith("probe_aborted") })
+    }
+
     private fun assertAccountCreationWasRejected(f: Fixture) {
         assertTrue(f.backend.dispatched.isEmpty())
         assertEquals(0, f.backend.executed.get())
@@ -93,9 +112,12 @@ class HostCapabilityProbeDeviceTest {
         val bridge = HostRequestBridge(HostSessionBridge()).apply { bind(backend) }
         val reports = mutableListOf<String>()
         val playable = mutableListOf<String>()
+        val playableOwners = mutableListOf<SessionStamp>()
         var onPlayable: () -> Unit = {}
-        fun run() = HostCapabilityProbe(bridge, { reports += it }, { url ->
+        var onReport: (String) -> Unit = {}
+        fun run() = HostCapabilityProbe(bridge, { reports += it; onReport(it) }, { url, owner ->
             playable += url
+            playableOwners += owner
             onPlayable()
         }).run()
     }

@@ -79,4 +79,53 @@ class SessionStoreTest {
         assertEquals(SessionStamp(1, user), sessions.snapshot())
         assertEquals(2, reads)
     }
+
+    @Test fun ownedTransitionFencesReadsAndPublishesBothLeaseEdges() {
+        val sessions = SessionStore().apply { bind { user } }
+        val owner = sessions.snapshot()
+        val events = mutableListOf<Long>()
+        sessions.onInvalidated { events += it }
+        sessions.beginTransition(owner).use {
+            assertThrows(SessionChangedException::class.java) { sessions.snapshot() }
+        }
+        assertEquals(listOf(1L, 2L), events)
+        assertEquals(owner.copy(generation = 2), sessions.snapshot())
+    }
+
+    @Test fun obsoleteTransitionCannotInvalidateAReplacementOrReauthorizedSession() {
+        for (replacement in listOf(false, true)) {
+            var identity = user
+            val sessions = SessionStore().apply { bind { identity } }
+            val owner = sessions.snapshot()
+            if (replacement) identity = user.copy(userId = 2) else sessions.invalidate()
+            val current = sessions.snapshot()
+            var events = 0
+            sessions.onInvalidated { events++ }
+            assertThrows(SessionChangedException::class.java) { sessions.beginTransition(owner) }
+            assertEquals(current, sessions.snapshot())
+            assertEquals(0, events)
+        }
+    }
+
+    @Test fun recoveryRejectsAnOwnedTransitionWithoutChangingItsGeneration() {
+        val sessions = SessionStore().apply { bind { user } }
+        val owner = sessions.snapshot()
+        sessions.setRecoveryRequired(true)
+        assertThrows(SessionChangedException::class.java) { sessions.beginTransition(owner) }
+        assertEquals(owner, sessions.snapshot())
+        sessions.setRecoveryRequired(false)
+        sessions.beginTransition(owner).close()
+        assertEquals(2, sessions.snapshot().generation)
+    }
+
+    @Test fun anOwnedTransitionCannotJoinAnInFlightMutation() {
+        val sessions = SessionStore().apply { bind { user } }
+        val owner = sessions.snapshot()
+        sessions.beginTransition().use {
+            val revision = sessions.changes.value
+            assertThrows(SessionChangedException::class.java) { sessions.beginTransition(owner) }
+            assertEquals(revision, sessions.changes.value)
+        }
+        assertEquals(2, sessions.snapshot().generation)
+    }
 }

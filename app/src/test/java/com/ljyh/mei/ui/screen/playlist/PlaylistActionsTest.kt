@@ -7,6 +7,7 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.SongSourceIdentity
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.data.model.api.BaseMessageResponse
+import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.room.AccountPlaylist
@@ -48,6 +49,9 @@ class PlaylistActionsTest {
     private val reads = mutableListOf<String>()
     private val syncs = mutableListOf<SessionStamp>()
     private val calls = mutableListOf<Pair<String, SessionStamp>>()
+    private val collectionCalls = mutableListOf<Triple<SessionStamp, String, Boolean>>()
+    private var playlistCreator = 1L
+    private var playlistCollected = false
     private var sync: suspend () -> Resource<Unit> = { Resource.Success(Unit) }
     private var manipulate: suspend () -> Resource<ManipulateTrackResult> = { Resource.Success(ManipulateTrackResult(200)) }
     private var create: suspend () -> Resource<CreatePlaylistResult> = { Resource.Success(CreatePlaylistResult(200, null, 30)) }
@@ -91,7 +95,15 @@ class PlaylistActionsTest {
             }
             val pages = object : com.ljyh.mei.data.repository.PlaylistPageSource by repository {
                 override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> = Resource.Success(
-                    Gson().fromJson("""{"code":200,"playlist":{"id":$id,"creator":{"userId":1},"tracks":[],"trackIds":[],"subscribed":false}}""", PlaylistDetail::class.java))
+                    Gson().fromJson("""{"code":200,"playlist":{"id":$id,"creator":{"userId":$playlistCreator},"tracks":[],"trackIds":[],"subscribed":$playlistCollected}}""", PlaylistDetail::class.java))
+                override suspend fun subscribePlaylist(id: String, session: SessionStamp?): Resource<BaseResponse> {
+                    collectionCalls += Triple(checkNotNull(session), id, true)
+                    return Resource.Success(BaseResponse(200))
+                }
+                override suspend fun unSubscribePlaylist(id: String, session: SessionStamp?): Resource<BaseResponse> {
+                    collectionCalls += Triple(checkNotNull(session), id, false)
+                    return Resource.Success(BaseResponse(200))
+                }
             }
             val model = PlaylistViewModel(pages, source, repository,
                 LocalPlaylistRepository(unused<PlaylistDao>()), api, sessions, library)
@@ -113,6 +125,79 @@ class PlaylistActionsTest {
         assertEquals(listOf("1", "1"), reads)
         assertFalse(model.picker.value.loading)
         assertNull(model.picker.value.error)
+    }
+
+    @Test fun retainedCollectionCallbackCannotWriteForAReplacementAccount() = checkModel { model, _ ->
+        playlistCreator = 9
+        model.getPlaylistDetail("10")
+        runCurrent()
+        val owner = checkNotNull(model.detailSession.value)
+        val displayed = model.playlistDetail.value
+        val onClick = { model.subscribePlaylist("10", owner, displayed) }
+        sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(collectionCalls.isEmpty())
+        assertEquals(false, model.collected.value)
+
+        val currentOwner = checkNotNull(model.detailSession.value)
+        val currentDetail = model.playlistDetail.value
+        model.subscribePlaylist("10", currentOwner, currentDetail)
+        runCurrent()
+        model.unsubscribePlaylist("10", currentOwner, currentDetail)
+        runCurrent()
+        assertEquals(listOf(Triple(currentOwner, "10", true), Triple(currentOwner, "10", false)), collectionCalls)
+        assertEquals(false, model.collected.value)
+    }
+
+    @Test fun retainedCollectionCallbackCannotWriteAfterSameAccountReauthorization() = checkModel { model, _ ->
+        playlistCreator = 9
+        playlistCollected = true
+        model.getPlaylistDetail("10")
+        runCurrent()
+        val owner = checkNotNull(model.detailSession.value)
+        val displayed = model.playlistDetail.value
+        val onClick = { model.unsubscribePlaylist("10", owner, displayed) }
+        sessions.invalidate()
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(collectionCalls.isEmpty())
+        assertNotEquals(owner, model.detailSession.value)
+        assertEquals(true, model.collected.value)
+
+        model.unsubscribePlaylist("10", checkNotNull(model.detailSession.value), model.playlistDetail.value)
+        runCurrent()
+        assertEquals(listOf(Triple(sessions.snapshot(), "10", false)), collectionCalls)
+        assertEquals(false, model.collected.value)
+    }
+
+    @Test fun retainedCollectionCallbackCannotWriteDuringOrAfterRecoveryWithTheSameOwner() = checkModel { model, _ ->
+        playlistCreator = 9
+        model.getPlaylistDetail("10")
+        runCurrent()
+        val owner = checkNotNull(model.detailSession.value)
+        val displayed = model.playlistDetail.value
+        val onClick = { model.subscribePlaylist("10", owner, displayed) }
+        sessions.setRecoveryRequired(true)
+        onClick()
+        runCurrent()
+        assertTrue(collectionCalls.isEmpty())
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(owner, model.detailSession.value)
+
+        onClick()
+        runCurrent()
+        assertTrue(collectionCalls.isEmpty())
+        assertEquals(false, model.collected.value)
+
+        model.subscribePlaylist("10", owner, model.playlistDetail.value)
+        runCurrent()
+        assertEquals(listOf(Triple(owner, "10", true)), collectionCalls)
     }
 
     @Test fun failedRefreshKeepsOnlyCurrentAccountCacheAndCanRetry() = checkModel { model, _ ->

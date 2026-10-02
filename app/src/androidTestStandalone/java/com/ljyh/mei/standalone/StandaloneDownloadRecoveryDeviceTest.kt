@@ -1,16 +1,26 @@
 package com.ljyh.mei.standalone
 
+import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.Configuration
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
-import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
+import androidx.work.impl.StartStopToken
+import androidx.work.impl.WorkDatabase
+import androidx.work.impl.WorkLauncherImpl
 import androidx.work.impl.WorkManagerImpl
+import androidx.work.impl.close
+import androidx.work.impl.model.WorkGenerationalId
+import androidx.work.impl.utils.taskexecutor.WorkManagerTaskExecutor
 import androidx.work.workDataOf
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.room.DownloadStatus
@@ -23,6 +33,7 @@ import com.ljyh.mei.utils.DownloadQueue
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,12 +49,11 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Private Room/v17 files and UUID-named delayed WorkSpecs only; never transfers real media. */
+/** Private Room/v17 files and an unscheduled in-memory WorkDatabase; never transfers real media. */
 @Suppress("RestrictedApi")
 @RunWith(AndroidJUnit4::class)
 class StandaloneDownloadRecoveryDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
-    private val manager get() = WorkManager.getInstance(context)
 
     @Test fun v17TasksRecoverTheirWorkInputsAndCompletedFilesWithoutFabricatingPublicationReceipts() = fixture(disk = true) { f ->
         val before = f.db.downloadDao().getAll().first().associateBy { it.songId }
@@ -61,7 +71,7 @@ class StandaloneDownloadRecoveryDeviceTest {
             assertEquals("", task.url)
             assertEquals(0, task.progress)
             assertEquals(before.getValue(song).createdAt, task.createdAt)
-            assertEquals(WorkInfo.State.ENQUEUED, manager.getWorkInfoById(UUID.fromString(task.requestId)).await()?.state)
+            assertEquals(WorkInfo.State.ENQUEUED, f.manager.getWorkInfoById(UUID.fromString(task.requestId)).await()?.state)
         }
         assertEquals(DownloadStatus.PAUSED, f.db.downloadDao().getBySongId("3")?.status)
         assertEquals(DownloadStatus.FAILED, f.db.downloadDao().getBySongId("4")?.status)
@@ -85,14 +95,14 @@ class StandaloneDownloadRecoveryDeviceTest {
         f.convert()
         f.queue.recover()
         val converted = f.db.downloadDao().getBySongId("1")!!
-        assertNull(manager.getWorkInfoById(UUID.fromString(converted.requestId)).await())
+        assertNull(f.manager.getWorkInfoById(UUID.fromString(converted.requestId)).await())
         assertEquals(DownloadStatus.PENDING, converted.status)
         f.sessions.setRecoveryRequired(false)
         f.account = 88
         f.queue.recover()
         assertEquals(DownloadStatus.FAILED, f.db.downloadDao().getBySongId("1")?.status)
         assertEquals(17L, f.db.downloadDao().getBySongId("1")?.ownerId)
-        assertNull(manager.getWorkInfoById(UUID.fromString(converted.requestId)).await())
+        assertNull(f.manager.getWorkInfoById(UUID.fromString(converted.requestId)).await())
     }
 
     @Test fun conversionAndOrphanRepairAreIdempotentAfterVerifiedSameAccountRecovery() = fixture { f ->
@@ -100,12 +110,12 @@ class StandaloneDownloadRecoveryDeviceTest {
         val old = f.legacy("1")
         f.convert()
         val converted = f.db.downloadDao().getBySongId("1")!!
-        assertEquals(WorkInfo.State.CANCELLED, manager.getWorkInfoById(old).await()?.state)
+        assertEquals(WorkInfo.State.CANCELLED, f.manager.getWorkInfoById(old).await()?.state)
         repeat(2) { f.convert(); f.queue.recover() }
         assertEquals(converted, f.db.downloadDao().getBySongId("1"))
-        val work = manager.getWorkInfosForUniqueWork(f.prefix + "1").await().single()
+        val work = f.manager.getWorkInfosForUniqueWork(f.prefix + "1").await().single()
         assertEquals(converted.requestId, work.id.toString())
-        val input = (manager as WorkManagerImpl).workDatabase.workSpecDao().getWorkSpec(work.id.toString())!!.input
+        val input = f.manager.workDatabase.workSpecDao().getWorkSpec(work.id.toString())!!.input
         assertEquals("1", input.getString(DownloadWorker.KEY_SONG_ID))
         assertEquals(17, input.getLong(DownloadWorker.KEY_OWNER_ID, 0))
         assertFalse(LEGACY_SONG_IDS in input.keyValueMap)
@@ -118,22 +128,22 @@ class StandaloneDownloadRecoveryDeviceTest {
         assertTrue(failure is IOException)
         val converted = f.db.downloadDao().getBySongId("1")!!
         assertEquals(DownloadStatus.PENDING, converted.status)
-        assertEquals(WorkInfo.State.ENQUEUED, manager.getWorkInfoById(old).await()?.state)
+        assertEquals(WorkInfo.State.ENQUEUED, f.manager.getWorkInfoById(old).await()?.state)
         f.convert(affinity = 88)
         f.queue.recover()
         assertEquals(converted, f.db.downloadDao().getBySongId("1"))
-        assertEquals(converted.requestId, manager.getWorkInfosForUniqueWork(f.prefix + "1").await().single().id.toString())
+        assertEquals(converted.requestId, f.manager.getWorkInfosForUniqueWork(f.prefix + "1").await().single().id.toString())
     }
 
     @Test fun canceledLegacyWorkRemainsPausedAndAnExplicitResumeKeepsTheOriginalDestination() = fixture { f ->
         f.db.downloadDao().insert(f.task())
         val old = f.legacy("1")
-        manager.cancelWorkById(old).result.await()
+        f.manager.cancelWorkById(old).result.await()
         f.convert()
         f.queue.recover()
         val paused = f.db.downloadDao().getBySongId("1")!!
         assertEquals(DownloadStatus.PAUSED, paused.status)
-        assertNull(manager.getWorkInfoById(UUID.fromString(paused.requestId)).await())
+        assertNull(f.manager.getWorkInfoById(UUID.fromString(paused.requestId)).await())
         f.queue.resumeSong("1", "Fallback", paused.requestId, "Music/Fallback")
         val resumed = f.db.downloadDao().getBySongId("1")!!
         assertNotEquals(paused.requestId, resumed.requestId)
@@ -154,19 +164,21 @@ class StandaloneDownloadRecoveryDeviceTest {
             assertEquals(0, task.ownerId)
             assertEquals(DownloadStatus.FAILED, task.status)
             assertEquals("", task.url)
-            assertTrue(manager.getWorkInfosForUniqueWork(f.prefix + song).await().all { it.state.isFinished })
+            assertTrue(f.manager.getWorkInfosForUniqueWork(f.prefix + song).await().all { it.state.isFinished })
         }
         assertEquals("Music/Original/3", f.db.downloadDao().getBySongId("3")?.downloadPath)
     }
 
-    @Test fun realSchedulerRetiresEvenAnUnresolvableOldWorkerNameWithoutConstructingTheOldImplementation() = fixture { f ->
+    @Test fun fixtureProcessorRetiresAnUnresolvableOldWorkerNameWithoutConstructingTheOldImplementation() = fixture { f ->
         val request = OneTimeWorkRequestBuilder<DownloadWorker>().addTag(f.tag).addTag("download")
             .setInputData(workDataOf(LEGACY_SONG_IDS to "[\"1\"]")).build()
         request.workSpec.workerClassName = "old.minified.DownloadWorkerAlias"
-        manager.enqueueUniqueWork(f.prefix + "1", ExistingWorkPolicy.REPLACE, request).result.await()
+        f.manager.enqueueUniqueWork(f.prefix + "1", ExistingWorkPolicy.REPLACE, request).result.await()
+        WorkLauncherImpl(f.manager.processor, f.manager.workTaskExecutor)
+            .startWork(StartStopToken(WorkGenerationalId(request.id.toString(), request.workSpec.generation)))
         val result = withTimeout(15_000) {
             while (true) {
-                val work = manager.getWorkInfoById(request.id).await()!!
+                val work = f.manager.getWorkInfoById(request.id).await()!!
                 if (work.state.isFinished) return@withTimeout work
                 delay(50)
             }
@@ -203,15 +215,19 @@ class StandaloneDownloadRecoveryDeviceTest {
         try { withTimeout(30_000) { block(f) } }
         finally {
             try {
-                manager.cancelAllWorkByTag(f.tag).result.await()
-                val works = manager.getWorkInfosByTag(f.tag).await()
-                val workDb = (manager as WorkManagerImpl).workDatabase
+                f.manager.cancelAllWorkByTag(f.tag).result.await()
+                val works = f.manager.getWorkInfosByTag(f.tag).await()
+                val workDb = f.manager.workDatabase
                 workDb.runInTransaction { works.forEach { workDb.workSpecDao().delete(it.id.toString()) } }
-                assertTrue(manager.getWorkInfosByTag(f.tag).await().isEmpty())
+                assertTrue(f.manager.getWorkInfosByTag(f.tag).await().isEmpty())
             } finally {
-                f.db.close()
-                if (disk) context.deleteDatabase(f.name)
-                assertTrue(!f.media.exists() || f.media.delete())
+                try {
+                    f.db.close()
+                    if (disk) context.deleteDatabase(f.name)
+                    assertTrue(!f.media.exists() || f.media.delete())
+                } finally {
+                    try { f.manager.close() } finally { f.executor.shutdown() }
+                }
             }
         }
     }
@@ -221,6 +237,25 @@ class StandaloneDownloadRecoveryDeviceTest {
         val prefix = "$tag-song-"
         val name = "$tag.db"
         val media = File(context.cacheDir, "$tag-media.fixture")
+        val executor = Executors.newSingleThreadExecutor()
+        private val configuration = Configuration.Builder()
+            .setExecutor(executor)
+            .setTaskExecutor(executor)
+            // Skip ForceStopRunnable's persisted-database and system-job recovery.
+            .setDefaultProcessName("${context.packageName}.offline.fixture")
+            .setWorkerFactory(object : WorkerFactory() {
+                override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker? {
+                    val worker = StandaloneDownloadWorkerFactory().createWorker(appContext, workerClassName, workerParameters) ?: return null
+                    val legacy = "download" in workerParameters.tags && LEGACY_SONG_IDS in workerParameters.inputData.keyValueMap
+                    return if (legacy) StandaloneDownloadWorker(appContext, workerParameters, true, prepared = {}) else worker
+                }
+            }).build()
+        private val taskExecutor = WorkManagerTaskExecutor(executor)
+        val manager = WorkManagerImpl(
+            context, configuration, taskExecutor,
+            WorkDatabase.create(context, taskExecutor.serialTaskExecutor, configuration.clock, true),
+            schedulersCreator = { _, _, _, _, _, _ -> emptyList() },
+        )
         var account = 17L
         val sessions = SessionStore().apply { bind { SessionIdentity(account, true, false) } }
         var db: AppDatabase

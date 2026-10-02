@@ -48,6 +48,7 @@ class PodcastSessionTest {
         val subscriptionOffsets = mutableListOf<Int>()
         val programOffsets = mutableListOf<Int>()
         val writes = mutableListOf<Pair<Long, Boolean>>()
+        val mutationOwners = mutableListOf<SessionStamp>()
         val requestedSessions = mutableListOf<SessionStamp>()
         var homeCalls = 0
         val categories = mutableListOf<Long>()
@@ -76,6 +77,7 @@ class PodcastSessionTest {
         }
         override suspend fun setPodcastSubscribed(session: SessionStamp, id: Long, subscribed: Boolean) {
             requestedSessions += session
+            mutationOwners += session
             writes += id to subscribed
             mutation(id, subscribed)
         }
@@ -127,6 +129,69 @@ class PodcastSessionTest {
             assertTrue(source.writes.isEmpty())
             assertEquals("Official sign-in required", detail.state.value.error)
         }
+    }
+
+    @Test fun retainedSubscriptionCallbackCannotWriteForAReplacementAccount() = checkModels { _, detail, _ ->
+        detail.load(1)
+        runCurrent()
+        val displayed = detail.state.value
+        val onClick = { detail.toggleSubscription(displayed) }
+        sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(source.writes.isEmpty())
+        assertTrue(detail.state.value.detail!!.podcast.isSubscribed)
+
+        detail.toggleSubscription(detail.state.value)
+        runCurrent()
+        assertEquals(listOf(1L to false), source.writes)
+        assertEquals(listOf(sessions.snapshot()), source.mutationOwners)
+        assertFalse(detail.state.value.detail!!.podcast.isSubscribed)
+    }
+
+    @Test fun retainedSubscriptionCallbackCannotWriteAfterSameAccountReauthorization() = checkModels { _, detail, _ ->
+        detail.load(1)
+        runCurrent()
+        val displayed = detail.state.value
+        val onClick = { detail.toggleSubscription(displayed) }
+        sessions.invalidate()
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(source.writes.isEmpty())
+        assertTrue(displayed.session != detail.state.value.session)
+
+        detail.toggleSubscription(detail.state.value)
+        runCurrent()
+        assertEquals(listOf(1L to false), source.writes)
+        assertEquals(listOf(sessions.snapshot()), source.mutationOwners)
+    }
+
+    @Test fun retainedSubscriptionCallbackCannotWriteDuringOrAfterRecoveryWithTheSameOwner() = checkModels { _, detail, _ ->
+        detail.load(1)
+        runCurrent()
+        val displayed = detail.state.value
+        val onClick = { detail.toggleSubscription(displayed) }
+        sessions.setRecoveryRequired(true)
+        onClick()
+        runCurrent()
+        assertTrue(source.writes.isEmpty())
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(displayed.session, detail.state.value.session)
+
+        onClick()
+        runCurrent()
+        assertTrue(source.writes.isEmpty())
+        assertTrue(detail.state.value.detail!!.podcast.isSubscribed)
+
+        detail.toggleSubscription(detail.state.value)
+        runCurrent()
+        assertEquals(listOf(1L to false), source.writes)
+        assertEquals(listOf(sessions.snapshot()), source.mutationOwners)
     }
 
     @Test fun subscriptionCursorUsesRawPageSizeAndRejectsConcurrentLoads() {

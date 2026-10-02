@@ -90,9 +90,9 @@ class StandaloneSessionStore @Inject internal constructor(
         }
     }
 
-    suspend fun logout(clearWebSession: suspend () -> Unit) = mutations.withLock {
-        attempts.incrementAndGet()
-        beginTransition().use {
+    suspend fun logout(expected: SessionStamp = snapshot(), clearWebSession: suspend () -> Unit) = mutations.withLock {
+        beginTransition(expected).use {
+            attempts.incrementAndGet()
             withContext(NonCancellable) {
                 persistence.write(anonymous())
                 current = anonymous()

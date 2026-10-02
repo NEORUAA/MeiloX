@@ -72,7 +72,7 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.data.session.Session
 
     // 2. 状态收集
     val userId = session?.identity?.takeIf { it.authenticated }?.userId?.toString().orEmpty()
-    val playlistDetail by viewModel.playlistDetail.collectAsState()
+    val playlistDetail = viewModel.playlistDetail.collectAsState().value
     val removedTrackIds by viewModel.removedTrackIds.collectAsState()
     val subscriberState by viewModel.subscribePlaylist.collectAsState()
     val unSubscriberState by viewModel.unSubscribePlaylist.collectAsState()
@@ -296,12 +296,13 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.data.session.Session
     }
 
     fun toggleSubscription() {
+        val owner = session ?: return
         if (uiData.isCreator) {
             Toast.makeText(context, "不能收藏自己创建的歌单", Toast.LENGTH_SHORT).show()
             return
         }
-        if (isSubscribed) viewModel.unsubscribePlaylist(id.toString())
-        else viewModel.subscribePlaylist(id.toString())
+        if (isSubscribed) viewModel.unsubscribePlaylist(id.toString(), owner, playlistDetail)
+        else viewModel.subscribePlaylist(id.toString(), owner, playlistDetail)
     }
 
     DetailSelectionToolbar(

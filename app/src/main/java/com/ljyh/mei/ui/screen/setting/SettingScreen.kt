@@ -10,7 +10,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -35,7 +34,7 @@ fun SettingScreen(
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
-    val account by rememberAccount()
+    val account = rememberAccount().value
     val userNickname = account.profile?.nickname.orEmpty()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
@@ -59,7 +58,7 @@ fun SettingScreen(
                         Screen.AccountHome.navigate(navController)
                     }
                     SettingsEntry(stringResource(R.string.netease_logout), "rectangle.portrait.and.arrow.forward") {
-                        logoutNetease(context)
+                        account.session?.let { logoutNetease(context, it) }
                     }
                 }
             }

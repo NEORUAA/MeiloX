@@ -25,12 +25,20 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import java.nio.ByteBuffer
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 /** Component/audio namespace proof only, not the production MusicService replacement. */
 class HostRuntimeProbeService : Service() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
     private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var loadedMedia: ProbeMedia? = null
     private var closing = false
     private var lastReportedSecond = -1L
     private val pcmMeter = Pcm16Meter()
@@ -49,6 +57,7 @@ class HostRuntimeProbeService : Service() {
     }
     private val ticker = object : Runnable {
         override fun run() {
+            if (stopStalePlayback()) return
             updateState()
             val second = player.currentPosition / 1000
             if (player.isPlaying && second / 5 != lastReportedSecond / 5) {
@@ -79,7 +88,7 @@ class HostRuntimeProbeService : Service() {
         }
         session = MediaSession(this, "MeiloXRuntimeProbe").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() { player.play() }
+                override fun onPlay() { playMedia() }
                 override fun onPause() { player.pause() }
                 override fun onStop() { stopSelf() }
             })
@@ -90,9 +99,14 @@ class HostRuntimeProbeService : Service() {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (closing) return
-                updateState()
-                getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification())
-                HostRuntimeProbe.report("runtime_player playing=$isPlaying state=${player.playbackState}")
+                val observedMedia = loadedMedia
+                // ExoPlayer can invoke this synchronously while playback acceptance owns the session monitor.
+                handler.post {
+                    if (closing || loadedMedia != observedMedia || stopStalePlayback()) return@post
+                    updateState()
+                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification())
+                    HostRuntimeProbe.report("runtime_player playing=${player.isPlaying} state=${player.playbackState}")
+                }
             }
             override fun onPlayerError(error: PlaybackException) {
                 HostRuntimeProbe.report("runtime_player_error code=${error.errorCodeName}")
@@ -106,24 +120,18 @@ class HostRuntimeProbeService : Service() {
             }
         })
         startForeground(NOTIFICATION, notification())
+        scope.launch {
+            HostRuntimeProbe.playbackState.collect {
+                handler.post { if (!closing) stopStalePlayback() }
+            }
+        }
         handler.post(ticker)
         HostRuntimeProbe.report("runtime_service_created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            PLAY -> {
-                val url = HostRuntimeProbe.mediaUrl
-                if (url == null) {
-                    stopSelf()
-                    return START_NOT_STICKY
-                }
-                if (player.mediaItemCount == 0) {
-                    player.setMediaItem(MediaItem.fromUri(url))
-                    player.prepare()
-                }
-                player.play()
-            }
+            PLAY -> playMedia()
             PAUSE -> player.pause()
             else -> stopSelf()
         }
@@ -134,22 +142,58 @@ class HostRuntimeProbeService : Service() {
 
     override fun onDestroy() {
         closing = true
+        scope.cancel()
         handler.removeCallbacksAndMessages(null)
         player.release()
         session.release()
-        HostRuntimeProbe.updatePlayback(false, 0)
+        HostRuntimeProbe.updatePlayback(loadedMedia, false, 0)
+        loadedMedia = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         HostRuntimeProbe.report("runtime_service_destroyed")
         super.onDestroy()
     }
 
     private fun updateState() {
-        HostRuntimeProbe.updatePlayback(player.isPlaying, player.currentPosition)
+        HostRuntimeProbe.updatePlayback(loadedMedia, player.isPlaying, player.currentPosition)
         session.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_STOP)
             .setState(if (player.isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                 player.currentPosition, if (player.isPlaying) 1f else 0f)
             .build())
+    }
+
+    private fun playMedia() {
+        if (closing) return
+        val accepted = HostRuntimeProbe.withCurrentMedia { media ->
+            if (loadedMedia != media) {
+                loadedMedia = null
+                player.stop()
+                player.clearMediaItems()
+                loadedMedia = media
+                player.setMediaItem(MediaItem.fromUri(media.url))
+                player.prepare()
+            }
+            player.play()
+        }
+        if (!accepted) {
+            HostRuntimeProbe.report("runtime_media_play_rejected")
+            retirePlayback()
+        }
+    }
+
+    private fun stopStalePlayback(): Boolean {
+        val media = loadedMedia ?: return false
+        if (HostRuntimeProbe.isMediaCurrent(media)) return false
+        HostRuntimeProbe.report("runtime_media_retired")
+        retirePlayback()
+        return true
+    }
+
+    private fun retirePlayback() {
+        loadedMedia = null
+        player.stop()
+        player.clearMediaItems()
+        stopSelf()
     }
 
     private fun pcmReport(): String {

@@ -1,6 +1,7 @@
 package com.ljyh.mei.parasite
 
 import android.graphics.Bitmap
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import java.io.IOException
 import javax.inject.Inject
@@ -22,8 +23,8 @@ class HostSessionBridge @Inject constructor() : SessionStore() {
         authenticated = { runCatching { snapshot().identity.authenticated }.getOrDefault(false) },
     )
 
-    fun logout() {
+    fun logout(expected: SessionStamp = snapshot()) {
         val backend = loginBackend ?: throw IOException("Official login is not ready")
-        beginTransition().use { backend.logout() }
+        beginTransition(expected).use { backend.logout() }
     }
 }

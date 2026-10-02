@@ -142,6 +142,66 @@ class AlbumSessionTest {
         assertEquals(2, source.reads.size)
     }
 
+    @Test fun retainedCollectionCallbackCannotWriteForAReplacementAccount() = checkModel { model, _ ->
+        model.getAlbumDetail("10")
+        runCurrent()
+        val displayed = model.state.value
+        val onClick = { model.toggleCollection(displayed) }
+        sessions.beginTransition().use { identity = SessionIdentity(2, true, false) }
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(source.mutations.isEmpty())
+        assertEquals(false, model.state.value.collected)
+
+        model.toggleCollection(model.state.value)
+        runCurrent()
+        assertEquals(listOf(Triple(sessions.snapshot(), "10", true)), source.mutations)
+        assertEquals(true, model.state.value.collected)
+    }
+
+    @Test fun retainedCollectionCallbackCannotWriteAfterSameAccountReauthorization() = checkModel { model, _ ->
+        model.getAlbumDetail("10")
+        runCurrent()
+        val displayed = model.state.value
+        val onClick = { model.toggleCollection(displayed) }
+        sessions.invalidate()
+        runCurrent()
+
+        onClick()
+        runCurrent()
+        assertTrue(source.mutations.isEmpty())
+        assertNotEquals(displayed.session, model.state.value.session)
+
+        model.toggleCollection(model.state.value)
+        runCurrent()
+        assertEquals(listOf(Triple(sessions.snapshot(), "10", true)), source.mutations)
+    }
+
+    @Test fun retainedCollectionCallbackCannotWriteDuringOrAfterRecoveryWithTheSameOwner() = checkModel { model, _ ->
+        model.getAlbumDetail("10")
+        runCurrent()
+        val displayed = model.state.value
+        val onClick = { model.toggleCollection(displayed) }
+        sessions.setRecoveryRequired(true)
+        onClick()
+        runCurrent()
+        assertTrue(source.mutations.isEmpty())
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(displayed.session, model.state.value.session)
+
+        onClick()
+        runCurrent()
+        assertTrue(source.mutations.isEmpty())
+        assertEquals(false, model.state.value.collected)
+
+        model.toggleCollection(model.state.value)
+        runCurrent()
+        assertEquals(listOf(Triple(sessions.snapshot(), "10", true)), source.mutations)
+    }
+
     @Test fun optimisticMutationRunsOnceAndPublishesOneLibraryNotification() {
         val pending = CompletableDeferred<BaseResponse>()
         source.mutate = { _, _, _ -> Resource.Success(pending.await()) }

@@ -3,10 +3,13 @@ package com.ljyh.mei.standalone
 import android.content.ComponentName
 import android.content.res.Configuration
 import androidx.test.platform.app.InstrumentationRegistry
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
+import com.ljyh.mei.AppContext
 import com.ljyh.mei.R
 import com.ljyh.mei.di.AppGraph
-import com.ljyh.mei.runtime.StandaloneComponentRuntime
 import java.util.zip.ZipFile
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -32,20 +35,30 @@ class StandalonePackageDeviceTest {
         assertNotNull(manager.getServiceInfo(ComponentName(context, "com.ljyh.mei.playback.MusicService"), 0))
     }
 
-    @Test fun applicationBootstrapsTheStandaloneGraphWithoutAnyHost() {
-        val graph = AppGraph.component
-        assertSame(context.applicationContext, graph.context())
-        assertTrue(graph.runtime() is StandaloneComponentRuntime)
-        assertSame(graph.sessions(), graph.standaloneSessions())
-        assertSame(graph.sessions(), graph.playbackReports().sessions)
-        assertNotNull(graph.sessions().snapshot())
+    @Test fun fixtureApplicationProvidesPlatformContextWithoutTheProductionGraph() {
+        assertTrue(context.applicationContext is StandaloneFixtureApplication)
+        assertSame(context.applicationContext, AppContext.instance)
+        assertFalse(context.applicationContext is androidx.work.Configuration.Provider)
+        assertThrows(IllegalStateException::class.java) { AppGraph.component }
+        assertThrows(IllegalStateException::class.java) { androidx.work.WorkManager.getInstance(context) }
     }
 
-    @Test fun applicationSelectsTheGatedDownloadFactoryInsteadOfTheDefaultStartupInitializer() {
-        val application = context.applicationContext as androidx.work.Configuration.Provider
+    @Test fun fixtureImageLoaderRejectsRemoteImagesWithoutOpeningAConnection() = runBlocking {
+        val application = context.applicationContext as StandaloneFixtureApplication
+        val loader = application.newImageLoader(context)
+        try {
+            val result = loader.execute(ImageRequest.Builder(context)
+                .data("https://fixture.example.test/offline.png").build())
+            assertTrue(result is ErrorResult)
+            assertEquals("Network images are disabled in standalone fixtures", (result as ErrorResult).throwable.message)
+        } finally { loader.shutdown() }
+    }
+
+    @Test fun productionManifestDeclaresTheApplicationAndGatedDownloadFactory() {
+        assertEquals(AppContext::class.java.name, context.applicationInfo.className)
+        // This checks the configuration contract, not production onCreate or cold startup.
+        val application = AppContext() as androidx.work.Configuration.Provider
         assertTrue(application.workManagerConfiguration.workerFactory is StandaloneDownloadWorkerFactory)
-        val manager = androidx.work.WorkManager.getInstance(context) as androidx.work.impl.WorkManagerImpl
-        assertTrue(manager.configuration.workerFactory is StandaloneDownloadWorkerFactory)
         val provider = context.packageManager.getProviderInfo(
             ComponentName(context, "androidx.startup.InitializationProvider"), android.content.pm.PackageManager.GET_META_DATA,
         )

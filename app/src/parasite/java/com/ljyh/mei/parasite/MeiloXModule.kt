@@ -124,8 +124,8 @@ class MeiloXModule : XposedModule() {
                     val runtimeLoader = activity.javaClass.classLoader ?: return
                     if (!bindBridges(runtimeLoader)) return
                     Thread({
-                        HostCapabilityProbe(requests, ::report) { url ->
-                            if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url)
+                        HostCapabilityProbe(requests, ::report) { url, owner ->
+                            if (BuildConfig.PARASITE_RUNTIME_PROBE) HostRuntimeProbe.offerMedia(url, owner)
                         }.run()
                         if (BuildConfig.PARASITE_RUNTIME_PROBE) {
                             HostRetrofitProbe(com.ljyh.mei.di.AppGraph.component, ::report).run()

@@ -66,8 +66,16 @@ open class SessionStore {
         publish(revision)
     }
 
-    fun beginTransition(): Closeable {
+    fun beginTransition(): Closeable = beginTransitionInternal(null)
+
+    /** Reject a retained account action before it can invalidate or mutate a new session. */
+    fun beginTransition(expected: SessionStamp): Closeable = beginTransitionInternal(expected)
+
+    private fun beginTransitionInternal(expected: SessionStamp?): Closeable {
+        if (expected != null) requireCurrent(expected)
         val started = synchronized(this) {
+            if (expected != null && (generation.get() != expected.generation ||
+                    transitions.get() != 0 || recoveryRequired.value)) throw SessionChangedException()
             transitions.incrementAndGet()
             generation.incrementAndGet()
         }

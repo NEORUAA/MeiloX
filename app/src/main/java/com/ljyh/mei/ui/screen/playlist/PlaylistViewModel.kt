@@ -526,26 +526,36 @@ class PlaylistViewModel internal constructor(
     /*
      * 收藏歌单
      */
-    fun subscribePlaylist(id: String) {
-        setCollection(id, true)
+    internal fun subscribePlaylist(id: String) {
+        val owner = _detailSession.value ?: return
+        subscribePlaylist(id, owner, _playlistDetail.value)
+    }
+
+    fun subscribePlaylist(id: String, owner: SessionStamp, detail: Resource<PlaylistDetail>) {
+        setCollection(id, true, owner, detail)
     }
 
     /*
      * 取消收藏歌单
      */
-    fun unsubscribePlaylist(id: String) {
-        setCollection(id, false)
+    internal fun unsubscribePlaylist(id: String) {
+        val owner = _detailSession.value ?: return
+        unsubscribePlaylist(id, owner, _playlistDetail.value)
     }
 
-    private fun setCollection(id: String, collected: Boolean) {
-        val stamp = _detailSession.value ?: return
-        val before = _collected.value ?: return
+    fun unsubscribePlaylist(id: String, owner: SessionStamp, detail: Resource<PlaylistDetail>) {
+        setCollection(id, false, owner, detail)
+    }
+
+    private fun setCollection(id: String, collected: Boolean, stamp: SessionStamp, renderedDetail: Resource<PlaylistDetail>) {
         val output = if (collected) _subscribePlaylist else _unSubscribePlaylist
-        val version = runCatching { sessions.withCurrent(stamp) {
+        val reservation = runCatching { sessions.withCurrent(stamp) {
             if (sessions.recoveryRequired.value) throw SessionChangedException()
             synchronized(detailLock) {
                 val detail = (_playlistDetail.value as? Resource.Success)?.data?.playlist
-                if (changingCollection || loadedId != id || detail == null || before == collected) null
+                val before = _collected.value
+                if (_detailSession.value != stamp || _playlistDetail.value !== renderedDetail ||
+                    changingCollection || loadedId != id || detail == null || before == null || before == collected) null
                 else if (!stamp.identity.authenticated || detail.creator.userId == stamp.identity.userId) {
                     output.value = Resource.Error("Official account cannot collect this playlist")
                     null
@@ -553,10 +563,11 @@ class PlaylistViewModel internal constructor(
                     changingCollection = true
                     _collected.value = collected
                     output.value = Resource.Loading
-                    detailVersion
+                    detailVersion to before
                 }
             }
         } }.getOrNull() ?: return
+        val (version, before) = reservation
         collectionJob = viewModelScope.launch {
             try {
                 sessions.requireCurrent(stamp)

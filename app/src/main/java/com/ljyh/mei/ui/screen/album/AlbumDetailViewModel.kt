@@ -127,8 +127,9 @@ class AlbumDetailViewModel internal constructor(
         }
     }
 
-    fun toggleCollection() {
-        val current = state.value
+    internal fun toggleCollection() = toggleCollection(state.value)
+
+    fun toggleCollection(current: AlbumDetailState) {
         val stamp = current.session ?: return
         val id = current.id ?: return
         val before = current.collected ?: return
@@ -137,7 +138,7 @@ class AlbumDetailViewModel internal constructor(
             sessions.withCurrent(stamp) {
                 if (sessions.recoveryRequired.value) throw SessionChangedException()
                 synchronized(stateLock) {
-                    if (state.value != current) null
+                    if (state.value !== current) null
                     else if (!stamp.identity.authenticated) {
                         mutableState.value = current.copy(mutation = Resource.Error("Official login is required"))
                         null

@@ -389,21 +389,29 @@ class PodcastDetailViewModel internal constructor(
         }
     }
 
-    fun toggleSubscription() {
-        val current = state.value
+    internal fun toggleSubscription() = toggleSubscription(state.value)
+
+    fun toggleSubscription(current: PodcastDetailUiState) {
         val detail = current.detail ?: return
         val stamp = current.session ?: return
-        if (current.isLoading || current.isUpdatingSubscription) return
-        val version = generation.get()
-        if (!stamp.identity.authenticated) {
-            runCatching { publish(stamp, version) { it.copy(error = "Official sign-in required") } }
-            return
-        }
         val target = !detail.podcast.isSubscribed
-        if (!runCatching {
-            publish(stamp, version) { it.copy(detail = detail.copy(podcast = detail.podcast.copy(isSubscribed = target)),
-                isUpdatingSubscription = true, error = null) }
-        }.getOrDefault(false)) return
+        val version = runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                if (accounts.sessions.recoveryRequired.value) throw SessionChangedException()
+                synchronized(stateLock) {
+                    if (state.value !== current || loadedId != detail.podcast.id ||
+                        current.isLoading || current.isUpdatingSubscription) null
+                    else if (!stamp.identity.authenticated) {
+                        mutableState.value = current.copy(error = "Official sign-in required")
+                        null
+                    } else {
+                        mutableState.value = current.copy(detail = detail.copy(podcast = detail.podcast.copy(isSubscribed = target)),
+                            isUpdatingSubscription = true, error = null)
+                        generation.get()
+                    }
+                }
+            }
+        }.getOrNull() ?: return
         subscriptionJob = viewModelScope.launch {
             perform(stamp, version, detail.podcast.id, { repository.setPodcastSubscribed(stamp, detail.podcast.id, target) },
                 success = { latest, _ -> latest.copy(isUpdatingSubscription = false) },

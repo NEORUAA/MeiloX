@@ -484,7 +484,7 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
         onDownload = { prepareDownload(ids = selection.ids) },
     )
     val onSubscribe = {
-        if (state.session?.identity?.authenticated == true) viewModel.toggleSubscription()
+        if (state.session?.identity?.authenticated == true) viewModel.toggleSubscription(state)
         else Screen.NeteaseLogin.navigate(navController)
     }
     val menu = detailMenuItems(

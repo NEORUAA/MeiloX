@@ -35,6 +35,7 @@ android {
         create("standalone") {
             dimension = "runtime"
             proguardFiles("proguard-standalone.pro")
+            testInstrumentationRunner = "com.ljyh.mei.standalone.StandaloneFixtureInstrumentation"
             if (providers.gradleProperty("standaloneR8CodecProbe").orNull == "true") {
                 testInstrumentationRunner = "com.ljyh.mei.standalone.StandaloneR8NcblInstrumentation"
             }
@@ -149,6 +150,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlinxCoroutinesGuava.get()}")
     androidTestImplementation(libs.androidx.junit)
+    "androidTestStandaloneImplementation"("androidx.test:runner:1.7.0")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlinxCoroutinesGuava.get()}")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)

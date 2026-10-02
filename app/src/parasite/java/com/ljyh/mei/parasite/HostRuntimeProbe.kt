@@ -8,22 +8,106 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.MainActivity
+import com.ljyh.mei.data.session.SessionChangedException
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.playback.MusicService
 import io.github.libxposed.api.XposedModule
+import java.io.Closeable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
-internal data class ProbePlaybackState(val ready: Boolean = false, val playing: Boolean = false, val positionMs: Long = 0)
+internal data class ProbeMedia(val url: String, val owner: SessionStamp)
+
+internal data class ProbePlaybackState(val media: ProbeMedia? = null, val playing: Boolean = false, val positionMs: Long = 0) {
+    val ready: Boolean get() = media != null
+}
+
+/** Diagnostic URLs remain owned by the session that resolved them. */
+internal class ProbeMediaOwnership(private val sessions: SessionStore, scope: CoroutineScope) : Closeable {
+    private val playback = MutableStateFlow(ProbePlaybackState())
+    val playbackState = playback.asStateFlow()
+    private val invalidation = sessions.onInvalidated { revision ->
+        playback.update { state ->
+            if (state.media?.owner?.generation?.let { it < revision } == true) ProbePlaybackState() else state
+        }
+    }
+    private val recovery = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        sessions.recoveryRequired.collect { required ->
+            if (required) playback.value.media?.let(::retire)
+        }
+    }
+
+    fun offer(url: String, owner: SessionStamp): Boolean = runCatching {
+        sessions.withCurrent(owner) {
+            requireUsable(owner)
+            playback.value = ProbePlaybackState(media = ProbeMedia(url, owner))
+            true
+        }
+    }.getOrElse { playback.value.media?.let(::isCurrent); false }
+
+    fun withMedia(action: (ProbeMedia) -> Unit): Boolean {
+        val media = playback.value.media ?: return false
+        return runCatching {
+            sessions.withCurrent(media.owner) {
+                requireUsable(media.owner)
+                if (playback.value.media != media) false else {
+                    action(media)
+                    true
+                }
+            }
+        }.getOrElse { retire(media); false }
+    }
+
+    fun isCurrent(media: ProbeMedia): Boolean = runCatching {
+        sessions.requireCurrent(media.owner)
+        requireUsable(media.owner)
+        playback.value.media == media
+    }.getOrDefault(false).also { if (!it) retire(media) }
+
+    fun update(media: ProbeMedia?, playing: Boolean, positionMs: Long) {
+        if (media == null) return
+        runCatching {
+            sessions.withCurrent(media.owner) {
+                requireUsable(media.owner)
+                playback.update { state ->
+                    if (state.media == media) state.copy(playing = playing, positionMs = positionMs)
+                    else state
+                }
+            }
+        }.onFailure { retire(media) }
+    }
+
+    private fun requireUsable(owner: SessionStamp) {
+        if (!owner.identity.authenticated || owner.identity.anonymous || sessions.recoveryRequired.value) {
+            throw SessionChangedException()
+        }
+    }
+
+    private fun retire(media: ProbeMedia) {
+        playback.update { if (it.media == media) ProbePlaybackState() else it }
+    }
+
+    override fun close() {
+        invalidation.close()
+        recovery.cancel()
+        playback.value = ProbePlaybackState()
+    }
+}
 
 /** Installs the app shell, or the explicitly requested isolated runtime probe. */
 internal object HostRuntimeProbe {
     const val ACTIVITY = HostComponentMapping.ACTIVITY
     const val SERVICE = HostComponentMapping.SERVICE
-    @Volatile var mediaUrl: String? = null
-        private set
-    private val playback = MutableStateFlow(ProbePlaybackState())
-    val playbackState = playback.asStateFlow()
+    private lateinit var mediaOwnership: ProbeMediaOwnership
+    val playbackState get() = mediaOwnership.playbackState
     lateinit var applicationContext: ModuleContext
         private set
     var report: (String) -> Unit = {}
@@ -39,6 +123,10 @@ internal object HostRuntimeProbe {
         report = logger
         applicationContext = ModuleContext.create(application, moduleInfo.packageName)
         com.ljyh.mei.di.AppGraph.initialize(applicationContext)
+        if (BuildConfig.PARASITE_RUNTIME_PROBE) {
+            mediaOwnership = ProbeMediaOwnership(com.ljyh.mei.di.AppGraph.component.sessions(),
+                CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        }
         if (BuildConfig.PARASITE_APP_ENABLED) HostAppComponentHooks.install(module, applicationContext, report)
         if (BuildConfig.PARASITE_APP_ENABLED) {
             HostWorkManager.install(module, applicationContext, report)
@@ -99,14 +187,14 @@ internal object HostRuntimeProbe {
 
     fun wrap(base: Context): Context = applicationContext.wrap(base)
 
-    fun offerMedia(url: String) {
-        mediaUrl = url
-        playback.update { it.copy(ready = true) }
-    }
+    fun offerMedia(url: String, owner: SessionStamp): Boolean = mediaOwnership.offer(url, owner)
 
-    fun updatePlayback(playing: Boolean, positionMs: Long) {
-        playback.update { it.copy(playing = playing, positionMs = positionMs) }
-    }
+    fun withCurrentMedia(action: (ProbeMedia) -> Unit): Boolean = mediaOwnership.withMedia(action)
+
+    fun isMediaCurrent(media: ProbeMedia): Boolean = mediaOwnership.isCurrent(media)
+
+    fun updatePlayback(media: ProbeMedia?, playing: Boolean, positionMs: Long) =
+        mediaOwnership.update(media, playing, positionMs)
 
     fun playbackIntent(context: Context, action: String): Intent =
         Intent(action).setClassName(context.packageName, SERVICE)

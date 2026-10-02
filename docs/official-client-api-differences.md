@@ -48,6 +48,14 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   between identity check and dispatch, same-account reauthorization at creation,
   and retired cancellation requests. This does not qualify live capabilities or
   audible playback; no real capability probe is enabled for the ordinary package.
+- Prototype-media follow-up (2026-10-02): the opt-in runtime prototype also cached
+  a resolved URL without its originating session. Its offer now carries the exact
+  capability-request stamp; URL/readiness retire on invalidation or observed recovery,
+  and both Intent and MediaSession play reject stale ownership. Loaded playback is
+  retired rather than resumed under a replacement account. Platform listener
+  publication is deferred outside the session monitor, and old/null cleanup cannot
+  erase a newer offer. Ordinary production playback still uses MusicService and
+  ordinary probe flags stay disabled; this does not qualify live prototype audio.
 
 ### API-002: Parsed JSON Is Not an HTTP Envelope
 
@@ -81,6 +89,13 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
 - Remaining: canceling local polling cannot revoke authorization already accepted by the
   server. Real logout/account-switch acceptance requires user cooperation; test-double
   transitions must not be reported as real account acceptance.
+- Rendered logout follow-up (2026-10-02): shared Settings now passes its displayed
+  stamp to the flavor-specific logout helper. Both backends validate it before
+  starting the transition, atomically rejecting changed generations, in-flight
+  transitions and pending recovery. Standalone retains that stamp while waiting for
+  its mutation mutex; a login committing first cannot turn the queued logout into
+  logout of the new account. Credential/WebView cleanup and official logout remain
+  owned by their original backends. No real account logout is performed by fixtures.
 
 ### API-004: Search Metadata Is Optional
 
@@ -2398,6 +2413,13 @@ These are integration differences, not server API semantics.
   synchronization or server acceptance, and cancellation cannot undo a write already
   accepted remotely. Paired real read-only page and release-package evidence is
   recorded separately in the matching dual-runtime checkpoint.
+- Rendered callback follow-up (2026-10-02): previous Store fixtures did not test the
+  original Compose callback capture. A delegated State value could reread a new
+  account when a retained create/join/end callback ran. The original page now captures
+  the rendered state value; its controls, navigation and invitation layout are unchanged.
+  The new native fixture retains the actual ClickableElement callback, not Semantics'
+  mutable forwarding action, and tests replacement and same-account reauthorization.
+  Synthetic replacement rooms reuse the same room ID so ID checks alone cannot pass.
 
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 
@@ -2917,6 +2939,16 @@ These are integration differences, not server API semantics.
   through their persisted accounts. This does not qualify real expiry/account
   switching, production-ID signing/upgrade or complete paired release execution;
   further artifact/runtime evidence is in the build plan.
+- Collection-intent follow-up (2026-10-02): album, playlist and podcast action entry
+  points could recapture the ViewModel's current account instead of the rendered
+  context. Their original controls now pass the exact displayed state/detail and
+  stamp; reservation validates that context before any collection write. Exact state
+  identity also rejects a retained callback after same-stamp recovery reloads.
+  Playlist menu/picker/create transitions retain one owner until dismissal and reject
+  obsolete transitions rather than opening another account's picker/share/create UI.
+  Dismissing and reopening starts a fresh operation; endpoint/signing/download policy
+  and the original page architecture are unchanged. Closed sources do not qualify
+  real collection mutations or sharing under cooperating accounts.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 
@@ -2952,6 +2984,38 @@ These are integration differences, not server API semantics.
   preservation evidence is recorded in the build plan. These fixtures do not
   authorize sending real logs or qualify every external
   share target; no credentials, real logs, device captures or APKs enter Git.
+
+### ABI-020: Closed Device Fixtures Must Not Restore the Real Account at Startup
+
+- Recorded: 2026-10-02. The default standalone AndroidJUnitRunner instantiated the
+  production AppContext before a test's opt-in/fixture checks. On a logged-in isolated
+  debug installation this could verify a persisted Cookie, convert/recover download
+  work and schedule pending tasks, even if the test itself used synthetic sources.
+  This audit identifies a startup safety gap, not evidence that a particular earlier
+  fixture actually transferred media or that the production installation was changed.
+- Standalone AndroidTest now uses a test-only offline Application that supplies
+  platform context without AppGraph, credentials, production download recovery or a
+  global WorkManager. Its image loader rejects remote connections. The existing
+  target-only R8 codec runner remains a separate override; neither runner is included
+  in a production APK or substitutes for ordinary application startup qualification.
+- Explicit standaloneLiveReads opt-in is checked before reading the isolated saved
+  Cookie. Candidate verification and subsequent reads use a private session with
+  in-memory persistence; they do not bootstrap production downloads or write account
+  preferences. These checks still contact real servers only when separately enabled.
+- Download-recovery fixtures now own an unscheduled, in-memory WorkDatabase. A
+  non-current default process skips persisted/system-job recovery; no singleton is
+  installed. The unresolved legacy-worker test explicitly starts that fixture's
+  Processor and is no longer described as a real global-scheduler startup test.
+- Earlier substitute evidence qualifies its named request/source behavior, not a
+  guarantee that the old production Application performed no background work.
+  Updated package tests distinguish offline startup, manifest/configuration checks
+  and network-image rejection from direct production launch. Framework-free startup,
+  original-install upgrade and actual download recovery remain separate exit gates.
+- Verification: the final offline safety run passes 14 package/recovery cases and
+  skips seven live-read cases without opt-in. Both production R8 builds and all 56
+  local real-SDK release gates pass; standalone release DEX excludes the fixture
+  Application, runner and live-read/package test classes. Actual production startup
+  and full paired regression remain separate, as recorded in the dual-runtime plan.
 
 ## Adding an Entry
 

@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal class HostCapabilityProbe(
     private val requests: HostRequestBridge,
     private val report: (String) -> Unit,
-    private val onPlayable: (String) -> Unit = {},
+    private val onPlayable: (String, SessionStamp) -> Unit = { _, _ -> },
 ) {
     fun run() {
         try {
@@ -75,7 +75,7 @@ internal class HostCapabilityProbe(
             val hasUrl = source?.optString("url").orEmpty().let { it.startsWith("https://") || it.startsWith("http://") }
             report("playback code=${source?.optInt("code", -1)} url_present=$hasUrl trial=${source?.isNull("freeTrialInfo") == false}")
             if (hasUrl && source?.optInt("code") == 200 && source.isNull("freeTrialInfo")) {
-                onPlayable(source.getString("url"))
+                onPlayable(source.getString("url"), session)
             }
         }
         verifyCancellation(session)

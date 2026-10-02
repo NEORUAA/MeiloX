@@ -30,9 +30,11 @@ fun PlaylistActionOverlay(
     onDownloadTrack: ((MediaMetadata, MusicQuality) -> Unit)? = null,
     viewModel: PlaylistViewModel
 ) {
+    if (overlay == OverlayState.None) return
     val context = LocalContext.current
-    val owner = remember(overlay) { viewModel.captureActionSession() }
+    val owner = remember(viewModel) { viewModel.captureActionSession() }
     val currentOwner by viewModel.actionSession.collectAsState()
+    val actionIsCurrent = { owner != null && viewModel.captureActionSession() == owner }
     LaunchedEffect(currentOwner, owner) {
         if (owner != currentOwner) onDismiss()
     }
@@ -56,10 +58,10 @@ fun PlaylistActionOverlay(
                 onRetry = { owner?.let(viewModel::getAllMePlaylist) },
                 onDismiss = onDismiss,
                 onCreateNewPlaylist = {
-                    // 这里可以跳转到创建歌单的 Overlay 或页面
-                    onUpdateOverlay(OverlayState.CreatePlaylist)
+                    if (actionIsCurrent()) onUpdateOverlay(OverlayState.CreatePlaylist)
                 },
                 onSelectPlaylist = { selectedPlaylist ->
+                    if (!actionIsCurrent()) return@AddToPlaylistSheet
                     viewModel.addSongToPlaylist(
                         pid = selectedPlaylist.id,
                         track = overlay.track,
@@ -82,14 +84,17 @@ fun PlaylistActionOverlay(
             TrackActionMenu(
                 targetTrack = overlay.track,
                 anchorBounds = overlay.anchorBounds,
-                onShare = { onUpdateOverlay(OverlayState.Share(overlay.track)) },
+                onShare = { if (actionIsCurrent()) onUpdateOverlay(OverlayState.Share(overlay.track)) },
                 isCreator = isCreator,
                 onDismiss = onDismiss,
                 onAddToPlaylist = {
-                    onUpdateOverlay(OverlayState.AddToPlaylist(overlay.track))
+                    if (actionIsCurrent()) onUpdateOverlay(OverlayState.AddToPlaylist(overlay.track))
                 },
-                onDownloadTrack = onDownloadTrack?.let { download -> { quality -> download(overlay.track, quality) } },
+                onDownloadTrack = onDownloadTrack?.let { download -> { quality ->
+                    if (actionIsCurrent()) download(overlay.track, quality)
+                } },
                 onDelete = {
+                    if (!actionIsCurrent()) return@TrackActionMenu null
                     if (owner != null) viewModel.deleteSongFromPlaylist(
                         playlistId.toString(),
                         overlay.track,
@@ -119,6 +124,7 @@ fun PlaylistActionOverlay(
             CreatePlaylistSheet(
                 onDismiss = onDismiss,
                 onConfirm = { name, privacy ->
+                    if (!actionIsCurrent()) return@CreatePlaylistSheet
                     viewModel.createPlaylist(name, privacy, owner ?: return@CreatePlaylistSheet) { created ->
                         Toast.makeText(context, if (created) "歌单已创建" else "创建歌单失败", Toast.LENGTH_SHORT).show()
                     }

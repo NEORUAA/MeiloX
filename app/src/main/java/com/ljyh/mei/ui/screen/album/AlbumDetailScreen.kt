@@ -184,7 +184,7 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
         com.ljyh.mei.R.string.track_quality_master,
     ).map { androidx.compose.ui.res.stringResource(it) }
     fun toggleSubscription() {
-        viewModel.toggleCollection()
+        viewModel.toggleCollection(state)
     }
     val detailMenu = listOf(
         com.ljyh.mei.ui.glass.IosCascadingMenuItem(

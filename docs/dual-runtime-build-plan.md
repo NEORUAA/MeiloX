@@ -164,7 +164,7 @@ groups unless their source changes or a new failure is reproduced.
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
-| Remaining page/runtime-carrier and test support changes | Local page hunks, carrier selection and selected test cases do not constitute full source review of every changed page/carrier/test | Open; complete semantic merge acceptance is not inferred from existing fixtures |
+| Remaining page/runtime-carrier and test support changes | All changed hunks in 47 shared UI consumer files and five complete runtime/prototype files reviewed; account-intent repairs recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; not every unchanged page body or test assertion was reviewed, and complete semantic/runtime acceptance remains open |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
 TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
@@ -3184,6 +3184,55 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   Framework-free standalone startup, preserving production upgrade/signing, real
   authorization/business/capability/lifecycle matrices and full merge acceptance
   remain open; this checkpoint does not mark D2-D6 complete.
+
+### D3/D4/D5/D6 Checkpoint: Retained Account Actions and Offline Device Fixtures (2026-10-02)
+
+- Album, playlist and podcast collection controls pass their rendered context rather
+  than recapturing a new account. Reservation validates the exact state/detail and
+  stamp, including reloads after same-stamp recovery. The original Together page
+  captures the rendered state value for create/join/end. Playlist menu/picker/create
+  transitions retain one operation owner until dismissal; reopening can capture the
+  current account. No page, layout, control, endpoint or download policy is replaced.
+- Settings passes the displayed owner into both logout adapters. The transition
+  compares that owner before any invalidation/cleanup; standalone also checks it
+  after waiting for its mutation mutex. Closed tests do not log out a real account.
+- The opt-in media prototype retains its resolving owner and rejects stale play or
+  resume; ordinary production playback still uses MusicService with probes disabled.
+  Listener publication avoids reading credential identity under the session monitor.
+- Default standalone AndroidTest startup is now offline. Explicit live-read opt-in
+  uses a private, in-memory verified session; recovery fixtures own an unscheduled
+  in-memory WorkDatabase and do not initialize global production scheduling. Earlier
+  source substitutes did not prove that the old target Application avoided background
+  account/download bootstrap. ABI-020 records this correction and keeps ordinary
+  production launch and real recovery acceptance separate from fixture startup.
+- Paired debug/AndroidTest/JVM builds pass in 21s (160 tasks). Fresh JVM suites pass
+  972 standalone and 1005 parasite cases (1977), zero failures/errors/skips. The
+  offline standalone native run passes 59 cases in 170.042s: original Together/menu/
+  share callbacks, Store regressions, offline package/image boundaries and private
+  database/download recovery. The first instrumentation attempt fails to attach
+  before any test runs (empty Java crash buffer); a subsequent run identifies seven
+  fixture-only missing PlayerConnection providers. Supplying null only in that
+  fixture fixes all seven. These failed runs remain recorded, not counted as success.
+- Both production R8 artifacts build in 3m27s (107 tasks), and all 56 real-SDK local
+  release gates pass. Release standalone DEX contains neither the fixture runner/
+  Application nor live-read/package test classes. The ordinary parasite R8 is signed
+  with the existing compatible development key; signature and 16KB alignment pass.
+  Its SHA-256 is `d0a11111957aa2b65c125c046dc42d0e4f1f5017323d0fcac0e65c3b99ffa9a4`.
+- Parasite passes 47 matched native cases in 137.079s (106 with the standalone run).
+  A final standalone safety recheck passes 14 package/recovery cases and skips all
+  seven live-read cases without opt-in; those skips are not server acceptance.
+  Ordinary probe-disabled parasite R8 is preserving-installed and cold-starts TV in
+  7805ms. PID 17871 has an empty Java crash buffer; the inspected screenshot shows
+  original portrait Home, glass navigation and paused mini-player. MeiloX remains
+  paused at 55536ms with null error, native TV is STOPPED, and MediaStore row 820
+  retains size 22705573, TV ownership and pending=0. This is a bounded startup/state
+  check, not full interaction, audio, cold-start reliability or real account acceptance.
+- The current exit-gate summary remains authoritative; API-001/API-003/API-029/
+  ABI-018 are extended in place. No cloud flow is reopened, no original standalone
+  data is replaced, and no social/quota write is authorized by these changes. No
+  AVD restart or screen-off, framework hook, global rotation change or remote action
+  occurs. Local logs and artifacts stay under `/tmp/meilox-final-action-owner-*`,
+  outside Git; D2-D6 and the full goal remain open.
 
 ## Acceptance and Remaining Decisions
 
