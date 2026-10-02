@@ -34,6 +34,67 @@ class PlaylistRepositoryTest {
         """{"id":$id,"name":"Track","al":{"id":1,"name":"Album","picUrl":""},"ar":[],"dt":1000}""",
         PlaylistDetail.Playlist.Track::class.java)
 
+    private fun qualityRepository(invoke: (String, Array<out Any?>) -> Any?) = PlaylistRepository(
+        api { _, _ -> error("Closed API") }, api<WeApiService>(invoke), api { _, _ -> error("Closed collections") },
+        sessions, api { _, _ -> error("Closed catalog") }, api { _, _ -> error("Closed tracks") },
+        api { _, _ -> error("Closed downloads") },
+    )
+
+    @Test fun highQualityRequestsKeepTheOriginalPayloadAndTagTheirCapturedOwner() = runBlocking {
+        var body: com.ljyh.mei.data.model.weapi.HighQualityPlaylist? = null
+        var tag: Any? = null
+        val source = qualityRepository { name, args ->
+            assertEquals("getHighQualityPlaylist", name)
+            body = args[0] as com.ljyh.mei.data.model.weapi.HighQualityPlaylist
+            tag = args.getOrNull(1)
+            com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult(200, 0, false, emptyList(), 0)
+        }
+        assertTrue(source.getHighQualityPlaylist("ACG", 57, owner) is Resource.Success)
+        assertEquals(owner, tag)
+        assertEquals(com.ljyh.mei.data.model.weapi.HighQualityPlaylist("ACG", 57, 0, true), body)
+        val method = WeApiService::class.java.methods.single { it.name == "getHighQualityPlaylist" }
+        assertTrue(method.parameterAnnotations[1].any { it is retrofit2.http.Tag })
+    }
+
+    @Test fun staleAndRecoveringHighQualityReadsCannotReachTheApi() = runBlocking {
+        var calls = 0
+        val source = qualityRepository { _, _ ->
+            calls++
+            com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult(200, 0, false, emptyList(), 0)
+        }
+        sessions.invalidate()
+        assertTrue(source.getHighQualityPlaylist("ACG", 30, owner) is Resource.Error)
+        sessions.setRecoveryRequired(true)
+        try {
+            assertTrue(source.getHighQualityPlaylist("ACG", 30, sessions.snapshot()) is Resource.Error)
+            assertEquals(0, calls)
+        } finally { sessions.setRecoveryRequired(false) }
+    }
+
+    @Test fun lateHighQualityResponsesCannotSurviveRecoveryOrReauthorization() = runBlocking {
+        for (recover in listOf(true, false)) {
+            val stamp = sessions.snapshot()
+            val source = qualityRepository { _, _ ->
+                if (recover) sessions.setRecoveryRequired(true) else sessions.invalidate()
+                com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult(200, 0, false, emptyList(), 0)
+            }
+            try {
+                assertTrue(source.getHighQualityPlaylist("ACG", 30, stamp) is Resource.Error)
+            } finally { sessions.setRecoveryRequired(false) }
+        }
+    }
+
+    @Test fun highQualityReadsRejectBusinessFailuresAndMissingRowsButPreserveCancellation() = runBlocking {
+        for (json in listOf("""{"code":301,"playlists":[]}""", """{"code":200}""")) {
+            val source = qualityRepository { _, _ ->
+                Gson().fromJson(json, com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult::class.java)
+            }
+            assertTrue(source.getHighQualityPlaylist("ACG", 30, owner) is Resource.Error)
+        }
+        val source = qualityRepository { _, _ -> throw CancellationException("Cancelled") }
+        assertTrue(runCatching { source.getHighQualityPlaylist("ACG", 30, owner) }.exceptionOrNull() is CancellationException)
+    }
+
     @Test fun detailsValidateBusinessCodeAndRequestedIdentity() = runBlocking {
         listOf(detail(10), detail(20), detail(10, 500)).forEach { response ->
             val source = repository { name, args ->

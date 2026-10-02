@@ -54,6 +54,10 @@ internal interface PlaylistMutationSource {
     suspend fun deletePlaylist(id: String, session: SessionStamp): Resource<BaseMessageResponse>
 }
 
+internal interface HighQualityPlaylistSource {
+    suspend fun getHighQualityPlaylist(cat: String, limit: Int, session: SessionStamp): Resource<HighQualityPlaylistResult>
+}
+
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
@@ -62,7 +66,7 @@ class PlaylistRepository(
     private val catalogCollections: CatalogCollectionBackend,
     private val playlistTracks: PlaylistTracksBackend,
     private val downloadSources: DownloadSourceBackend,
-) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource {
+) : AlbumDetailSource, PlaylistPageSource, PlaylistMutationSource, HighQualityPlaylistSource {
     override suspend fun getPlaylistDetail(id: String, session: SessionStamp?): Resource<PlaylistDetail> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -271,15 +275,25 @@ class PlaylistRepository(
         }
     }
 
-    suspend fun getHighQualityPlaylist(cat:String, limit:Int): Resource<HighQualityPlaylistResult>{
+    override suspend fun getHighQualityPlaylist(cat:String, limit:Int, session: SessionStamp): Resource<HighQualityPlaylistResult>{
         return withContext(Dispatchers.IO){
             safeApiCall {
+                currentCoroutineContext().ensureActive()
+                sessions.requireCurrent(session)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
                 weApiService.getHighQualityPlaylist(
                     HighQualityPlaylist(
                         category = cat,
                         limit = limit
-                    )
-                )
+                    ), session,
+                ).also { response ->
+                    currentCoroutineContext().ensureActive()
+                    sessions.requireCurrent(session)
+                    if (sessions.recoveryRequired.value) throw SessionChangedException()
+                    check(response.code == 200) { "High-quality playlist request failed (${response.code})" }
+                    val rows: List<com.ljyh.mei.data.model.weapi.Playlists>? = response.playlists
+                    checkNotNull(rows) { "High-quality playlist rows are missing" }
+                }
             }
         }
     }

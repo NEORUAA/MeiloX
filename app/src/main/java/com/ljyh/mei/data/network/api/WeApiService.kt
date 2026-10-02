@@ -26,7 +26,7 @@ interface WeApiService {
     suspend fun getUserSubcount(@Body body: Map<String,String> = mapOf()) : UserSubcount
 
     @POST("/api/playlist/highquality/list")
-    suspend fun getHighQualityPlaylist(@Body body: HighQualityPlaylist): HighQualityPlaylistResult
+    suspend fun getHighQualityPlaylist(@Body body: HighQualityPlaylist, @Tag expectedSession: SessionStamp): HighQualityPlaylistResult
 
     @POST("/weapi/v1/radio/get")
     suspend fun getRadio(@Body body: Map<String, String>, @Tag expectedSession: SessionStamp): Radio

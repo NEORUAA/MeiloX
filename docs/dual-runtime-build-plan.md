@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`792d01b5` plus the library-consumer recovery repair below. Source review is separate from
+`5bd56723` plus the discovery-ownership repair below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -157,7 +157,7 @@ groups unless their source changes or a new failure is reproduced.
 | Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Reviewed at source level; actual playback/reporting acceptance remains separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
-| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist and both podcast recovery repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
+| Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
 | Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
 | Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
 
@@ -2795,6 +2795,64 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
 - Remaining original-upgrade, framework-free execution, paired runtime/account
   matrices and full semantic merge review stay open. Local evidence is
   `/tmp/meilox-library-recovery-*-2026-10-02*`; no device logs are committed.
+
+### D4/D5/D6 Checkpoint: High-Quality Discovery Ownership (2026-10-02)
+
+- The remaining discovery consumer had no session-bound cache/retirement, and
+  high-quality requests omitted the originating SessionStamp. A closed typed source
+  exposes the old loading behavior without adding a fence: seven consumer cases and
+  four repository/API cases fail before repair. They reproduce stale cached content,
+  queued pending reads, non-cooperative results, lifecycle retirement, missing tags
+  and unvalidated business/missing-row responses. These substitutes do not establish
+  real requests escaping the already guarded transport.
+- FindMusicViewModel now binds reservations, category cache, dispatch and publication
+  to the originating session, retires work/content on invalidation/recovery and resumes
+  the latest category/limit after readiness. PlaylistRepository passes a required
+  Retrofit session tag and checks ownership/readiness/cancellation and business/rows
+  before accepting the response. Ready public/guest discovery remains allowed.
+- Original `/api/playlist/highquality/list`, request fields, runtime-owned crypto,
+  default limit 30, explicit limits, category-only ready-session cache, forced refresh
+  and the existing ranking alias are retained. FindMusicScreen is untouched in this
+  increment; against main it differs only by the previously approved ViewModel factory
+  import/default. No layout, page architecture, player or main-only frontend repair
+  is added. ABI-018 records the shared-consumer/runtime distinction.
+- Fresh paired suites pass 939 standalone and 956 parasite cases (1895 total),
+  including 11 discovery consumer cases per flavor; additional cases cover unbound
+  startup and a held same-account reauthorization. Both debug/test pairs build in
+  2m14s. Two FindMusicSessionDeviceTest substitutes pass per flavor (0.118s standalone,
+  0.075s parasite), with actual Android ViewModels, private sessions and a socket-free
+  source. No credentials or real account changes/writes/grants are used by those cases.
+- Current standalone debug displays loaded All and Western discovery using its
+  persisted account through the unchanged frontend; screenshots are checked. The
+  initial Home recovery-required frame resolves automatically before discovery is
+  entered. This ready-state consumption is not a controlled expiry/account-switch
+  test.
+- Both production R8 artifacts and vital lint pass in 7m55s. The local release
+  workflow passes 41 fixtures and one real built-pair SDK gate, covering identity,
+  version, signatures, runtime declarations and 16KB alignment. No production keys,
+  remote CI, upload or original-install replacement is used.
+- Fresh development-signed minified APKs display Home, All and Western discovery
+  under each runtime's persisted account; screenshots are inspected. The parasite
+  cold-starts from the original TV launcher in 6996ms and remains portrait. A local
+  init script builds standalone release in 4m1s under the isolated debug package ID;
+  its app-only cold start takes 808ms. This qualifies bounded minified ready-state
+  consumption, not production-ID signing/upgrade or complete release/session parity.
+  The signed SHA-256 values are
+  `cab598d8de5b24d3c0490bf41cfe215759cadd91454a5a4a7f7e7509f8a7c073`
+  (parasite) and
+  `6c9ec23445e13c8d145215f9f2024f13a5ba172f5176bb782c115e20ca6a6e42`
+  (isolated standalone); both pass signer and 16KB zip-alignment checks.
+- Ordinary standalone debug is preserving-reinstalled and its loaded Home checked;
+  the TV-hosted Home is restored to the foreground. Queues remain paused at
+  145670ms/seven entries and 55536ms/six entries, with null errors; the original TV
+  player remains STOPPED/empty. Media row 820 retains size 22705573, TV ownership and
+  published state. Standalone notification/microphone grants remain false, current
+  PID-scoped Java crash buffers are empty, and the rooted AVD stays awake. No original
+  standalone data or credentials are copied, and no real write/download is performed.
+- Framework-free startup, original-install upgrade, complete paired release/device
+  qualification, real failure/account/server matrices and remaining semantic merge
+  review stay open. Local evidence is `/tmp/meilox-discovery-session-*-2026-10-02*`;
+  no APKs, credentials or device logs are committed.
 
 ## Acceptance and Remaining Decisions
 

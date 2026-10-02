@@ -3,17 +3,27 @@ package com.ljyh.mei.ui.screen.main.findmusic
 import androidx.lifecycle.ViewModel
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.PlaylistRepository
+import com.ljyh.mei.data.repository.HighQualityPlaylistSource
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionChangedException
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-class FindMusicViewModel @Inject constructor(
-    private val repository: PlaylistRepository
+class FindMusicViewModel internal constructor(
+    private val repository: HighQualityPlaylistSource,
+    private val sessions: SessionStore,
 ) : ViewModel() {
+    @Inject constructor(repository: PlaylistRepository, sessions: SessionStore) : this(repository as HighQualityPlaylistSource, sessions)
 
     // 分类列表
     val categories = "全部,华语,欧美,日语,韩语,粤语,小语种,流行,摇滚,民谣,电子,舞曲,说唱,轻音乐,爵士,乡村,R&B/Soul,古典,民族,英伦,金属,朋克,蓝调,雷鬼,世界音乐,拉丁,另类/独立,New Age,古风,后摇,Bossa Nova,清晨,夜晚,学习,工作,午休,下午茶,地铁,驾车,运动,旅行,散步,酒吧,怀旧,清新,浪漫,性感,伤感,治愈,放松,孤独,感动,兴奋,快乐,安静,思念,影视原声,ACG,儿童,校园,游戏,70后,80后,90后,网络歌曲,KTV,经典,翻唱,吉他,钢琴,器乐,榜单,00后".split(",")
@@ -24,12 +34,39 @@ class FindMusicViewModel @Inject constructor(
     private val _highQualityPlaylist = MutableStateFlow<Resource<HighQualityPlaylistResult>>(Resource.Loading)
     val highQualityPlaylist = _highQualityPlaylist.asStateFlow()
     private val _playlistCache = mutableMapOf<String, HighQualityPlaylistResult>()
+    private val stateLock = Any()
+    private var dataSession: SessionStamp? = null
+    private var requestedCategory = "全部"
+    private var requestedLimit = 30
     private var loadJob: Job? = null
     private var loadGeneration = 0
+    private val invalidation = sessions.onInvalidated { revision ->
+        synchronized(stateLock) {
+            if ((dataSession?.generation ?: -1) < revision) resetSession(null)
+        }
+    }
 
     init {
-        // 初始化加载
-        loadCategoryData("全部")
+        viewModelScope.launch {
+            combine(sessions.changes, sessions.recoveryRequired) { _, _ -> Unit }.collect {
+                val stamp = if (sessions.recoveryRequired.value) null else runCatching { sessions.snapshot() }.getOrNull()
+                if (stamp == null) {
+                    loadJob?.cancel()
+                    synchronized(stateLock) { resetSession(null) }
+                } else if (synchronized(stateLock) { dataSession != stamp }) {
+                    loadCategoryData(requestedCategory, requestedLimit, true)
+                }
+            }
+        }
+    }
+
+    private fun resetSession(owner: SessionStamp?) {
+        loadGeneration++
+        dataSession = owner
+        _playlistCache.clear()
+        _highQualityPlaylist.value = if (sessions.recoveryRequired.value) {
+            Resource.Error("Official session recovery is required")
+        } else Resource.Loading
     }
 
     /**
@@ -38,19 +75,8 @@ class FindMusicViewModel @Inject constructor(
     fun onCategorySelected(cat: String) {
         val category = normalizeCategory(cat)
 
-        // 1. 更新选中的 Tag UI
         _selectedCategory.value = category
-
-        // 2. 检查缓存
-        if (_playlistCache.containsKey(category)) {
-            loadGeneration++
-            loadJob?.cancel()
-            // 【命中缓存】：直接使用缓存数据，不发网络请求
-            _highQualityPlaylist.value = Resource.Success(_playlistCache[category]!!)
-        } else {
-            // 【未命中缓存】：发起网络请求
-            loadCategoryData(category)
-        }
+        loadCategoryData(category)
     }
 
     /**
@@ -59,33 +85,58 @@ class FindMusicViewModel @Inject constructor(
      */
     fun loadCategoryData(cat: String, limit: Int = 30, forceRefresh: Boolean = false) {
         val category = normalizeCategory(cat)
-        if (!forceRefresh) {
-            _playlistCache[category]?.let { cached ->
-                loadGeneration++
-                loadJob?.cancel()
-                _highQualityPlaylist.value = Resource.Success(cached)
-                return
-            }
+        synchronized(stateLock) {
+            requestedCategory = category
+            requestedLimit = limit
         }
-        val generation = ++loadGeneration
         loadJob?.cancel()
-        loadJob = viewModelScope.launch {
-            _highQualityPlaylist.value = Resource.Loading
-
-            // 调用 Repository
-            val result = repository.getHighQualityPlaylist(category, limit)
-            if (generation != loadGeneration) return@launch
-
-            // 如果请求成功，写入缓存
-            if (result is Resource.Success) {
-                _playlistCache[category] = result.data
+        val owner = if (sessions.recoveryRequired.value) null else runCatching { sessions.snapshot() }.getOrNull()
+        if (owner == null) {
+            synchronized(stateLock) { resetSession(null) }
+            return
+        }
+        val (generation, cached) = runCatching { sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw SessionChangedException()
+            synchronized(stateLock) {
+                if (dataSession != owner) resetSession(owner)
+                val previous = if (forceRefresh) null else _playlistCache[category]
+                _highQualityPlaylist.value = previous?.let { Resource.Success(it) } ?: Resource.Loading
+                ++loadGeneration to (previous != null)
             }
-
-            // 更新 UI
-            _highQualityPlaylist.value = result
+        } }.getOrNull() ?: return
+        if (cached) return
+        loadJob = viewModelScope.launch {
+            fun publish(result: Resource<HighQualityPlaylistResult>) = sessions.withCurrent(owner) {
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
+                synchronized(stateLock) {
+                    if (dataSession == owner && generation == loadGeneration) {
+                        if (result is Resource.Success) _playlistCache[category] = result.data
+                        _highQualityPlaylist.value = result
+                    }
+                }
+            }
+            try {
+                sessions.requireCurrent(owner)
+                if (sessions.recoveryRequired.value) throw SessionChangedException()
+                val result = repository.getHighQualityPlaylist(category, limit, owner)
+                currentCoroutineContext().ensureActive()
+                publish(result)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SessionChangedException) {
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                runCatching { publish(Resource.Error(error.message ?: "High-quality playlist request failed")) }
+            }
         }
     }
 
     private fun normalizeCategory(category: String): String =
         if (category == "排行榜") "榜单" else category
+
+    override fun onCleared() {
+        invalidation.close()
+        synchronized(stateLock) { loadGeneration++; _playlistCache.clear() }
+        super.onCleared()
+    }
 }

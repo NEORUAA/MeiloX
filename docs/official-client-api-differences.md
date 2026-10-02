@@ -2761,6 +2761,23 @@ These are integration differences, not server API semantics.
   already guarded: these reproductions establish consumer gaps, not real pending
   requests escaping it. Artifact/bootstrap qualification and remaining real-account
   gates are recorded in the dual-runtime plan.
+- Category-discovery follow-up: the existing FindMusic consumer had no session-bound
+  cache/retirement, while `/api/playlist/highquality/list` omitted an originating
+  Retrofit session tag. The transport still guarded the execution owner it captured;
+  that alone did not bind the request/cache/result to the originating consumer. A
+  closed typed source exposes seven failing consumer cases and four failing API/
+  repository cases before the repair. Requests, ready-category cache and results now
+  retain their owner and reject recovery/invalidation/lifecycle retirement; latest
+  category/limit resumes after readiness. Business failures and missing rows cannot
+  become successful cached content. The endpoint/body/crypto, default and explicit
+  limits, ready guest browsing, ranking alias and original page remain unchanged.
+  Fresh paired suites pass 1895 cases, including 11 discovery cases per flavor; two
+  Android substitutes pass per flavor with private sessions and a socket-free source.
+  Current standalone debug consumes All/Western results with its persisted account.
+  Fresh minified parasite and isolated-ID standalone also consume Home/All/Western
+  through their persisted accounts. This does not qualify real expiry/account
+  switching, production-ID signing/upgrade or complete paired release execution;
+  further artifact/runtime evidence is in the build plan.
 
 ## Adding an Entry
 
