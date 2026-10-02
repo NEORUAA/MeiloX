@@ -4064,6 +4064,66 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   tests. Full Repository/page integration, live authorization/failure/cooperation,
   original-install upgrade and remaining D2-D6 runtime gates are still open.
 
+#### Source-Identity Recovery Repair (2026-10-03)
+
+- A focused check of the unresolved near-end failure finds a separate, concrete
+  migration defect: range-error scheduling uses full sourceKey, while the transition
+  callback still uses visible mediaId. Private-source repeat transitions can cancel
+  the pending recovery and reset its single-attempt budget. This is not evidence
+  identifying the Oct1 no-progress failure; its missing raw trace and unproven
+  original-song/expiry reproduction remain explicit.
+- PlaybackSourceRecovery groups the existing source key, job and attempt state.
+  Both service paths select the same full identity; a changed identity cancels the
+  old job, and an unchanged source retains its budget. Invalid/conflicting metadata
+  retires recovery without throwing from the callback. Session retirement clears
+  even an unchanged public source. The original maximum remains one attempt.
+- JVM tests cover repeat, file/account/audio/entry replacement, public/private
+  collisions, null selection, retirement and finite budgets. Native fixtures invoke
+  the actual MusicService transition callback with synthetic MediaItems and empty,
+  unprepared/muted StableDeckPlayer decks. They do not start the registered service
+  lifecycle, load credentials/media, resolve URLs or report listening statistics.
+- Final-source JVM results are 39 cases per flavor with zero failures/errors/skips;
+  eight cases per flavor are new recovery-state regression. Each matching debug
+  device APK passes four service-callback cases (0.637s parasite, 0.643s standalone),
+  including conflicting metadata. The earlier three-case device run predates that
+  additional guard and is not substituted for these final four-case results.
+- The isolated standalone is preserving-updated with its matching debug APK, then
+  launched through the ordinary application, not the fixture Application. It COLD
+  starts in 7706ms (PID 11246), displays its original Home/artwork/mini-player and
+  restores seven queue items PAUSED at 143811ms, speed 0/error null. Its screenshot
+  is inspected. This does not qualify R8 recovery, audible output or a timing fix.
+- The final frozen source passes the paired filtered JVM/debug/test-APK/release
+  Gradle command in 30m20s (267 tasks: 63 executed, 204 up-to-date), including both
+  R8, resource shrinking and lintVital tasks. A previous in-progress build predates
+  the conflicting-metadata guard and is explicitly terminated; its partial outputs
+  are not substituted for this successful final command.
+- Final unsigned release SHA256 values are parasite
+  `7d8a5f39a19ffe357dbee24a07d7c7b459e44188865723430b73e4dc9f858ac7`
+  and standalone
+  `768d7cc2fa7180719d084e17975eb292d1026abdaf5ec3381d8cae1ec364e251`.
+  The local `dual_runtime_release_test.rb --built-apks` gate exits 0 with 64 PASS
+  records: actual SDK signatures/identities/versions, 16KB alignment, runtime
+  declarations, stable parasite Parcelable names/platform CREATOR fields, and
+  rejection of swapped, unsigned or missing-scope pairs. Its temporary fixture
+  keys/APKs are removed; it does not install APKs or use production credentials.
+  The parasite is development-signed, passes SDK signature and 16KB alignment
+  checks, and is preserving-installed with device SHA256
+  `b26fd83023549bf36b5e39e45472f23023aa82624b1cfada1dffc20a6737e727`.
+- The final parasite R8 cold-starts through the ordinary TV launcher in 7011ms
+  (PID 12918). The inspected screenshot shows the original portrait MeiloX Home,
+  artwork, mini-player and glass navigation. Its session restores 11 queue items
+  PAUSED at 178897ms, speed 0/error null; the native TV session remains inactive,
+  STOPPED at 0 with an empty queue. Each restored application's PID-scoped crash
+  buffer is empty. No playback action or audible-output qualification is made.
+- The production standalone install path is unchanged. MediaStore row 820 remains
+  22705573 bytes, is_pending=0, owned by com.netease.cloudmusic.tv. No credentials
+  are read/imported, accounts switched, production data cleared or real writes
+  exercised. Local logs/screenshots/APKs stay outside Git under
+  `/tmp/meilox-source-recovery-*-2026-10-03.*`; no remote CI or push is requested.
+- This changes backend source-recovery ownership only; it does not redesign pages,
+  playback controls, DSP, AutoMix, source authorization or quality/cache policy.
+  ABI/API evidence is recorded in API-015. Full D2-D6 acceptance remains open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

@@ -151,9 +151,7 @@ class MusicService : MediaLibraryService(),
     lateinit var mediaUriProvider: MediaUriProvider
 
     private var errorCount = 0 // 记录连续错误的次数，防止死循环
-    private var sourceRecoveryJob: Job? = null
-    private var sourceRecoveryMediaId: String? = null
-    private var sourceRecoveryAttempts = 0
+    private val sourceRecovery = PlaybackSourceRecovery(MAX_SOURCE_RECOVERY_ATTEMPTS)
 
     private val binder = MusicBinder()
 
@@ -411,7 +409,7 @@ class MusicService : MediaLibraryService(),
 
     private fun invalidatePlaybackSession() {
         // Keep the local metadata read alive; its policy suppresses stale source preparation.
-        sourceRecoveryJob?.cancel()
+        sourceRecovery.clear()
         automaticCacheJob?.cancel()
         queueManager.invalidateSession()
         playbackHistoryReporter.discardSession()
@@ -758,7 +756,7 @@ class MusicService : MediaLibraryService(),
         mediaButtonBinding?.close()
         mediaButtonBinding = null
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
-        sourceRecoveryJob?.cancel()
+        sourceRecovery.clear()
         periodicSnapshotJob?.cancel()
         playbackRestoreJob?.cancel()
         playbackSnapshotJob?.cancel()
@@ -938,25 +936,21 @@ class MusicService : MediaLibraryService(),
     private fun scheduleSourceRecovery(): Boolean {
         val mediaItem = player.currentMediaItem ?: return false
         val mediaId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return false
-        val sourceKey = mediaItem.sourceKey
-        if (sourceRecoveryMediaId != sourceKey) {
-            sourceRecoveryMediaId = sourceKey
-            sourceRecoveryAttempts = 0
-        }
-        if (sourceRecoveryJob?.isActive == true) return true
-        if (sourceRecoveryAttempts >= MAX_SOURCE_RECOVERY_ATTEMPTS) return false
-
-        sourceRecoveryAttempts++
+        val sourceKey = runCatching { mediaItem.sourceKey }.getOrNull()
+        sourceRecovery.selectSource(sourceKey)
+        if (sourceKey == null) return false
+        if (sourceRecovery.job?.isActive == true) return true
+        if (!sourceRecovery.tryBeginAttempt()) return false
         val recoveryPositionMs = player.currentPosition.coerceAtLeast(0L)
         val resumePlayback = player.playWhenReady
         val owner = runCatching { accountSessions.snapshot() }.getOrNull() ?: return false
-        sourceRecoveryJob = scope.launch {
+        sourceRecovery.job = scope.launch {
             try {
                 Timber.tag("MusicService").w(
                     "Refreshing source after out-of-range read: id=%s position=%s attempt=%s",
                     mediaId,
                     recoveryPositionMs,
-                    sourceRecoveryAttempts,
+                    sourceRecovery.attempts,
                 )
                 mediaUriProvider.invalidate(sourceKey)
                 resetPlaybackSourcesForQualityChange()
@@ -994,12 +988,7 @@ class MusicService : MediaLibraryService(),
                 realtimeMs = SystemClock.elapsedRealtime(),
             ),
         )
-        if (mediaItem?.mediaId != sourceRecoveryMediaId) {
-            sourceRecoveryJob?.cancel()
-            sourceRecoveryJob = null
-            sourceRecoveryMediaId = mediaItem?.mediaId
-            sourceRecoveryAttempts = 0
-        }
+        sourceRecovery.selectSource(runCatching { mediaItem?.sourceKey }.getOrNull())
         // 如果成功切歌，重置错误计数器
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {

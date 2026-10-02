@@ -707,6 +707,28 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   dispatch, checked after the queue reaches its terminal state. The same closed, muted,
   in-memory fixtures apply; this does not qualify actual clicks on every listed screen,
   real account changes or audible output.
+- Source-recovery follow-up (2026-10-03): the migrated range-error retry scheduler
+  tracked the full sourceKey, but MusicService's transition callback still compared
+  and assigned the visible mediaId. A repeat of the same private source could cancel
+  its own pending refresh and reopen the one-attempt limit. Public/private or
+  same-entry file/account/audio replacements could also be conflated by the old ID.
+- One shared recovery state now owns the source key, pending job and retry budget.
+  Both scheduling and transitions select the full identity; invalid/conflicting
+  metadata selects no source, cancels pending recovery and cannot claim a retry.
+  Session retirement clears the state even when a public song keeps its visible ID.
+  Source authorization, quality selection, cache removal, UI and engine controls are
+  unchanged. This source defect is not attribution of the earlier near-end stall.
+- Final-source regression passes 39 JVM cases per flavor, including eight new
+  recovery-state cases, plus four actual service-callback cases per debug flavor on
+  emulator-5554. The callback fixture uses synthetic metadata and unprepared empty
+  decks, not a registered service lifecycle or a real range-error/media transfer.
+  Invalid metadata is rejected without an uncaught callback exception. It does not
+  qualify complete release playback, live source recovery or the earlier stall.
+- Both final debug/test and minified release APKs build successfully. A matching
+  parasite R8 install cold-starts to the original portrait Home and restores its
+  paused queue; the isolated standalone debug install does likewise. This is a
+  scoped launch/restore smoke check, not real range-error recovery or a replacement
+  for the still-open cross-artifact saved-state and near-end failure evidence.
 
 ### ABI-016: Standalone Legacy Media Spans Need Current Source Authorization
 
