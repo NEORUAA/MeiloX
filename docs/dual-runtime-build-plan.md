@@ -44,8 +44,8 @@ not physical-device acceptance or a framework-free standalone test.
 Do not run further tests on `Pixel_10_Pro` (`emulator-5554` at migration time).
 Existing Pixel/16 KB checkpoints remain historical, bounded evidence. The user
 authorized local application/data migration and closing Pixel after verification,
-not deletion of its AVD or original data. The previous implementation goal remains
-paused during this environment transfer.
+not deletion of its AVD or original data. The transfer is verified below and the
+user has resumed implementation; device validation now stays on HyperOS 4.
 
 ## Source and Build Boundaries
 
@@ -4501,6 +4501,57 @@ playlist/component/PlaylistActionOverlay.kt
   kept separate from ordinary R8 helper execution and does not authorize production
   framework hooks or new permissions. Logs, APKs and screenshots remain outside Git
   under `/tmp/meilox-pip-*`; no audio or credentials are committed.
+
+## HyperOS 4 Current-R8 Boundary Checks (2026-10-03)
+
+- At `ec1dd5a3`, the two installed production-ID, development-signed R8 hashes match
+  the PiP checkpoint above. TV PID 25742's actual API 102 `code_source` matches
+  `r8-map-id-3272c2faba8232e55095f21607584efae41547d51ec3132b0daed6315fde7095`.
+  This is separate execution evidence, not an assumption from the installed file.
+- Existing playback is observed without play/pause/seek/next commands, an install,
+  Activity launch, process kill, permission or volume changes. The native session
+  monitor records The des Alizes advancing from 133591ms to 217949ms, followed by
+  the next item at 14ms. No transition-reason or complete decoded-duration evidence
+  is obtained; the item change alone is not counted as automatic/full-track completion.
+- A subsequent seven-sample, 121-second capture holds the hosted player PLAYING,
+  speed 1, error null, with six queue items. The successor advances from 9559ms to
+  129816ms. Original standalone remains PAUSED at 72252ms with 1512 entries; the
+  separate native TV session remains inactive, STOPPED at zero, with an empty queue.
+- The primary AudioFlinger speaker output is unmuted, with an active 44100Hz track
+  owned by TV UID 10312. Its frames increase from 46893888 to 52638528, a delta of
+  5744640; signal-power samples are nonzero. The independently read system music
+  volume is 7/15. These are decoder/output-state observations, not audible acceptance
+  of the emulator or any physical device. The current-PID crash buffer is empty;
+  this does not assert an empty engine/system log or erase the earlier near-end failure.
+- PID-scoped official SDK markers process the prior item end (`play`/`_pld`,
+  222 seconds) and successor start (`startplay`/`_plv`) under generation zero.
+  SDK processing/enqueue, request acknowledgement and later server statistics remain
+  distinct; this capture does not prove a network acknowledgement or final statistics.
+- Inspected screenshots retain the original portrait General Settings page,
+  Follow System theme, successor artwork and playing mini-player. No frontend repair
+  is made. Captures and the read-only script remain outside Git under
+  `/tmp/meilox-hyperos-passive-playback-2026-10-03-1790980130471` and
+  `/tmp/meilox-hyperos-passive-playback-2026-10-03.mjs`. No original account,
+  Cookie, download quota or social action is changed; all existing exit gates remain.
+- The Java-only installed-R8 instrumentation now optionally verifies the module
+  process's actual AppGraph instance before and after its untrusted microphone
+  binding test. The matching map resolves AppGraph to `xx` and its static instance
+  field to `b`; both reads are null. The real service rejects the module UID before
+  recording. Optional PiP-action instrumentation checks this field while pinned and
+  after destruction too, but that action mode is not rerun in this checkpoint.
+- The test APK builds in 10 seconds and is installed independently, without
+  `connectedAndroidTest`, module replacement, scope changes or host restart.
+  `am instrument -w -r -e graph_class xx -e graph_field b` with runner
+  `com.neoruaa.meilox.parasite.test/com.ljyh.mei.parasite.MicrophoneR8Instrumentation`
+  returns PASS and instrumentation code -1. Replacing only the field argument with
+  `missing_graph_probe_field` returns the expected NoSuchFieldException/FAIL and
+  code zero, proving an invalid map argument cannot silently qualify the graph.
+  These aliases belong only to the pinned mapping, not a stable future command.
+- After both runs, TV PID 25742 is still PLAYING/error null at 305826ms on item two;
+  native TV is still STOPPED/empty and original standalone remains PAUSED at 72252ms.
+  This closes the named module-bootstrap/binding scenario, not every real helper
+  permission/PiP lifecycle. Production sources and both installed R8 APKs are
+  unchanged; prior paired JVM/release evidence is retained, not rerun or broadened.
 
 ## Acceptance and Remaining Decisions
 

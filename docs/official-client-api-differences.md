@@ -823,6 +823,15 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   special real-time path, podcast/cloud semantics, release runtime, and server-side
   listening-history/statistics acceptance. No account change or social action was
   performed for this checkpoint.
+- HyperOS 4 R8 follow-up (2026-10-03): the currently executing TV module map ID
+  matches its tested APK. A read-only 121-second observation retains PLAYING/error
+  null, advancing from 9559ms to 129816ms with an active unmuted output track and
+  5744640 additional primary output frames. The native TV player remains inactive,
+  STOPPED and empty. Official SDK workers process `play`/`_pld` (222 active seconds)
+  and successor `startplay`/`_plv` under the same generation. Worker processing is
+  still not a network acknowledgement, server statistics or audible acceptance;
+  the earlier near-end failure is not reclassified. ABI-009 continues to own the
+  restored standalone reporting implementation after the dual-runtime revision.
 
 ### API-017: Download Permission Is Not Playback Permission
 
@@ -3370,7 +3379,8 @@ These are integration differences, not server API semantics.
 - Paired JVM suites, both R8 builds/vital lint, native installed-R8 security checks
   and real-SDK signed-pair gates pass. HyperOS launch confirmation is respected;
   host APK, framework scope and global rotation settings are not modified. Dedicated
-  PiP support and full denial/expiry/process-death/device matrix remain open.
+  PiP support is subsequently implemented in API-038; the full denial/expiry/
+  process-death/device matrix remains open.
 
 ### API-038: PiP Capability Belongs to the Registered Activity, Not Injected UI
 
@@ -3400,6 +3410,14 @@ These are integration differences, not server API semantics.
   original standalone light-theme readability issue is reproduced and recorded,
   without changing its frontend styling. No host repack, credentials, official
   sources, device logs, global rotation changes or framework hooks are introduced.
+- Module-process graph follow-up (2026-10-03): native Java instrumentation reads
+  AppGraph's actual private static instance using names from the matching installed
+  R8 map, before and after binding the real microphone helper. The instance remains
+  null and that helper rejects the module UID. A wrong mapped field explicitly
+  fails; no recording, business request, host restart or playback command is issued.
+  Optional live-PiP graph assertions are added to the harness but are not exercised
+  in this follow-up. This is the named bootstrap/binding boundary, not proof of the
+  full PiP/permission matrix or replacement for the earlier real-window evidence.
 
 ## Adding an Entry
 

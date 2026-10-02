@@ -16,7 +16,9 @@ import org.xmlpull.v1.XmlPullParser;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -25,18 +27,25 @@ import java.util.concurrent.TimeUnit;
 /** Uses only Android/Java APIs; a debug AndroidX runner cannot link an R8 Kotlin runtime. */
 public final class MicrophoneR8Instrumentation extends Instrumentation {
     private boolean pipActions;
+    private String graphClass;
+    private String graphField;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         pipActions = arguments != null && "true".equals(arguments.getString("pip_actions"));
+        graphClass = arguments == null ? null : arguments.getString("graph_class");
+        graphField = arguments == null ? null : arguments.getString("graph_field");
         start();
     }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            verifyGraphUninitialized();
             verify();
+            verifyGraphUninitialized();
             if (pipActions) verifyPipActions();
-            result.putString("helper_boundary", "PASS: microphone/PiP ownership, private actions, no launcher, untrusted Binder rejection");
+            result.putString("helper_boundary", "PASS: microphone/PiP ownership, private actions, no launcher, untrusted Binder rejection" +
+                    (graphClass == null ? "" : "; module graph stays uninitialized"));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("helper_boundary", "FAIL: " + error);
@@ -101,6 +110,17 @@ public final class MicrophoneR8Instrumentation extends Instrumentation {
         if (!condition) throw new IllegalStateException(message);
     }
 
+    /** Names come from the exact installed APK's R8 mapping, not the debug classpath. */
+    private void verifyGraphUninitialized() throws Exception {
+        if (graphClass == null && graphField == null) return;
+        require(graphClass != null && graphField != null, "Both R8 graph names are required");
+        Class<?> type = Class.forName(graphClass, true, getTargetContext().getClassLoader());
+        Field field = type.getDeclaredField(graphField);
+        require(Modifier.isStatic(field.getModifiers()) && !field.getType().isPrimitive(), "Wrong R8 graph field");
+        field.setAccessible(true);
+        require(field.get(null) == null, "Module helper initialized the music graph");
+    }
+
     private static boolean hasPipActivity(PackageManager manager, String packageName) throws Exception {
         try (XmlResourceParser xml = manager.getResourcesForApplication(packageName).getAssets()
                 .openXmlResourceParser("AndroidManifest.xml")) {
@@ -123,6 +143,7 @@ public final class MicrophoneR8Instrumentation extends Instrumentation {
         removeMonitor(monitor);
         require(activity != null, "Normal host PiP launch timed out");
         await(() -> activity.isInPictureInPictureMode(), "Helper did not enter pinned mode");
+        verifyGraphUninitialized();
         Method factory = Arrays.stream(activity.getClass().getDeclaredMethods()).filter(method ->
                 method.getReturnType() == PictureInPictureParams.class &&
                 Arrays.equals(method.getParameterTypes(), new Class<?>[] {boolean.class})).findFirst()
@@ -143,6 +164,7 @@ public final class MicrophoneR8Instrumentation extends Instrumentation {
         dispatch(params[0], 1, "pause");
         runOnMainSync(activity::finish);
         await(activity::isDestroyed, "Helper did not finish");
+        verifyGraphUninitialized();
         dispatch(params[0], 1, "closed_stale");
         Bundle status = new Bundle();
         status.putString("pip_actions", "PASS: installed R8 helper, pinned mode, immutable action ownership and dispatch; verify host state separately");
