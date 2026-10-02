@@ -19,7 +19,13 @@ internal fun SessionStore.requirePlaybackSession(owner: SessionStamp) {
     if (recoveryRequired.value) throw SessionChangedException()
 }
 
-internal data class PlaybackUrl(val url: String, val actualQuality: String, val cacheKey: String)
+internal data class PlaybackUrl(
+    val url: String,
+    val actualQuality: String,
+    val cacheKey: String,
+    val sourceMd5: String?,
+    val sourceSize: Long,
+)
 
 /** Signed URLs belong to one official authorization generation, never just a song ID. */
 @Singleton
@@ -66,6 +72,7 @@ class PlaybackUrlResolver internal constructor(
             val resolved = PlaybackUrl(
                 checkNotNull(source.url), actual,
                 playbackCacheKey(sourceKey, actual, source.md5, source.size.toLong(), owner.identity),
+                source.md5, source.size.toLong(),
             )
             val ttl = source.expi?.coerceAtLeast(0)?.toLong()?.times(1_000) ?: 300_000L
             val entry = Entry(resolved, started + (ttl - 30_000L).coerceAtLeast(0))

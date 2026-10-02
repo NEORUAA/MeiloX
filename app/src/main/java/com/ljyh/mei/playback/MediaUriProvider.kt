@@ -20,6 +20,7 @@ internal data class ResolvedMediaSource(
     val uri: Uri,
     val actualQuality: String,
     val cacheKey: String?,
+    val onlineSource: PlaybackUrl? = null,
 )
 
 @Singleton
@@ -53,7 +54,7 @@ class MediaUriProvider @Inject constructor(
         }
         val resolved = urls.resolve(mediaId, quality, owner)
         sessions.requirePlaybackSession(owner)
-        return ResolvedMediaSource(resolved.url.toUri(), resolved.actualQuality, resolved.cacheKey)
+        return ResolvedMediaSource(resolved.url.toUri(), resolved.actualQuality, resolved.cacheKey, resolved)
     }
 
     fun invalidate(mediaId: String) = urls.invalidate(mediaId)

@@ -83,6 +83,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -837,9 +838,13 @@ class MusicService : MediaLibraryService(),
             runBlocking {
                 val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality, owner)
                 accountSessions.requireCurrent(owner)
+                val cacheKey = resolved.onlineSource?.let { source ->
+                    currentCoroutineContext().ensureActive()
+                    CacheManager.authorizedPlaybackKey(simpleCache, mediaId, source, accountSessions, owner)
+                } ?: resolved.cacheKey
                 dataSpec.buildUpon()
                     .setUri(resolved.uri)
-                    .setKey(resolved.cacheKey)
+                    .setKey(cacheKey)
                     .build()
             }
         }
@@ -956,8 +961,9 @@ class MusicService : MediaLibraryService(),
                 mediaUriProvider.invalidate(sourceKey)
                 resetPlaybackSourcesForQualityChange()
                 val removedEntries = withContext(Dispatchers.IO) {
-                    accountSessions.requirePlaybackSession(owner)
-                    removePlaybackEntries(CacheManager.getSimpleCache(context), sourceKey, owner.identity)
+                    val playbackCache = CacheManager.getSimpleCache(context)
+                    currentCoroutineContext().ensureActive()
+                    removePlaybackEntries(playbackCache, sourceKey, accountSessions, owner)
                 }
                 accountSessions.requirePlaybackSession(owner)
                 if (player.currentMediaItem?.sourceKey != sourceKey) return@launch

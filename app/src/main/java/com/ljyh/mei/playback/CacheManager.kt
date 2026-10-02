@@ -20,6 +20,10 @@ import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.io.File
 import com.ljyh.mei.data.session.SessionIdentity
+import com.ljyh.mei.data.session.SessionStamp
+import com.ljyh.mei.data.session.SessionStore
+import com.ljyh.mei.data.model.SongSourceIdentity
+import com.ljyh.mei.runtime.PlaybackCachePolicy
 
 
 @UnstableApi
@@ -110,13 +114,35 @@ object CacheManager {
             .asSequence()
             .filter { it.startsWith(prefix) }
             .firstOrNull { isContentFullyCached(cache, it) }
+            ?: PlaybackCachePolicy.findVerifiedLegacyKey(cache, mediaId, quality, owner)
+    }
+
+    internal fun authorizedPlaybackKey(
+        cache: Cache, mediaId: String, source: PlaybackUrl, sessions: SessionStore, owner: SessionStamp,
+    ): String {
+        sessions.requirePlaybackSession(owner)
+        val identity = SongSourceIdentity.fromKey(mediaId)
+        identity.requireAccount(owner.identity)
+        require(source.cacheKey == playbackCacheKey(identity.key, source.actualQuality, source.sourceMd5, source.sourceSize, owner.identity))
+        return sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw com.ljyh.mei.data.session.SessionChangedException()
+            PlaybackCachePolicy.authorize(cache, identity, source, owner.identity)
+        }
     }
 
     @OptIn(UnstableApi::class)
     fun removePlaybackEntries(cache: Cache, mediaId: String, owner: SessionIdentity): Int {
         val keys = cache.keys.filter { it.startsWith(playbackCacheKeyPrefix(mediaId, owner)) }
         keys.forEach(cache::removeResource)
-        return keys.size
+        return keys.size + PlaybackCachePolicy.retireLegacyKeys(cache, mediaId, owner)
+    }
+
+    internal fun removePlaybackEntries(cache: Cache, mediaId: String, sessions: SessionStore, owner: SessionStamp): Int {
+        sessions.requirePlaybackSession(owner)
+        return sessions.withCurrent(owner) {
+            if (sessions.recoveryRequired.value) throw com.ljyh.mei.data.session.SessionChangedException()
+            removePlaybackEntries(cache, mediaId, owner.identity)
+        }
     }
 
     @OptIn(UnstableApi::class)

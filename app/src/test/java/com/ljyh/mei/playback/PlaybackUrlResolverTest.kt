@@ -43,6 +43,8 @@ class PlaybackUrlResolverTest {
         assertEquals(listOf("hires", "lossless"), calls.map { it.first.level })
         assertTrue(calls.all { it.second == owner && it.first.ids == "[123]" && it.first.encodeType == "flac" })
         assertEquals("exhigh", source.actualQuality)
+        assertEquals("abc", source.sourceMd5)
+        assertEquals(12345L, source.sourceSize)
         assertTrue(source.cacheKey.startsWith(playbackCacheKeyPrefix("123", "exhigh", owner.identity)))
         assertEquals(source, resolve("hires"))
         assertEquals(source, resolve("exhigh"))

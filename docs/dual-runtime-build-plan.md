@@ -135,7 +135,7 @@ The latest acceptance state is:
 | --- | --- | --- |
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
-| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable Room/legacy-work upgrades verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
+| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable database/work/preference/cache upgrade fixtures verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved near-end playback failure attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
@@ -2524,6 +2524,71 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   real account-switch matrix or full release/merge qualification. The framework-free
   device and original-install upgrade permissions and TV capability decisions remain
   pending; no cloud flow is reopened to substitute for those gates.
+
+### D3/D6 Checkpoint: Authorized Legacy Playback Cache Reuse (2026-10-02)
+
+- The bounded main-upgrade review finds that original `meilox-media-v3` spans remain
+  on disk but cannot be consumed by the new account-scoped lookup. Standalone now
+  records a per-public-owner metadata receipt after current full-source authorization
+  matches catalog song, effective quality, 32-hex MD5 and positive content length.
+  It reuses original files rather than duplicating/re-keying them; missing MD5s,
+  unowned lookup, cloud identities and a different account cannot inherit old bytes.
+  Session guards reject stale/recovery/transition publication. Recovery retires only
+  that owner's receipt and retains a rejection marker plus the original/other-owner
+  spans. Parasite's policy still rejects legacy adoption. See ABI-016 in the ledger.
+- Fourteen focused standalone JVM cases cover the adapter, including guarded
+  retirement after same-account reauthorization; resolver assertions also retain
+  source metadata through actual-quality fallback. Paired result totals follow
+  the final rebuild, not the earlier pre-retirement-guard artifacts:
+  905 standalone/104 suites and 922 parasite/105 suites,
+  zero failures/errors/skips. The first run had one incorrect fixture expectation:
+  MD5-based keys do not encode size; the key/size contradiction case now correctly
+  uses a size-only key. Production policy was not relaxed to satisfy that assertion.
+- Matched final debug AVD target/test APKs pass nine standalone cases (five package/
+  graph and four cache upgrades, 1.369s) and six parasite cases (four package and two
+  ownership/local-source cases, 0.190s). The private standalone cache fixtures read
+  all original bytes with null upstream, preserve one physical cache namespace,
+  continue a 37-byte span using only the missing 219-byte range, and reopen with
+  persisted ownership/rejection metadata. A 500 ms silent WAV is decoded from the
+  authorized original cache to ExoPlayer STATE_ENDED, with a 48 kHz mono format and
+  positive rendered output-buffer count; its data-source factory has no upstream.
+  This is synthetic decoder/output-pipeline evidence, not audible AVD acceptance or
+  real-song/minified MusicService completion. Parasite also rejects a legacy 32-hex
+  fingerprint after current source authorization. UUID fixtures clean only their
+  own cache directories and Media3 index tables. No real URL/grant/download/upload,
+  social mutation, original standalone replacement or copied account data is used.
+- Final paired debug/instrumentation/R8 builds pass in 2m39s (267 tasks, 33 executed).
+  The actual SDK release gate passes signed identity/version/declaration/16KB checks
+  and rejects swapped, unsigned and missing-scope pairs. The final development-signed
+  parasite R8 APK SHA256 is
+  `9c231a88639bf80db67e979615afe05d19d9b821842ee86f40b43425a40a63d5`.
+  Streamed install-r and app-only TV cold start succeed in 6534ms (PID 18932).
+  The inspected screenshot shows portrait MeiloX Home, the existing account/feed
+  and paused mini-player; the scoped crash buffer is empty. Module queue six remains
+  PAUSED at 55536ms, speed 0, error=null; official TV remains STOPPED/queue zero.
+  These timings are observations, not account/content readiness or performance
+  acceptance. The initial pre-guard incremental-install capture and its later
+  settled/streamed captures are retained separately and are not final-artifact proof.
+- Isolated standalone R8 rebuild passes in 6m29s (55 tasks) with normal minification,
+  DEBUG=false and only the existing local init-script package/build-directory override.
+  Development-signed SHA256:
+  `674bd81d6a1eae960b74e3565787bb8ff46f80faa2057d7033d8e823c0f1c796`.
+  SDK signature/16KB checks pass. Preserving install-r and app-only COLD startup take
+  1125ms (PID 19907); the inspected Home screenshot shows its distinct existing
+  account/feed and paused mini-player. Its seven-item MediaSession is NONE/speed 0
+  at 145670ms, error=null, not a prepared PAUSED session. Ordinary isolated debug is
+  restored with install-r and COLD startup at 1918ms (PID 20323), retaining that same
+  queue/state/position and Home account. UID 10254 and ungranted notification/microphone
+  permission flags are unchanged; both scoped crash buffers are empty.
+- Final TV return is HOT at 1220ms with PID 18932 unchanged and an inspected portrait
+  Home screenshot. Existing MediaStore row 820 stays TV-owned, 22705573 bytes, pending=0.
+  The rooted AVD stays awake and is never stopped/restarted/screened off. No new real
+  track play command, download grant, upload/delete or social action is issued. Evidence
+  remains under `/tmp/meilox-legacy-cache-*-2026-10-02*`, not Git. No UI architecture,
+  screen, DSP/AutoMix logic, production identity or original installed data is changed.
+- This is a verified cache-adapter increment, not completion of original-install
+  upgrade, first offline Cookie recovery, production signing, full release playback
+  or merge review. Broader D2-D6 gates and pending device/capability decisions remain.
 
 ## Acceptance and Remaining Decisions
 

@@ -625,6 +625,47 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   API-022 adapts current/preloaded lyric state and cache ownership. Real cloud text and
   karaoke rendering still need their own acceptance.
 
+### ABI-016: Standalone Legacy Media Spans Need Current Source Authorization
+
+- Recorded: 2026-10-02. Main's Media3 cache uses unowned
+  `meilox-media-v3:<song>:<effective-quality>:<md5-or-size>`, while shared runtime
+  lookup uses public-account-scoped `meilox-host-media-v1` keys. The same cache
+  directory/database survives an upgrade, but preserving files alone does not make
+  their bytes readable by the new player. This is a persistence/runtime difference,
+  not a replacement official endpoint or frontend change.
+- Standalone now reuses catalog spans only after the current usable session resolves
+  a full, non-trial source with the same song, effective quality, valid 32-hex MD5 and
+  exact positive content length. A credential-free per-owner metadata receipt is
+  recorded under the session publication guard; no spans are copied or re-keyed.
+  Existing partial spans can continue at their missing range; only complete spans
+  become later cache-only candidates. Saved UserId, length alone, unverified legacy
+  entries and numeric/cloud collisions are not authorization evidence.
+- Other accounts/guests cannot inherit a receipt. Private-cloud sources never adopt
+  these catalog aliases. Source recovery retires only the current owner's receipts
+  and preserves the old spans and other independently authorized owners. A rejection
+  marker prevents repeatedly adopting that same failed legacy fingerprint. Parasite's
+  flavor policy stays a no-op and never inherits standalone legacy bytes.
+- Verification: fourteen standalone JVM cases cover matching/mismatched sources,
+  identity flags, independent second-account authorization, partial/complete spans,
+  invalid sizes/MD5s, retirement and stale/recovery/transition publication guards.
+  Source-recovery retirement also uses the session guard, preventing an old task
+  from retiring a newly authorized same-account receipt.
+  A cache-metadata write failure preserves the already authorized normal source key
+  instead of making optional legacy reuse block online playback.
+  Shared resolver assertions retain server MD5/size through actual-quality fallback.
+  Four private AVD SimpleCache fixtures exercise the production resolver/provider/
+  cache helper, actual cache-only byte reads, partial upstream continuation and
+  database reopen. A cache-only 500 ms WAV reaches ExoPlayer STATE_ENDED with a
+  48 kHz mono format and positive rendered output-buffer count, using no upstream.
+  Nine standalone and six parasite selected package/cache device cases pass.
+  All fixture source responses/identities/bytes are synthetic; no real
+  playback URL, grant, media mutation or credential copying is involved.
+- Limits: this qualifies the adapter's bytes and metadata, not actual original-install
+  upgrade, production signing, first offline startup with an unverified Cookie,
+  arbitrary legacy fingerprints or minified complete-track decoding. The ordinary
+  account recovery rule is unchanged; first legacy reuse still requires a successful
+  current source response. Those broader acceptance gates remain open.
+
 ### API-016: Playback Reports Use the Native Official SDK
 
 - Recorded: 2026-09-29. Host: TV 1.1.80.

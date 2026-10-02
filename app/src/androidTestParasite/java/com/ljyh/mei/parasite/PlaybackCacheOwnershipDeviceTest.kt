@@ -15,6 +15,7 @@ import com.ljyh.mei.di.repository.SongRepository
 import com.ljyh.mei.playback.CacheManager
 import com.ljyh.mei.playback.MediaUriProvider
 import com.ljyh.mei.playback.PlaybackUrlResolver
+import com.ljyh.mei.playback.PlaybackUrl
 import com.ljyh.mei.playback.playbackCacheKey
 import java.io.File
 import java.lang.reflect.Proxy
@@ -48,6 +49,7 @@ class PlaybackCacheOwnershipDeviceTest {
             val source = provider.resolveMediaSource("123", "exhigh", owner)
             assertEquals(file.path, source.uri.path)
             assertNull(source.cacheKey)
+            assertNull(source.onlineSource)
             assertTrue(runCatching { provider.resolveMediaSource("456", "exhigh", owner) }
                 .exceptionOrNull() is SessionChangedException)
             sessions.invalidate()
@@ -64,9 +66,10 @@ class PlaybackCacheOwnershipDeviceTest {
         val cache = SimpleCache(directory, NoOpCacheEvictor(), database)
         val first = SessionIdentity(10, true, false)
         val second = SessionIdentity(20, true, false)
-        val firstKey = playbackCacheKey("123", "exhigh", "a", 4, first)
-        val secondKey = playbackCacheKey("123", "exhigh", "a", 4, second)
-        val legacyKey = playbackCacheKey("123", "exhigh", "a", 4)
+        val digest = "a".repeat(32)
+        val firstKey = playbackCacheKey("123", "exhigh", digest, 4, first)
+        val secondKey = playbackCacheKey("123", "exhigh", digest, 4, second)
+        val legacyKey = playbackCacheKey("123", "exhigh", digest, 4)
         fun seed(key: String) {
             val hole = cache.startReadWrite(key, 0, 4)
             try {
@@ -80,6 +83,10 @@ class PlaybackCacheOwnershipDeviceTest {
         }
         try {
             seed(legacyKey)
+            assertNull(CacheManager.findFullyCachedPlaybackKey(cache, "123", "exhigh", first))
+            val sessions = HostSessionBridge().apply { bind { first } }
+            val source = PlaybackUrl("https://example.invalid/source", "exhigh", firstKey, digest, 4)
+            assertEquals(firstKey, CacheManager.authorizedPlaybackKey(cache, "123", source, sessions, sessions.snapshot()))
             assertNull(CacheManager.findFullyCachedPlaybackKey(cache, "123", "exhigh", first))
             seed(firstKey)
             assertEquals(firstKey, CacheManager.findFullyCachedPlaybackKey(cache, "123", "exhigh", first))
