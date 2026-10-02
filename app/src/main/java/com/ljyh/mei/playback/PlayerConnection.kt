@@ -130,9 +130,9 @@ class PlayerConnection(
         }
     }
 
-    fun fmStart(firstSongId: String? = null) {
+    fun fmStart(firstSongId: String? = null, expectedSession: SessionStamp? = null) {
         try {
-            val owner = service.accountSessions.snapshot()
+            val owner = expectedSession ?: service.accountSessions.snapshot()
             service.queueManager.startFmModeById(firstSongId, owner)
         } catch (_: java.io.IOException) {
             // A retired/recovering session cannot start personalized playback.
@@ -140,8 +140,11 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue, shuffle: Boolean? = null, expectedSession: SessionStamp? = null) {
-        val publish: (() -> Unit) -> Unit = { action -> withPlaybackSession(expectedSession, action) }
+    fun playQueue(
+        queue: ListQueue, shuffle: Boolean? = null, expectedSession: SessionStamp? = null,
+        allowSessionRecovery: Boolean = false,
+    ) {
+        val publish: (() -> Unit) -> Unit = { action -> withPlaybackSession(expectedSession, allowSessionRecovery, action) }
         // 判断当前 UI 上的模式是否是随机模式
         val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         try {
@@ -167,9 +170,22 @@ class PlayerConnection(
         }
     }
 
-    private fun withPlaybackSession(expectedSession: SessionStamp?, action: () -> Unit) {
+    fun togglePlayPause(expectedSession: SessionStamp) {
+        try {
+            withPlaybackSession(expectedSession) {
+                if (!player.playWhenReady && player.playbackState == Player.STATE_IDLE) player.prepare()
+            }
+            withPlaybackSession(expectedSession) { player.playWhenReady = !player.playWhenReady }
+        } catch (_: SessionChangedException) {
+            // A retained recommendation must not toggle a replacement session's player.
+        }
+    }
+
+    private fun withPlaybackSession(
+        expectedSession: SessionStamp?, allowSessionRecovery: Boolean = false, action: () -> Unit,
+    ) {
         if (expectedSession == null) action() else service.accountSessions.withCurrent(expectedSession) {
-            if (service.accountSessions.recoveryRequired.value) throw SessionChangedException()
+            if (!allowSessionRecovery && service.accountSessions.recoveryRequired.value) throw SessionChangedException()
             action()
         }
     }

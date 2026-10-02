@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`20ce19f1` plus the catalog click-handoff qualification below. Source review is separate from
+`20ce19f1` plus the documented playback handoff checkpoints below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -154,7 +154,7 @@ groups unless their source changes or a new failure is reproduced.
 | --- | --- | --- |
 | Flavor/manifest/dependencies/R8, network providers and signing | Original standalone transport/codec restoration and host-only call boundaries reviewed; native R8 evidence is recorded below | Reviewed at source level; production upgrade/runtime gates remain separate |
 | Bootstrap, ViewModel factory and navigation | Graph/context injection, 29 unscoped provider bindings and owner/key lifecycle reviewed; navigation body matches main except its comment | Reviewed at source level; factory lifecycle tests remain paired |
-| Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence and selected catalog click handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Listed paths reviewed at source level; remaining consumer callback integration and actual playback/reporting acceptance remain separate |
+| Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence, catalog/Home/library/search/podcast/recognition/wiki/message song handoff and owned offline-history policy, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Listed paths reviewed at source level; full lifecycle, continuation and actual playback/reporting acceptance remain separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
 | Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
@@ -3067,6 +3067,62 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   downloads must retain their existing generation/source affinity and offline-recovery
   policy rather than adopting the recovered-online-only policy of these catalog pages.
   Home intelligence's consume callback also needs a separate publication-lock review.
+  This enumerated handoff review is addressed by the following checkpoint, not by the
+  earlier sixteen connection cases alone.
+
+### D3/D4/D5/D6 Checkpoint: Remaining Consumer Playback Handoff (2026-10-02)
+
+- Home private/similar/podcast, heart seeds and FM, Library liked/FM, search, podcast
+  detail and recognition now pass their displayed owner into PlayerConnection. Wiki
+  and private-message song cards use the same captured-owner path. Composed result
+  state is a value snapshot; no callback rereads a replacement session via a delegate.
+  Home validates the exact displayed feed result, including refresh, recovery,
+  invalidation, guest catalog and disposal. Original page trees and queue builders,
+  selection/order/shuffle, player/AutoMix/DSP/glass and backend wire contracts remain.
+- Cloud/History short validation ends before player invocation, removing nested backend
+  identity reads under their publication monitor. Deferred queue commits retain the
+  owner. Hydrated owned history queues play during recovery but reject retired generations;
+  this exception does not grant online source authorization. Local/download default
+  paths remain unchanged. No live cloud request or quota download is repeated.
+- A new real connection fixture fails before repair because heart consumption calls
+  the player under SessionStore's monitor. The state now claims/clears once under the
+  locks and hands off after ownership/recovery/revision checks outside them. FM seed
+  startup accepts the displayed owner instead of acquiring a later one; Home toggle
+  checks ownership separately before prepare and play/pause.
+- Current paired JVM suites pass 957 standalone and 980 parasite cases (1937), with
+  zero failures/errors/skips. Six new JVM cases cover Home's result owner and heart
+  seed/consume behavior. Both final debug/AndroidTest pairs build in 17s (160 tasks)
+  after the first successful 54s build. Final AndroidTest packages rebuild in 5s after
+  adding the online-placeholder recovery check. Each matched debug pair passes 27 actual
+  connection plus six intelligence and fourteen FM cases on emulator-5554: 47 parasite
+  cases in 0.588s and 47 standalone cases in 0.463s. That last fixture first fails in
+  both runtimes on premature observation of a still-null manager Job; it now waits
+  through the connection handoff for the actual terminal queue state. Production code
+  does not change for that fixture correction. The fixtures use real connection/
+  binder/manager/StableDeckPlayer, muted silence-source decks, closed substitutes and
+  in-memory databases; they do not start registered service lifecycle, switch accounts,
+  copy credentials or touch persistent queues/media. The production standalone is not
+  replaced. Current build/device logs remain local at
+  `/tmp/meilox-consumer-handoff-*-2026-10-02.log`.
+- Both current production R8 artifacts build in 3m30s (107 tasks). All 56 local release
+  checks pass, including real SDK pair signing/alignment/declarations and rejected
+  swapped/unsigned/missing-scope packages. Ordinary parasite R8, with probes disabled,
+  is development-signed using the existing compatible key, signature/16KB checked and
+  preserving-installed. SHA-256:
+  `fe72c74145f44f8623d4eec58c18812c5e5d0bc0cb24ce9982d244a8ec5d036a`.
+  App-only TV cold startup succeeds in 3178ms. The inspected screenshot shows the
+  original portrait shared Home, recommendation cards, glass navigation and paused
+  mini-player. PID 6720 has an empty Java crash buffer; MeiloX restores six entries,
+  paused at 55536ms with null error, and official TV playback stays STOPPED/empty.
+  MediaStore row 820 still has size 22705573, TV ownership and pending=0. This is
+  restore/startup evidence, not fresh interaction on every changed callback, glass
+  motion, audible output or full paired minified runtime acceptance. No AVD restart,
+  screen power/rotation configuration, original production app upgrade or upload occurs.
+- API-015 and API-030 are extended in place. This closes the enumerated source handoff
+  gap, not actual screen interaction or full paired lifecycle/release qualification.
+  Framework-free startup, original-install upgrade/signing, real account/expiry/server
+  matrices, cooperating social/Together tests, capability decisions and the remaining
+  semantic merge review are still open.
 
 ## Acceptance and Remaining Decisions
 

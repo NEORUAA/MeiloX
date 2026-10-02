@@ -113,8 +113,8 @@ class PlayerViewModel @Inject constructor(
         startIntelligenceMode(id, playlistId, startSongId)
     }
 
-    fun startIntelligenceMode(id: String, playlistId: String, startSongId: String) {
-        intelligence.start(id, playlistId, startSongId)
+    fun startIntelligenceMode(id: String, playlistId: String, startSongId: String, expectedSession: SessionStamp? = null) {
+        intelligence.start(id, playlistId, startSongId, expectedSession)
     }
 
     fun consumeIntelligencePlayback(expected: IntelligencePlaybackSnapshot, play: (SessionStamp) -> Unit) =

@@ -76,7 +76,7 @@ fun SearchResultScreen(
     type: Int,
     viewModel: SearchViewModel = viewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val selectedType = state.type
     val playerConnection = LocalPlayerConnection.current
     val navController = LocalNavController.current
@@ -125,6 +125,7 @@ fun SearchResultScreen(
                     navController = navController,
                     onSongMore = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
                     onSongClick = { songs, index ->
+                        val owner = state.session ?: return@SearchResultList
                         playerConnection?.playQueue(
                             ListQueue(
                                 id = "SearchQueue-$query",
@@ -135,6 +136,7 @@ fun SearchResultScreen(
                                 startIndex = index,
                                 position = 0,
                             ),
+                            expectedSession = owner,
                         )
                     },
                 )

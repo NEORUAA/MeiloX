@@ -54,7 +54,7 @@ fun LibraryScreen(
         return
     }
     val navController = LocalNavController.current
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val userId = state.userId
     val photoAlbum = state.photos
     val albumList = state.albums
@@ -112,6 +112,7 @@ fun LibraryScreen(
                         Screen.Album.navigate(navController) { addPath(id) }
                     },
                     userId = userId,
+                    session = state.session,
                     likedSongs = state.likedSongs,
                     likedSongsLoading = state.playlistsLoading || state.likedSongsLoading,
                     isRefreshing = state.playlistsLoading || state.likedSongsLoading || state.albums is Resource.Loading,

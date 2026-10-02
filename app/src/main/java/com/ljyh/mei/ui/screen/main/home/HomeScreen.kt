@@ -68,7 +68,6 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.extensions.togglePlayPause
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.home.CardExtInfo
@@ -108,12 +107,12 @@ fun HomeScreen(
     // 替换为 LazyListState
     val listState = rememberLazyListState()
 
-    val homePageResourceShowPage1 by viewModel.homePageResourceShow.collectAsState()
+    val homePageResourceShowPage1 = viewModel.homePageResourceShow.collectAsState().value
     val isRefreshing = homePageResourceShowPage1 is Resource.Loading
     val device = rememberDeviceInfo()
     val glassColors = LocalGlassColors.current
     val playerConnection = LocalPlayerConnection.current
-    val intelligencePlayback by playerViewModel.intelligencePlayback.collectAsState()
+    val intelligencePlayback = playerViewModel.intelligencePlayback.collectAsState().value
 
     // Consume the one-shot intelligence-mode result at screen scope. A block item can leave and
     // re-enter LazyColumn composition while the screen remains alive, so it must not own playback.
@@ -217,6 +216,7 @@ fun HomeScreen(
                         ) { block ->
                             HomeBlockItem(
                                 block = block,
+                                feed = result,
                                 navController = navController,
                                 viewModel = viewModel,
                                 playerViewModel = playerViewModel,
@@ -267,6 +267,7 @@ fun HomeScreen(
 @Composable
 private fun HomeBlockItem(
     block: HomePageResourceShow.Data.Block,
+    feed: Resource<List<HomePageResourceShow.Data.Block>>,
     navController: MeiNavigator,
     viewModel: HomeViewModel,
     playerViewModel: PlayerViewModel,
@@ -315,12 +316,13 @@ private fun HomeBlockItem(
                     cardHeight = recommendCardHeight,
                     viewModel = viewModel
                 ) {
+                    val owner = viewModel.ownerFor(feed) ?: return@RecommendCard
                     when (resource.resourceType) {
                         "dailySongs" -> Screen.EveryDay.navigate(navController)
                         "star" -> {
                             val playlistId = resource.resourceId
                             resource.extInfo.songId?.let { songId ->
-                                playerViewModel.startIntelligenceMode(songId, playlistId, songId)
+                                playerViewModel.startIntelligenceMode(songId, playlistId, songId, expectedSession = owner)
                             }
 
                             // 心动模式，发了ids
@@ -328,7 +330,7 @@ private fun HomeBlockItem(
 
                         "fm" -> {
                             // 私人FM
-                            playerConnection?.fmStart(resource.resourceId)
+                            playerConnection?.fmStart(resource.resourceId, expectedSession = owner)
 
                         }
 
@@ -340,7 +342,7 @@ private fun HomeBlockItem(
                                     title = resource.title,
                                     items = listOf(item.mediaId to item),
                                     startIndex = 0,
-                                )
+                                ), expectedSession = owner,
                             )
                         }
 
@@ -417,6 +419,7 @@ private fun HomeBlockItem(
                     imageSize = !resource.coverImg.contains("thumbnail"),
                     cardSize = playlistCardSize,
                 ) {
+                    if (viewModel.ownerFor(feed) == null) return@PlaylistCard
                     Screen.PlayList.navigate(navController) { addPath(resource.resourceId) }
                 }
             }
@@ -444,12 +447,14 @@ private fun HomeBlockItem(
                 screenWidthDp = device.screenWidthDp,
             ) { songs, index ->
                 val connection = playerConnection ?: return@TripleLaneSlider
+                val owner = viewModel.ownerFor(feed) ?: return@TripleLaneSlider
                 val flatSongs = songs.flatMap { it.items }.map { it.resourceId to null }
                 if (connection.isPlaying(flatSongs[index].first)) {
-                    connection.player.togglePlayPause()
+                    connection.togglePlayPause(owner)
                 } else {
                     connection.onTrackClicked(
                         trackId = flatSongs[index].first,
+                        expectedSession = owner,
                         buildQueue = {
                             ListQueue(
                                 id = UUID.randomUUID().toString(),

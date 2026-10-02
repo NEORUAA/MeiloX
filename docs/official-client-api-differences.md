@@ -648,6 +648,25 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   during its request cannot replace the sentinel queue. Ordinary recovery-independent
   queue and existing-item behavior remains covered. This is not audible, live-account,
   Home/library callback, full lifecycle or release-runtime acceptance.
+- Remaining consumer handoff follow-up (2026-10-02): Home private/similar/podcast,
+  Library liked/FM, search, podcast detail, recognition, wiki and private-message song
+  cards now forward the composed result's owner instead of capturing a replacement
+  session at playback time. Home also validates the exact displayed Resource before
+  returning its owner. FM and heart seeds accept that owner explicitly. Home's existing
+  play/pause action checks ownership separately before prepare and toggle.
+- Cloud page and History guards now finish before invoking PlayerConnection; its
+  asynchronous queue publications keep the captured owner. History alone permits a
+  current owner for hydrated queues during recovery, retaining the offline policy while rejecting
+  retired generations. This flag does not authorize online metadata/media requests.
+  Local/download default paths, queue ordering, signing, source identities, layouts
+  and playback engine remain unchanged. No cloud operation is repeated for this check.
+- Each matched debug flavor now passes 27 real connection cases plus 20 FM/heart
+  queue-manager regressions. They check FM seed owner/retired success, recommendation
+  toggle, owned offline-history recovery and retirement, and heart consumption outside
+  the session monitor. The recovery exception rejects a placeholder's actual metadata
+  dispatch, checked after the queue reaches its terminal state. The same closed, muted,
+  in-memory fixtures apply; this does not qualify actual clicks on every listed screen,
+  real account changes or audible output.
 
 ### ABI-016: Standalone Legacy Media Spans Need Current Source Authorization
 
@@ -2424,6 +2443,13 @@ These are integration differences, not server API semantics.
   audible output and full paired release qualification remain separate gates. No library
   mutation, quota download, upload or social operation is performed. Latest isolated
   standalone R8 execution is recorded in the matching build-plan checkpoint separately.
+- Consumer-lock follow-up (2026-10-02): a real PlayerConnection fixture fails before
+  repair because Home heart consumption invokes its callback under SessionStore's
+  publication monitor, causing a nested backend identity read. Consumption now claims
+  and clears once under the locks, then rechecks ownership/recovery/revision and hands
+  off outside them. Home supplies the displayed feed's owner to seed startup as well.
+  Two added paired JVM cases cover retained seeds and failed-callback non-replay; the
+  actual connection fixture verifies successful queue publication without the monitor.
 
 ### API-031: Personal FM Refills Must Keep Their Triggering Session and Queue
 

@@ -13,13 +13,17 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.Tracks
+import com.ljyh.mei.data.model.api.Intelligence
+import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
+import com.ljyh.mei.data.repository.PlayerIntelligenceSource
 import com.ljyh.mei.data.session.SessionIdentity
 import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.data.session.SessionStore
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.ui.component.player.state.IntelligencePlaybackState
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +32,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -166,6 +172,92 @@ class PlayerConnectionSessionDeviceTest {
         assertTrue(f.player.playWhenReady)
     }
 
+    @Test fun ownedHistoryQueuesRemainPlayableDuringRecovery() = connectionTest { f ->
+        f.sessions.setRecoveryRequired(true)
+        f.connection.playQueue(f.queue, expectedSession = f.owner, allowSessionRecovery = true)
+        runCurrent()
+        assertEquals("11", f.player.currentMediaItem?.mediaId)
+        assertTrue(f.player.playWhenReady)
+    }
+
+    @Test fun recoveryIndependentHistoryStillRejectsARetiredOwner() = connectionTest { f ->
+        f.sessions.invalidate()
+        f.sessions.setRecoveryRequired(true)
+        f.connection.playQueue(f.queue, expectedSession = f.owner, allowSessionRecovery = true)
+        runCurrent()
+        f.assertUntouched()
+    }
+
+    @Test fun historyRetirementAfterClickCannotCommitAnOfflineQueue() = connectionTest { f ->
+        f.sessions.setRecoveryRequired(true)
+        f.connection.playQueue(f.queue, expectedSession = f.owner, allowSessionRecovery = true)
+        f.sessions.invalidate()
+        runCurrent()
+        assertEquals("sentinel", f.player.currentMediaItem?.mediaId)
+        assertFalse(f.player.playWhenReady)
+    }
+
+    @Test fun historyRecoveryExceptionDoesNotAuthorizeOnlinePlaceholderHydration() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val f = onMain { Fixture(scope, SessionIdentity(17, true, false)) }
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        f.detailRequest = { requests.incrementAndGet(); error("Recovery must not dispatch metadata") }
+        try {
+            val status = onMain {
+                @Suppress("UNCHECKED_CAST")
+                val state = PlaybackQueueManager::class.java.getDeclaredField("_queueState")
+                    .apply { isAccessible = true }.get(f.service.queueManager) as StateFlow<PlaybackQueueManager.QueueState>
+                f.sessions.setRecoveryRequired(true)
+                f.connection.playQueue(
+                    ListQueue("history", "History", listOf("11" to null)),
+                    expectedSession = f.owner, allowSessionRecovery = true,
+                )
+                state
+            }
+            // Wait through both the connection handoff and the manager's IO validation.
+            withTimeout(5_000L) { status.first { it is PlaybackQueueManager.QueueState.Error } }
+            onMain {
+                assertEquals(0, requests.get())
+                assertEquals("sentinel", f.player.currentMediaItem?.mediaId)
+                assertFalse(f.player.playWhenReady)
+            }
+        } finally { onMain { f.close() }; scope.cancel() }
+    }
+
+    @Test fun currentRecommendationCanToggleTheExistingPlayer() = connectionTest { f ->
+        f.connection.togglePlayPause(f.owner)
+        assertTrue(f.player.playWhenReady)
+        f.connection.togglePlayPause(f.owner)
+        assertFalse(f.player.playWhenReady)
+        assertEquals("sentinel", f.player.currentMediaItem?.mediaId)
+    }
+
+    @Test fun retiredRecommendationCannotToggleTheExistingPlayer() = connectionTest { f ->
+        f.sessions.invalidate()
+        f.connection.togglePlayPause(f.owner)
+        f.assertUntouched()
+    }
+
+    @Test fun recoveringRecommendationCannotToggleTheExistingPlayer() = connectionTest { f ->
+        f.sessions.setRecoveryRequired(true)
+        f.connection.togglePlayPause(f.owner)
+        f.assertUntouched()
+    }
+
+    @Test fun retiredFmSeedDoesNotCaptureANewSession() = connectionTest { f ->
+        f.sessions.invalidate()
+        f.connection.fmStart("11", expectedSession = f.owner)
+        runCurrent()
+        f.assertUntouched()
+    }
+
+    @Test fun recoveringFmSeedNeverDispatches() = connectionTest { f ->
+        f.sessions.setRecoveryRequired(true)
+        f.connection.fmStart("11", expectedSession = f.owner)
+        runCurrent()
+        f.assertUntouched()
+    }
+
     @Test fun currentOwnerCanReuseTheExistingQueueWithoutBuildingAnother() = connectionTest { f ->
         f.player.setMediaItems(listOf(f.sentinel, f.selected), 0, 1234L)
         f.connection.onTrackClicked("11", expectedSession = f.owner) { error("Existing item must not rebuild") }
@@ -224,7 +316,9 @@ class PlayerConnectionSessionDeviceTest {
         assertTrue(f.player.playWhenReady)
     }
 
-    private fun placeholderRequestTest(identity: SessionIdentity, retireInRequest: Boolean = false) = runBlocking {
+    private fun placeholderRequestTest(
+        identity: SessionIdentity, retireInRequest: Boolean = false, fmSeed: Boolean = false,
+    ) = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val f = onMain { Fixture(scope, identity) }
         val started = CompletableDeferred<SessionStamp?>()
@@ -241,7 +335,8 @@ class PlayerConnectionSessionDeviceTest {
                 ]}""", Tracks::class.java)
             }
             onMain {
-                f.connection.playQueue(ListQueue("rank", "Fixture", listOf("11" to null)), expectedSession = f.owner)
+                if (fmSeed) f.connection.fmStart("11", expectedSession = f.owner)
+                else f.connection.playQueue(ListQueue("rank", "Fixture", listOf("11" to null)), expectedSession = f.owner)
             }
             withTimeout(5_000L) { assertEquals(f.owner, started.await()); build.await().join() }
             onMain {
@@ -262,4 +357,27 @@ class PlayerConnectionSessionDeviceTest {
 
     @Test fun retiredPlaceholderResponseCannotReplaceTheQueue() =
         placeholderRequestTest(SessionIdentity(17, true, false), retireInRequest = true)
+
+    @Test fun fmSeedHydrationRetainsTheDisplayedOwnerAndRejectsRetiredSuccess() =
+        placeholderRequestTest(SessionIdentity(17, true, false), retireInRequest = true, fmSeed = true)
+
+    @Test fun intelligenceConsumptionPublishesOutsideTheSessionMonitor() = connectionTest { f ->
+        val source = object : PlayerIntelligenceSource {
+            override suspend fun getSongDetail(id: String, owner: SessionStamp) =
+                Resource.Success(Tracks(200, emptyList(), emptyList()))
+            override suspend fun getIntelligenceList(id: String, playlistId: String, startSongId: String, owner: SessionStamp) =
+                Resource.Success(Intelligence(200, emptyList(), ""))
+        }
+        val intelligence = IntelligencePlaybackState(backgroundScope, f.sessions, source)
+        try {
+            intelligence.start("11", "22", "11")
+            runCurrent()
+            val expected = intelligence.state.value
+            assertTrue(intelligence.consume(expected) { owner -> f.connection.playQueue(f.queue, expectedSession = owner) })
+            runCurrent()
+            assertEquals("11", f.player.currentMediaItem?.mediaId)
+            assertTrue(f.player.playWhenReady)
+            assertFalse(intelligence.consume(expected) { error("Already consumed") })
+        } finally { intelligence.close() }
+    }
 }

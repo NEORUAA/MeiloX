@@ -411,9 +411,11 @@ fun CloudMusicScreen(
                             val mediaItem = item.asMediaMetadata().toMediaItem()
                             mediaItem.mediaId to mediaItem
                         }
-                        viewModel.withCurrentPage(state.session, state.page) {
-                            playerConnection?.playQueue(ListQueue("cloud", cloudTitle, queue, index))
-                        }
+                        var current = false
+                        viewModel.withCurrentPage(state.session, state.page) { current = true }
+                        if (current) playerConnection?.playQueue(
+                            ListQueue("cloud", cloudTitle, queue, index), expectedSession = state.session,
+                        )
                     },
                 )
             }

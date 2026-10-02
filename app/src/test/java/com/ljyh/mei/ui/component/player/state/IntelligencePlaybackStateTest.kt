@@ -62,6 +62,37 @@ class IntelligencePlaybackStateTest {
         state.close()
     }
 
+    @Test fun retainedSeedCannotBeReboundToTheCurrentAuthorization() = runTest {
+        val state = IntelligencePlaybackState(backgroundScope, sessions, source)
+        val old = sessions.snapshot()
+        sessions.invalidate()
+        state.start("11", "22", "33", expectedSession = old)
+        runCurrent()
+        assertTrue(reads.isEmpty())
+        val owner = sessions.snapshot()
+        state.start("44", "55", "66", expectedSession = owner)
+        runCurrent()
+        assertEquals(listOf("seed:66" to owner, "list:44:55:66" to owner), reads)
+        state.close()
+    }
+
+    @Test fun consumptionHandsOffOutsideTheSessionMonitorAndCannotReplayFailure() = runTest {
+        val state = IntelligencePlaybackState(backgroundScope, sessions, source)
+        state.start("11", "22", "33")
+        runCurrent()
+        val expected = state.state.value
+        var plays = 0
+        assertFalse(state.consume(expected) { owner ->
+            assertFalse(Thread.holdsLock(sessions))
+            assertEquals(owner, sessions.snapshot())
+            plays++
+            error("Playback rejected")
+        })
+        assertEquals(1, plays)
+        assertFalse(state.consume(expected) { fail("Consumed result replayed") })
+        state.close()
+    }
+
     @Test fun guestsAndRecoveryNeverDispatch() = runTest {
         val state = IntelligencePlaybackState(backgroundScope, sessions, source)
         identity = SessionIdentity(0, false, true)

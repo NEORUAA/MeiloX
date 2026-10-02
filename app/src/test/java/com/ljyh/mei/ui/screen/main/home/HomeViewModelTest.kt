@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -185,6 +186,50 @@ class HomeViewModelTest {
             runCurrent()
             assertEquals(Resource.Loading, model.homePageResourceShow.value)
         }
+    }
+
+    @Test fun playbackOwnerRequiresTheExactDisplayedResult() = checkModel({ blocks("home") }) { model, _ ->
+        sessions.bind { identity }
+        runCurrent()
+        val displayed = model.homePageResourceShow.value
+        assertEquals(sessions.snapshot(), model.ownerFor(displayed))
+        assertNull(model.ownerFor(Resource.Success((displayed as Resource.Success).data)))
+        assertNull(model.ownerFor(Resource.Loading))
+        assertNull(model.ownerFor(Resource.Error("Offline")))
+    }
+
+    @Test fun refreshingTheSameAccountRetiresThePreviousFeedCallback() = checkModel({ blocks("home") }) { model, _ ->
+        sessions.bind { identity }
+        runCurrent()
+        val previous = model.homePageResourceShow.value
+        model.homePageResourceShow(refresh = true)
+        assertNull(model.ownerFor(previous))
+        runCurrent()
+        assertNull(model.ownerFor(previous))
+        assertEquals(sessions.snapshot(), model.ownerFor(model.homePageResourceShow.value))
+    }
+
+    @Test fun recoveryAndInvalidationFenceRetainedFeedCallbacksBeforeCollection() = checkModel({ blocks("home") }) { model, _ ->
+        sessions.bind { identity }
+        runCurrent()
+        val previous = model.homePageResourceShow.value
+        sessions.setRecoveryRequired(true)
+        assertNull(model.ownerFor(previous))
+        sessions.setRecoveryRequired(false)
+        sessions.invalidate()
+        assertNull(model.ownerFor(previous))
+        runCurrent()
+        assertEquals(sessions.snapshot(), model.ownerFor(model.homePageResourceShow.value))
+    }
+
+    @Test fun guestCatalogOwnerIsAvailableButDisposedFeedIsNot() = checkModel({ blocks("guest") }) { model, store ->
+        identity = SessionIdentity(0, false, true)
+        sessions.bind { identity }
+        runCurrent()
+        val displayed = model.homePageResourceShow.value
+        assertEquals(sessions.snapshot(), model.ownerFor(displayed))
+        store.clear()
+        assertNull(model.ownerFor(displayed))
     }
 
     @Test fun delayedInvalidationCannotEraseANewerSessionPublication() {

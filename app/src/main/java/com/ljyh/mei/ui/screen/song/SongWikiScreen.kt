@@ -17,7 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -171,7 +170,7 @@ fun SongWikiScreen(
     songId: Long,
     viewModel: SongWikiViewModel = viewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val uriHandler = LocalUriHandler.current
@@ -289,9 +288,11 @@ fun SongWikiScreen(
                     WikiSection(stringResource(R.string.song_wiki_similar_songs)) {
                         wiki.similarSongs.forEach { song ->
                             WikiSongRow(song) {
+                                val owner = state.session ?: return@WikiSongRow
                                 val item = song.asMediaMetadata().toMediaItem()
                                 playerConnection?.playQueue(
                                     ListQueue("song-wiki", pageTitle, listOf(item.mediaId to item)),
+                                    expectedSession = owner,
                                 )
                             }
                         }

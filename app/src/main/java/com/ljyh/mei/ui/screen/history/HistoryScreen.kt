@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,7 +45,7 @@ fun HistoryScreen(
 ) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val historyList = state.items
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
 
@@ -103,7 +102,9 @@ fun HistoryScreen(
                         )
                     },
                     onClick = {
-                        viewModel.withCurrent(state, historyList) { playerConnection?.playQueue(
+                        var current = false
+                        viewModel.withCurrent(state, historyList) { current = true }
+                        if (current) playerConnection?.playQueue(
                             ListQueue(
                                 id = "history",
                                 title = navController.context.getString(R.string.listening_history),
@@ -111,7 +112,9 @@ fun HistoryScreen(
                                 startIndex = index,
                                 position = 0,
                             ),
-                        ) }
+                            expectedSession = state.session,
+                            allowSessionRecovery = true,
+                        )
                     },
                 )
             }

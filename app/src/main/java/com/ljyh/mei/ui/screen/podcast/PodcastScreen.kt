@@ -496,11 +496,16 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
         onRefresh = { selection.finish(); viewModel.load(id, true) },
     )
     fun play(trackId: Long? = null, shuffle: Boolean = false) {
+        val owner = state.session ?: return
+        if (runCatching { viewModel.requireDetail(owner, id) }.isFailure) return
         val playable = detail?.programs.orEmpty().filter { it.mainSongId != null }
         val items = playable.map { it.asMediaMetadata().toMediaItem().let { song -> song.mediaId to song } }
         if (items.isEmpty()) return
         val index = if (shuffle) items.indices.random() else playable.indexOfFirst { it.mainSongId == trackId }.coerceAtLeast(0)
-        playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index), shuffle = shuffle)
+        playerConnection?.playQueue(
+            ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index),
+            shuffle = shuffle, expectedSession = owner,
+        )
     }
     com.ljyh.mei.ui.screen.playlist.CommonSongListScreen(
         uiData = com.ljyh.mei.ui.model.UiPlaylist(
@@ -521,11 +526,15 @@ private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, st
         onTrackClick = { track, _ ->
             if (selection.active) { if (track.id > 0) selection.toggle(track.id.toString()) }
             else if (track.id > 0) {
+                val owner = state.session ?: return@CommonSongListScreen
+                if (runCatching { viewModel.requireDetail(owner, id) }.isFailure) return@CommonSongListScreen
                 // Search may return a program outside the pages loaded for scrolling.
                 val playable = if (query.isBlank()) detail?.programs.orEmpty().map { it.asMediaMetadata() } else tracks
                 val items = playable.filter { it.id > 0 }.map { it.toMediaItem().let { song -> song.mediaId to song } }
                 val index = items.indexOfFirst { it.first == track.id.toString() }.coerceAtLeast(0)
-                playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index))
+                playerConnection?.playQueue(
+                    ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index), expectedSession = owner,
+                )
             }
         },
         onTrackDownload = { track, quality -> if (track.id > 0) download(listOf(track), quality) },

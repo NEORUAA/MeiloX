@@ -52,7 +52,7 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 
 @Composable
 fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -118,8 +118,11 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = viewModel()) {
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
+                    val owner = state.session ?: return@GlassCard
                     val media = song.asMediaMetadata().toMediaItem()
-                    playerConnection?.playQueue(ListQueue("recognition", recognitionTitle, listOf(media.mediaId to media)))
+                    playerConnection?.playQueue(
+                        ListQueue("recognition", recognitionTitle, listOf(media.mediaId to media)), expectedSession = owner,
+                    )
                 },
             ) {
                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {

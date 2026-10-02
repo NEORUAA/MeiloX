@@ -267,7 +267,7 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = viewModel()) {
 
 @Composable
 fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = LocalContext.current
@@ -385,9 +385,11 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = viewMode
                             MessageResourceCard(resource, outgoing) {
                                 when (resource.kind) {
                                     ShareResourceKind.Song -> {
+                                        val owner = state.session ?: return@MessageResourceCard
                                         val item = resource.toMediaMetadata().toMediaItem()
                                         playerConnection?.playQueue(
                                             ListQueue("private-message", resource.title, listOf(item.mediaId to item)),
+                                            expectedSession = owner,
                                         )
                                     }
                                     ShareResourceKind.Playlist -> Screen.PlayList.navigate(navController) {

@@ -68,6 +68,7 @@ import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.toMediaItem
+import com.ljyh.mei.data.session.SessionStamp
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
@@ -186,6 +187,7 @@ fun LibraryMobileLayout(
     likedSongs: List<MediaMetadata>,
     likedSongsLoading: Boolean,
     userId: String,
+    session: SessionStamp?,
     onPlaylistClick: (String) -> Unit,
     onAlbumClick: (String) -> Unit,
     isCategoryPage: Boolean = false,
@@ -367,12 +369,14 @@ fun LibraryMobileLayout(
                                     systemName = "play.fill",
                                     showTopSeparator = false,
                                     onClick = {
+                                        val owner = session ?: return@IosListRow
                                         playerConnection?.playQueue(
                                             ListQueue(
                                                 id = "library-liked",
                                                 title = likedTitle,
                                                 items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
                                             ),
+                                            expectedSession = owner,
                                         )
                                     },
                                 )
@@ -380,7 +384,8 @@ fun LibraryMobileLayout(
                                     title = stringResource(R.string.library_heart_mode),
                                     systemName = "heart.circle.fill",
                                     onClick = {
-                                        playerConnection?.fmStart(visibleLikedSongs.randomOrNull()?.id?.toString())
+                                        val owner = session ?: return@IosListRow
+                                        playerConnection?.fmStart(visibleLikedSongs.randomOrNull()?.id?.toString(), expectedSession = owner)
                                     },
                                 )
                             }
@@ -393,6 +398,7 @@ fun LibraryMobileLayout(
                             LibrarySongRow(
                                 song = song,
                                 onClick = {
+                                    val owner = session ?: return@LibrarySongRow
                                     val index = visibleLikedSongs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                                     playerConnection?.playQueue(
                                         ListQueue(
@@ -401,6 +407,7 @@ fun LibraryMobileLayout(
                                             items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
                                             startIndex = index,
                                         ),
+                                        expectedSession = owner,
                                     )
                                 },
                                 onMoreClick = {
@@ -476,9 +483,9 @@ fun LibraryMobileLayout(
                 LibraryPage.Cloud -> {
                     cloudState?.let { state ->
                         libraryCloudItems(state, query) { queue ->
-                            cloudViewModel?.withCurrentPage(state.session, state.page) {
-                                playerConnection?.playQueue(queue)
-                            }
+                            var current = false
+                            cloudViewModel?.withCurrentPage(state.session, state.page) { current = true }
+                            if (current) playerConnection?.playQueue(queue, expectedSession = state.session)
                         }
                     }
                 }
@@ -1132,14 +1139,18 @@ private fun LazyListScope.libraryHistoryItems(
                     )
                 },
                 onClick = {
-                    viewModel?.withCurrent(state, visibleHistory) { playerConnection?.playQueue(
+                    var current = false
+                    viewModel?.withCurrent(state, visibleHistory) { current = true }
+                    if (current) playerConnection?.playQueue(
                         ListQueue(
                             id = "library-history",
                             title = "History",
                             items = visibleHistory.map(ListeningHistoryEntry::toHistoryQueueEntry),
                             startIndex = index,
                         ),
-                    ) }
+                        expectedSession = state.session,
+                        allowSessionRecovery = true,
+                    )
                 },
             )
         }

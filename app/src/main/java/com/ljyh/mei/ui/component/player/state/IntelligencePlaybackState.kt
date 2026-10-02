@@ -47,8 +47,8 @@ internal class IntelligencePlaybackState(
         }
     }
 
-    fun start(id: String, playlistId: String, seedId: String) {
-        val owner = runCatching { sessions.snapshot() }.getOrNull() ?: return
+    fun start(id: String, playlistId: String, seedId: String, expectedSession: SessionStamp? = null) {
+        val owner = expectedSession ?: runCatching { sessions.snapshot() }.getOrNull() ?: return
         if (sessions.recoveryRequired.value || !owner.identity.authenticated ||
             owner.identity.anonymous || owner.identity.userId <= 0
         ) return
@@ -73,18 +73,23 @@ internal class IntelligencePlaybackState(
 
     fun consume(expected: IntelligencePlaybackSnapshot, play: (SessionStamp) -> Unit): Boolean {
         val owner = expected.owner ?: return false
-        return runCatching {
+        val claim = runCatching {
             sessions.withCurrent(owner) {
                 synchronized(lock) {
                     if (!matches(expected) || state.value != expected || expected.seed is Resource.Loading ||
                         expected.recommendations !is Resource.Success
-                    ) false else {
+                    ) null else {
                         clear()
-                        play(owner)
-                        true
+                        revision
                     }
                 }
             }
+        }.getOrNull() ?: return false
+        return runCatching {
+            sessions.requireCurrent(owner)
+            if (sessions.recoveryRequired.value || synchronized(lock) { closed || revision != claim }) return false
+            play(owner)
+            true
         }.getOrDefault(false)
     }
 

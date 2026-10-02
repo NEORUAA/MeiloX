@@ -106,6 +106,19 @@ class HomeViewModel @Inject constructor(
         Resource.Error("Official session recovery is required")
     } else Resource.Loading
 
+    fun ownerFor(expected: Resource<List<HomePageResourceShow.Data.Block>>): SessionStamp? {
+        if (expected !is Resource.Success) return null
+        val owner = displayedSession ?: return null
+        return runCatching {
+            sessions.withCurrent(owner) {
+                synchronized(stateLock) {
+                    owner.takeIf { !sessions.recoveryRequired.value && displayedSession == owner &&
+                        _homePageResourceShow.value === expected }
+                }
+            }
+        }.getOrNull()
+    }
+
     fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
 
     suspend fun getOrExtractColor(url: String) = colorRepository.getColorOrExtract(AppContext.instance, url)
@@ -113,6 +126,7 @@ class HomeViewModel @Inject constructor(
     override fun onCleared() {
         invalidation.close()
         requestVersion.incrementAndGet()
+        synchronized(stateLock) { displayedSession = null }
         super.onCleared()
     }
 }
