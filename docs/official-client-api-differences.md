@@ -2779,6 +2779,41 @@ These are integration differences, not server API semantics.
   switching, production-ID signing/upgrade or complete paired release execution;
   further artifact/runtime evidence is in the build plan.
 
+### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
+
+- Recorded: 2026-10-02. This is a runtime component difference, not a NetEase business
+  endpoint or a change to the original log page. Standalone's registered
+  `${applicationId}.fileprovider` exposes its private files root; TV 1.1.80's
+  `com.netease.cloudmusic.tv.fileprovider` instead exposes selected external roots and
+  `cache/apk`, with no private-files root. Using the module's files directory and
+  wrapped context cannot make the host provider serve that file.
+- Repair: the existing ComponentRuntime supplies the URI. Standalone retains the
+  original direct FileProvider call. Parasite requires the verified enabled host and
+  ModuleContext, accepts only direct regular files in its app_logs/crash_logs folders,
+  and copies the selected file into a UUID-scoped host-cache export directory. URI
+  generation uses the underlying host context, matching the already registered
+  provider's roots; no provider/path metadata, scope or official APK is modified.
+- Sharing runs off the main thread and keeps the original chooser, MIME, stream and
+  read-grant flags. Source logs remain unchanged. Copies older than 24 hours are
+  pruned on the next share, and explicit log clearing removes owned copies after
+  retiring an in-flight share. Cache eviction may also remove them; no exact-time
+  automatic expiry is promised. Foreign paths, nested files and symbolic-link escapes
+  are rejected, and cleanup does not follow links or delete unrelated cache entries.
+- Verification: six JVM staging/security/cleanup cases and paired debug suites pass;
+  two standalone Android cases read a synthetic private log through the original
+  provider and capture the unchanged chooser without launching a recipient. Four
+  host-runtime Android cases include disabled/foreign-context rejection. A separate
+  ordinary UID reads two synthetic files through TV's actual provider, rejects an
+  ungranted URI and rejects both selected URIs after revocation; TV independently
+  acknowledges success and cleanup. Five paired host/runtime cases pass in 2.298s.
+  This is warm-host evidence: cold fixture delivery and startup timeout observations
+  remain separate. Both final production R8 artifacts build and all 42 local
+  real-SDK release checks pass. The ordinary probe-disabled parasite R8 is restored
+  with development signing and reaches portrait MeiloX Home; detailed artifact and
+  preservation evidence is recorded in the build plan. These fixtures do not
+  authorize sending real logs or qualify every external
+  share target; no credentials, real logs, device captures or APKs enter Git.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see

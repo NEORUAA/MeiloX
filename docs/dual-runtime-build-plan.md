@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`5bd56723` plus the discovery-ownership repair below. Source review is separate from
+`a82272fd` plus the log-sharing adaptation below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -159,6 +159,7 @@ groups unless their source changes or a new failure is reproduced.
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
 | Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
 | Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
+| Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
 | Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
@@ -2853,6 +2854,63 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   qualification, real failure/account/server matrices and remaining semantic merge
   review stay open. Local evidence is `/tmp/meilox-discovery-session-*-2026-10-02*`;
   no APKs, credentials or device logs are committed.
+
+### D5/D6 Checkpoint: Runtime-Owned Log Share URIs (2026-10-02)
+
+- Review finds a concrete provider-root mismatch in the migrated LogViewModel, not a
+  main-only frontend bug. ABI-019 records the original standalone/private-files
+  provider and TV/cache-apk provider distinction. The existing ComponentRuntime now
+  supplies share URIs and export cleanup. Standalone keeps direct private-file URIs;
+  parasite stages only the selected module log under a UUID-scoped host-cache path
+  and generates the URI using the raw host context. Page/layout/navigation and the
+  chooser's MIME/stream/read-grant behavior remain unchanged.
+- Six JVM cases cover preservation, uniqueness, rejected foreign/nested/missing/link
+  sources, destination escapes, age pruning and explicit cleanup. The first run has
+  one fixture assertion failure caused by macOS's canonical temporary-directory path;
+  correcting the expected path yields fresh paired suites of 939 standalone and
+  962 parasite cases (1901 total), with no failures/errors/skips. Both ordinary debug
+  and test artifact pairs build. Two standalone Android cases pass in 0.025s; four
+  host-runtime Android cases pass in 0.061s. The standalone chooser is captured, not
+  sent, and all content is synthetic.
+- The warmed TV process rejects the legacy private-file path and serves two staged
+  synthetic logs through its actual registered provider. A separate ordinary module
+  UID reads only the granted URIs, rejects an ungranted child URI, then rejects the
+  selected URIs after revocation. Five host/runtime Android cases pass in 2.298s and
+  TV independently reports cross_uid_readback=true and fixture cleanup. No root or
+  shell permission identity is adopted by the reader; ADB only triggers the explicit
+  debug fixture. No real share target, logs or credential-bearing files are used.
+- Fixture development first encounters package-visibility/command-trigger failures,
+  then an ordered-broadcast acknowledgment deadlock. An earlier recipient-only pass
+  was insufficient while TV reported failure; it is not acceptance evidence. The
+  trigger now finishes before waiting for a reply, and the recipient requires both
+  its read assertions and TV's successful cleanup acknowledgment. A cold fixture
+  also times out during bootstrap; final cross-UID evidence is explicitly warm-host
+  evidence, not qualification of cold delivery. Debug TV startup after updates has
+  pre-Application attach timeouts; system termination is checked before app-only
+  retries. No AVD restart or unrelated UI/startup repair is performed.
+- The legacy UserRepository convenience reads and legacy ShareViewModel have no
+  shared frontend call sites; the factory binding alone does not execute them. The
+  active NeteaseShareViewModel uses the separate owned social source. No unused
+  baseline API or feature entry is removed merely to reduce review scope.
+- The final ordinary debug/test pair, paired JVM suites and production R8 pair build
+  successfully in 3m32s (267 tasks). The real-SDK release gate passes all 42 checks,
+  including identity/signature/version/16KB/runtime declarations and negative pairs.
+  The final parasite R8 artifact is signed only with the existing development key
+  and installed preserving data; PARASITE_WORK_PROBE is false. Its SHA-256 is
+  `190915745f4ae0a21bc52a2c2d5781cdb8e8b5c533aa42c7476ade5451912bfd`.
+- The restored R8 TV cold launch succeeds in 4103ms, with portrait MeiloX Home
+  visually inspected and no entry in its PID-scoped Java crash buffer. The ordinary
+  standalone debug cold launch succeeds in 3275ms and its Home is also inspected.
+  Paused queues retain 55536ms/6 entries for parasite and 145670ms/7 entries for
+  standalone, both error-null; the original TV session remains stopped/empty.
+  MediaStore row 820 retains TV ownership, size 22705573 and pending=0. Standalone
+  notification/microphone permissions remain denied, the AVD stays awake, and
+  scoped fixture checks find no synthetic logs. These are bounded restoration
+  checks, not original-production upgrade, audible playback or full UI acceptance.
+- Framework-free startup, production signing/original-install upgrade, complete
+  paired account/lifecycle/release qualification and remaining semantic merge groups
+  stay open. Local evidence is `/tmp/meilox-log-share-*-2026-10-02*`; no device logs,
+  credentials, official sources or APKs are committed.
 
 ## Acceptance and Remaining Decisions
 

@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.File
 
 class HostComponentRuntimeDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -80,5 +81,17 @@ class HostComponentRuntimeDeviceTest {
             HostMediaButtons.consumeResumeRequest()
             session.release()
         }
+    }
+
+    @Test fun logSharingRejectsDisabledAndNonModuleContexts() {
+        val base = instrumentation.targetContext
+        val host = IdentityContext(base, HostIdentity.PACKAGE)
+        val file = File(base.filesDir, "missing-log-fixture.txt")
+        for (enabled in listOf(true, false)) {
+            val runtime = HostComponentRuntime(enabled, { it }, {})
+            assertThrows(IllegalArgumentException::class.java) { runtime.logShareUri(base, file) }
+            assertThrows(IllegalArgumentException::class.java) { runtime.logShareUri(host, file) }
+        }
+        assertFalse(file.exists())
     }
 }

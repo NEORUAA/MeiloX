@@ -2,22 +2,25 @@ package com.ljyh.mei.ui.screen.log
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import com.ljyh.mei.di.ApplicationContext
+import com.ljyh.mei.runtime.ComponentRuntime
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
 
 
 class LogViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val components: ComponentRuntime,
 ) : ViewModel() {
 
     // 日志文件列表
@@ -30,6 +33,7 @@ class LogViewModel @Inject constructor(
 
     // 当前选中的文件对象（用于分享）
     private var currentSelectedFile: File? = null
+    private var shareJob: Job? = null
 
     init {
         loadLogFiles()
@@ -84,28 +88,29 @@ class LogViewModel @Inject constructor(
      */
     fun shareCurrentFile() {
         val file = currentSelectedFile ?: return
+        shareJob?.cancel()
+        shareJob = viewModelScope.launch {
+            try {
+                val uri = withContext(Dispatchers.IO) { components.logShareUri(context, file) }
 
-        try {
-            // 获取 FileProvider URI
-            // 注意：authority 必须与 AndroidManifest.xml 中的 provider authorities 一致
-            val authority = "${context.packageName}.fileprovider"
-            val uri: Uri = FileProvider.getUriForFile(context, authority, file)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    // 赋予临时读权限
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
 
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                // 赋予临时读权限
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val chooser = Intent.createChooser(intent, "分享日志给开发者")
+                // 在非 Activity 环境启动 Activity 需要这个 Flag
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // 可以在这里通过 Toast 提示用户分享失败，或者通过 EventFlow 发送 UI 事件
             }
-
-            val chooser = Intent.createChooser(intent, "分享日志给开发者")
-            // 在非 Activity 环境启动 Activity 需要这个 Flag
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(chooser)
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-            // 可以在这里通过 Toast 提示用户分享失败，或者通过 EventFlow 发送 UI 事件
         }
     }
 
@@ -113,10 +118,16 @@ class LogViewModel @Inject constructor(
      * 清空所有日志
      */
     fun clearAllLogs() {
+        val pendingShare = shareJob
+        pendingShare?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
+            pendingShare?.join()
             _logFiles.value.forEach {
                 try { it.delete() } catch (e: Exception) { e.printStackTrace() }
             }
+            try { components.clearLogShares(context) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { e.printStackTrace() }
             loadLogFiles() // 刷新列表
         }
     }

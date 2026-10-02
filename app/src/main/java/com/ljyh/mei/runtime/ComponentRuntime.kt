@@ -3,6 +3,8 @@ package com.ljyh.mei.runtime
 import android.app.Activity
 import android.content.Context
 import android.media.session.MediaSession
+import android.net.Uri
+import java.io.File
 
 /** Platform attachment and media-control integration supplied by the selected runtime. */
 interface ComponentRuntime {
@@ -12,4 +14,6 @@ interface ComponentRuntime {
     fun consumePlaybackResumeRequest(): Boolean
     fun bindMediaButtons(context: Context, token: MediaSession.Token): AutoCloseable?
     fun playbackServiceCreated(sessionCount: Int)
+    fun logShareUri(context: Context, file: File): Uri
+    fun clearLogShares(context: Context)
 }

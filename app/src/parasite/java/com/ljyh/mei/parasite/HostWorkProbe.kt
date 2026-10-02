@@ -26,11 +26,19 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
         val hold = intent.getBooleanExtra("hold", false)
         Thread({
             val report = HostRuntimeProbe.report
+            var broadcastFinished = false
             try {
                 val owner = AppGraph.component.context()
                 val manager = WorkManager.getInstance(owner)
                 val preferences = owner.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 when (command) {
+                    "log_share_closed" -> verifyLogSharing(owner)
+                    "log_share_grant_closed" -> {
+                        // Release the ordered trigger before waiting for another broadcast to this UID.
+                        pending.finish()
+                        broadcastFinished = true
+                        verifyLogSharing(owner, checkNotNull(intent.getStringExtra("nonce")))
+                    }
                     "cloud_upload_sdk_closed" -> HostCloudUploadProbe.run(owner)
                     "cloud_history_closed" -> HostCloudHistoryProbe.closed(owner)
                     "cloud_history_read" -> HostCloudHistoryProbe.read(owner)
@@ -101,8 +109,72 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
                 if (command == "cloud_favorite_read") error.stackTrace.take(8).forEach { frame ->
                     report("cloud_favorite_probe_frame=${frame.className}.${frame.methodName}:${frame.lineNumber}")
                 }
-            } finally { pending.finish() }
+            } finally { if (!broadcastFinished) pending.finish() }
         }, "MeiloX-work-probe").start()
+    }
+
+    private fun verifyLogSharing(owner: Context, fixtureNonce: String? = null) {
+        val module = owner as ModuleContext
+        val host = module.baseContext
+        if (fixtureNonce != null) check(UUID.fromString(fixtureNonce).toString() == fixtureNonce)
+        val provider = host.classLoader.loadClass("androidx.core.content.FileProvider")
+            .getMethod("getUriForFile", Context::class.java, String::class.java, java.io.File::class.java)
+        val originals = mutableListOf<java.io.File>()
+        val copies = mutableListOf<java.io.File>()
+        val uris = arrayListOf<android.net.Uri>()
+        var acknowledgment: BroadcastReceiver? = null
+        var verified = false
+        try {
+            for (folder in listOf("app_logs", "crash_logs")) {
+                val source = java.io.File(owner.filesDir, "$folder/log-share-fixture-${UUID.randomUUID()}.txt")
+                source.parentFile!!.mkdirs()
+                originals += source
+                val text = "Synthetic host log"
+                source.writeText(text)
+                val legacyFailure = runCatching { provider.invoke(null, host, "${host.packageName}.fileprovider", source) }.exceptionOrNull()
+                check((legacyFailure as? java.lang.reflect.InvocationTargetException)?.cause is IllegalArgumentException)
+                val uri = AppGraph.component.runtime().logShareUri(owner, source)
+                uris += uri
+                check(uri.authority == "${HostIdentity.PACKAGE}.fileprovider")
+                check(uri.path.orEmpty().startsWith("/cache_apk/${ModuleStorage.NAMESPACE}_log_share/"))
+                val path = uri.pathSegments.drop(1).joinToString(java.io.File.separator)
+                val staged = java.io.File(host.cacheDir, "apk/$path")
+                copies += staged
+                check(staged.isFile && staged.name == source.name)
+                check(owner.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() } == text)
+                check(source.readText() == text)
+                owner.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)!!.use {
+                    check(it.moveToFirst() && it.getString(0) == source.name)
+                }
+            }
+            if (fixtureNonce != null) {
+                val replied = java.util.concurrent.CountDownLatch(1)
+                val passed = java.util.concurrent.atomic.AtomicBoolean()
+                acknowledgment = object : BroadcastReceiver() {
+                    override fun onReceive(context: Context, intent: Intent) {
+                        if (intent.getStringExtra("nonce") == fixtureNonce) {
+                            passed.set(intent.getBooleanExtra("passed", false))
+                            replied.countDown()
+                        }
+                    }
+                }.also { host.registerReceiver(it, android.content.IntentFilter(LOG_SHARE_ACK), Context.RECEIVER_EXPORTED) }
+                uris.forEach { host.grantUriPermission(BuildConfig.APPLICATION_ID, it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                host.sendBroadcast(Intent(LOG_SHARE_FIXTURE).setPackage(BuildConfig.APPLICATION_ID)
+                    .putExtra("nonce", fixtureNonce).putExtra("hostUid", Process.myUid()).putParcelableArrayListExtra("uris", uris))
+                check(replied.await(10, TimeUnit.SECONDS) && passed.get())
+            }
+            verified = true
+            HostRuntimeProbe.report("log_share_probe_passed originals=2 legacy_private_path_rejected=true host_provider_readback=true cross_uid_readback=${fixtureNonce != null} synthetic_only=true")
+        } finally {
+            uris.forEach { host.revokeUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            acknowledgment?.let { host.unregisterReceiver(it) }
+            originals.forEach { it.delete() }
+            copies.forEach { file -> file.delete(); file.parentFile?.delete() }
+            check(originals.none { it.exists() } && copies.none { it.exists() })
+            HostRuntimeProbe.report("log_share_probe_cleaned fixtures_only=true")
+            if (fixtureNonce != null) host.sendBroadcast(Intent(LOG_SHARE_CLEANED).setPackage(BuildConfig.APPLICATION_ID)
+                .putExtra("nonce", fixtureNonce).putExtra("passed", verified))
+        }
     }
 
     companion object {
@@ -110,6 +182,9 @@ internal class HostWorkProbeReceiver : BroadcastReceiver() {
         const val ACTION = "com.neoruaa.meilox.parasite.WORK_PROBE"
         const val TAG = "meilox-work-qualification"
         const val PREFERENCES = "work_qualification"
+        const val LOG_SHARE_FIXTURE = "com.neoruaa.meilox.parasite.LOG_SHARE_FIXTURE"
+        const val LOG_SHARE_ACK = "com.neoruaa.meilox.parasite.LOG_SHARE_ACK"
+        const val LOG_SHARE_CLEANED = "com.neoruaa.meilox.parasite.LOG_SHARE_CLEANED"
     }
 }
 
