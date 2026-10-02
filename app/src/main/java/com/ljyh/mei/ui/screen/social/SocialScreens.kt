@@ -107,7 +107,7 @@ import java.util.Locale
 
 @Composable
 fun ConversationsScreen(viewModel: ConversationsViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val currentUser = state.session?.identity?.userId ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -165,8 +165,10 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = viewModel()) {
                             },
                             showTopSeparator = index > 0,
                             onClick = {
-                                Screen.PrivateConversation.navigate(navController) {
-                                    addPath(participant.id.toString())
+                                viewModel.withCurrent(state) {
+                                    Screen.PrivateConversation.navigate(navController) {
+                                        addPath(participant.id.toString())
+                                    }
                                 }
                             },
                         )
@@ -179,7 +181,7 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = viewModel()) {
 
 @Composable
 fun MessageContactsScreen(viewModel: MessageContactsViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     var query by remember { mutableStateOf("") }
@@ -253,8 +255,10 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = viewModel()) {
                             },
                             showTopSeparator = index > 0,
                             onClick = {
-                                Screen.PrivateConversation.navigate(navController) {
-                                    addPath(contact.id.toString())
+                                viewModel.withCurrent(state) {
+                                    Screen.PrivateConversation.navigate(navController) {
+                                        addPath(contact.id.toString())
+                                    }
                                 }
                             },
                         )

@@ -2356,6 +2356,19 @@ These are integration differences, not server API semantics.
   API 37 Espresso initialization failure is a test-harness limitation, not a business
   failure; ActivityScenario and native root inspection avoid its removed InputManager
   method without changing the AVD/framework or production UI.
+- Rendered-navigation follow-up (2026-10-02): old conversation/contact rows could
+  navigate with an obsolete participant after replacement, causing the new page to
+  read under the current account. The original rows now pass their rendered value
+  into a gate checking exact state identity, generation and recovery at navigation
+  dispatch. No route, participant mapping, endpoint, layout or control is changed.
+  SocialSessionTest passes 23 cases per flavor; six native original-row callback
+  cases pass per flavor using only private in-memory sessions/accounts/contacts.
+  They retain the actual debug ClickableElement callbacks across replacement,
+  same-user reauthorization and recovery, and accept newly rendered callbacks.
+  Private history and all writes are closed in the fixture. This is not pointer
+  hit-testing, minified UI or cooperating-account/server acceptance; the first
+  parasite runner failed to attach before its successful retry. The build plan
+  records those attempts and the separately qualified current R8 bootstrap.
 - Limits: substitute send success is not server delivery acceptance. A request already
   accepted by a server cannot be revoked by local invalidation. Real logout/relogin,
   cooperating-account send/delivery and complete minified standalone qualification
@@ -2767,8 +2780,31 @@ These are integration differences, not server API semantics.
   recovers another queue item. AudioPlayer, StableDeckPlayer and SleepTimer match
   current main, and both use Media3 1.10.1, but no baseline reproduction establishes
   the cause. Empty crash buffers do not erase this handled player error. No engine/UI
-  repair is included in this checkpoint. Natural end-of-track, process-loss timer
-  behavior, audible output and complete release playback remain unqualified.
+  repair is included in this checkpoint. At that checkpoint natural end-of-track,
+  process-loss timer behavior, audible output and complete release playback were
+  unqualified; the bounded natural end-of-track follow-up below does not close the
+  other gates.
+- Natural end-of-track follow-up (2026-10-02): prior `de14777e` standalone R8 under
+  the isolated debug ID holds the natural successor PAUSED at 36ms after the original
+  EndOfTrack timer fires. A 41s capture stays paused; explicit platform-media resume
+  advances beyond 39s with no engine error. The permission dialog remains unanswered
+  and is canceled with Back, preserving the ungranted permission and original flags.
+  It obscures direct Off-state inspection, so that screenshot is not claimed as
+  unobscured Off acceptance. The existing timer/page/notification code is unchanged.
+- Separate track-completion and tail cases complete on the prior R8 runtimes.
+  Standalone Full Moon Serenade (decoded 224888ms) naturally advances, including a tail pause at
+  209462ms and platform resume; TV magnolia starts at 0ms and naturally advances to
+  Prelude while native TV remains STOPPED. AudioFlinger frames/nonzero signal and
+  progress prove decoding/output-state activity, not audible AVD output. AutoMix
+  remains off. The TV capture includes AudioTrack device-stall time corrections but
+  no Media3 ERROR/stuck exception. Platform commands do not qualify every UI-toggle
+  or quality/lifecycle path.
+- The original Oct1 local raw trace is no longer present at the follow-up audit;
+  its song, exact duration and stack cannot be recovered from the retained coarse
+  error record. Different-song completion and EndOfTrack success do not reproduce
+  the original five-minute-expiry sequence, attribute its cause or erase ERROR at
+  129910ms. The build plan keeps artifact identities, interrupted attempts, restoration
+  and the remaining release/runtime gates separate. No engine/UI repair is included.
 
 ### ABI-015: Dynamic Standalone Requests Lost Their Signing Labels
 
@@ -2949,6 +2985,17 @@ These are integration differences, not server API semantics.
   Dismissing and reopening starts a fresh operation; endpoint/signing/download policy
   and the original page architecture are unchanged. Closed sources do not qualify
   real collection mutations or sharing under cooperating accounts.
+- Library-navigation follow-up (2026-10-02): retained playlist/album rows could
+  navigate from an old account's content and let the destination recapture the
+  current account. The unchanged Library routes now pass the exact rendered state
+  to a session/recovery/state-identity gate at dispatch. Same-stamp recovery/reload
+  or removed/refreshed resources also retire the callback. LibraryViewModelTest
+  passes 19 cases per flavor; combined with the social follow-up, 84 focused JVM
+  cases pass without failures/errors/skips. There is no new full-Library native
+  fixture or real account-switch acceptance. The source audit still leaves
+  AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and
+  SongWiki navigation callback families open; Social/Library success is not a
+  declaration that every shared page action is qualified.
 
 ### ABI-019: Log Sharing Needs the Host Provider's Actual Root Context
 

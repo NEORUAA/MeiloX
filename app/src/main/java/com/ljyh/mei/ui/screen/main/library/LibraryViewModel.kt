@@ -74,6 +74,17 @@ class LibraryViewModel internal constructor(
         }
     }
 
+    fun withCurrent(expected: LibraryUiState, action: () -> Unit) {
+        val stamp = expected.session ?: return
+        runCatching {
+            accounts.sessions.withCurrent(stamp) {
+                synchronized(stateLock) {
+                    if (!accounts.sessions.recoveryRequired.value && state.value === expected) action()
+                }
+            }
+        }
+    }
+
     fun refresh() {
         refreshJob?.cancel()
         val stamp = runCatching { accounts.requireAuthenticated() }.getOrNull()

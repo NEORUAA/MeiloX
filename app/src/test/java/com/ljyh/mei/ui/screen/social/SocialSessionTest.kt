@@ -146,6 +146,62 @@ class SocialSessionTest {
         assertTrue(source.reads.takeLast(4).all { it == sessions.snapshot() })
     }
 
+    private fun checkRetainedListNavigation(changeAccount: Boolean) = checkModels { model ->
+        runCurrent()
+        val conversations = model.list.state.value
+        val contacts = model.contacts.state.value
+        var navigations = 0
+        model.list.withCurrent(conversations) { navigations++ }
+        model.contacts.withCurrent(contacts) { navigations++ }
+        assertEquals(2, navigations)
+        sessions.beginTransition().use { if (changeAccount) identity = SessionIdentity(2, true, false) }
+        runCurrent()
+        model.list.withCurrent(conversations) { navigations++ }
+        model.contacts.withCurrent(contacts) { navigations++ }
+        assertEquals(2, navigations)
+        model.list.withCurrent(model.list.state.value) { navigations++ }
+        model.contacts.withCurrent(model.contacts.state.value) { navigations++ }
+        assertEquals(4, navigations)
+    }
+
+    @Test fun retainedListNavigationCannotAdoptAReplacementAccount() = checkRetainedListNavigation(true)
+
+    @Test fun retainedListNavigationCannotAdoptSameAccountReauthorization() = checkRetainedListNavigation(false)
+
+    @Test fun recoveryImmediatelyRejectsRenderedListNavigationEvenWithoutGenerationChange() = checkModels { model ->
+        runCurrent()
+        val conversations = model.list.state.value
+        val contacts = model.contacts.state.value
+        var navigations = 0
+        sessions.setRecoveryRequired(true)
+        model.list.withCurrent(conversations) { navigations++ }
+        model.contacts.withCurrent(contacts) { navigations++ }
+        assertEquals(0, navigations)
+        runCurrent()
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(conversations.session, model.list.state.value.session)
+        model.list.withCurrent(conversations) { navigations++ }
+        model.contacts.withCurrent(contacts) { navigations++ }
+        assertEquals(0, navigations)
+        model.list.withCurrent(model.list.state.value) { navigations++ }
+        model.contacts.withCurrent(model.contacts.state.value) { navigations++ }
+        assertEquals(2, navigations)
+    }
+
+    @Test fun refreshedListsRejectCallbacksFromThePreviousRenderedRows() = checkModels { model ->
+        runCurrent()
+        val conversations = model.list.state.value
+        val contacts = model.contacts.state.value
+        source.conversations = { emptyList() }
+        source.contacts = { emptyList() }
+        model.list.refresh()
+        model.contacts.refresh()
+        runCurrent()
+        model.list.withCurrent(conversations) { fail("Removed conversation navigation") }
+        model.contacts.withCurrent(contacts) { fail("Removed contact navigation") }
+    }
+
     @Test fun latePreviousAccountListsAndContactsCannotRestoreOldData() {
         val oldList = CompletableDeferred<List<PrivateConversation>>()
         val oldContacts = CompletableDeferred<List<MessageContact>>()

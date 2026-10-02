@@ -106,10 +106,14 @@ fun LibraryScreen(
                     collectedPlaylists = collectedPlaylists,
                     albums = if (albumList is Resource.Success) albumList.data.data.map { it.toAlbum() } else emptyList(),
                     onPlaylistClick = { id->
-                        Screen.PlayList.navigate(navController) { addPath(id) }
+                        viewModel.withCurrent(state) {
+                            Screen.PlayList.navigate(navController) { addPath(id) }
+                        }
                     },
                     onAlbumClick = { id->
-                        Screen.Album.navigate(navController) { addPath(id) }
+                        viewModel.withCurrent(state) {
+                            Screen.Album.navigate(navController) { addPath(id) }
+                        }
                     },
                     userId = userId,
                     session = state.session,

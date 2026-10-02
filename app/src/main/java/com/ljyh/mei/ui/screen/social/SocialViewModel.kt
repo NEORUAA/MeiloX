@@ -104,6 +104,17 @@ internal class SocialSessionState<T>(
             !sessions.recoveryRequired.value && runCatching { sessions.requireCurrent(it) }.isSuccess
     }
 
+    fun withCurrent(stamp: SessionStamp?, expected: T, action: () -> Unit) {
+        if (stamp == null || !stamp.identity.authenticated || stamp.identity.anonymous || stamp.identity.userId <= 0) return
+        runCatching {
+            sessions.withCurrent(stamp) {
+                synchronized(lock) {
+                    if (session == stamp && !sessions.recoveryRequired.value && state.value === expected) action()
+                }
+            }
+        }
+    }
+
     fun publish(stamp: SessionStamp, update: (T) -> T, after: () -> Unit = {}) {
         sessions.withCurrent(stamp) {
             synchronized(lock) {
@@ -132,6 +143,9 @@ class ConversationsViewModel internal constructor(
     private var loadJob: Job? = null
 
     init { owner.observe { loadJob?.cancel(); if (it != null) refresh() } }
+
+    fun withCurrent(expected: ConversationsUiState, action: () -> Unit) =
+        owner.withCurrent(expected.session, expected, action)
 
     fun refresh() {
         val stamp = owner.owner() ?: return
@@ -241,6 +255,9 @@ class MessageContactsViewModel internal constructor(
     private var loadJob: Job? = null
 
     init { owner.observe { loadJob?.cancel(); if (it != null) refresh() } }
+
+    fun withCurrent(expected: MessageContactsUiState, action: () -> Unit) =
+        owner.withCurrent(expected.session, expected, action)
 
     fun refresh() {
         val stamp = owner.owner() ?: return

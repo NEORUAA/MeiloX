@@ -144,6 +144,55 @@ class LibraryViewModelTest {
         }
     }
 
+    private fun checkRetainedNavigation(changeAccount: Boolean) {
+        source.playlists("1").value = listOf(playlist("visible"))
+        checkModel { model, _ ->
+            runCurrent()
+            val rendered = model.state.value
+            var navigations = 0
+            model.withCurrent(rendered) { navigations++ }
+            assertEquals(1, navigations)
+            sessions.beginTransition().use { if (changeAccount) identity = SessionIdentity(2, true, false) }
+            runCurrent()
+            model.withCurrent(rendered) { navigations++ }
+            assertEquals(1, navigations)
+            model.withCurrent(model.state.value) { navigations++ }
+            assertEquals(2, navigations)
+        }
+    }
+
+    @Test fun retainedNavigationCannotAdoptAReplacementAccount() = checkRetainedNavigation(true)
+
+    @Test fun retainedNavigationCannotAdoptSameAccountReauthorization() = checkRetainedNavigation(false)
+
+    @Test fun recoveryImmediatelyRejectsRenderedNavigationWithoutGenerationChange() = checkModel { model, _ ->
+        runCurrent()
+        val rendered = model.state.value
+        var navigations = 0
+        sessions.setRecoveryRequired(true)
+        model.withCurrent(rendered) { navigations++ }
+        assertEquals(0, navigations)
+        runCurrent()
+        sessions.setRecoveryRequired(false)
+        runCurrent()
+        assertEquals(rendered.session, model.state.value.session)
+        model.withCurrent(rendered) { navigations++ }
+        assertEquals(0, navigations)
+        model.withCurrent(model.state.value) { navigations++ }
+        assertEquals(1, navigations)
+    }
+
+    @Test fun refreshedLibraryRejectsCallbacksFromThePreviousRenderedResources() = checkModel { model, _ ->
+        runCurrent()
+        val rendered = model.state.value
+        model.refresh()
+        runCurrent()
+        model.withCurrent(rendered) { org.junit.Assert.fail("Obsolete resource navigation") }
+        var navigations = 0
+        model.withCurrent(model.state.value) { navigations++ }
+        assertEquals(1, navigations)
+    }
+
     @Test fun lateAlbumAndPhotoReadsCannotReplaceTheNextAccountsResults() {
         val oldAlbums = CompletableDeferred<Resource<UserAlbumList>>()
         val oldPhotos = CompletableDeferred<Resource<AlbumPhoto>>()

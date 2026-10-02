@@ -145,10 +145,13 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 
 ### Merge Review Coverage (2026-10-02)
 
-The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`20ce19f1` plus the documented playback handoff checkpoints below. Source review is separate from
-the remaining exit gates above. Resume open groups instead of repeating qualified
-groups unless their source changes or a new failure is reproduced.
+The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`. The page and
+runtime-carrier audit below was performed at `7327e7d2`; subsequent scoped reviews
+and repairs are recorded through `de14777e` and the rendered-navigation checkpoint
+below. This reconciles earlier grouped coverage, including the `20ce19f1` handoff
+review; it does not claim a fresh full-body audit of every current file. Source
+review is separate from the remaining exit gates above. Resume open groups instead
+of repeating qualified groups unless their source changes or a new failure is reproduced.
 
 | Group | Bounded review evidence | Status |
 | --- | --- | --- |
@@ -164,7 +167,91 @@ groups unless their source changes or a new failure is reproduced.
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
-| Remaining page/runtime-carrier and test support changes | All changed hunks in 47 shared UI consumer files and five complete runtime/prototype files reviewed; account-intent repairs recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; not every unchanged page body or test assertion was reviewed, and complete semantic/runtime acceptance remains open |
+| Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe repairs and current Social/Library navigation guards are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; six remaining navigation-callback families, unchanged page bodies and complete test/runtime semantics are not declared qualified |
+
+#### Reconciled Page and Runtime-Carrier Inventory
+
+The original audit reported grouped names, not a per-path manifest. The following
+47 paths expand those groups against the current diff; they are a reconciled
+changed-hunk inventory, not new full-body review evidence. Prefix:
+`app/src/main/java/com/ljyh/mei/ui/`.
+
+```text
+component/GlobalProfileAvatarButton.kt
+component/player/FloatingLyricsPip.kt
+component/player/OverlayState.kt
+component/player/Player.kt
+component/player/component/applemusic/AppleMusicPlayer.kt
+component/player/component/classic/ClassicImmersiveLayout.kt
+component/player/component/classic/ClassicPhoneLayout.kt
+component/player/component/classic/ClassicTabletLayout.kt
+component/player/overlay/CommonOverlayHandler.kt
+component/player/overlay/PlayerOverlayHandler.kt
+component/playlist/AddToPlaylistSheet.kt
+local/AccountState.kt
+navigation/MeiNavigation.kt
+screen/about/AboutScreen.kt
+screen/account/AccountHomeScreen.kt
+screen/account/NeteaseLoginScreen.kt
+screen/album/AlbumDetailScreen.kt
+screen/artist/ArtistScreen.kt
+screen/artist/ArtistSongsScreen.kt
+screen/cloud/CloudMusicScreen.kt
+screen/comment/CommentScreen.kt
+screen/comment/component/FloorCommentItem.kt
+screen/history/HistoryScreen.kt
+screen/listentogether/ListenTogetherScreen.kt
+screen/log/LogScreen.kt
+screen/main/findmusic/FindMusicScreen.kt
+screen/main/home/HomeScreen.kt
+screen/main/library/LibraryScreen.kt
+screen/main/library/component/LibraryMobileLayout.kt
+screen/playlist/CommonSongListScreen.kt
+screen/playlist/EveryDay.kt
+screen/playlist/PlaylistScreen.kt
+screen/playlist/component/PlaylistActionOverlay.kt
+screen/playlist/component/PlaylistTrackList.kt
+screen/playlist/component/StandaloneTrackActionOverlay.kt
+screen/podcast/PodcastScreen.kt
+screen/recognition/SongRecognitionScreen.kt
+screen/search/SearchLandingScreen.kt
+screen/search/SearchResultScreen.kt
+screen/search/SearchScreen.kt
+screen/setting/DownloadManageScreen.kt
+screen/setting/GeneralSettings.kt
+screen/setting/SettingScreen.kt
+screen/setting/StorageManagementScreen.kt
+screen/social/NeteaseShareSheet.kt
+screen/social/SocialScreens.kt
+screen/song/SongWikiScreen.kt
+```
+
+`screen/account/NeteaseLoginScreen.kt` is the removed common login file; its two
+flavor implementations are not qualified by that deletion review. The current
+72-path common UI diff also includes 17 separate ViewModel files, two paging
+sources, three player-state files and three explicitly retained historical glass
+files, covered by their separate scopes rather than this 47-path count.
+
+The five full-body runtime/prototype files at `7327e7d2` have prefix
+`app/src/parasite/java/com/ljyh/mei/parasite/`:
+
+```text
+MeiloXModule.kt
+HostRuntimeProbe.kt
+HostRuntimeProbeActivity.kt
+HostRuntimeProbeService.kt
+Pcm16Meter.kt
+```
+
+Later module/probe/service owner changes are covered by the `de14777e` checkpoint;
+the Activity and meter did not change. The original dependency inspection read
+HostIdentity, HostComponentMapping, HostPlaybackHooks and AppGraph fully, but only
+selected ModuleContext/Work hook sections. It does not qualify all host SDK internals.
+The audit's retained account intents, logout and diagnostic offer findings have
+their scoped repairs below. Social/Library navigation is repaired in this checkpoint;
+AccountHome, FindMusic, SearchLanding, non-song SearchResult, Podcast list and SongWiki
+callbacks remain six concrete audit families (13 entries), not an implicitly closed
+page-integration gate. No duplicate frontend tree or new page architecture is added.
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
 TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
@@ -3233,6 +3320,109 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   AVD restart or screen-off, framework hook, global rotation change or remote action
   occurs. Local logs and artifacts stay under `/tmp/meilox-final-action-owner-*`,
   outside Git; D2-D6 and the full goal remain open.
+
+### D3/D4/D5/D6 Checkpoint: Rendered Social and Library Navigation Owners (2026-10-02)
+
+- A retained conversation/contact row or Library playlist/album row could navigate
+  from an old account's rendered content, after which the destination would load
+  under the current account. Social now captures Compose state as a rendered value;
+  both existing consumers gate the exact state identity, session generation and
+  recovery status while dispatching the unchanged route. Refreshed/removed resources
+  are rejected even without an account-generation change. No layout, resource,
+  control, endpoint, player or page architecture is changed.
+- Paired debug/AndroidTest builds and focused JVM suites pass in 38s (160 tasks):
+  SocialSessionTest has 23 cases and LibraryViewModelTest 19 per flavor, 84 total,
+  with zero failures/errors/skips. Eight added cases per flavor cover replacement
+  accounts, same-user reauthorization, same-stamp recovery and refreshed/removed rows.
+  This is a focused rerun, not a fresh aggregate run of all 1977 earlier cases.
+- SocialNavigationOwnerDeviceTest passes six native cases in standalone (6.326s)
+  and six in parasite (20.526s). It renders the original conversation/contact rows
+  and retains their actual debug ClickableElement callbacks across replacement,
+  reauthorization and recovery, then verifies fresh callbacks can navigate. Sessions,
+  contacts and accounts are in memory; history/send/share operations cannot dispatch.
+  This is callback ownership, not pointer hit-testing, minified UI, real private reads
+  or server delivery. Library navigation has focused JVM/source evidence here, not
+  a new full-Library native fixture. The first parasite instrumentation attempt fails
+  to attach before tests; no later AndroidRuntime stack is found. Its retry success
+  does not erase that separate startup observation.
+- Both production R8 artifacts build in 3m22s (107 tasks); all 56 real-SDK local
+  release gates pass, including identities, signatures, versions, declarations and
+  16KB alignment. Unsigned standalone SHA-256 is
+  `7782d82aecf995d7c3dea12f066b8bce8623edecd3e1d4ae081ba206f97fa305`;
+  parasite is `0f0a2e5c6ea9c79a74eecff97b8e4b02d44ebd141e4b03d6bed124b5e6952ca8`.
+  These contain `de14777e` plus this scoped navigation repair, not the old playback
+  artifacts described next. Development-signed parasite R8 is non-debuggable, passes
+  signature/16KB checks and has SHA-256
+  `a7b4b900baad2f0896c9fa6d7cf0f97031c4e2e267dfc2d0b5645f9554d30348`.
+- Current parasite R8 is preserving-installed into the module package; the official
+  TV APK is not replaced. App-only TV cold start succeeds in 2827ms (PID 27407),
+  restoring Prelude PAUSED at 178897ms, null error and queue size 11;
+  native TV remains STOPPED with no queue. The inspected settled screenshot shows
+  original portrait MeiloX Home, glass mini-player/navigation and its paused control.
+  This is not a cold-frame sequence, rotation or repeated-start reliability claim.
+  MediaStore row 820 remains TV-owned, pending=0 and 22705573 bytes; the original
+  production standalone package/data is untouched. API-028 and ABI-018 record the
+  session-consumer distinction; six other navigation families remain open above.
+- Current ordinary standalone debug cold-starts after its offline fixture in 11603ms,
+  restoring Full Moon Serenade PAUSED at 143811ms, speed 0, null error and seven
+  queue entries. The inspected portrait Home retains original glass controls; TV
+  subsequently returns hot in 183ms with the same PID and paused state. The slow
+  standalone start is recorded, not generalized into startup reliability. No fresh
+  Cookie is imported, and isolated-ID execution is not production-ID or upgrade
+  acceptance. Neither cold start validates current minified playback or callback
+  integration; the native callback cases above use matched debug targets.
+- Local-only evidence is under `/tmp/meilox-retained-navigation-*` and
+  `/tmp/meilox-retained-navigation-owner-*`. No AVD restart, screen-off, framework
+  scope/global rotation change, credential copy, cloud rerun or social/quota write
+  occurs. This checkpoint does not close any remaining D2-D6 exit gate.
+
+### D5/D6 Checkpoint: Bounded R8 Track Completion and Tail Resume (2026-10-02)
+
+- These playback cases use the prior `de14777e` artifacts, before the navigation
+  repair above. TV's installed module SHA-256 is
+  `d0a11111957aa2b65c125c046dc42d0e4f1f5017323d0fcac0e65c3b99ffa9a4`.
+  A local-only build-directory/application-ID override produces normal standalone
+  R8 under `com.neoruaa.meilox.standalone.debug`, SHA-256
+  `3e215580f6f436a7da01bdf645c8738991789c29641bf7ecfecd223a201636ec`.
+  Both are non-debuggable and use the compatible existing development key; production
+  standalone is neither replaced nor given the validation ID. AutoMix stays off;
+  the existing qualities, modes, queues and controls are not redesigned.
+- Standalone Full Moon Serenade decodes a duration of 224888ms. A 243s capture starts
+  at 2612ms, advances through its end and naturally reaches Whispers Woven in Mist,
+  whose progress also advances. Primary AudioFlinger frames increase by 11663360,
+  with an active unmuted isolated-runtime track and nonzero signal power. A separate
+  original-slider tail case pauses at 209462ms, resumes through the platform media
+  session and naturally reaches the successor. No Media3 ERROR/stuck exception is
+  recorded in either scoped engine capture. The first attempted tail seek happened
+  while the queue was open and did not seek; it is not counted as tail evidence.
+- The original EndOfTrack timer naturally transitions from Whispers to the successor,
+  then holds PAUSED/speed 0 at 36ms throughout a 41s capture. An explicit platform
+  resume advances beyond 39s with no engine error. This is natural end-of-track and
+  platform resume evidence, not a five-minute-expiry replay or UI-toggle equivalence.
+  An unanswered system notification-permission dialog obscures direct Off-state
+  inspection; it is canceled with Back, with the ungranted permission and original
+  flags unchanged. No notification permission is silently granted.
+- TV magnolia is confirmed at 0ms before continuous playback and naturally advances
+  to Prelude; the successor reaches 101698ms at the 243s sample. Primary AudioFlinger
+  frames increase by 11665536 with PID 17871 and nonzero signal. Native TV remains
+  STOPPED with no queue throughout. The capture has AudioTrack device-stall time
+  corrections but no Media3 ERROR/stuck exception; it is not described as an empty
+  log. An earlier manually interrupted track capture is not full-track acceptance.
+  The displayed queue window grows from six to eleven, so unchanged queue size is
+  not claimed. No stream-provider attribution is inferred solely from metadata IDs.
+- Engine/progress/output-state evidence does not establish audible AVD output,
+  full quality/AutoMix coverage or final listening-statistics aggregation. Accepted
+  standalone report acknowledgements are kept distinct from server statistics.
+  The Oct1 handled no-progress ERROR at 129910ms remains open: its named local raw
+  trace is no longer present at this audit, so the exact original song, duration and
+  stack cannot be recovered. These different-song, AutoMix-off cases neither prove
+  attribution nor erase that five-minute-expiry failure. No engine/UI fix is made.
+- The isolated standalone is preserving-restored to ordinary debug after the R8
+  cases, retaining its seven-entry queue without replacing production data. Local
+  captures, APKs and R8 mappings remain outside Git under `/tmp/meilox-nearend-*`
+  and `/tmp/meilox-standalone-r8-validation-*`. ABI-014 is extended in place; all
+  production-upgrade, framework-free, real-account, capability and full-regression
+  gates in the current exit summary remain open.
 
 ## Acceptance and Remaining Decisions
 
