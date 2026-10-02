@@ -12,6 +12,7 @@ import com.ljyh.mei.data.model.room.AccountPlaylist
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.room.PlaylistType
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,7 +76,7 @@ internal object ModuleStorageProbe {
                 context.deleteDatabase(NAME)
             }
             verifyRoom(context)
-            report("runtime_storage room_schema=true account_library=true migration_17_18=true")
+            report("runtime_storage room_schema=true account_library=true current_schema_reopen=true")
             verifyDataStore(context)
             report("runtime_storage datastore=true")
         } catch (error: Throwable) {
@@ -83,8 +84,8 @@ internal object ModuleStorageProbe {
         }
     }
 
-    private fun verifyRoom(context: Context) {
-        val name = "${NAME}_room"
+    internal fun verifyRoom(context: Context) {
+        val name = "${NAME}_room_${UUID.randomUUID()}"
         var database = Room.databaseBuilder(context, AppDatabase::class.java, name).build()
         try {
             database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").use {
@@ -93,15 +94,11 @@ internal object ModuleStorageProbe {
             val shared = Playlist("shared", "Shared", "", "creator", "Creator", "", 1,
                 lastPlayTime = 10, localPlayCount = 4)
             runBlocking { database.playlistDao().insertPlaylist(shared) }
+            val schemaVersion = database.openHelper.writableDatabase.version
             database.close()
-            // Recreate the previous schema without exporting any real module database.
-            context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use {
-                it.execSQL("DROP TABLE account_playlist")
-                it.version = 17
-            }
-            database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-                .addMigrations(AppDatabase.MIGRATION_17_18).build()
-            check(database.openHelper.writableDatabase.version == 18)
+            // Historical upgrade qualification uses the dedicated versioned fixtures.
+            database = Room.databaseBuilder(context, AppDatabase::class.java, name).build()
+            check(database.openHelper.writableDatabase.version == schemaVersion)
             runBlocking {
                 val dao = database.playlistDao()
                 check(dao.getPlaylist("shared")?.localPlayCount == 4)

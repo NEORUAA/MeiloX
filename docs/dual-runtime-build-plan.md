@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`ae50555c` plus the account-record ownership adaptation below. Source review is separate from
+`b837941a` plus the diagnostic/component qualification below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -161,6 +161,7 @@ groups unless their source changes or a new failure is reproduced.
 | Changed DTOs and Retrofit declarations | Public source/download ownership fields, nullable comment/search/mutation responses, raw podcast pagination counts and session tags inspected; standalone-owned header/e_r restoration retained | Declaration/body ownership reviewed at source level; complete dynamic-route and consumer integration review remains separate |
 | Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
 | Active account/detail/rank/history reads | Required dynamic owner tuples, generation-owned rank cache and retained queue callbacks reviewed and covered by paired tests below; original page/control bodies preserved | Listed consumers reviewed at source level; real account/expiry and complete runtime acceptance remain separate |
+| Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
@@ -2958,6 +2959,57 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   full lifecycle/release and semantic merge gates. Evidence remains local under
   `/tmp/meilox-account-read-*-2026-10-02*`; no credentials, device logs, official source
   or artifacts enter Git.
+
+### D5/D6 Checkpoint: Production Components and Current-Schema Diagnostics (2026-10-02)
+
+- Production entry review checks the identity-pinned module bootstrap, runtime Activity/
+  service selection and work receiver/worker opt-in guards. Ordinary release constants
+  force all three probes off and the shared app on. The actual R8 work receiver contains
+  only parameter null checks and return; R8 removes ModuleStorageProbe, capability,
+  Retrofit and work-worker diagnostics. Blanket component keep rules retain the prototype
+  Activity/service classes, so their class presence is not claimed absent. They are not
+  registered in the module manifest and ordinary carrier selection instantiates the
+  shared MainActivity/MusicService, not those prototypes.
+- The opt-in Room diagnostic was obsolete: it fabricated version 17 from a current
+  schema, registered only 17-to-18 and asserted version 18. A new actual Android case
+  first fails with `A migration from 17 to 21 was required but not found`. The diagnostic
+  now creates a UUID-named current-schema database, validates reopen and retains its
+  existing account-library/rollback checks. It no longer emits a historical-migration
+  success marker. Dedicated versioned migration fixtures remain the upgrade evidence;
+  the production migration policy, real databases and frontend are unchanged.
+- BackendGraphDeviceTest passes both cases in 0.269s, including two diagnostic runs,
+  complete fixture cleanup and an unrelated synthetic sentinel database/row preserved.
+  The fixture runs in the module test package, not the TV storage wrapper, and does not
+  qualify the full opt-in storage probe, real upgrade or server authorization. The
+  current paired JVM suites pass 951 standalone and 974 parasite cases (1925), zero
+  failures/errors/skips. Paired debug/production R8 and parasite AndroidTest builds
+  pass in 2m49s (234 tasks).
+- The signed release workflow previously accepted a standalone fixture with no launcher.
+  A new negative case reproduces that missing gate. It now parses the actual APK manifest
+  with the existing Ruby toolchain/REXML: require the shared Application, usable original
+  standalone launcher/playback service, no host component in standalone, and no independent
+  launcher or module-owned component registration in parasite. Production instrumentation
+  and failed/malformed manifest inspection are rejected. Activity aliases are checked,
+  not just Activity names. APK manifests themselves are not changed.
+- All 56 local release checks pass, including fourteen added parsed-manifest negatives
+  and the real-SDK signed current R8 pair. The existing actual swapped/unsigned/missing-
+  scope APK negatives remain covered. New malformed/component-negative manifests use
+  synthetic SDK fixtures, not rewritten official APKs. Original CI triggers, permissions,
+  signing bindings, paired artifact names and manual-only publication are retained;
+  temporary test keys/artifacts are cleaned up and no remote run/upload is triggered.
+- The current ordinary parasite R8 is development-signed, signature/16KB alignment
+  checked and restored with a preserving install. SHA-256:
+  `42871f26ec42df2f4d13f3a08ca69e0f8b134a8ce81b6e5bc16d3267fa795168`.
+  App-only TV cold startup succeeds in 3479ms; its portrait shared Home is visually
+  inspected and PID 17985 has an empty Java crash buffer. Both retained playback positions
+  remain paused (parasite 55536ms, standalone 145670ms); original TV playback stays stopped.
+  MediaStore row 820 remains TV-owned, size 22705573, pending=0. No AVD restart, global
+  setting, permission, original standalone installation or credential/media copy occurs.
+- ABI-007 is extended in place with the package-registration gate. These checks do not
+  complete the remaining production-signing/original-upgrade, framework-free startup,
+  paired lifecycle/account/server, capability or complete semantic merge-review gates.
+  Local evidence: `/tmp/meilox-storage-probe-*-2026-10-02*` and
+  `/tmp/meilox-component-gate-*-2026-10-02*`; logs, APKs and credentials stay out of Git.
 
 ## Acceptance and Remaining Decisions
 

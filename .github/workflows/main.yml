@@ -134,6 +134,33 @@ jobs:
             test "$("$analyzer" manifest application-id "$file")" = "$application_id"
             test "$("$analyzer" manifest version-name "$file")" = "$VERSION_NAME"
             test "$("$analyzer" manifest version-code "$file")" = "$VERSION_CODE"
+            "$analyzer" manifest print "$file" | ruby -rrexml/document -e '
+              document = REXML::Document.new($stdin.read)
+              applications = document.get_elements("manifest/application")
+              abort "Invalid production Application" unless applications.length == 1 &&
+                applications.first.attributes["android:name"] == "com.ljyh.mei.AppContext"
+              abort "Production APK contains instrumentation" unless document.get_elements("manifest/instrumentation").empty?
+              application = applications.first
+              components = application.elements.to_a.select { |node| %w[activity activity-alias service receiver provider].include?(node.name) }
+              launcher = lambda { |node|
+                node.get_elements("intent-filter").any? { |filter|
+                  filter.get_elements("action").any? { |item| item.attributes["android:name"] == "android.intent.action.MAIN" } &&
+                    filter.get_elements("category").any? { |item| item.attributes["android:name"] == "android.intent.category.LAUNCHER" }
+                }
+              }
+              if ARGV.fetch(0) == "com.neoruaa.meilox"
+                main = components.find { |node| node.name == "activity" && node.attributes["android:name"] == "com.ljyh.mei.MainActivity" }
+                playback = components.find { |node| node.name == "service" && node.attributes["android:name"] == "com.ljyh.mei.playback.MusicService" }
+                abort "Standalone startup or playback component is unavailable" unless application.attributes["android:enabled"] != "false" &&
+                  main && main.attributes["android:exported"] == "true" && main.attributes["android:enabled"] != "false" && launcher.call(main) &&
+                  playback && playback.attributes["android:enabled"] != "false"
+                abort "Standalone APK registers a host component" if components.any? { |node| node.attributes["android:name"].to_s.start_with?("com.ljyh.mei.parasite.") }
+              else
+                abort "Parasite APK registers an independent launcher or module component" if components.any? { |node|
+                  launcher.call(node) || node.attributes["android:name"].to_s.start_with?("com.ljyh.mei.")
+                }
+              end
+            ' "$application_id"
             local files
             files="$("$analyzer" files list --files-only "$file")"
             case "$files" in

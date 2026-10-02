@@ -4,6 +4,7 @@ require 'fileutils'
 require 'base64'
 require 'json'
 require 'open3'
+require 'rexml/document'
 require 'tmpdir'
 require 'yaml'
 
@@ -143,6 +144,27 @@ def test_metadata(name, valid:, version: '1.54.6')
   puts "PASS metadata: #{name}"
 end
 
+def manifest_fixture(flavor)
+  components = if flavor == 'standalone'
+    <<~XML
+      <activity android:name="com.ljyh.mei.MainActivity" android:exported="true">
+        <intent-filter>
+          <action android:name="android.intent.action.MAIN"/>
+          <category android:name="android.intent.category.LAUNCHER"/>
+        </intent-filter>
+      </activity>
+      <service android:name="com.ljyh.mei.playback.MusicService"/>
+    XML
+  else
+    ''
+  end
+  <<~XML
+    <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <application android:name="com.ljyh.mei.AppContext">#{components}</application>
+    </manifest>
+  XML
+end
+
 def signed_fixture(directory)
   sdk = File.join(directory, 'sdk')
   build_tools = File.join(sdk, 'build-tools/37.0.0')
@@ -181,6 +203,11 @@ def signed_fixture(directory)
       document = JSON.parse(File.read(file))
       case ARGV.first
       when 'manifest'
+        abort 'Synthetic manifest inspection failure' if ARGV[1] == 'print' && document['manifest-print-failure']
+        if ARGV[1] == 'print'
+          puts document.fetch('manifest')
+          exit
+        end
         puts document.fetch(ARGV[1])
       when 'files'
         if ARGV[1] == 'list'
@@ -210,6 +237,7 @@ def signed_fixture(directory)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, JSON.generate('application-id' => APPLICATIONS.fetch(flavor),
                                   'version-name' => '1.54.6', 'version-code' => '11',
+                                  'manifest' => manifest_fixture(flavor),
                                   'files' => flavor == 'parasite' ? MODULE_FILES : {},
                                   'module-class' => flavor == 'parasite',
                                   'signature' => true, 'aligned' => true))
@@ -389,6 +417,55 @@ test_prepare('standalone Xposed declaration leak', valid: false) do |paths, _|
   path = paths.fetch('standalone')
   document = JSON.parse(File.read(path))
   document.fetch('files')['/META-INF/xposed/module.prop'] = MODULE_FILES.fetch('/META-INF/xposed/module.prop')
+  File.write(path, JSON.generate(document))
+end
+
+{
+  'standalone missing launcher' => ['standalone', ->(xml) { xml.elements['manifest/application/activity/intent-filter/category'].remove }],
+  'standalone missing playback service' => ['standalone', ->(xml) { xml.elements['manifest/application/service'].remove }],
+  'standalone disabled launcher' => ['standalone', ->(xml) { xml.elements['manifest/application/activity'].attributes['android:enabled'] = 'false' }],
+  'standalone disabled Application' => ['standalone', ->(xml) { xml.elements['manifest/application'].attributes['android:enabled'] = 'false' }],
+  'standalone disabled playback service' => ['standalone', ->(xml) { xml.elements['manifest/application/service'].attributes['android:enabled'] = 'false' }],
+  'standalone non-exported launcher' => ['standalone', ->(xml) { xml.elements['manifest/application/activity'].attributes['android:exported'] = 'false' }],
+  'standalone wrong Application' => ['standalone', ->(xml) { xml.elements['manifest/application'].attributes['android:name'] = 'com.example.OtherApplication' }],
+  'parasite launcher alias leak' => ['parasite', ->(xml) {
+    entry = xml.elements['manifest/application'].add_element('activity-alias',
+      'android:name' => 'com.example.Launcher', 'android:targetActivity' => 'com.example.Activity')
+    filter = entry.add_element('intent-filter')
+    filter.add_element('action', 'android:name' => 'android.intent.action.MAIN')
+    filter.add_element('category', 'android:name' => 'android.intent.category.LAUNCHER')
+  }],
+  'parasite own playback component leak' => ['parasite', ->(xml) {
+    xml.elements['manifest/application'].add_element('service', 'android:name' => 'com.ljyh.mei.playback.MusicService')
+  }],
+  'standalone host diagnostic component leak' => ['standalone', ->(xml) {
+    xml.elements['manifest/application'].add_element('receiver', 'android:name' => 'com.ljyh.mei.parasite.HostWorkProbeReceiver')
+  }],
+  'production instrumentation leak' => ['parasite', ->(xml) {
+    xml.root.add_element('instrumentation', 'android:name' => 'com.example.TestRunner')
+  }]
+}.each do |name, (flavor, change)|
+  test_prepare(name, valid: false) do |paths, _|
+    path = paths.fetch(flavor)
+    document = JSON.parse(File.read(path))
+    xml = REXML::Document.new(document.fetch('manifest'))
+    change.call(xml)
+    document['manifest'] = xml.to_s
+    File.write(path, JSON.generate(document))
+  end
+end
+FLAVORS.each do |flavor|
+  test_prepare("#{flavor} manifest inspection failure", valid: false) do |paths, _|
+    path = paths.fetch(flavor)
+    document = JSON.parse(File.read(path))
+    document['manifest-print-failure'] = true
+    File.write(path, JSON.generate(document))
+  end
+end
+test_prepare('malformed production manifest', valid: false) do |paths, _|
+  path = paths.fetch('parasite')
+  document = JSON.parse(File.read(path))
+  document['manifest'] = '<manifest><application>'
   File.write(path, JSON.generate(document))
 end
 

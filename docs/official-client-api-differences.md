@@ -1782,6 +1782,22 @@ These are integration differences, not server API semantics.
   The existing published TV-owned download remains 22,705,573 bytes. This does not
   qualify audible output, new grants, standalone behavior or release runtime.
 
+- Follow-up package qualification on 2026-10-02: the release gate now parses actual
+  manifest XML, requiring the shared Application and original usable standalone
+  launcher/playback service while rejecting independent launcher aliases, module-owned
+  component registrations in parasite, host component registrations in standalone and
+  production instrumentation. Missing/failed/malformed manifest inspection is fatal.
+  A missing-standalone-launcher fixture was accepted before this gate and is rejected
+  after it. All 56 local release checks pass, including the current signed R8 pair;
+  component-negative XML fixtures are distinct from the actual APK negatives.
+- Ordinary release forces the app on and diagnostic flags off. Actual R8 removes the
+  capability/Retrofit/work-worker/storage diagnostics; its retained work receiver is
+  a no-op. Prototype Activity/service classes remain due to component keep rules, but
+  have no module manifest registration and are not selected by the ordinary carrier.
+  The opt-in Room fixture now validates current-schema reopen rather than asserting
+  an obsolete 17-to-18 upgrade. This is diagnostic/package evidence, not original
+  installation upgrade, complete host storage qualification or server acceptance.
+
 ### ABI-008: Standalone Cookie Publication Must Not Borrow Host Ownership
 
 - Date: 2026-09-30. The original standalone interceptor read `CookieKey` on every send;
