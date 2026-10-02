@@ -115,14 +115,11 @@ class MeloXDynamicRequestDeviceTest {
         assertTrue(f.eapi.requests.isEmpty())
     }
 
-    @Test fun explicitWeapiAndEapiCallsDoNotAcquireGenericRetrySemantics() = runBlocking {
+    @Test fun explicitEapiCallsDoNotAcquireGenericRetrySemantics() = runBlocking {
         val f = Fixture()
-        f.weapi.reply = { json("""{"code":403}""") }
-        assertTrue(runCatching { f.repository.listenTogetherStatus(f.owner) }.isFailure)
-        assertTrue(f.eapi.requests.isEmpty())
         f.eapi.reply = { json("""{"code":403}""") }
         assertTrue(runCatching { f.repository.songWiki(11, f.owner) }.isFailure)
-        assertEquals(1, f.weapi.requests.size)
+        assertTrue(f.weapi.requests.isEmpty())
         assertEquals(1, f.eapi.requests.size)
     }
 

@@ -137,7 +137,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; disposable database/work/preference/cache upgrade fixtures verified | Preserving upgrade of the original installation with compatible signing; production-ID execution; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved near-end playback failure attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified | Complete paired lifecycle/permission/regression matrix; TV recording/PiP capability decision; unresolved near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -162,7 +162,9 @@ groups unless their source changes or a new failure is reproduced.
 | Utility/context consumers | About/cache behavior and the unused legacy ShareViewModel retain baseline bodies; log sharing needs the host provider adaptation recorded below | Listed utility consumers reviewed at source level; native provider/permission evidence remains bounded |
 | Active account/detail/rank/history reads | Required dynamic owner tuples, generation-owned rank cache and retained queue callbacks reviewed and covered by paired tests below; original page/control bodies preserved | Listed consumers reviewed at source level; real account/expiry and complete runtime acceptance remain separate |
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
-| Remaining business/repository/ViewModel and probe/test changes | Existing feature fixtures do not substitute for the complete semantic merge audit | Open |
+| Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
+| Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
+| Remaining page/runtime-carrier and test support changes | Local page hunks, carrier selection and selected test cases do not constitute full source review of every changed page/carrier/test | Open; complete semantic merge acceptance is not inferred from existing fixtures |
 
 Twenty-nine explicitly selected baseline blobs are identical: AudioPlayer, StableDeckPlayer,
 TenBandEqualizer, PlaybackBeatMeter, BeatNet analyzer/native weights, playback timer,
@@ -3123,6 +3125,65 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   Framework-free startup, original-install upgrade/signing, real account/expiry/server
   matrices, cooperating social/Together tests, capability decisions and the remaining
   semantic merge review are still open.
+
+### D3/D4/D5/D6 Checkpoint: Account Retry and Rendered Share Ownership (2026-10-02)
+
+- The original shared share sheet now captures its rendered state as a value rather
+  than rereading a replacement owner through a delegate. Three obsolete callbacks
+  fail before repair; six actual Compose sheet cases pass per debug flavor afterwards,
+  including current private/timeline sends and newly rendered replacement actions.
+  API 37 Espresso fails before behavior due to its removed InputManager method; the
+  fixture instead uses ActivityScenario, native Compose roots and the rendered debug
+  ClickableElement callback. Semantics' mutable-node forwarding is not treated as a
+  captured callback. Accounts/contacts/sends are in-memory; no real social write runs.
+  Page architecture, controls, glass and draft/recipient lifetimes remain unchanged.
+- Account-owned private conversation/history, contacts and Together status reads
+  reuse the original standalone WeAPI-to-EAPI retry policy. The migration wrapper
+  previously bypassed it. Owner/authentication/recovery/cancellation guards and the
+  original bodies remain; parasite still uses one official pipeline. Ten paired
+  Repository cases cover success, transport/business failures, terminal alternative,
+  stale/reauthorized/recovery/canceled requests and single-attempt EAPI writes. The
+  previous Together no-retry assertion is corrected to match main; wiki EAPI
+  single-attempt coverage is retained.
+- Both opt-in diagnostic helpers pin their original stamp through dispatch and
+  cancellation. Only account/subcount typed declarations gain optional non-wire tags
+  preserving their legacy calls. Nine native parasite cases use production Retrofit/
+  HostCallFactory/HostRequestBridge and synthetic backends, covering full sequences,
+  first-call/between-report races and cancellation. Ordinary probe flags remain off.
+- Shared parser/report helper comparison retains main's bodies except the documented
+  official-json diagnostic envelope; no new live cloud test is performed. Named
+  business/diagnostic source review is classified in the table above. Remaining page,
+  runtime-carrier and test-source coverage is still bounded, not a complete merge audit.
+- Current paired JVM suites pass 957 standalone and 980 parasite cases (1937), zero
+  failures/errors/skips. The final paired debug/AndroidTest/JVM build succeeds in 5s
+  (160 tasks), after successful 31s and 24s builds. Matched debug pairs pass 43
+  standalone native cases in 23.470s and 52 parasite cases in 17.465s on emulator-5554:
+  account retry, dynamic/social/Together regressions, original share sheet and the
+  parasite-only probe fixtures. The original production standalone is not replaced.
+  Logs stay local at `/tmp/meilox-business-owner-*-2026-10-02.log`; the initial
+  share-only fixture/build evidence remains at `/tmp/meilox-share-owner-*`.
+- Both production R8 artifacts build in 4m31s (107 tasks); all 56 local release gates
+  pass, including real SDK signing/alignment/declarations and swapped/unsigned/
+  missing-scope negatives. Ordinary parasite R8 is development-signed with the existing
+  compatible key, signature/16KB checked and preserving-installed. SHA-256:
+  `191d918afa0a334300c5ce360171637517f181cd715dd6f583141edee3519e8f`.
+  The first TV cold launch returns UNKNOWN and its process exits with INITIALIZATION
+  FAILURE / start timeout; the crash buffer and process log are empty. This is a
+  failed startup, not qualified success or an attributed code regression. Logs/exit
+  information and the launcher screenshot are preserved before retry. One app-only
+  retry cold-starts in 2281ms; the inspected screenshot shows the original portrait
+  shared Home, glass navigation and paused mini-player. PID 13843 remains alive with
+  an empty Java crash buffer. The MeiloX session has six queue entries, paused at
+  55536ms with null error; native TV playback is STOPPED with an empty queue.
+  MediaStore row 820 retains size 22705573, TV ownership and pending=0. No emulator
+  restart, global rotation/permission change, original standalone upgrade, opt-in live
+  cloud/social test or quota-consuming download occurs. Initial startup timeout
+  attribution and full minified interaction/lifecycle qualification remain open.
+- API-001, API-028 and ABI-015 are extended in place. Native substitutes do not prove
+  real server writes, later statistics, minified sheet interaction or audible output.
+  Framework-free standalone startup, preserving production upgrade/signing, real
+  authorization/business/capability/lifecycle matrices and full merge acceptance
+  remain open; this checkpoint does not mark D2-D6 complete.
 
 ## Acceptance and Remaining Decisions
 

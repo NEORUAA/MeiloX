@@ -171,7 +171,7 @@ fun NeteaseShareSheet(
             artworkUrl = metadata.coverUrl,
         )
     }
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val context = LocalContext.current
     var mode by remember { mutableStateOf(NeteaseShareMode.Menu) }
     var message by remember(state.session) { mutableStateOf("") }

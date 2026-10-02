@@ -1,5 +1,6 @@
 package com.ljyh.mei.parasite
 
+import com.ljyh.mei.data.session.SessionStamp
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
@@ -29,7 +30,7 @@ internal class HostCapabilityProbe(
         fun request(name: String, path: String, params: Map<String, String> = emptyMap()): JSONObject? {
             check(isCurrentSession())
             return try {
-                val response = JSONObject(requests.newCall(path, params).execute().body)
+                val response = JSONObject(requests.newCall(path, params, session).execute().body)
                 check(isCurrentSession())
                 report("probe=$name code=${response.optInt("code", -1)}")
                 response
@@ -77,12 +78,12 @@ internal class HostCapabilityProbe(
                 onPlayable(source.getString("url"))
             }
         }
-        verifyCancellation()
+        verifyCancellation(session)
         report("probe_complete session_unchanged=${isCurrentSession()}")
     }
 
-    private fun verifyCancellation() {
-        val call = requests.newCall("search/get", mapOf("s" to "music", "type" to "1", "limit" to "1", "offset" to "1"))
+    private fun verifyCancellation(session: SessionStamp) {
+        val call = requests.newCall("search/get", mapOf("s" to "music", "type" to "1", "limit" to "1", "offset" to "1"), session)
         val failure = AtomicReference<Throwable?>()
         val worker = Thread({
             try { call.execute() } catch (error: Throwable) { failure.set(error) }

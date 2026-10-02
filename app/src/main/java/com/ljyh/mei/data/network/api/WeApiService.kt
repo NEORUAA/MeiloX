@@ -23,7 +23,10 @@ interface WeApiService {
     ): EveryDaySongs
 
     @POST("/weapi/subcount")
-    suspend fun getUserSubcount(@Body body: Map<String,String> = mapOf()) : UserSubcount
+    suspend fun getUserSubcount(
+        @Body body: Map<String, String> = mapOf(),
+        @Tag expectedSession: SessionStamp? = null,
+    ): UserSubcount
 
     @POST("/api/playlist/highquality/list")
     suspend fun getHighQualityPlaylist(@Body body: HighQualityPlaylist, @Tag expectedSession: SessionStamp): HighQualityPlaylistResult

@@ -33,6 +33,21 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   checks. API-019 replaces that path with runtime-owned binary transports; official
   SDK device/server acceptance remains open. The earlier JSON rejection did not prove
   that every binary path was official-only.
+- Diagnostic ownership follow-up (2026-10-02): the optional typed Retrofit probe
+  captured a session once but omitted its tag on several subsequent reads. An account
+  change between reports could therefore start reads under another authorization
+  before the final check aborted. Every probe request now carries its original stamp;
+  account and subcount declarations gain only an optional, non-wire Retrofit tag.
+  Five native cases use production Retrofit providers, HostCallFactory and bridge
+  with a synthetic host backend. They cover all eight requests, unchanged legacy
+  calls, two first-call creation races and sixteen between-report invalidations.
+  No real account switch or request runs; ordinary module probe flags remain off.
+- The sibling read-only capability probe and its cancellation request now pass the
+  same captured stamp at newCall, closing the check-to-dispatch replacement window.
+  Four native substitute cases cover its current sequence/cancellation, replacement
+  between identity check and dispatch, same-account reauthorization at creation,
+  and retired cancellation requests. This does not qualify live capabilities or
+  audible playback; no real capability probe is enabled for the ordinary package.
 
 ### API-002: Parsed JSON Is Not an HTTP Envelope
 
@@ -2313,6 +2328,19 @@ These are integration differences, not server API semantics.
   Real read-only UI additionally loads conversation and contact lists in standalone
   debug and the locally signed parasite R8 package under their separate existing
   accounts. No conversation is opened and no real social write is dispatched.
+- Rendered-action follow-up (2026-10-02): the sheet's delegated Compose state still
+  let a retained callback reread a replacement session, despite the ViewModel's
+  expected-owner guard. Its state is now a rendered value snapshot. Three obsolete
+  callbacks fail before repair; all six native sheet cases pass in each debug flavor
+  afterwards, including private/timeline success and a newly rendered replacement
+  action. Fixtures render the original sheet/glass and use only in-memory accounts,
+  contacts and sends. They retain the debug ClickableElement callback, because the
+  semantics action itself forwards to the current mutable ClickableNode; a Compose
+  SideEffect waits for replacement rendering. This is callback/session evidence, not
+  pointer hit-testing, motion, minified UI or real server delivery acceptance. The
+  API 37 Espresso initialization failure is a test-harness limitation, not a business
+  failure; ActivityScenario and native root inspection avoid its removed InputManager
+  method without changing the AVD/framework or production UI.
 - Limits: substitute send success is not server delivery acceptance. A request already
   accepted by a server cannot be revoked by local invalidation. Real logout/relogin,
   cooperating-account send/delivery and complete minified standalone qualification
@@ -2748,8 +2776,9 @@ These are integration differences, not server API semantics.
 - The Repository's generic helper again retries validated WeAPI failures through EAPI
   only in standalone. Both attempts retain one captured SessionStamp, with pre/post
   cancellation/current/recovery checks. Cancellation, account replacement and
-  reauthorization cannot retry under a new account. Explicit account WeAPI/EAPI calls
-  do not acquire this generic retry behavior; the host never invokes the alternative.
+  reauthorization cannot retry under a new account. At that checkpoint the new
+  account helper still bypassed this policy; the follow-up below corrects that
+  remaining baseline-fidelity gap. The host never invokes the alternative.
 - Three production-provider/interceptor assertions fail before repair. Paired JVM
   suites pass 862 standalone and 913 parasite cases. Forty-six Android substitute
   cases pass per flavor, including actual Repository retry and late-response behavior.
@@ -2779,6 +2808,21 @@ These are integration differences, not server API semantics.
   photo defaults, homepage fields already overwritten by the original EAPI encoder,
   and an unused search DTO; no new gap is established by that audit. Other real
   cooperation, original-install upgrade, full release and merge gates remain open.
+- Account-read follow-up (2026-10-02): private conversation/history, contacts and
+  Together status originally used the generic WeAPI-to-EAPI helper in main. The new
+  authenticated-owner wrapper had instead used one direct WeAPI call. It now reuses
+  the existing flavor policy while retaining account/current/recovery/cancellation
+  checks and the original body/tag. Standalone can retry ordinary transport or
+  business failures; parasite remains primary-only. Explicit EAPI social writes and
+  wiki reads do not gain retries. The earlier dynamic fixture's Together no-retry
+  assertion was based on the migration regression and is replaced by paired account
+  coverage; its explicit EAPI single-attempt assertion remains.
+- Ten new real-Repository substitute cases pass in each debug flavor, covering the
+  four retained read bodies/owners, ordinary transport/business retry, terminal
+  secondary failure, retired generations, recovery and direct/noncooperating
+  cancellation. Explicit EAPI writes remain single-attempt. Existing dynamic,
+  social and Together Repository cases also pass per flavor. These are closed
+  contract tests, not real account delivery or server-induced retry acceptance.
 
 ### ABI-017: Standalone Native Reporting Needs Target-Only R8 Evidence
 

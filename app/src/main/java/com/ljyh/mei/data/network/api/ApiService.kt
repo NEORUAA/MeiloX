@@ -71,7 +71,7 @@ interface ApiService {
     * 获取用户信息
     * */
     @POST("/api/nuser/account/get")
-    suspend fun getAccountDetail(): UserAccount
+    suspend fun getAccountDetail(@Tag expectedSession: SessionStamp? = null): UserAccount
 
     /*
     * 获取歌词

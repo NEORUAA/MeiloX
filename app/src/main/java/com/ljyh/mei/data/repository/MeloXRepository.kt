@@ -467,10 +467,10 @@ class MeloXRepository @Inject constructor(
     ): JsonObject {
         currentCoroutineContext().ensureActive()
         requireAccountSession(session)
-        val response = (if (useEapi) eapi else weapi).post(path, body, expectedSession = session)
+        val response = if (useEapi) requestEapi(path, body, session) else request(path, body, session)
         currentCoroutineContext().ensureActive()
         requireAccountSession(session)
-        return validate(response)
+        return response
     }
 
     suspend fun songWiki(songId: Long, session: SessionStamp): SongWiki {
