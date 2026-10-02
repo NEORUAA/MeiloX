@@ -93,7 +93,7 @@ fun ArtistScreen(
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val artistDetail = state.detail
     val artistAlbums = state.albums
     val artistSongs = state.songs
@@ -179,22 +179,27 @@ fun ArtistScreen(
                     items(songs.take(10), key = { it.id }) { song ->
                         Track(
                             track = song.toMediaMetadata(),
-                            onClick = { viewModel.withCurrent(state) {
-                                val allIds = songs.map {
-                                    it.id.toString() to it.toMediaMetadata().toMediaItem()
-                                }
-                                playerConnection.onTrackClicked(
-                                    trackId = song.id.toString(),
-                                    buildQueue = {
-                                        ListQueue(
-                                            UUID.randomUUID().toString(),
-                                            "Hot Songs",
-                                            allIds,
-                                            songs.indexOf(song)
-                                        )
+                            onClick = {
+                                var current = false
+                                viewModel.withCurrent(state) { current = true }
+                                if (current) {
+                                    val allIds = songs.map {
+                                        it.id.toString() to it.toMediaMetadata().toMediaItem()
                                     }
-                                )
-                            } },
+                                    playerConnection.onTrackClicked(
+                                        trackId = song.id.toString(),
+                                        expectedSession = state.session,
+                                        buildQueue = {
+                                            ListQueue(
+                                                UUID.randomUUID().toString(),
+                                                "Hot Songs",
+                                                allIds,
+                                                songs.indexOf(song)
+                                            )
+                                        }
+                                    )
+                                }
+                            },
                             onMoreClick = { bounds -> viewModel.withCurrent(state) { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), bounds) } }
                         )
                     }

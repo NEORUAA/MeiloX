@@ -624,6 +624,30 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   API-021 subsequently implements source-aware lyric requests and Worker propagation;
   API-022 adapts current/preloaded lyric state and cache ownership. Real cloud text and
   karaoke rendering still need their own acceptance.
+- Catalog click handoff follow-up (2026-10-02): daily recommendations, playlist,
+  album, both artist pages and listening rank now retain their displayed session
+  through PlayerConnection and its deferred queue build. Existing-item clicks check
+  before seek and again before play, rather than bypassing the builder's owner checks.
+  Retired/recovering clicks also reject synchronous title publication without leaking
+  SessionChangedException into the UI callback. Composed content uses value snapshots;
+  retained callbacks do not reread a replacement owner's delegated state. Page guards
+  finish before player publication to avoid backend identity reads under their monitor.
+- Selected placeholder hydration now forwards that same owner to the existing
+  `/api/v3/song/detail` supplemental request. It checks dispatch and response ownership
+  without requiring FM authentication for a public catalog guest; the existing FM
+  authorization rule remains separate. Hydrated queues do not acquire a new request.
+  Standalone signing/transport, official host signing/session ownership, default local
+  and offline queue paths, source identities, layouts and playback engine are unchanged.
+- Before-fix actual PlayerConnection fixtures fail two of six cases on uncaught stale/
+  recovering title publication. Each current debug flavor passes sixteen connection
+  cases plus twenty FM/intelligence queue-manager regressions on emulator-5554. The
+  connection fixture uses its real binder/queue manager/StableDeckPlayer and muted
+  silence-source ExoPlayer decks, an in-memory database and closed synthetic metadata
+  responses; it does not start the registered MusicService lifecycle or access official
+  credentials, media, accounts or servers. Guest hydration succeeds; a response retired
+  during its request cannot replace the sentinel queue. Ordinary recovery-independent
+  queue and existing-item behavior remains covered. This is not audible, live-account,
+  Home/library callback, full lifecycle or release-runtime acceptance.
 
 ### ABI-016: Standalone Legacy Media Spans Need Current Source Authorization
 

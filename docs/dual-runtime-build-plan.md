@@ -146,7 +146,7 @@ server acceptance, or mark the overall goal complete while these exit gates rema
 ### Merge Review Coverage (2026-10-02)
 
 The review base is main `1d830d3f9cd11294e2bb977c7d0ba77f0fb8ca29`, against
-`b837941a` plus the diagnostic/component qualification below. Source review is separate from
+`20ce19f1` plus the catalog click-handoff qualification below. Source review is separate from
 the remaining exit gates above. Resume open groups instead of repeating qualified
 groups unless their source changes or a new failure is reproduced.
 
@@ -154,7 +154,7 @@ groups unless their source changes or a new failure is reproduced.
 | --- | --- | --- |
 | Flavor/manifest/dependencies/R8, network providers and signing | Original standalone transport/codec restoration and host-only call boundaries reviewed; native R8 evidence is recorded below | Reviewed at source level; production upgrade/runtime gates remain separate |
 | Bootstrap, ViewModel factory and navigation | Graph/context injection, 29 unscoped provider bindings and owner/key lifecycle reviewed; navigation body matches main except its comment | Reviewed at source level; factory lifecycle tests remain paired |
-| Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Reviewed at source level; actual playback/reporting acceptance remains separate |
+| Shared player, queues, persistence, history, cache and lyrics | Session/source ownership, invalidation, serialization, FM/intelligence and selected catalog click handoff, direct QQ/AMLL and resource handling reviewed; no new engine/layout repair | Listed paths reviewed at source level; remaining consumer callback integration and actual playback/reporting acceptance remain separate |
 | Together session coordinator | Room/player generations, entire job-tree retirement, command suppression and captured request owner reviewed; original queue synchronization bodies retained | Reviewed at source level; real cooperating-account acceptance remains open |
 | Database and download runtime | Room 17-to-21 additive migrations, flavor-specific ownership policy, legacy WorkSpec conversion/startup fence, owner-bound queue/worker, transfer/publication receipts, notifications and backend download semantics reviewed | Reviewed at source level; original-install upgrade and complete runtime acceptance remain separate |
 | Catalog and comment consumers | Collection endpoint adapters, artist consumers and comment paging/reply ownership reviewed; album, playlist, both podcast and category-discovery ownership repairs are verified below | Listed consumer ownership reviewed at source level; full catalog/UI integration audit and actual account/server matrices remain open |
@@ -3010,6 +3010,63 @@ APKs are not committed. `git diff --check` passes before the scoped local commit
   paired lifecycle/account/server, capability or complete semantic merge-review gates.
   Local evidence: `/tmp/meilox-storage-probe-*-2026-10-02*` and
   `/tmp/meilox-component-gate-*-2026-10-02*`; logs, APKs and credentials stay out of Git.
+
+### D3/D4/D5/D6 Checkpoint: Captured Catalog Clicks and Queue Hydration (2026-10-02)
+
+- The previous immediate page guards did not own asynchronous PlayerConnection work.
+  Daily recommendations, playlist/album, both artist pages and listening rank now
+  forward the displayed session through new queues and existing-item clicks. Their
+  composed session/content are value snapshots, not delegated state read again after
+  account replacement. Page/revision validation ends before player publication; it
+  does not make backend identity readers run under the page's session monitor.
+- PlayerConnection rejects retired/recovering synchronous title publication without
+  returning SessionChangedException to the click callback. Existing-item seek and play
+  are separately owner-checked, including reentrant invalidation during seek. New-track
+  assembly retains its owner after the UI callback returns and through queue commit.
+  The existing default paths remain recovery-independent for local/offline callers;
+  no blanket online-session requirement is introduced for them.
+- Selected placeholder metadata now carries that owner through the actual supplemental
+  song-detail request and response check. Public catalog guests remain valid; FM keeps
+  its authenticated-owner policy. Neither backend transport/signing, ListQueue ordering,
+  playlist source, shuffle/start index, original frontend tree nor playback engine is
+  replaced. Other consumer callback integration still needs its own audit;
+  the selected pages do not qualify every retained playback action.
+- Before repair, six actual PlayerConnection device cases reproduce two uncaught
+  title-publication exceptions. Current matched debug packages each pass sixteen new
+  connection cases plus six intelligence and fourteen FM queue-manager regressions:
+  36 parasite cases in 0.368s, 36 standalone cases in 1.025s. Metadata tests prove the
+  captured tag, successful guest hydration and rejection of a retired successful reply,
+  not just an empty-response/no-op. Existing queue seek and default recovery paths are
+  also checked. Fixtures use real binder/connection/manager/StableDeckPlayer and muted
+  silence-source decks, closed API substitutes and an in-memory database. They do not
+  start registered service lifecycle, alter persistent queues or perform real writes.
+- Current paired JVM results remain 951 standalone and 974 parasite cases (1925), zero
+  failures/errors/skips. Both current debug and AndroidTest packages build in 1m02s
+  (160 tasks). Preserving installs target only the module and isolated standalone
+  debug IDs on emulator-5554; the original production standalone is not replaced.
+- Both current production R8 packages build in 8m38s (107 tasks). All 56 local release
+  checks pass, including the actual signed SDK pair and swapped/unsigned/missing-scope
+  negatives; no remote workflow or upload runs. The ordinary parasite release is
+  development-signed with the existing compatible key, signature/16KB alignment checked
+  and preserving-installed. SHA-256:
+  `7029fb5ba73aceb66eff4ac7f26c8199616e8fb2d4cfb166d9a3d571c61d740b`.
+  App-only TV cold launch succeeds in 7574ms; a screenshot shows the original portrait
+  shared Home and paused mini-player. PID 21780 has an empty Java crash buffer. Its
+  session remains paused at 55536ms, official TV playback remains STOPPED, and MediaStore
+  row 820 retains size 22705573, TV ownership and pending=0. This is bounded restore/
+  startup evidence, not new catalog UI interaction, motion, audio or full R8 acceptance.
+- API-015 is extended in place. These checks do not complete framework-free startup,
+  production upgrade/signing, real account changes, capability decisions, full lifecycle/
+  business/server coverage or the remaining merge audit. Logs stay out of Git at
+  `/tmp/meilox-queue-handoff-*-2026-10-02.log`.
+- Remaining handoff audit is concrete: Home private/similar/podcast, heart seeds and FM,
+  Library liked/FM, SearchResultScreen, PodcastDetailContent and recognition results
+  still call default playback entry points without their displayed owner. Cloud page
+  and History guards also end before the asynchronous default queue build; review those
+  continuations with substitutes, not repeated live cloud experiments. History/local
+  downloads must retain their existing generation/source affinity and offline-recovery
+  policy rather than adopting the recovered-online-only policy of these catalog pages.
+  Home intelligence's consume callback also needs a separate publication-lock review.
 
 ## Acceptance and Remaining Decisions
 

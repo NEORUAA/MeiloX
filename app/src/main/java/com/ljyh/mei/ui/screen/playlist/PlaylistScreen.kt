@@ -374,20 +374,21 @@ private fun PlaylistContent(id: Long, session: com.ljyh.mei.data.session.Session
             // 播放全部
             onPlayAll = {
                 buildListQueue()?.let { queue ->
-                    playerConnection.playQueue(queue)
+                    playerConnection.playQueue(queue, expectedSession = session)
                 }
             },
             onShufflePlay = {
                 buildListQueue(randomStart = true)?.let { queue ->
-                    playerConnection.playQueue(queue, shuffle = true)
+                    playerConnection.playQueue(queue, shuffle = true, expectedSession = session)
                 }
             },
 
             // 点击单曲播放
             onTrackClick = { mediaMetadata, index ->
                 if (selection.active) selection.toggle(mediaMetadata.id.toString())
-                else playerConnection.onTrackClicked(
+                else if (session != null) playerConnection.onTrackClicked(
                     trackId = mediaMetadata.id.toString(),
+                    expectedSession = session,
                     buildQueue = {
                         buildListQueue(mediaMetadata.id)
                     }

@@ -448,7 +448,7 @@ class ListeningRankViewModel internal constructor(
 @OptIn(UnstableApi::class)
 @Composable
 fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = viewModel()) {
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -530,16 +530,21 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = viewMo
                                 )
                             }
                         },
-                        onClick = { viewModel.withCurrent(state) {
-                            playerConnection?.playQueue(
-                                ListQueue(
-                                    id = "account-rank-${state.period.name}",
-                                    title = navController.context.getString(R.string.account_listening_rank),
-                                    items = state.records.map { it.song.id.toString() to null },
-                                    startIndex = index,
-                                ),
-                            )
-                        } },
+                        onClick = {
+                            var current = false
+                            viewModel.withCurrent(state) { current = true }
+                            if (current) {
+                                playerConnection?.playQueue(
+                                    ListQueue(
+                                        id = "account-rank-${state.period.name}",
+                                        title = navController.context.getString(R.string.account_listening_rank),
+                                        items = state.records.map { it.song.id.toString() to null },
+                                        startIndex = index,
+                                    ),
+                                    expectedSession = state.session,
+                                )
+                            }
+                        },
                     )
                 }
             }

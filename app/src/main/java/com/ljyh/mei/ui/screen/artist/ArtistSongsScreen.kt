@@ -45,7 +45,7 @@ fun ArtistSongsScreen(
 ) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val state by viewModel.state.collectAsState()
+    val state = viewModel.state.collectAsState().value
     var overlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val title = stringResource(R.string.artist_all_songs)
     LaunchedEffect(id) { viewModel.open(id) }
@@ -63,20 +63,25 @@ fun ArtistSongsScreen(
             items(state.songs, key = { it.id }) { song ->
                 Track(
                     track = song,
-                    onClick = { viewModel.withCurrent(state) {
-                        val songs = state.songs
-                        playerConnection.onTrackClicked(
-                            trackId = song.id.toString(),
-                            buildQueue = {
-                                ListQueue(
-                                    UUID.randomUUID().toString(),
-                                    title,
-                                    songs.map { it.id.toString() to it.toMediaItem() },
-                                    songs.indexOf(song),
-                                )
-                            },
-                        )
-                    } },
+                    onClick = {
+                        var current = false
+                        viewModel.withCurrent(state) { current = true }
+                        if (current) {
+                            val songs = state.songs
+                            playerConnection.onTrackClicked(
+                                trackId = song.id.toString(),
+                                expectedSession = state.session,
+                                buildQueue = {
+                                    ListQueue(
+                                        UUID.randomUUID().toString(),
+                                        title,
+                                        songs.map { it.id.toString() to it.toMediaItem() },
+                                        songs.indexOf(song),
+                                    )
+                                },
+                            )
+                        }
+                    },
                     onMoreClick = { bounds -> viewModel.withCurrent(state) { overlay = OverlayState.TrackActionMenu(song, bounds) } },
                 )
             }

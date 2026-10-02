@@ -370,6 +370,7 @@ class PlaybackQueueManager(
         startInShuffleMode: Boolean = false,
         playWhenReady: Boolean = true,
         publishQueue: (() -> Unit) -> Unit = { it() },
+        expectedSession: SessionStamp? = null,
     ) {
         cancelServerShuffle()
         queueSelectionJob?.cancel()
@@ -403,7 +404,7 @@ class PlaybackQueueManager(
                 // The selected item must be hydrated before prepare(). A placeholder can fail
                 // immediately in the player, and MusicService handles that failure by seeking
                 // to the next item (which is random when shuffle is enabled).
-                val selectedItem = hydrateQueueItem(allIds[startIndex])
+                val selectedItem = hydrateQueueItem(allIds[startIndex], expectedSession)
                 if (selectedItem == null) {
                     Log.e(TAG, "Unable to hydrate selected item ${allIds[startIndex].first}")
                     if (generation == queueBuildGeneration) {
@@ -666,17 +667,26 @@ class PlaybackQueueManager(
     }
 
 
-    private suspend fun loadSongDetails(ids: List<String>, owner: SessionStamp? = null): List<MediaItem> {
+    private suspend fun loadSongDetails(
+        ids: List<String>, owner: SessionStamp? = null, requireAuthentication: Boolean = true,
+    ): List<MediaItem> {
         return withContext(Dispatchers.IO) {
+            fun requireOwner() {
+                if (owner == null) return
+                if (requireAuthentication) requireFmOwner(owner) else {
+                    sessions.requireCurrent(owner)
+                    if (sessions.recoveryRequired.value) throw SessionChangedException()
+                }
+            }
             try {
-                if (owner != null) requireFmOwner(owner)
+                requireOwner()
                 val response = apiService.getSongDetail(
                     com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(",")), owner,
                 )
                 currentCoroutineContext().ensureActive()
                 if (owner != null) {
-                    requireFmOwner(owner)
-                    if (response.code != 200) throw IOException("FM seed request failed (${response.code})")
+                    requireOwner()
+                    if (response.code != 200) throw IOException("Song detail request failed (${response.code})")
                 }
                 response.songs.map { it.toMediaItem() }
             } catch (e: CancellationException) {
@@ -695,11 +705,11 @@ class PlaybackQueueManager(
      * Non-placeholder items are already safe to use; unresolved entries reuse the same
      * metadata request as the lazy-loading path below.
      */
-    private suspend fun hydrateQueueItem(item: Pair<String, MediaItem?>): MediaItem? {
+    private suspend fun hydrateQueueItem(item: Pair<String, MediaItem?>, owner: SessionStamp? = null): MediaItem? {
         val existing = item.second
         if (existing != null && isPlayableMediaItem(existing)) return existing
 
-        return loadSongDetails(listOf(item.first))
+        return loadSongDetails(listOf(item.first), owner, requireAuthentication = false)
             .firstOrNull { it.mediaId == item.first }
     }
 

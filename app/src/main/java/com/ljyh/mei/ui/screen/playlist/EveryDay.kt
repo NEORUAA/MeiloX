@@ -36,8 +36,8 @@ import com.ljyh.mei.ui.model.UiPlaylist
 @Composable
 fun EveryDay(viewModel: PlaylistViewModel = viewModel()) {
     val context = LocalContext.current
-    val everyDaySongs by viewModel.everyDay.collectAsState()
-    val session by viewModel.dailySession.collectAsState()
+    val everyDaySongs = viewModel.everyDay.collectAsState().value
+    val session = viewModel.dailySession.collectAsState().value
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current ?: return
 
@@ -95,14 +95,15 @@ fun EveryDay(viewModel: PlaylistViewModel = viewModel()) {
             uiData = displayedUiData,
             pagingItems = null,
             isLoading = everyDaySongs is Resource.Loading,
-            onPlayAll = { queue()?.let { playerConnection.playQueue(it) } },
-            onShufflePlay = { queue()?.let { playerConnection.playQueue(it, shuffle = true) } },
+            onPlayAll = { queue()?.let { playerConnection.playQueue(it, expectedSession = session) } },
+            onShufflePlay = { queue()?.let { playerConnection.playQueue(it, shuffle = true, expectedSession = session) } },
             headerActionIcon = Icons.Default.FavoriteBorder,
             headerActionLabel = "收藏",
             onTrackClick = { metadata, _ ->
                 val selected = queue(metadata.id)
                 if (selected != null) playerConnection.onTrackClicked(
                     trackId = metadata.id.toString(),
+                    expectedSession = session,
                     buildQueue = { queue(metadata.id) },
                 )
             },

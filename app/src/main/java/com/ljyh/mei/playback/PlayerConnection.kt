@@ -114,17 +114,19 @@ class PlayerConnection(
     fun isPlaying(id: String): Boolean {
         return mediaMetadata.value?.id.toString() == id && isPlaying.value
     }
-    fun onTrackClicked(trackId: String, buildQueue: () -> ListQueue?) {
-        val foundIndex = player.mediaItems.indexOfFirst { it.mediaId == trackId }
-        val foundItem = player.mediaItems.getOrNull(foundIndex)
-        if (foundItem != null && isPlayableMediaItem(foundItem)) {
-            player.seekToDefaultPosition(foundIndex)
-            player.play()
-        } else {
-            buildQueue()?.let {
-                playQueue(it)
+    fun onTrackClicked(trackId: String, expectedSession: SessionStamp? = null, buildQueue: () -> ListQueue?) {
+        try {
+            withPlaybackSession(expectedSession) { }
+            val foundIndex = player.mediaItems.indexOfFirst { it.mediaId == trackId }
+            val foundItem = player.mediaItems.getOrNull(foundIndex)
+            if (foundItem != null && isPlayableMediaItem(foundItem)) {
+                withPlaybackSession(expectedSession) { player.seekToDefaultPosition(foundIndex) }
+                withPlaybackSession(expectedSession) { player.play() }
+            } else {
+                buildQueue()?.let { playQueue(it, expectedSession = expectedSession) }
             }
-
+        } catch (_: SessionChangedException) {
+            // Retained page clicks must not seek or start the replacement account's queue.
         }
     }
 
@@ -139,27 +141,36 @@ class PlayerConnection(
 
 
     fun playQueue(queue: ListQueue, shuffle: Boolean? = null, expectedSession: SessionStamp? = null) {
-        val publish: (() -> Unit) -> Unit = { action ->
-            if (expectedSession == null) action() else service.accountSessions.withCurrent(expectedSession) {
-                if (service.accountSessions.recoveryRequired.value) throw SessionChangedException()
-                action()
-            }
-        }
+        val publish: (() -> Unit) -> Unit = { action -> withPlaybackSession(expectedSession, action) }
         // 判断当前 UI 上的模式是否是随机模式
         val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
-        publish {
-            service.queueTitle = queue.title
-            queueTitle.value = queue.title
-        }
-        // 调用新的 playQueue 方法，传入随机意图
-        service.scope.launch {
-            try {
-                publish {
-                    service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle, publishQueue = publish)
-                }
-            } catch (_: SessionChangedException) {
-                // A retired personalized result must not start work for the replacement account.
+        try {
+            publish {
+                service.queueTitle = queue.title
+                queueTitle.value = queue.title
             }
+            // 调用新的 playQueue 方法，传入随机意图
+            service.scope.launch {
+                try {
+                    publish {
+                        service.queueManager.playQueue(
+                            queue, startInShuffleMode = startInShuffle, publishQueue = publish,
+                            expectedSession = expectedSession,
+                        )
+                    }
+                } catch (_: SessionChangedException) {
+                    // A retired personalized result must not start work for the replacement account.
+                }
+            }
+        } catch (_: SessionChangedException) {
+            // Reject a retired click before its synchronous title publication as well.
+        }
+    }
+
+    private fun withPlaybackSession(expectedSession: SessionStamp?, action: () -> Unit) {
+        if (expectedSession == null) action() else service.accountSessions.withCurrent(expectedSession) {
+            if (service.accountSessions.recoveryRequired.value) throw SessionChangedException()
+            action()
         }
     }
     fun playNext(item: MediaItem) = playNext(listOf(item))

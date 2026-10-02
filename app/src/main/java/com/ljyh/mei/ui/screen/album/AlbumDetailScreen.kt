@@ -303,7 +303,7 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
             // 播放全部
             onPlayAll = {
                 buildListQueue(0)?.let { queue ->
-                    playerConnection.playQueue(queue)
+                    playerConnection.playQueue(queue, expectedSession = state.session)
                 }
             },
 
@@ -312,9 +312,10 @@ private fun AlbumDetailContent(id: Long, state: AlbumDetailState, viewModel: Alb
                 if (selectionMode) {
                     val trackId = mediaMetadata.id.toString()
                     selectedIds = if (trackId in selectedIds) selectedIds - trackId else selectedIds + trackId
-                } else {
+                } else if (state.session != null) {
                     playerConnection.onTrackClicked(
                         trackId = mediaMetadata.id.toString(),
+                        expectedSession = state.session,
                         buildQueue = {
                             val originalIndex = uiData.tracks.indexOfFirst { it.id == mediaMetadata.id }
                                 .takeIf { it >= 0 } ?: index
