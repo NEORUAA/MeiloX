@@ -833,6 +833,14 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   the earlier near-end failure is not reclassified. ABI-009 continues to own the
   restored standalone reporting implementation after the dual-runtime revision.
 
+- Server-read follow-up (2026-10-03): both periods of the current TV R8 account's
+  original listening-rank page show positive counts for the earlier SDK-observed
+  track and successor (two each). This is the `/api/v1/play/record` server-record
+  contract, not local history. No before-play counter baseline ties those counts
+  to an individual report; raw upload acknowledgement and full-track completion
+  are not inferred. The paired current standalone R8 account has a different row
+  set. See [Paired Server Records](dual-runtime-build-plan.md#paired-server-records-and-helper-boundary-review-2026-10-03).
+
 ### API-017: Download Permission Is Not Playback Permission
 
 - Recorded: 2026-09-29. Host: TV 1.1.80.
@@ -2872,6 +2880,13 @@ These are integration differences, not server API semantics.
   read consumption, not new listening-statistics acceptance or updated standalone
   R8/production-ID execution; the full paired account/history and real authorization
   matrices remain separate.
+
+- Current production-ID R8 follow-up (2026-10-03): both installed clients consume
+  their own account details and weekly/all-time ranks through the unchanged pages,
+  including weekly refresh and distinct period/account row sets. Their installed
+  hashes match the latest development-signed R8 pair. No account switch, logout,
+  playback command or direct database mutation is performed; real authorization/expiry and
+  retained-callback transitions remain separate from these successful reads.
 
 ### API-036: Standalone Photo Metadata Is Not Host Business Data
 

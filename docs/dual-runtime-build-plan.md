@@ -150,7 +150,7 @@ The latest acceptance state is:
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
-| D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
+| D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; both current production-ID R8 clients consume distinct authenticated weekly/all-time server records | Complete real business/failure/account coverage, cooperating social/Together accounts and scoped upload/write acceptance; server counter reads do not qualify individual report settlement |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
 
@@ -182,6 +182,7 @@ of repeating qualified groups unless their source changes or a new failure is re
 | Production diagnostic entry selection | API/version/signature/process eligibility, app/probe carrier selection, receiver/worker opt-in guards and ordinary R8 manifest/receiver behavior inspected; stale current-schema Room diagnostic repaired below | Listed entry points qualified within the recorded source/package scope; this is not full probe/test or business acceptance |
 | Business request adapters and remaining session ViewModels | User/Search/Recognition repositories and Search/Recognition/Social ViewModels reviewed; MeloX request, wiki, retained parser/report helpers and the account retry repair are recorded below | Listed source boundaries reviewed; full page integration and real business matrices remain separate |
 | Diagnostic helper ownership | Retrofit/capability helpers now pin every request; account/cloud/work/foreground/download/storage/publication helpers and the closed DownloadWorkerFixture inspected | Listed helper source reviewed; native substitutes qualify only the recorded scenarios |
+| Module microphone and PiP helpers | All nine helper source bodies, shared recognition capture/ViewModel and host PiP source reviewed; manifest/runtime registration, permission-result wiring, fingerprint asset interception and original PiP-render extraction hunks inspected | No new migration defect established in this source scope; existing permission, motion, Binder/action and host-death evidence stays bounded |
 | Remaining page/runtime-carrier and test support changes | At `7327e7d2`, changed hunks in the 47 UI paths named below and five complete runtime/prototype files were reviewed; later account-intent/probe, Social/Library and six catalog-navigation-family repairs, with bounded FindMusic, Search, AccountHome, Podcast and Wiki native callbacks, are recorded below. Test audit covers 149 source scans, 31 full reads and nine targeted safety entries, plus the new repairs | Named source scopes reviewed; the 13 catalog-navigation entries have source/JVM guards and bounded native coverage, not complete page integration, unchanged-body or full runtime acceptance |
 
 #### Reconciled Page and Runtime-Carrier Inventory
@@ -4587,6 +4588,39 @@ playlist/component/PlaylistActionOverlay.kt
   push, merge, tag or release is invoked. The current AVD uses a different
   certificate and must not be overwritten with this pair. Production-signed
   preserving upgrade and runtime acceptance remain separate, still-open gates.
+
+## Paired Server Records and Helper Boundary Review (2026-10-03)
+
+- Current installed production-ID, development-signed R8 hashes still match
+  `3e698fac38622a8de856181e3ff75cb9bfd04c6f6d25ad9732bb9422108d0d26`
+  (standalone) and
+  `00e45ab0ee38962c3e4eaed266858df4e22062b7b1c474aad168fb9f8837b2b5`
+  (parasite). Existing processes are brought forward, not restarted or replaced.
+- Both original account pages successfully load weekly and all-time listening ranks;
+  the weekly refresh control also returns populated records. The two accounts have
+  distinct totals/row sets. Standalone's leading weekly/all-time counts are 22/562;
+  TV's are 22/22. Screenshots verify period selection and populated original rows.
+- In both TV periods, The des Alizes and the previously observed successor each
+  show two plays. The Repository reads `/api/v1/play/record` through the selected
+  runtime, with type 1/weekData or type 0/allData, not local Room history. These
+  positive server records are separate evidence from the earlier SDK worker markers;
+  there is no before-play counter baseline proving an individual report's settlement,
+  nor an independently observed raw HTTP receipt or full-track completion here.
+- No playback command, account switch, social write, upload/download authorization,
+  permission change or APK installation is sent. Both shared players remain paused
+  at their observed positions (TV 156027ms/queue six; standalone 81766ms/queue 1512).
+  The native TV player remains inactive and STOPPED. Capture PNGs stay outside Git
+  under `/tmp/meilox-records-{week,alltime}-2026-10-03.png` and
+  `/tmp/meilox-standalone-records-{week,alltime}-2026-10-03.png`.
+- The new helper source scope listed in the review table is inspected without a
+  production edit. It retains caller/signature/version checks, one-use microphone
+  grants and finite capture, platform-only IPC, session-owned PiP data/commands,
+  cancellation/death cleanup and the extracted original rendering. No new defect
+  is established. No official source is tracked under `ncm_workspace`; shared assets,
+  native DSP and non-string resources still match main. This does not replace the
+  remaining real-account, capability or full merge/runtime gates.
+- `git diff --check` passes. Production code/APKs are unchanged; the preceding
+  paired JVM/build/release checks are retained, not represented as new executions.
 
 ## Acceptance and Remaining Decisions
 
