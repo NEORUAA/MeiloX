@@ -33,6 +33,20 @@ Superseded requirements:
 - Existing host evidence remains valid only within its recorded scope. It does not
   qualify a newly restored standalone backend or either new flavor automatically.
 
+## Current Validation Environment
+
+From 2026-10-03, use only the user's `HyperOS_4_Official_API_37` AVD for device
+validation. Its migration-time serial is `emulator-5574`, Android API 37, arm64,
+4 KB pages, KernelSU root and LSPosed 2.2.0/API 102. Identify the AVD by name before
+selecting a serial; emulator ports may change. This remains emulator evidence,
+not physical-device acceptance or a framework-free standalone test.
+
+Do not run further tests on `Pixel_10_Pro` (`emulator-5554` at migration time).
+Existing Pixel/16 KB checkpoints remain historical, bounded evidence. The user
+authorized local application/data migration and closing Pixel after verification,
+not deletion of its AVD or original data. The previous implementation goal remains
+paused during this environment transfer.
+
 ## Source and Build Boundaries
 
 Keep the existing `:app` project and introduce one `runtime` flavor dimension, rather
@@ -4324,6 +4338,50 @@ playlist/component/PlaylistActionOverlay.kt
   remain separate; resume unreviewed scopes rather than re-reading these seven
   unchanged bodies as new qualification.
 
+## HyperOS 4 Environment Transfer (2026-10-03)
+
+- Source checkout is `b0dbbab`; production source remains `8ff63f75`. No application
+  code, shared UI, page architecture, backend contract or APK version is changed.
+  The final transferred applications are official TV `com.netease.cloudmusic.tv`,
+  module `com.neoruaa.meilox.parasite`, original `com.neoruaa.meilox` and isolated
+  `com.neoruaa.meilox.standalone.debug`. Installed APK SHA-256 values match the
+  source backups byte for byte: TV `b0bba591...`, parasite `5ae79a5e...`, original
+  `7d0233bc...`, isolated debug `175a7f9e...` (full values in private audit records).
+- Private backups include credential-encrypted/device-protected application
+  directories and existing app-owned external data/media. They stay under the permission-restricted
+  local directory `~/.local/share/meilox-avd-migration/2026-10-03`, outside Git.
+  Source applications were stopped for consistent snapshots, not tested again.
+  Target application UIDs, cache groups and private-file SELinux categories are
+  reassigned for HyperOS; no Android Keystore or system account database is copied.
+- `com.netease.cloudmusic` was identified as a historical MeiloX 1.54.2 test APK,
+  not an official mobile client. The user excluded it during transfer; its new
+  target copy is uninstalled. Its original Pixel installation and private backup
+  remain intact. It is not part of final migration or runtime acceptance.
+- The migration enables MeiloX Parasite through the target LSPosed manager, with
+  static TV-only scope. The shared LSPosed database is not imported; pre-existing KeiMi
+  enabled state and all 19 scope entries are unchanged. The TV-only orientation
+  compatibility changes `265464455` and `265452344` are restored; no global rotation
+  setting or system-framework scope is added for MeiloX.
+- Three existing downloaded audio files have matching SHA-256, size, ownership
+  and non-pending status. Target MediaStore IDs are `40`, `41`, `42` rather than
+  source `342`, `441`, `820`. Existing song URI references are remapped, with the
+  published TV download receipt updated to the target provider version/generation.
+  SQLite integrity passes; song counts stay 150/original, 23/isolated and 15/TV.
+  TV's existing download row displays completed. No new download/grant is requested.
+- Actual TV cold launch reaches portrait MeiloX Home (3288 ms); the executed
+  API-102 module marker matches `r8-map-id-020077de3aa68755d9e29c79c66cfccf98fda510b24cae9b3267a885beb69979`.
+  Original and isolated standalone cold launches also show their restored account
+  identities and shared Home. PID-scoped crash buffers are empty for these launches.
+  TV retains its 11-item queue paused at 178897 ms; isolated standalone retains
+  seven items paused at 143811 ms. The native TV player remains stopped/inactive.
+- After verification, `adb -s emulator-5554 emu kill` closes Pixel successfully.
+  A subsequent device inventory contains only HyperOS `emulator-5574`. Pixel's
+  AVD and original installations/data are retained, not deleted or upgraded.
+- These checks qualify environment/data transfer only. They do not qualify audible
+  playback, all interactions, account expiry, later statistics, a production-signed
+  original-install upgrade, cross-R8 task restoration or the remaining D2-D6 gates.
+  APKs are copied unchanged, so no rebuild or new unit-test execution is claimed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -4353,6 +4411,7 @@ playlist/component/PlaylistActionOverlay.kt
   scenarios. No generic saved-state clearing or shared frontend repair is authorized
   by the unresolved cross-artifact failure.
 
-The shared dependency-boundary D1 exit condition is met and the dual-debug skeleton is
-operational on the current AVD. D2's framework-free startup gate and D3-D6 remain open;
-final acceptance still requires the scoped evidence above, not compilation alone.
+The shared dependency-boundary D1 exit condition is met and the dual-runtime skeleton
+is operational on the migrated HyperOS 4 AVD. D2's framework-free startup gate and
+D3-D6 remain open; final acceptance still requires the scoped evidence above, not
+compilation alone.
