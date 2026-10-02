@@ -1968,6 +1968,15 @@ These are integration differences, not server API semantics.
   an obsolete 17-to-18 upgrade. This is diagnostic/package evidence, not original
   installation upgrade, complete host storage qualification or server acceptance.
 
+- Production-signing follow-up (2026-10-03): the user-provided local key matches the
+  previously inspected standalone release certificate (`03bc4bbc...`). Both current
+  production-ID R8 flavors are signed with it and pass the exact paired workflow
+  preparation, including TV-only API 102 metadata and helper-only registrations.
+  Original ZIP payloads are unchanged by signing. No credentials are recorded here
+  and no APK is installed: the active AVD uses a different development certificate.
+  Certificate/package qualification is not a production-signed preserving-upgrade
+  or runtime test. See [Production-Certificate Paired Artifacts](dual-runtime-build-plan.md#production-certificate-paired-artifacts-2026-10-03).
+
 ### ABI-008: Standalone Cookie Publication Must Not Borrow Host Ownership
 
 - Date: 2026-09-30. The original standalone interceptor read `CookieKey` on every send;

@@ -149,10 +149,10 @@ The latest acceptance state is:
 | --- | --- | --- |
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
-| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4 | Separate production-release signing compatibility; real authorization/expiry/account matrix |
+| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
 | D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; existing live evidence is retained | Complete real business/failure/account coverage, cooperating social/Together accounts, scoped upload/write acceptance and later server statistics |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
-| D6 | Both production R8 artifacts build; local real-SDK release/signing/identity/version/declaration/16KB gates pass | Full artifact/runtime qualification, production upgrade/signing compatibility and complete review against current main; no push/release/merge authorized |
+| D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
 server acceptance, or mark the overall goal complete while these exit gates remain.
@@ -4552,6 +4552,41 @@ playlist/component/PlaylistActionOverlay.kt
   This closes the named module-bootstrap/binding scenario, not every real helper
   permission/PiP lifecycle. Production sources and both installed R8 APKs are
   unchanged; prior paired JVM/release evidence is retained, not rerun or broadened.
+
+## Production-Certificate Paired Artifacts (2026-10-03)
+
+- The user supplied a local keystore and authorized reading the signing parameters
+  from its project workflow. Passwords stay in child-process environment variables;
+  no password, private key or signing configuration is copied into this repository.
+  The original keystore's before/after SHA-256 is unchanged.
+- Its public certificate SHA-256 is
+  `03bc4bbc1e9b3b2bfad4e8712ccbc964546a2648ec6992d697875270d2b1a737`,
+  matching the previously inspected MeiloX production release, not the AVD's
+  development certificate. This closes the certificate-identity uncertainty only.
+- At `265de285`, the paired unit-test/release Gradle command succeeds in 9 seconds
+  (163 tasks: 10 executed, 153 up-to-date), including both vital lint gates. Unit
+  tasks are up-to-date: the retained XML reports contain 1074 standalone and 1085
+  parasite cases with zero failures/errors/skips; no fresh case execution is claimed.
+- Both final production-ID R8 APKs keep version 1.54.6/code 11 and pass SDK v3
+  signature verification. Standalone SHA-256 is
+  `afe5af2b01d83a4b622c301ccadc6cfd6ee401dcf7709fc9188f991382a926bb`;
+  parasite SHA-256 is
+  `2b0a3c9a7e19ea0d3254461b655a94bccd5c0a87c3ba2504586894aa6fe0804b`.
+  Signing preserves all original ZIP entry names/order and the concatenated
+  uncompressed payload (266 standalone/269 parasite entries); only signature
+  entries are added. No UI/backend source is changed.
+- The existing workflow's exact `prepare_apks` block passes on this production
+  pair: identity/version, usable standalone components, helper-only parasite
+  components, API 102 TV-only declarations, saved-state Parcelable identities,
+  signatures and 16KB alignment. Exported hashes equal their signed inputs.
+  `ruby .github/tests/dual_runtime_release_test.rb --built-apks` also passes its
+  metadata, signing, component-negative and actual-SDK package scenarios.
+- The pair and credential-free verification manifest remain outside Git under
+  `/tmp/meilox-production-pair-2026-10-03-20261003-55614-7vaoob`.
+  No APK is installed, no account/data/LSPosed scope is changed, and no remote CI,
+  push, merge, tag or release is invoked. The current AVD uses a different
+  certificate and must not be overwritten with this pair. Production-signed
+  preserving upgrade and runtime acceptance remain separate, still-open gates.
 
 ## Acceptance and Remaining Decisions
 
