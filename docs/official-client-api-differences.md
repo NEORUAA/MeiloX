@@ -807,6 +807,14 @@ prove HTTP status, completed playback, or final listening-statistics settlement.
   hold the module session monitor across host calls, whose account stores have their
   own locks. Native account metadata rotation remains intact; a real account change
   during the worker call is not yet qualified as an atomic delivery guarantee.
+- Adapter review (2026-10-03): both complete reporting adapter/bridge bodies are
+  inspected. In the rehashed, pinned TV APK, actual DEX `j1.r` forwards to private
+  `j1.q`; the inspected `q` and `p0.I` bodies do not directly call each other's
+  hooked entry. The existing official log queues/writers remain in control.
+  Two additional closed ownership cases qualify independent copied markers for
+  all four actions and rejection of a remaining channel after a session transition.
+  Map copies model queued fields; they do not execute host fastjson/hooks or prove
+  real account-switch atomicity, native upload or later server aggregation.
 - Evidence: unit tests cover ordering, captured timestamps, pause exclusion, duplicate
   completions, draining/cancellation, guests/recovery, stale identities, one-use markers,
   expiry, bounded retention and delayed invalidation. On the AVD, both native workers
@@ -1480,6 +1488,13 @@ These are integration differences, not server API semantics.
   those stubs. Expired NOS authorization fails instead of fetching a new-account token,
   inventing a refresh contract, or switching transport. This limitation needs explicit
   live qualification; source signatures alone do not prove the SDK succeeds on AVD.
+- Adapter review (2026-10-03): complete TvHostNosUploadBackend and
+  HostCloudBinaryUploader bodies retain those policies. Actual pinned-APK DEX
+  confirms the uploader/provider, builder and progress/cancellation signatures;
+  selected official uploader bodies retain pre-LBS cancellation, offset-based
+  completion and failure for a null refresh token. No real transfer is repeated,
+  and this does not extend the existing pre-transfer cancellation fixture to
+  successful upload, token-expiry recovery or blocked-I/O interruption latency.
 - Standalone retains its own NOS lookup and transfer protocol. Lookup responses are
   bounded; token-bearing uploads require an HTTPS `.127.net` origin with no userinfo,
   alternate port, path/query/fragment, redirects or connection-failure retries. Only

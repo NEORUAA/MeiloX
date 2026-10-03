@@ -24,6 +24,36 @@ class PlaybackReportOwnershipTest {
         assertFalse(replay.containsKey(PlaybackReportOwnership.MARKER))
     }
 
+    @Test fun copiedNativeChannelsConsumeIndependentMarkers() {
+        val queued = PlaybackReportOwnership.ACTIONS.associateWith { action ->
+            ownership.mark(action, fields, sessions.snapshot()).toMutableMap<String, Any?>()
+        }
+        assertEquals(4, queued.values.map { it[PlaybackReportOwnership.MARKER] }.toSet().size)
+        for ((action, copiedFields) in queued) {
+            val replay = copiedFields.toMutableMap()
+            assertEquals(sessions.snapshot(), ownership.consume(action, copiedFields))
+            assertEquals(fields, copiedFields)
+            assertNull(ownership.consume(action, replay))
+            assertEquals(fields, replay)
+        }
+    }
+
+    @Test fun transitionAfterOneNativeChannelDropsRemainingChannels() {
+        val owner = sessions.snapshot()
+        val legacy = ownership.mark("play", fields, owner).toMutableMap<String, Any?>()
+        val bi = ownership.mark("_pld", fields, owner).toMutableMap<String, Any?>()
+        assertEquals(owner, ownership.consume("play", legacy))
+        sessions.beginTransition().use {
+            assertNull(ownership.consume("_pld", bi))
+            assertEquals(fields, bi)
+            assertTrue(runCatching { ownership.mark("_pld", fields, owner) }
+                .exceptionOrNull() is SessionChangedException)
+        }
+        assertEquals(fields, legacy)
+        assertNull(ownership.consume("_pld", bi))
+        assertNotNull(ownership.consume("_pld", marked("_pld")))
+    }
+
     @Test fun officialUnownedEventsAndFabricatedTokensCannotDuplicatePlayback() {
         assertNull(ownership.consume("play", fields.toMutableMap()))
         val unknown = (fields + (PlaybackReportOwnership.MARKER to "unknown")).toMutableMap<String, Any?>()
