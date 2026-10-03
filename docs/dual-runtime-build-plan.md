@@ -649,6 +649,26 @@ Local evidence: `/tmp/meilox-dual-release-workflow-final.log` and
 or merge was triggered. D6 remains incomplete until runtime, upgrade and merge-readiness
 gates are qualified; this checkpoint changes only CI and documentation.
 
+### D6 Checkpoint: Hosted Runner SDK Initialization (2026-10-03)
+
+- The user-reported [Actions job](https://github.com/NEORUAA/MeiloX/actions/runs/37089492500/job/111106585328)
+  stopped before Gradle with `sdkmanager: command not found` (exit 127). That run
+  did not build, sign or upload either APK.
+- Added explicit [Android SDK setup](https://github.com/android-actions/setup-android)
+  after Java initialization and before installing platform/build-tools 37. APK
+  preparation resolves `apkanalyzer` from the configured PATH instead of assuming
+  a `cmdline-tools/latest` directory. Triggers, signing identities, release
+  permissions and the four paired Gradle targets are unchanged.
+- Local Ruby/shell syntax and workflow fixtures pass, including setup ordering,
+  versioned-only command-line tools with spaces in paths, and rejection when the
+  analyzer is absent from PATH. The existing two release APKs also pass
+  `dual_runtime_release_test.rb --built-apks` with the real SDK and a disposable
+  fixture signing key; temporary keys/APKs are removed.
+- No app source/UI, installation, device state or production credentials changed.
+  No push, remote retry, dispatch, tag or release was performed. This is local
+  configuration/package evidence, not a successful hosted-runner rerun or D6
+  completion.
+
 ### D1/D4 Checkpoint: Runtime-Owned Playlist Collection (2026-09-30)
 
 - Extracted playlist collection/uncollection into `PlaylistCollectionBackend`. Shared

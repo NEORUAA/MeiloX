@@ -37,7 +37,10 @@ end
 
 def test_built_apks
   sdk = ENV.fetch('ANDROID_HOME')
-  analyzer = File.join(sdk, 'cmdline-tools/latest/bin/apkanalyzer')
+  analyzer = ENV.fetch('PATH').split(File::PATH_SEPARATOR).map { |path| File.join(path, 'apkanalyzer') }
+                .find { |path| File.file?(path) && File.executable?(path) } ||
+             File.join(sdk, 'cmdline-tools/latest/bin/apkanalyzer')
+  check(File.executable?(analyzer), 'Android SDK APK analyzer is unavailable')
   parasite = File.join(ROOT, 'app/build/outputs/apk/parasite/release/app-parasite-release-unsigned.apk')
   PARASITE_SAVED_STATE_TYPES.each do |name|
     stdout, stderr, status = Open3.capture3(analyzer, 'dex', 'code', '--class', name, parasite)
@@ -56,7 +59,8 @@ def test_built_apks
                                       '-storepass', 'fixture-only', '-keypass', 'fixture-only', '-keyalg', 'RSA',
                                       '-keysize', '2048', '-validity', '1', '-dname', 'CN=MeiloX Packaging Test')
     check(status.success?, "Temporary fixture key: #{stderr}")
-    environment = { 'ANDROID_HOME' => sdk, 'VERSION_NAME' => values.fetch('tag_name'),
+    environment = { 'ANDROID_HOME' => sdk, 'PATH' => "#{File.dirname(analyzer)}:#{ENV.fetch('PATH')}",
+                    'VERSION_NAME' => values.fetch('tag_name'),
                     'VERSION_CODE' => values.fetch('version_code') }
     FLAVORS.each do |flavor|
       relative = "app/build/outputs/apk/#{flavor}/release"
@@ -191,7 +195,7 @@ end
 def signed_fixture(directory)
   sdk = File.join(directory, 'sdk')
   build_tools = File.join(sdk, 'build-tools/37.0.0')
-  cmdline = File.join(sdk, 'cmdline-tools/latest/bin')
+  cmdline = File.join(sdk, 'cmdline-tools/22.0/bin')
   FileUtils.mkdir_p([build_tools, cmdline])
   tool = File.join(directory, 'sdk-fixture.rb')
   File.write(tool, <<~'RUBY')
@@ -273,7 +277,8 @@ def signed_fixture(directory)
                                   'signature' => true, 'aligned' => true))
     [flavor, path]
   end
-  [paths, { 'ANDROID_HOME' => sdk, 'VERSION_NAME' => '1.54.6', 'VERSION_CODE' => '11',
+  [paths, { 'ANDROID_HOME' => sdk, 'PATH' => "#{cmdline}:#{ENV.fetch('PATH')}",
+            'VERSION_NAME' => '1.54.6', 'VERSION_CODE' => '11',
             'STANDALONE_SIGNED_RELEASE_FILE' => paths.fetch('standalone'),
             'PARASITE_SIGNED_RELEASE_FILE' => paths.fetch('parasite') }]
 end
@@ -341,6 +346,15 @@ check(RELEASE.fetch('steps').count { |step| step['uses'] == 'actions/download-ar
 gradle = STEPS.find { |step| step['id'] == 'build_apks' }
 check(gradle.fetch('run').split == %w[./gradlew :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
                                           :app:assembleStandaloneRelease :app:assembleParasiteRelease], 'Build and test both runtimes')
+sdk_setup = STEPS.select { |step| step['uses'] == 'android-actions/setup-android@v4' }
+check(sdk_setup.size == 1, 'Initialize the Android SDK and command-line tool PATH exactly once')
+sdk_install = STEPS.find { |step| step['name'] == 'Install Android build tools' }
+check(sdk_install&.fetch('run') == "sdkmanager 'platforms;android-37' 'build-tools;37.0.0'",
+      'Install the exact compile SDK and signing/alignment build tools')
+java_index = STEPS.index { |step| step['uses'] == 'actions/setup-java@v6' }
+check(java_index && java_index < STEPS.index(sdk_setup.first) &&
+      STEPS.index(sdk_setup.first) < STEPS.index(sdk_install) && STEPS.index(sdk_install) < STEPS.index(gradle),
+      'Set up Java and Android SDK before installing tools or invoking Gradle')
 signer = STEPS.find { |step| step['id'] == 'sign_apks' }
 { 'SIGNING_KEY' => 'SIGNING_KEY', 'KEY_ALIAS' => 'ALIAS', 'KEY_STORE_PASSWORD' => 'KEY_STORE_PASSWORD',
   'KEY_PASSWORD' => 'KEY_PASSWORD' }.each do |input, secret|
@@ -368,7 +382,7 @@ check(publisher.dig('with', 'artifacts').split(',').sort == FLAVORS.map { |flavo
   _, stderr, status = Open3.capture3('bash', '-n', stdin_data: script)
   check(status.success?, "Shell syntax: #{stderr}")
 end
-puts 'PASS workflow: paired wiring, original permissions, signing bindings and publication gate'
+puts 'PASS workflow: SDK initialization order, paired wiring, original permissions, signing bindings and publication gate'
 
 test_metadata('matching production pair', valid: true)
 test_metadata('prerelease and build metadata', valid: true, version: '2.0.0-beta.1+42')
@@ -384,7 +398,13 @@ test_metadata('invalid version tag', valid: false, version: "1.54.6\ntag_name=un
 test_metadata('missing APK', valid: false) { |_, dir| File.delete(File.join(dir, 'app/build/outputs/apk/parasite/release/app-parasite-release-unsigned.apk')) }
 test_metadata('path escape', valid: false) { |docs, _| docs['standalone']['elements'][0]['outputFile'] = '../other.apk' }
 
-test_prepare('matching signed pair with spaces in paths', valid: true)
+test_prepare('matching signed pair with spaces and versioned SDK tools, without latest', valid: true)
+test_prepare('analyzer unavailable on PATH', valid: false) do |_, environment|
+  isolated = File.join(environment.fetch('ANDROID_HOME'), 'empty-bin')
+  FileUtils.mkdir_p(isolated)
+  File.symlink('/bin/bash', File.join(isolated, 'bash'))
+  environment['PATH'] = isolated
+end
 test_prepare('missing second APK', valid: false) { |paths, _| File.delete(paths.fetch('parasite')) }
 test_prepare('missing signed output', valid: false) { |_, env| env['STANDALONE_SIGNED_RELEASE_FILE'] = '' }
 test_prepare('swapped artifact outputs', valid: false) do |_, env|

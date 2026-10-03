@@ -32,6 +32,9 @@ jobs:
       - name: Check paired release workflow
         run: ruby .github/tests/dual_runtime_release_test.rb
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
       - name: Install Android build tools
         run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
 
@@ -125,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           build_tools="$ANDROID_HOME/build-tools/37.0.0"
-          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          analyzer="$(command -v apkanalyzer)"
           verify_apk() {
             local file="$1" application_id="$2"
             test -s "$file"
