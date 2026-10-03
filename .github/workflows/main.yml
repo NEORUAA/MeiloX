@@ -228,6 +228,13 @@ jobs:
                 grep -Fxq '.implements Landroid/os/Parcelable;' <<< "$state_code"
                 grep -Fxq '.field public static final CREATOR:Landroid/os/Parcelable$Creator;' <<< "$state_code"
               done
+              local library_enum enum_value
+              library_enum="$("$analyzer" dex code --class com.ljyh.mei.ui.navigation.LibraryPage "$file")"
+              grep -Fxq '.class public final enum Lcom/ljyh/mei/ui/navigation/LibraryPage;' <<< "$library_enum"
+              grep -Fxq '.super Ljava/lang/Enum;' <<< "$library_enum"
+              for enum_value in Songs Playlists Podcasts Downloads Cloud History; do
+                grep -Eq "const-string(/jumbo)? v[0-9]+, \"$enum_value\"" <<< "$library_enum"
+              done
             fi
           }
           verify_apk "$STANDALONE_SIGNED_RELEASE_FILE" com.neoruaa.meilox

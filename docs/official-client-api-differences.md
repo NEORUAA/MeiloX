@@ -3553,6 +3553,23 @@ These are integration differences, not server API semantics.
   parsed account/settings/full queues and their paused checkpoints are retained.
   Full cross-R8 Activity restoration stays open. See
   [Matching-Code Cross-R8 Activity Attempt](dual-runtime-build-plan.md#matching-code-cross-r8-activity-attempt-2026-10-03).
+- Forward wire fix: parasite-only R8 now preserves LibraryPage's enum class name;
+  its unchanged shared saveable state still uses Java enum serialization. The
+  paired-release verifier checks the enum header, superclass and six original
+  constant names. Nine new rejection fixtures and the real fixed APK pass the
+  expanded gate. No shared UI, standalone R8 rule, generic clearing or historical
+  task-name migration is introduced.
+- The extended opt-in Android fixture passes 54 actual cross-APK transfers,
+  including all six enum values/three policies both ways and receiving-loader
+  identity of the decoded enum object. A controlled dictionary changes 3079 R8
+  class assignments without renaming the stable wire types. Real task 72 restores
+  detail/back stack/Podcasts selection in matching-code PID 1648 without a crash,
+  but its detail scroll position resets and its paused mini-player is not visible.
+  Complete page-state recovery remains open; this is not all-lifecycle acceptance.
+  The dictionary is removed and ordinary production A is rebuilt/installed again;
+  matching-code PID 4126 displays Home and the mini-player, with accounts/settings/
+  full queues/checkpoints preserved. The existing update workflow is retained.
+  See [Nested Library Enum Wire Fix](dual-runtime-build-plan.md#nested-library-enum-wire-fix-and-controlled-recovery-2026-10-03).
 
 ### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
 

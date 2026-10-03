@@ -3,7 +3,10 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import dalvik.system.DexClassLoader;
 import java.io.File;
+import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -18,14 +21,24 @@ public final class ParcelableStateCompatibility {
         PREFIX + "ParcelableSnapshotMutableState",
         PREFIX + "snapshots.SnapshotStateList"
     };
+    private static final String LIBRARY_ENUM = "com.ljyh.mei.ui.navigation.LibraryPage";
+    private static final String[] LIBRARY_VALUES = {
+        "Songs", "Playlists", "Podcasts", "Downloads", "Cloud", "History"
+    };
 
     private static final class State {
         final String name;
         final byte[] payload;
+        final String enumName;
 
         State(String name, byte[] payload) {
+            this(name, payload, null);
+        }
+
+        State(String name, byte[] payload, String enumName) {
             this.name = name;
             this.payload = payload;
+            this.enumName = enumName;
         }
     }
 
@@ -74,6 +87,28 @@ public final class ParcelableStateCompatibility {
                 default: throw new AssertionError("Unknown state kind");
             }
             return new State(name, parcel.marshall());
+        } finally {
+            parcel.recycle();
+        }
+    }
+
+    private static State enumState(ClassLoader loader, String name, int policy) throws Exception {
+        Class<?> type = loader.loadClass(LIBRARY_ENUM);
+        require(type.isEnum() && type.getClassLoader() == loader, "LibraryPage enum wire identity changed");
+        Object[] constants = type.getEnumConstants();
+        require(constants != null && constants.length == LIBRARY_VALUES.length, "LibraryPage values changed");
+        Serializable value = null;
+        for (int index = 0; index < constants.length; index++) {
+            Enum<?> constant = (Enum<?>) constants[index];
+            require(constant.name().equals(LIBRARY_VALUES[index]), "LibraryPage enum name/order changed");
+            if (constant.name().equals(name)) value = constant;
+        }
+        require(value != null, "LibraryPage fixture value is absent");
+        Parcel parcel = Parcel.obtain();
+        try {
+            parcel.writeValue(value);
+            parcel.writeInt(policy);
+            return new State(TYPES[3], parcel.marshall(), name);
         } finally {
             parcel.recycle();
         }
@@ -129,15 +164,46 @@ public final class ParcelableStateCompatibility {
         require(value != null && value.getClass().getName().equals(expected.name), "State wire identity changed");
         require(value.getClass().getClassLoader() == receiver, "Decoded state used the writer's loader");
         require(Arrays.equals(payload(value), expected.payload), "Decoded state value or mutation policy changed");
+        if (expected.enumName != null) {
+            boolean found = false;
+            // R8 may rename getters; verify the actual erased state value, not its reserialized descriptor alone.
+            for (Method method : value.getClass().getMethods()) {
+                if (Modifier.isStatic(method.getModifiers()) || method.getParameterTypes().length != 0 ||
+                        method.getReturnType() != Object.class) continue;
+                try {
+                    method.setAccessible(true);
+                    Object item = method.invoke(value);
+                    if (!(item instanceof Enum)) continue;
+                    Enum<?> enumValue = (Enum<?>) item;
+                    require(enumValue.getDeclaringClass().getName().equals(LIBRARY_ENUM) &&
+                            enumValue.getDeclaringClass().getClassLoader() == receiver &&
+                            enumValue.name().equals(expected.enumName), "Decoded enum escaped the receiving loader or changed value");
+                    found = true;
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError("Cannot inspect the actual decoded enum state", error);
+                }
+            }
+            require(found, "No decoded LibraryPage state getter was inspected");
+        }
     }
 
     @SuppressWarnings("deprecation")
-    private static void stableDirection(String label, ClassLoader writer, ClassLoader receiver) throws Exception {
+    private static void stableDirection(String label, ClassLoader writer, ClassLoader receiver, boolean libraryEnums) throws Exception {
         List<State> states = new ArrayList<>();
         for (int kind = 0; kind < 3; kind++) states.add(state(TYPES[kind], kind, 0));
         for (int policy = 0; policy < 3; policy++) states.add(state(TYPES[3], 3, policy));
         states.add(state(TYPES[4], 4, 0));
         states.add(state(TYPES[4], 5, 0));
+        if (libraryEnums) {
+            for (String name : LIBRARY_VALUES) {
+                for (int policy = 0; policy < 3; policy++) {
+                    State expected = enumState(writer, name, policy);
+                    require(Arrays.equals(expected.payload, enumState(receiver, name, policy).payload),
+                            "LibraryPage enum serialization differs between APKs");
+                    states.add(expected);
+                }
+            }
+        }
         ArrayList<Parcelable> nested = new ArrayList<>();
         for (State state : states) {
             Parcelable value = create(writer, state);
@@ -149,7 +215,8 @@ public final class ParcelableStateCompatibility {
             verify(result.getParcelable("state"), receiver, state);
             require("tail-sentinel".equals(result.getString("tail")), "Parcelable corrupted its sibling field");
             nested.add(value);
-            System.out.println("PASS " + label + ": " + state.name + " bytes=" + state.payload.length);
+            System.out.println("PASS " + label + ": " + state.name +
+                    (state.enumName == null ? "" : "/" + state.enumName) + " bytes=" + state.payload.length);
         }
         Bundle inner = new Bundle();
         inner.putParcelableArrayList("states", nested);
@@ -189,11 +256,13 @@ public final class ParcelableStateCompatibility {
     }
 
     public static void main(String[] args) throws Exception {
+        boolean libraryEnums = args.length > 0 && args[0].equals("--library-enums");
+        if (libraryEnums) args = Arrays.copyOfRange(args, 1, args.length);
         require(args.length == 2 || args.length == 4, "Supply two stable-name R8 APKs and optionally two known legacy-collision APKs");
         ModuleLoader older = loader(args[0]);
         ModuleLoader current = loader(args[1]);
-        stableDirection("older-to-current", older, current);
-        stableDirection("current-to-older", current, older);
+        stableDirection("older-to-current", older, current, libraryEnums);
+        stableDirection("current-to-older", current, older, libraryEnums);
         require(!older.applicationLoaded() && !current.applicationLoaded(), "State fixture loaded the production Application");
         if (args.length == 4) {
             ModuleLoader legacyWriter = loader(args[2]);

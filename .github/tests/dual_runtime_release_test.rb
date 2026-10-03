@@ -31,6 +31,9 @@ PARASITE_SAVED_STATE_TYPES = %w[
   androidx.compose.runtime.ParcelableSnapshotMutableState
   androidx.compose.runtime.snapshots.SnapshotStateList
 ].freeze
+LIBRARY_ENUM = 'com.ljyh.mei.ui.navigation.LibraryPage'
+LIBRARY_ENUM_HEADER = '.class public final enum Lcom/ljyh/mei/ui/navigation/LibraryPage;'
+LIBRARY_ENUM_VALUES = %w[Songs Playlists Podcasts Downloads Cloud History].freeze
 
 def check(condition, message)
   raise message unless condition
@@ -59,6 +62,12 @@ def test_built_apks
           "Preserve parasite saved-state Parcelable name and CREATOR for #{name}: #{stderr}")
   end
   puts 'PASS built APK: stable parasite Compose saved-state Parcelable names and platform CREATOR fields'
+  stdout, stderr, status = Open3.capture3(analyzer, 'dex', 'code', '--class', LIBRARY_ENUM, parasite)
+  check(status.success? && stdout.lines.map(&:strip).include?(LIBRARY_ENUM_HEADER) &&
+        stdout.lines.map(&:strip).include?('.super Ljava/lang/Enum;') &&
+        LIBRARY_ENUM_VALUES.all? { |value| stdout.match?(/const-string(?:\/jumbo)? v\d+, "#{value}"/) },
+        "Preserve the nested LibraryPage Serializable enum identity and values: #{stderr}")
+  puts 'PASS built APK: stable nested LibraryPage enum identity and all six names'
   Dir.mktmpdir('meilox-release-pair-') do |directory|
     outputs = File.join(directory, 'outputs')
     stdout, stderr, status = execute(METADATA, ROOT, 'GITHUB_OUTPUT' => outputs, 'GITHUB_RUN_NUMBER' => '42')
@@ -283,7 +292,8 @@ def signed_fixture(directory)
                                   'module-class' => flavor == 'parasite',
                                   'saved-state-classes' => flavor == 'parasite' ? PARASITE_SAVED_STATE_TYPES.to_h { |name|
                                     [name, ".implements Landroid/os/Parcelable;\n.field public static final CREATOR:Landroid/os/Parcelable$Creator;\n"]
-                                  } : {},
+                                  }.merge(LIBRARY_ENUM => "#{LIBRARY_ENUM_HEADER}\n.super Ljava/lang/Enum;\n" +
+                                    LIBRARY_ENUM_VALUES.map { |value| "const-string v0, \"#{value}\"\n" }.join) : {},
                                   'signature' => true, 'aligned' => true))
     [flavor, path]
   end
@@ -501,6 +511,32 @@ end
     classes = document.fetch('saved-state-classes')
     type = 'androidx.compose.runtime.ParcelableSnapshotMutableState'
     classes[type] = classes.fetch(type).sub(from, to)
+    File.write(path, JSON.generate(document))
+  end
+end
+test_prepare('renamed nested LibraryPage enum', valid: false) do |paths, _|
+  path = paths.fetch('parasite')
+  document = JSON.parse(File.read(path))
+  classes = document.fetch('saved-state-classes')
+  classes['obfuscated-enum'] = classes.delete(LIBRARY_ENUM)
+  File.write(path, JSON.generate(document))
+end
+{ 'wrong enum wire name' => [LIBRARY_ENUM_HEADER, '.class public final enum Lobfuscated;'],
+  'non-enum alias reuse' => ['.super Ljava/lang/Enum;', '.super Ljava/lang/Object;'] }.each do |name, (from, to)|
+  test_prepare("nested LibraryPage #{name}", valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    classes = document.fetch('saved-state-classes')
+    classes[LIBRARY_ENUM] = classes.fetch(LIBRARY_ENUM).sub(from, to)
+    File.write(path, JSON.generate(document))
+  end
+end
+LIBRARY_ENUM_VALUES.each do |value|
+  test_prepare("nested LibraryPage missing #{value}", valid: false) do |paths, _|
+    path = paths.fetch('parasite')
+    document = JSON.parse(File.read(path))
+    classes = document.fetch('saved-state-classes')
+    classes[LIBRARY_ENUM] = classes.fetch(LIBRARY_ENUM).sub("const-string v0, \"#{value}\"\n", '')
     File.write(path, JSON.generate(document))
   end
 end

@@ -16,3 +16,6 @@
 # stable so another R8 build cannot select an unrelated state type's CREATOR.
 -keepnames class androidx.compose.runtime.ParcelableSnapshotMutable*State
 -keepnames class androidx.compose.runtime.snapshots.SnapshotStateList
+
+# LibraryScreen stores this enum inside a saveable MutableState via Java serialization.
+-keepnames enum com.ljyh.mei.ui.navigation.LibraryPage

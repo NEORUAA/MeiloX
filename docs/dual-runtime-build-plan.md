@@ -157,7 +157,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks; a new cross-APK attempt verifies updated executed-code identity but exposes LibraryPage Serializable alias reuse | Complete paired lifecycle/permission/regression matrix; complete cross-R8 Activity restoration, including the reproduced nested enum wire-name failure; historical module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks; LibraryPage wire identity now has a parasite-only fix and CI gate, with 54 native transfers and a controlled cross-R8 task restoring the detail/back stack/Podcasts tab | Complete paired lifecycle/permission/regression matrix; full cross-R8 page-state restoration, including the observed detail-scroll reset and absent mini-player after saved-task recovery; historical module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -5251,6 +5251,67 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   memory checkpoint are retained, not rerun for this documentation-only increment;
   `git diff --check` passes. Full cross-APK Activity restoration remains failed/open,
   and the user's early pre-keepnames task waiver is not broadened.
+
+### Nested Library Enum Wire Fix and Controlled Recovery (2026-10-03)
+
+- Added only `-keepnames enum com.ljyh.mei.ui.navigation.LibraryPage` to the
+  parasite R8 rules. The shared LibraryScreen/saveable state, standalone rules,
+  dependencies, page architecture and visible controls remain unchanged. The old
+  actual APK fails a lookup for this original enum name; the fixed actual DEX
+  retains it as an enum with all six original constant names. Already-obfuscated
+  task descriptors are not retroactively migrated or generically cleared, and
+  the user's narrowly accepted early-task limitation is not broadened.
+- The exact signed-pair workflow preparation now checks this nested Serializable
+  identity as well as the five outer state names/CREATORs. Nine new negative
+  fixtures reject renamed/missing enum types, a non-enum alias and each missing
+  constant. Ruby syntax, 88 synthetic release checks and 92 combined real-SDK
+  checks pass. Both ordinary R8 artifacts build/vital-lint successfully in 2m03s.
+  Kotlin/application sources are unchanged; previous paired JVM results are
+  retained rather than reported as fresh executions.
+- The opt-in Android fixture's `--library-enums` mode covers six values and three
+  mutation policies in each direction, plus the existing primitive/list/nested
+  state cases: 54 positive transfers. Reflection verifies the actual decoded enum
+  returned by the erased state getter belongs to the receiving module loader,
+  not merely that its reserialized descriptor matches. Payloads/policies, nested
+  lists and sibling sentinels survive; no production Application or account is loaded.
+  The default fixture mode keeps its historical 18-case/legacy-control behavior.
+- Two production-signed probe-disabled artifacts are used: ordinary A has SHA256
+  `e6d432fad20adc5aae984fbdea59547ff36182f2cc956bea7d2ddf5b19c43db1`, R8 map
+  `0b0af1c0275844bc2027bee467b311a41b9e3a989fb263ebd84205c0ff249b33`;
+  validation B has SHA256
+  `b27b662fe8cfe8b463b4a9eb1a402030cab8f1d0dd9757879fe12f3f734a71ee`, R8 map
+  `b9820c3f61e5ece8adecf9f56cb18aef630f43f69621a2fbe70956b8dd6d7da3`.
+  B uses a temporary `b/a` class-name dictionary, changing 3079 mapped class names
+  while retaining LibraryPage and the module ReportFragment identity. This is a
+  controlled minifier perturbation, not a second frontend or release configuration.
+  Both pass production-certificate/signature and exact workflow preparation checks.
+- On HyperOS 4 only, A's original subscribed-podcast detail is scrolled and task 72
+  reaches STOPPED with a 4800-byte saved Bundle. `am kill` removes PID 31698 without
+  force-stop/task removal. One preserving B install and task focus restores the
+  same task in PID 1648, with restored=true and code_source matching B's actual R8
+  map; installed SHA256 also matches. No crash is recorded for that PID. The original
+  detail/artwork/program rows render, and Back returns to Library with Podcasts
+  still selected. However the detail title moves from y=534 to y=1070, so the prior
+  scroll offset is not retained; the paused mini-player is also absent from the
+  restored detail, Library and Home despite its valid six-item MediaSession. Thus
+  the enum crash/route/tab gate passes, not complete saved-page/UI restoration.
+- Removed the temporary dictionary directive, rebuilt both ordinary artifacts
+  in 2m26s, and verified both unsigned APKs are byte-identical to the checked A
+  pair. The validation B APK is replaced by ordinary signed A under the existing
+  force-stop/restart procedure. Final PID 4126 executes A's matching map and hash,
+  reaches portrait Home and displays the mini-player again, with an empty PID
+  crash buffer. Standalone remains PID 8066 and is neither installed nor restarted.
+  Parsed before/after settings preserve account/Cookie values, all other settings,
+  all queue entries/order/source/modes and paused checkpoints: standalone 1512/index
+  3/95136ms; parasite 6/index 2/156071ms. Only parasite playback.snapshot changes.
+- No playback command, room/invitation, download/upload, authorization/account
+  change, clear-data, manual persistent-data rewrite, framework scope change or
+  AVD backup occurs. Staged device APK/DEX/XML files and their dedicated directory
+  are removed. Private artifacts/captures/results stay under the mode-0700
+  `/tmp/meilox-library-enum-native-20261003`; no credential, APK or device log enters
+  Git. `git diff --check` passes. The scroll/session-key and mini-player restoration
+  observations need bounded attribution; unrelated main frontend repair is not
+  authorized. D3-D6 and overall completion remain open.
 
 ## Acceptance and Remaining Decisions
 
