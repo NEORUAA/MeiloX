@@ -424,9 +424,12 @@
     <string name="netease_mobile_login_activity_unavailable">Reopen this sign-in sheet and try again.</string>
     <string name="netease_mobile_login_signing_in">Signing In…</string>
     <string name="netease_mobile_login_submit">Sign In and Continue</string>
-    <string name="pc_qr_login">Scan to Sign In on PC</string>
+    <string name="pc_qr_login">Scan to Sign In on Web / PC</string>
+    <string name="pc_qr_login_select_image">Scan a QR code image</string>
+    <string name="pc_qr_login_image_error">Could not read the QR code image. Please select another image.</string>
+    <string name="pc_qr_login_image_no_qr">No QR code was detected. Select a clear image of the sign-in QR code.</string>
     <string name="pc_qr_login_mobile_session_required">Computer QR authorization requires a complete NetEase mobile account session. Sign in again first.</string>
-    <string name="pc_qr_login_scan_tip">Scan the NetEase Cloud Music sign-in QR code shown on your computer</string>
+    <string name="pc_qr_login_scan_tip">Scan the sign-in QR code on the NetEase Cloud Music website or desktop app</string>
     <string name="pc_qr_login_preparing_security">Preparing the secure sign-in environment…</string>
     <string name="pc_qr_login_marking_scanned">Contacting your computer…</string>
     <string name="pc_qr_login_confirm_title">Confirm Sign-In</string>
@@ -440,7 +443,7 @@
     <string name="pc_qr_login_allow_camera">Allow Camera Access</string>
     <string name="pc_qr_login_open_settings">Open Settings</string>
     <string name="pc_qr_login_flashlight">Flashlight</string>
-    <string name="pc_qr_login_invalid_qr">This is not a NetEase Cloud Music computer sign-in QR code</string>
+    <string name="pc_qr_login_invalid_qr">This is not a NetEase Cloud Music website or desktop app sign-in QR code</string>
     <string name="pc_qr_login_expired">The QR code has expired. Refresh it on your computer and scan again.</string>
     <string name="pc_qr_login_request_failed">Could not contact NetEase Cloud Music. Check your network and try again.</string>
     <string name="pc_qr_login_cancel_failed">The cancellation could not be sent. No sign-in was authorized, and the QR code will expire automatically.</string>
@@ -571,4 +574,14 @@
     <string name="comment_sort_recommended">Recommended</string>
     <string name="comment_sort_hot">Popular</string>
     <string name="comment_sort_latest">Latest</string>
+    <string name="netease_sms_up_title">SMS security verification</string>
+    <string name="netease_sms_up_tip">NetEase requires a text sent from the phone number you are signing in with. In an emulator, send it using the phone that has that SIM, then continue here.</string>
+    <string name="netease_sms_up_destination">Send to: %1$s</string>
+    <string name="netease_sms_up_content">Message: %1$s</string>
+    <string name="netease_sms_up_copy_number">Copy number</string>
+    <string name="netease_sms_up_copy_content">Copy message</string>
+    <string name="netease_sms_up_retry">Refresh</string>
+    <string name="netease_sms_up_open_app">Open SMS app</string>
+    <string name="netease_sms_up_continue">I have sent the SMS — continue</string>
+    <string name="netease_sms_up_no_app">No SMS app is available. Send the message using the phone that has the SIM for this number, then continue here.</string>
 </resources>

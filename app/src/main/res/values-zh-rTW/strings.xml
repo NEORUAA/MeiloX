@@ -423,9 +423,12 @@
     <string name="netease_mobile_login_activity_unavailable">請重新開啟此登入面板後再試。</string>
     <string name="netease_mobile_login_signing_in">正在登入…</string>
     <string name="netease_mobile_login_submit">登入並繼續</string>
-    <string name="pc_qr_login">掃碼登入 PC</string>
+    <string name="pc_qr_login">掃碼登入網頁 / PC</string>
+    <string name="pc_qr_login_select_image">從圖片識別登入二維碼</string>
+    <string name="pc_qr_login_image_error">無法讀取二維碼圖片，請重新選擇圖片。</string>
+    <string name="pc_qr_login_image_no_qr">圖片中未識別到 QR Code，請選擇清晰的登入 QR Code 圖片。</string>
     <string name="pc_qr_login_mobile_session_required">電腦端掃碼授權需要完整的網易雲行動端帳號工作階段，請先重新登入。</string>
-    <string name="pc_qr_login_scan_tip">請掃描電腦端顯示的網易雲音樂登入 QR Code</string>
+    <string name="pc_qr_login_scan_tip">請掃描網易雲音樂官網或電腦客戶端顯示的登入 QR Code</string>
     <string name="pc_qr_login_preparing_security">正在準備安全登入環境…</string>
     <string name="pc_qr_login_marking_scanned">正在連接電腦端…</string>
     <string name="pc_qr_login_confirm_title">確認登入</string>
@@ -439,7 +442,7 @@
     <string name="pc_qr_login_allow_camera">允許相機存取</string>
     <string name="pc_qr_login_open_settings">開啟設定</string>
     <string name="pc_qr_login_flashlight">閃光燈</string>
-    <string name="pc_qr_login_invalid_qr">這不是網易雲音樂電腦端登入 QR Code</string>
+    <string name="pc_qr_login_invalid_qr">這不是網易雲音樂網頁或電腦客戶端的登入 QR Code</string>
     <string name="pc_qr_login_expired">QR Code 已過期，請在電腦端重新整理後再次掃描。</string>
     <string name="pc_qr_login_request_failed">無法連接網易雲音樂，請檢查網路後重試。</string>
     <string name="pc_qr_login_cancel_failed">未能通知電腦端取消。本次登入沒有獲得授權，QR Code 將自動失效。</string>
@@ -570,4 +573,14 @@
     <string name="comment_sort_recommended">推薦</string>
     <string name="comment_sort_hot">熱門</string>
     <string name="comment_sort_latest">最新</string>
+    <string name="netease_sms_up_title">簡訊安全驗證</string>
+    <string name="netease_sms_up_tip">網易要求使用登入手機號碼主動傳送一則簡訊。模擬器中請用該號碼所在的手機傳送，然後回到這裡繼續登入。</string>
+    <string name="netease_sms_up_destination">接收號碼：%1$s</string>
+    <string name="netease_sms_up_content">簡訊內容：%1$s</string>
+    <string name="netease_sms_up_copy_number">複製號碼</string>
+    <string name="netease_sms_up_copy_content">複製內容</string>
+    <string name="netease_sms_up_retry">重新取得</string>
+    <string name="netease_sms_up_open_app">開啟簡訊應用程式</string>
+    <string name="netease_sms_up_continue">我已傳送簡訊，繼續登入</string>
+    <string name="netease_sms_up_no_app">本機沒有簡訊應用程式，請使用登入手機號碼所在的手機傳送，再回到這裡繼續登入。</string>
 </resources>

@@ -21,6 +21,7 @@ interface MeloXDirectService {
         @Header("X-Netease-NMDI") nmdi: String? = null,
         @Header("X-Netease-NMTID") nmtid: String? = null,
         @Header("X-Netease-Without-Account") withoutAccount: Boolean? = null,
+        @Header("X-Netease-URS-App-Id") ursAppId: String? = null,
     ): JsonObject
 
     @POST
@@ -35,5 +36,6 @@ interface MeloXDirectService {
         @Header("X-Netease-NMDI") nmdi: String? = null,
         @Header("X-Netease-NMTID") nmtid: String? = null,
         @Header("X-Netease-Without-Account") withoutAccount: Boolean? = null,
+        @Header("X-Netease-URS-App-Id") ursAppId: String? = null,
     ): Response<JsonObject>
 }

@@ -1,5 +1,7 @@
 package com.ljyh.mei.data.network
 
+import android.annotation.SuppressLint
+
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ApplicationInfo
@@ -9,6 +11,7 @@ import android.content.pm.Signature
 import android.content.pm.SigningInfo
 import android.content.pm.VersionedPackage
 import android.content.res.Resources
+import android.os.Build
 import android.os.SystemClock
 import android.test.mock.MockPackageManager
 import android.util.Base64
@@ -21,7 +24,6 @@ import com.ljyh.mei.constants.NeteaseNmdiKey
 import com.ljyh.mei.constants.NeteaseNmtidKey
 import com.ljyh.mei.utils.dataStore
 import com.netease.cloudmusic.crypto.caesarson.CaesarsonCryptor
-import dalvik.system.InMemoryDexClassLoader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -29,7 +31,6 @@ import java.lang.reflect.Proxy
 import java.net.InetAddress
 import java.net.URLEncoder
 import java.net.UnknownHostException
-import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -71,7 +72,6 @@ class NeteaseLoginSecurity @Inject constructor(
     private val watchManNetworkCompleted = AtomicInteger()
     private val watchManNetworkFailed = AtomicInteger()
     private val serverTrackId = AtomicReference("")
-    private val preparedPcQrCheckToken = AtomicReference("")
     private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
@@ -96,9 +96,9 @@ class NeteaseLoginSecurity @Inject constructor(
         token
     }
 
-    suspend fun pcQrCheckToken(): String = withContext(Dispatchers.IO) {
-        preparedPcQrCheckToken.get().takeIf(String::isNotBlank) ?: freshCheckToken()
-    }
+    // The official client asks WatchMan for a token for every QR action. Prewarming
+    // initializes the SDK; its token must never be reused for later requests.
+    suspend fun pcQrCheckToken(): String = freshCheckToken()
 
     suspend fun prepareForPcQrLogin(): String = withContext(Dispatchers.IO) {
         restoreServerTrackId()
@@ -107,7 +107,6 @@ class NeteaseLoginSecurity @Inject constructor(
         val sdk = watchManSdk
         val checkToken = sdk.getToken()
         awaitWatchManNetworkIdle(checkpoint)
-        preparedPcQrCheckToken.set(checkToken)
         val watchManDeviceId = awaitWatchManDeviceId()
         securityCookies()
         Log.i(
@@ -514,39 +513,9 @@ class NeteaseLoginSecurity @Inject constructor(
             activeInstance?.updateServerTrackId(trackId, persist = true)
         }
 
-        @Volatile
-        var sharedSecurityClassLoader: ClassLoader? = null
-
-        val SECURITY_CLASS_LOADER_LOCK = Any()
-
-        internal fun getOrCreateSecurityClassLoader(context: Context): ClassLoader {
-            sharedSecurityClassLoader?.let { return it }
-            return synchronized(SECURITY_CLASS_LOADER_LOCK) {
-                sharedSecurityClassLoader ?: run {
-                    val dexBuffers = SHARED_SECURITY_DEX_ASSETS.map { assetName ->
-                        context.assets.open(assetName).use { input ->
-                            ByteBuffer.wrap(input.readBytes())
-                        }
-                    }.toTypedArray()
-                    InMemoryDexClassLoader(
-                        dexBuffers,
-                        context.applicationInfo.nativeLibraryDir,
-                        context.classLoader,
-                    ).also { sharedSecurityClassLoader = it }
-                }
-            }
-        }
+        internal fun getOrCreateSecurityClassLoader(context: Context): ClassLoader = context.classLoader
 
         const val TAG = "PcQrLogin"
-        const val SECURITY_SDK_ASSET = "netease-device-sdk.dex"
-        val SHARED_SECURITY_DEX_ASSETS = listOf(
-            "netease-urs-loginapi.dex",
-            "netease-urs-captcha.dex",
-            "netease-urs-modular.dex",
-            "netease-urs-core.dex",
-            "netease-urs-httpdns.dex",
-            SECURITY_SDK_ASSET,
-        )
         const val DEVICE_CLASS_NAME = "com.netease.mobsec.xs.NEDevice"
         const val WATCHMAN_CLASS_NAME = "com.netease.mobsec.WatchMan"
         const val WATCHMAN_CONF_CLASS_NAME = "com.netease.mobsec.WatchManConf"
@@ -667,6 +636,9 @@ private class OfficialNeteasePackageManager(
         Base64.decode(NeteaseLoginSecurity.OFFICIAL_SIGNING_CERTIFICATE, Base64.DEFAULT),
     )
 
+    // VERSION_JAR is the compile-time integer 1 accepted by the API 35 constructor.
+    // SDK 37's signature-scheme IntDef is empty and incorrectly rejects this value.
+    @SuppressLint("InlinedApi", "WrongConstant")
     override fun getPackageInfo(packageName: String, flags: Int): PackageInfo {
         if (packageName != NeteaseLoginSecurity.OFFICIAL_PACKAGE_NAME) {
             return delegate.getPackageInfo(packageName, flags)
@@ -681,12 +653,16 @@ private class OfficialNeteasePackageManager(
             firstInstallTime = sourceInfo.firstInstallTime
             lastUpdateTime = sourceInfo.lastUpdateTime
             signatures = arrayOf(officialSignature)
-            signingInfo = SigningInfo(
-                SigningInfo.VERSION_JAR,
-                listOf(officialSignature),
-                emptyList(),
-                listOf(officialSignature),
-            )
+            // The four-argument constructor only exists from Android 15.
+            // Older SDK consumers use the GET_SIGNATURES field populated above.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                signingInfo = SigningInfo(
+                    SigningInfo.VERSION_JAR,
+                    listOf(officialSignature),
+                    emptyList(),
+                    listOf(officialSignature),
+                )
+            }
         }
     }
 

@@ -11,7 +11,7 @@ import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.NeteaseCsrfKey
 import com.ljyh.mei.constants.NeteaseMusicAKey
-import com.ljyh.mei.constants.NeteaseRefreshTokenKey
+import com.ljyh.mei.constants.NeteaseUrsAppIdKey
 import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
@@ -105,6 +105,8 @@ class NeteaseInterceptor : Interceptor {
         val nmcid = originalRequest.header(NMCID_HEADER)?.takeIf(String::isNotBlank)
         val nmdi = originalRequest.header(NMDI_HEADER)?.takeIf(String::isNotBlank)
         val nmtid = originalRequest.header(NMTID_HEADER)?.takeIf(String::isNotBlank)
+        val ursAppId = originalRequest.header(URS_APP_ID_HEADER)?.takeIf(String::isNotBlank)
+            ?: AppContext.instance.dataStore[NeteaseUrsAppIdKey]?.takeIf(String::isNotBlank)
         val withoutAccount = originalRequest.header(WITHOUT_ACCOUNT_HEADER) == "true"
         val builder = originalRequest.newBuilder()
             .removeHeader(CRYPTO_MODE_HEADER)
@@ -115,6 +117,7 @@ class NeteaseInterceptor : Interceptor {
             .removeHeader(NMCID_HEADER)
             .removeHeader(NMDI_HEADER)
             .removeHeader(NMTID_HEADER)
+            .removeHeader(URS_APP_ID_HEADER)
             .removeHeader(WITHOUT_ACCOUNT_HEADER)
 
         if (cryptoMode in setOf("eapi", "xeapi") && "/api/" in originalRequest.url.encodedPath) {
@@ -131,8 +134,7 @@ class NeteaseInterceptor : Interceptor {
         }
 
         val storedMusicU = AppContext.instance.dataStore[CookieKey].orEmpty()
-        val hasMobileSession = storedMusicU.isNotBlank() &&
-            !AppContext.instance.dataStore[NeteaseRefreshTokenKey].isNullOrBlank()
+        val hasMobileSession = storedMusicU.isNotBlank()
         val usesAndroidEapiIdentity = usesOfficialAndroidIdentity(
             cryptoMode = cryptoMode,
             encodedPath = originalRequest.url.encodedPath,
@@ -147,7 +149,7 @@ class NeteaseInterceptor : Interceptor {
 
         val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
         val storedSDeviceId = AppContext.instance.dataStore[SDeviceIdKey].orEmpty()
-        val sDeviceId = if (usesXeapiIdentity) deviceId else storedSDeviceId
+        val sDeviceId = storedSDeviceId
         val musicU = if (withoutAccount || !hasMobileSession) {
             ""
         } else {
@@ -196,12 +198,12 @@ class NeteaseInterceptor : Interceptor {
             put("__csrf", csrfToken)
 
             if (usesAndroidEapiIdentity) {
+                ursAppId?.let { put("URS_APPID", it) }
                 nmcid?.let { put("NMCID", it) }
                 put("EVNSM", "1.0.0")
                 nmdi?.let { put("NMDI", it) }
                 nmtid?.let { put("NMTID", it) }
                 if (usesXeapiIdentity) {
-                    put("URS_APPID", CONST_URS_APPID)
                     put("minors_mode_age_range", "0")
                     put("screenType", "normal")
                 }
@@ -526,6 +528,7 @@ class NeteaseInterceptor : Interceptor {
         const val CHECK_TOKEN_HEADER = "X-Netease-Check-Token"
         const val ANTI_CHEAT_TOKEN_HEADER = "X-Netease-Anti-Cheat-Token"
         const val YD_DEVICE_TOKEN_HEADER = "X-Netease-Yd-Device-Token"
+        const val URS_APP_ID_HEADER = "X-Netease-URS-App-Id"
         const val LOGIN_CHAIN_ID_HEADER = "X-Netease-Login-Chain-Id"
         const val NMCID_HEADER = "X-Netease-NMCID"
         const val NMDI_HEADER = "X-Netease-NMDI"
@@ -553,6 +556,7 @@ internal fun usesOfficialAndroidIdentity(
     cryptoMode == "xeapi" || (
         cryptoMode == "eapi" && (hasMobileSession ||
             encodedPath.endsWith("/login/qrcode/server/login") ||
+                encodedPath.endsWith("/login/cellphone") ||
                 encodedPath.endsWith("/middle/device-info/get") ||
                 encodedPath.endsWith("/bsr/sk/get")
             )

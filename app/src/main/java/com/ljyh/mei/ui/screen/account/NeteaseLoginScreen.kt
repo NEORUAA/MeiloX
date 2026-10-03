@@ -52,6 +52,7 @@ import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.NeteaseCsrfKey
 import com.ljyh.mei.constants.NeteaseMusicAKey
 import com.ljyh.mei.constants.NeteaseRefreshTokenKey
+import com.ljyh.mei.constants.NeteaseUrsAppIdKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.UserNicknameKey
@@ -127,6 +128,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             onSubmitPassword = viewModel::loginWithMobilePassword,
             onRequestSmsCode = viewModel::requestMobileSmsCode,
             onSubmitSms = viewModel::loginWithMobileSms,
+            onSubmitUpSms = viewModel::loginWithUpSms,
             onLoginSuccess = navController::navigateUp,
         )
     }
@@ -349,12 +351,17 @@ class NeteaseLoginViewModel @Inject constructor(
         repository.loginWithMobileSms(phone, countryCode, code)
     }
 
+    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge) {
+        repository.loginWithUpSms(challenge)
+    }
+
     suspend fun completeLogin(musicU: String) {
         context.dataStore.edit {
             it[CookieKey] = musicU
             it.remove(NeteaseCsrfKey)
             it.remove(NeteaseMusicAKey)
             it.remove(NeteaseRefreshTokenKey)
+            it.remove(NeteaseUrsAppIdKey)
         }
         runCatching { repository.accountProfile() }.getOrNull()?.let { profile ->
             context.dataStore.edit { preferences ->
@@ -393,6 +400,7 @@ class NeteaseLoginViewModel @Inject constructor(
             preferences.remove(NeteaseCsrfKey)
             preferences.remove(NeteaseMusicAKey)
             preferences.remove(NeteaseRefreshTokenKey)
+            preferences.remove(NeteaseUrsAppIdKey)
             preferences[UserIdKey] = profile.id.toString()
             preferences[UserNicknameKey] = profile.nickname
             if (profile.avatarUrl == null) preferences.remove(UserAvatarUrlKey)
@@ -410,6 +418,7 @@ fun logoutNetease(context: android.content.Context) {
                 preferences.remove(NeteaseCsrfKey)
                 preferences.remove(NeteaseMusicAKey)
                 preferences.remove(NeteaseRefreshTokenKey)
+                preferences.remove(NeteaseUrsAppIdKey)
                 preferences.remove(UserIdKey)
                 preferences.remove(UserNicknameKey)
                 preferences.remove(UserAvatarUrlKey)

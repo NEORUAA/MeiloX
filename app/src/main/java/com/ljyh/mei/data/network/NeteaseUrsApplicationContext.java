@@ -10,7 +10,7 @@ import android.content.pm.Signature;
 import android.test.mock.MockPackageManager;
 
 /**
- * Context used only by the isolated URS runtime so its official app signature remains coherent.
+ * Context used by URS native signature verification.
  */
 final class NeteaseUrsApplicationContext extends ContextWrapper {
     private final PackageManager packageManager;

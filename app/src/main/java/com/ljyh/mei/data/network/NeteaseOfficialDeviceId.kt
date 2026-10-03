@@ -3,10 +3,8 @@ package com.ljyh.mei.data.network
 import android.content.Context
 import android.provider.Settings
 import android.util.Base64
-import dalvik.system.InMemoryDexClassLoader
 import java.lang.reflect.Method
 import java.net.URLEncoder
-import java.nio.ByteBuffer
 
 internal object NeteaseOfficialDeviceId {
     @Volatile
@@ -55,12 +53,7 @@ internal object NeteaseOfficialDeviceId {
         return synchronized(this) {
             loadedSdk ?: run {
                 NeteaseNativeLogPolicy.installSecurityFilter()
-                val dexBytes = context.assets.open(DEVICE_ID_SDK_ASSET).use { it.readBytes() }
-                val classLoader = InMemoryDexClassLoader(
-                    arrayOf(ByteBuffer.wrap(dexBytes)),
-                    context.applicationInfo.nativeLibraryDir,
-                    context.classLoader,
-                )
+                val classLoader = context.classLoader
                 val deviceIdClass = Class.forName(DEVICE_ID_CLASS_NAME, true, classLoader)
                 DeviceIdSdk(
                     classLoader = classLoader,
@@ -80,7 +73,6 @@ internal object NeteaseOfficialDeviceId {
     private const val NULL_DEVICE_FIELD = "null"
     private const val DEFAULT_WIFI_ADDRESS = "02:00:00:00:00:00"
     private const val LOCAL_ID_LENGTH = 16
-    private const val DEVICE_ID_SDK_ASSET = "netease-device-id-sdk.dex"
     private const val DEVICE_ID_CLASS_NAME = "com.netease.is.deviceid.NEDeviceID"
 }
 
