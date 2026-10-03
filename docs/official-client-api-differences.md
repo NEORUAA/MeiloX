@@ -1066,6 +1066,16 @@ These are integration differences, not server API semantics.
   an official TV page. The official session stays inactive STOPPED with no queue.
   This is task-removal/notification evidence, not process death or audible output;
   standalone production identity/signing remains a separate qualification.
+- Production follow-up (2026-10-03): on the configured HyperOS 4 AVD, both real
+  production identities pass Home backgrounding and actual SystemUI media-card
+  title clicks back to their portrait MeiloX Home/mini-player, without process
+  recreation. Native TV remains inactive STOPPED with no queue. The preserving
+  standalone update initially restores an unprepared NONE session without a card;
+  normal current-item play/pause creates it. A separate private prepare fixture
+  exits 137 and is not accepted as successful dispatch/prepare evidence. This
+  qualifies notification entry, not task removal, process death, audible output
+  or every media-control path. See
+  [Paired HyperOS Production Interactions](dual-runtime-build-plan.md#paired-hyperos-production-interactions-2026-10-03).
 - Remaining: this retires the verified media-session/receiver path, not every
   possible official widget, external playback intent, or reporting path. Slow-disk
   restoration, empty/corrupt stored queues, real Bluetooth peripherals, other OS

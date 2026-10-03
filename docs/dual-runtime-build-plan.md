@@ -5467,6 +5467,42 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   quota-consuming request, room/invitation, extra scope, Pixel launch, AVD backup,
   push, release or merge is performed. D3-D6 remain open within their existing scope.
 
+## Paired HyperOS Production Interactions (2026-10-03)
+
+- Use only the configured HyperOS 4 AVD and existing accounts/queues. The approved
+  preserving standalone update installs production-signed APK SHA-256
+  `8f6842e6e8333aa39d859264325d4f812359c14d3095f3f8c4d7b9d53c3b1d06` with
+  `install -r`; UID 10309 remains unchanged. Its 265 logical ZIP entries match the
+  current unsigned Release output, excluding signing/version-control metadata;
+  v3 verification matches the previously qualified production certificate. TV
+  continues executing the existing qualified module A without replacement.
+- On both production identities, the original Search entry opens the keyboard;
+  first Back hides it, and second Back returns Home content with the expanded
+  search field still visible. The existing close button restores the footer.
+  No query is submitted. Screenshots retain the original structure and visible
+  glass/blur; this records shared behavior, not a frontend Back-navigation repair.
+- Home backgrounds each app. Fresh SystemUI hierarchy locates each existing
+  media card by its current title; clicking its title returns the matching
+  portrait MeiloX Home and mini-player, not an official TV page. Neither process
+  is recreated by those notification clicks. The inactive native TV session stays
+  STOPPED, with no queue; no permission grant or notification setting is changed.
+- After the standalone update, its restored unprepared session is NONE and has
+  no media card. A private platform `prepare` fixture exits 137 without success;
+  it is not accepted as prepare evidence and its device DEX is removed. Normal
+  mini-player play/pause then advances the existing item by about 3.2 seconds
+  and creates the actual card. Final sessions are paused, error-free and retain
+  standalone index 3/1512 items and TV index 2/6 items. This is neither complete
+  playback, audible-output nor final listen-statistics acceptance.
+- Strict PreferencesProto/queue comparison retains both account identities,
+  all unrelated settings and complete queue items/order/source/modes. Only the
+  standalone playback snapshot changes; paused progress checkpoints belong to
+  their captured queues at 98327 ms and 156071 ms. Module settings contain no
+  Cookie key. PID-scoped crash buffers are empty, and owned device XML is removed.
+  Private evidence stays outside Git under `meilox-hyperos-production-interactions-*`
+  in the macOS temporary directory. No source/UI edit, room, upload, new download,
+  scope change, Pixel launch, AVD backup or push occurs. This closes only the named
+  production keyboard/background/native-card checks, not the full D3-D6 matrix.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
