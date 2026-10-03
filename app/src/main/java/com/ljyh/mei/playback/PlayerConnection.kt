@@ -34,11 +34,14 @@ import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.reportException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -86,6 +89,8 @@ class PlayerConnection(
 
     val error = MutableStateFlow<PlaybackException?>(null)
 
+    private var qualityChangeJob: Job? = null
+
     init {
         player.addListener(this)
         updateAllStates()
@@ -129,9 +134,9 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue) {
+    fun playQueue(queue: ListQueue, shuffle: Boolean? = null) {
         // 判断当前 UI 上的模式是否是随机模式
-        val startInShuffle = repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode
+        val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         service.queueTitle = queue.title
         queueTitle.value = queue.title
         // 调用新的 playQueue 方法，传入随机意图
@@ -152,14 +157,21 @@ class PlayerConnection(
     }
 
     fun changeQuality(quality: MusicQuality) {
-        scope.launch {
+        qualityChangeJob?.cancel()
+        qualityChangeJob = scope.launch {
             service.dataStore.edit { it[MusicQualityKey] = quality.name }
+            currentCoroutineContext().ensureActive()
+
             val index = player.currentMediaItemIndex
-            val current = player.currentMediaItem ?: return@launch
+            if (player.currentMediaItem == null) return@launch
+            if (index !in 0 until player.mediaItemCount) return@launch
             val position = player.currentPosition
             val shouldPlay = player.playWhenReady
-            player.removeMediaItem(index)
-            player.addMediaItem(index, current)
+
+            // Keep the playlist intact, but force every source that may have been
+            // prepared at the previous quality to be discarded.
+            service.resetPlaybackSourcesForQualityChange()
+            player.refreshMediaItemSource(index)
             player.seekTo(index, position)
             player.prepare()
             player.playWhenReady = shouldPlay
@@ -313,6 +325,8 @@ class PlayerConnection(
     }
 
     fun dispose() {
+        qualityChangeJob?.cancel()
+        qualityChangeJob = null
         player.removeListener(this)
     }
 }

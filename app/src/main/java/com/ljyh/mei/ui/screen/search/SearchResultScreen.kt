@@ -1,5 +1,9 @@
 package com.ljyh.mei.ui.screen.search
 
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.foundation.clickable
@@ -108,7 +112,7 @@ fun SearchResultScreen(
                     data = result.data,
                     type = selectedType,
                     navController = navController,
-                    onSongMore = { currentOverlay = OverlayState.TrackActionMenu(it) },
+                    onSongMore = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
                     onSongClick = { songs, index ->
                         playerConnection?.playQueue(
                             ListQueue(
@@ -176,7 +180,7 @@ fun LazyListScope.SearchResultList(
     data: SearchResult,
     type: SearchType,
     navController: MeiNavigator,
-    onSongMore: (MediaMetadata) -> Unit,
+    onSongMore: (MediaMetadata, Rect) -> Unit,
     onSongClick: (List<SearchResult.Result.Song>, Int) -> Unit,
 ) {
     when (type) {
@@ -211,14 +215,16 @@ fun LazyListScope.SearchResultList(
                             )
                         },
                         trailing = {
+                            var menuAnchor by remember { mutableStateOf(Rect.Zero) }
                             Box(
                                 Modifier
                                     .size(44.dp)
+                                    .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
                                     .clip(ContinuousRoundedRectangle(22.dp))
                                     .clickable(
                                         interactionSource = null,
                                         indication = null,
-                                        onClick = { onSongMore(media) },
+                                        onClick = { onSongMore(media, menuAnchor) },
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {

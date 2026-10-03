@@ -3,6 +3,7 @@ package com.ljyh.mei.data.repository
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.model.AlbumDetail
+import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.api.BaseMessageResponse
@@ -12,11 +13,13 @@ import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
+import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.GetSongUrl
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SubscribePlaylist
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylist
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult
@@ -25,6 +28,8 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
+import com.ljyh.mei.playback.playbackQualityFallbacks
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,6 +50,27 @@ class PlaylistRepository(
         }
     }
 
+    suspend fun getCompletePlaylistTracks(detail: PlaylistDetail): List<MediaMetadata> {
+        return withContext(Dispatchers.IO) {
+            val playlist = detail.playlist
+            val tracksById = playlist.tracks.associateBy { it.id }.toMutableMap()
+
+            playlist.trackIds
+                .map { it.id }
+                .filterNot(tracksById::containsKey)
+                .chunked(200)
+                .forEach { ids ->
+                    apiService.getSongDetail(GetSongDetails(ids.joinToString(",")))
+                        .songs
+                        .forEach { track -> tracksById[track.id] = track }
+                }
+
+            playlist.trackIds
+                .mapNotNull { trackId -> tracksById[trackId.id] }
+                .map { track -> track.toMediaMetadata() }
+        }
+    }
+
     suspend fun getSongUrl(id: String): Resource<SongUrl> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
@@ -59,14 +85,46 @@ class PlaylistRepository(
 
     suspend fun getSongUrlV1(ids: List<String>, quality: MusicQuality): Resource<SongUrl> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.getSongUrlV1(
-                    GetSongUrlV1(
-                        ids = "[${ids.joinToString(",")}]",
-                        level = quality.text
-                    )
-                )
+            val requestedIds = ids.map(String::trim).filter(String::isNotBlank).distinct()
+            if (requestedIds.isEmpty()) {
+                return@withContext Resource.Success(SongUrl(code = 200, data = emptyList()))
             }
+
+            val fullSourcesById = LinkedHashMap<String, SongUrl.Data>()
+            var responseCode = 200
+            for (attemptedQuality in playbackQualityFallbacks(quality.text)) {
+                val response = try {
+                    apiService.getSongUrlV1(
+                        GetSongUrlV1(
+                            ids = "[${requestedIds.joinToString(",")}]",
+                            level = attemptedQuality,
+                        )
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    // A transport/authentication failure is not a quality fallback signal.
+                    return@withContext Resource.Error(error.message ?: "Unable to resolve song URL")
+                }
+                if (response.code != 200) {
+                    return@withContext Resource.Error(
+                        "Song URL API returned code ${response.code}"
+                    )
+                }
+
+                responseCode = response.code
+                response.fullSourcesFor(requestedIds.toSet()).forEach { source ->
+                    fullSourcesById.putIfAbsent(source.id.toString(), source)
+                }
+                if (fullSourcesById.size == requestedIds.size) break
+            }
+
+            Resource.Success(
+                SongUrl(
+                    code = if (fullSourcesById.isNotEmpty()) 200 else responseCode,
+                    data = fullSourcesById.values.toList(),
+                )
+            )
         }
     }
 

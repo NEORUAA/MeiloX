@@ -25,7 +25,7 @@ class DuetDetector @Inject constructor() {
     ): LyricData? {
         val netVerbatim = netease.lyric.yrc?.lyric?.takeIf { it.isNotBlank() }
         val qqVerbatim = qq.lyric.lyric.takeIf { qq.lyric.qrcT != 0 && it.isNotBlank() }
-        val netLine = netease.lyric.lrc.lyric.takeIf { it.isNotBlank() }
+        val netLine = netease.lyric.lrc?.lyric?.takeIf { it.isNotBlank() }
         val qqLine = qq.lrcContent?.takeIf { it.isNotBlank() }
             ?: qq.lyric.lyric.takeIf { it.isNotBlank() }
 
@@ -47,7 +47,7 @@ class DuetDetector @Inject constructor() {
 
     fun singleDuet(source: LyricSourceData.NetEase): LyricData? {
         val verbatim = source.lyric.yrc?.lyric?.takeIf { it.isNotBlank() }
-        val line = source.lyric.lrc.lyric.takeIf { it.isNotBlank() } ?: return null
+        val line = source.lyric.lrc?.lyric?.takeIf { it.isNotBlank() } ?: return null
         val translation = source.lyric.tlyric?.lyric?.takeIf { it.isNotBlank() }
 
         val duet = if (isDuetLikely(line)) detectDuetLocally(line) else null

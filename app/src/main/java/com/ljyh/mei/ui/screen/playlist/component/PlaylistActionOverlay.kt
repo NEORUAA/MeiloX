@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
+import com.ljyh.mei.constants.MusicQuality
+
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
@@ -23,12 +25,17 @@ fun PlaylistActionOverlay(
     allMePlaylist: List<Playlist>, // 用户拥有的歌单列表
     onDismiss: () -> Unit,
     onUpdateOverlay: (OverlayState) -> Unit, // 用于切换状态（如从菜单跳到收藏页）
-    onDownloadTrack: ((MediaMetadata) -> Unit)? = null,
+    onDownloadTrack: ((MediaMetadata, MusicQuality) -> Unit)? = null,
     viewModel: PlaylistViewModel
 ) {
     val context = LocalContext.current
 
     when (overlay) {
+        is OverlayState.Share -> com.ljyh.mei.ui.screen.social.NeteaseShareSheet(
+            metadata = overlay.metadata,
+            onDismiss = onDismiss,
+        )
+
         is OverlayState.AddToPlaylist -> {
             AddToPlaylistSheet(
                 playlists = allMePlaylist,
@@ -58,13 +65,15 @@ fun PlaylistActionOverlay(
         is OverlayState.TrackActionMenu -> {
             TrackActionMenu(
                 targetTrack = overlay.track,
+                anchorBounds = overlay.anchorBounds,
+                onShare = { onUpdateOverlay(OverlayState.Share(overlay.track)) },
                 isCreator = isCreator,
                 onDismiss = onDismiss,
                 onAddToPlaylist = {
                     viewModel.getAllMePlaylist()
                     onUpdateOverlay(OverlayState.AddToPlaylist(overlay.track.id))
                 },
-                onDownloadTrack = onDownloadTrack?.let { { it(overlay.track) } },
+                onDownloadTrack = onDownloadTrack?.let { download -> { quality -> download(overlay.track, quality) } },
                 onDelete = {
                     viewModel.deleteSongFromPlaylist(
                         playlistId.toString(),

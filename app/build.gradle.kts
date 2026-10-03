@@ -25,9 +25,11 @@ android {
             .get()
         minSdk = 33
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.54.2"
+        versionCode = 11
+        versionName = "1.54.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["superlyricapi_version_name"] = "3.4"
+        manifestPlaceholders["superlyricapi_version_code"] = "34"
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "arm64-v8a"
@@ -61,9 +63,10 @@ android {
         compose = true
     }
     packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
+        // Direct-distribution APKs prioritize download size. Android extracts these
+        // entries at install time instead of mmap'ing them directly from the APK.
+        jniLibs.useLegacyPackaging = true
+        dex.useLegacyPackaging = true
     }
 }
 
@@ -110,7 +113,10 @@ dependencies {
     implementation(libs.annotations)
     implementation(libs.androidx.core.animation)
     implementation(libs.androidx.compose.material3.window.size.class1)
+    implementation("com.github.luben:zstd-jni:1.5.7-20@aar")
     testImplementation(libs.junit)
+    testRuntimeOnly("com.github.luben:zstd-jni:1.5.7-20")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlinxCoroutinesGuava.get()}")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
@@ -172,15 +178,14 @@ dependencies {
     // 歌词组件
     implementation(libs.lyrics.core)
     implementation(libs.lyrics.ui)
+    implementation("io.github.proify.lyricon:provider:0.1.70")
+    implementation("com.github.HChenX:SuperLyricApi:3.4")
     implementation(libs.zoomable)
     implementation(libs.timber)
     implementation(libs.compose.cloudy)
     implementation(libs.backdrop)
     implementation(libs.shapes)
     implementation(libs.capsule)
-    implementation(libs.onnxruntime.android)
-
-
 }
 
 //kotlin {

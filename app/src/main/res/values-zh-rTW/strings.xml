@@ -1,6 +1,8 @@
 <resources>
     <string name="artist_follow">關注</string>
     <string name="artist_following">已關注</string>
+    <string name="artist_unavailable_title">無相關藝人</string>
+    <string name="artist_unavailable_description">暫時無法取得該藝人的詳細資訊。</string>
     <string name="track_action_add_playlist">加入播放清單</string>
     <string name="track_action_download">下載</string>
     <string name="track_action_delete">刪除此歌曲</string>
@@ -27,6 +29,24 @@
     <string name="more_action_delete">刪除</string>
     <string name="more_action_view_playlist">檢視播放佇列</string>
     <string name="more_action_sleep_timer">睡眠計時器</string>
+    <string name="sleep_timer_close">關閉睡眠計時器</string>
+    <string name="sleep_timer_active">睡眠計時器已開啟</string>
+    <string name="sleep_timer_inactive">睡眠計時器未開啟</string>
+    <string name="sleep_timer_adjust">調整時長</string>
+    <string name="sleep_timer_duration">停止播放時間</string>
+    <string name="sleep_timer_minutes">%1$d 分鐘</string>
+    <string name="sleep_timer_end_of_track">播放完目前歌曲後停止</string>
+    <string name="sleep_timer_start">開始計時</string>
+    <string name="sleep_timer_running">計時中</string>
+    <string name="sleep_timer_update">更新計時</string>
+    <string name="sleep_timer_cancel">取消計時</string>
+    <string name="sleep_timer_notification_disabled">倒數計時通知未開啟</string>
+    <string name="sleep_timer_notification_hint">點一下開啟通知，計時仍會正常運作</string>
+    <string name="sleep_timer_stops_at">將於 %1$s 停止播放</string>
+    <string name="sleep_timer_stops_in">%1$d 分鐘後停止播放</string>
+    <string name="sleep_timer_track_status">本曲結束後停止</string>
+    <string name="sleep_timer_title">讓音樂陪你入睡</string>
+    <string name="sleep_timer_track_short">本曲結束</string>
     <string name="more_action_floating_lyrics">懸浮窗歌詞</string>
     <string name="more_action_bottom_actions">播放器底部動作</string>
     <string name="more_action_song_info">歌曲資訊</string>
@@ -91,9 +111,17 @@
     <string name="podcast_for_you">為你推薦</string>
     <string name="podcast_category">分類 Podcast</string>
     <string name="podcast_featured">精選 Podcast</string>
+    <string name="podcast_discover">探索</string>
+    <string name="podcast_my_subscriptions">我的訂閱</string>
     <string name="podcast_subscribe">訂閱</string>
     <string name="podcast_subscribed">已訂閱</string>
     <string name="podcast_duration_minutes">%1$d 分鐘</string>
+    <string name="podcast_program_count">%1$d 集</string>
+    <string name="podcast_loading_more">正在載入更多 Podcast</string>
+    <string name="podcast_empty_subscriptions">還沒有訂閱 Podcast</string>
+    <string name="podcast_empty_subscriptions_description">開啟 Podcast 詳情後，點一下訂閱即可在這裡查看。</string>
+    <string name="podcast_subscriptions_sign_in">登入後查看訂閱</string>
+    <string name="podcast_subscriptions_sign_in_description">Podcast 訂閱將與網易雲音樂帳號同步。</string>
     <string name="cloud_music">雲端音樂</string>
     <string name="cloud_music_quota">已使用 %1$s，共 %2$s</string>
     <string name="load_failed">內容載入失敗</string>
@@ -149,6 +177,8 @@
     <string name="general_clipboard">剪貼簿</string>
     <string name="general_recognize_clipboard">辨識網易雲連結</string>
     <string name="general_recognize_clipboard_description">啟動後讀取一次剪貼簿，發現網易雲歌曲或一起聽邀請時會先詢問是否開啟。</string>
+    <string name="general_export_music_u">匯出 MUSIC_U Cookie</string>
+    <string name="general_export_music_u_description">將目前登入帳號的 MUSIC_U 值複製到剪貼簿。</string>
     <string name="clipboard_song_title">發現網易雲歌曲連結</string>
     <string name="clipboard_song_message">是否在 Mei 中開啟剪貼簿裡的歌曲？</string>
     <string name="clipboard_listen_title">發現一起聽邀請</string>
@@ -167,6 +197,7 @@
     <string name="appearance_dynamic_theme_description">根據目前歌曲封面為介面著色。</string>
     <string name="appearance_accent_color">強調色</string>
     <string name="appearance_accent_dynamic">封面</string>
+    <string name="appearance_accent_default">預設</string>
     <string name="appearance_accent_custom">自訂</string>
     <string name="color_picker_grid">網格</string>
     <string name="color_picker_spectrum">光譜</string>
@@ -182,6 +213,8 @@
     <string name="appearance_player">播放器</string>
     <string name="appearance_player_style">播放器樣式</string>
     <string name="appearance_player_classic">經典</string>
+    <string name="appearance_keep_screen_on">播放頁保持螢幕常亮</string>
+    <string name="appearance_keep_screen_on_description">開啟播放器頁面時，防止螢幕自動熄滅。</string>
     <string name="appearance_original_cover">載入原圖封面</string>
     <string name="appearance_original_cover_description">可用時請求完整解析度封面。</string>
     <string name="appearance_song_cover">歌曲封面形狀</string>
@@ -293,6 +326,8 @@
     <string name="equalizer_band_8k">8 kHz</string>
     <string name="equalizer_band_16k">16 kHz</string>
     <string name="playback_behavior">播放行為</string>
+    <string name="cloud_shuffle">雲端隨機</string>
+    <string name="cloud_shuffle_description">優先使用雲端隨機，失敗時自動使用本地隨機；關閉後僅使用本地隨機。</string>
     <string name="loop_playback">循環播放</string>
     <string name="skip_unavailable">無音訊來源時播放下一首</string>
     <string name="previous_behavior">播放超過 3 秒時上一首按鈕從頭播放</string>
@@ -317,7 +352,7 @@
     <string name="app_tab_music">音樂</string>
     <string name="app_tab_podcasts">播客</string>
     <string name="app_tab_explore">發現</string>
-    <string name="app_tab_library">音樂庫</string>
+    <string name="app_tab_library">媒體庫</string>
     <string name="app_tab_library_songs">收藏歌曲</string>
     <string name="app_tab_library_playlists">收藏歌單</string>
     <string name="app_tab_library_podcasts">訂閱播客</string>
@@ -533,6 +568,7 @@
     <string name="content_tab_order">標籤順序</string>
     <string name="move_up">上移</string>
     <string name="move_down">下移</string>
+    <string name="reorder_drag_handle">拖曳排序</string>
     <string name="load_failed_message">載入失敗：%1$s</string>
     <string name="no_search_results">暫無搜尋結果</string>
     <string name="library_sign_in">登入以同步音樂庫</string>
@@ -550,6 +586,7 @@
     <string name="listening_history">最近播放</string>
     <string name="clear_history">清除歷史</string>
     <string name="no_listening_history">暫無播放記錄</string>
+    <string name="no_listening_history_description">網易雲音樂中的最近播放會顯示在這裡。</string>
     <string name="download_management">下載管理</string>
     <string name="clear_downloads">清除下載</string>
     <string name="download_filter_all">全部</string>
@@ -563,6 +600,14 @@
     <string name="download_paused">已暫停</string>
     <string name="download_completed">完成</string>
     <string name="download_failed">失敗</string>
+    <string name="download_file_unavailable">本機檔案無法使用</string>
+    <string name="download_play_next">下一首播放</string>
+    <string name="download_add_to_queue">加入播放佇列</string>
+    <string name="download_added_next">已加入下一首播放</string>
+    <string name="download_added_to_queue">已加入播放佇列</string>
+    <string name="download_cancel">取消下載</string>
+    <string name="download_delete_local_file">刪除本機檔案</string>
+    <string name="download_delete_record">刪除下載記錄</string>
     <string name="pause">暫停</string>
     <string name="resume">恢復</string>
     <string name="playlist_table_title">標題</string>
@@ -583,4 +628,40 @@
     <string name="netease_sms_up_open_app">開啟簡訊應用程式</string>
     <string name="netease_sms_up_continue">我已傳送簡訊，繼續登入</string>
     <string name="netease_sms_up_no_app">本機沒有簡訊應用程式，請使用登入手機號碼所在的手機傳送，再回到這裡繼續登入。</string>
+    <string name="appearance_library_style">媒體庫樣式</string>
+    <string name="artist_all_songs_count">全部 %1$d 首歌曲</string>
+    <string name="artist_all_songs">全部歌曲</string>
+    <string name="artist_songs_empty">暫無歌曲</string>
+    <string name="track_action_download_song">下載歌曲</string>
+    <string name="track_quality_standard">標準</string>
+    <string name="track_quality_high">高品質</string>
+    <string name="track_quality_lossless">無損</string>
+    <string name="track_quality_hires">Hi-Res</string>
+    <string name="track_quality_surround">高清環繞聲</string>
+    <string name="track_quality_spatial">沉浸環繞聲</string>
+    <string name="track_quality_master">超清母帶</string>
+    <string name="menu_expanded">已展開</string>
+    <string name="menu_collapsed">已收起</string>
+    <string name="track_action_share">分享</string>
+
+    <string name="album_menu_title">專輯操作</string>
+    <string name="album_download_all">下載全部（%1$d 首）</string>
+    <string name="album_multi_select">多選</string>
+    <string name="album_subscribe">收藏專輯</string>
+    <string name="album_unsubscribe">取消收藏專輯</string>
+    <string name="album_refresh">重新整理</string>
+    <string name="album_select_all">全選</string>
+    <string name="album_download_selected">開始下載</string>
+
+    <string name="detail_playlist_menu">歌單操作</string>
+    <string name="detail_playlist_subscribe">收藏歌單</string>
+    <string name="detail_playlist_unsubscribe">取消收藏歌單</string>
+    <string name="detail_podcast_menu">播客操作</string>
+    <string name="detail_podcast_unsubscribe">取消訂閱</string>
+    <string name="detail_podcast_download_all">下載全部（%1$d 期）</string>
+    <string name="detail_download_queued">已加入 %1$d 項到下載佇列</string>
+    <string name="system_lyrics_settings">歌詞分享</string>
+    <string name="system_lyrics_enabled">啟用歌詞分享</string>
+    <string name="system_lyrics_description">透過 Lyricon Provider 和 SuperLyricApi SDK 分享歌詞及播放狀態。</string>
+    <string name="system_lyrics_usage">已接入 Lyricon Provider 和 SuperLyricApi SDK。</string>
 </resources>

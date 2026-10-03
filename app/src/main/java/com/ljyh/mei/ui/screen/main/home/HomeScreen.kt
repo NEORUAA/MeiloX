@@ -63,6 +63,7 @@ import com.ljyh.mei.constants.RecommendCardHeightTablet
 import com.ljyh.mei.constants.RecommendCardWidth
 import com.ljyh.mei.constants.RecommendCardWidthTablet
 import com.ljyh.mei.constants.UserIdKey
+import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -234,7 +235,12 @@ fun HomeScreen(
                 }
 
                 Resource.Loading -> {
-                    // 这里可以加 Loading Skeleton
+                    HomeShimmer(
+                        contentPadding = PaddingValues(
+                            top = pinnedPadding.calculateTopPadding(),
+                            bottom = systemBarsPadding.calculateBottomPadding() + 16.dp,
+                        ),
+                    )
                 }
             }
         }
@@ -311,6 +317,18 @@ private fun HomeBlockItem(
                             // 私人FM
                             playerConnection.fmStart(resource.resourceId)
 
+                        }
+
+                        "musicPodcast" -> resource.toMusicPodcastMediaMetadata()?.let { metadata ->
+                            val item = metadata.toMediaItem()
+                            playerConnection.playQueue(
+                                ListQueue(
+                                    id = "home_music_podcast_${resource.resourceId}",
+                                    title = resource.title,
+                                    items = listOf(item.mediaId to item),
+                                    startIndex = 0,
+                                )
+                            )
                         }
 
                         "similarSo  ng" -> {
@@ -434,6 +452,26 @@ private fun HomeBlockItem(
         }
     }
 }
+
+private fun HomePageResourceShow.Data.Block.DslData.BlockResource.Resource.toMusicPodcastMediaMetadata(): MediaMetadata? =
+    runCatching {
+        val programData = Gson().fromJson(programDTO, JsonObject::class.java)
+            .getAsJsonObject("programData")
+        val mainSong = programData.getAsJsonObject("mainSong")
+        val radio = programData.getAsJsonObject("radio")
+        val radioId = radio.get("id").asLong
+        MediaMetadata(
+            id = mainSong.get("id").asLong,
+            title = programData.get("name")?.takeUnless { it.isJsonNull }?.asString ?: title,
+            coverUrl = programData.get("coverUrl")?.takeUnless { it.isJsonNull }?.asString ?: coverImg,
+            artists = listOf(MediaMetadata.Artist(0, subTitle)),
+            duration = programData.get("duration")?.takeUnless { it.isJsonNull }?.asLong ?: 0L,
+            album = MediaMetadata.Album(radioId, subTitle),
+            isPodcast = true,
+        )
+    }.onFailure { error ->
+        Timber.tag("HomeMusicPodcast").e(error, "Unable to parse program %s", resourceId)
+    }.getOrNull()
 
 /**
  * 优化后的水平滚动行，使用 LazyRow 提升性能

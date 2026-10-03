@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.screen.social
 
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import androidx.compose.foundation.layout.ime
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -311,7 +314,10 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
             .firstOrNull()
             ?.displayName
     }
-    val bottomPadding = insets.calculateBottomPadding()
+    val keyboardBottom = with(density) { androidx.compose.foundation.layout.WindowInsets.ime.getBottom(this).toDp() }
+    val bottomPadding = maxOf(insets.calculateBottomPadding(), keyboardBottom)
+    val conversationBackdrop = rememberLayerBackdrop()
+    val pageBackground = LocalGlassColors.current.groupedBackground
 
     LaunchedEffect(
         userId,
@@ -338,7 +344,9 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = messageListState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .layerBackdrop(conversationBackdrop)
+                    .background(pageBackground),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     top = contentPadding.calculateTopPadding() + 12.dp,
@@ -433,7 +441,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                     modifier = Modifier.weight(1f),
                     shape = ContinuousRoundedRectangle(50),
                     style = GlassSurfaceStyle.Navigation,
-                    navigationSurfaceColor = Color.Transparent,
+                    backdrop = conversationBackdrop,
                 ) {
                     BasicTextField(
                         value = draft,
@@ -459,6 +467,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                     enabled = draft.isNotBlank() && !state.isSending,
                     emphasis = GlassEmphasis.Prominent,
                     style = GlassSurfaceStyle.Navigation,
+                    backdrop = conversationBackdrop,
                 ) {
                     Text(stringResource(R.string.send))
                 }

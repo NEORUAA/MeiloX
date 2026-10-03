@@ -103,6 +103,22 @@ object CacheManager {
     }
 
     @OptIn(UnstableApi::class)
+    fun findFullyCachedPlaybackKey(cache: Cache, mediaId: String, quality: String): String? {
+        val prefix = playbackCacheKeyPrefix(mediaId, quality)
+        return cache.keys
+            .asSequence()
+            .filter { it.startsWith(prefix) }
+            .firstOrNull { isContentFullyCached(cache, it) }
+    }
+
+    @OptIn(UnstableApi::class)
+    fun removePlaybackEntries(cache: Cache, mediaId: String): Int {
+        val keys = cache.keys.filter { it.startsWith(playbackCacheKeyPrefix(mediaId)) }
+        keys.forEach(cache::removeResource)
+        return keys.size
+    }
+
+    @OptIn(UnstableApi::class)
     fun clear() {
         synchronized(LOCK) {
             simpleCache?.keys?.toList()?.forEach { key ->

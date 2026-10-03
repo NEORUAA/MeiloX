@@ -46,6 +46,7 @@ import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosPinnedListPage
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -370,7 +371,16 @@ private fun WikiArtworkRow(
                     )
                 }
             }
-            SfIcon(symbolName, null, size = 19.dp)
+            SfIcon(
+                symbolName,
+                null,
+                size = 19.dp,
+                tint = if (symbolName.startsWith("chevron.")) {
+                    LocalGlassColors.current.separator
+                } else {
+                    LocalGlassColors.current.content
+                },
+            )
         }
     }
 }

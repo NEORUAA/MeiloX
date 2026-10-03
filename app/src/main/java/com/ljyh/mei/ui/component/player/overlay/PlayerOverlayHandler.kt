@@ -113,6 +113,10 @@ class PlayerOverlayHandler(
     /**
      * 显示轨道操作菜单
      */
+    fun showShare(metadata: MediaMetadata) {
+        _currentOverlay.value = OverlayState.Share(metadata)
+    }
+
     fun showTrackActionMenu(track: MediaMetadata) {
         _currentOverlay.value = OverlayState.TrackActionMenu(track)
     }

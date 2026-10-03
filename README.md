@@ -40,6 +40,12 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的第三方�
 
 功能仍在持续调整中，实际可用范围会随版本和网易云音乐接口状态变化。
 
+## 歌词共享
+
+已接入 [Lyricon Provider](https://tomakino.github.io/lyricon/zh-cn/developer/provider/) 和 [SuperLyricApi](https://github.com/HChenX/SuperLyricApi) SDK，用于共享歌词、逐字时间、翻译及播放状态。
+
+「设置 → 歌词设置 → 歌词共享」中的「启用歌词共享」默认开启。
+
 ## 开源致谢
 
 MeiloX 的界面、歌词和底层能力受以下项目启发或直接使用其开源组件，感谢所有贡献者：
@@ -48,6 +54,8 @@ MeiloX 的界面、歌词和底层能力受以下项目启发或直接使用其�
 - [MeloX](https://github.com/youshen2/MeloX)：iOS 版参考实现与产品方向；
 - [amll-ttml-db](https://github.com/Steve-xmh/amll-ttml-db)：高质量逐字歌词数据；
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui)：歌词模型与渲染组件；
+- [Lyricon](https://github.com/tomakino/lyricon)：词幕 Provider SDK；
+- [SuperLyricApi](https://github.com/HChenX/SuperLyricApi)：歌词共享 SDK；
 - [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)：Compose Multiplatform 流体玻璃效果。
 
 ## 许可证与第三方声明

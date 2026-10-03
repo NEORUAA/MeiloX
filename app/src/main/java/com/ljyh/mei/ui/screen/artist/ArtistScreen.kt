@@ -46,7 +46,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,8 +69,12 @@ import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassEmphasis
+import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosPinnedPage
+import com.ljyh.mei.ui.glass.IosTypography
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -93,6 +99,9 @@ fun ArtistScreen(
     val followMutation by viewModel.followMutation.collectAsState()
     var isFollowed by remember(id) { mutableStateOf(false) }
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
+    val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
+    val artistData = (artistDetail as? Resource.Success)?.data?.data
+    val isArtistUnavailable = artistDetail is Resource.Success && artistData?.artist == null
 
     val scrollState = rememberLazyListState()
     // Hero 高度 320dp，当滚过约 60% 时显示 TopBar 标题
@@ -120,31 +129,46 @@ fun ArtistScreen(
 
     Box(Modifier.fillMaxSize()) {
         IosPinnedPage(
-            title = (artistDetail as? Resource.Success)?.data?.data?.artist?.name.orEmpty(),
+            title = artistData?.artist?.name.orEmpty(),
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             collapseProgress = topBarCollapseProgress,
             onNavigateBack = navController::popBackStack,
         ) { contentPadding ->
-            LazyColumn(
-                state = scrollState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    bottom = contentPadding.calculateBottomPadding(),
-                ),
-            ) {
+            if (isArtistUnavailable) {
+                ArtistUnavailableState(
+                    onNavigateBack = navController::popBackStack,
+                    modifier = Modifier.fillMaxSize().padding(contentPadding),
+                )
+            } else {
+                LazyColumn(
+                    state = scrollState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        bottom = contentPadding.calculateBottomPadding(),
+                    ),
+                ) {
             // --- 1. Hero + Info Header ---
             item {
                 when (val detail = artistDetail) {
-                    is Resource.Success -> ArtistHeader(
-                        artist = detail.data.data.artist,
-                        isFollowed = isFollowed,
-                        isFollowLoading = followMutation is Resource.Loading,
-                        onFollowClick = {
-                            viewModel.setArtistFollowed(detail.data.data.artist.id.toLong(), !isFollowed)
-                        },
-                        expertIdentities = detail.data.data.secondaryExpertIdentiy
-                            .filter { it.expertIdentiyCount > 0 }
-                    )
+                    is Resource.Success -> {
+                        val data = detail.data.data
+                        val artist = data?.artist
+                        if (artist != null) {
+                            ArtistHeader(
+                                artist = artist,
+                                onSongsClick = onAllSongsClick,
+                                isFollowed = isFollowed,
+                                isFollowLoading = followMutation is Resource.Loading,
+                                onFollowClick = {
+                                    viewModel.setArtistFollowed(artist.id.toLong(), !isFollowed)
+                                },
+                                expertIdentities = data.secondaryExpertIdentiy.orEmpty()
+                                    .filter { it.expertIdentiyCount > 0 }
+                            )
+                        } else {
+                            ErrorItem(detail.data.message ?: "Unable to load artist")
+                        }
+                    }
                     is Resource.Loading -> ArtistHeaderShimmer()
                     is Resource.Error -> ErrorItem(detail.message)
                 }
@@ -155,7 +179,7 @@ fun ArtistScreen(
 
             when (val songsResource = artistSongs) {
                 is Resource.Success -> {
-                    val songs = songsResource.data.hotSongs
+                    val songs = songsResource.data.hotSongs.orEmpty()
                     items(songs.take(10), key = { it.id }) { song ->
                         Track(
                             track = song.toMediaMetadata(),
@@ -175,7 +199,7 @@ fun ArtistScreen(
                                     }
                                 )
                             },
-                            onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata()) }
+                            onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), it) }
                         )
                     }
                 }
@@ -183,12 +207,33 @@ fun ArtistScreen(
                 is Resource.Error -> item { ErrorItem(songsResource.message) }
             }
 
+            val songCount = artistData?.artist?.musicSize
+                ?: (artistSongs as? Resource.Success)?.data?.artist?.musicSize
+            if (songCount != null) {
+                item(key = "all-artist-songs") {
+                    IosListRow(
+                        title = stringResource(R.string.artist_all_songs_count, songCount),
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        onClick = onAllSongsClick,
+                        trailing = {
+                            SfIcon(
+                                "chevron.forward",
+                                null,
+                                modifier = Modifier.padding(start = 8.dp),
+                                size = 12.dp,
+                                tint = LocalGlassColors.current.secondaryContent,
+                            )
+                        },
+                    )
+                }
+            }
+
             // --- 3. Albums ---
             item { SectionTitle("专辑") }
 
             when (val albumsResource = artistAlbums) {
                 is Resource.Success -> {
-                    val albums = albumsResource.data.hotAlbums
+                    val albums = albumsResource.data.hotAlbums.orEmpty()
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 20.dp),
@@ -223,6 +268,7 @@ fun ArtistScreen(
                 }
                 is Resource.Error -> item { ErrorItem(albumsResource.message) }
             }
+                }
             }
         }
         StandaloneTrackActionOverlay(
@@ -230,6 +276,44 @@ fun ArtistScreen(
             onDismiss = { currentOverlay = OverlayState.None },
             onUpdateOverlay = { currentOverlay = it },
         )
+    }
+}
+
+@Composable
+private fun ArtistUnavailableState(
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        SfIcon(
+            symbol = SfSymbol.PersonFilled,
+            contentDescription = null,
+            size = 48.dp,
+            tint = LocalGlassColors.current.tertiaryContent,
+        )
+        Text(
+            text = stringResource(R.string.artist_unavailable_title),
+            style = IosTypography.title2,
+            color = LocalGlassColors.current.content,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            text = stringResource(R.string.artist_unavailable_description),
+            style = IosTypography.subheadline,
+            color = LocalGlassColors.current.secondaryContent,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        GlassButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.padding(top = 20.dp),
+        ) {
+            Text(stringResource(R.string.navigation_back))
+        }
     }
 }
 
@@ -244,6 +328,7 @@ fun ArtistHeader(
     isFollowed: Boolean,
     isFollowLoading: Boolean,
     onFollowClick: () -> Unit,
+    onSongsClick: () -> Unit,
 ) {
     var descExpanded by remember { mutableStateOf(false) }
     val bgColor = MaterialTheme.colorScheme.background
@@ -348,7 +433,11 @@ fun ArtistHeader(
 
                 // 统计数字行
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    StatItem(value = artist.musicSize.formatCount(), label = "单曲")
+                    StatItem(
+                        value = artist.musicSize.formatCount(),
+                        label = "单曲",
+                        modifier = Modifier.clickable(role = Role.Button, onClick = onSongsClick),
+                    )
                     StatItem(value = artist.albumSize.toString(), label = "专辑")
                     StatItem(value = artist.mvSize.toString(), label = "MV")
                 }
@@ -439,8 +528,8 @@ private fun HeroBadge(text: String) {
 // ─── Stat Item ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StatItem(value: String, label: String) {
-    Column {
+private fun StatItem(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,

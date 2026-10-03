@@ -90,6 +90,18 @@
 -keep class com.google.gson.stream.** { *; }
 -dontwarn com.google.gson.**
 
+# NeteaseHeader is serialized reflectively into the EAPI body and Cookie header.
+# Keep only its wire fields while allowing the class and the rest of the app to be optimized.
+-keepclassmembers,allowoptimization class com.ljyh.mei.di.NeteaseHeader {
+    java.lang.String *;
+}
+
+# Playback snapshots are restored through Gson reflection. Keep the model fields and
+# their generic signatures so R8 cannot erase List element types in release builds.
+-keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
+-keep class com.ljyh.mei.playback.PlaybackItemSnapshot { *; }
+-keep class com.ljyh.mei.playback.PlaybackArtistSnapshot { *; }
+
 -keepclasseswithmembernames class * {
     native <methods>;
 }
@@ -164,3 +176,11 @@
 -keepclassmembers class com.ljyh.mei.data.network.NeteaseAegisSecurity$AegisNetworkLayer {
     public void requireKey(int, java.lang.String, long);
 }
+
+# zstd-jni resolves its native bindings by Java class and method name.
+-keep class com.github.luben.zstd.** { *; }
+
+# Preserve SuperLyricApi's cross-process Parcelable and Binder contract.
+-keep class com.hchen.superlyricapi.* { *; }
+# SuperLyricApi compiles this framework entry point against its compile-only stubs.
+-dontwarn android.os.ServiceManager

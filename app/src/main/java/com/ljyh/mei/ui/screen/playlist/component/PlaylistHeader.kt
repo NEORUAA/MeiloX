@@ -16,13 +16,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
@@ -32,6 +35,7 @@ import com.ljyh.mei.constants.PlaylistCoverStyleKey
 import com.ljyh.mei.ui.component.playlist.FinalPerfectCollage
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassEmphasis
+import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -57,6 +61,8 @@ fun PlaylistHeader(
     onDownload: (() -> Unit)? = null,
     actionIcon: ImageVector,
     actionLabel: String,
+    metadata: String? = null,
+    onShufflePlay: () -> Unit = onPlayAll,
 ) {
     val colors = LocalGlassColors.current
     val playlistCoverStyle by rememberEnumPreference(
@@ -101,7 +107,7 @@ fun PlaylistHeader(
         }
 
         Text(
-            text = buildPlaylistMetadata(count, playCount, subscribeCount),
+            text = metadata ?: buildPlaylistMetadata(count, playCount, subscribeCount),
             style = IosTypography.subheadline.copy(fontWeight = FontWeight.Medium),
             color = colors.secondaryContent,
             maxLines = 1,
@@ -114,11 +120,12 @@ fun PlaylistHeader(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GlassIconButton(onClick = onPlayAll, enabled = count > 0) {
+            GlassIconButton(onClick = onShufflePlay, enabled = count > 0, style = GlassSurfaceStyle.Navigation) {
                 SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
             }
             GlassButton(
                 onClick = onPlayAll,
+                style = GlassSurfaceStyle.Navigation,
                 enabled = count > 0,
                 emphasis = GlassEmphasis.Prominent,
             ) {
@@ -131,6 +138,7 @@ fun PlaylistHeader(
             }
             GlassIconButton(
                 onClick = { onSubscribed(isSubscribed) },
+                style = GlassSurfaceStyle.Navigation,
                 emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
             ) {
                 SfIcon(
@@ -166,7 +174,14 @@ private fun PlaylistCover(
             .fillMaxWidth(0.68f)
             .widthIn(max = 300.dp)
             .aspectRatio(1f)
-            .shadow(18.dp, shape)
+            .dropShadow(
+                shape = shape,
+                shadow = Shadow(
+                    radius = 18.dp,
+                    color = Color.Black.copy(alpha = 0.16f),
+                    offset = DpOffset.Zero,
+                ),
+            )
             .clip(shape),
     ) {
         when (style) {

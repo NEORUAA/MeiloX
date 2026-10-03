@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.component.player
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -25,9 +30,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.recordPlayerContent
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
@@ -41,12 +51,12 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import coil3.compose.AsyncImage
 import com.kyant.backdrop.Backdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MiniPlayerHeight
+import com.ljyh.mei.constants.NavigationBarHeight
 import com.ljyh.mei.constants.ThumbnailCornerRadius
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.extensions.togglePlayPause
@@ -56,14 +66,13 @@ import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalPlayerConnection
-import com.ljyh.mei.utils.smallImage
 import kotlin.math.roundToInt
 
 private fun Modifier.compactMiniPlayerHorizontalPadding(
     compactProgress: State<Float>,
 ): Modifier = layout { measurable, constraints ->
     val progress = compactProgress.value.coerceIn(0f, 1f)
-    val horizontalPadding = (12.dp + 60.dp * progress).roundToPx()
+    val horizontalPadding = (20.dp + 60.dp * progress).roundToPx()
     val totalPadding = horizontalPadding * 2
     val childConstraints = constraints.copy(
         minWidth = (constraints.minWidth - totalPadding).coerceAtLeast(0),
@@ -103,6 +112,10 @@ fun MiniPlayer(
     onClick: () -> Unit,
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
 ) {
+    val sheet = LocalPlayerSheet.current
+    val sheetTransitioning by remember(sheet) {
+        derivedStateOf { sheet?.state?.isTransitioning == true }
+    }
     val playerConnection = LocalPlayerConnection.current ?: return
     val isPlaying by playerConnection.isPlaying.collectAsState()
     val playbackState by playerConnection.playbackState.collectAsState()
@@ -116,9 +129,18 @@ fun MiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(MiniPlayerHeight)
-            .compactMiniPlayerHorizontalPadding(compactProgress),
+            .compactMiniPlayerHorizontalPadding(compactProgress)
+            .onGloballyPositioned {
+                // This modifier is outside GlassSurface's press layer. Avoid boundsInRoot,
+                // which can clip the hidden mini player against the moving sheet outline.
+                sheet?.miniBounds = Rect(it.localToRoot(Offset.Zero), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+            },
         backdrop = backdrop,
         shape = Capsule(),
+        onVisualBoundsChanged = { bounds, light -> sheet?.updateMiniPressHighlight(bounds, light) },
+        cancelPressFeedback = sheetTransitioning,
+        morphProgress = compactProgress,
+        morphVerticalTravel = NavigationBarHeight - 16.dp,
         style = GlassSurfaceStyle.Navigation,
         onClick = onClick,
     ) {
@@ -126,7 +148,17 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
+                .onGloballyPositioned { sheet?.miniLayoutCoordinates = it }
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+                .onGloballyPositioned {
+                    sheet?.miniContentCoordinates = it
+                    sheet?.miniLayoutBounds(it)?.let { bounds -> sheet.miniContentBounds = bounds }
+                }
+                .then(
+                    if (sheet != null) {
+                        Modifier.recordPlayerContent(sheet, sheet.miniContent) { true }
+                    } else Modifier,
+                ),
         ) {
             Box(Modifier.weight(1f)) {
                 mediaMetadata?.let {
@@ -139,58 +171,62 @@ fun MiniPlayer(
                 }
             }
 
-            IconButton(
-                modifier = Modifier.size(40.dp),
-                onClick = {
-                    if (playbackState == Player.STATE_ENDED) {
-                        playerConnection.player.seekTo(0, 0)
-                        playerConnection.player.playWhenReady = true
-                    } else {
-                        playerConnection.player.togglePlayPause()
-                    }
-                },
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                SfIcon(
-                    symbol = when {
-                        playbackState == Player.STATE_ENDED -> SfSymbol.ArrowClockwise
-                        isPlaying -> SfSymbol.PauseFilled
-                        else -> SfSymbol.PlayFilled
+                IconButton(
+                    modifier = Modifier.size(40.dp),
+                    onClick = {
+                        if (playbackState == Player.STATE_ENDED) {
+                            playerConnection.player.seekTo(0, 0)
+                            playerConnection.player.playWhenReady = true
+                        } else {
+                            playerConnection.player.togglePlayPause()
+                        }
                     },
-                    contentDescription = stringResource(
-                        if (isPlaying) R.string.player_pause else R.string.player_play,
-                    ),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    size = 22.dp,
-                    weight = FontWeight.SemiBold,
-                )
-            }
-
-            if (showNextButton) {
-                Box(
-                    modifier = Modifier
-                        .compactNextButtonWidth(compactProgress)
-                        .graphicsLayer {
-                            val nextVisibility = 1f - compactProgress.value.coerceIn(0f, 1f)
-                            alpha = nextVisibility
-                            val scale = 0.82f + 0.18f * nextVisibility
-                            scaleX = scale
-                            scaleY = scale
-                            clip = true
-                        },
-                    contentAlignment = Alignment.Center,
                 ) {
-                    IconButton(
-                        modifier = Modifier.size(40.dp),
-                        enabled = canSkipNext,
-                        onClick = playerConnection::seekToNext,
+                    SfIcon(
+                        symbol = when {
+                            playbackState == Player.STATE_ENDED -> SfSymbol.ArrowClockwise
+                            isPlaying -> SfSymbol.PauseFilled
+                            else -> SfSymbol.PlayFilled
+                        },
+                        contentDescription = stringResource(
+                            if (isPlaying) R.string.player_pause else R.string.player_play,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        size = 22.dp,
+                        weight = FontWeight.SemiBold,
+                    )
+                }
+
+                if (showNextButton) {
+                    Box(
+                        modifier = Modifier
+                            .compactNextButtonWidth(compactProgress)
+                            .graphicsLayer {
+                                val nextVisibility = 1f - compactProgress.value.coerceIn(0f, 1f)
+                                alpha = nextVisibility
+                                val scale = 0.82f + 0.18f * nextVisibility
+                                scaleX = scale
+                                scaleY = scale
+                                clip = true
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
-                        SfIcon(
-                            symbol = SfSymbol.ForwardFilled,
-                            contentDescription = stringResource(R.string.player_next),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            size = 22.dp,
-                            weight = FontWeight.SemiBold,
-                        )
+                        IconButton(
+                            modifier = Modifier.size(40.dp),
+                            enabled = canSkipNext,
+                            onClick = playerConnection::seekToNext,
+                        ) {
+                            SfIcon(
+                                symbol = SfSymbol.ForwardFilled,
+                                contentDescription = stringResource(R.string.player_next),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                size = 22.dp,
+                                weight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
@@ -205,23 +241,40 @@ fun MiniMediaInfo(
     modifier: Modifier = Modifier,
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
 ) {
+    val sheet = LocalPlayerSheet.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier,
     ) {
         Box(modifier = Modifier.padding(4.dp)) {
             Spacer(modifier = Modifier.size(32.dp))
-            AsyncImage(
-                model = mediaMetadata.coverUrl.smallImage(),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(32.dp)
+            val artwork = LocalPlayerArtwork.current
+            AnimatedContent(
+                targetState = artwork,
+                transitionSpec = {
+                    (fadeIn(tween(400)) + scaleIn(initialScale = 0.92f, animationSpec = tween(400)))
+                        .togetherWith(fadeOut(tween(400)))
+                },
+                label = "MiniCoverTransition",
+                modifier = Modifier.size(32.dp)
                     .onGloballyPositioned { coordinates ->
-                        onCoverBoundsChanged?.invoke(coordinates.boundsInRoot())
+                        val bounds = coordinates.boundsInRoot()
+                        sheet?.miniArtworkCoordinates = coordinates
+                        sheet?.miniLayoutBounds(coordinates)?.let { layoutBounds ->
+                            sheet.miniArtworkBounds = layoutBounds
+                        }
+                        onCoverBoundsChanged?.invoke(bounds)
                     }
-                    .alpha(1f)
+                    .drawWithContent { if (sheet?.drawsArtworkOverlay != true) drawContent() }
                     .clip(ContinuousRoundedRectangle(ThumbnailCornerRadius)),
-            )
+            ) { cover ->
+                if (cover != null) Image(
+                    painter = cover.second,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             androidx.compose.animation.AnimatedVisibility(
                 visible = error != null,
                 enter = fadeIn(),

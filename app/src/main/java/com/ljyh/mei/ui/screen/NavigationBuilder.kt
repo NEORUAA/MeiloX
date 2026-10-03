@@ -20,11 +20,13 @@ import com.ljyh.mei.ui.screen.history.HistoryScreen
 import com.ljyh.mei.ui.screen.local.LocalMusicScreen
 import com.ljyh.mei.ui.screen.local.LocalSongListScreen
 import com.ljyh.mei.ui.screen.main.home.HomeHubScreen
+import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.screen.main.library.LibraryScreen
 import com.ljyh.mei.ui.screen.playlist.EveryDay
 import com.ljyh.mei.ui.screen.playlist.PlaylistScreen
 import com.ljyh.mei.ui.screen.search.SearchResultScreen
 import com.ljyh.mei.ui.screen.setting.AppearanceSettings
+import com.ljyh.mei.ui.screen.artist.ArtistSongsScreen
 import com.ljyh.mei.ui.screen.artist.ArtistScreen
 import com.ljyh.mei.ui.screen.main.findmusic.FindMusicScreen
 import com.ljyh.mei.ui.screen.setting.ContentsSetting
@@ -65,6 +67,15 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable(Screen.Library.route) {
         LibraryScreen()
+    }
+
+    composable(
+        route = "${Screen.LibraryCategory.route}/{page}",
+        arguments = listOf(navArgument("page") { type = NavType.StringType }),
+    ) { entry ->
+        LibraryPage.entries.firstOrNull { it.name == entry.arguments?.getString("page") }?.let {
+            LibraryScreen(category = it)
+        }
     }
 
     composable(Screen.FindMusic.route) {
@@ -294,6 +305,13 @@ fun NavGraphBuilder.navigationBuilder(
         ArtistScreen(id = it.arguments!!.getString("id")!!)
     }
 
+    composable(
+        route = "${Screen.ArtistSongs.route}/{id}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+    ) {
+        ArtistSongsScreen(id = it.arguments!!.getString("id")!!)
+    }
+
     composable(Screen.History.route) {
         HistoryScreen()
     }
@@ -322,11 +340,17 @@ fun NavGraphBuilder.navigationBuilder(
 fun navigationEntry(
     route: String,
     scrollBehavior: TopAppBarScrollBehavior,
+    isNavigationTab: Boolean = false,
 ) {
     when {
         route == Screen.Home.route -> HomeHubScreen()
-        route == Screen.Library.route -> LibraryScreen()
-        route == Screen.FindMusic.route -> FindMusicScreen()
+        route == Screen.Library.route -> LibraryScreen(isNavigationTab = isNavigationTab)
+        route.startsWith("${Screen.LibraryCategory.route}/") -> {
+            LibraryPage.entries.firstOrNull {
+                it.name == route.substringAfter("${Screen.LibraryCategory.route}/")
+            }?.let { LibraryScreen(category = it) }
+        }
+        route == Screen.FindMusic.route -> FindMusicScreen(isNavigationTab = isNavigationTab)
         route.startsWith("${Screen.PlaylistCategory.route}/") -> {
             val arguments = route.substringAfter("${Screen.PlaylistCategory.route}/")
                 .split('/', limit = 2)
@@ -336,8 +360,8 @@ fun navigationEntry(
                 FindMusicScreen(initialCategory = category, titleOverride = title)
             }
         }
-        route == Screen.Podcasts.route -> PodcastScreen()
-        route == Screen.CloudMusic.route -> CloudMusicScreen()
+        route == Screen.Podcasts.route -> PodcastScreen(isNavigationTab = isNavigationTab)
+        route == Screen.CloudMusic.route -> CloudMusicScreen(isNavigationTab = isNavigationTab)
         route == Screen.Search.route -> SearchLandingScreen()
         route == Screen.PrivateMessages.route -> ConversationsScreen()
         route == Screen.MessageContacts.route -> MessageContactsScreen()
@@ -356,12 +380,15 @@ fun navigationEntry(
         route == Screen.EqualizerSettings.route -> EqualizerSettings()
         route == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
         route == Screen.StorageManagement.route -> StorageManagementScreen()
-        route == Screen.DownloadManage.route -> DownloadManageScreen(scrollBehavior)
+        route == Screen.DownloadManage.route -> DownloadManageScreen(
+            scrollBehavior = scrollBehavior,
+            isNavigationTab = isNavigationTab,
+        )
         route == Screen.LocalMusic.route -> LocalMusicScreen(scrollBehavior)
         route == Screen.EveryDay.route -> EveryDay()
         route == Screen.About.route -> AboutScreen()
         route == Screen.Log.route -> LogScreen()
-        route == Screen.History.route -> HistoryScreen()
+        route == Screen.History.route -> HistoryScreen(isNavigationTab = isNavigationTab)
         route.startsWith("${Screen.PrivateConversation.route}/") -> {
             route.substringAfter("${Screen.PrivateConversation.route}/").toLongOrNull()
                 ?.let { userId -> ConversationScreen(userId) }
@@ -421,6 +448,9 @@ fun navigationEntry(
         route.startsWith("${Screen.Album.route}/") -> {
             route.substringAfter("${Screen.Album.route}/").toLongOrNull()
                 ?.let { AlbumDetailScreen(id = it) }
+        }
+        route.startsWith("${Screen.ArtistSongs.route}/") -> {
+            ArtistSongsScreen(id = route.substringAfter("${Screen.ArtistSongs.route}/"))
         }
         route.startsWith("${Screen.Artist.route}/") -> {
             route.substringAfter("${Screen.Artist.route}/")

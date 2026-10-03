@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.component.player
 
+import androidx.compose.ui.geometry.Rect
+
 import com.ljyh.mei.data.model.MediaMetadata
 
 sealed interface OverlayState {
@@ -19,5 +21,5 @@ sealed interface OverlayState {
     data class Share(val metadata: MediaMetadata): OverlayState
     data object BottomAction: OverlayState
 
-    data class TrackActionMenu(val track: MediaMetadata): OverlayState
+    data class TrackActionMenu(val track: MediaMetadata, val anchorBounds: Rect? = null): OverlayState
 }

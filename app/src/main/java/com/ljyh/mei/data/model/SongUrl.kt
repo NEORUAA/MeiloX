@@ -8,6 +8,26 @@ data class SongUrl(
     @SerializedName("data")
     val `data`: List<Data>
 ) {
+    /**
+     * Returns the first complete, non-trial source for the requested song.
+     *
+     * The `payed` flag describes account/song metadata and is not a reliable
+     * indicator that the returned URL is a short free-trial stream.
+     */
+    fun fullSourceFor(expectedId: String): Data? {
+        if (code != 200) return null
+        return data.firstOrNull { it.isFullSourceFor(expectedId) }
+    }
+
+    /** Returns all complete sources for the requested song ids in one pass. */
+    fun fullSourcesFor(expectedIds: Set<String>): List<Data> {
+        if (code != 200 || expectedIds.isEmpty()) return emptyList()
+        return data.filter { source ->
+            val sourceId = source.id.toString()
+            sourceId in expectedIds && source.isFullSourceFor(sourceId)
+        }
+    }
+
     data class Data(
         @SerializedName("br")
         val br: Int,
@@ -26,7 +46,7 @@ data class SongUrl(
         @SerializedName("encodeType")
         val encodeType: String,
         @SerializedName("expi")
-        val expi: Int,
+        val expi: Int?,
         @SerializedName("fee")
         val fee: Int,
         @SerializedName("flag")
@@ -34,7 +54,7 @@ data class SongUrl(
         @SerializedName("freeTimeTrialPrivilege")
         val freeTimeTrialPrivilege: FreeTimeTrialPrivilege,
         @SerializedName("freeTrialInfo")
-        val freeTrialInfo: Any,
+        val freeTrialInfo: FreeTrialInfo?,
         @SerializedName("freeTrialPrivilege")
         val freeTrialPrivilege: FreeTrialPrivilege,
         @SerializedName("gain")
@@ -72,6 +92,13 @@ data class SongUrl(
         @SerializedName("urlSource")
         val urlSource: Int
     ) {
+        data class FreeTrialInfo(
+            @SerializedName("start")
+            val start: Long? = null,
+            @SerializedName("end")
+            val end: Long? = null,
+        )
+
         data class FreeTimeTrialPrivilege(
             @SerializedName("remainTime")
             val remainTime: Int,
@@ -99,3 +126,28 @@ data class SongUrl(
         )
     }
 }
+
+/**
+ * A playable source must belong to the requested song, be a successful source,
+ * contain a URL, and not be marked as a free-trial source.
+ */
+fun SongUrl.Data.isFullSourceFor(expectedId: String): Boolean =
+    isFullSource(
+        expectedId = expectedId,
+        sourceId = id,
+        sourceCode = code,
+        url = url,
+        freeTrialInfo = freeTrialInfo,
+    )
+
+internal fun isFullSource(
+    expectedId: String,
+    sourceId: Long,
+    sourceCode: Int,
+    url: String?,
+    freeTrialInfo: Any?,
+): Boolean =
+    sourceId.toString() == expectedId &&
+        sourceCode == 200 &&
+        !url.isNullOrBlank() &&
+        freeTrialInfo == null

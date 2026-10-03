@@ -54,9 +54,9 @@ interface HistoryDao {
     suspend fun insertHistory(history: PlaybackHistory)
 
     @Transaction
-    suspend fun addSongToHistory(song: Song) {
+    suspend fun addSongToHistory(song: Song, playedAt: Long = System.currentTimeMillis()) {
         insertOrUpdateSong(song)
-        insertHistory(PlaybackHistory(songId = song.id, playedAt = System.currentTimeMillis()))
+        insertHistory(PlaybackHistory(songId = song.id, playedAt = playedAt))
     }
 
     @Query("""

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,11 +44,13 @@ import com.ljyh.mei.data.model.melox.ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSurface
+import com.ljyh.mei.ui.glass.IosGroupedList
+import com.ljyh.mei.ui.glass.IosListRow
+import com.ljyh.mei.ui.glass.IosSheetTopToolbar
+import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
 import com.ljyh.mei.ui.glass.IosModalSheet
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -96,7 +100,10 @@ class NeteaseShareViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null)
             runCatching { repository.sendPrivateResource(resource, recipients.toList(), message.trim()) }
-                .onSuccess { onSent() }
+                .onSuccess {
+                    _state.value = _state.value.copy(isSending = false)
+                    onSent()
+                }
                 .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
         }
     }
@@ -106,7 +113,10 @@ class NeteaseShareViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null)
             runCatching { repository.shareToTimeline(resource, message.trim()) }
-                .onSuccess { onSent() }
+                .onSuccess {
+                    _state.value = _state.value.copy(isSending = false)
+                    onSent()
+                }
                 .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
         }
     }
@@ -140,36 +150,35 @@ fun NeteaseShareSheet(
     IosModalSheet(
         onDismissRequest = onDismiss,
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.fillMaxWidth()) {
+            IosSheetTopToolbar(
+                title = stringResource(
+                    when (mode) {
+                        NeteaseShareMode.Menu -> R.string.share_song
+                        NeteaseShareMode.PrivateMessage -> R.string.netease_private_message
+                        NeteaseShareMode.Timeline -> R.string.netease_timeline_share
+                    },
+                ),
+                actions = {
                     if (mode != NeteaseShareMode.Menu) {
-                        GlassIconButton(onClick = { mode = NeteaseShareMode.Menu }) {
+                        IosSheetTopToolbarButton(onClick = { mode = NeteaseShareMode.Menu }) {
                             SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
                         }
                     }
-                    Text(
-                        stringResource(
-                            when (mode) {
-                                NeteaseShareMode.Menu -> R.string.share_song
-                                NeteaseShareMode.PrivateMessage -> R.string.netease_private_message
-                                NeteaseShareMode.Timeline -> R.string.netease_timeline_share
-                            },
-                        ),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                    )
-                    GlassIconButton(onClick = onDismiss) {
+                    IosSheetTopToolbarButton(onClick = onDismiss) {
                         SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
                     }
-                }
+                },
+            )
+            Column(
+                Modifier.fillMaxWidth().weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 ShareResourcePreview(resource)
                 when (mode) {
-                    NeteaseShareMode.Menu -> {
-                        ShareModeButton("paperplane", R.string.netease_private_message) {
+                    NeteaseShareMode.Menu -> IosGroupedList {
+                        ShareModeButton("paperplane", R.string.netease_private_message, showTopSeparator = false) {
                             mode = NeteaseShareMode.PrivateMessage
                         }
                         ShareModeButton("arrowshape.turn.up.right", R.string.netease_timeline_share) {
@@ -180,7 +189,7 @@ fun NeteaseShareSheet(
                             val text = buildString {
                                 append(metadata.title)
                                 if (artists.isNotBlank()) append(" — ").append(artists)
-                                append("\nhttps://music.163.com/song?id=").append(metadata.id)
+                                if (!metadata.isLocal) append("\nhttps://music.163.com/song?id=").append(metadata.id)
                             }
                             context.startActivity(
                                 Intent.createChooser(
@@ -203,20 +212,22 @@ fun NeteaseShareSheet(
                         when {
                             state.isLoadingContacts -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
                             state.contacts.isEmpty() && state.error == null -> Text(stringResource(R.string.share_no_contacts))
-                            else -> LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
+                            else -> IosGroupedList {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp),
+                                ) {
                                 items(state.contacts, key = MessageContact::id) { contact ->
                                     ContactSelectionRow(
                                         contact = contact,
                                         selected = contact.id in selectedContactIds,
+                                        showTopSeparator = contact.id != state.contacts.firstOrNull()?.id,
                                         onClick = {
                                             selectedContactIds = if (contact.id in selectedContactIds) {
                                                 selectedContactIds - contact.id
                                             } else selectedContactIds + contact.id
                                         },
                                     )
+                                }
                                 }
                             }
                         }
@@ -239,47 +250,49 @@ fun NeteaseShareSheet(
                         ) { Text(stringResource(R.string.publish)) }
                     }
                 }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                state.error?.let { Text(it, color = LocalGlassColors.current.destructive) }
+            }
         }
     }
 }
 
 @Composable
-private fun ShareModeButton(systemName: String, labelRes: Int, onClick: () -> Unit) {
-    GlassButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        SfIcon(systemName, null, size = 21.dp)
-        Text(stringResource(labelRes), modifier = Modifier.weight(1f).padding(start = 12.dp))
-        SfIcon("chevron.right", null, size = 15.dp)
-    }
+private fun ShareModeButton(
+    systemName: String,
+    labelRes: Int,
+    showTopSeparator: Boolean = true,
+    onClick: () -> Unit,
+) {
+    IosListRow(
+        title = stringResource(labelRes),
+        systemName = systemName,
+        showTopSeparator = showTopSeparator,
+        onClick = onClick,
+    )
 }
 
 @Composable
 private fun ShareResourcePreview(resource: ShareResource) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = resource.artworkUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(56.dp).clip(ContinuousRoundedRectangle(12.dp)),
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(resource.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    resource.subtitle.orEmpty(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+    IosGroupedList {
+        IosListRow(
+            title = resource.title,
+            subtitle = resource.subtitle,
+            showTopSeparator = false,
+            leading = {
+                AsyncImage(
+                    model = resource.artworkUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(9.dp)),
                 )
-            }
-            Text(stringResource(R.string.share_kind_song), style = MaterialTheme.typography.labelMedium)
-        }
+            },
+        )
     }
 }
 
 @Composable
 private fun ShareMessageField(value: String, onValueChange: (String) -> Unit, placeholderRes: Int) {
-    GlassSurface(Modifier.fillMaxWidth(), shape = ContinuousRoundedRectangle(18.dp)) {
+    IosGroupedList {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -298,29 +311,28 @@ private fun ShareMessageField(value: String, onValueChange: (String) -> Unit, pl
 }
 
 @Composable
-private fun ContactSelectionRow(contact: MessageContact, selected: Boolean, onClick: () -> Unit) {
-    GlassButton(
+private fun ContactSelectionRow(
+    contact: MessageContact,
+    selected: Boolean,
+    showTopSeparator: Boolean,
+    onClick: () -> Unit,
+) {
+    IosListRow(
+        title = contact.displayName,
+        showTopSeparator = showTopSeparator,
+        subtitle = contact.signature?.takeIf(String::isNotBlank),
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        emphasis = if (selected) GlassEmphasis.Prominent else GlassEmphasis.Regular,
-    ) {
-        AsyncImage(
-            model = contact.avatarUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(34.dp).clip(ContinuousRoundedRectangle(50)),
-        )
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            Text(contact.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            contact.signature?.takeIf(String::isNotBlank)?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-        }
-        SfIcon(if (selected) "checkmark.circle.fill" else "circle", null, size = 20.dp)
-    }
+        leading = {
+            AsyncImage(
+                model = contact.avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(34.dp).clip(ContinuousRoundedRectangle(50)),
+            )
+        },
+        trailing = {
+            SfIcon(if (selected) "checkmark.circle.fill" else "circle", null, size = 20.dp,
+                tint = if (selected) LocalGlassColors.current.accent else LocalGlassColors.current.secondaryContent)
+        },
+    )
 }

@@ -6,7 +6,6 @@ import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
-import androidx.media3.exoplayer.ExoPlayer
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.api.GetSongDetails
@@ -56,7 +55,7 @@ class ListenTogetherStore @Inject constructor(
     private val _state = MutableStateFlow(ListenTogetherSessionState())
     val state = _state.asStateFlow()
 
-    private var player: ExoPlayer? = null
+    private var player: Player? = null
     private var monitorJob: Job? = null
     private var queueReportJob: Job? = null
     private var actionJob: Job? = null
@@ -69,7 +68,7 @@ class ListenTogetherStore @Inject constructor(
     private var formerSongId: Long? = null
     private var consecutiveFailures = 0
 
-    fun attachPlayer(value: ExoPlayer) {
+    fun attachPlayer(value: Player) {
         if (player === value) return
         player?.removeListener(this)
         player = value
@@ -78,7 +77,7 @@ class ListenTogetherStore @Inject constructor(
         refresh()
     }
 
-    fun detachPlayer(value: ExoPlayer) {
+    fun detachPlayer(value: Player) {
         if (player !== value) return
         value.removeListener(this)
         player = null

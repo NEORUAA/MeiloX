@@ -9,6 +9,7 @@ import com.ljyh.mei.ui.navigation.ContentFeature
 sealed class Screen(val route:String) {
     data object Home:Screen("home")
     data object Library:Screen("library")
+    data object LibraryCategory:Screen("library_category")
     data object FindMusic: Screen("find_music")
     data object PlaylistCategory: Screen("playlist_category")
     data object SearchResult:Screen("search_result")
@@ -32,6 +33,7 @@ sealed class Screen(val route:String) {
     data object EveryDay:Screen("everyday")
     data object Album: Screen("album")
     data object Artist: Screen("artist")
+    data object ArtistSongs: Screen("artist-songs")
     data object History: Screen("history")
     data object Podcasts: Screen("podcasts")
     data object PodcastDetail: Screen("podcast")
@@ -67,13 +69,13 @@ enum class Index(
     val symbol: SfSymbol,
     val requiredFeature: ContentFeature? = null,
 ) {
-    Home(Screen.Home.route, R.string.app_tab_home, SfSymbol.House),
-    FindMusic(Screen.FindMusic.route, R.string.app_tab_explore, SfSymbol.Safari),
-    Podcasts(Screen.Podcasts.route, R.string.app_tab_podcasts, SfSymbol.RadioWaves, ContentFeature.Podcasts),
-    Library(Screen.Library.route, R.string.app_tab_library, SfSymbol.MusicNoteList),
-    Downloads(Screen.DownloadManage.route, R.string.app_tab_library_downloads, SfSymbol.Download, ContentFeature.Downloads),
-    Cloud(Screen.CloudMusic.route, R.string.app_tab_library_cloud, SfSymbol.Cloud, ContentFeature.CloudMusic),
-    History(Screen.History.route, R.string.app_tab_library_history, SfSymbol.Clock, ContentFeature.ListeningHistory),
+    Home(Screen.Home.route, R.string.app_tab_home, SfSymbol.HouseFilled),
+    FindMusic(Screen.FindMusic.route, R.string.app_tab_explore, SfSymbol.SafariFilled),
+    Podcasts(Screen.Podcasts.route, R.string.app_tab_podcasts, SfSymbol.RadioFilled, ContentFeature.Podcasts),
+    Library(Screen.Library.route, R.string.app_tab_library, SfSymbol.MusicNoteSquareStackFilled),
+    Downloads(Screen.DownloadManage.route, R.string.app_tab_library_downloads, SfSymbol.DownloadFilled, ContentFeature.Downloads),
+    Cloud(Screen.CloudMusic.route, R.string.app_tab_library_cloud, SfSymbol.CloudFilled, ContentFeature.CloudMusic),
+    History(Screen.History.route, R.string.app_tab_library_history, SfSymbol.ClockFilled, ContentFeature.ListeningHistory),
     Settings(Screen.Setting.route, R.string.settings, SfSymbol.Settings),
     Search(Screen.Search.route, R.string.app_tab_search, SfSymbol.Search),
 

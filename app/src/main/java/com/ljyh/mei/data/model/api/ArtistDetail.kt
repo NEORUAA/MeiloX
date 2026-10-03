@@ -11,9 +11,9 @@ data class ArtistDetail(
     @SerializedName("code")
     val code: Int,
     @SerializedName("message")
-    val message: String,
+    val message: String?,
     @SerializedName("data")
-    val `data`: Data
+    val `data`: Data?
 ) {
     data class Data(
         @SerializedName("videoCount")
@@ -23,7 +23,7 @@ data class ArtistDetail(
         @SerializedName("identify")
         val identify: Identify,
         @SerializedName("artist")
-        val artist: Artist,
+        val artist: Artist?,
         @SerializedName("blacklist")
         val blacklist: Boolean,
         @SerializedName("preferShow")
@@ -31,11 +31,11 @@ data class ArtistDetail(
         @SerializedName("showPriMsg")
         val showPriMsg: Boolean,
         @SerializedName("secondaryExpertIdentiy")
-        val secondaryExpertIdentiy: List<SecondaryExpertIdentiy>,
+        val secondaryExpertIdentiy: List<SecondaryExpertIdentiy>?,
         @SerializedName("eventCount")
         val eventCount: Int,
         @SerializedName("user")
-        val user: User
+        val user: User?
     ) {
         data class VipRights(
             @SerializedName("rightsInfoDetailDtoList")
@@ -210,4 +210,3 @@ data class ArtistDetail(
         }
     }
 }
-

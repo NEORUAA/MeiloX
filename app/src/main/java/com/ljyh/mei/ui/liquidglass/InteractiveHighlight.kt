@@ -4,6 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -16,6 +19,7 @@ import androidx.compose.ui.util.fastCoerceIn
 import com.kyant.backdrop.RuntimeShader
 import com.kyant.backdrop.asComposeShader
 import com.kyant.backdrop.isRuntimeShaderSupported
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -35,8 +39,18 @@ class InteractiveHighlight(
         Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
 
     private var startPosition = Offset.Zero
-    val pressProgress: Float get() = pressProgressAnimation.value
-    val offset: Offset get() = positionAnimation.value - startPosition
+    private var pressCancelled by mutableStateOf(false)
+    val pressProgress: Float get() = if (pressCancelled) 0f else pressProgressAnimation.value
+    val offset: Offset get() = if (pressCancelled) Offset.Zero else positionAnimation.value - startPosition
+
+    /** A sheet has taken this gesture; only a new down may restore feedback. */
+    fun cancelPress() {
+        pressCancelled = true
+        animationScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            pressProgressAnimation.snapTo(0f)
+            positionAnimation.snapTo(startPosition)
+        }
+    }
 
     private val shader =
         if (isRuntimeShaderSupported()) {
@@ -57,9 +71,13 @@ half4 main(float2 coord) {
             null
         }
 
-    val modifier: Modifier =
-        Modifier.drawWithContent {
-            val progress = pressProgressAnimation.value
+    fun highlightPosition(size: Size): Offset = position(size, positionAnimation.value)
+
+    fun highlightModifier(
+        progressProvider: () -> Float = { pressProgress },
+        positionProvider: (Size) -> Offset = ::highlightPosition,
+    ): Modifier = Modifier.drawWithContent {
+            val progress = progressProvider()
             if (progress > 0f) {
                 if (shader != null) {
                     drawRect(
@@ -67,7 +85,7 @@ half4 main(float2 coord) {
                         blendMode = BlendMode.Plus
                     )
                     shader.apply {
-                        val position = position(size, positionAnimation.value)
+                        val position = positionProvider(size)
                         setFloatUniform("size", size.width, size.height)
                         setColorUniform("color", Color.White.copy(0.15f * progress))
                         setFloatUniform("radius", size.minDimension * 1.5f)
@@ -92,10 +110,13 @@ half4 main(float2 coord) {
             drawContent()
         }
 
+    val modifier: Modifier = highlightModifier()
+
     val gestureModifier: Modifier =
         Modifier.pointerInput(animationScope) {
             inspectDragGestures(
                 onDragStart = { down ->
+                    pressCancelled = false
                     startPosition = down.position
                     animationScope.launch {
                         launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
@@ -103,19 +124,19 @@ half4 main(float2 coord) {
                     }
                 },
                 onDragEnd = {
-                    animationScope.launch {
+                    if (!pressCancelled) animationScope.launch {
                         launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
                         launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                     }
                 },
                 onDragCancel = {
-                    animationScope.launch {
+                    if (!pressCancelled) animationScope.launch {
                         launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
                         launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                     }
                 }
             ) { change, _ ->
-                animationScope.launch { positionAnimation.snapTo(change.position) }
+                if (!pressCancelled) animationScope.launch { positionAnimation.snapTo(change.position) }
             }
         }
 }

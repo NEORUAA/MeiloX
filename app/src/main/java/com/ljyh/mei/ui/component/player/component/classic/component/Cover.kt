@@ -26,12 +26,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.playerArtwork
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -56,8 +60,8 @@ import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.utils.image.saveImageToGallery
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
-import com.ljyh.mei.utils.size1600
 import com.ljyh.mei.utils.smallImage
+import com.ljyh.mei.utils.size1600
 import kotlinx.coroutines.launch
 import net.engawapg.lib.zoomable.rememberZoomState
 import net.engawapg.lib.zoomable.zoomable
@@ -72,6 +76,10 @@ fun Cover(
     onDoubleClick: (Offset, Int) -> Unit = { _, _ ->}
 ) {
     val context = LocalContext.current
+    val sheet = LocalPlayerSheet.current
+    val sheetExpanded by remember(sheet) {
+        derivedStateOf { sheet == null || sheet.state.isExpanded }
+    }
     // 获取当前的封面样式设置
     val coverStyle by rememberEnumPreference(CoverStyleKey, defaultValue = CoverStyle.Square)
     val originalCover by rememberPreference(
@@ -85,14 +93,16 @@ fun Cover(
         ContinuousRoundedRectangle(12.dp)
     }
 
-    val coverScale by animateFloatAsState(
+    val animatedCoverScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.9f,
-        animationSpec = spring(
+        animationSpec = if (sheetExpanded) spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
-        ),
+        ) else androidx.compose.animation.core.snap(),
         label = "CoverScale"
     )
+
+    val coverScale = if (sheetExpanded) animatedCoverScale else if (isPlaying) 1f else 0.9f
 
     var showFullImage by remember { mutableStateOf(false) }
     Box(
@@ -109,14 +119,17 @@ fun Cover(
             modifier = Modifier.graphicsLayer {
                 scaleX = coverScale
                 scaleY = coverScale
-            }
+            }.playerArtwork(
+                circle = coverStyle == CoverStyle.Circle,
+            )
         ) { url ->
 
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
                     .aspectRatio(1f)
-                    .shadow(12.dp, coverShape)
+                    .shadow(if (sheet?.state?.isTransitioning == true) 0.dp else 12.dp,
+                        if (sheet?.state?.isTransitioning == true) RectangleShape else coverShape)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onDoubleTap = { offset ->
@@ -127,7 +140,7 @@ fun Cover(
                             }
                         )
                     },
-                shape = coverShape,
+                shape = if (sheet?.state?.isTransitioning == true) RectangleShape else coverShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 AsyncImage(

@@ -1,6 +1,16 @@
 package com.ljyh.mei.ui.component.item
 
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,9 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,16 +48,26 @@ fun Track(
     isTablet: Boolean = false,
     isPlaying: Boolean = false,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    selected: Boolean? = null,
+    onMoreClick: ((Rect) -> Unit)?
 ) {
+    var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (isPlaying) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else Color.Transparent)
-            .clickable { onClick() }
+            .then(if (selected == null) Modifier.clickable(onClick = onClick)
+                else Modifier.selectable(selected = selected, role = Role.Checkbox, onClick = onClick))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (selected != null) {
+            com.ljyh.mei.ui.glass.SfIcon(
+                if (selected) "checkmark.circle.fill" else "circle", null,
+                size = 24.dp, tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
+            )
+            Spacer(Modifier.width(12.dp))
+        }
         // --- 1. 序号 (仅平板) ---
         if (isTablet && index != null) {
             Text(
@@ -125,16 +142,19 @@ fun Track(
         }
 
         // --- 5. 更多按钮 ---
-        IconButton(
-            onClick = onMoreClick,
-            modifier = Modifier.padding(start = 8.dp).size(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "更多",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+        onMoreClick?.let {
+            IconButton(
+                onClick = { it(menuAnchor) },
+                modifier = Modifier.padding(start = 8.dp).size(44.dp)
+                    .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
+            ) {
+                com.ljyh.mei.ui.glass.SfIcon(
+                    symbol = com.ljyh.mei.ui.glass.SfSymbol.Ellipsis,
+                    contentDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.more_actions_title),
+                    tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
+                    size = 18.dp,
+                )
+            }
         }
     }
 }

@@ -71,6 +71,8 @@ class LyricManager @Inject constructor(
     /** 当前正在加载歌词的歌曲 ID，用于防止重复加载 */
     private var currentSongId: String? = null
 
+    val songId: String? get() = currentSongId
+
     /** 当前歌词拉取协程 Job，切歌时 cancel */
     private var fetchJob: Job? = null
 

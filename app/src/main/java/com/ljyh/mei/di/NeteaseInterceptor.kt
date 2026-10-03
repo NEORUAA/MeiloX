@@ -7,7 +7,9 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.ljyh.mei.AppContext
+import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.NeteaseCsrfKey
 import com.ljyh.mei.constants.NeteaseMusicAKey
@@ -18,13 +20,16 @@ import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.NeteaseAegisSecurity
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.encrypt.createRandomKey
+import com.ljyh.mei.utils.encrypt.decryptEApi
 import com.ljyh.mei.utils.encrypt.decryptEApiBytes
 import com.ljyh.mei.utils.encrypt.encryptEApi
 import com.ljyh.mei.utils.encrypt.encryptWeAPI
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.getDeviceId
+import com.ljyh.mei.utils.log.logPlaybackHistory
 import com.ljyh.mei.utils.netease.ChineseIpUtils
 import com.ljyh.mei.utils.netease.NeteaseUtils.getWNMCID
+import kotlinx.coroutines.CancellationException
 import okhttp3.FormBody
 import okhttp3.Cookie
 import okhttp3.Interceptor
@@ -33,12 +38,59 @@ import okhttp3.RequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import timber.log.Timber
 import java.io.IOException
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
 import kotlin.apply
+
+internal const val NETEASE_EAPI_PROFILE_HEADER = "X-Netease-Eapi-Profile"
+internal const val PLAYBACK_HISTORY_PROFILE = "playback-history"
+internal const val MAX_PLAYBACK_HISTORY_RESPONSE_BYTES = 16_384
+
+internal class PlaybackResponseBodyException(
+    val httpStatus: Int,
+    val failureKind: String,
+    val failureReason: String,
+    cause: IOException? = null,
+) : IOException("Playback response $failureKind", cause)
+
+internal fun readBoundedPlaybackResponseBody(
+    body: ResponseBody,
+    httpStatus: Int,
+): ByteArray {
+    return try {
+        body.use {
+            if (it.contentLength() > MAX_PLAYBACK_HISTORY_RESPONSE_BYTES) {
+                throw playbackBodyTooLarge(httpStatus)
+            }
+            val source = it.source()
+            if (source.request(MAX_PLAYBACK_HISTORY_RESPONSE_BYTES + 1L) ||
+                source.buffer.size > MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
+            ) {
+                throw playbackBodyTooLarge(httpStatus)
+            }
+            source.buffer.readByteArray(source.buffer.size)
+        }
+    } catch (error: PlaybackResponseBodyException) {
+        throw error
+    } catch (error: IOException) {
+        throw PlaybackResponseBodyException(
+            httpStatus = httpStatus,
+            failureKind = "ResponseBodyReadFailure",
+            failureReason = "response body read failed",
+            cause = error,
+        )
+    }
+}
+
+private fun playbackBodyTooLarge(httpStatus: Int) = PlaybackResponseBodyException(
+    httpStatus = httpStatus,
+    failureKind = "ResponseBodyTooLarge",
+    failureReason = "response body exceeds ${MAX_PLAYBACK_HISTORY_RESPONSE_BYTES} bytes",
+)
 
 class NeteaseInterceptor : Interceptor {
 
@@ -70,6 +122,11 @@ class NeteaseInterceptor : Interceptor {
         "ua" to "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.0.18.203152"
     )
 
+    private val PLAYBACK_HISTORY_USER_AGENT =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/124.0.0.0 Safari/537.36"
+
     // =========================================================================
     //  配置 B：普通 Android 模式 (用于 weapi/api - 保持手机端正常行为)
     // =========================================================================
@@ -98,6 +155,11 @@ class NeteaseInterceptor : Interceptor {
         val originalRequest = chain.request()
         val url = originalRequest.url.toString()
         val cryptoMode = originalRequest.header(CRYPTO_MODE_HEADER) ?: determineCryptoMethod(url)
+        val eapiProfile = originalRequest.header(NETEASE_EAPI_PROFILE_HEADER)
+        val isPlaybackHistoryProfile =
+            cryptoMode == "eapi" && eapiProfile == PLAYBACK_HISTORY_PROFILE
+        val cookieOsOverride = originalRequest.header(COOKIE_OS_HEADER)
+        val userAgentOverride = originalRequest.header(USER_AGENT_HEADER)
         val suppliedAntiCheatToken =
             originalRequest.header(ANTI_CHEAT_TOKEN_HEADER)?.takeIf(String::isNotBlank)
         val ydDeviceToken = originalRequest.header(YD_DEVICE_TOKEN_HEADER)?.takeIf(String::isNotBlank)
@@ -119,6 +181,19 @@ class NeteaseInterceptor : Interceptor {
             .removeHeader(NMTID_HEADER)
             .removeHeader(URS_APP_ID_HEADER)
             .removeHeader(WITHOUT_ACCOUNT_HEADER)
+            .removeHeader(COOKIE_OS_HEADER)
+            .removeHeader(USER_AGENT_HEADER)
+            .removeHeader(NETEASE_EAPI_PROFILE_HEADER)
+
+        if (isPlaybackHistoryProfile) {
+            originalRequest.headers.names()
+                .filter { it.startsWith("X-Netease-", ignoreCase = true) }
+                .forEach(builder::removeHeader)
+            builder
+                .removeHeader("Referer")
+                .removeHeader("X-Real-IP")
+                .removeHeader("X-Forwarded-For")
+        }
 
         if (cryptoMode in setOf("eapi", "xeapi") && "/api/" in originalRequest.url.encodedPath) {
             builder.url(
@@ -135,16 +210,29 @@ class NeteaseInterceptor : Interceptor {
 
         val storedMusicU = AppContext.instance.dataStore[CookieKey].orEmpty()
         val hasMobileSession = storedMusicU.isNotBlank()
-        val usesAndroidEapiIdentity = usesOfficialAndroidIdentity(
+        val usesAndroidEapiIdentity = !isPlaybackHistoryProfile && usesOfficialAndroidIdentity(
             cryptoMode = cryptoMode,
             encodedPath = originalRequest.url.encodedPath,
             hasMobileSession = hasMobileSession,
         )
         val usesXeapiIdentity = cryptoMode == "xeapi"
-        val config = if (cryptoMode == "eapi" && !usesAndroidEapiIdentity) {
-            EAPI_CONFIG
+        val config = when {
+            isPlaybackHistoryProfile -> mapOf(
+                "os" to "osx",
+                "osver" to "15.5",
+                "appver" to "3.1.10.5100",
+                "versioncode" to "140",
+                "channel" to "netease",
+                "resolution" to "1920x1080",
+                "buildver" to (System.currentTimeMillis() / 1_000L).toString(),
+            )
+            cryptoMode == "eapi" && !usesAndroidEapiIdentity -> EAPI_CONFIG
+            else -> ANDROID_CONFIG
+        }
+        val requestOs = if (isPlaybackHistoryProfile) {
+            config["os"]!!
         } else {
-            ANDROID_CONFIG
+            cookieOsOverride ?: config["os"]!!
         }
 
         val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
@@ -161,10 +249,13 @@ class NeteaseInterceptor : Interceptor {
             AppContext.instance.dataStore[NeteaseMusicAKey].orEmpty()
         }
         val rawBody = getBodyString(originalRequest.body)
-        val requiresCheckToken = originalRequest.header(CHECK_TOKEN_HEADER) == "true" ||
+        val requiresCheckToken = !isPlaybackHistoryProfile && (
+            originalRequest.header(CHECK_TOKEN_HEADER) == "true" ||
             rawBody.contains("\"checkToken\"")
+        )
         val antiCheatToken = suppliedAntiCheatToken ?: extractCheckToken(rawBody) ?: checkToken
         val csrfToken = when {
+            isPlaybackHistoryProfile -> ""
             !usesAndroidEapiIdentity -> CONST_CSRF
             withoutAccount || !hasMobileSession -> cachedAndroidCsrf
             else -> AppContext.instance.dataStore[NeteaseCsrfKey]
@@ -175,12 +266,12 @@ class NeteaseInterceptor : Interceptor {
 
         val cookieMap = buildMap {
             // 基础字段 (动态从 config 取)
-            put("os", config["os"]!!)
+            put("os", requestOs)
             put("appver", config["appver"]!!)
             put("osver", config["osver"]!!)
             put("channel", config["channel"]!!)
             put("versioncode", config["versioncode"]!!)
-            put("mobilename", config["mobilename"]!!)
+            config["mobilename"]?.let { put("mobilename", it) }
             put("buildver", config["buildver"]!!)
             put("resolution", config["resolution"]!!)
 
@@ -226,10 +317,10 @@ class NeteaseInterceptor : Interceptor {
         val neteaseHeader = NeteaseHeader(
             osver = config["osver"]!!,
             deviceId = deviceId,
-            os = config["os"]!!,
+            os = requestOs,
             appver = config["appver"]!!,
             versioncode = config["versioncode"]!!,
-            mobilename = config["mobilename"]!!,
+            mobilename = config["mobilename"],
             buildver = config["buildver"]!!,
             resolution = config["resolution"]!!,
             __csrf = csrfToken,
@@ -239,29 +330,46 @@ class NeteaseInterceptor : Interceptor {
             if (musicU.isNotEmpty()) this.MUSIC_U = musicU
             if (musicA.isNotEmpty()) this.MUSIC_A = musicA
         }
-        val useEApiHeaderCookie = cryptoMode == "eapi" &&
+        val useEApiHeaderCookie = isPlaybackHistoryProfile || (cryptoMode == "eapi" &&
             originalRequest.url.encodedPath in setOf(
                 "/api/playlist/subscribe",
                 "/api/playlist/unsubscribe",
+                "/api/feedback/weblog",
+            ))
+        val cookie = if (useEApiHeaderCookie) {
+            buildEApiCookieString(
+                neteaseHeader,
+                requiresCheckToken && !usesAndroidEapiIdentity,
+                antiCheatToken,
             )
-        builder.addHeader(
-            "Cookie",
-            if (useEApiHeaderCookie) {
-                buildEApiCookieString(neteaseHeader)
-            } else {
-                buildCookieString(cookieMap)
-            },
-        )
+        } else {
+            buildCookieString(cookieMap)
+        }
+        if (isPlaybackHistoryProfile) {
+            builder.header("Cookie", cookie)
+        } else {
+            builder.addHeader("Cookie", cookie)
+        }
 
         // UA 处理：
         // weapi: 永远使用 PC Web UA (Chrome/Edge)，这是 weapi 协议的特性
         // eapi: 使用 Config 中指定的 UA (PC Desktop)
         // api: 使用 Config 中指定的 UA (Android)
-        val userAgent = when (cryptoMode) {
-            "weapi" -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
-            else -> config["ua"]!!
+        val userAgent = if (isPlaybackHistoryProfile) {
+            PLAYBACK_HISTORY_USER_AGENT
+        } else {
+            userAgentOverride ?: when (cryptoMode) {
+                "weapi" -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+                else -> config["ua"]!!
+            }
         }
-        builder.addHeader("User-Agent", userAgent)
+        if (isPlaybackHistoryProfile) {
+            builder
+                .header("Accept", "*/*")
+                .header("User-Agent", PLAYBACK_HISTORY_USER_AGENT)
+        } else {
+            builder.addHeader("User-Agent", userAgent)
+        }
 
         if (cryptoMode == "weapi") {
             builder.addHeader("Referer", "https://music.163.com")
@@ -286,9 +394,26 @@ class NeteaseInterceptor : Interceptor {
                 builder.header("x-channel", config["channel"]!!)
                 builder.header("x-mobilename", config["mobilename"]!!.replace("+", " "))
             }
-        } else {
+        } else if (!isPlaybackHistoryProfile) {
             builder.addHeader("X-Real-IP", fakeIP)
             builder.addHeader("X-Forwarded-For", fakeIP)
+        }
+        if (isPlaybackHistoryProfile &&
+            (BuildConfig.DEBUG || AppContext.instance.dataStore[DebugKey] == true)
+        ) {
+            logPlaybackHistory(
+                Log.DEBUG,
+                "PlaybackHistory profile os=%s appver=%s osver=%s channel=%s " +
+                    "versioncode=%s resolution=%s requestUrl=%s signingUri=%s",
+                config["os"],
+                config["appver"],
+                config["osver"],
+                config["channel"],
+                config["versioncode"],
+                config["resolution"],
+                builder.build().url,
+                originalRequest.url.encodedPath.replaceFirst("/eapi/", "/api/"),
+            )
         }
 
         handleRequestEncryption(
@@ -315,7 +440,7 @@ class NeteaseInterceptor : Interceptor {
             ?.value
             ?.takeIf(String::isNotBlank)
             ?.let { NeteaseLoginSecurity.acceptServerTrackId(it) }
-        return handleResponseDecryption(response, cryptoMode)
+        return handleResponseDecryption(response, cryptoMode, isPlaybackHistoryProfile)
     }
 
     private fun buildCookieString(map: Map<String, String>): String {
@@ -326,8 +451,12 @@ class NeteaseInterceptor : Interceptor {
 
     private fun buildEApiCookieString(
         headerObj: NeteaseHeader,
+        requiresCheckToken: Boolean,
+        antiCheatToken: String,
     ): String {
-        val headerJson = gson.toJsonTree(headerObj).asJsonObject
+        val headerJson = gson.toJsonTree(headerObj).asJsonObject.apply {
+            if (requiresCheckToken) addProperty("X-antiCheatToken", antiCheatToken)
+        }
         return headerJson.entrySet()
             .sortedBy { it.key }
             .joinToString("; ") { (key, value) ->
@@ -380,7 +509,9 @@ class NeteaseInterceptor : Interceptor {
                 bodyMap["header"] = if (usesAndroidEapiIdentity) {
                     "{}"
                 } else {
-                    gson.toJsonTree(headerObj).asJsonObject
+                    gson.toJsonTree(headerObj).asJsonObject.apply {
+                        if (requiresCheckToken) addProperty("X-antiCheatToken", antiCheatToken)
+                    }
                 }
                 bodyMap["e_r"] = false
 
@@ -453,19 +584,26 @@ class NeteaseInterceptor : Interceptor {
 
 
 
-    private fun handleResponseDecryption(response: Response, cryptoMode: String): Response {
+    private fun handleResponseDecryption(
+        response: Response,
+        cryptoMode: String,
+        isPlaybackHistoryProfile: Boolean,
+    ): Response {
+        if (isPlaybackHistoryProfile) {
+            return handlePlaybackHistoryResponse(response)
+        }
         if (cryptoMode in setOf("eapi", "xeapi") && response.isSuccessful) {
-            val body = response.body
+            val body = response.body ?: return response
             val contentType = body.contentType()
-            val encryptedBytes = body.bytes()
+            val encryptedBytes = body.use { it.bytes() }
             if (encryptedBytes.isEmpty()) {
-                return response.newBuilder().body(encryptedBytes.toResponseBody(contentType)).build()
+                return response.withBody(encryptedBytes, contentType)
             }
             val firstByte = encryptedBytes.firstOrNull { it.toInt() > 32 }
             if (firstByte == '{'.code.toByte() || firstByte == '['.code.toByte()) {
-                return response.newBuilder().body(encryptedBytes.toResponseBody(contentType)).build()
+                return response.withBody(encryptedBytes, contentType)
             }
-            return runCatching {
+            return try {
                 Timber.tag("Decrypted Response").d(cryptoMode)
                 val decrypted = decryptEApiBytes(encryptedBytes)
                 val decoded = if (
@@ -477,17 +615,58 @@ class NeteaseInterceptor : Interceptor {
                 } else {
                     decrypted
                 }
-                decoded.toResponseBody(contentType)
-            }.fold(
-                onSuccess = { response.newBuilder().body(it).build() },
-                onFailure = { error ->
-                    Timber.e(error, "Decrypt EAPI response failed; forwarding the raw response")
-                    response.newBuilder().body(encryptedBytes.toResponseBody(contentType)).build()
-                },
-            )
+                response.newBuilder().body(decoded.toResponseBody(contentType)).build()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.e(error, "Decrypt EAPI response failed; forwarding the raw response")
+                response.withBody(encryptedBytes, contentType)
+            }
         }
         return response
     }
+
+    private fun handlePlaybackHistoryResponse(response: Response): Response {
+        val body = response.body ?: return response
+        val contentType = body.contentType()
+        val responseBytes = readPlaybackHistoryResponseBody(response)
+        if (!response.isSuccessful || responseBytes.isEmpty()) {
+            return response.withBody(responseBytes, contentType)
+        }
+
+        val firstByte = responseBytes.firstOrNull { it.toInt() > 32 }
+        if (firstByte == '{'.code.toByte() || firstByte == '['.code.toByte()) {
+            return response.withBody(responseBytes, contentType)
+        }
+
+        return try {
+            val decrypted = decryptEApi(responseBytes)
+            if (decrypted.toByteArray(Charsets.UTF_8).size > MAX_PLAYBACK_HISTORY_RESPONSE_BYTES) {
+                throw playbackBodyTooLarge(response.code)
+            }
+            response.newBuilder().body(decrypted.toResponseBody(contentType)).build()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: PlaybackResponseBodyException) {
+            throw error
+        } catch (error: Exception) {
+            logPlaybackHistory(
+                Log.WARN,
+                "PlaybackHistory EAPI response decrypt failed type=%s status=%s",
+                error::class.simpleName ?: "Exception",
+                response.code,
+            )
+            response.withBody(responseBytes, contentType)
+        }
+    }
+
+    internal fun readPlaybackHistoryResponseBody(response: Response): ByteArray {
+        val body = response.body ?: return ByteArray(0)
+        return readBoundedPlaybackResponseBody(body, response.code)
+    }
+
+    private fun Response.withBody(bytes: ByteArray, contentType: okhttp3.MediaType?): Response =
+        newBuilder().body(bytes.toResponseBody(contentType)).build()
 
     private fun getBodyString(requestBody: RequestBody?): String {
         if (requestBody == null) return ""
@@ -545,6 +724,8 @@ class NeteaseInterceptor : Interceptor {
                 "\"tPJJnts2H31BZXmp\":{\"version\":\"5388288\",\"appver\":\"4.78.0\"}," +
                 "\"c0Ve6C0uNl2Am0Rl\":{\"version\":\"276480\",\"appver\":\"1.4.30\"}," +
                 "\"zr4bw6pKFDIZScpo\":{\"version\":\"3772416\",\"appver\":\"2.40.0\"}}"
+        const val COOKIE_OS_HEADER = "X-Netease-Cookie-OS"
+        const val USER_AGENT_HEADER = "X-Netease-User-Agent"
     }
 }
 

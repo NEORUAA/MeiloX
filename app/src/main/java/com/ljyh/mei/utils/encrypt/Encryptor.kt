@@ -5,7 +5,6 @@ import korlibs.crypto.Padding
 import korlibs.crypto.md5
 import korlibs.encoding.hex
 import korlibs.encoding.toBase64
-import timber.log.Timber
 
 private const val presetKey = "0CoJUm6Qyw8W8jud"
 private const val iv = "0102030405060708"
@@ -56,7 +55,6 @@ fun encryptEApi(
     url: String,
     data: String
 ): EApi {
-    Timber.tag("Eapi").d("Encrypt path=%s payloadBytes=%d", url, data.toByteArray().size)
     val message = "nobody" + url + "use" + data + "md5forencrypt"
     val digest: String = message.toByteArray().md5().hex
     return EApi(

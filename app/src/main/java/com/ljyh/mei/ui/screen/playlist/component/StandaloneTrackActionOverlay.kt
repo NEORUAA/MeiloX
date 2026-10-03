@@ -26,7 +26,7 @@ fun StandaloneTrackActionOverlay(
         allMePlaylist = playlists,
         onDismiss = onDismiss,
         onUpdateOverlay = onUpdateOverlay,
-        onDownloadTrack = { playerViewModel.downloadSong(it, context) },
+        onDownloadTrack = { track, quality -> playerViewModel.downloadSong(track, context, quality) },
         viewModel = playlistViewModel,
     )
 }

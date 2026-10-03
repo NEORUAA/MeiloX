@@ -1,6 +1,5 @@
 package com.ljyh.mei.utils.lyric
 
-import android.util.Log
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.ui.model.LyricSourceData
@@ -36,9 +35,10 @@ fun mergeLyrics(sources: List<LyricSourceData>, isPureMusic: Boolean = false): L
     val neteaseSource = sources.filterIsInstance<LyricSourceData.NetEase>().firstOrNull()
     if (neteaseSource != null) {
         val n = neteaseSource.lyric
-        if (n.yrc != null && n.yrc.lyric.isNotBlank()) {
+        val yrc = n.yrc?.lyric
+        if (!yrc.isNullOrBlank()) {
             val translation = n.ytlrc?.lyric ?: n.tlyric?.lyric
-            val yrcContent = n.yrc.lyric.trim()
+            val yrcContent = yrc.trim()
             val hasYrcLines = yrcContent.lines().any { line ->
                 val trimmed = line.trim()
                 trimmed.startsWith("[") && trimmed.contains("]") && trimmed.contains("(")
@@ -49,7 +49,7 @@ fun mergeLyrics(sources: List<LyricSourceData>, isPureMusic: Boolean = false): L
                     isVerbatim = true,
                     isPureMusic = isPureMusic,
                     source = LyricSource.NetEaseCloudMusic,
-                    lyricLine = YRCParser.parse(n.yrc.lyric, translation)
+                    lyricLine = YRCParser.parse(yrc, translation)
                 )
             }
         }
@@ -75,13 +75,14 @@ fun mergeLyrics(sources: List<LyricSourceData>, isPureMusic: Boolean = false): L
     // 1) NetEase 非逐字（LRC）
     if (neteaseSource != null) {
         val n = neteaseSource.lyric
-        if (n.lrc.lyric.isNotBlank()) {
+        val lrc = n.lrc?.lyric
+        if (!lrc.isNullOrBlank()) {
             Timber.tag("LyricUtils").d("NetEase LRC")
             return LyricData(
                 isVerbatim = false,
                 isPureMusic = isPureMusic,
                 source = LyricSource.NetEaseCloudMusic,
-                lyricLine = LRCParser.parse(n.lrc.lyric, n.tlyric?.lyric)
+                lyricLine = LRCParser.parse(lrc, n.tlyric?.lyric)
             )
         }
     }

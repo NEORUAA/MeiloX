@@ -42,6 +42,11 @@
             android:name="android.test.mock"
             android:required="false" />
 
+        <meta-data android:name="lyricon_module" android:value="true" />
+        <meta-data android:name="lyricon_module_author" android:value="NEORUAA" />
+        <meta-data android:name="lyricon_module_description" android:value="@string/system_lyrics_description" />
+        <meta-data android:name="lyricon_module_tags" android:resource="@array/lyricon_module_tags" />
+        <meta-data android:name="io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY" android:value="true" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

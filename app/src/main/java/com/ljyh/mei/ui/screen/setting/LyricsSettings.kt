@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.LyricAutoFollowEnabledKey
+import com.ljyh.mei.constants.SystemLyricsEnabledKey
 import com.ljyh.mei.constants.LyricGlowEnabledKey
 import com.ljyh.mei.constants.LyricLiftEnabledKey
 import com.ljyh.mei.constants.LyricLongToneEnabledKey
@@ -52,6 +53,7 @@ fun LyricsSettings() {
     val (lift, onLift) = rememberPreference(LyricLiftEnabledKey, true)
     val (longTone, onLongTone) = rememberPreference(LyricLongToneEnabledKey, true)
     val (autoFollow, onAutoFollow) = rememberPreference(LyricAutoFollowEnabledKey, true)
+    val (systemLyrics, onSystemLyrics) = rememberPreference(SystemLyricsEnabledKey, true)
     val (floatingTranslation, onFloatingTranslation) = rememberPreference(FloatingLyricsTranslationKey, true)
     val (floatingNext, onFloatingNext) = rememberPreference(FloatingLyricsNextLineKey, true)
     val (floatingScale, onFloatingScale) = rememberPreference(FloatingLyricsFontScaleKey, 1f)
@@ -94,6 +96,17 @@ fun LyricsSettings() {
                 LyricsToggleRow(stringResource(R.string.lyrics_lift), lift, onLift)
                 LyricsToggleRow(stringResource(R.string.lyrics_long_tone), longTone, onLongTone)
                 LyricsToggleRow(stringResource(R.string.lyrics_auto_follow), autoFollow, onAutoFollow)
+            }
+        }
+        item {
+            SettingsGroup(stringResource(R.string.system_lyrics_settings)) {
+                LyricsToggleRow(stringResource(R.string.system_lyrics_enabled), systemLyrics, onSystemLyrics)
+                Text(
+                    stringResource(R.string.system_lyrics_usage),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(14.dp),
+                )
             }
         }
         item {

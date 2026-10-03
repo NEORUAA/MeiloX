@@ -8,10 +8,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
+import com.ljyh.mei.ui.component.sheet.PlayerSheetArtworkOverlay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -30,6 +36,7 @@ import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.player.state.rememberPlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import com.ljyh.mei.ui.component.utils.rememberLifecycleStarted
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.glass.LocalBlurBackdrop
@@ -37,10 +44,18 @@ import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.rememberCrossWindowBackdrop
+import coil3.compose.rememberAsyncImagePainter
+import coil3.request.ImageRequest
+import coil3.size.Precision
+import androidx.compose.runtime.key
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+
+internal val LocalPlayerArtwork = staticCompositionLocalOf<Pair<String, androidx.compose.ui.graphics.painter.Painter>?> { null }
 
 /** Publishes a capturable frame for the player's native GL background. */
 val LocalPlayerBackdropFrame = staticCompositionLocalOf<MutableState<ImageBitmap?>?> { null }
@@ -94,10 +109,12 @@ fun BottomSheetPlayer(
     val playerStyle by rememberEnumPreference(PlayerStyleKey, defaultValue = PlayerStyle.AppleMusic)
 
     // 创建公共状态容器
+    val lifecycleStarted by rememberLifecycleStarted()
+    val sheetCollapsed by remember(state) { derivedStateOf { state.isCollapsed } }
     val stateContainer = rememberPlayerStateContainer(
         playerViewModel = playerViewModel,
         playerConnection = playerConnection,
-        progressUpdatesEnabled = !state.isCollapsed,
+        progressUpdatesEnabled = lifecycleStarted && !sheetCollapsed,
     )
 
     // 创建弹窗处理器
@@ -107,16 +124,62 @@ fun BottomSheetPlayer(
         navController = navController
     )
 
+    val currentMetadata by playerConnection.mediaMetadata.collectAsState()
+    val context = LocalContext.current
+    val artwork = currentMetadata?.coverUrl?.let { url ->
+        key(url) {
+            url to rememberAsyncImagePainter(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .size(1440)
+                    .precision(Precision.INEXACT)
+                    .build(),
+            )
+        }
+    }
+    val sheetLayers = rememberPlayerSheetLayers(state)
+
     // 单入口、双实现 - 根据样式渲染不同的播放器
     CompositionLocalProvider(
+        LocalPlayerSheet provides sheetLayers,
+        LocalPlayerArtwork provides artwork,
         LocalPlayerBackdropFrame provides backdropFrame,
         LocalGlassBackdrop provides playerBackdrop,
         LocalBlurBackdrop provides playerBackdrop,
     ) {
-        when (playerStyle) {
-            PlayerStyle.AppleMusic -> {
-                // 横屏模式下直接进入经典模式
-                if( device.isLandscape){
+        Box(Modifier.fillMaxSize()) {
+            when (playerStyle) {
+                PlayerStyle.AppleMusic -> {
+                    // 横屏模式下直接进入经典模式
+                    if( device.isLandscape){
+                        ClassicPlayer(
+                            state = state,
+                            modifier = modifier,
+                            stateContainer = stateContainer,
+                            overlayHandler = overlayHandler,
+                            collapsedBackdrop = collapsedBackdrop,
+                            playerBackgroundBackdrop = playerBackgroundBackdrop,
+                            playerContentBackdrop = playerContentBackdrop,
+                            compactMiniPlayerProgress = compactMiniPlayerProgress,
+                            miniPlayerVerticalOffset = miniPlayerVerticalOffset,
+                        )
+                    }else{
+                        AppleMusicPlayer(
+                            state = state,
+                            modifier = modifier,
+                            stateContainer = stateContainer,
+                            overlayHandler = overlayHandler,
+                            collapsedBackdrop = collapsedBackdrop,
+                            playerBackgroundBackdrop = playerBackgroundBackdrop,
+                            playerContentBackdrop = playerContentBackdrop,
+                            playerCoverBackdrop = playerCoverBackdrop,
+                            compactMiniPlayerProgress = compactMiniPlayerProgress,
+                            miniPlayerVerticalOffset = miniPlayerVerticalOffset,
+                        )
+                    }
+
+                }
+                PlayerStyle.Classic -> {
                     ClassicPlayer(
                         state = state,
                         modifier = modifier,
@@ -128,35 +191,9 @@ fun BottomSheetPlayer(
                         compactMiniPlayerProgress = compactMiniPlayerProgress,
                         miniPlayerVerticalOffset = miniPlayerVerticalOffset,
                     )
-                }else{
-                    AppleMusicPlayer(
-                        state = state,
-                        modifier = modifier,
-                        stateContainer = stateContainer,
-                        overlayHandler = overlayHandler,
-                        collapsedBackdrop = collapsedBackdrop,
-                        playerBackgroundBackdrop = playerBackgroundBackdrop,
-                        playerContentBackdrop = playerContentBackdrop,
-                        playerCoverBackdrop = playerCoverBackdrop,
-                        compactMiniPlayerProgress = compactMiniPlayerProgress,
-                        miniPlayerVerticalOffset = miniPlayerVerticalOffset,
-                    )
                 }
-
             }
-            PlayerStyle.Classic -> {
-                ClassicPlayer(
-                    state = state,
-                    modifier = modifier,
-                    stateContainer = stateContainer,
-                    overlayHandler = overlayHandler,
-                    collapsedBackdrop = collapsedBackdrop,
-                    playerBackgroundBackdrop = playerBackgroundBackdrop,
-                    playerContentBackdrop = playerContentBackdrop,
-                    compactMiniPlayerProgress = compactMiniPlayerProgress,
-                    miniPlayerVerticalOffset = miniPlayerVerticalOffset,
-                )
-            }
+            PlayerSheetArtworkOverlay(sheetLayers)
         }
     }
 

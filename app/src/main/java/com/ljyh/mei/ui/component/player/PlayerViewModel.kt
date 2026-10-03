@@ -237,9 +237,9 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun downloadSong(metadata: MediaMetadata, context: android.content.Context) {
+    fun downloadSong(metadata: MediaMetadata, context: android.content.Context, requestedQuality: MusicQuality? = null) {
         viewModelScope.launch {
-            val quality = try {
+            val quality = requestedQuality ?: try {
                 val saved = AppContext.instance.dataStore[DownloadQualityKey]
                 if (saved != null) com.ljyh.mei.constants.DownloadQuality.valueOf(saved).toMusicQuality()
                 else MusicQuality.EXHIGH
@@ -253,7 +253,7 @@ class PlayerViewModel @Inject constructor(
             )
 
             if (result is Resource.Success) {
-                val songData = result.data.data.firstOrNull()
+                val songData = result.data.fullSourceFor(metadata.id.toString())
                 val url = songData?.url
                 if (url != null) {
                     val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
@@ -271,7 +271,7 @@ class PlayerViewModel @Inject constructor(
                                 songCover = metadata.coverUrl,
                                 duration = metadata.duration,
                                 fileType = songData.encodeType,
-                                quality = quality.text,
+                                quality = songData.level,
                             )
                         ),
                         playlistName = "单曲下载",

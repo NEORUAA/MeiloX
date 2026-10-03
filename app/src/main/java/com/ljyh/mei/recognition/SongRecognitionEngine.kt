@@ -10,9 +10,12 @@ import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.Keep
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -20,9 +23,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.floor
 
@@ -98,8 +99,12 @@ class SongRecognitionRecorder(private val context: Context) {
 
 class NeteaseFingerprintGenerator(context: Context) {
     private val applicationContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val bridge = FingerprintBridge()
+    private val pendingGenerations = mutableMapOf<String, CancellableContinuation<String>>()
     private var webView: WebView? = null
     private var prepared: CompletableDeferred<Unit>? = null
+    private var nextRequestId = 0L
 
     suspend fun generate(samples: FloatArray): String = withContext(Dispatchers.Main) {
         require(samples.isNotEmpty())
@@ -110,14 +115,31 @@ class NeteaseFingerprintGenerator(context: Context) {
             .array()
         val pcm = Base64.encodeToString(bytes, Base64.NO_WRAP)
         suspendCancellableCoroutine { continuation ->
-            webView?.evaluateJavascript("generateFingerprint(${quote(pcm)})") { value ->
-                runCatching {
-                    val result = JSONArray("[$value]").getString(0)
-                    check(result.isNotBlank()) { "The fingerprint runtime returned no data" }
-                    result
-                }.onSuccess { if (continuation.isActive) continuation.resume(it) }
-                    .onFailure { if (continuation.isActive) continuation.resumeWithException(it) }
-            } ?: continuation.resumeWithException(IllegalStateException("Fingerprint runtime is unavailable"))
+            val requestId = (++nextRequestId).toString()
+            pendingGenerations[requestId] = continuation
+            continuation.invokeOnCancellation {
+                mainHandler.post { pendingGenerations.remove(requestId) }
+            }
+            val script = """
+                (function() {
+                    try {
+                        Promise.resolve(generateFingerprint(${quote(pcm)})).then(
+                            function(result) {
+                                $BRIDGE_NAME.onSuccess(${quote(requestId)}, String(result));
+                            },
+                            function(error) {
+                                $BRIDGE_NAME.onFailure(${quote(requestId)}, String(error));
+                            }
+                        );
+                    } catch (error) {
+                        $BRIDGE_NAME.onFailure(${quote(requestId)}, String(error));
+                    }
+                })();
+            """.trimIndent()
+            runCatching {
+                webView?.evaluateJavascript(script, null)
+                    ?: error("Fingerprint runtime is unavailable")
+            }.onFailure { completeGeneration(requestId, Result.failure(it)) }
         }
     }
 
@@ -126,10 +148,15 @@ class NeteaseFingerprintGenerator(context: Context) {
             webView?.apply {
                 stopLoading()
                 loadUrl("about:blank")
+                removeJavascriptInterface(BRIDGE_NAME)
                 removeAllViews()
                 destroy()
             }
             webView = null
+            pendingGenerations.values.forEach {
+                it.resumeWithException(IllegalStateException("Fingerprint runtime was released"))
+            }
+            pendingGenerations.clear()
             prepared?.cancel()
             prepared = null
         }
@@ -145,6 +172,7 @@ class NeteaseFingerprintGenerator(context: Context) {
         webView = WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
             settings.allowFileAccess = true
+            addJavascriptInterface(bridge, BRIDGE_NAME)
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     if (!deferred.isCompleted) deferred.complete(Unit)
@@ -165,5 +193,39 @@ class NeteaseFingerprintGenerator(context: Context) {
         return deferred
     }
 
+    private fun completeGeneration(requestId: String, result: Result<String>) {
+        val continuation = pendingGenerations.remove(requestId) ?: return
+        if (continuation.isActive) continuation.resumeWith(result)
+    }
+
+    @Keep
+    private inner class FingerprintBridge {
+        @JavascriptInterface
+        fun onSuccess(requestId: String, fingerprint: String) {
+            mainHandler.post {
+                val result = runCatching {
+                    val decoded = Base64.decode(fingerprint, Base64.DEFAULT)
+                    check(decoded.isNotEmpty()) { "The fingerprint runtime returned no data" }
+                    fingerprint
+                }
+                completeGeneration(requestId, result)
+            }
+        }
+
+        @JavascriptInterface
+        fun onFailure(requestId: String, message: String) {
+            mainHandler.post {
+                completeGeneration(
+                    requestId,
+                    Result.failure(IllegalStateException("Fingerprint generation failed: $message")),
+                )
+            }
+        }
+    }
+
     private fun quote(value: String): String = JSONObject.quote(value)
+
+    private companion object {
+        const val BRIDGE_NAME = "NeteaseFingerprintBridge"
+    }
 }

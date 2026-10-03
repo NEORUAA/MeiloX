@@ -1,5 +1,8 @@
 package com.ljyh.mei
 
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+
 import android.content.ComponentName
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,6 +12,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.WindowManager
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -51,18 +55,21 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -83,6 +90,8 @@ import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.zIndex
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -114,16 +123,20 @@ import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.AccentColorKey
+import com.ljyh.mei.constants.DefaultAccentColorArgb
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryEnabledKey
+import com.ljyh.mei.constants.FindMusicTabEnabledKey
+import com.ljyh.mei.constants.LibraryTabEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
 import com.ljyh.mei.constants.DownloadsTabEnabledKey
 import com.ljyh.mei.constants.CloudMusicTabEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.LastSelectedTabKey
+import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
@@ -167,7 +180,7 @@ import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
-import com.ljyh.mei.ui.glass.rememberCrossWindowBackdrop
+import com.ljyh.mei.ui.glass.rememberSharedGlassBackdrop
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import com.ljyh.mei.ui.screen.Index
 import com.ljyh.mei.ui.screen.Screen
@@ -189,11 +202,11 @@ import com.ljyh.mei.utils.VersionUpdateChecker
 import com.ljyh.mei.utils.VersionUpdateResult
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Interceptor
@@ -253,22 +266,25 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(false)
             }
             val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
-            val accentColorArgb by rememberPreference(AccentColorKey, 0xFFFF3B30L)
+            val accentColorArgb by rememberPreference(AccentColorKey, DefaultAccentColorArgb)
             val appAppearance by rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
             val (lastSelectedTab, setLastSelectedTab) = rememberPreference(LastSelectedTabKey, Index.Home.name)
             val recognizeClipboardLinks by rememberPreference(RecognizeClipboardLinksKey, false)
-            val podcastsEnabled by rememberPreference(PodcastsEnabledKey, defaultValue = true)
-            val downloadsEnabled by rememberPreference(DownloadsEnabledKey, defaultValue = true)
-            val cloudMusicEnabled by rememberPreference(CloudMusicEnabledKey, defaultValue = true)
-            val listeningHistoryEnabled by rememberPreference(ListeningHistoryEnabledKey, defaultValue = true)
-            val podcastsTabEnabled by rememberPreference(PodcastsTabEnabledKey, defaultValue = false)
-            val downloadsTabEnabled by rememberPreference(DownloadsTabEnabledKey, defaultValue = false)
-            val cloudMusicTabEnabled by rememberPreference(CloudMusicTabEnabledKey, defaultValue = false)
-            val listeningHistoryTabEnabled by rememberPreference(ListeningHistoryTabEnabledKey, defaultValue = false)
-            val navigationTabOrder by rememberPreference(
-                NavigationTabOrderKey,
-                Index.DefaultOrder.joinToString(",", transform = Index::name),
-            )
+            val navigationPreferences by context.dataStore.data
+                .collectAsState<Preferences, Preferences?>(initial = null)
+            val podcastsEnabled = navigationPreferences?.get(PodcastsEnabledKey) ?: true
+            val downloadsEnabled = navigationPreferences?.get(DownloadsEnabledKey) ?: true
+            val cloudMusicEnabled = navigationPreferences?.get(CloudMusicEnabledKey) ?: true
+            val listeningHistoryEnabled = navigationPreferences?.get(ListeningHistoryEnabledKey) ?: true
+            val findMusicTabEnabled = navigationPreferences?.get(FindMusicTabEnabledKey) ?: true
+            val libraryTabEnabled = navigationPreferences?.get(LibraryTabEnabledKey) ?: true
+            val podcastsTabEnabled = navigationPreferences?.get(PodcastsTabEnabledKey) ?: false
+            val downloadsTabEnabled = navigationPreferences?.get(DownloadsTabEnabledKey) ?: false
+            val cloudMusicTabEnabled = navigationPreferences?.get(CloudMusicTabEnabledKey) ?: false
+            val listeningHistoryTabEnabled = navigationPreferences?.get(ListeningHistoryTabEnabledKey) ?: false
+            val keepScreenOnInPlayer by rememberPreference(PlayerKeepScreenOnKey, false)
+            val navigationTabOrder = navigationPreferences?.get(NavigationTabOrderKey)
+                ?: Index.DefaultOrder.joinToString(",", transform = Index::name)
             var playerConnection by remember { mutableStateOf<PlayerConnection?>(null) }
             var clipboardLink by remember { mutableStateOf<NeteaseMusicLink?>(null) }
             var clipboardInspected by rememberSaveable { mutableStateOf(false) }
@@ -331,31 +347,35 @@ class MainActivity : ComponentActivity() {
                     }
                     .build()
             }
-            var targetThemeColor by remember { mutableStateOf(Color.Black) }
+            var targetThemeColor by remember { mutableStateOf<Color?>(null) }
 
-            LaunchedEffect(playerConnection) {
+            LaunchedEffect(playerConnection, dynamicTheme) {
                 Timber.tag("MainActivity").d("playerConnection: $playerConnection")
+                if (!dynamicTheme) {
+                    targetThemeColor = null
+                    return@LaunchedEffect
+                }
                 val playerConnection = playerConnection ?: return@LaunchedEffect
                 val player = playerConnection.service.player
-                playerConnection.service.currentMediaMetadata.collect { song->
-                    if (dynamicTheme && song != null) {
-                        val context = this@MainActivity
-                        launch {
-                            Timber.tag("MainActivity").d("获取当前歌曲颜色: $song")
-                            val color = colorRepository.getColorOrExtract(context, song.coverUrl)
-                            targetThemeColor = color
-                        }
-                        Timber.tag("MainActivity").d("获取歌曲颜色: $targetThemeColor")
+                playerConnection.service.currentMediaMetadata.collectLatest { song ->
+                    if (song == null) {
+                        targetThemeColor = null
+                        return@collectLatest
+                    }
+                    val context = this@MainActivity
+                    Timber.tag("MainActivity").d("获取当前歌曲颜色: $song")
+                    val color = colorRepository.getColorOrExtract(context, song.coverUrl)
+                    targetThemeColor = color.takeUnless { it == Color.Black }
+                    Timber.tag("MainActivity").d("获取歌曲颜色: $targetThemeColor")
 
-                        val nextIndex = player.nextMediaItemIndex
-                        if (nextIndex != C.INDEX_UNSET) {
-                            val nextUrl = player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
-                            if (!nextUrl.isNullOrEmpty()) {
-                                Timber.tag("MainActivity").d("获取下一首歌曲颜色: $nextUrl")
-                                launch(Dispatchers.IO) {
-                                    colorRepository.getColorOrExtract(context, nextUrl)
-                                    preloadImage(context, nextUrl)
-                                }
+                    val nextIndex = player.nextMediaItemIndex
+                    if (nextIndex != C.INDEX_UNSET) {
+                        val nextUrl = player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
+                        if (!nextUrl.isNullOrEmpty()) {
+                            Timber.tag("MainActivity").d("获取下一首歌曲颜色: $nextUrl")
+                            launch(Dispatchers.IO) {
+                                colorRepository.getColorOrExtract(context, nextUrl)
+                                preloadImage(context, nextUrl)
                             }
                         }
                     }
@@ -363,6 +383,8 @@ class MainActivity : ComponentActivity() {
 
             }
             var navigationBarVisible by remember { mutableStateOf(true) }
+            val scrollPlayerSheet = remember { mutableStateOf<BottomSheetState?>(null) }
+            val searchActiveState = rememberUpdatedState(active)
             val nestedScrollConnection = remember {
                 object : NestedScrollConnection {
 
@@ -370,6 +392,18 @@ class MainActivity : ComponentActivity() {
                         available: Offset,
                         source: NestedScrollSource
                     ): Offset {
+                        // Read the actual sheet state for every event. Page scrolling remains
+                        // unconsumed, but cannot move the mini player's return target mid-flight.
+                        val sheet = scrollPlayerSheet.value
+                        if (sheet != null && !sheet.isCollapsed && !sheet.isDismissed) {
+                            return Offset.Zero
+                        }
+                        val route = navController.currentRoute
+                        val handlesNavigationBar = !searchActiveState.value &&
+                            (route == null ||
+                                route in homeNavigationRoutes ||
+                                route == Screen.Search.route)
+                        if (!handlesNavigationBar) return Offset.Zero
 
                         if (available.y < -10f) {
                             // 向下滑
@@ -394,28 +428,20 @@ class MainActivity : ComponentActivity() {
                 AppAppearance.Light -> false
                 AppAppearance.Dark -> true
             }
-            SideEffect {
-                val transparent = android.graphics.Color.TRANSPARENT
-                enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(transparent, transparent) { effectiveDark },
-                    navigationBarStyle = SystemBarStyle.auto(transparent, transparent) { effectiveDark },
-                )
-                // Keep the navigation bar transparent instead of applying the platform contrast scrim.
-                window.navigationBarColor = transparent
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    window.isNavigationBarContrastEnforced = false
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    window.navigationBarDividerColor = transparent
-                }
+            val defaultAccent = if (effectiveDark) Color(0xFFFF4245) else Color(DefaultAccentColorArgb.toInt())
+            val configuredAccent = if (accentColorArgb == DefaultAccentColorArgb) {
+                defaultAccent
+            } else {
+                Color(accentColorArgb.toInt())
             }
+            val effectiveAccent = if (dynamicTheme) targetThemeColor ?: defaultAccent else configuredAccent
             MusicTheme(
-                seedColor = if (dynamicTheme) targetThemeColor else Color(accentColorArgb.toInt()),
+                seedColor = effectiveAccent,
                 isDark = effectiveDark,
             ) {
                 val glassColors = defaultGlassColors(
                     isDark = effectiveDark,
-                    accent = if (effectiveDark) Color(0xFFFF4245) else Color(0xFFFF3B30),
+                    accent = MaterialTheme.colorScheme.primary,
                 )
                 // The regular page backdrop is a static color, so avoid recording a full-screen
                 // layer just to replay the same pixels for every glass consumer.
@@ -437,10 +463,7 @@ class MainActivity : ComponentActivity() {
                 // Popups are hosted in a separate Android window. Wrap the recorded page layer
                 // before combining it so its sample coordinates use the popup's real screen
                 // position rather than the popup-local overshoot origin.
-                val bottomControlsBackdrop = rememberCombinedBackdrop(
-                    glassBackdrop,
-                    rememberCrossWindowBackdrop(bottomBackdrop),
-                )
+                val bottomControlsBackdrop = rememberSharedGlassBackdrop(glassBackdrop, bottomBackdrop)
                 CompositionLocalProvider(
                     LocalGlassBackdrop provides glassBackdrop,
                     LocalGlassColors provides glassColors,
@@ -459,6 +482,23 @@ class MainActivity : ComponentActivity() {
                     val density = LocalDensity.current
                     val windowsInsets = WindowInsets.systemBars
                     val currentRoute = navController.currentRoute
+                    val handlesKeyboardInsets = active || currentRoute == Screen.Search.route ||
+                        currentRoute?.startsWith("${Screen.PrivateConversation.route}/") == true
+                    DisposableEffect(handlesKeyboardInsets) {
+                        val previousMode = window.attributes.softInputMode
+                        if (handlesKeyboardInsets) {
+                            window.setSoftInputMode(
+                                (previousMode and android.view.WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()) or
+                                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,
+                            )
+                        }
+                        onDispose {
+                            if (handlesKeyboardInsets) window.setSoftInputMode(previousMode)
+                        }
+                    }
+                    val imeInsets = WindowInsets.ime
+                    val searchBottomInset = maxOf(with(density) { imeInsets.getBottom(this).toDp() },
+                        WindowInsets.systemBars.asPaddingValues().calculateBottomPadding())
 
                     val bottomInset by remember {
                         derivedStateOf {
@@ -473,6 +513,8 @@ class MainActivity : ComponentActivity() {
                         downloadsEnabled,
                         cloudMusicEnabled,
                         listeningHistoryEnabled,
+                        findMusicTabEnabled,
+                        libraryTabEnabled,
                         podcastsTabEnabled,
                         downloadsTabEnabled,
                         cloudMusicTabEnabled,
@@ -481,9 +523,9 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val available = buildList {
                             add(Index.Home)
-                            add(Index.FindMusic)
+                            if (findMusicTabEnabled) add(Index.FindMusic)
                             if (podcastsEnabled && podcastsTabEnabled) add(Index.Podcasts)
-                            add(Index.Library)
+                            if (libraryTabEnabled) add(Index.Library)
                             if (downloadsEnabled && downloadsTabEnabled) add(Index.Downloads)
                             if (cloudMusicEnabled && cloudMusicTabEnabled) add(Index.Cloud)
                             if (listeningHistoryEnabled && listeningHistoryTabEnabled) add(Index.History)
@@ -515,7 +557,12 @@ class MainActivity : ComponentActivity() {
                                 currentRoute == Screen.Search.route) &&
                                 !active
                     }
-                    val shouldCompactNavigationBar = shouldAllowNavigationBar && !navigationBarVisible
+                    // Route visibility must not reset the expanded/compact shape. This keeps a
+                    // MiniNav compact while it fades out, while navigationBarVisible remains the
+                    // only source that changes its shape.
+                    val shouldCompactNavigationBar = !navigationBarVisible
+                    val shouldCompactMiniPlayer =
+                        shouldAllowNavigationBar && !navigationBarVisible
 
 
 
@@ -536,11 +583,65 @@ class MainActivity : ComponentActivity() {
                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                         label = "CompactBottomNavigation",
                     )
+                    val compactMiniPlayerProgress = animateFloatAsState(
+                        targetValue = if (shouldCompactMiniPlayer) 1f else 0f,
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        label = "CompactMiniPlayer",
+                    )
                     val playerBottomSheetState = rememberBottomSheetState(
                         dismissedBound = 0.dp,
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
                     )
+                    DisposableEffect(playerBottomSheetState) {
+                        scrollPlayerSheet.value = playerBottomSheetState
+                        onDispose {
+                            if (scrollPlayerSheet.value === playerBottomSheetState) {
+                                scrollPlayerSheet.value = null
+                            }
+                        }
+                    }
+                    val windowInsetsController = remember {
+                        WindowInsetsControllerCompat(window, window.decorView)
+                    }
+                    val isPlayerPage = remember(playerBottomSheetState) {
+                        derivedStateOf {
+                            playerBottomSheetState.isExpanded ||
+                                playerBottomSheetState.progress >= 0.99f
+                        }
+                    }.value
+                    val playerDismissed by remember(playerBottomSheetState) {
+                        derivedStateOf { playerBottomSheetState.isDismissed }
+                    }
+                    SideEffect {
+                        val transparent = android.graphics.Color.TRANSPARENT
+                        enableEdgeToEdge(
+                            statusBarStyle = if (isPlayerPage) {
+                                // The expanded player renders artwork behind the status bar;
+                                // keep its foreground white regardless of the app theme.
+                                SystemBarStyle.dark(transparent)
+                            } else {
+                                SystemBarStyle.auto(transparent, transparent) { effectiveDark }
+                            },
+                            navigationBarStyle = SystemBarStyle.auto(transparent, transparent) {
+                                effectiveDark
+                            },
+                        )
+                        // Keep this explicit because the API 35+ edge-to-edge implementation can
+                        // retain the previous appearance while the bottom sheet settles.
+                        windowInsetsController.isAppearanceLightStatusBars =
+                            !isPlayerPage && !effectiveDark
+                        if (isPlayerPage && keepScreenOnInPlayer) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        // Keep the navigation bar transparent instead of applying the platform
+                        // contrast scrim.
+                        window.navigationBarColor = transparent
+                        window.isNavigationBarContrastEnforced = false
+                        window.navigationBarDividerColor = transparent
+                    }
                     val (query, onQueryChange) = rememberSaveable(stateSaver = TextFieldValue.Saver) {
                         mutableStateOf(TextFieldValue())
                     }
@@ -619,7 +720,9 @@ class MainActivity : ComponentActivity() {
                             player.removeListener(listener)
                         }
                     }
+                    val selectionToolbar = remember { com.ljyh.mei.ui.local.SelectionToolbarState() }
                     CompositionLocalProvider(
+                        com.ljyh.mei.ui.local.LocalSelectionToolbar provides selectionToolbar,
                         LocalDatabase provides database,
                         LocalNavController provides navController,
                         LocalPlayerConnection provides playerConnection,
@@ -640,6 +743,7 @@ class MainActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .graphicsLayer()
                                     .layerBackdrop(bottomBackdrop)
                                     .trackBackdropPosition(bottomBackdrop),
                             ) {
@@ -659,6 +763,9 @@ class MainActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    // Keep sibling player/nav draw invalidations from recording
+                                    // the unchanged page again. Child updates remain live.
+                                    .graphicsLayer()
                                     .layerBackdrop(bottomBackdrop)
                                     .trackBackdropPosition(bottomBackdrop),
                             ) {
@@ -763,25 +870,29 @@ class MainActivity : ComponentActivity() {
                                                     bottomInset,
                                                     navigationItems,
                                                     navigationBarVisible,
-                                                    playerBottomSheetState.isDismissed,
+                                                    playerDismissed,
                                                     windowsInsets,
                                                 ) {
                                                     playerAwareWindowInsetsForRoute(
                                                         route = meiRoute.route,
                                                         navigationItems = navigationItems,
                                                         navigationBarVisible = navigationBarVisible,
-                                                        playerDismissed = playerBottomSheetState.isDismissed,
+                                                        playerDismissed = playerDismissed,
                                                         windowsInsets = windowsInsets,
                                                         bottomInset = bottomInset,
                                                     )
                                                 }
                                                 CompositionLocalProvider(
                                                     LocalPlayerAwareWindowInsets provides
-                                                        entryPlayerAwareWindowInsets,
+                                                        if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
+                                                        else entryPlayerAwareWindowInsets,
                                                 ) {
                                                     navigationEntry(
                                                         route = meiRoute.route,
                                                         scrollBehavior = entryTopAppBarScrollBehavior,
+                                                        isNavigationTab = navigationItems.any {
+                                                            it.route == meiRoute.route
+                                                        },
                                                     )
                                                 }
                                             }
@@ -816,15 +927,15 @@ class MainActivity : ComponentActivity() {
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .padding(top = windowsInsets.asPaddingValues().calculateTopPadding())
-                                                        .padding(bottom = bottomInset + NavigationBarHeight),
+                                                        .padding(bottom = searchBottomInset + NavigationBarHeight),
                                                 )
                                             }
                                         }
                                     }
                                 }
                             }
-                        AnimatedMiniPlayerLayer(
-                            compactProgress = compactNavigationProgress,
+                        if (selectionToolbar.content.value == null) AnimatedMiniPlayerLayer(
+                            compactProgress = compactMiniPlayerProgress,
                             state = playerBottomSheetState,
                             backdrop = bottomControlsBackdrop,
                         )
@@ -848,7 +959,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp)
-                                        .padding(bottom = bottomInset + NavigationBarBottomMargin),
+                                        .padding(bottom = searchBottomInset + NavigationBarBottomMargin),
                                 )
                             }
                         }
@@ -864,7 +975,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         AnimatedVisibility(
-                            visible = shouldAllowNavigationBar,
+                            visible = navigationPreferences != null && shouldAllowNavigationBar &&
+                                selectionToolbar.content.value == null,
                             enter = fadeIn(),
                             exit = fadeOut(),
                             modifier = Modifier
@@ -897,6 +1009,15 @@ class MainActivity : ComponentActivity() {
                                 playerBottomSheetState = playerBottomSheetState,
                                 bottomInset = bottomInset,
                             )
+                        }
+                        selectionToolbar.content.value?.let { toolbar ->
+                            Box(Modifier.align(Alignment.BottomCenter).zIndex(3f)
+                                .fillMaxWidth().padding(horizontal = 16.dp)
+                                .padding(bottom = bottomInset + NavigationBarBottomMargin)) {
+                                CompositionLocalProvider(LocalGlassBackdrop provides bottomControlsBackdrop) {
+                                    toolbar()
+                                }
+                            }
                         }
                         LaunchedEffect(recognizeClipboardLinks) {
                             if (recognizeClipboardLinks && !clipboardInspected) {
@@ -1027,11 +1148,10 @@ private fun AnimatedBottomNavigationRow(
     playerBottomSheetState: BottomSheetState,
     bottomInset: Dp,
 ) {
-    val progress = compactProgress.value
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 20.dp)
             .padding(bottom = bottomInset + NavigationBarBottomMargin)
             .offset {
                 val slideOffset = (bottomInset + NavigationBarHeight) *
@@ -1046,7 +1166,7 @@ private fun AnimatedBottomNavigationRow(
             onExpand = onExpand,
             onSelected = onSelected,
             backdrop = backdrop,
-            compactProgress = progress,
+            compactProgress = compactProgress,
             compactSize = MiniPlayerHeight,
             modifier = Modifier.weight(1f),
         )
@@ -1055,21 +1175,33 @@ private fun AnimatedBottomNavigationRow(
             modifier = Modifier.size(64.dp),
             contentAlignment = Alignment.CenterEnd,
         ) {
-            GlassIconButton(
-                onClick = onSearchClick,
-                backdrop = backdrop,
-                style = GlassSurfaceStyle.Navigation,
-                modifier = Modifier.size(64.dp - 16.dp * progress),
-            ) {
-                SfIcon(
-                    SfSymbol.Search,
-                    contentDescription = stringResource(R.string.app_tab_search),
-                    tint = LocalGlassColors.current.content,
-                    size = 26.dp + (CompactBottomControlIconSize - 26.dp) * progress,
-                    weight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                )
-            }
+            AnimatedHomeSearchButton(compactProgress, backdrop, onSearchClick)
         }
+    }
+}
+
+@Composable
+private fun AnimatedHomeSearchButton(
+    compactProgress: State<Float>,
+    backdrop: Backdrop,
+    onClick: () -> Unit,
+) {
+    val progress = compactProgress.value
+    GlassIconButton(
+        onClick = onClick,
+        backdrop = backdrop,
+        style = GlassSurfaceStyle.Navigation,
+        modifier = Modifier.size(64.dp - 16.dp * progress),
+        morphProgress = compactProgress,
+        morphCaptureWidth = 64.dp,
+    ) {
+        SfIcon(
+            SfSymbol.Search,
+            contentDescription = stringResource(R.string.app_tab_search),
+            tint = LocalGlassColors.current.content,
+            size = 26.dp + (CompactBottomControlIconSize - 26.dp) * progress,
+            weight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        )
     }
 }
 

@@ -1,8 +1,10 @@
 package com.ljyh.mei.data.repository
 
+import com.ljyh.mei.data.model.api.AllArtistSongs
 import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
+import com.ljyh.mei.data.model.api.GetAllArtistSongs
 import com.ljyh.mei.data.model.api.GetArtistAlbum
 import com.ljyh.mei.data.model.api.GetArtistDetail
 import com.ljyh.mei.data.model.api.GetArtistSong
@@ -29,6 +31,15 @@ class ArtistRepository(private val apiService: ApiService) {
             }
         }
     }
+
+    suspend fun getAllArtistSongs(id: String, offset: Int): Resource<AllArtistSongs> =
+        withContext(Dispatchers.IO) {
+            safeApiCall {
+                apiService.getAllArtistSongs(GetAllArtistSongs(id, offset)).also {
+                    check(it.code == 200) { "Unable to load artist songs (${it.code})" }
+                }
+            }
+        }
 
     suspend fun getArtistSongs(id: String): Resource<ArtistSong> {
         return withContext(Dispatchers.IO) {

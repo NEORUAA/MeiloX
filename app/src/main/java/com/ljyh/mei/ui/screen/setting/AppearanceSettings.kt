@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import com.ljyh.mei.constants.AccompanimentLyricTextSizeKey
 import com.ljyh.mei.constants.CoverStyle
 import com.ljyh.mei.constants.CoverStyleKey
 import com.ljyh.mei.constants.DebugKey
+import com.ljyh.mei.constants.DefaultAccentColorArgb
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.LyricTextSize
 import com.ljyh.mei.constants.MeshFlowSpeedKey
@@ -39,6 +41,9 @@ import com.ljyh.mei.constants.NormalLyricTextBoldKey
 import com.ljyh.mei.constants.NormalLyricTextSizeKey
 import com.ljyh.mei.constants.OriginalCoverKey
 import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.LibraryStyle
+import com.ljyh.mei.constants.LibraryStyleKey
+import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
@@ -68,11 +73,14 @@ fun AppearanceSettings(
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (dynamicTheme, setDynamicTheme) = rememberPreference(DynamicThemeKey, true)
-    val (accentColorArgb, setAccentColorArgb) = rememberPreference(AccentColorKey, 0xFFFF3B30L)
+    val (accentColorArgb, setAccentColorArgb) = rememberPreference(AccentColorKey, DefaultAccentColorArgb)
+    val customAccent = accentColorArgb != DefaultAccentColorArgb
     var showColorPicker by remember { mutableStateOf(false) }
     val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val (playlistHeader, setPlaylistHeader) = rememberPreference(PlaylistTrackTableHeaderKey, false)
+    val (libraryStyle, setLibraryStyle) = rememberEnumPreference(LibraryStyleKey, LibraryStyle.Default)
     val (playerStyle, setPlayerStyle) = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
+    val (keepScreenOn, setKeepScreenOn) = rememberPreference(PlayerKeepScreenOnKey, false)
     val (originalCover, setOriginalCover) = rememberPreference(OriginalCoverKey, false)
     val (coverStyle, setCoverStyle) = rememberEnumPreference(CoverStyleKey, CoverStyle.Square)
     val (progressStyle, setProgressStyle) = rememberEnumPreference(ProgressBarStyleKey, ProgressBarStyle.LINEAR)
@@ -100,10 +108,28 @@ fun AppearanceSettings(
                 AppearanceChoice(
                     R.string.appearance_accent_color,
                     "paintpalette.fill",
-                    accentColorArgb,
-                    listOf(accentColorArgb),
-                    { stringResource(if (dynamicTheme) R.string.appearance_accent_dynamic else R.string.appearance_accent_custom) },
-                    { showColorPicker = true },
+                    customAccent,
+                    listOf(false, true),
+                    { isCustom ->
+                        stringResource(
+                            if (isCustom) R.string.appearance_accent_custom
+                            else R.string.appearance_accent_default,
+                        )
+                    },
+                    { isCustom ->
+                        if (isCustom) showColorPicker = true
+                        else setAccentColorArgb(DefaultAccentColorArgb)
+                    },
+                    enabled = !dynamicTheme,
+                )
+            }
+        }
+        item {
+            SettingsGroup(stringResource(R.string.app_tab_library)) {
+                AppearanceChoice(
+                    R.string.appearance_library_style, "music.note.list", libraryStyle, LibraryStyle.entries,
+                    { if (it == LibraryStyle.AppleMusic) "Apple Music" else stringResource(R.string.appearance_accent_default) },
+                    setLibraryStyle,
                 )
             }
         }
@@ -129,6 +155,13 @@ fun AppearanceSettings(
                 AppearanceChoice(
                     R.string.appearance_player_style, "music.note.house", playerStyle, PlayerStyle.entries,
                     { if (it == PlayerStyle.AppleMusic) "Apple Music" else stringResource(R.string.appearance_player_classic) }, setPlayerStyle,
+                )
+                AppearanceToggle(
+                    R.string.appearance_keep_screen_on,
+                    R.string.appearance_keep_screen_on_description,
+                    "sun.max",
+                    keepScreenOn,
+                    setKeepScreenOn,
                 )
                 AppearanceToggle(R.string.appearance_original_cover, R.string.appearance_original_cover_description, "photo", originalCover, setOriginalCover)
                 AppearanceChoice(
@@ -180,7 +213,6 @@ fun AppearanceSettings(
         selectedColor = androidx.compose.ui.graphics.Color(accentColorArgb.toInt()),
         onColorSelected = { color ->
             setAccentColorArgb(color.toArgb().toLong() and 0xFFFFFFFFL)
-            setDynamicTheme(false)
         },
         onDismiss = { showColorPicker = false },
         title = stringResource(R.string.appearance_accent_color),
@@ -220,7 +252,10 @@ private fun <T> AppearanceChoice(
     enabled: Boolean = true,
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             SfIcon(systemName, null)
             Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
             IosPopupButton(

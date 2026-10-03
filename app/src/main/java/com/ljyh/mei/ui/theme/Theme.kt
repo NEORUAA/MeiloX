@@ -59,15 +59,11 @@ private val AppTypography = Typography(
 )
 @Composable
 fun MusicTheme(
-    @Suppress("UNUSED_PARAMETER")
     seedColor: Color,
     isDark: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    // MeloX uses the system red tint globally. Keep it independent from artwork-derived
-    // colors so navigation, tabs, popup buttons and prominent controls never drift blue.
-    val targetAccent = if (isDark) Color(0xFFFF4245) else Color(0xFFFF3B30)
-    val accent by animateColorAsState(targetAccent, tween(600), label = "iOS accent")
+    val accent by animateColorAsState(seedColor, tween(600), label = "iOS accent")
     val colorScheme = if (isDark) {
         darkColorScheme(
             primary = accent,

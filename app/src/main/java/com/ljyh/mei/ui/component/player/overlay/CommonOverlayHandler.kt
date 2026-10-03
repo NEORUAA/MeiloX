@@ -191,7 +191,7 @@ fun CommonOverlayHandler(
                                         "checkmark",
                                         contentDescription = null,
                                         size = 17.dp,
-                                        tint = LocalGlassColors.current.accent,
+                                        tint = LocalGlassColors.current.content,
                                     )
                                 }
                             } else {
@@ -206,9 +206,11 @@ fun CommonOverlayHandler(
         is OverlayState.TrackActionMenu -> {
             TrackActionMenu(
                 targetTrack = overlay.track,
+                anchorBounds = overlay.anchorBounds,
+                onShare = { overlayHandler.showShare(overlay.track) },
                 onDismiss = overlayHandler::dismiss,
                 onAddToPlaylist = { overlayHandler.showAddToPlaylist(overlay.track.id) },
-                onDownloadTrack = { playerViewModel.downloadSong(overlay.track, context) },
+                onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
                 onCopyId = { setClipboard(context, overlay.track.id.toString(), "id") },
                 onCopyName = { setClipboard(context, overlay.track.title, "name") },
             )

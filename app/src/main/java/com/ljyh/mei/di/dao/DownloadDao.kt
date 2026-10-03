@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
+import com.ljyh.mei.data.model.room.Song
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -32,6 +33,15 @@ interface DownloadDao {
 
     @Query("SELECT * FROM download_task ORDER BY createdAt DESC")
     fun getAll(): Flow<List<DownloadTask>>
+
+    @Query(
+        """
+        SELECT song.* FROM song
+        INNER JOIN download_task ON song.id = download_task.songId
+        WHERE download_task.status = 'COMPLETED' AND song.path IS NOT NULL AND song.path != ''
+        """,
+    )
+    fun getPlayableSongs(): Flow<List<Song>>
 
     @Query("SELECT COUNT(*) FROM download_task WHERE status = 'DOWNLOADING' OR status = 'PENDING'")
     fun activeCount(): Flow<Int>

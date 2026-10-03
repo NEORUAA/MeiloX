@@ -238,7 +238,7 @@ data class Subscriber(
 
 data class AvatarDetail(
     @SerializedName("identityIconUrl")
-    val identityIconUrl: String,
+    val identityIconUrl: String?,
     @SerializedName("identityLevel")
     val identityLevel: Int,
     @SerializedName("userType")

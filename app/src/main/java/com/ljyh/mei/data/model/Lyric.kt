@@ -7,9 +7,9 @@ data class Lyric(
     @SerializedName("code")
     val code: Int,
     @SerializedName("klyric")
-    val klyric: Klyric,
+    val klyric: Klyric?,
     @SerializedName("lrc")
-    val lrc: Lrc,
+    val lrc: Lrc?,
     @SerializedName("qfy")
     val qfy: Boolean,
     @SerializedName("romalrc")
@@ -29,35 +29,35 @@ data class Lyric(
 ) {
     data class Klyric(
         @SerializedName("lyric")
-        val lyric: String,
+        val lyric: String?,
         @SerializedName("version")
         val version: Int
     )
 
     data class Lrc(
         @SerializedName("lyric")
-        val lyric: String,
+        val lyric: String?,
         @SerializedName("version")
         val version: Int
     )
 
     data class Romalrc(
         @SerializedName("lyric")
-        val lyric: String,
+        val lyric: String?,
         @SerializedName("version")
         val version: Int
     )
 
     data class Tlyric(
         @SerializedName("lyric")
-        val lyric: String,
+        val lyric: String?,
         @SerializedName("version")
         val version: Int
     )
 
     data class Yrc(
         @SerializedName("lyric")
-        val lyric: String,
+        val lyric: String?,
         @SerializedName("version")
         val version: Int
     )

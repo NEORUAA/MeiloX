@@ -1,397 +1,194 @@
 package com.ljyh.mei.ui.component.sheet
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.DraggableState
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import com.kyant.capsule.ContinuousRoundedRectangle
-import com.ljyh.mei.constants.NavigationBarAnimationSpec
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-
-private fun Modifier.bottomSheetGestureHandlers(
-    state: BottomSheetState,
-    onHorizontalSwipe: ((direction: HorizontalSwipeDirection) -> Unit)?,
-): Modifier = then(
-    if (onHorizontalSwipe == null) {
-        Modifier
-    } else {
-        Modifier.pointerInput(onHorizontalSwipe) {
-            val velocityTracker = VelocityTracker()
-            detectHorizontalDragGestures(
-                onDragStart = { velocityTracker.resetTracking() },
-                onHorizontalDrag = { change, _ ->
-                    velocityTracker.addPointerInputChange(change)
-                },
-                onDragEnd = {
-                    val velocity = velocityTracker.calculateVelocity().x
-                    val swipeThreshold = 500f
-
-                    if (velocity > swipeThreshold) {
-                        onHorizontalSwipe(HorizontalSwipeDirection.Right)
-                    } else if (velocity < -swipeThreshold) {
-                        onHorizontalSwipe(HorizontalSwipeDirection.Left)
-                    }
-                },
-            )
-        }
-    },
-).pointerInput(state) {
-    val velocityTracker = VelocityTracker()
-    var dragEnabled = true
-
-    detectVerticalDragGestures(
-        onDragStart = {
-            dragEnabled = !state.isDismissed
-        },
-        onVerticalDrag = { change, dragAmount ->
-            if (dragEnabled) {
-                velocityTracker.addPointerInputChange(change)
-                state.dispatchRawDelta(dragAmount)
-            }
-        },
-        onDragCancel = {
-            if (dragEnabled) {
-                velocityTracker.resetTracking()
-                state.snapTo(state.collapsedBound)
-            }
-            dragEnabled = true
-        },
-        onDragEnd = {
-            if (dragEnabled) {
-                val velocity = -velocityTracker.calculateVelocity().y
-                velocityTracker.resetTracking()
-                state.performFling(velocity, null)
-            } else {
-                velocityTracker.resetTracking()
-            }
-            dragEnabled = true
-        },
-    )
-}
-
-
-@Composable
-fun BottomSheet(
-    state: BottomSheetState,
-    modifier: Modifier = Modifier,
-    backgroundColor: Color = MaterialTheme.colorScheme.surface,
-    collapsedDragOffset: () -> Dp = { 0.dp },
-    collapsedDragHeight: Dp = 0.dp,
-    collapsedContentPadding: Dp = 0.dp,
-    onDismiss: (() -> Unit)? = null,
-    onHorizontalSwipe: ((direction: HorizontalSwipeDirection) -> Unit)? = null,
-    backgroundContent: @Composable BoxScope.() -> Unit = {},
-    collapsedContent: @Composable BoxScope.() -> Unit,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    // The collapsed glass surface draws a crisp outer stroke. Give its host a small amount of
-    // headroom so the stroke is not cut by the rounded sheet clip, while compensating both the
-    // sheet and the child so the mini-player keeps the same visual anchor.
-    val collapsedSurfaceOffset = if (
-        collapsedDragHeight > 0.dp && collapsedContentPadding > 0.dp && !state.isDismissed
-    ) {
-        collapsedContentPadding * (1f - state.progress).coerceIn(0f, 1f)
-    } else {
-        0.dp
-    }
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .offset {
-                val y = (state.expandedBound - state.value)
-                    .roundToPx()
-                    .coerceAtLeast(0) - collapsedSurfaceOffset.roundToPx()
-                IntOffset(x = 0, y = y)
-            }
-            .then(
-                if (!state.isDismissed &&
-                    !(state.isCollapsed && collapsedDragHeight > 0.dp)
-                ) {
-                    Modifier.bottomSheetGestureHandlers(state, onHorizontalSwipe)
-                } else {
-                    Modifier
-                },
-            )
-            .clip(
-                ContinuousRoundedRectangle(
-                    topStart = if (!state.isExpanded) 16.dp else 0.dp,
-                    topEnd = if (!state.isExpanded) 16.dp else 0.dp
-                )
-            )
-            // The collapsed player is a floating liquid-glass capsule. Keep the sheet host
-            // transparent at that anchor so the page remains visible around it, then restore
-            // the full player background continuously while expanding.
-            .background(backgroundColor.copy(alpha = state.progress.coerceIn(0f, 1f)))
-    ) {
-        // Native player backgrounds use a full-screen AndroidView. Do not keep that view in
-        // the collapsed composition: even when transparent, it can remain the top hit target
-        // and block the page behind the mini player.
-        if (!state.isCollapsed) {
-            backgroundContent()
-        }
-
-        if (!state.isCollapsed && !state.isDismissed) {
-            BackHandler(onBack = state::collapseSoft)
-        }
-
-        if (!state.isCollapsed) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        alpha = ((state.progress - 0.25f) * 4).coerceIn(0f, 1f)
-                    },
-                content = content
-            )
-        }
-
-        if (!state.isExpanded && (onDismiss == null || !state.isDismissed)) {
-            Box(
-                modifier = Modifier
-                    .graphicsLayer {
-                        alpha = 1f - (state.progress * 4).coerceAtMost(1f)
-                    }
-                    .fillMaxWidth()
-                    .height(state.collapsedBound),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(
-                            if (collapsedDragHeight > 0.dp) {
-                                collapsedDragHeight
-                            } else {
-                                state.collapsedBound
-                            },
-                        )
-                        .offset {
-                            val offset = if (collapsedDragHeight > 0.dp) {
-                                collapsedDragOffset() + collapsedSurfaceOffset
-                            } else {
-                                0.dp
-                            }
-                            IntOffset(x = 0, y = offset.roundToPx())
-                        }
-                        .then(
-                            if (!state.isExpanded && !state.isDismissed && collapsedDragHeight > 0.dp) {
-                                Modifier.bottomSheetGestureHandlers(state, onHorizontalSwipe)
-                            } else {
-                                Modifier
-                            },
-                        ),
-                    content = collapsedContent,
-                )
-            }
-        }
-    }
-}
-
 @Stable
-class BottomSheetState(
-    draggableState: DraggableState,
+class BottomSheetState internal constructor(
     private val coroutineScope: CoroutineScope,
-    private val animatable: Animatable<Dp, AnimationVector1D>,
+    private val density: Float,
     private val onAnchorChanged: (Int) -> Unit,
+    val dismissedBound: Dp,
     val collapsedBound: Dp,
-) : DraggableState by draggableState {
-    val dismissedBound: Dp
-        get() = animatable.lowerBound!!
+    val expandedBound: Dp,
+    initialValue: Dp,
+    initialAnchor: Int,
+    previouslyShown: Boolean = false,
+) {
+    private val animation = Animatable(initialValue, Dp.VectorConverter)
+    private var motionJob: Job? = null
+    private var lastDragDelta = 0f
+    private var dragOriginOpen = initialAnchor == expandedAnchor
+    private var relocating by mutableStateOf(initialAnchor == collapsedAnchor && initialValue != collapsedBound)
 
-    val expandedBound: Dp
-        get() = animatable.upperBound!!
+    var hasBeenShown by mutableStateOf(previouslyShown || initialAnchor == expandedAnchor)
+        private set
 
-    val value by animatable.asState()
+    var value by mutableStateOf(initialValue)
+        private set
+    var targetAnchor by mutableIntStateOf(initialAnchor)
+        private set
+    var isDragging by mutableStateOf(false)
+        private set
 
-    val isDismissed by derivedStateOf {
-        value == animatable.lowerBound!!
-    }
+    val isDismissed get() = value <= dismissedBound && targetAnchor == dismissedAnchor
+    val isCollapsed get() = relocating || value == collapsedBound && !isDragging && targetAnchor == collapsedAnchor
+    val isExpanded get() = value == expandedBound && !isDragging && targetAnchor == expandedAnchor
+    val progress: Float get() = if (relocating || expandedBound <= collapsedBound) 0f else
+        ((value - collapsedBound) / (expandedBound - collapsedBound)).coerceIn(0f, 1f)
+    val isTransitioning get() = !relocating && (isDragging || when (targetAnchor) {
+        expandedAnchor -> value < expandedBound
+        else -> value > collapsedBound
+    })
 
-    val isCollapsed by derivedStateOf {
-        value == collapsedBound
-    }
+    fun collapse(animationSpec: AnimationSpec<Dp>) = settle(collapsedAnchor, animationSpec)
+    fun expand(animationSpec: AnimationSpec<Dp>) = settle(expandedAnchor, animationSpec)
+    fun collapseSoft() = collapse(playerSheetSpring())
+    fun expandSoft() = expand(playerSheetSpring())
+    fun dismiss() = settle(dismissedAnchor, playerSheetSpring())
 
-    val isExpanded by derivedStateOf {
-        value == animatable.upperBound
-    }
+    internal fun relocate() = settle(targetAnchor, playerSheetSpring())
+    internal fun dispose() { motionJob?.cancel() }
 
-    val progress by derivedStateOf {
-        1f - (animatable.upperBound!! - animatable.value) / (animatable.upperBound!! - collapsedBound)
-    }
-
-    /** Delays expanded-player artwork until the sheet has visibly left the mini-player. */
-    val revealProgress by derivedStateOf {
-        ((progress - 0.12f) / 0.28f).coerceIn(0f, 1f)
-    }
-
-    fun collapse(animationSpec: AnimationSpec<Dp>) {
-        onAnchorChanged(collapsedAnchor)
-        coroutineScope.launch {
-            animatable.animateTo(collapsedBound, animationSpec)
+    private fun settle(anchor: Int, spec: AnimationSpec<Dp>, velocity: Dp? = null) {
+        val releaseVelocity = velocity ?: if (motionJob?.isActive == true) animation.velocity else 0.dp
+        motionJob?.cancel()
+        isDragging = false
+        targetAnchor = anchor
+        if (anchor == expandedAnchor) {
+            hasBeenShown = true
+            relocating = false
         }
-    }
-
-    fun expand(animationSpec: AnimationSpec<Dp>) {
-        onAnchorChanged(expandedAnchor)
-        coroutineScope.launch {
-            animatable.animateTo(animatable.upperBound!!, animationSpec)
+        onAnchorChanged(anchor)
+        val target = when (anchor) {
+            expandedAnchor -> expandedBound
+            collapsedAnchor -> collapsedBound
+            else -> dismissedBound
         }
-    }
-
-    private fun collapse() {
-        collapse(SpringSpec())
-    }
-
-    private fun expand() {
-        expand(SpringSpec())
-    }
-
-    fun collapseSoft() {
-        collapse(spring(stiffness = Spring.StiffnessMediumLow))
-    }
-
-    fun expandSoft() {
-        expand(spring(stiffness = Spring.StiffnessMediumLow))
-    }
-
-    fun dismiss() {
-        onAnchorChanged(dismissedAnchor)
-        coroutineScope.launch {
-            animatable.animateTo(animatable.lowerBound!!)
+        val start = value
+        val lowerBound = if (anchor == dismissedAnchor || start < collapsedBound) dismissedBound else collapsedBound
+        motionJob = coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            animation.snapTo(start)
+            animation.animateTo(target, spec, initialVelocity = releaseVelocity) {
+                this@BottomSheetState.value = this.value.coerceIn(lowerBound, expandedBound)
+            }
+            value = target
+            relocating = false
         }
     }
 
     fun snapTo(value: Dp) {
-        coroutineScope.launch {
-            animatable.snapTo(value)
-        }
+        motionJob?.cancel()
+        isDragging = false
+        relocating = false
+        this.value = value.coerceIn(dismissedBound, expandedBound)
     }
 
+    fun beginDrag() {
+        if (isDismissed || isDragging) return
+        motionJob?.cancel()
+        hasBeenShown = true
+        relocating = false
+        dragOriginOpen = targetAnchor == expandedAnchor
+        lastDragDelta = 0f
+        isDragging = true
+    }
+
+    fun dispatchRawDelta(delta: Float) {
+        if (isDismissed) return
+        if (!isDragging) beginDrag()
+        if (delta != 0f) lastDragDelta = delta
+        value = playerDragValue(value.value, delta, density, collapsedBound.value, expandedBound.value).dp
+    }
+
+    fun cancelDrag() {
+        if (!isDragging) return
+        settle(if (dragOriginOpen) expandedAnchor else collapsedAnchor, playerSheetSpring(), 0.dp)
+    }
+
+    /** Velocity follows the existing sheet API: positive is upward, in pixels/second. */
     fun performFling(velocity: Float, onDismiss: (() -> Unit)?) {
-        if (velocity > 250) {
-            expand()
-        } else if (velocity < -250) {
-            if (value < collapsedBound && onDismiss != null) {
-                dismiss()
-                onDismiss.invoke()
-            } else {
-                collapse()
-            }
-        } else {
-            val l0 = dismissedBound
-            val l1 = (collapsedBound - dismissedBound) / 2
-            val l2 = (expandedBound - collapsedBound) / 2
-            val l3 = expandedBound
-
-            when (value) {
-                in l0..l1 -> {
-                    if (onDismiss != null) {
-                        dismiss()
-                        onDismiss.invoke()
-                    } else {
-                        collapse()
-                    }
-                }
-
-                in l1..l2 -> collapse()
-                in l2..l3 -> expand()
-                else -> Unit
-            }
+        if (value < collapsedBound && onDismiss != null) {
+            dismiss()
+            onDismiss()
+            return
         }
+        val opens = playerDragOpens(-velocity, lastDragDelta, dragOriginOpen)
+        settle(if (opens) expandedAnchor else collapsedAnchor, playerSheetSpring(), (velocity / density).dp)
     }
 
-    val preUpPostDownNestedScrollConnection
-        get() = object : NestedScrollConnection {
-            var isTopReached = false
+    val preUpPostDownNestedScrollConnection = object : NestedScrollConnection {
+        var isTopReached = false
 
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (isExpanded && available.y < 0) {
-                    isTopReached = false
-                }
-
-                return if (isTopReached && available.y < 0 && source == NestedScrollSource.UserInput) {
-                    dispatchRawDelta(available.y)
-                    available
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (!isTopReached) {
-                    isTopReached = consumed.y == 0f && available.y > 0
-                }
-
-                return if (isTopReached && source == NestedScrollSource.UserInput) {
-                    dispatchRawDelta(available.y)
-                    available
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                return if (isTopReached) {
-                    val velocity = -available.y
-                    performFling(velocity, null)
-
-                    available
-                } else {
-                    Velocity.Zero
-                }
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (isExpanded && available.y < 0) {
                 isTopReached = false
-                return Velocity.Zero
+            }
+
+            return if (isTopReached && available.y < 0 && source == NestedScrollSource.UserInput) {
+                dispatchRawDelta(available.y)
+                available
+            } else {
+                Offset.Zero
             }
         }
+
+        override fun onPostScroll(
+            consumed: Offset,
+            available: Offset,
+            source: NestedScrollSource,
+        ): Offset {
+            if (!isTopReached) {
+                isTopReached = consumed.y == 0f && available.y > 0
+            }
+
+            return if (isTopReached && source == NestedScrollSource.UserInput) {
+                dispatchRawDelta(available.y)
+                available
+            } else {
+                Offset.Zero
+            }
+        }
+
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            return if (isTopReached) {
+                val velocity = -available.y
+                performFling(velocity, null)
+
+                available
+            } else {
+                Velocity.Zero
+            }
+        }
+
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+            isTopReached = false
+            return Velocity.Zero
+        }
+    }
 }
 
 const val expandedAnchor = 2
@@ -405,44 +202,26 @@ fun rememberBottomSheetState(
     collapsedBound: Dp = dismissedBound,
     initialAnchor: Int = dismissedAnchor,
 ): BottomSheetState {
-    val density = LocalDensity.current
+    val density = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
-
-    var previousAnchor by rememberSaveable {
-        mutableIntStateOf(initialAnchor)
-    }
-    val animatable = remember {
-        Animatable(0.dp, Dp.VectorConverter)
-    }
-
-
-    return remember(dismissedBound, expandedBound, collapsedBound, coroutineScope) {
-        val initialValue = when (previousAnchor) {
+    var previousAnchor by rememberSaveable { mutableIntStateOf(initialAnchor) }
+    val previousState = remember { arrayOfNulls<BottomSheetState>(1) }
+    val state = remember(density, dismissedBound, expandedBound, collapsedBound) {
+        val initialValue = previousState[0]?.value ?: when (previousAnchor) {
             expandedAnchor -> expandedBound
             collapsedAnchor -> collapsedBound
-            dismissedAnchor -> dismissedBound
-            else -> error("Unknown BottomSheet anchor")
+            else -> dismissedBound
         }
-
-        animatable.updateBounds(dismissedBound.coerceAtMost(expandedBound), expandedBound)
-        coroutineScope.launch {
-            animatable.animateTo(initialValue, NavigationBarAnimationSpec)
-        }
-
         BottomSheetState(
-            draggableState = DraggableState { delta ->
-                coroutineScope.launch {
-                    animatable.snapTo(animatable.value - with(density) { delta.toDp() })
-                }
-            },
-            onAnchorChanged = { previousAnchor = it },
-            coroutineScope = coroutineScope,
-            animatable = animatable,
-            collapsedBound = collapsedBound,
-        )
+            coroutineScope, density, { previousAnchor = it }, dismissedBound,
+            collapsedBound.coerceAtMost(expandedBound), expandedBound,
+            initialValue.coerceIn(dismissedBound, expandedBound), previousAnchor,
+            previouslyShown = previousState[0]?.hasBeenShown == true,
+        ).also { previousState[0] = it }
     }
+    DisposableEffect(state) { onDispose { state.dispose() } }
+    LaunchedEffect(state) { state.relocate() }
+    return state
 }
-// 在你的文件顶部或一个合适的位置定义这个枚举
-enum class HorizontalSwipeDirection {
-    Left, Right
-}
+
+enum class HorizontalSwipeDirection { Left, Right }

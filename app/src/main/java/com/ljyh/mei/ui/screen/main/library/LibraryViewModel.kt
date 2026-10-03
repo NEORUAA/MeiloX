@@ -18,6 +18,7 @@ import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.repository.AlbumsRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -127,11 +128,23 @@ class LibraryViewModel @Inject constructor(
     fun getLikedSongs(playlistId: Long) {
         viewModelScope.launch {
             _likedSongsLoading.value = true
-            when (val result = playlistRepository.getPlaylistDetail(playlistId.toString())) {
-                is Resource.Success -> _likedSongs.value = result.data.toMiniPlaylistDetail().tracks
-                else -> Unit
+            try {
+                when (val result = playlistRepository.getPlaylistDetail(playlistId.toString())) {
+                    is Resource.Success -> {
+                        val initialTracks = result.data.toMiniPlaylistDetail().tracks
+                        _likedSongs.value = try {
+                            playlistRepository.getCompletePlaylistTracks(result.data)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            initialTracks
+                        }
+                    }
+                    else -> Unit
+                }
+            } finally {
+                _likedSongsLoading.value = false
             }
-            _likedSongsLoading.value = false
         }
     }
 

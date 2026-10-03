@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -40,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -50,7 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
@@ -73,6 +76,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlin.math.sin
 
@@ -94,7 +98,11 @@ private val LocalLiquidTabScale = staticCompositionLocalOf { { 1f } }
 /** Shared compact icon endpoint for the bottom navigation and its adjacent search control. */
 val CompactBottomControlIconSize = 22.dp
 
-private val ExpandedNavigationIconSize = 24.dp
+private val ExpandedNavigationIconSize = 28.dp
+private val NavigationLabelStyle = IosTypography.caption.copy(
+    fontSize = 10.sp,
+    lineHeight = 13.sp,
+)
 private const val CompactIndicatorFadeStart = 0.74f
 private const val CompactIndicatorFadeEnd = 0.98f
 private const val CompactTabContentScaleFloor = 0.82f
@@ -132,13 +140,21 @@ fun <T> GlassBottomBar(
     selectedKey: T,
     onSelected: (T) -> Unit,
     onExpand: () -> Unit,
-    compactProgress: Float,
+    compactProgress: State<Float>,
     compactSize: Dp,
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalGlassBackdrop.current,
 ) {
     require(items.isNotEmpty())
-    val compact = compactProgress.coerceIn(0f, 1f)
+    val compactState = remember(compactProgress) {
+        derivedStateOf { compactProgress.value.coerceIn(0f, 1f) }
+    }
+    val morphing by remember(compactProgress) {
+        derivedStateOf { compactProgress.value != 0f && compactProgress.value != 1f }
+    }
+    val compactMode by remember(compactState) {
+        derivedStateOf { compactState.value >= CompactIndicatorFadeStart }
+    }
     val onSelectedState = rememberUpdatedState(onSelected)
     val stableOnSelected: (T) -> Unit = remember {
         { key -> onSelectedState.value(key) }
@@ -154,7 +170,6 @@ fun <T> GlassBottomBar(
     val indicatorBackdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop)
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
-    val compactState = rememberUpdatedState(compact)
     val onExpandState = rememberUpdatedState(onExpand)
     val selectedIndexState = rememberUpdatedState(selectedIndex)
 
@@ -162,26 +177,46 @@ fun <T> GlassBottomBar(
         val density = LocalDensity.current
         val fullWidthPx = constraints.maxWidth.toFloat()
         val compactWidthPx = with(density) { compactSize.toPx() }
-        val indicatorSettled = compact >= CompactIndicatorFadeEnd
-        val surfaceWidthPx = morphSurfaceWidthPx(fullWidthPx, compactWidthPx, compact)
-        val surfaceWidth = with(density) { surfaceWidthPx.toDp() }
-        val surfaceHeight = androidx.compose.ui.unit.lerp(64.dp, compactSize, compact)
+        val indicatorSettled by remember(compactState) {
+            derivedStateOf { compactState.value >= CompactIndicatorFadeEnd }
+        }
+        // Geometry changes belong to measurement. Do not rebuild the tab/source/effect
+        // compositions on every spring frame just to update their width and height.
+        val surfaceSizeModifier = remember(compactState, fullWidthPx, compactWidthPx, compactSize) {
+            Modifier.layout { measurable, constraints ->
+                val progress = compactState.value
+                val width = constraints.constrainWidth(
+                    morphSurfaceWidthPx(fullWidthPx, compactWidthPx, progress).roundToInt(),
+                )
+                val height = constraints.constrainHeight(
+                    androidx.compose.ui.unit.lerp(64.dp, compactSize, progress).roundToPx(),
+                )
+                val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(width, height))
+                layout(width, height) { placeable.placeRelative(0, 0) }
+            }
+        }
         val paddingPx = with(density) { 4.dp.toPx() }
         val expandedTabWidthPx = ((fullWidthPx - paddingPx * 2f) / tabItems.size)
             .coerceAtLeast(1f)
         val compactInnerWidthPx = (compactWidthPx - paddingPx * 2f).coerceAtLeast(1f)
         val tabWidthPx = expandedTabWidthPx
-        val indicatorWidthPx = if (indicatorSettled) {
-            compactWidthPx
-        } else {
-            lerp(expandedTabWidthPx, compactInnerWidthPx, compact)
+        val innerGlassVisibilityState = remember(compactState) {
+            derivedStateOf { compactIndicatorVisibility(compactState.value) }
         }
-        val indicatorWidth = with(density) {
-            indicatorWidthPx.toDp()
+        val indicatorSizeModifier = remember(
+            compactState, expandedTabWidthPx, compactInnerWidthPx, compactWidthPx, compactSize,
+        ) {
+            Modifier.layout { measurable, constraints ->
+                val progress = compactState.value
+                val settled = progress >= CompactIndicatorFadeEnd
+                val width = constraints.constrainWidth((if (settled) compactWidthPx else
+                    lerp(expandedTabWidthPx, compactInnerWidthPx, progress)).roundToInt())
+                val height = constraints.constrainHeight((if (settled) compactSize else
+                    androidx.compose.ui.unit.lerp(56.dp, compactSize - 8.dp, progress)).roundToPx())
+                val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(width, height))
+                layout(width, height) { placeable.placeRelative(0, 0) }
+            }
         }
-        val expandedIndicatorVisibility = (1f - compact * 1.5f).coerceIn(0f, 1f)
-        val innerGlassVisibility = compactIndicatorVisibility(compact)
-        val innerGlassVisibilityState = rememberUpdatedState(innerGlassVisibility)
         val offsetAnimation = remember { Animatable(0f) }
         var currentIndex by remember { mutableIntStateOf(selectedIndex) }
         val dragAnimation = remember(animationScope, tabItems.size) {
@@ -216,7 +251,7 @@ fun <T> GlassBottomBar(
                 },
             )
         }
-        LaunchedEffect(selectedIndex, compact >= 0.74f) {
+        LaunchedEffect(selectedIndex, compactMode) {
             currentIndex = selectedIndex
             dragAnimation.animateToValue(selectedIndex.toFloat())
         }
@@ -310,7 +345,7 @@ fun <T> GlassBottomBar(
                     (1f - compactState.value).coerceAtLeast(CompactTabContentScaleFloor)
             }
         }
-        val selectedIconLateScaleProvider: () -> Float = remember(compactState) {
+        val selectedContentLateScaleProvider: () -> Float = remember(compactState) {
             {
                 // Keep the icon geometry continuous through p = 0.98; only the settled
                 // transparent indicator/source composition uses CompactIndicatorFadeEnd.
@@ -334,7 +369,15 @@ fun <T> GlassBottomBar(
                 scaleY = scale
             }
         }
-        val navigationGlassModifier = remember(
+        val morphingNavigationGlass = rememberMorphingNavigationGlass(
+            backdrop = backdrop,
+            active = morphing,
+            shape = Capsule(),
+            tint = containerColor,
+            pressProgress = { pressProgressState.value },
+            layerBlock = pressLayerBlock,
+        )
+        val navigationGlassModifier = if (morphing) morphingNavigationGlass else remember(
             backdrop,
             containerColor,
             pressProgressState,
@@ -351,7 +394,17 @@ fun <T> GlassBottomBar(
         val hiddenLayerBackdropModifier = remember(tabsBackdrop) {
             Modifier.layerBackdrop(tabsBackdrop)
         }
-        val hiddenBackdropModifier = remember(
+        val morphingHiddenGlass = rememberMorphingNavigationGlass(
+            backdrop = backdrop,
+            active = morphing,
+            shape = Capsule(),
+            tint = containerColor,
+            pressProgress = { pressProgressState.value },
+            layerBlock = pressLayerBlock,
+            tintMultiplier = 1f,
+            lensSource = true,
+        )
+        val hiddenBackdropModifier = if (morphing) morphingHiddenGlass else remember(
             backdrop,
             containerColor,
             pressProgressState,
@@ -379,8 +432,9 @@ fun <T> GlassBottomBar(
                     onDrawSurface = { drawRect(containerColor) },
                 )
         }
-        val expandedIndicatorVisibilityState = rememberUpdatedState(expandedIndicatorVisibility)
-        val expandedIconOffsetYPx = with(density) { (-9.5).dp.toPx() }
+        val expandedIndicatorVisibilityState = remember(compactState) {
+            derivedStateOf { (1f - compactState.value * 1.5f).coerceIn(0f, 1f) }
+        }
         val indicatorPositionLayerBlock: GraphicsLayerScope.() -> Unit = remember(
             compactState,
             offsetAnimation,
@@ -448,7 +502,7 @@ fun <T> GlassBottomBar(
                 alpha = innerGlassVisibilityState.value
             }
         }
-        val indicatorBackdropModifier = if (compact < CompactIndicatorFadeEnd) {
+        val indicatorBackdropModifier = if (!indicatorSettled) {
             remember(
                 indicatorBackdrop,
                 dragAnimation,
@@ -525,12 +579,11 @@ fun <T> GlassBottomBar(
         CompositionLocalProvider(LocalLiquidTabScale provides visibleTabContentScale) {
             Row(
                 modifier = Modifier
-                    .width(surfaceWidth)
-                    .height(surfaceHeight)
+                    .then(surfaceSizeModifier)
                     .then(commonTransform)
                     .then(navigationGlassModifier)
                     .then(interactiveHighlight.modifier)
-                    .then(if (compact >= 0.74f) Modifier.clearAndSetSemantics {} else Modifier)
+                    .then(if (compactMode) Modifier.clearAndSetSemantics {} else Modifier)
                     .padding(4.dp)
                     .clip(Capsule()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -545,14 +598,14 @@ fun <T> GlassBottomBar(
                             items = stableItems,
                             selectedKey = selectedItem.key,
                             onSelected = stableOnSelected,
-                            enabled = compact < 0.74f,
+                            enabled = !compactMode,
                             alpha = tabContentAlpha,
                             selectedColorFilter = selectedIconColorFilterState,
-                            hideSelectedIcon = true,
+                            hideSelectedItem = true,
                         )
                     }
-                    MorphingSelectedNavigationIcon(
-                        symbol = selectedItem.symbol,
+                    MorphingSelectedNavigationItem(
+                        item = selectedItem,
                         compactProgress = compactState,
                         fullWidthPx = fullWidthPx,
                         compactWidthPx = compactWidthPx,
@@ -560,8 +613,8 @@ fun <T> GlassBottomBar(
                         selectedIndex = selectedIndex,
                         isLtr = isLtr,
                         horizontalInsetPx = paddingPx,
-                        expandedIconOffsetYPx = expandedIconOffsetYPx,
-                        selectedIconLateScale = selectedIconLateScaleProvider,
+                        selectedContentLateScale = selectedContentLateScaleProvider,
+                        labelAlpha = tabContentAlpha,
                         selectedIconColorFilter = selectedIconColorFilterState,
                         contentColor = colors.content,
                     )
@@ -569,15 +622,14 @@ fun <T> GlassBottomBar(
             }
         }
 
-        if (compact < CompactIndicatorFadeEnd) {
+        if (!indicatorSettled) {
             CompositionLocalProvider(LocalLiquidTabScale provides lensSourceTabContentScale) {
                 Row(
                     modifier = Modifier
                         .clearAndSetSemantics {}
                         .alpha(0f)
                         .then(hiddenLayerBackdropModifier)
-                        .width(surfaceWidth)
-                        .height(surfaceHeight)
+                        .then(surfaceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
                         .then(interactiveHighlight.modifier)
@@ -600,15 +652,14 @@ fun <T> GlassBottomBar(
                                 // is visually hidden, but it sits above the visible row in the hit-test tree.
                                 // The source content is accent-filtered as one unit so every item
                                 // sampled through the Lens uses the same emphasis color.
-                                enabled = compact < 0.74f,
+                                enabled = !compactMode,
                                 alpha = tabContentAlpha,
                                 selectedColorFilter = selectedIconColorFilterState,
-                                iconOffsetY = 1.5.dp,
-                                hideSelectedIcon = true,
+                                hideSelectedItem = true,
                             )
                         }
-                        MorphingSelectedNavigationIcon(
-                            symbol = selectedItem.symbol,
+                        MorphingSelectedNavigationItem(
+                            item = selectedItem,
                             compactProgress = compactState,
                             fullWidthPx = fullWidthPx,
                             compactWidthPx = compactWidthPx,
@@ -616,8 +667,8 @@ fun <T> GlassBottomBar(
                             selectedIndex = selectedIndex,
                             isLtr = isLtr,
                             horizontalInsetPx = paddingPx,
-                            expandedIconOffsetYPx = expandedIconOffsetYPx,
-                            selectedIconLateScale = selectedIconLateScaleProvider,
+                            selectedContentLateScale = selectedContentLateScaleProvider,
+                            labelAlpha = tabContentAlpha,
                             selectedIconColorFilter = selectedIconColorFilterState,
                             contentColor = colors.content,
                         )
@@ -632,16 +683,9 @@ fun <T> GlassBottomBar(
                 .then(interactiveHighlight.gestureModifier)
                 .then(dragAnimation.modifier)
                 .then(indicatorBackdropModifier)
-                .height(
-                    if (indicatorSettled) {
-                        compactSize
-                    } else {
-                        androidx.compose.ui.unit.lerp(56.dp, compactSize - 8.dp, compact)
-                    },
-                )
-                .width(indicatorWidth)
+                .then(indicatorSizeModifier)
                 .then(
-                    if (compact >= 0.74f) {
+                    if (compactMode) {
                         Modifier
                             .clickable(
                                 interactionSource = null,
@@ -668,8 +712,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
     enabled: Boolean,
     alpha: () -> Float,
     selectedColorFilter: State<ColorFilter>,
-    iconOffsetY: Dp = 0.dp,
-    hideSelectedIcon: Boolean = false,
+    hideSelectedItem: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val scale = LocalLiquidTabScale.current
@@ -688,7 +731,7 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
                     onClick = { onSelected(item.key) },
                 )
                 .graphicsLayer {
-                    this.alpha = alpha()
+                    this.alpha = if (selected && hideSelectedItem) 0f else alpha()
                     val contentScale = scale()
                     scaleX = contentScale
                     scaleY = contentScale
@@ -696,55 +739,89 @@ private fun <T> androidx.compose.foundation.layout.RowScope.FullTabContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            SfIcon(
-                symbol = item.symbol,
-                contentDescription = if (selected && hideSelectedIcon) {
-                    null
-                } else {
-                    item.contentDescription
-                },
-                tint = if (selected) colors.accent else colors.content,
-                size = 24.dp,
-                weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                modifier = Modifier
-                    .padding(top = 3.dp)
-                    .offset(y = iconOffsetY)
-                    .then(
-                        if (selected) {
-                            Modifier.graphicsLayer {
-                                if (hideSelectedIcon) this.alpha = 0f
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-            )
-            Text(
-                text = item.label,
-                color = colors.content,
-                style = IosTypography.caption,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(top = 1.dp, bottom = 4.dp)
-                    .then(
-                        if (selected) {
-                            Modifier.graphicsLayer {
-                                colorFilter = selectedColorFilter.value
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
+            NavigationTabContent(
+                item = item,
+                selected = selected,
+                selectedColorFilter = selectedColorFilter,
             )
         }
     }
 }
 
 @Composable
-private fun BoxScope.MorphingSelectedNavigationIcon(
-    symbol: SfSymbol,
+private fun <T> NavigationTabContent(
+    item: GlassTabItem<T>,
+    selected: Boolean,
+    selectedColorFilter: State<ColorFilter>? = null,
+    selectedIconTint: Color? = null,
+    labelAlpha: (() -> Float)? = null,
+) {
+    val colors = LocalGlassColors.current
+    val labelVisibility = labelAlpha?.invoke()?.coerceIn(0f, 1f) ?: 1f
+    SfIcon(
+        symbol = item.symbol,
+        contentDescription = item.contentDescription,
+        tint = if (selected) selectedIconTint ?: colors.accent else colors.content,
+        size = ExpandedNavigationIconSize,
+        weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        modifier = Modifier
+            .padding(top = 3.dp * labelVisibility)
+            .then(
+                if (selected && selectedColorFilter != null) {
+                    Modifier.graphicsLayer {
+                        colorFilter = selectedColorFilter.value
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    )
+    Text(
+        text = item.label,
+        color = colors.content,
+        style = NavigationLabelStyle,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .then(
+                if (labelAlpha != null) {
+                    Modifier.collapseVertically(labelVisibility)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(top = 1.dp, bottom = 4.dp)
+            .then(
+                if (labelAlpha != null || (selected && selectedColorFilter != null)) {
+                    Modifier.graphicsLayer {
+                        if (labelAlpha != null) {
+                            alpha = labelVisibility
+                        }
+                        if (selected) {
+                            selectedColorFilter?.let { colorFilter = it.value }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    )
+}
+
+private fun Modifier.collapseVertically(fraction: Float): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val height = (placeable.height * fraction.coerceIn(0f, 1f))
+        .roundToInt()
+        .coerceIn(constraints.minHeight, constraints.maxHeight)
+    layout(placeable.width, height) {
+        placeable.placeRelative(0, 0)
+    }
+}
+
+@Composable
+private fun <T> BoxScope.MorphingSelectedNavigationItem(
+    item: GlassTabItem<T>,
     compactProgress: State<Float>,
     fullWidthPx: Float,
     compactWidthPx: Float,
@@ -752,20 +829,27 @@ private fun BoxScope.MorphingSelectedNavigationIcon(
     selectedIndex: Int,
     isLtr: Boolean,
     horizontalInsetPx: Float,
-    expandedIconOffsetYPx: Float,
-    selectedIconLateScale: () -> Float,
+    selectedContentLateScale: () -> Float,
+    labelAlpha: () -> Float,
     selectedIconColorFilter: State<ColorFilter>,
     contentColor: Color,
 ) {
     val sharedTabScale = LocalLiquidTabScale.current
-    SfIcon(
-        symbol = symbol,
-        contentDescription = null,
-        tint = contentColor,
-        size = ExpandedNavigationIconSize,
-        weight = FontWeight.SemiBold,
+    val density = LocalDensity.current
+    val currentContentWidthPx = morphSurfaceWidthPx(
+        fullWidthPx,
+        compactWidthPx,
+        compactProgress.value.coerceIn(0f, 1f),
+    ) - 2f * horizontalInsetPx
+    val selectedTabWidth = with(density) {
+        (currentContentWidthPx / itemCount)
+            .coerceAtLeast(ExpandedNavigationIconSize.toPx())
+            .toDp()
+    }
+    Box(
         modifier = Modifier
             .align(Alignment.Center)
+            .fillMaxSize()
             .graphicsLayer {
                 val progress = compactProgress.value.coerceIn(0f, 1f)
                 val expandedContentWidth = fullWidthPx - 2f * horizontalInsetPx
@@ -785,14 +869,29 @@ private fun BoxScope.MorphingSelectedNavigationIcon(
                 val compactCenter = compactContentWidth / 2f
                 val targetCenter = lerp(expandedCenter, compactCenter, progress)
                 translationX = targetCenter - currentContentWidth / 2f
-                translationY = lerp(expandedIconOffsetYPx, 0f, progress)
-                // The shared tab scale owns press deformation and the <= 0.74 morph. Apply
-                // only the late compact correction here so the press scale is not duplicated.
-                val scale = sharedTabScale() * selectedIconLateScale()
+                // Scale the selected icon and label as one tab item. The shared tab scale owns
+                // press deformation and the <= 0.74 morph; the late correction only reconciles
+                // the expanded icon size with the compact control endpoint.
+                val scale = sharedTabScale() * selectedContentLateScale()
                 scaleX = scale
                 scaleY = scale
-                alpha = 1f
-                colorFilter = selectedIconColorFilter.value
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(selectedTabWidth)
+                .fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            NavigationTabContent(
+                item = item,
+                selected = true,
+                selectedColorFilter = selectedIconColorFilter,
+                selectedIconTint = contentColor,
+                labelAlpha = labelAlpha,
+            )
+        }
+    }
 }
