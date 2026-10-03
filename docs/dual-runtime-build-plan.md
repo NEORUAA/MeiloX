@@ -39,7 +39,8 @@ From 2026-10-03, use only the user's `HyperOS_4_Official_API_37` AVD for device
 validation. Its migration-time serial is `emulator-5574`, Android API 37, arm64,
 4 KB pages, KernelSU root and LSPosed 2.2.0/API 102. Identify the AVD by name before
 selecting a serial; emulator ports may change. This remains emulator evidence,
-not physical-device acceptance or a framework-free standalone test.
+not physical-device acceptance. The unscoped standalone-process qualification below
+does not require uninstalling/disabling the device's framework.
 
 Do not run further tests on `Pixel_10_Pro` (`emulator-5554` at migration time).
 Existing Pixel/16 KB checkpoints remain historical, bounded evidence. The user
@@ -148,9 +149,9 @@ The latest acceptance state is:
 | Step | Established evidence | Remaining exit gates |
 | --- | --- | --- |
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
-| D2 | Both debug artifacts build and execute separately on the existing rooted AVD; package registration and implementation isolation verified | Standalone execution on a framework-free device; permission for the temporary AVD is pending |
+| D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
-| D4 | Core feature adapters and session-owned actions are implemented and covered by paired contracts; both current production-ID R8 clients consume distinct authenticated weekly/all-time server records | Complete real business/failure/account coverage, cooperating social/Together accounts and scoped upload/write acceptance; server counter reads do not qualify individual report settlement |
+| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room | Together join is explicitly rejected with HIGH_V_REJECTED for the older participant; host compatibility/selection must be resolved without hiding the feature; broader business/failure/account and upload/write coverage remain |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
 
@@ -4672,6 +4673,58 @@ playlist/component/PlaylistActionOverlay.kt
   the other explicitly unqualified matrix items above are not silently marked
   complete. No additional test loop, remote CI, push, merge or release is started.
 
+## Unscoped Standalone and Authorized Two-Account Acceptance (2026-10-03)
+
+- The user clarified the independent-runtime requirement: standalone must not need
+  or execute an Xposed module, rather than requiring an entirely framework-free
+  device. The earlier clone/framework-disable proposal is not required for this gate.
+  Neither LSPosed nor any module is disabled, and no temporary AVD is created.
+- A read-only LSPosed database snapshot contains zero scope records for
+  `com.neoruaa.meilox`, including zero enabled modules targeting it. Parasite
+  remains enabled only for `com.netease.cloudmusic.tv`; other module settings are
+  not changed. The existing standalone process and its subsequent cold process
+  both have zero LSPosed/libxposed or parasite-APK mapping rows.
+- TV and standalone are force-stopped once after room cleanup. Standalone alone
+  cold-starts in 4938ms (PID 22773), displays its populated original Home and
+  restores the paused 1512-item queue at 81766ms. TV has no process during this
+  check, and the standalone PID-scoped crash buffer is empty. The installed APK
+  SHA-256 remains
+  `3e698fac38622a8de856181e3ff75cb9bfd04c6f6d25ad9732bb9422108d0d26`.
+  Actual SDK inspection finds zero module metadata entries, libxposed defined
+  classes or host/parasite implementation rows. This qualifies independence on
+  the current unscoped process, not physical-device or every lifecycle acceptance.
+- With explicit authorization, the original native private-message pages send one
+  test text from TV to standalone and one in the reverse direction. Both original
+  pages render both texts. The user-supplied Cookie is used only for a read-only
+  diagnostic that verifies the standalone account before reading this conversation;
+  the server has exactly one entry for each marker with the expected sender and
+  recipient. It is not used to send a message, establish TV credentials or replace
+  the official pipeline. No other recipient, follow or timeline write is involved.
+- TV creates exactly one Together room and displays its creator/invitation. Joining
+  that exact invitation in standalone fails with `AVAILABLE`. Raw read-only room
+  check evidence instead establishes an explicit rejection: code 200,
+  `status=AVAILABLE`, `joinable=false`, `type=HIGH_V_REJECTED`, with an upgrade
+  requirement for the other participant. API-029 records the distinction; the
+  existing main parser checks the false Boolean correctly. No production fix is
+  justified by treating this as a missing field or overriding the rejection.
+- TV ends that room through the original control. Its page returns to Create Room
+  without a local-end error; server room check then returns `EXPIRED`/false. No
+  second room is created. Both queues retain their original positions/counts.
+  A private 0700/0600 standalone preference/checkpoint backup is kept outside Git
+  before the attempted join; it is not restored over live settings or credentials.
+- TV is relaunched once after the standalone check to restore the working test
+  environment. No APK is replaced, account switched, permission/scope changed or
+  production code edited. Existing unit/build/release results remain retained
+  evidence, not newly executed tests. `git diff --check` covers this documentation
+  increment; screenshots, scope snapshots, APK inspection and private UI dumps
+  stay outside Git. No push, merge, remote CI, upload or quota-consuming download
+  runs. API-028/029 now distinguish passed text delivery from rejected room joining.
+- Together's two-member/playback acceptance is blocked on genuine host-version
+  compatibility, not on the resolved test authorization. Per the host-selection
+  requirement, do not claim completion or drop that feature; confirm the next
+  host/compatibility investigation with the user. Production-signed upgrade and
+  the other explicitly unqualified exit gates remain separate.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -4702,7 +4755,7 @@ playlist/component/PlaylistActionOverlay.kt
   scenarios. No generic saved-state clearing or shared frontend repair is authorized
   by the unresolved cross-artifact failure.
 
-The shared dependency-boundary D1 exit condition is met and the dual-runtime skeleton
-is operational on the migrated HyperOS 4 AVD. D2's framework-free startup gate and
-D3-D6 remain open; final acceptance still requires the scoped evidence above, not
-compilation alone.
+The shared dependency-boundary D1 and clarified independent-runtime/build-skeleton D2
+exit conditions are met on the HyperOS 4 AVD. D3-D6 remain open, including the genuine
+Together host-version rejection; final acceptance still requires the scoped evidence
+above, not compilation alone.

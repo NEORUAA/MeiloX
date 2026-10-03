@@ -2528,6 +2528,18 @@ These are integration differences, not server API semantics.
   legacy user preference and had unstamped room sequences; API-029 subsequently
   adapts that ownership path. Neither entry qualifies real room cooperation. No room
   is created/joined for this checkpoint.
+- Authorized live text follow-up (2026-10-03): the two existing accounts exchange
+  exactly one clearly marked test text per direction using the original private
+  conversation pages in their current production-ID R8 clients. The TV send uses
+  official session/request ownership; standalone uses its restored Cookie transport.
+  Both pages subsequently render both test texts. A read-only EAPI diagnostic with
+  the user-supplied standalone Cookie first verifies that account against the
+  displayed standalone user ID, then finds exactly one server-history entry for
+  each test, with the expected sender and recipient IDs. IDs, nicknames, existing
+  conversation content and Cookie values are not recorded here.
+- This qualifies basic native text send/read and server delivery in both directions,
+  not resource/timeline sharing, real session expiry/account replacement or every
+  social failure path. No third account is contacted and no follow operation runs.
 
 ### API-029: Together Rooms and Player Commands Need a Runtime Session Owner
 
@@ -2585,6 +2597,25 @@ These are integration differences, not server API semantics.
   The new native fixture retains the actual ClickableElement callback, not Semantics'
   mutable forwarding action, and tests replacement and same-account reauthorization.
   Synthetic replacement rooms reuse the same room ID so ID checks alone cannot pass.
+- Authorized live room follow-up (2026-10-03): TV 1.1.80 creates one real room through
+  the original page and official pipeline, displays its single creator and produces
+  an invitation. The standalone page consumes that exact invitation but rejects
+  joining with `AVAILABLE`. An independently authenticated, read-only standalone
+  EAPI check of the same room returns code 200 and data keys `copywriting`,
+  `joinable`, `status`, `type`: `status=AVAILABLE`, `joinable=false`,
+  `type=HIGH_V_REJECTED`. The copywriting says the other party's current version
+  is too old and must be upgraded to participate.
+- This is not a missing-field/parser failure: the baseline main Repository already
+  checks `joinable`, and that field is explicitly false. Availability does not
+  override an official compatibility rejection. No response rewriting, fabricated
+  client upgrade, Cookie fallback in TV or feature removal is introduced.
+- The creator ends the same room through its original control. The room-end page
+  returns to Create Room without a local-end error, and the read-only server check
+  then reports `status=EXPIRED`, `joinable=false`. Both queues remain paused at
+  their original positions/counts. Real create/end and the rejected join are
+  established; two-member join, playback synchronization and room lifecycle remain
+  unqualified. The pinned TV host's compatibility must be resolved, or another
+  host validated with the user, before claiming complete feature migration.
 
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 
