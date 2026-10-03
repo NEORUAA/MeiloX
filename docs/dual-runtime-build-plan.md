@@ -4725,6 +4725,32 @@ playlist/component/PlaylistActionOverlay.kt
   host/compatibility investigation with the user. Production-signed upgrade and
   the other explicitly unqualified exit gates remain separate.
 
+## Together Rejection Response Mapping (2026-10-03)
+
+- The real `HIGH_V_REJECTED` response is still a rejected join. Repository mapping
+  now returns nonblank official `copywriting` as the existing error explanation,
+  falling back to `status`. It does not infer joinability from `AVAILABLE`, alter
+  host identity/version fields, or change the shared Store, page or navigation.
+  API-029 records the official model and actual TV version-getter DEX evidence,
+  including the limits of attributing the server rejection to any one parameter.
+- Paired JVM reports contain 1083 standalone and 1096 parasite passing cases,
+  including nine new pure response cases per flavor, with no failures, errors or
+  skips. Both minified release builds and vital lint pass. The new synthetic
+  Repository/platform case compiles into both Android test variants but is not
+  executed on the AVD in this increment. Updated native error rendering and
+  cooperating-account room synchronization therefore remain unqualified.
+- `dual_runtime_release_test.rb --built-apks` passes the paired local workflow
+  and actual-SDK package checks. The current unsigned pair is also signed with
+  the matching production certificate; v3 verification, unchanged ZIP entries/
+  payloads, exact workflow preparation and the original unmodified key all pass.
+  Signed SHA-256 values are:
+  standalone `56bd9a617ed6c30728ea636d1926ccda387b37b345329c500c6553ab5e9e46fa`;
+  parasite `7c53b7bf4ab018b06ed32c314908a4952a0be19a58330f15e11d8a08bc887372`.
+- No APK is installed, framework/module state changed, new room/message created,
+  account switched or download repeated. D1/D2 remain met under the clarified
+  unscoped-process requirement; D3-D6 and genuine Together host compatibility are
+  not closed by this response-only repair. No push, merge or remote run occurs.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

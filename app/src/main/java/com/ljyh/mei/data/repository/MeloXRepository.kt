@@ -645,7 +645,7 @@ class MeloXRepository @Inject constructor(
             mapOf("roomId" to roomId),
             useEapi = true,
         ).objectOrNull("data")
-        return (data?.boolean("joinable") ?: false) to data?.string("status")
+        return parseListenTogetherRoomCheck(data)
     }
 
     override suspend fun acceptListenTogetherRoom(session: SessionStamp, roomId: String, inviterId: String): ListenTogetherRoom {
@@ -1403,6 +1403,13 @@ private fun parseShareResource(kind: ShareResourceKind, value: JsonObject): Shar
             ShareResourceKind.Album -> value.string("picUrl")
         },
     )
+}
+
+internal fun parseListenTogetherRoomCheck(data: JsonObject?): Pair<Boolean, String?> {
+    val joinable = data?.boolean("joinable") ?: false
+    val status = data?.string("status")
+    val reason = if (joinable) status else data?.string("copywriting")?.takeIf(String::isNotBlank) ?: status
+    return joinable to reason
 }
 
 private fun parseRoom(value: JsonObject): ListenTogetherRoom = ListenTogetherRoom(

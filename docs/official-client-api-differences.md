@@ -2616,6 +2616,28 @@ These are integration differences, not server API semantics.
   established; two-member join, playback synchronization and room lifecycle remain
   unqualified. The pinned TV host's compatibility must be resolved, or another
   host validated with the user, before claiming complete feature migration.
+- Rejection-explanation follow-up (2026-10-03): `status=AVAILABLE` describes the
+  room, not permission to join. The shared Repository now preserves nonblank
+  official `copywriting` when `joinable` is false, with `status` as its fallback.
+  Accepted rooms retain the previous status contract; missing data or a missing
+  Boolean still rejects. The existing Store already displays this second value
+  through its error path, so no page, control, navigation or queue change is needed.
+- The local phone 9.2.10 model independently declares `copywriting`, `joinable`,
+  `status` and `type`; that is static model evidence, not qualification of the
+  different phone 9.6.05 APK. Actual TV 1.1.80 DEX inspection confirms
+  `AbsCookieStore.getAppVer()` calls `NeteaseMusicUtils.v(Context)`, then
+  `utils.x3.b(Context)`, which reads the package's `versionName`. Local TV source
+  additionally shows `os=andrtv` and the EAPI header reconstructed from the
+  official CookieJar. This is consistent with the observed version rejection,
+  not a parameter-isolation experiment or proof of which field causes it. No
+  supported compatibility override is established, and none is introduced.
+- Nine pure response cases pass for each flavor, including explicit rejection,
+  absent data/Boolean, malformed/blank/null explanation, fallback and acceptance.
+  A Repository/platform substitute case also asserts the captured session,
+  room-only payload and retained EAPI selection. It compiles for both flavors
+  but is not executed in this increment; the matching dual-runtime checkpoint
+  records build/package evidence. These checks do not qualify a real two-member
+  room, sync, or updated native error rendering.
 
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 

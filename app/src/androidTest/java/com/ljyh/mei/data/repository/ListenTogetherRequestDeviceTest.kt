@@ -82,6 +82,19 @@ class ListenTogetherRequestDeviceTest {
         assertEquals("9", repository.acceptListenTogetherRoom(owner, "room-a", "9").creatorId)
     }
 
+    @Test fun versionRejectedAvailableRoomKeepsItsOfficialExplanation() = runBlocking {
+        eapi.result = { json("""{"code":200,"data":{
+            "status":"AVAILABLE","joinable":false,"type":"HIGH_V_REJECTED",
+            "copywriting":"The other participant must upgrade"
+        }}""") }
+        val owner = sessions.snapshot()
+        assertEquals(false to "The other participant must upgrade",
+            repository.checkListenTogetherRoom(owner, "room-a"))
+        assertEquals(owner, eapi.requests.single().owner)
+        assertEquals(mapOf("roomId" to "room-a"), eapi.requests.single().body)
+        assertTrue(weapi.requests.isEmpty())
+    }
+
     @Test fun playlistVersionBelongsToTheSessionNotTheRoomCreator() = runBlocking {
         repository.reportListenTogetherPlaylist(sessions.snapshot(), "room-a", 3, listOf(11, 22), listOf(22, 11))
         val body = JsonParser.parseString(eapi.requests.single().body["playlistParam"] as String).asJsonObject
