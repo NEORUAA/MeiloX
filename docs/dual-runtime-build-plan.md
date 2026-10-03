@@ -42,6 +42,11 @@ selecting a serial; emulator ports may change. This remains emulator evidence,
 not physical-device acceptance. The unscoped standalone-process qualification below
 does not require uninstalling/disabling the device's framework.
 
+The user enabled `org.lsposed.corepatch` and authorized rebooting this same AVD
+for cross-signature preserving installs. The production-certificate checkpoint below
+uses that configuration; it is not evidence of cross-signature upgrade compatibility
+on an unmodified package manager. No AVD clone, disk backup or snapshot is created.
+
 Do not run further tests on `Pixel_10_Pro` (`emulator-5554` at migration time).
 Existing Pixel/16 KB checkpoints remain historical, bounded evidence. The user
 authorized local application/data migration and closing Pixel after verification,
@@ -150,10 +155,10 @@ The latest acceptance state is:
 | --- | --- | --- |
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
-| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
+| D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
-| D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
+| D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
 server acceptance, or mark the overall goal complete while these exit gates remain.
@@ -4917,6 +4922,57 @@ playlist/component/PlaylistActionOverlay.kt
   runtime qualification. `git diff --check` passes for the documentation-only
   increment; no production implementation, account data or frontend repair is
   included in this documentation change.
+
+## Production-Signed Preserving Installs on Configured HyperOS 4 (2026-10-03)
+
+- The user chose the existing AVD, enabled Core Patch and authorized one
+  system reboot. The same `HyperOS_4_Official_API_37`/emulator-5574 boots with root,
+  LSPosed and Core Patch available. All module enable flags and 21 scope records
+  equal their pre-reboot values; MeiloX still targets only TV. No AVD disk, snapshot
+  or clone is backed up or created. Only application APK/data recovery material is
+  retained in the previously authorized private application-backup directory.
+- Both current production APKs are installed with `adb install -r`, without
+  uninstalling or clearing data. Installed SHA256 values match the already verified
+  production pair: standalone `56bd9a617ed6c30728ea636d1926ccda387b37b345329c500c6553ab5e9e46fa`
+  and parasite `7c53b7bf4ab018b06ed32c314908a4952a0be19a58330f15e11d8a08bc887372`.
+  Their certificate remains `03bc4bbc1e9b3b2bfad4e8712ccbc964546a2648ec6992d697875270d2b1a737`.
+  This qualifies preserving installation on the user's cross-signature-enabled AVD,
+  not native cross-signature acceptance on an unmodified system.
+- Standalone PID 8066 COLD-starts in 1517ms. Its original Home/artwork/glass and
+  Settings account name are inspected. Before any playback test, all rows in all
+  17 Room tables match their pre-upgrade hashes: schema 21, 152 songs, 22 playlists,
+  1015 likes and two completed downloads. Both database integrity checks pass.
+  AndroidX's actual protobuf parser and Gson verify unchanged Cookie/account and
+  other preferences, all 1512 queue entries/modes/title, index 3 and the 81766ms
+  checkpoint. Only the queue snapshot's save timestamp changes. The process has
+  zero framework/module mappings and its PID-scoped crash buffer is empty.
+- One bounded ordinary play resumes the original queued track, not a download.
+  MediaSession progresses from BUFFERING/81766ms to PLAYING/90951ms and then
+  PAUSED/92802ms with no error or queue change. AudioFlinger identifies an active,
+  unmuted 96000Hz track owned by standalone UID 10309 with nonzero server frames.
+  This proves bounded decoder/output-state execution, not audible acceptance,
+  full-track completion or settled server statistics. No new download grant,
+  upload, social write, logout or account switch is performed.
+- TV PID 10784 COLD-starts in 2755ms into portrait original MeiloX Home. Its actual
+  API-102 executed map ID `50ba403bb003b995e29e4b8f4a441b921413fa756e10dad9c2bed05aa3a0f8b2`
+  matches the production APK's DEX; host version/signature/isolation and request,
+  login/report/upload bridge bindings succeed. Its six queue entries, index 2,
+  modes and 156037ms checkpoint remain unchanged. Module preferences have no
+  Cookie key. Sixteen of its 17 Room tables retain identical rows; the remaining
+  playback_count table keeps every identity but one counter changes 17 to 18 with
+  a newer timestamp during cold restoration. No TV play command is issued, and
+  the captured hosted state is PAUSED; that local counter is not counted as real
+  playback/server evidence or silently restored over current data. Attribution
+  remains unqualified. Native TV is inactive/STOPPED with no queue; crash bytes=0.
+- Recovery artifacts and redacted comparisons remain under
+  `~/.local/share/meilox-avd-migration/2026-10-03/production-certificate-preserving-upgrade`
+  with private directory/file permissions. The temporary device UI dump is removed.
+  Application source/UI, official APKs, account credentials and scopes are unchanged.
+  No rebuild or fresh JVM execution is claimed; retained source/package results
+  still apply. This closes the configured production-install/data-preservation
+  gate, not Together compatibility, full authorization/lifecycle/merge acceptance
+  or an unrelated shared-player repair. No agent push, remote dispatch or release
+  is performed.
 
 ## Acceptance and Remaining Decisions
 
