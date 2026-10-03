@@ -674,6 +674,31 @@ gates are qualified; this checkpoint changes only CI and documentation.
   configuration/package evidence, not a successful hosted-runner rerun or D6
   completion.
 
+### D6 Checkpoint: Published API 37 Platform Identifier (2026-10-03)
+
+- The next user-reported [Actions job](https://github.com/NEORUAA/MeiloX/actions/runs/37092493982/job/111115595221)
+  initializes the SDK successfully but stops before Gradle with
+  `Failed to find package 'platforms;android-37'` (exit 1). The deprecation warning
+  is not this failure's cause; neither APK was built or signed by that run.
+- Google's [SDK package catalog](https://dl.google.com/android/repository/repository2-3.xml)
+  publishes the stable platform as `platforms;android-37.0` (revision 2,
+  channel 0), matching the existing local SDK. Corrected only that installation
+  identifier; compile/target API 37 and build-tools 37.0.0 remain unchanged.
+- Earlier fixtures and existing-APK checks did not exercise a fresh SDK download.
+  This time the exact workflow install command passes in a new temporary SDK
+  using setup-android v4's default command-line tools 22.0. Both installed package
+  metadata records, the platform `android.jar` and executable `apksigner` are
+  checked. The downloaded command-line tools match Google's catalog checksum;
+  the temporary SDK is removed without modifying the project SDK or AVD.
+- The regression contract now requires the published identifier; real-APK checks
+  also inspect the installed stable platform's package identity and API metadata,
+  rejecting previews or renamed directories. Local Ruby/shell syntax, workflow
+  fixtures and the existing unsigned pair's real-SDK disposable-signing checks
+  pass. No production credentials, app source/UI or device state changed.
+- No push, remote retry/dispatch, release or merge was performed. A successful
+  hosted-runner build is still unverified; this fixes the reported prerequisite,
+  not the remaining D6 runtime/merge gates.
+
 ### D1/D4 Checkpoint: Runtime-Owned Playlist Collection (2026-09-30)
 
 - Extracted playlist collection/uncollection into `PlaylistCollectionBackend`. Shared

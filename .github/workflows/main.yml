@@ -36,7 +36,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android build tools
-        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
 
       - uses: gradle/actions/setup-gradle@v6
         with:

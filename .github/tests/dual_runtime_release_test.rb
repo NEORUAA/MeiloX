@@ -37,6 +37,15 @@ end
 
 def test_built_apks
   sdk = ENV.fetch('ANDROID_HOME')
+  platform = File.join(sdk, 'platforms/android-37.0')
+  check(File.file?(File.join(platform, 'package.xml')) && File.file?(File.join(platform, 'android.jar')),
+        'The pinned Android 37.0 platform must be installed')
+  package = REXML::Document.new(File.read(File.join(platform, 'package.xml'))).get_elements('//localPackage').first
+  check(package&.attributes&.[]('path') == 'platforms;android-37.0' &&
+        package.elements['type-details/api-level']&.text == '37.0' &&
+        package.elements['type-details/codename']&.text.to_s.empty?,
+        'Use the installed stable Android 37.0 platform, not a preview or a renamed directory')
+  puts 'PASS built SDK: official stable platforms;android-37.0 package and android.jar'
   analyzer = ENV.fetch('PATH').split(File::PATH_SEPARATOR).map { |path| File.join(path, 'apkanalyzer') }
                 .find { |path| File.file?(path) && File.executable?(path) } ||
              File.join(sdk, 'cmdline-tools/latest/bin/apkanalyzer')
@@ -349,8 +358,8 @@ check(gradle.fetch('run').split == %w[./gradlew :app:testStandaloneDebugUnitTest
 sdk_setup = STEPS.select { |step| step['uses'] == 'android-actions/setup-android@v4' }
 check(sdk_setup.size == 1, 'Initialize the Android SDK and command-line tool PATH exactly once')
 sdk_install = STEPS.find { |step| step['name'] == 'Install Android build tools' }
-check(sdk_install&.fetch('run') == "sdkmanager 'platforms;android-37' 'build-tools;37.0.0'",
-      'Install the exact compile SDK and signing/alignment build tools')
+check(sdk_install&.fetch('run') == "sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'",
+      'Install the published Android 37.0 package, not the unavailable android-37 identifier')
 java_index = STEPS.index { |step| step['uses'] == 'actions/setup-java@v6' }
 check(java_index && java_index < STEPS.index(sdk_setup.first) &&
       STEPS.index(sdk_setup.first) < STEPS.index(sdk_install) && STEPS.index(sdk_install) < STEPS.index(gradle),
