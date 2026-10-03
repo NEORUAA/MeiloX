@@ -156,7 +156,7 @@ The latest acceptance state is:
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
-| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
+| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
@@ -4998,6 +4998,46 @@ playlist/component/PlaylistActionOverlay.kt
   gate, not Together compatibility, full authorization/lifecycle/merge acceptance
   or an unrelated shared-player repair. No agent push, remote dispatch or release
   is performed.
+
+## Paired Production Offline Recovery (2026-10-03)
+
+- One bounded read-only test runs on the current production-signed pair, whose
+  installed hashes still match the preserving-upgrade checkpoint above. Standalone
+  PID 8066 and TV PID 10784 are brought forward, not rebuilt, reinstalled or restarted.
+  Both original weekly-rank pages initially contain their distinct account records.
+- The existing refresh control calls `ListeningRankViewModel.load(force = true)`
+  and bypasses its in-memory rank cache for `/api/v1/play/record`, type 1. Wi-Fi
+  and mobile data are disabled once; ConnectivityService reports no active default
+  network. Exactly one forced refresh is issued per runtime during this window.
+  Standalone displays its DNS resolution failure; parasite displays
+  `Official transport failed: a`. Existing rows remain visible with the error,
+  and screenshots verify the original page rather than treating retained rows as
+  successful offline requests. API-039 records the different error contracts.
+- The original Wi-Fi/mobile-data enablement is restored in a cleanup block.
+  ConnectivityService again reports a validated default network. One forced
+  refresh per runtime removes the error and displays populated weekly records.
+  Both Settings account rows remain logged in; each client returns to its original
+  Home. Airplane mode remains disabled. Temporary device XML is removed.
+- All four captured settings/progress protobuf files are byte-identical before
+  and after the test, preserving standalone Cookie/account data and both complete
+  queue/checkpoint stores. Standalone remains PAUSED at 92802ms/index 3 and TV at
+  156037ms/index 2; MediaSession state lines are unchanged. No playback, download,
+  upload, room creation/join, social write or authorization transition is invoked.
+- Preservation uses complete before/after byte comparisons, not the upgrade-only
+  validator's checkpoint-to-restored-queue assertion: no task/queue restoration
+  occurs in this live-process test. No new queue mutation is demonstrated.
+- The crash buffer contains unrelated HyperOS security/location records, not an
+  empty device-wide buffer. It has zero records for either runtime/module, and
+  both application PIDs remain unchanged. Private XML/PNG/datastore/comparison
+  evidence stays under
+  `~/.local/share/meilox-avd-migration/2026-10-03/paired-production-network-recovery`;
+  no credentials, account identifiers, device logs or screenshots enter Git.
+- This qualifies the named forced-read network failure/recovery path, not session
+  expiry, account switching, all transport failures or full D3-D6 acceptance.
+  The user defers the proposed unhooked phone Together join; no invitation is
+  requested and no further phone-room test is run. Application/UI source and
+  installed APKs are unchanged; prior build/unit/package evidence is retained,
+  not represented as fresh executions. `git diff --check` passes.
 
 ## Acceptance and Remaining Decisions
 

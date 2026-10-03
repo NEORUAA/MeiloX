@@ -3605,6 +3605,27 @@ These are integration differences, not server API semantics.
   1074 standalone cases and 79 local release gates pass. The original light-theme
   lyric readability issue remains outside this backend migration.
 
+### API-039: Native Transport Failures Do Not Expose Standalone DNS Diagnostics
+
+- Observed on 2026-10-03 through the shared weekly-rank forced refresh:
+  `/api/v1/play/record`, type 1. Standalone retains the original transport's
+  hostname/DNS failure message. The TV reflection boundary instead throws
+  `IOException("Official transport failed: <native simple class name>")` without
+  retaining the official exception message or cause, which may contain credentials.
+- On the current production-signed HyperOS pair, a single confirmed offline window
+  produces standalone DNS failure and TV `Official transport failed: a`. The
+  obfuscated `a` is an opaque exception type, not a business code, HTTP status or
+  independently proven DNS classification. It must not trigger Cookie/signature
+  fallback or classify the official account as logged out.
+- The unchanged shared ViewModel shows the error alongside retained records.
+  After restoring the original network configuration, one forced refresh per
+  runtime clears it and returns populated records. All settings/progress stores
+  are byte-identical, account rows remain logged in, and both players stay paused.
+  See [Paired Production Offline Recovery](dual-runtime-build-plan.md#paired-production-offline-recovery-2026-10-03).
+- This is the named real transport-failure/recovery case, not the full expiry,
+  account-change, cancellation or server-failure matrix. No frontend/message
+  redesign, credential exposure, new retries or production-code change is made.
+
 ## Adding an Entry
 
 As of 2026-09-29, the project targets both standalone and parasite APKs; see
