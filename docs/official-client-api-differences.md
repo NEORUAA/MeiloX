@@ -2638,6 +2638,32 @@ These are integration differences, not server API semantics.
   but is not executed in this increment; the matching dual-runtime checkpoint
   records build/package evidence. These checks do not qualify a real two-member
   room, sync, or updated native error rendering.
+- Actual phone protocol follow-up (2026-10-03): inspect the provided 9.6.05 APK,
+  not the older 9.2.10 source tree. Manifest identity is
+  `com.netease.cloudmusic`, code `9006005`; SHA-256 is
+  `ac67e9684fdbf6f95184c919d4a73771b5e12ec49479adafb32a8a75a6fae737`.
+  SDK v2 signature verification passes with the same pinned NetEase signer as TV.
+  Its actual `CheckRoomInfo` model retains the four fields above. Native
+  `ze0.a$a` handles `HIGH_V_REJECTED` by displaying the creator-version-low
+  message, completing the route and returning before the joinable path. The
+  static branch would reject the observed response rather than treating
+  `AVAILABLE` as join permission; this is not a live phone-room test.
+- SDK-backed DEX literal ownership resolves four methods in classes17.dex:
+  `zc0.u0$c.f` checks a room with only `roomId`; `zc0.u0$s.f` accepts with
+  `roomId`, `inviterId` and optional nonempty `refer`. These explicit payloads
+  agree with the existing shared contract. The two create methods,
+  `zc0.u0$e.f`/`zc0.u0$f.f`, include `refer`, respectively `inviteUid`/`robotUid`
+  (empty when absent), and optional nonempty `extJson`. Those business fields
+  are recorded, not added speculatively: no explicit version-compatibility flag
+  occurs in these method bodies, and neither `extJson` semantics nor the complete
+  request/header pipeline is qualified as a solution to TV's rejected join.
+- The same direct-literal scan finds no matching create/check/accept instruction
+  in TV DEX; its named Together package contains only player-statistics models.
+  This bounded scan is not proof against dynamic/native implementations or every
+  possible compatibility mechanism. HyperOS package inventory contains TV but
+  not the phone package. No candidate is installed, account authorized, framework
+  scope changed, network operation issued or existing app data modified. Phone
+  runtime/official-session suitability remains a user-confirmed candidate gate.
 
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 

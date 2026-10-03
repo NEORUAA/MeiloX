@@ -4751,6 +4751,26 @@ playlist/component/PlaylistActionOverlay.kt
   unscoped-process requirement; D3-D6 and genuine Together host compatibility are
   not closed by this response-only repair. No push, merge or remote run occurs.
 
+## Current Phone APK Protocol Check (2026-10-03)
+
+- Read-only inspection now uses the actual signed phone 9.6.05 APK rather than
+  assuming its older decompiled source matches. API-029 records its manifest,
+  SHA-256, verified signer, DEX request owners and native rejection branch.
+  The phone controller treats HIGH_V_REJECTED as an older room creator and stops
+  joining. Its explicit check/accept payloads match the existing contract; create
+  additionally has optional invitation/robot/extJson inputs, none established as
+  a TV version-compatibility fix. No client identity or false join flag is changed.
+- This improves candidate/protocol evidence, not Together server acceptance or
+  the current TV runtime. The user's HyperOS AVD name is rechecked; package
+  inventory shows TV only. A temporary helper uses the SDK's existing dexlib2
+  parser to locate literal owners and stays outside Git. No APK, generated
+  official source, device log or credential is added to the repository.
+- Changes are documentation-only; current c715f7d4 paired unit/R8/signing/package
+  evidence is retained, not rerun or relabeled as new device acceptance.
+  `git diff --check` covers this increment. Installing/validating the phone
+  candidate, changing the selected host or another cooperating room requires
+  the stated user decision; no install, scope change or real write occurs here.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
