@@ -42,6 +42,60 @@ class PcQrLoginTest {
     }
 
     @Test
+    fun `preserves web login trace id`() {
+        val payload = parseNeteasePcLoginQr(
+            "https://music.163.com/login?codekey=web-key&login_traceId=web-trace",
+        )
+        assertEquals("web-key", payload?.key)
+        assertEquals("web-trace", payload?.clientTraceId)
+    }
+
+    @Test
+    fun `parses current official web scan login url`() {
+        val payload = parseNeteasePcLoginQr(
+            "https://music.163.com/st/platform/scanlogin?codekey=web-key" +
+                "&chainId=analytics-chain&hdw_device=web&hdw_appid=web&hitExp=1",
+        )
+        assertEquals("web-key", payload?.key)
+        assertNull(payload?.clientTraceId)
+    }
+
+    @Test
+    fun `preserves login trace without treating web analytics chain as client trace`() {
+        val payload = parseNeteasePcLoginQr(
+            "https://music.163.com/st/platform/scanlogin/?codekey=key%2Bvalue" +
+                "&chainId=analytics-chain&login_traceId=trace%2Fvalue",
+        )
+        assertEquals("key+value", payload?.key)
+        assertEquals("trace/value", payload?.clientTraceId)
+    }
+
+    @Test
+    fun `validates current web qr host path key and port`() {
+        listOf(
+            "https://music.163.com.evil.example/st/platform/scanlogin?codekey=key",
+            "https://evil.example@music.163.com/st/platform/scanlogin?codekey=key",
+            "https://music.163.com:8080/st/platform/scanlogin?codekey=key",
+            "https://music.163.com/st/platform/scanlogin?chainId=chain",
+            "https://music.163.com/st/platform/scanlogin?codekey=",
+            "https://music.163.com/st/platform/scanlogin/other?codekey=key",
+        ).forEach { assertNull(it, parseNeteasePcLoginQr(it)) }
+    }
+
+    @Test
+    fun `chooses supported login qr ahead of other qr codes in an image`() {
+        val loginQr = "https://music.163.com/st/platform/scanlogin?codekey=key"
+        assertEquals(loginQr, selectNeteaseLoginQr(listOf("https://example.com", loginQr)))
+    }
+
+    @Test
+    fun `retains unsupported decoded qr separately from an image without qr codes`() {
+        assertEquals("https://example.com", selectNeteaseLoginQr(listOf("", "https://example.com")))
+        assertNull(selectNeteaseLoginQr(emptyList()))
+        assertNull(selectNeteaseLoginQr(listOf("", " ")))
+    }
+
+    @Test
     fun `rejects lookalike hosts and user info`() {
         assertNull(
             parseNeteasePcLoginQr(
@@ -84,6 +138,7 @@ class PcQrLoginTest {
         assertTrue(usesOfficialAndroidIdentity("xeapi", "/api/banner/get/v3"))
         assertTrue(usesOfficialAndroidIdentity("xeapi", "/api/login/qrcode/server/login"))
         assertTrue(usesOfficialAndroidIdentity("eapi", "/api/middle/device-info/get"))
+        assertTrue(usesOfficialAndroidIdentity("eapi", "/api/login/cellphone"))
         assertFalse(usesOfficialAndroidIdentity("eapi", "/api/banner/get/v3"))
         assertTrue(
             usesOfficialAndroidIdentity(

@@ -39,6 +39,7 @@ val CookieKey = stringPreferencesKey("cookie")
 val NeteaseCsrfKey = stringPreferencesKey("neteaseCsrf")
 val NeteaseMusicAKey = stringPreferencesKey("neteaseMusicA")
 val NeteaseRefreshTokenKey = stringPreferencesKey("neteaseRefreshToken")
+val NeteaseUrsAppIdKey = stringPreferencesKey("neteaseUrsAppId")
 val MusicQualityKey = stringPreferencesKey("musicQuality")
 
 

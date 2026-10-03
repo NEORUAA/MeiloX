@@ -104,6 +104,10 @@ class PcQrLoginViewModel @Inject constructor(
         repository.loginWithMobileSms(phone, countryCode, code)
     }
 
+    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge) {
+        repository.loginWithUpSms(challenge)
+    }
+
     fun prepare() {
         if (_state.value.phase != PcQrLoginPhase.Preparing || actionJob?.isActive == true) return
         startAction {
@@ -127,14 +131,10 @@ class PcQrLoginViewModel @Inject constructor(
 
     fun onQrValue(rawValue: String) {
         val current = _state.value
-        Log.i(PC_QR_LOG_TAG, "QR value received length=${rawValue.length} phase=${current.phase}")
         if (!current.isAnalyzing || rawValue == ignoredRawValue) {
-            Log.i(
-                PC_QR_LOG_TAG,
-                "QR value ignored analyzing=${current.isAnalyzing} duplicate=${rawValue == ignoredRawValue}",
-            )
             return
         }
+        Log.i(PC_QR_LOG_TAG, "QR value received length=${rawValue.length} phase=${current.phase}")
         val payload = parseNeteasePcLoginQr(rawValue)
         if (payload == null) {
             Log.i(PC_QR_LOG_TAG, "QR value rejected as unsupported")
@@ -274,6 +274,13 @@ class PcQrLoginViewModel @Inject constructor(
         )
     }
 
+    fun reportImageError(message: String) {
+        if (_state.value.phase != PcQrLoginPhase.Scanning) return
+        _state.value = _state.value.copy(
+            error = PcQrLoginError(PcQrLoginErrorKind.Request, message),
+        )
+    }
+
     private fun handleScanFailure(payload: PcQrLoginPayload, error: Exception) {
         Log.e(PC_QR_LOG_TAG, "Scan action failed", error)
         ignoredRawValue = payload.rawValue
@@ -329,7 +336,10 @@ internal fun parseNeteasePcLoginQr(rawValue: String): PcQrLoginPayload? = runCat
     if (!uri.host.equals("music.163.com", ignoreCase = true)) return null
     if (uri.userInfo != null) return null
     if (uri.port !in setOf(-1, 80, 443)) return null
-    if (uri.path !in setOf("/login", "/login/")) return null
+    // The current website shares its H5 scan-login URL with the app and WeChat.
+    if (uri.path !in setOf("/login", "/login/", "/st/platform/scanlogin", "/st/platform/scanlogin/")) {
+        return null
+    }
 
     val parameters = uri.rawQuery.orEmpty()
         .split('&')
@@ -343,8 +353,13 @@ internal fun parseNeteasePcLoginQr(rawValue: String): PcQrLoginPayload? = runCat
         .groupBy({ it.first }, { it.second })
     val key = parameters["codekey"]?.firstOrNull(String::isNotBlank) ?: return null
     val clientTraceId = parameters["login_traceId"]?.firstOrNull(String::isNotBlank)
+    // chainId belongs to H5 analytics; only login_traceId is sent as clientTraceId.
     PcQrLoginPayload(key, clientTraceId, trimmed)
 }.getOrNull()
+
+internal fun selectNeteaseLoginQr(rawValues: List<String>): String? =
+    rawValues.firstOrNull { parseNeteasePcLoginQr(it) != null }
+        ?: rawValues.firstOrNull(String::isNotBlank)
 
 private fun decodeQueryPart(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8.name())

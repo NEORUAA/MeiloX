@@ -18,6 +18,7 @@ import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.NeteaseCsrfKey
 import com.ljyh.mei.constants.NeteaseMusicAKey
 import com.ljyh.mei.constants.NeteaseRefreshTokenKey
+import com.ljyh.mei.constants.NeteaseUrsAppIdKey
 import com.ljyh.mei.constants.NeteaseSecurityIdentityKey
 import com.ljyh.mei.constants.NeteaseLocalDeviceIdKey
 import com.ljyh.mei.constants.NeteaseDeviceRegisteredModelKey
@@ -64,7 +65,7 @@ import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
-import com.ljyh.mei.data.network.NeteaseAegisSecurity
+import com.ljyh.mei.data.network.readNeteaseLoginCookies
 import com.ljyh.mei.data.network.NeteaseOfficialDeviceId
 import com.ljyh.mei.data.network.NeteaseUrsSmsLogin
 import com.ljyh.mei.utils.dataStore
@@ -74,8 +75,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.Cookie
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -98,7 +97,6 @@ class MeloXRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     @Named("CloudUploadClient") private val cloudUploadClient: OkHttpClient,
     private val neteaseLoginSecurity: NeteaseLoginSecurity,
-    private val neteaseAegisSecurity: NeteaseAegisSecurity,
     private val neteaseUrsSmsLogin: NeteaseUrsSmsLogin,
 ) {
     suspend fun podcastHome(): PodcastHome = coroutineScope {
@@ -192,7 +190,6 @@ class MeloXRepository @Inject constructor(
 
         return loginWithMobileCredentials { checkToken ->
             linkedMapOf(
-                "loginType" to "cellphonePasswordLogin",
                 "phone" to normalizedPhone,
                 "countrycode" to normalizedCountryCode,
                 "password" to passwordMd5,
@@ -222,54 +219,49 @@ class MeloXRepository @Inject constructor(
         require(normalizedCode.length in 4..8 && normalizedCode.all(Char::isDigit)) {
             "Invalid SMS verification code"
         }
-        val ursToken = neteaseUrsSmsLogin.verifyCode(
+        val credentials = neteaseUrsSmsLogin.verifyCode(
             normalizedPhone,
             normalizedCountryCode,
             normalizedCode,
         )
-        return loginWithMobileCredentials { checkToken ->
+        return loginWithUrsCredentials(credentials)
+    }
+
+    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge): AccountProfile =
+        loginWithUrsCredentials(neteaseUrsSmsLogin.verifyUpSms(challenge))
+
+    private suspend fun loginWithUrsCredentials(credentials: com.ljyh.mei.data.network.NeteaseUrsLoginCredentials): AccountProfile =
+        loginWithMobileCredentials(ursAppId = credentials.appId) { checkToken ->
             linkedMapOf(
-                "ursToken" to ursToken,
+                "ursToken" to credentials.token,
                 "nonce" to UUID.randomUUID().toString(),
                 "checkToken" to checkToken,
             )
         }
-    }
 
     private suspend fun loginWithMobileCredentials(
+        ursAppId: String? = null,
         body: (checkToken: String) -> Map<String, Any>,
     ): AccountProfile {
-        ensureOfficialDeviceIdentity()
+        val loginUrsAppId = ursAppId ?: neteaseUrsSmsLogin.appId()
+        val ydDeviceToken = prepareNeteaseLoginDevice()
         val deviceId = context.dataStore.data.first()[DeviceIdKey].orEmpty()
         check(deviceId.isNotBlank()) { "NetEase official device identity is unavailable" }
         val loginChainId = "v1_${deviceId}_android_login_${System.currentTimeMillis()}"
-        val ydDeviceToken = neteaseLoginSecurity.prepareForPcQrLogin()
-        ensureNeteaseDeviceRegistered(ydDeviceToken)
-        neteaseAegisSecurity.prepareForPcQrLogin()
-        preparePcQrAegisSession(withoutAccount = true)
-
         val checkToken = neteaseLoginSecurity.pcQrCheckToken()
         val headerAntiCheatToken = neteaseLoginSecurity.freshCheckToken()
         val securityCookies = neteaseLoginSecurity.securityCookies()
-        check(checkToken != headerAntiCheatToken) {
-            "NetEase WatchMan returned duplicate request tokens"
-        }
-        val loginUrl = "https://interface3.music.163.com/api/login/cellphone"
-            .toHttpUrl()
-            .newBuilder()
-            .addQueryParameter("extJson", "{}")
-            .addQueryParameter("manualUpgrade", "false")
-            .addQueryParameter("currentExploreHomeType", "main")
-            .addQueryParameter("_intercepted", "1")
-            .build()
         Log.i(
             PC_QR_LOG_TAG,
-            "Mobile login context ready loginChainId=${loginChainId.length} queryFields=4",
+            "Mobile login context ready loginChainId=${loginChainId.length} " +
+                "ursAppId=${loginUrsAppId.length} transport=eapi",
         )
+        // 3.7.30 uses the ordinary EAPI login route. It does not depend on a
+        // banner request negotiating an unrelated AEAPI session first.
         val response = eapi.postResponse(
-            path = loginUrl.toString(),
+            path = "/api/login/cellphone",
             body = body(checkToken),
-            cryptoMode = "xeapi",
+            cryptoMode = "eapi",
             antiCheatToken = headerAntiCheatToken,
             ydDeviceToken = ydDeviceToken,
             loginChainId = loginChainId,
@@ -277,6 +269,7 @@ class MeloXRepository @Inject constructor(
             nmdi = securityCookies.nmdi,
             nmtid = securityCookies.nmtid.takeIf(String::isNotBlank),
             withoutAccount = true,
+            ursAppId = loginUrsAppId,
         )
         val responseBody = response.body()
         val code = responseBody?.int("code") ?: response.code()
@@ -293,46 +286,30 @@ class MeloXRepository @Inject constructor(
                     ?: "NetEase mobile login failed ($code)",
             )
         }
-        val responseCookies = Cookie.parseAll(response.raw().request.url, response.headers())
-        val musicU = responseCookies
-            .lastOrNull { it.name.equals("MUSIC_U", ignoreCase = true) }
-            ?.value
-            ?.takeIf(String::isNotBlank)
-        val musicA = responseCookies
-            .lastOrNull { it.name.equals("MUSIC_A", ignoreCase = true) }
-            ?.value
-            ?.takeIf(String::isNotBlank)
-        val csrf = responseCookies
-            .lastOrNull { it.name.equals("__csrf", ignoreCase = true) }
-            ?.value
-            ?.takeIf(String::isNotBlank)
-            ?: response.raw().request.header("Cookie")
-                ?.split(';')
-                ?.asSequence()
-                ?.map(String::trim)
-                ?.firstOrNull { it.substringBefore('=').equals("__csrf", ignoreCase = true) }
-                ?.substringAfter('=', "")
-                ?.takeIf(String::isNotBlank)
-        val refreshToken = response.headers()["x-refresh-token"]?.takeIf(String::isNotBlank)
+        val session = readNeteaseLoginCookies(response.raw())
+        val (musicU, csrf, musicA, refreshToken) = session
         val profile = parseAccountProfile(responseBody.objectOrNull("profile"))
         Log.i(
             PC_QR_LOG_TAG,
-            "Mobile login session fields musicU=${musicU != null} musicA=${musicA != null} " +
-                "csrf=${csrf != null} refreshToken=${refreshToken != null} " +
+            "Mobile login session fields musicU=${musicU.isNotBlank()} musicA=${musicA != null} " +
+                "csrf=${csrf.isNotBlank()} refreshToken=${refreshToken != null} " +
                 "profile=${profile?.id?.let { it > 0 } == true}",
         )
         check(
-            musicU != null && csrf != null && refreshToken != null &&
-                profile != null && profile.id > 0
+            profile != null && profile.id > 0
         ) {
             "NetEase mobile login returned an incomplete account session"
         }
         context.dataStore.edit { preferences ->
             preferences[CookieKey] = musicU
             preferences[NeteaseCsrfKey] = csrf
+            preferences[NeteaseUrsAppIdKey] = loginUrsAppId
             if (musicA == null) preferences.remove(NeteaseMusicAKey)
             else preferences[NeteaseMusicAKey] = musicA
-            preferences[NeteaseRefreshTokenKey] = refreshToken
+            // Some supported clients do not receive a refresh token. MUSIC_U is
+            // the authenticated session; a missing refresh token is not a failure.
+            if (refreshToken == null) preferences.remove(NeteaseRefreshTokenKey)
+            else preferences[NeteaseRefreshTokenKey] = refreshToken
             preferences[UserIdKey] = profile.id.toString()
             preferences[UserNicknameKey] = profile.nickname
             if (profile.avatarUrl == null) preferences.remove(UserAvatarUrlKey)
@@ -341,7 +318,7 @@ class MeloXRepository @Inject constructor(
         Log.i(
             PC_QR_LOG_TAG,
             "Mobile account session ready musicU=${musicU.length} csrf=${csrf.length} " +
-                "musicA=${musicA?.length ?: 0} refreshToken=${refreshToken.length}",
+                "musicA=${musicA?.length ?: 0} refreshToken=${refreshToken?.length ?: 0}",
         )
         return profile
     }
@@ -361,17 +338,17 @@ class MeloXRepository @Inject constructor(
     suspend fun preparePcQrLoginSecurity() {
         val preferences = context.dataStore.data.first()
         check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
-        check(!preferences[NeteaseRefreshTokenKey].isNullOrBlank()) {
-            "NetEase mobile account session is required for PC QR login"
-        }
         check(preferences[UserIdKey]?.toLongOrNull()?.let { it > 0 } == true) {
             "NetEase account user ID is unavailable"
         }
+        prepareNeteaseLoginDevice()
+    }
+
+    internal suspend fun prepareNeteaseLoginDevice(): String {
         ensureOfficialDeviceIdentity()
         val ydDeviceToken = neteaseLoginSecurity.prepareForPcQrLogin()
         ensureNeteaseDeviceRegistered(ydDeviceToken)
-        neteaseAegisSecurity.prepareForPcQrLogin()
-        preparePcQrAegisSession()
+        return ydDeviceToken
     }
 
     suspend fun markPcQrScanned(key: String, clientTraceId: String?): String =
@@ -398,26 +375,17 @@ class MeloXRepository @Inject constructor(
         )
         val preferences = context.dataStore.data.first()
         check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
-        check(!preferences[NeteaseRefreshTokenKey].isNullOrBlank()) {
-            "NetEase mobile account session is required for PC QR login"
-        }
         val userId = preferences[UserIdKey]?.toLongOrNull()?.takeIf { it > 0 }
             ?: error("NetEase account user ID is unavailable")
         ensureOfficialDeviceIdentity()
         val ydDeviceToken = neteaseLoginSecurity.ydDeviceToken()
         ensureNeteaseDeviceRegistered(ydDeviceToken)
-        check(neteaseAegisSecurity.hasActiveSession()) {
-            "NetEase AEAPI session is unavailable; QR action was not sent"
-        }
         val checkToken = neteaseLoginSecurity.pcQrCheckToken()
         val headerAntiCheatToken = neteaseLoginSecurity.freshCheckToken()
         val securityCookies = neteaseLoginSecurity.securityCookies()
-        check(checkToken != headerAntiCheatToken) {
-            "NetEase WatchMan returned duplicate request tokens"
-        }
         val response = try {
             eapi.post(
-                path = "https://interface3.music.163.com/api/login/qrcode/server/login",
+                path = "/api/login/qrcode/server/login",
                 body = buildPcQrLoginBody(
                     key = key,
                     clientTraceId = clientTraceId,
@@ -425,7 +393,7 @@ class MeloXRepository @Inject constructor(
                     action = action,
                     antiCheatToken = checkToken,
                 ),
-                cryptoMode = "xeapi",
+                cryptoMode = "eapi",
                 antiCheatToken = headerAntiCheatToken,
                 ydDeviceToken = ydDeviceToken,
                 nmcid = securityCookies.nmcid,
@@ -437,66 +405,41 @@ class MeloXRepository @Inject constructor(
             Log.e(
                 PC_QR_LOG_TAG,
                 "Request failed action=${action.name} security={checkToken:${checkToken.length}," +
-                    "antiCheatToken:${headerAntiCheatToken.length},ydDeviceToken:${ydDeviceToken.length},xeapi:true}",
+                    "antiCheatToken:${headerAntiCheatToken.length},ydDeviceToken:${ydDeviceToken.length},eapi:true}",
                 error,
             )
             Timber.tag(PC_QR_LOG_TAG).e(
                 error,
-                "Request failed action=%s security={antiCheat:%d,yd:%d,xeapi:true}",
+                "Request failed action=%s security={antiCheat:%d,yd:%d,eapi:true}",
                 action.name,
                 checkToken.length,
                 ydDeviceToken.length,
             )
             throw error
         }
-        val code = response.int("code") ?: 200
+        val code = response.int("code") ?: 0
         val message = response.string("message") ?: response.string("msg")
         Log.i(
             PC_QR_LOG_TAG,
             "Response action=${action.name} code=$code message=${message.orEmpty()} " +
                 "security={checkToken:${checkToken.length},antiCheatToken:${headerAntiCheatToken.length}," +
-                "ydDeviceToken:${ydDeviceToken.length},xeapi:true}",
+                "ydDeviceToken:${ydDeviceToken.length},eapi:true}",
         )
         Timber.tag(PC_QR_LOG_TAG).i(
-            "Response action=%s code=%d message=%s security={antiCheat:%d,yd:%d,xeapi:true}",
+            "Response action=%s code=%d message=%s security={antiCheat:%d,yd:%d,eapi:true}",
             action.name,
             code,
             message.orEmpty(),
             checkToken.length,
             ydDeviceToken.length,
         )
-        if (code !in 200..299) {
+        if (code != 200) {
             throw PcQrLoginException(
                 code = code,
                 message = message ?: "NetEase PC QR login failed ($code)",
             )
         }
         return response
-    }
-
-    private suspend fun preparePcQrAegisSession(withoutAccount: Boolean = false) {
-        if (neteaseAegisSecurity.hasActiveSession()) {
-            Log.i(PC_QR_LOG_TAG, "Aegis session preflight reused")
-            return
-        }
-        val securityCookies = neteaseLoginSecurity.securityCookies()
-        val response = eapi.post(
-            path = "https://interface3.music.163.com/api/banner/get/v3",
-            body = mapOf("clientType" to "android"),
-            cryptoMode = "xeapi",
-            nmcid = securityCookies.nmcid,
-            nmdi = securityCookies.nmdi,
-            nmtid = securityCookies.nmtid.takeIf(String::isNotBlank),
-            withoutAccount = withoutAccount.takeIf { it },
-        )
-        val ready = neteaseAegisSecurity.hasActiveSession()
-        Log.i(
-            PC_QR_LOG_TAG,
-            "Aegis session preflight response=${response.int("code") ?: 200} ready=$ready",
-        )
-        check(ready) {
-            "NetEase AEAPI session preflight did not return a complete session; QR action was not sent"
-        }
     }
 
     private suspend fun ensureOfficialDeviceIdentity() {

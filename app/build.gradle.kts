@@ -18,6 +18,7 @@ android {
     compileSdk = 37
     ndkVersion = "27.1.12297006"
     useLibrary("android.test.mock")
+    testBuildType = providers.gradleProperty("mei.instrumentationBuildType").orElse("debug").get()
     defaultConfig {
         applicationId = providers.gradleProperty("mei.applicationId")
             .orElse("com.neoruaa.meilox")
@@ -45,7 +46,8 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "netease-sdk-rules.pro"
             )
         }
     }
@@ -190,3 +192,21 @@ dependencies {
 //        }
 //    }
 //}
+
+val verifyNoDexAssets by tasks.registering {
+    group = "verification"
+    description = "Reject executable dex files in application assets."
+    val assets = layout.projectDirectory.dir("src/main/assets")
+    inputs.dir(assets)
+    doLast {
+        assets.asFile.walkTopDown().filter { it.isFile }.forEach { asset ->
+            val header = asset.inputStream().use { it.readNBytes(4) }
+            val executable = header.contentEquals(byteArrayOf(100, 101, 120, 10)) ||
+                header.contentEquals(byteArrayOf(99, 100, 101, 120))
+            check(!asset.extension.equals("dex", ignoreCase = true) && !executable) {
+                "Executable dex assets are forbidden: ${asset.relativeTo(assets.asFile)}"
+            }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyNoDexAssets) }

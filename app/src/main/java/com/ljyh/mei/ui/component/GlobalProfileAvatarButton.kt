@@ -11,7 +11,6 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.NeteaseRefreshTokenKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.glass.GlassIconButton
@@ -25,14 +24,13 @@ import com.ljyh.mei.utils.rememberPreference
 fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
     val navController = LocalNavController.current
     val (cookie) = rememberPreference(CookieKey, "")
-    val (refreshToken) = rememberPreference(NeteaseRefreshTokenKey, "")
     val (avatarUrl) = rememberPreference(UserAvatarUrlKey, "")
     val (nickname) = rememberPreference(UserNicknameKey, "")
     val accountDescription = stringResource(R.string.account_home)
 
     GlassIconButton(
         onClick = {
-            if (cookie.isBlank() || refreshToken.isBlank()) {
+            if (cookie.isBlank()) {
                 Screen.NeteaseLogin.navigate(navController)
             } else {
                 Screen.AccountHome.navigate(navController)
@@ -40,7 +38,7 @@ fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
         },
         modifier = modifier,
     ) {
-        if (avatarUrl.isBlank() || refreshToken.isBlank()) {
+        if (avatarUrl.isBlank() || cookie.isBlank()) {
             SfIcon(
                 systemName = "person.crop.circle",
                 contentDescription = accountDescription,
