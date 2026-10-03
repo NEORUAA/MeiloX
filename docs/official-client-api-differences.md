@@ -2704,6 +2704,32 @@ These are integration differences, not server API semantics.
   track and no auto-play. This closes the one test, not the remaining TV/phone
   compatibility or full parasite Together acceptance gate.
 
+- Authorized passive phone diagnosis (2026-10-03): the user permits a temporary
+  phone-only observer and one native invitation attempt, noting the existing
+  unscoped failure and environment-detection risk. A development-signed debug
+  diagnostic pins the installed 9.6.05/code 9006005/official signer, leaves its
+  original UI/session/network behavior intact and bypasses all MeiloX app/session
+  initialization in that process. It observes only the actual DEX create/accept
+  wrappers, their scoped response parser and business-code callback; no request
+  parameters, credentials, room IDs, full response or error message are logged.
+  The single Copy Link -> Two-person action enters `zc0.u0$e.f`, reports business
+  code 491 in `r42.a.z1` and throws `m42.b`; no RoomInfoResult parser is reached.
+  Exact APK DEX shows `r42.a.b1` obtains this code from JSON `code` and calls `z1`
+  before the feature parser. Its `w1` maps general non-success codes with messages
+  to `m42.b`; that exception does not identify an environment-detection rejection.
+  This is not HTTP status 491 or proof of the previous unscoped failure's code,
+  an AVD/root cause, hook-induced risk or a successful/pending room's absence.
+  No accept, synchronized playback, external invitation/message or retry follows.
+- Diagnostic cleanup is verified: the phone process is stopped before scope
+  removal; the original module APK hash is restored, and every module enable flag
+  and scope exactly matches the pre-diagnostic database snapshot. A fresh native
+  phone process has zero framework/module mapping rows, observer logs or crash
+  bytes and retains a nonplaying control. Temporary source/build flags and extra
+  packaged scope are removed; an ordinary ParasiteDebug build passes. Only this
+  evidence is retained in Git, not the diagnostic APK, proprietary DEX or device
+  logs. TV stays the selected host; phone-host migration and parasite cooperation
+  remain unqualified, with no environment-bypass or speculative protocol change.
+
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 
 - Recorded: 2026-10-01. This is a shared persistence boundary, not an official

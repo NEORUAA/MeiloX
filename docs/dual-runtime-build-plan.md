@@ -151,7 +151,7 @@ The latest acceptance state is:
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
-| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
+| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
 
@@ -4850,6 +4850,54 @@ playlist/component/PlaylistActionOverlay.kt
   diagnostics and device captures remain outside Git. This single test is closed;
   no further room creation, upload, download, host/scope change or UI repair runs.
 
+### Authorized Passive Phone Diagnosis (2026-10-03)
+
+- The user authorizes temporary extra scope for com.netease.cloudmusic, with an
+  explicit warning about environment detection. A temporary opt-in debug observer
+  verifies the exact phone version/code/signer, never initializes the module app
+  graph/session/player there, and preserves all observed methods' arguments,
+  results and thrown exceptions. It records only operation labels, business codes,
+  exception class names and bounded response-state fields. It neither reads
+  credentials nor changes detection, headers, device identity or original UI.
+- Diagnostic build is ParasiteDebug with a temporary build property; it passes in
+  54 seconds. Its certificate matches the original development-signed module.
+  Actual APK metadata and DEX confirm phone observation is enabled only in this
+  diagnostic. TV scope is retained; all other modules are untouched. The original
+  module APK and native playback/queue files are backed up privately before the
+  single native Copy Link -> Two-person attempt; no raw backup is restored over
+  current phone state or authentication.
+- Native PID 24947 reports loaded/identity-verified/observer-ready, then exactly
+  one create_invite begin at 10:31:58, business code 491 and exception m42.b at
+  10:31:59. The feature RoomInfoResult parser is not reached. The current crash
+  buffer is empty. APK DEX traces JSON code -> z1 -> generic non-success exception;
+  API-029 records why this does not prove an AVD/root/environment-detection cause
+  or the earlier unscoped failure's code. No second create/accept, synchronized
+  playback or external contact action is issued. Room success/absence and phone
+  suitability remain unqualified; generic rejection is not a migration fix.
+- Cleanup force-stops the phone before removing its scope. Original module SHA256
+  0e8fbdeb6bf1acfb2a9febffd75aaf6020e289e05e79eef4147cbe082cc6086b
+  is restored exactly. Structured queries verify all module enable flags/scopes
+  equal the original snapshot, not only the MeiloX row. Fresh native PID 27487
+  cold-starts successfully, has zero framework/module mapping rows, observer log
+  rows and crash bytes; inspected Home retains the original nonplaying control.
+  Temporary observer source, build properties and packaged extra scope are fully
+  removed; ordinary ParasiteDebug passes in 35 seconds. Production source matches
+  the pre-diagnostic revision. Private artifacts remain under
+  /tmp/meilox-phone-observer-20261003-cQinHb outside Git; no credential backup or
+  proprietary source/log/APK is committed. TV remains the selected host and this
+  temporary authorization is not a permanent host/scope expansion.
+- Restored TV PID 28711 cold-starts into the original portrait MeiloX Home without
+  autoplay or crash rows. Executed code_source matches the original APK's actual
+  R8 DEX map ID 17d8ce30c001536a75b6c183f51db95d039d11dcdf8aec0e7766c09076dc741d.
+  Its current module session is PAUSED/156037 ms with six entries; native TV is
+  inactive/STOPPED/empty. This current observation is not replaced with an older
+  checkpoint's eleven-item queue. Standalone remains NONE/81766 ms/speed zero with
+  1512 entries. The ordinary rebuilt debug APK contains TV-only scope and no phone
+  observer class. Local release workflow fixtures pass; this is not a new release
+  runtime qualification. `git diff --check` passes for the documentation-only
+  increment; no production implementation, account data or frontend repair is
+  included in this documentation change.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -4867,7 +4915,9 @@ playlist/component/PlaylistActionOverlay.kt
 - Dedicated TV microphone/PiP helpers are implemented with bounded live evidence
   above; full permission/lifecycle and native PiP-menu interaction gates remain open.
   Invoking the standalone APK as a helper, sharing credentials,
-  hiding features, changing LSPosed scope or rewriting host metadata is not authorized.
+  hiding features, permanently expanding LSPosed scope or rewriting host metadata
+  is not authorized. The explicitly approved temporary phone diagnostic above is
+  closed and its additional scope revoked.
 - Real login/logout/account switching, quota-consuming downloads/uploads and social
   writes still require the previously stated user cooperation/authorization boundaries.
 - No standalone frontend bug cleanup is part of this migration. Record unrelated
