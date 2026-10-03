@@ -394,19 +394,25 @@ fun PodcastDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
     LaunchedEffect(id) { viewModel.load(id) }
+    // Request generations restart with the process; the public list position belongs to the route.
+    val listState = key(id) { rememberLazyListState() }
     key(id, state.session) {
-        PodcastDetailContent(id, viewModel, state)
+        PodcastDetailContent(id, viewModel, state, listState)
     }
 }
 
 @Composable
-private fun PodcastDetailContent(id: Long, viewModel: PodcastDetailViewModel, state: PodcastDetailUiState) {
+private fun PodcastDetailContent(
+    id: Long,
+    viewModel: PodcastDetailViewModel,
+    state: PodcastDetailUiState,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+) {
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val selection = rememberDetailSelection(id)
-    val listState = rememberLazyListState()
     val detail = state.detail
     var searchActive by remember(id) { mutableStateOf(false) }
     var query by remember(id) { mutableStateOf("") }

@@ -5313,6 +5313,59 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   observations need bounded attribution; unrelated main frontend repair is not
   authorized. D3-D6 and overall completion remain open.
 
+### Route-Owned Podcast Scroll and Session Generations (2026-10-03)
+
+- The original list container and MainActivity player-display effects still match
+  main; this increment does not rewrite either. The migration added
+  `key(id, state.session)` around PodcastDetailContent, including its saveable
+  LazyListState. SessionStamp generations are process-local request fences, not
+  persistent page identifiers. A new process may use generation zero for the same
+  public account whose previous process used generation one.
+- Added a closed native fixture rendering the original PodcastDetailScreen and
+  its original CommonSongListScreen with 40 coverless program rows. It delegates
+  saveability checks to Android's parent SaveableStateRegistry, saves the real
+  Compose registry, disposes the composition/ViewModelStore, and creates fresh
+  models with the saved registry. Unrelated PodcastSource operations and playlist
+  backend calls throw; there are no production graph, Cookie, request, upload, download,
+  playback or subscription operations.
+- Attribution has a passing control: null-to-ready acquisition with the same
+  SessionStamp preserves scroll even before the fix. It is not sufficient to
+  explain the historical reset. The same-account generation-1-to-generation-0
+  recreation fails before the fix: the native list's semantic position changes
+  from 9000 to zero. Both cases pass after moving only rememberLazyListState to
+  the route-owned scope outside the session key. Search, selection, menus, pending
+  actions and all request/publication guards remain within their existing session
+  scope. No layout, page architecture or backend authorization behavior changes.
+- HyperOS 4's current Espresso dependency fails before entering the test with
+  InputManager.getInstance missing. The final fixture uses the repository's native
+  WindowInspector/semantic-action approach, not a framework hook or dependency
+  override. HyperOS also rejects its initial background Activity launch. A shell
+  bootstrap targets only the offline standalone-debug ComponentActivity, then
+  ActivityScenario owns the test Activity. No background-start policy is changed;
+  observed fixture-to-instrumentation prompts use Allow This Time, not a permanent grant.
+- Both native cases pass on HyperOS_4_Official_API_37 in one final run. Paired
+  unit suites are freshly executed: standalone 1083 cases/112 suites, parasite
+  1096 cases/116 suites, all without failures, errors or skips. The paired unit,
+  standalone-debug APK/test APK and parasite Android-test compilation command
+  succeeds in 53 seconds with 119 tasks (26 executed, 93 up-to-date).
+- Both ordinary minified Release APKs rebuild in 4m07s with 107 tasks (28 executed,
+  79 up-to-date), including their vital lint gates. The exact paired workflow's
+  built-APK verifier passes SDK/package/version/module isolation, stable saved-state
+  declarations, temporary-key signing, 16 KB alignment and negative artifact cases.
+  Fixture keys/APKs are removed; no production signing material is used. These new
+  release artifacts are not installed or qualified as the currently executed TV code.
+- Only the separate standalone-debug fixture APKs are installed. Production TV
+  PID 4126 and standalone PID 8066 remain unchanged; task 75 is brought back to
+  the foreground after testing. The temporary UI XML is removed. No production
+  package, credentials, queues, settings, scope or device policy is rewritten.
+- This proves a migration-owned scroll-key regression and its closed Compose
+  recovery fix, not actual process death, cross-APK Parcel transport, complete
+  real-task restoration, late multi-page loading, account/server parity or visual
+  acceptance of a newly installed production pair. The earlier task-72 scroll
+  reset and mini-player absence remain recorded; the current fix still needs
+  production cross-R8 qualification. It does not extend the narrow early-task
+  waiver or migrate historical Compose registry keys. D3-D6 remain open.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,

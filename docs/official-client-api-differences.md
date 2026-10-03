@@ -3570,6 +3570,15 @@ These are integration differences, not server API semantics.
   matching-code PID 4126 displays Home and the mini-player, with accounts/settings/
   full queues/checkpoints preserved. The existing update workflow is retained.
   See [Nested Library Enum Wire Fix](dual-runtime-build-plan.md#nested-library-enum-wire-fix-and-controlled-recovery-2026-10-03).
+- Session-generation follow-up: the migration's detail-content key also enclosed
+  its public saveable list position. A closed native original-page fixture rules
+  out null-to-ready acquisition alone and reproduces a same-account generation
+  1-to-0 reset (semantic position 9000 to zero). Route-owned LazyListState now
+  survives both controlled cases while session-owned searches, selections, menus
+  and request fences remain unchanged. This is Compose-registry/model recreation
+  with offline sources, not a production cross-R8 task or server-account test;
+  real full-task scroll and mini-player qualification remain open. See
+  [Route-Owned Podcast Scroll](dual-runtime-build-plan.md#route-owned-podcast-scroll-and-session-generations-2026-10-03).
 
 ### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
 
