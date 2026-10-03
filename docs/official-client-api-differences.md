@@ -1076,6 +1076,14 @@ These are integration differences, not server API semantics.
   qualifies notification entry, not task removal, process death, audible output
   or every media-control path. See
   [Paired HyperOS Production Interactions](dual-runtime-build-plan.md#paired-hyperos-production-interactions-2026-10-03).
+- Configured sleep follow-up: each production runtime advances its existing item
+  after Home/KEYCODE_SLEEP while the other remains paused. HyperOS reports Dozing,
+  then DOZE_SUSPEND display state with AOD enabled and no device-idle mode. Matching
+  PID AudioFlinger tracks remain active/unmuted with increasing output frames;
+  native TV remains inactive STOPPED/empty. Wake, portrait app return and pause
+  retain accounts/settings/queues. This is configured sleep-key/AOD evidence, not
+  OFF-panel, forced-idle, audible-output or final reporting acceptance. See
+  [Configured Sleep-Key Playback](dual-runtime-build-plan.md#configured-sleep-key-playback).
 - Remaining: this retires the verified media-session/receiver path, not every
   possible official widget, external playback intent, or reporting path. Slow-disk
   restoration, empty/corrupt stored queues, real Bluetooth peripherals, other OS

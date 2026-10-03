@@ -5503,6 +5503,33 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   scope change, Pixel launch, AVD backup or push occurs. This closes only the named
   production keyboard/background/native-card checks, not the full D3-D6 matrix.
 
+### Configured Sleep-Key Playback
+
+- At the same production-artifact checkpoint, one bounded pass per runtime resumes
+  its existing item, presses Home then KEYCODE_SLEEP, samples without UI input,
+  wakes with KEYCODE_WAKEUP and pauses through the original mini-player. No seek,
+  track/quality change, rebuild, install or power-setting override is introduced.
+- Both sleeping samples report `mWakefulness=Dozing`; display state changes from
+  ON at the first sample to DOZE_SUSPEND at the last. Existing AOD remains enabled,
+  with both light/deep device-idle flags false. This qualifies the configured
+  sleep-key/AOD path, not an OFF-panel interval, forced idle or battery endurance.
+- TV's same item/index 2 advances from 170674 to 222488 ms between sleeping samples;
+  standalone's same item/index 3 advances from 110155 to 159210 ms. Their platform
+  state-update timestamps differ by 52272 and 49973 ms respectively; the intended
+  30-second wait is not represented as the full capture interval. Each matching
+  PID has an active, unmuted AudioFlinger track; primary output frames increase
+  by 2539392 and 2471936. These are progress/output-state observations, not heard
+  audio, complete-song playback or server-statistics proof. Native TV stays inactive
+  STOPPED with an empty queue; the other runtime stays paused during each case.
+- Wake and app return retain portrait Home and original glass/mini-player without
+  process recreation. Final paused checkpoints are TV 235909 ms/index 2/six items
+  and standalone 172522 ms/index 3/1512 items. Strict PreferencesProto comparison
+  finds no changed settings, including account and complete queue/source/modes;
+  checkpoints match their queue epochs and module settings contain no Cookie key.
+  Both PID-scoped crash buffers are empty. Owned device XML is removed; private
+  evidence remains in the macOS temporary `meilox-hyperos-screenoff-20261003.*`
+  directory, outside Git. No production source or frontend change is needed.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
