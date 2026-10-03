@@ -45,7 +45,10 @@ jobs:
       - name: Build and test both runtimes
         id: build_apks
         run: >-
-          ./gradlew :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
+          ./gradlew --no-daemon --no-parallel --max-workers=1
+          '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+          -Pkotlin.daemon.jvmargs=-Xmx4g -Pkotlin.daemon.useFallbackStrategy=false
+          :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
           :app:assembleStandaloneRelease :app:assembleParasiteRelease
 
       - name: Read paired release metadata

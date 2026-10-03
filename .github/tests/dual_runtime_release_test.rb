@@ -5,6 +5,7 @@ require 'base64'
 require 'json'
 require 'open3'
 require 'rexml/document'
+require 'shellwords'
 require 'tmpdir'
 require 'yaml'
 
@@ -353,8 +354,33 @@ check(STEPS.count { |step| step['uses'] == 'actions/upload-artifact@v4' } == 2, 
 check(RELEASE.fetch('steps').count { |step| step['uses'] == 'actions/download-artifact@v4' } == 2, 'Exactly two release downloads')
 
 gradle = STEPS.find { |step| step['id'] == 'build_apks' }
-check(gradle.fetch('run').split == %w[./gradlew :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
-                                          :app:assembleStandaloneRelease :app:assembleParasiteRelease], 'Build and test both runtimes')
+gradle_arguments = %w[--no-daemon --no-parallel --max-workers=1] +
+                   ['-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'] +
+                   %w[-Pkotlin.daemon.jvmargs=-Xmx4g -Pkotlin.daemon.useFallbackStrategy=false
+                      :app:testStandaloneDebugUnitTest :app:testParasiteDebugUnitTest
+                      :app:assembleStandaloneRelease :app:assembleParasiteRelease]
+check(Shellwords.split(gradle.fetch('run')) == ['./gradlew', *gradle_arguments],
+      'Build and test both runtimes with bounded CI workers and separate Gradle/Kotlin heaps')
+Dir.mktmpdir('meilox-build-command-') do |directory|
+  wrapper = File.join(directory, 'gradlew')
+  File.write(wrapper, <<~'RUBY')
+    #!/usr/bin/env ruby
+    require 'json'
+    File.write(ENV.fetch('GRADLE_ARGUMENTS_FILE'), JSON.generate(ARGV))
+    exit Integer(ENV.fetch('GRADLE_EXIT_CODE'))
+  RUBY
+  FileUtils.chmod(0o755, wrapper)
+  [0, 1].each do |exit_code|
+    arguments_file = File.join(directory, "arguments-#{exit_code}.json")
+    stdout, stderr, status = execute(gradle.fetch('run'), directory,
+                                     'GRADLE_ARGUMENTS_FILE' => arguments_file,
+                                     'GRADLE_EXIT_CODE' => exit_code.to_s)
+    check(status.exitstatus == exit_code, "Build command must preserve Gradle exit #{exit_code}: #{stdout} #{stderr}")
+    check(JSON.parse(File.read(arguments_file)) == gradle_arguments,
+          'The real workflow shell must pass quoted JVM arguments intact to Gradle')
+  end
+end
+puts 'PASS build command: single worker, 4 GiB Gradle/Kotlin heaps, exact paired targets and compiler failure propagation'
 sdk_setup = STEPS.select { |step| step['uses'] == 'android-actions/setup-android@v4' }
 check(sdk_setup.size == 1, 'Initialize the Android SDK and command-line tool PATH exactly once')
 sdk_install = STEPS.find { |step| step['name'] == 'Install Android build tools' }

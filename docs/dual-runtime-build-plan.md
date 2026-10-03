@@ -699,6 +699,53 @@ gates are qualified; this checkpoint changes only CI and documentation.
   hosted-runner build is still unverified; this fixes the reported prerequisite,
   not the remaining D6 runtime/merge gates.
 
+### D6 Checkpoint: Bounded CI Compiler Memory (2026-10-03)
+
+- The user-reported [Actions job](https://github.com/NEORUAA/MeiloX/actions/runs/37095107054/job/111123322872)
+  passes SDK setup and installation, then fails after 14m57s with
+  `OutOfMemoryError: GC overhead limit exceeded`. The full job log reports failures
+  in standalone Debug, parasite Debug and parasite Release Kotlin compilation,
+  not only the parasite Release exception quoted by the user. Signing, artifact
+  upload and release are skipped. The later checkout submodule-cleanup warning is
+  separate from this compilation failure.
+- The unchanged project settings give Gradle a 2048 MiB heap and do not explicitly
+  configure the Kotlin daemon. [Kotlin's documented inheritance](https://kotlinlang.org/docs/gradle-compilation-and-caches.html#gradle-daemon-arguments-inheritance)
+  allows that heap limit to apply to the Kotlin compiler as well. The OOM and
+  overlapping variant compiles motivate explicit heaps and worker limits; the
+  remote log does not directly dump daemon JVM arguments or total RSS.
+- Set CI-only command-line overrides: Gradle and Kotlin each receive `-Xmx4g`,
+  `--max-workers=1 --no-parallel` prevents overlapping compilation workers, and
+  `--no-daemon` confines the Gradle daemon to this invocation. Disable Kotlin's
+  [in-process fallback](https://kotlinlang.org/docs/compiler-execution-strategy.html#fallback-strategy)
+  so a daemon failure is reported rather than unexpectedly compiling in Gradle's
+  heap. Keep all four paired test/release targets in one fail-fast invocation.
+  The two heap ceilings total 8 GiB; they are not a total-process memory measurement.
+  Project-wide developer defaults, SDK/API levels, signing, permissions and
+  artifact/release gates remain unchanged.
+- The workflow contract parses shell arguments with `Shellwords`. A disposable
+  wrapper executes the actual YAML shell command, verifies intact quoted Gradle
+  JVM arguments and all paired targets, and propagates both success and compilation
+  failure exit codes. It never launches an app, installs an APK or accesses signing
+  credentials. Ruby/shell syntax and these workflow fixtures pass.
+- Local full-build verification uses the actual YAML command plus test-only
+  `--rerun-tasks --no-build-cache --console=plain --info`. The real Gradle and
+  Kotlin daemon command lines show `-Xmx4g`, and Gradle reports one worker lease.
+  Both Debug test suites are freshly executed: standalone 1083 cases/112 suites,
+  parasite 1096 cases/116 suites, with zero failures, errors or skips.
+  All 228 XML reports are newer than this run's start. Both Release APKs, including
+  Kotlin compilation, R8 and vital lint, build successfully in 6m48s, with all 163
+  actionable tasks executed. No OOM or in-process fallback is reported.
+- The newly produced pair also passes `dual_runtime_release_test.rb --built-apks`:
+  workflow fixtures plus real-SDK temporary-key signing, package/version identity,
+  helper/module isolation, stable Parcelable declarations, 16 KB alignment and
+  swapped/unsigned/missing-scope rejection. Temporary fixture keys/APKs are removed.
+  Private evidence stays in `/tmp/meilox-ci-memory-paired-build-20261003.log` and
+  `/tmp/meilox-ci-memory-release-gates-20261003.log`, outside Git. This is a local
+  macOS/JDK 21 rebuild, not an Ubuntu hosted-runner memory or release acceptance.
+- No app source/UI, local `gradle.properties`, AVD state or production credentials
+  change. No push, remote retry/dispatch, tag, release or merge is performed. Local
+  verification does not establish a successful hosted-runner rerun or complete D6.
+
 ### D1/D4 Checkpoint: Runtime-Owned Playlist Collection (2026-09-30)
 
 - Extracted playlist collection/uncollection into `PlaylistCollectionBackend`. Shared
