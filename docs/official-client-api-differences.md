@@ -3579,6 +3579,25 @@ These are integration differences, not server API semantics.
   with offline sources, not a production cross-R8 task or server-account test;
   real full-task scroll and mini-player qualification remain open. See
   [Route-Owned Podcast Scroll](dual-runtime-build-plan.md#route-owned-podcast-scroll-and-session-generations-2026-10-03).
+- Updated-source real-task follow-up: ordinary A to same-source dictionary B
+  retains task 92's 4800-byte Bundle across process death. PID 13047 executes
+  exactly the installed B map, reports restored=true, renders the original detail,
+  restores back to subscribed Podcasts and displays the paused mini-player.
+  Binding is confirmed independently by Service Connected and the retained
+  six-item/index-2/156071ms PAUSED media session. No crash occurs. This bounded
+  attempt does not reproduce the earlier mini-player absence or establish its cause.
+- The detail's scroll still resets by 736 pixels. A closed delayed-read control,
+  with unchanged account/generation/APK/classloader, measures semantic position
+  9000 before save, zero during the original loading placeholder and zero after
+  all 40 programs arrive. The loading-item branch and pinned-list container retain
+  their main bodies; awaited loading is sufficient for loss in this named scope,
+  not evidence of a new Parcelable collision or a complete main-APK diagnosis.
+  The diagnostic does not freeze lost scroll as desired behavior or claim full
+  page-state acceptance. No unrelated production frontend repair is made.
+- Ordinary A is restored with matching executed code, original Home/glass/player,
+  complete account/settings/queue/checkpoint preservation and TV-only operation.
+  The temporary dictionary is absent from source and ordinary build outputs.
+  See [Real Cross-R8 Task and Delayed Loading Control](dual-runtime-build-plan.md#real-cross-r8-task-and-delayed-loading-control-2026-10-03).
 
 ### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
 

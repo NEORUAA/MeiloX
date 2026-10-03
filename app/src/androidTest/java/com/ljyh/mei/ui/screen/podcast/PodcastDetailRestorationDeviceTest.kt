@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.screen.podcast
 
 import android.os.SystemClock
 import android.os.ParcelFileDescriptor
+import android.util.Log
+import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
@@ -67,6 +69,9 @@ import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiRoute
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -87,6 +92,7 @@ class PodcastDetailRestorationDeviceTest {
     private lateinit var accounts: AccountStore
     private var modelCount = 0
     private var renderedState: PodcastDetailUiState? = null
+    private var initialReadGate: CompletableDeferred<Unit>? = null
     private val reads = mutableListOf<SessionStamp>()
     private val podcast = Podcast(91, "Fixture podcast", null, null, null, null, null, null,
         40, 0, 0, null, false, null)
@@ -107,6 +113,7 @@ class PodcastDetailRestorationDeviceTest {
             assertEquals(podcast.id, id)
             assertEquals(0, offset)
             reads += session
+            initialReadGate?.await()
             return PodcastDetail(podcast, programs, false, programs.size)
         }
 
@@ -244,6 +251,39 @@ class PodcastDetailRestorationDeviceTest {
     @Test fun reacquiringTheSameSessionDoesNotDiscardRestoredScroll() = restoreScroll(false)
 
     @Test fun processLocalGenerationDoesNotDiscardTheSameAccountsScroll() = restoreScroll(true)
+
+    /** Diagnostic control, not acceptance of lost scroll as successful restoration. */
+    @Test fun delayedInitialReadMeasuresOriginalLoadingLayout() {
+        showOriginalDetail()
+        awaitLoaded()
+        onMain { assertTrue(checkNotNull(list()).config[SemanticsActions.ScrollToIndex].action!!(18)) }
+        await { scrollPosition() >= 18f }
+        val before = onMain { scrollPosition() }
+        val saved = onMain {
+            initialReadGate = CompletableDeferred()
+            registry.performSave().also { renderedState = null }
+        }
+        showOriginalDetail(saved)
+        await { renderedState?.let { it.isLoading && it.detail == null } == true && reads.size == 2 && list() != null }
+        val frames = CountDownLatch(1)
+        onMain {
+            Choreographer.getInstance().postFrameCallback {
+                Choreographer.getInstance().postFrameCallback { frames.countDown() }
+            }
+        }
+        assertTrue("The loading placeholder must receive real layout frames", frames.await(5, TimeUnit.SECONDS))
+        val loading = onMain { scrollPosition() }
+        onMain { checkNotNull(initialReadGate).complete(Unit) }
+        awaitLoaded()
+        onMain {
+            val loaded = scrollPosition()
+            Log.i("PodcastRestorationFixture", "delayed-read positions: before=$before loading=$loading loaded=$loaded")
+            assertEquals(2, modelCount)
+            assertEquals(listOf(0L, 0L), reads.map { it.generation })
+            assertEquals(sessions.snapshot(), renderedState?.session)
+            assertEquals(programs, renderedState?.detail?.programs)
+        }
+    }
 
     private fun restoreScroll(resetGeneration: Boolean) {
         if (resetGeneration) onMain { sessions.invalidate() }

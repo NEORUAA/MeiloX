@@ -157,7 +157,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks; LibraryPage wire identity now has a parasite-only fix and CI gate, with 54 native transfers and a controlled cross-R8 task restoring the detail/back stack/Podcasts tab | Complete paired lifecycle/permission/regression matrix; full cross-R8 page-state restoration, including the observed detail-scroll reset and absent mini-player after saved-task recovery; historical module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks; LibraryPage wire identity has a parasite-only fix and CI gate, with 54 native transfers; the updated route-owned build's real cross-R8 task 92 restores detail/back stack/Podcasts selection and the paused mini-player with binding and media-session evidence | Complete paired lifecycle/permission/regression matrix; full page-state restoration beyond the bounded wire/route/player case, including the original loading-placeholder scroll reset characterized below; the earlier mini-player absence is not reproduced here but its cause is not established; historical module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -5365,6 +5365,73 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   reset and mini-player absence remain recorded; the current fix still needs
   production cross-R8 qualification. It does not extend the narrow early-task
   waiver or migrate historical Compose registry keys. D3-D6 remain open.
+
+### Real Cross-R8 Task and Delayed Loading Control (2026-10-03)
+
+- Qualify the route-owned scroll source from `3adbd8b4` on the same HyperOS 4 AVD,
+  without changing production UI, the shared list container, activity architecture,
+  playback engine or backend behavior. Ordinary production-signed A has SHA-256
+  `bcb29324de883cdc158d4f134bf67e2e43db73c152a07e25539f21277a295772` and
+  R8 map ID `e16ef4d9ae26039401f4c8bc381abbfbe03fbc19c5194bda2fff11a0b2310e15`.
+  The same-source dictionary B changes 3079 class assignments, has SHA-256
+  `6ee43ccc2f3b7c2082a70b5f2b1fd35eecf58a6ffd74ecf890c40dc856e1ffbe` and
+  map ID `22e535f571a70b929ebff2298c23f57926111553dc035e0b9f7dbb067532f578`.
+  B's v3 certificate matches the already authorized production certificate.
+- Task 92 is STOPPED with a real 4800-byte Bundle before `am kill`. Its process
+  disappears but the task and Bundle remain. After one preserving B install,
+  focus that exact task, not a new launcher task. PID 13047 reports restored=true
+  and exactly B's executed map ID; the installed APK hash also matches B.
+  The original detail and its back stack restore without a crash. Back returns
+  to the original subscribed Podcasts page. The paused mini-player is visible in
+  both detail and Library, and MainActivity logs Service Connected at 14:09:34.792.
+  There is one module MusicService; its media session retains index 2, six items,
+  PAUSED at 156071ms with error null. The official player is STOPPED/empty.
+- Scroll does not pass: the detail title moves from y=414 before saving to y=1150
+  after settled restoration; the first program moves from y=1035 to y=1771.
+  Mini-player bounds are unchanged on the detail. The route/generation repair and
+  correct wire names are not sufficient to accept complete real-task page state.
+  The previous task-72 mini-player absence is not reproduced in this attempt;
+  neither its cause nor general absence of that failure is inferred.
+- Add a strictly offline delayed-read diagnostic to the existing original-page
+  fixture. A CompletableDeferred holds the second initial detail read while two
+  native Choreographer frames lay out the original loading placeholder. Save and
+  recreate the Compose registry/models without changing APK/classloader, account
+  identity or SessionStamp generation. Measured semantic positions are
+  before=9000, loading=0, loaded=0. Thus awaited loading alone is sufficient to
+  consume the recovered position; no R8 or session-generation change is necessary
+  in this control. The 620dp loading-item branch in CommonSongListScreen and the
+  entire IosPinnedListPage body match local main `1d830d3f` in this named scope.
+  This is not a separate baseline-main APK run or complete multi-page attribution.
+- The diagnostic completes in 41.156s and verifies two fresh models, two reads at
+  generation zero, the same owner and all 40 returned programs. Its success means
+  the measurement is valid, not that scroll preservation passes. A generic-runner
+  invocation was rejected before test startup; the installed manifest's offline
+  StandaloneFixtureInstrumentation is used for the actual run. HyperOS's test-only
+  launch prompt is handled from a fresh screencap with Allow This Time, not a
+  permanent grant. No production session or network source is used by this test.
+- Remove the temporary dictionary and rebuild ordinary parasite Release in 2m,
+  55 tasks (10 executed, 45 up-to-date). The ordinary class mapping matches A;
+  original ZIP entry names/order match, and all uncompressed payload bytes except
+  Git revision metadata match A, SHA-256
+  `bd614c27b0ea967eaeb81c111f8e78bec40d1da30ecdfed6330aeb43414e875e`.
+  Restore signed A through the existing force-stop/install/restart procedure.
+  PID 14097 executes A's map, starts portrait in 3192ms, connects its service at
+  14:13:23.507, and displays the original Home, glass and paused mini-player.
+- Both test source sets compile: standalone debug/test APK build takes 21s,
+  75 tasks (7 executed); parasite Android-test Kotlin takes 20s, 31 tasks
+  (2 executed). No production source changed, so the earlier paired 2179-case
+  unit gate remains earlier evidence, not a newly executed suite in this checkpoint.
+  The current diff check passes. No new full paired runtime acceptance is claimed.
+- Structured final datastore comparisons retain both accounts, every other
+  setting, complete queue items/order/source/modes and associated paused checkpoints.
+  TV retains six items/index 2/156071ms; standalone retains 1512 items/index 3/95136ms
+  and PID 8066. Only TV's playback snapshot epoch changes after process recreation;
+  final stored navigation is Home and module preferences contain no Cookie key.
+  MediaStore row 42 remains TV-owned, 22705573 bytes, pending=0. Temporary device
+  XML is removed; private evidence stays under `/tmp/meilox-route-scroll-native-*`.
+- No production loading/scroll UI repair, generic Bundle clearing, waiver extension,
+  quota-consuming request, room/invitation, extra scope, Pixel launch, AVD backup,
+  push, release or merge is performed. D3-D6 remain open within their existing scope.
 
 ## Acceptance and Remaining Decisions
 
