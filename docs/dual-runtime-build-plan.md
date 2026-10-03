@@ -157,7 +157,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; complete stable-name cross-R8 Activity restoration, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks | Complete paired lifecycle/permission/regression matrix; complete stable-name cross-R8 Activity restoration, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -5093,6 +5093,67 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   ParcelableStateCompatibility $device/older.apk $device/current.apk"
 ```
 
+## Paired Production Native PiP Menu Qualification (2026-10-03)
+
+- The unchanged, installed production-signed APKs retain SHA-256
+  `56bd9a617ed6c30728ea636d1926ccda387b37b345329c500c6553ab5e9e46fa`
+  (standalone) and
+  `7c53b7bf4ab018b06ed32c314908a4952a0be19a58330f15e11d8a08bc887372`
+  (parasite). Only HyperOS 4 is used. Neither APK is installed, rebuilt or
+  force-stopped; framework scope, rotation, PiP flags and shared frontend stay unchanged.
+- Entered PiP from each existing player-menu entry. One prompted helper launch uses
+  only "Allow this time"; subsequent launches have no confirmation, without selecting
+  a permanent allowance. ActivityManager identifies the correct pinned component:
+  standalone MainActivity or module LyricsPipActivity, not an injected TV Activity
+  falsely represented as PiP-capable. Later host-menu operations select labels from
+  fresh UI XML rather than chained coordinates during sheet animations.
+- The earlier unexposed-menu observations remain historical. In this checkpoint,
+  native SystemUI menus render after a tap and animation settlement (450ms before
+  capture/button input). SystemUI reports the actual touch and `mMenuState=1`.
+  Early input-window flags such as `NOT_TOUCHABLE` or `globalScale=0` alone did not
+  prove a system defect: later screenshots and successful clicks contradict that
+  premature inference. No system flag change or menu replacement is used.
+- Actual native play/pause buttons, not an instrumentation-sent PendingIntent,
+  change standalone PAUSED-to-PLAYING-to-PAUSED at item 3, and the hosted player
+  at item 2. Native next/previous clicks change standalone 3-to-4-to-3 and hosted
+  2-to-3-to-2, retaining their paused state and queue sizes of 1512 and 6.
+  The separate native TV player stays inactive, STOPPED at zero with no queue.
+- Native expand restores standalone fullscreen. For parasite it exits pinned mode,
+  finishes the auxiliary Activity and returns to the TV-hosted MeiloX player.
+  Native close removes both pinned windows; the helper Activity is absent after
+  close without killing its process or TV. A separate initial helper dismissal
+  gesture also succeeds. This is actual menu interaction, separate from the prior
+  immutable-PendingIntent/stale-replay and continuous-lyric-frame evidence.
+- Tests intentionally include short playback and next/previous transitions. One
+  early animation-time coordinate tap instead seeks TV to 84775ms; that is harness
+  error, not application acceptance. UI seeking restores the same original items
+  and leaves standalone PAUSED at 95136ms, hosted PAUSED at 156071ms (34ms from its
+  original 156037ms). Restoring standalone progress after a paused item transition
+  also requires a short preparation/play/pause before its duration is available.
+  No exact byte-preserved playback checkpoint or whole-track/audible/server-statistics
+  acceptance is claimed. Both authenticated Home pages are separately inspected,
+  and final foreground is TV-hosted Home with no pinned/helper Activity.
+- Parsed current settings against the previous production checkpoint using the
+  DataStore protobuf and Gson parsers, without printing credentials. Account/Cookie
+  values, all queue entries/order/title/source/modes and other settings are unchanged;
+  only `navigation.lastSelectedTab` (Home) and `playback.snapshot` differ. The captured
+  TV queue snapshot's index is 3 while its matching-epoch progress checkpoint is 2;
+  applying that checkpoint restores the live item, as designed. Both current progress
+  files match their queue epochs and the final paused indices/positions. Raw-byte
+  comparison and direct old/new snapshot-index equality are not valid preservation
+  assertions for these intentional operations.
+- Current standalone PID 8066, TV PID 10784 and helper PID 20144 crash-buffer captures
+  are empty. The auxiliary shell-only precise-seek fixture was terminated with
+  `Killed` and is not counted as a successful recovery or application test; its
+  attempted system-context and minimal-context implementations are abandoned.
+  The temporary device DEX ZIP and UI XML are removed. Private source, parser,
+  screenshots and results remain under `/tmp/meilox-pip-native-*` and
+  `/tmp/MeiloxPipPreferenceRetention*`; no APK, credential or device log enters Git.
+- No production source changes occur. Existing app builds/unit/package results are
+  retained, not rerun or reported as fresh. `git diff --check` passes. This closes
+  the named paired native PiP-menu gate only; full permission/account/configuration
+  coverage, readability, stable-name Activity restoration and other D3-D6 gates remain.
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -5108,7 +5169,8 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   [Official Client API Differences](official-client-api-differences.md), distinguishing
   standalone contract, official-host contract, shared mapping and verification limits.
 - Dedicated TV microphone/PiP helpers are implemented with bounded live evidence
-  above; full permission/lifecycle and native PiP-menu interaction gates remain open.
+  above; paired production native PiP-menu interaction now passes, while full
+  permission/lifecycle gates remain open.
   Invoking the standalone APK as a helper, sharing credentials,
   hiding features, permanently expanding LSPosed scope or rewriting host metadata
   is not authorized. The explicitly approved temporary phone diagnostic above is

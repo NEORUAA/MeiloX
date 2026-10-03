@@ -3622,6 +3622,20 @@ These are integration differences, not server API semantics.
   acceptance. Both R8 builds, 1087 freshly executed parasite JVM cases, the retained
   1074 standalone cases and 79 local release gates pass. The original light-theme
   lyric readability issue remains outside this backend migration.
+- Production-signed native-menu follow-up (2026-10-03): the previously unexposed
+  menu is now captured after touch/animation settlement in both runtimes. Actual
+  SystemUI play/pause and next/previous clicks change the correct hosted or standalone
+  player; native TV remains inactive/STOPPED/empty. Native expand restores standalone
+  fullscreen, or finishes the parasite helper and returns to hosted MeiloX. Native
+  close removes both pinned windows and leaves no helper Activity, without a process
+  kill, system-flag change or permanent app-launch allowance. Early window/input flags
+  alone did not prove menu failure; successful screenshots/clicks supersede that
+  inference, not the earlier recorded failures.
+  See [Paired Production Native PiP Menu Qualification](dual-runtime-build-plan.md#paired-production-native-pip-menu-qualification-2026-10-03).
+  Accounts, complete queue entries/modes and unrelated settings remain unchanged;
+  intentional short playback/item transitions and UI checkpoint restoration are
+  recorded separately. This closes the native-menu gate, not full permission/account/
+  configuration, audible playback or shared readability acceptance.
 
 ### API-039: Native Transport Failures Do Not Expose Standalone DNS Diagnostics
 
