@@ -2665,6 +2665,45 @@ These are integration differences, not server API semantics.
   scope changed, network operation issued or existing app data modified. Phone
   runtime/official-session suitability remains a user-confirmed candidate gate.
 
+- Native phone candidate follow-up (2026-10-03): with user authorization, the exact
+  9.6.05 APK is installed through the ordinary Xiaomi installer and the user logs
+  in. Actual public identity fields establish phone/standalone are different
+  accounts; phone matches the TV test account. Phone remains unscoped, running
+  its original UI, with no framework/module mappings or PID-scoped crash rows.
+  Native Together Copy Link offers two-person/multiple-person options. One
+  authorized two-person creation action is attempted, but the original standalone
+  Paste Invitation obtains no usable link and no join is submitted. Native
+  history has no completed Together record. The user's subsequent native-screen
+  evidence shows "Invitation failed" and "Together is temporarily unavailable;
+  try later." The unscoped official flow fails before a MeiloX join, so this is
+  not just a missing clipboard value. Pending room creation, the server response,
+  failure cause and compatibility are not established. Do not infer HIGH_V_REJECTED,
+  cloud-song/account restrictions or an adapter mismatch from these generic errors.
+  No further creation/retry is issued by the assistant.
+  The dual-runtime checkpoint records private backups and unchanged standalone
+  queue/checkpoint. No host switch, scope change, identity spoof or Cookie copying
+  occurs; full phone-host session/request integration is still unqualified.
+- User-owned iPhone-room follow-up (2026-10-03): the distinct standalone account
+  joins the user's exact iPhone-created invitation once. Native UI shows two
+  members, adopts the room playlist and changes songs during the user's test.
+  An account-verified read-only standalone diagnostic observes status code 200
+  for that room, FULL/false on its occupied-room check, and sync code 200 with
+  PAUSE/progress 58555 ms. Native media state is independently PAUSED/58555 ms.
+  The user's corrected iPhone 00:57/AVD 00:58 observation supersedes the earlier
+  typo; it is not a quantified latency guarantee. This qualifies the specific
+  standalone/iPhone join and state/track synchronization, not TV-created room
+  compatibility or parasite cooperation. The official Android invitation failure
+  and successful iPhone creation suggest an environment/client distinction but
+  do not isolate an AVD/root-detection, account, network or server cause. No
+  speculative protocol/header/version changes are justified by this comparison.
+- The user ends the iPhone test room; owned read-only status becomes inRoom=false
+  and room check EXPIRED/false. AVD standalone playback-only preferences are
+  selectively restored without replacing current credentials/other settings.
+  Cold relaunch and fresh structured reads verify the original 1512-item order,
+  source/title, index and paused 81766 ms checkpoint; native Home shows the original
+  track and no auto-play. This closes the one test, not the remaining TV/phone
+  compatibility or full parasite Together acceptance gate.
+
 ### ABI-013: Playback Checkpoints Need Stable Cross-Build Disk Keys
 
 - Recorded: 2026-10-01. This is a shared persistence boundary, not an official

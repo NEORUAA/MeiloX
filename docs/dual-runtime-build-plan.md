@@ -151,7 +151,7 @@ The latest acceptance state is:
 | D1 | Shared consumers/graph contracts no longer require concrete host or framework implementations; both backend contract suites pass | Dependency-boundary exit condition met; feature/device parity is not inferred |
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; original-ID development-signed preserving upgrade and v17-to-v21 migration verified on HyperOS 4; production signing certificate matches the previous release | Production-signed original-install upgrade/runtime acceptance; real authorization/expiry/account matrix |
-| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room | Together join is explicitly rejected with HIGH_V_REJECTED for the older participant; host compatibility/selection must be resolved without hiding the feature; broader business/failure/account and upload/write coverage remain |
+| D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
 | D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
 | D6 | Both production R8 artifacts build and are locally signed with the matching production certificate; exact workflow preparation and real-SDK identity/version/declaration/16KB gates pass | Full runtime qualification, production-signed upgrade acceptance and complete review against current main; no push/release/merge authorized |
 
@@ -4770,6 +4770,85 @@ playlist/component/PlaylistActionOverlay.kt
   `git diff --check` covers this increment. Installing/validating the phone
   candidate, changing the selected host or another cooperating room requires
   the stated user decision; no install, scope change or real write occurs here.
+
+## Phone Candidate Native Baseline (2026-10-03)
+
+- Following explicit user authorization, phone 9.6.05 is installed on HyperOS 4.
+  The first ADB install is rejected with `INSTALL_FAILED_USER_RESTRICTED`; the
+  subsequent normal Xiaomi file-installer flow succeeds. The installed base APK
+  matches the candidate SHA-256 recorded in API-029. The user completes login.
+  Native Home/Player and Together entry pages render; the current phone process
+  has no framework/module mappings and no PID-scoped crash rows. This is native
+  candidate evidence, not phone-host injection or audible playback acceptance.
+- Public identity fields from the actual phone preferences and standalone
+  DataStore confirm distinct accounts; phone matches the existing TV test account.
+  No official Cookie/token is read, exported or copied. Private standalone queue/
+  checkpoint and phone playback-preference backups are kept outside Git with
+  restricted permissions. Native queue-cache files are additionally archived
+  before any join; these backups are not a tested phone queue-restore operation.
+- The user authorizes one two-account room test. Native phone Copy Link presents
+  a Two-person/Multiple-person choice; Two-person is selected once. No usable
+  invitation is obtained through the standalone's original Paste Invitation
+  control. It never submits a join, plays a synchronized command or sends a
+  third-party invitation/message. Phone history shows no completed Together
+  record, which does not prove that no pending server room was created.
+- The user's native-screen follow-up supplies two actual toast failures:
+  "Invitation failed" and "Together is temporarily unavailable; try later."
+  These occur in the unscoped official app, before any MeiloX join. They establish
+  native invitation failure, not a clipboard-only diagnosis, a server response
+  code, an account restriction or TV's previous HIGH_V_REJECTED cause. Creation
+  success, pending-room identity and compatibility remain unqualified; no further
+  creation/retry is issued by the assistant. Standalone account,
+  full 1512-item queue and paused 81766 ms checkpoint are unchanged after the
+  attempt. Phone playback bookkeeping/cache files change during native navigation;
+  no blanket phone-state preservation claim or raw backup restoration is made.
+- TV remains the selected host and module scope is unchanged. No production code,
+  frontend architecture, APK update, download, framework setting or account switch
+  is made in this checkpoint. Prior paired build/signing results are retained,
+  not rerun. `git diff --check` qualifies the documentation increment only.
+
+### User-Owned iPhone Room Follow-Up
+
+- The user supplies an invitation created successfully on iPhone, using the same
+  account as the AVD's TV/phone. Its HTTPS short-link redirect resolves the official
+  Together share route with room/inviter/song parameters. The distinct standalone
+  account joins that exact room once through its original UI. Its native page
+  shows the matching room, two members and the adopted six-item playlist. No new
+  room or third-party invitation/message is created by the assistant.
+- The user reports approximately twenty seconds of playback followed by pause,
+  then manually tests a track change. The original invitation song changes in
+  the AVD. The corrected simultaneous progress report is iPhone 00:57/AVD 00:58,
+  not the superseded 00:27/00:58 typo. This is a bounded observed difference,
+  not a measured synchronization-latency guarantee or full audio acceptance.
+- A read-only diagnostic first verifies the user-supplied standalone Cookie's
+  account identity. Status returns code 200 and the exact room; the occupied
+  room check returns FULL/false, not HIGH_V_REJECTED. Playlist sync returns code
+  200, PAUSE and progress 58555 ms. The standalone media session independently
+  reports PAUSED/58555 ms, and the page retains two members. The command target
+  differs from the invitation song after the user's track change. No diagnostic
+  sends a play, heartbeat, invitation, room-create or end request; official host
+  credentials are neither read nor used by this standalone-only diagnostic.
+- The first platform sample at 25304 ms may already be after the user's earlier
+  pause, so equal successive samples do not establish a synchronization failure.
+  Server/native state agreement and the real track change qualify this specific
+  standalone/iPhone interaction, not the TV parasite's room-creation compatibility
+  or the AVD phone's native invitation cause. An AVD-specific cause is plausible
+  but not isolated from platform/client/environment differences by this test.
+- The user ends this one room on iPhone. Account-verified server reads establish
+  inRoom=false and room check EXPIRED/false; no further playback read or room-end
+  write is issued. With standalone stopped, a temporary structured DataStore helper
+  replaces only playback.snapshot and checkpoint in freshly captured current maps.
+  It verifies the account and every other preference remain unchanged. Staged
+  files retain the original owner, mode and SELinux label; replacement bytes are
+  verified before relaunch. No raw original preference map replaces current auth.
+- Relaunch is COLD/1801 ms. Actual native Home renders the original track with a
+  nonplaying control; the platform position is 81766 ms and speed zero. Fresh
+  DataStore reads verify all 1512 song IDs in the original order, source type,
+  queue title, selected index 3, repeat/shuffle modes and nonplaying checkpoint.
+  Persistence epochs are regenerated by normal startup, not mistaken for queue
+  loss. The current PID-scoped crash buffer is empty. Private backups, temporary
+  diagnostics and device captures remain outside Git. This single test is closed;
+  no further room creation, upload, download, host/scope change or UI repair runs.
 
 ## Acceptance and Remaining Decisions
 
