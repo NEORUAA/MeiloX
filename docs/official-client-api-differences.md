@@ -3537,6 +3537,22 @@ These are integration differences, not server API semantics.
   downloads remain preserved. This is not universal saved-state clearing, proof
   of normal stable-name Activity restoration, or approval for a shared UI change.
   No production clearing hook is introduced.
+- Matching-code Activity follow-up: one preserving production-module update on
+  HyperOS 4 retains task 68 and its 4692-byte subscription-detail state after
+  killing PID 10784. New PID 29116 reports restored=true and executes exactly the
+  installed new R8 map `e8a64187a082a14e6d21350e1ed8ef5c6c89a140f77a85933405fb08f29d2897`,
+  but crashes while reading a nested Serializable enum in the stable-name generic
+  state. Actual old DEX (`50ba403b...`) defines `r17` as LibraryPage; the new matching
+  map reuses that name for non-enum LibraryMusicKt. The resulting InvalidClassException
+  proves another unstable wire identity beyond the five Parcelable names.
+  LibraryScreen's original rememberSaveable state and page architecture are unchanged.
+- This failure is not the historical missing-Main-dispatcher/mismatched-code case,
+  and is not covered by the primitive/list native codec success or the narrow user
+  waiver. No second restore attempt, generic state clearing or speculative runtime
+  patch occurs. Ordinary force-stop/restart recovers portrait Home in PID 29709;
+  parsed account/settings/full queues and their paused checkpoints are retained.
+  Full cross-R8 Activity restoration stays open. See
+  [Matching-Code Cross-R8 Activity Attempt](dual-runtime-build-plan.md#matching-code-cross-r8-activity-attempt-2026-10-03).
 
 ### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
 

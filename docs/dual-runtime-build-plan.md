@@ -157,7 +157,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks | Complete paired lifecycle/permission/regression matrix; complete stable-name cross-R8 Activity restoration, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup; both production-signed runtimes pass actual native PiP play/pause/previous/next/expand/close clicks; a new cross-APK attempt verifies updated executed-code identity but exposes LibraryPage Serializable alias reuse | Complete paired lifecycle/permission/regression matrix; complete cross-R8 Activity restoration, including the reproduced nested enum wire-name failure; historical module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -5200,6 +5200,57 @@ adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
   retained, not rerun or reported as fresh. `git diff --check` passes. This closes
   the named paired native PiP-menu gate only; full permission/account/configuration
   coverage, readability, stable-name Activity restoration and other D3-D6 gates remain.
+
+### Matching-Code Cross-R8 Activity Attempt (2026-10-03)
+
+- One bounded attempt uses only HyperOS 4 `emulator-5574`, TV-only scope and
+  ordinary probe-disabled production artifacts. The old installed module SHA256
+  is `7c53b7bf4ab018b06ed32c314908a4952a0be19a58330f15e11d8a08bc887372`,
+  with executed R8 map `50ba403bb003b995e29e4b8f4a441b921413fa756e10dad9c2bed05aa3a0f8b2`.
+  The new module SHA256 is
+  `ebc9ab26247cc951e9f7b7f682f51d393952a7dc134f67648c32113ac5c4fedd`,
+  with R8 map `e8a64187a082a14e6d21350e1ed8ef5c6c89a140f77a85933405fb08f29d2897`.
+  Both use the production certificate qualified above. Signing and exact paired
+  workflow preparation pass; only the parasite APK is preserving-installed.
+- The existing Library/Podcasts subscription opens the original detail for
+  `《明日方舟》游戏背景音乐合集`; a small scroll is captured without playing,
+  subscribing or writing account data. Task 68 stops with a 4692-byte saved Bundle.
+  `am kill` removes PID 10784 while preserving that task, its state and `app=null`.
+  No host force-stop or CLEAR_TASK occurs before the restoration attempt.
+- The installed APK hash matches the new artifact. Filtered framework logs do not
+  provide a cache-refresh acknowledgment; two dex2oat errors alone do not establish
+  which DEX will execute. Focusing the retained task starts PID 29116. Its module
+  code_source and crash frames both match the new R8 map, and Activity creation
+  reports `restored=true`. This attempt therefore executes the intended updated
+  module, unlike the older mismatched-code observation. It does not explain or
+  universally fix that historical framework cache/resource failure.
+- Restoration fails before a usable detail page with `BadParcelableException`:
+  Serializable object `r17` cannot bind an enum descriptor to a non-enum class.
+  The old actual APK DEX identifies `r17` as the six-value LibraryPage enum
+  (Songs/Playlists/Podcasts/Downloads/Cloud/History); the new matching R8 map assigns
+  `r17` to `androidx.compose.material.icons.rounded.LibraryMusicKt`. LibraryScreen's
+  unchanged rememberSaveable stores this enum inside ParcelableSnapshotMutableState.
+  Keeping the outer Parcelable name is insufficient to stabilize this nested
+  Serializable payload. The previous native primitive/list/policy codec tests
+  remain valid, but never covered LibraryPage or full Activity state.
+- No speculative dispatcher, loader, enum rule or shared frontend change is made
+  in this checkpoint, and there is no second install/restore attempt. The existing
+  manual force-stop/restart recovery returns ordinary portrait Home in PID 29709
+  (cold launch 2304ms), with an empty current-PID crash buffer and matching new code.
+  Standalone remains PID 8066 and is not updated or restarted.
+- Before/after DataStore protobuf/Gson comparisons preserve account/Cookie values,
+  all other settings, complete queue entries/order/source/modes and paused progress:
+  standalone 1512 items, index 3, 95136ms; parasite 6 items, index 2, 156071ms.
+  Only parasite navigation and playback.snapshot differ after recovery. An initial
+  retention-helper assertion expected the persisted Home tab too early; normal
+  Library-to-Home selection settles that value and the final comparison passes.
+  No uninstall, clear-data, manual persistent-data rewrite, download or AVD backup occurs.
+- Private captures and failure evidence stay under `/tmp/meilox-stable-activity-*`
+  with mode 0600; the temporary device UI XML is removed. No APK, credential or
+  device log enters Git. Existing paired build/unit/package checks from the CI
+  memory checkpoint are retained, not rerun for this documentation-only increment;
+  `git diff --check` passes. Full cross-APK Activity restoration remains failed/open,
+  and the user's early pre-keepnames task waiver is not broadened.
 
 ## Acceptance and Remaining Decisions
 
