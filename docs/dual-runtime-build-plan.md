@@ -157,7 +157,7 @@ The latest acceptance state is:
 | D2 | Both debug artifacts build and execute separately; package isolation is verified; the production-ID standalone R8 client cold-starts with TV stopped, no LSPosed scope, no framework/module mappings and no host/libxposed classes or module metadata | Build-skeleton and independent-runtime exit condition met under the clarified process-level requirement; whole-device framework removal/another AVD is not required |
 | D3 | Original standalone login controls, owned Cookie verification, transport/signing/reporting and isolated read/playback/recovery work; development-signed v17-to-v21 migration and production-signed original-ID preserving upgrade/runtime verified on the configured HyperOS 4; production certificate matches the previous release | Real authorization/expiry/account matrix; the cross-signature install uses the user's Core Patch configuration, not standard signature-check acceptance |
 | D4 | Core feature adapters/session-owned actions have paired contracts; both R8 clients read distinct authenticated server records and exchange one native test text per direction with server-history/recipient proof; production-signed weekly-rank forced refresh fails offline and recovers online in both runtimes without changing their account/settings/queue stores; TV creates and ends a real Together room; standalone joins the user's iPhone-created room, follows a track change and matches the server's paused progress | TV-created invitation is rejected with HIGH_V_REJECTED; unscoped phone 9.6.05 native invitations fail, and one authorized passive diagnosis observes business code 491 without establishing its cause; parasite's cooperating-room acceptance and host selection remain unresolved; broader business/failure/account and upload/write coverage remain |
-| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; unresolved cross-R8 old-task Bundle failure, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution |
+| D5 | Paired device substitutes and bounded minified navigation/playback/background/timer/notification paths verified; same-APK saved-task process recreation passes; stable-name R8 state Parcelables pass native Android cross-loader transfers in both directions; the user accepts the early pre-keepnames task limitation under the existing force-stop/restart update procedure only; module microphone and PiP helpers execute on HyperOS 4, including real fingerprint/match, immutable playback actions, continuous lyric frames and host-death cleanup | Complete paired lifecycle/permission/regression matrix and native PiP menu interaction; complete stable-name cross-R8 Activity restoration, module-update executed-code mismatch, near-end playback failure and intermittent process-start timeout attribution remain unqualified |
 | D6 | Both production R8 artifacts build, are signed with the matching production certificate and now execute on HyperOS 4; preserving standalone data and matching TV executed-code identity are verified; exact workflow preparation and real-SDK package gates pass | Remaining full paired runtime qualification and complete review against current main; no push/release/merge authorized |
 
 Do not reopen usable cloud flows to fill unrelated gates, count substitute success as
@@ -5039,6 +5039,60 @@ playlist/component/PlaylistActionOverlay.kt
   installed APKs are unchanged; prior build/unit/package evidence is retained,
   not represented as fresh executions. `git diff --check` passes.
 
+## Native Cross-R8 Parcelable Codec Qualification (2026-10-03)
+
+- Added opt-in `.github/tests/ParcelableStateCompatibility.java`, compiled against
+  Android 37.0 and converted with D8. The fixture runs in an Android shell VM on
+  the verified HyperOS 4 AVD, not a JVM Android stub or an installed test client.
+  Separate boot-parent DexClassLoaders load two actual minified module APKs.
+  Assertions check receiving-loader identity, complete payload consumption,
+  decoded values/policies and untouched sibling sentinels. Neither loader may
+  load the production `AppContext`.
+- The first stable-name artifact `d5c9667b2c1b3854ca39fafa9902d603cfbfeadb4e3588628db87fcb7cebce03`
+  and the currently installed production parasite
+  `7c53b7bf4ab018b06ed32c314908a4952a0be19a58330f15e11d8a08bc887372`
+  pass 18 positive scenarios: Float/Int/Long state, all three generic mutation
+  policies, empty/mixed SnapshotStateList, and nested Bundle/Parcelable lists,
+  in both APK directions. This strengthens the existing class-name/CREATOR gates
+  with real Android decoding; it does not qualify a complete saved Activity task.
+- One negative control uses the previously fingerprinted library-owner and
+  lifecycle-fixed pre-rule APKs. Its writer's `z99` is first verified as generic
+  state and its reader's `z99` as Long state. The cross-loader Bundle throws
+  `BadParcelableException`. This reproduces the alias hazard without corrupting
+  a real task; it does not prove the exact contents or sole cause of PID 1681's
+  historical `Bad magic number` failure.
+- No module/app installation, host restart, LSPosed scope change, saved-state
+  clearing, business request, playback or account transition occurs. Standalone
+  PID 8066 and TV PID 10784 remain alive and PAUSED at 92802ms and 156037ms.
+  The five read-only fixture/APK files and their temporary device directory are
+  removed. Local compiler/DEX/result evidence stays in
+  `/tmp/meilox-parcel-native-20261003`; no APKs or device logs enter Git.
+- The fixture source and `git diff --check` pass. Production code/APKs are
+  unchanged; previous app builds/tests are retained, not rerun or represented as
+  new results. The user accepts non-restoration of only the early pre-keepnames
+  internal-test tasks, using the existing module-update host force-stop/restart
+  procedure. This retires their transient page state, not login, settings, queues
+  or downloads. No automatic/generic Bundle clearing is added. The historical
+  failure remains recorded; complete stable-name cross-version Activity restoration
+  and the separate module-update code/resource mismatch are not qualified by this
+  codec test or the limited acceptance decision.
+
+To reproduce, prepare a fresh local `classes` directory and stage the compiled
+fixture plus two own module APKs as read-only `fixture.zip`, `older.apk` and
+`current.apk` under a fresh temporary device directory. Verify the HyperOS AVD
+name before selecting `$serial`, and remove only those staged files afterward.
+Optional third/fourth APK arguments are the known generic/Long `z99` negative pair.
+
+```sh
+javac --release 8 -Xlint:-options -cp "$ANDROID_HOME/platforms/android-37.0/android.jar" \
+  -d "$work/classes" .github/tests/ParcelableStateCompatibility.java
+"$ANDROID_HOME/build-tools/37.0.0/d8" --min-api 33 \
+  --lib "$ANDROID_HOME/platforms/android-37.0/android.jar" \
+  --output "$work/fixture.zip" "$work"/classes/*.class
+adb -s "$serial" shell "CLASSPATH=$device/fixture.zip app_process /system/bin \
+  ParcelableStateCompatibility $device/older.apk $device/current.apk"
+```
+
 ## Acceptance and Remaining Decisions
 
 - Run shared contract tests against both backends, plus flavor-specific transport,
@@ -5066,10 +5120,12 @@ playlist/component/PlaylistActionOverlay.kt
 - The observed standalone R8 near-end pause/resume stall remains an unqualified
   playback regression. Preserve the successful timer evidence separately from that
   failure and establish reproduction/attribution before any scoped repair.
-- Preserving old task state across different parasite R8 APKs fails in Bundle
-  decoding as recorded above. Same-APK process recreation passes; these are distinct
-  scenarios. No generic saved-state clearing or shared frontend repair is authorized
-  by the unresolved cross-artifact failure.
+- The user accepts only early pre-keepnames internal-test tasks not restoring across
+  module versions, under the existing host force-stop/restart update procedure.
+  Their historical Bundle failure stays recorded. This does not waive normal
+  same-APK recreation or stable-name cross-R8 Activity qualification, authorize
+  generic saved-state clearing, or permit clearing account/queue/settings/download
+  data. The stable-name native codec test and full Activity restoration are distinct.
 
 The shared dependency-boundary D1 and clarified independent-runtime/build-skeleton D2
 exit conditions are met on the HyperOS 4 AVD. D3-D6 remain open, including the genuine

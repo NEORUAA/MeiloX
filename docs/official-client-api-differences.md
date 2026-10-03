@@ -3519,6 +3519,24 @@ These are integration differences, not server API semantics.
   its tested APK's SDK DEX metadata and R8 mapping ID; the installed hash separately
   matches its signed artifact. Inspected Home and empty PID crash buffer qualify
   only this matching-code launch. No old task compatibility or timing fix is claimed.
+- Native codec follow-up: an opt-in Android shell fixture now checks two actual
+  stable-name R8 APKs in isolated boot-parent loaders. Eighteen bidirectional
+  transfers preserve all five state types, generic mutation policies, mixed/nested
+  lists and sibling sentinels; decoded objects belong to the receiving loader.
+  The known pre-rule generic/Long `z99` collision instead throws
+  `BadParcelableException`, after validating each side's distinct wire shape.
+  No production Application is loaded, app installed/restarted, real saved task
+  modified or business request sent. See
+  [Native Cross-R8 Parcelable Codec Qualification](dual-runtime-build-plan.md#native-cross-r8-parcelable-codec-qualification-2026-10-03).
+  This qualifies the named state codec, not complete Activity restoration, the
+  historical Bundle's exact contents or LSPosed's module-update code/resource
+  selection.
+- User decision after the native check: only early pre-keepnames internal-test
+  tasks may be retired through the existing module-update host force-stop/restart
+  procedure instead of restored across versions. Login, settings, queues and
+  downloads remain preserved. This is not universal saved-state clearing, proof
+  of normal stable-name Activity restoration, or approval for a shared UI change.
+  No production clearing hook is introduced.
 
 ### API-037: TV Recording Permission and WebView Assets Are Not Module Capabilities
 
