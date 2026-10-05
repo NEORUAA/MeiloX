@@ -673,4 +673,7 @@
     <string name="system_lyrics_enabled">啟用歌詞分享</string>
     <string name="system_lyrics_description">透過 Lyricon Provider 和 SuperLyricApi SDK 分享歌詞及播放狀態。</string>
     <string name="system_lyrics_usage">已接入 Lyricon Provider 和 SuperLyricApi SDK。</string>
+    <string name="artist_all_albums_count">全部 %1$d 張專輯</string>
+    <string name="artist_all_albums">全部專輯</string>
+    <string name="artist_albums_empty">暫無專輯</string>
 </resources>

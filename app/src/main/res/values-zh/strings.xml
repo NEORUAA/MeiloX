@@ -673,4 +673,7 @@
     <string name="system_lyrics_enabled">启用歌词共享</string>
     <string name="system_lyrics_description">通过 Lyricon Provider 和 SuperLyricApi SDK 共享歌词及播放状态。</string>
     <string name="system_lyrics_usage">已接入 Lyricon Provider 和 SuperLyricApi SDK。</string>
+    <string name="artist_all_albums_count">全部 %1$d 张专辑</string>
+    <string name="artist_all_albums">全部专辑</string>
+    <string name="artist_albums_empty">暂无专辑</string>
 </resources>

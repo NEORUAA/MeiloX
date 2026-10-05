@@ -79,6 +79,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.Album
+import com.ljyh.mei.ui.model.toAlbum
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import java.util.UUID
@@ -100,6 +101,7 @@ fun ArtistScreen(
     var isFollowed by remember(id) { mutableStateOf(false) }
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
+    val onAllAlbumsClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") }
     val artistData = (artistDetail as? Resource.Success)?.data?.data
     val isArtistUnavailable = artistDetail is Resource.Success && artistData?.artist == null
 
@@ -157,6 +159,7 @@ fun ArtistScreen(
                             ArtistHeader(
                                 artist = artist,
                                 onSongsClick = onAllSongsClick,
+                                onAlbumsClick = onAllAlbumsClick,
                                 isFollowed = isFollowed,
                                 isFollowLoading = followMutation is Resource.Loading,
                                 onFollowClick = {
@@ -241,15 +244,7 @@ fun ArtistScreen(
                         ) {
                             items(albums, key = { it.id }) { hotAlbum ->
                                 AlbumCard(
-                                    album = Album(
-                                        id = hotAlbum.id.toLong(),
-                                        title = hotAlbum.name,
-                                        cover = hotAlbum.picUrl,
-                                        artist = hotAlbum.artists.map {
-                                            Album.Artist(it.id.toLong(), it.name)
-                                        },
-                                        size = hotAlbum.size
-                                    ),
+                                    album = hotAlbum.toAlbum(),
                                     onClick = {
                                         navController.navigate("${Screen.Album.route}/$it")
                                     }
@@ -267,6 +262,27 @@ fun ArtistScreen(
                     }
                 }
                 is Resource.Error -> item { ErrorItem(albumsResource.message) }
+            }
+
+            val albumCount = artistData?.artist?.albumSize
+                ?: (artistAlbums as? Resource.Success)?.data?.artist?.albumSize
+            if (albumCount != null) {
+                item(key = "all-artist-albums") {
+                    IosListRow(
+                        title = stringResource(R.string.artist_all_albums_count, albumCount),
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        onClick = onAllAlbumsClick,
+                        trailing = {
+                            SfIcon(
+                                "chevron.forward",
+                                null,
+                                modifier = Modifier.padding(start = 8.dp),
+                                size = 12.dp,
+                                tint = LocalGlassColors.current.secondaryContent,
+                            )
+                        },
+                    )
+                }
             }
                 }
             }
@@ -329,6 +345,7 @@ fun ArtistHeader(
     isFollowLoading: Boolean,
     onFollowClick: () -> Unit,
     onSongsClick: () -> Unit,
+    onAlbumsClick: () -> Unit,
 ) {
     var descExpanded by remember { mutableStateOf(false) }
     val bgColor = MaterialTheme.colorScheme.background
@@ -438,7 +455,11 @@ fun ArtistHeader(
                         label = "单曲",
                         modifier = Modifier.clickable(role = Role.Button, onClick = onSongsClick),
                     )
-                    StatItem(value = artist.albumSize.toString(), label = "专辑")
+                    StatItem(
+                        value = artist.albumSize.toString(),
+                        label = "专辑",
+                        modifier = Modifier.clickable(role = Role.Button, onClick = onAlbumsClick),
+                    )
                     StatItem(value = artist.mvSize.toString(), label = "MV")
                 }
             }

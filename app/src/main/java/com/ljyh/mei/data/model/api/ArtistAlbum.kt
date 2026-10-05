@@ -4,8 +4,11 @@ import com.google.gson.annotations.SerializedName
 
 
 data class GetArtistAlbum(
+    @SerializedName("limit")
     val limit: Int = 50,
+    @SerializedName("offset")
     val offset: Int = 0,
+    @SerializedName("total")
     val total: Boolean = true,
 )
 

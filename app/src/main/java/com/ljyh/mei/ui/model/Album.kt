@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.model
 
 import com.ljyh.mei.data.model.UserAlbumList
+import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.model.room.AlbumEntity
 import com.ljyh.mei.data.model.room.ArtistEntity
 
@@ -16,6 +17,14 @@ data class Album(
         val name: String
     )
 }
+
+fun ArtistAlbum.HotAlbum.toAlbum(): Album = Album(
+    id = id.toLong(),
+    title = name,
+    cover = picUrl,
+    size = size,
+    artist = artists.map { Album.Artist(it.id, it.name) },
+)
 
 
 

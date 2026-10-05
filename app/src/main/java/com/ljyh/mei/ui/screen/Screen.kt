@@ -35,6 +35,7 @@ sealed class Screen(val route:String) {
     data object Album: Screen("album")
     data object Artist: Screen("artist")
     data object ArtistSongs: Screen("artist-songs")
+    data object ArtistAlbums: Screen("artist-albums")
     data object History: Screen("history")
     data object Podcasts: Screen("podcasts")
     data object PodcastDetail: Screen("podcast")

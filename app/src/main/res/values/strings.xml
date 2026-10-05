@@ -674,4 +674,7 @@
     <string name="system_lyrics_enabled">Enable lyric sharing</string>
     <string name="system_lyrics_description">Shares lyrics and playback state through the Lyricon Provider and SuperLyricApi SDKs.</string>
     <string name="system_lyrics_usage">Integrated with the Lyricon Provider and SuperLyricApi SDKs.</string>
+    <string name="artist_all_albums_count">All %1$d albums</string>
+    <string name="artist_all_albums">All Albums</string>
+    <string name="artist_albums_empty">No albums available</string>
 </resources>
