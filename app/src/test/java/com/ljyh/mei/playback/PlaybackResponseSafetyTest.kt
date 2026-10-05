@@ -125,33 +125,47 @@ class PlaybackResponseSafetyTest {
     }
 
     private fun responseService(response: Response<okhttp3.ResponseBody>): MeloXDirectService =
-        object : MeloXDirectService {
-            override suspend fun post(
-                path: String,
-                body: Map<String, @JvmSuppressWildcards Any>,
-                headers: Map<String, String>,
-            ): JsonObject = error("unused")
-
-            override suspend fun postPlaybackRaw(
-                path: String,
-                body: Map<String, @JvmSuppressWildcards Any>,
-                headers: Map<String, String>,
-            ): Response<okhttp3.ResponseBody> = response
-        }
+        playbackService { response }
 
     private fun throwingService(failure: Exception): MeloXDirectService =
+        playbackService { throw failure }
+
+    private fun playbackService(submit: () -> Response<ResponseBody>): MeloXDirectService =
         object : MeloXDirectService {
             override suspend fun post(
                 path: String,
                 body: Map<String, @JvmSuppressWildcards Any>,
+                cryptoMode: String?,
+                antiCheatToken: String?,
+                ydDeviceToken: String?,
+                loginChainId: String?,
+                nmcid: String?,
+                nmdi: String?,
+                nmtid: String?,
+                withoutAccount: Boolean?,
+                ursAppId: String?,
                 headers: Map<String, String>,
             ): JsonObject = error("unused")
+
+            override suspend fun postResponse(
+                path: String,
+                body: Map<String, @JvmSuppressWildcards Any>,
+                cryptoMode: String?,
+                antiCheatToken: String?,
+                ydDeviceToken: String?,
+                loginChainId: String?,
+                nmcid: String?,
+                nmdi: String?,
+                nmtid: String?,
+                withoutAccount: Boolean?,
+                ursAppId: String?,
+            ): Response<JsonObject> = error("unused")
 
             override suspend fun postPlaybackRaw(
                 path: String,
                 body: Map<String, @JvmSuppressWildcards Any>,
                 headers: Map<String, String>,
-            ): Response<okhttp3.ResponseBody> = throw failure
+            ): Response<okhttp3.ResponseBody> = submit()
         }
 
     private fun String.jsonBody(): ResponseBody = toResponseBody("application/json".toMediaType())

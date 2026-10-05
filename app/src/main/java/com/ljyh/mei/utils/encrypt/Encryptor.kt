@@ -42,16 +42,14 @@ fun encryptWeAPI(
     )
 }
 
-fun decryptEApi(
-    data: ByteArray
-): String {
-
-    return AES.decryptAesEcb(
+fun decryptEApiBytes(data: ByteArray): ByteArray =
+    AES.decryptAesEcb(
         data = data,
         key = eapiKey.toByteArray(),
         padding = Padding.PKCS7Padding
-    ).decodeToString()
-}
+    )
+
+fun decryptEApi(data: ByteArray): String = decryptEApiBytes(data).decodeToString()
 
 fun encryptEApi(
     url: String,

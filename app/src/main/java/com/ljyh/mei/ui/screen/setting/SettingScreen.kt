@@ -59,6 +59,9 @@ fun SettingScreen(
                     ) {
                         Screen.AccountHome.navigate(navController)
                     }
+                    SettingsEntry(stringResource(R.string.pc_qr_login), "viewfinder") {
+                        Screen.PcQrLogin.navigate(navController)
+                    }
                     SettingsEntry(stringResource(R.string.netease_logout), "rectangle.portrait.and.arrow.forward") {
                         logoutNetease(context)
                     }

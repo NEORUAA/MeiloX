@@ -100,8 +100,8 @@ fun LibraryScreen(
     }
 
     // --- 数据同步逻辑 ---
-    LaunchedEffect(userId) {
-        if (userId.isNotEmpty()) {
+    LaunchedEffect(userId, cookie) {
+        if (userId.isNotEmpty() && cookie.isNotEmpty()) {
             viewModel.syncUserPlaylists(userId)
             viewModel.getPhotoAlbum(userId)
             viewModel.getAlbumList()
@@ -117,7 +117,9 @@ fun LibraryScreen(
         }
     }
     LaunchedEffect(cookie, account) {
-        if (cookie.isNotEmpty() && account !is Resource.Success) viewModel.getUserAccount()
+        if (cookie.isNotEmpty() && account !is Resource.Success) {
+            viewModel.getUserAccount()
+        }
     }
     LaunchedEffect(account) {
         (account as? Resource.Success)

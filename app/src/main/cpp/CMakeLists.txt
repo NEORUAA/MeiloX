@@ -1,6 +1,11 @@
-cmake_minimum_required(VERSION 3.22)
-project(beatnet_native LANGUAGES CXX ASM)
+cmake_minimum_required(VERSION 3.22.1)
 
+project(meilox_native LANGUAGES C CXX ASM)
+
+add_library(netease_log_policy SHARED netease_log_policy.c)
+
+find_library(log_lib log)
+target_link_libraries(netease_log_policy ${log_lib})
 add_library(beatnet_native SHARED beatnet_native.cpp beatnet_weights.S jni_bridge.cpp)
 set_property(SOURCE beatnet_weights.S PROPERTY OBJECT_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/beatnet_weights.bin)

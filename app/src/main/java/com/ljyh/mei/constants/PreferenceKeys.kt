@@ -37,6 +37,10 @@ val FloatingLyricsFontScaleKey = floatPreferencesKey("floatingLyrics.fontScale")
 
 
 val CookieKey = stringPreferencesKey("cookie")
+val NeteaseCsrfKey = stringPreferencesKey("neteaseCsrf")
+val NeteaseMusicAKey = stringPreferencesKey("neteaseMusicA")
+val NeteaseRefreshTokenKey = stringPreferencesKey("neteaseRefreshToken")
+val NeteaseUrsAppIdKey = stringPreferencesKey("neteaseUrsAppId")
 val MusicQualityKey = stringPreferencesKey("musicQuality")
 
 
@@ -73,6 +77,14 @@ val EqualizerPreampKey = floatPreferencesKey("equalizer.preamp")
 val EqualizerBandGainsKey = stringPreferencesKey("equalizer.bandGains")
 
 val DeviceIdKey = stringPreferencesKey("deviceId")
+val SDeviceIdKey = stringPreferencesKey("sDeviceId")
+val NeteaseSecurityIdentityKey = stringPreferencesKey("neteaseSecurityIdentity")
+val NeteaseLocalDeviceIdKey = stringPreferencesKey("neteaseLocalDeviceId")
+val NeteaseDeviceRegisteredModelKey = stringPreferencesKey("neteaseDeviceRegisteredModel")
+val NeteaseNmcidKey = stringPreferencesKey("neteaseNmcid")
+val NeteaseNmdiKey = stringPreferencesKey("neteaseNmdi")
+val NeteaseNmdiFinalKey = booleanPreferencesKey("neteaseNmdiFinal")
+val NeteaseNmtidKey = stringPreferencesKey("neteaseNmtid")
 val DebugKey = booleanPreferencesKey("debug")
 val DevModeKey = booleanPreferencesKey("dev_mode")
 val AndroidIdKey = stringPreferencesKey("androidId")

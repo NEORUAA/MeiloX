@@ -16,8 +16,13 @@ plugins {
 android {
     namespace = "com.ljyh.mei"
     compileSdk = 37
+    ndkVersion = "27.1.12297006"
+    useLibrary("android.test.mock")
+    testBuildType = providers.gradleProperty("mei.instrumentationBuildType").orElse("debug").get()
     defaultConfig {
-        applicationId = "com.neoruaa.meilox"
+        applicationId = providers.gradleProperty("mei.applicationId")
+            .orElse("com.neoruaa.meilox")
+            .get()
         minSdk = 33
         targetSdk = 37
         versionCode = 11
@@ -30,6 +35,12 @@ android {
             abiFilters += "arm64-v8a"
         }
     }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 
     buildTypes {
         release {
@@ -37,7 +48,8 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "netease-sdk-rules.pro"
             )
         }
     }
@@ -55,12 +67,6 @@ android {
         // entries at install time instead of mmap'ing them directly from the APK.
         jniLibs.useLegacyPackaging = true
         dex.useLegacyPackaging = true
-    }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
     }
 }
 
@@ -84,6 +90,7 @@ kotlin {
 dependencies {
 
     implementation(libs.androidx.core.ktx)
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -94,6 +101,10 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.navigation.runtime.ktx)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.miuix.navigation3.ui.android)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.media3)
@@ -186,3 +197,21 @@ dependencies {
 //        }
 //    }
 //}
+
+val verifyNoDexAssets by tasks.registering {
+    group = "verification"
+    description = "Reject executable dex files in application assets."
+    val assets = layout.projectDirectory.dir("src/main/assets")
+    inputs.dir(assets)
+    doLast {
+        assets.asFile.walkTopDown().filter { it.isFile }.forEach { asset ->
+            val header = asset.inputStream().use { it.readNBytes(4) }
+            val executable = header.contentEquals(byteArrayOf(100, 101, 120, 10)) ||
+                header.contentEquals(byteArrayOf(99, 100, 101, 120))
+            check(!asset.extension.equals("dex", ignoreCase = true) && !executable) {
+                "Executable dex assets are forbidden: ${asset.relativeTo(assets.asFile)}"
+            }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyNoDexAssets) }

@@ -38,7 +38,7 @@ fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
         },
         modifier = modifier,
     ) {
-        if (avatarUrl.isBlank()) {
+        if (avatarUrl.isBlank() || cookie.isBlank()) {
             SfIcon(
                 systemName = "person.crop.circle",
                 contentDescription = accountDescription,

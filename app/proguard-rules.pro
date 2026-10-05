@@ -171,6 +171,11 @@
 
 # ONNX Runtime's JNI and reflective Java API are required by minimized builds.
 -keep class ai.onnxruntime.** { *; }
+-keep class com.aegis.sdk.AegisNative { *; }
+-keep class com.ljyh.mei.data.network.NeteaseNativeLogPolicy { *; }
+-keepclassmembers class com.ljyh.mei.data.network.NeteaseAegisSecurity$AegisNetworkLayer {
+    public void requireKey(int, java.lang.String, long);
+}
 
 # zstd-jni resolves its native bindings by Java class and method name.
 -keep class com.github.luben.zstd.** { *; }

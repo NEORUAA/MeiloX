@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.Header
 import retrofit2.http.HeaderMap
 import retrofit2.http.POST
 import retrofit2.http.Streaming
@@ -15,8 +16,32 @@ interface MeloXDirectService {
     suspend fun post(
         @Url path: String,
         @Body body: Map<String, @JvmSuppressWildcards Any> = emptyMap(),
+        @Header("X-Netease-Crypto") cryptoMode: String? = null,
+        @Header("X-Netease-Anti-Cheat-Token") antiCheatToken: String? = null,
+        @Header("X-Netease-Yd-Device-Token") ydDeviceToken: String? = null,
+        @Header("X-Netease-Login-Chain-Id") loginChainId: String? = null,
+        @Header("X-Netease-NMCID") nmcid: String? = null,
+        @Header("X-Netease-NMDI") nmdi: String? = null,
+        @Header("X-Netease-NMTID") nmtid: String? = null,
+        @Header("X-Netease-Without-Account") withoutAccount: Boolean? = null,
+        @Header("X-Netease-URS-App-Id") ursAppId: String? = null,
         @HeaderMap headers: Map<String, String> = emptyMap(),
     ): JsonObject
+
+    @POST
+    suspend fun postResponse(
+        @Url path: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any> = emptyMap(),
+        @Header("X-Netease-Crypto") cryptoMode: String? = null,
+        @Header("X-Netease-Anti-Cheat-Token") antiCheatToken: String? = null,
+        @Header("X-Netease-Yd-Device-Token") ydDeviceToken: String? = null,
+        @Header("X-Netease-Login-Chain-Id") loginChainId: String? = null,
+        @Header("X-Netease-NMCID") nmcid: String? = null,
+        @Header("X-Netease-NMDI") nmdi: String? = null,
+        @Header("X-Netease-NMTID") nmtid: String? = null,
+        @Header("X-Netease-Without-Account") withoutAccount: Boolean? = null,
+        @Header("X-Netease-URS-App-Id") ursAppId: String? = null,
+    ): Response<JsonObject>
 
     @Streaming
     @POST
