@@ -2,15 +2,20 @@ package com.ljyh.mei.data.network.netease
 
 import android.content.Context
 import android.os.Build
-import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.DeviceIdKey
+import com.ljyh.mei.constants.SDeviceIdKey
+import com.ljyh.mei.constants.NeteaseCsrfKey
+import com.ljyh.mei.constants.NeteaseMusicAKey
+import com.ljyh.mei.constants.NeteaseUrsAppIdKey
+import com.ljyh.mei.data.network.NeteaseAndroidClientProfile
+import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.neteaseSessionType
 import com.ljyh.mei.data.network.netease.NcblCodec.encode
 import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.utils.getDeviceId
 import com.ljyh.mei.utils.log.logPlaybackHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -67,39 +72,42 @@ internal class DataStoreNcblSessionContextProvider @Inject constructor(
     ): NcblSessionContext? {
         if (song.id <= 0L || source.isBlank() || sourceId <= 0L) return null
         val preferences = context.dataStore.data.first()
-        val musicU = preferences[CookieKey]?.trim().orEmpty()
-        if (musicU.isBlank()) return null
-
-        val deviceId = preferences[DeviceIdKey]?.trim().orEmpty().ifBlank {
-            val generated = getDeviceId()
-            context.dataStore.edit { stored ->
-                if (stored[DeviceIdKey].isNullOrBlank()) stored[DeviceIdKey] = generated
-            }
-            context.dataStore.data.first()[DeviceIdKey]?.trim().orEmpty().ifBlank { generated }
-        }
-        val profile = NcblClientProfile.Android
-        val buildVersion = startedAtMs.coerceAtLeast(0L).div(1_000L).toString()
+        val credentials = preferences.ncblCredentials() ?: return null
+        val deviceId = preferences[DeviceIdKey].orEmpty()
         return NcblSessionContext(
-            credentials = NcblCredentials(musicU = musicU, deviceId = deviceId),
+            credentials = credentials,
             device = NcblDeviceInfo(
                 deviceId = deviceId,
+                sDeviceId = preferences[SDeviceIdKey].orEmpty(),
                 osVersion = Build.VERSION.RELEASE.orEmpty(),
                 model = Build.MODEL.orEmpty(),
                 brand = Build.BRAND.orEmpty(),
                 processName = context.applicationInfo.processName ?: context.packageName,
-                buildType = BuildConfig.BUILD_TYPE,
+                buildType = NeteaseAndroidClientProfile.PACKAGE_TYPE,
                 pid = android.os.Process.myPid(),
                 buildId = Build.ID.orEmpty(),
             ),
-            profile = profile,
             song = song,
             source = source,
             sourceId = sourceId.toString(),
             startedAtMs = startedAtMs,
-            buildVersion = buildVersion,
             sessionId = UUID.randomUUID().toString(),
         )
     }
+}
+
+/** Client logs cannot turn a Web cookie or a fresh random ID into a mobile device. */
+internal fun Preferences.ncblCredentials(): NcblCredentials? {
+    if (neteaseSessionType() != NeteaseSessionType.Mobile || this[DeviceIdKey].isNullOrBlank()) {
+        return null
+    }
+    val ursAppId = this[NeteaseUrsAppIdKey]?.takeIf(String::isNotBlank) ?: return null
+    return NcblCredentials(
+        musicU = this[CookieKey].orEmpty(),
+        ursAppId = ursAppId,
+        musicA = this[NeteaseMusicAKey].orEmpty(),
+        csrf = this[NeteaseCsrfKey].orEmpty(),
+    )
 }
 
 @Singleton
@@ -174,9 +182,9 @@ class NeteaseClientLogClient @Inject internal constructor(
 
     private fun buildMeta(session: NcblSessionContext): JsonObject = JsonObject().apply {
         addProperty("MUSIC_U", session.credentials.musicU)
-        addProperty("URS_APPID", session.profile.ursAppId)
-        addProperty("appver", session.profile.appVersion)
-        addProperty("buildver", session.buildVersion)
+        addProperty("URS_APPID", session.credentials.ursAppId)
+        addProperty("appver", NeteaseAndroidClientProfile.APP_VERSION)
+        addProperty("buildver", NeteaseAndroidClientProfile.BUILD_VERSION)
     }
 
     private fun buildRequest(
@@ -184,25 +192,24 @@ class NeteaseClientLogClient @Inject internal constructor(
         fileName: String,
         encoded: ByteArray,
     ): Request {
-        val profile = session.profile
         val device = session.device
-        val version = profile.appVersion
-        val userAgent = "NeteaseMusic/$version(${profile.versionCode}); Dalvik/2.1.0 " +
-            "(Linux; U; Android ${device.osVersion}; ${device.model} Build/${device.buildId})"
+        val userAgent = NeteaseAndroidClientProfile.userAgent(device.osVersion, device.model, device.buildId)
         val cookie = buildString {
             append("MUSIC_U=").append(session.credentials.musicU)
-            append("; URS_APPID=").append(profile.ursAppId)
+            session.credentials.musicA.takeIf(String::isNotBlank)?.let { append("; MUSIC_A=").append(it) }
+            session.credentials.csrf.takeIf(String::isNotBlank)?.let { append("; __csrf=").append(it) }
+            append("; URS_APPID=").append(session.credentials.ursAppId)
             append("; deviceId=").append(device.deviceId)
-            append("; sDeviceId=").append(device.deviceId)
-            append("; os=").append(profile.os)
+            device.sDeviceId.takeIf(String::isNotBlank)?.let { append("; sDeviceId=").append(it) }
+            append("; os=").append(NeteaseAndroidClientProfile.OS)
             append("; osver=").append(device.osVersion)
-            append("; appver=").append(profile.appVersion)
-            append("; versioncode=").append(profile.versionCode)
-            append("; buildver=").append(session.buildVersion)
-            append("; channel=").append(profile.channel)
+            append("; appver=").append(NeteaseAndroidClientProfile.APP_VERSION)
+            append("; versioncode=").append(NeteaseAndroidClientProfile.VERSION_CODE)
+            append("; buildver=").append(NeteaseAndroidClientProfile.BUILD_VERSION)
+            append("; channel=").append(NeteaseAndroidClientProfile.CHANNEL)
             append("; mobilename=").append(device.model.replace(' ', '+'))
-            append("; brand=").append(device.brand.replace(' ', '+'))
-            append("; packageType=").append(device.buildType)
+            append("; brand=").append(device.brand)
+            append("; packageType=").append(NeteaseAndroidClientProfile.PACKAGE_TYPE)
         }
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -216,10 +223,13 @@ class NeteaseClientLogClient @Inject internal constructor(
             .url(NCBL_UPLOAD_ENDPOINT)
             .header("X-Music-U", session.credentials.musicU)
             .header("X-DeviceId", device.deviceId)
-            .header("X-Os", profile.os)
+            .header("X-Os", NeteaseAndroidClientProfile.OS)
             .header("X-Osver", device.osVersion)
-            .header("X-SDeviceId", device.deviceId)
-            .header("X-Buildver", session.buildVersion)
+            .apply {
+                device.sDeviceId.takeIf(String::isNotBlank)?.let { header("X-SDeviceId", it) }
+            }
+            .header("X-Appver", NeteaseAndroidClientProfile.APP_VERSION)
+            .header("X-Buildver", NeteaseAndroidClientProfile.BUILD_VERSION)
             .header("User-Agent", userAgent)
             .header("Cookie", cookie)
             .header("Accept", "application/json")

@@ -2,6 +2,7 @@ package com.ljyh.mei.di
 
 import android.os.Build
 import android.util.Log
+import androidx.datastore.preferences.core.Preferences
 import com.google.common.reflect.TypeToken
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -19,6 +20,7 @@ import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.NeteaseAegisSecurity
 import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.NeteaseAndroidClientProfile
 import com.ljyh.mei.data.network.neteaseSessionType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -97,7 +99,10 @@ private fun playbackBodyTooLarge(httpStatus: Int) = PlaybackResponseBodyExceptio
     failureReason = "response body exceeds ${MAX_PLAYBACK_HISTORY_RESPONSE_BYTES} bytes",
 )
 
-class NeteaseInterceptor : Interceptor {
+class NeteaseInterceptor internal constructor(
+    private val accountPreferences: () -> Preferences,
+) : Interceptor {
+    constructor() : this({ runBlocking { AppContext.instance.dataStore.data.first() } })
 
     private val gson by lazy {
         GsonBuilder()
@@ -127,27 +132,16 @@ class NeteaseInterceptor : Interceptor {
         "ua" to "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.0.18.203152"
     )
 
-    private val PLAYBACK_HISTORY_USER_AGENT =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/124.0.0.0 Safari/537.36"
-
     // =========================================================================
     //  配置 B：普通 Android 模式 (用于 weapi/api - 保持手机端正常行为)
     // =========================================================================
     private val ANDROID_CONFIG by lazy {
         val metrics = AppContext.instance.resources.displayMetrics
-        mapOf(
-            "os" to "android",
-            "osver" to Build.VERSION.RELEASE,
-            "appver" to "9.5.70",
-            "channel" to "xiaomi",
-            "versioncode" to "9005070",
-            "mobilename" to Build.MODEL.replace(" ", "+"),
-            "buildver" to "260818213343",
-            "resolution" to "${metrics.widthPixels}x${metrics.heightPixels}",
-            "ua" to "NeteaseMusic/9.5.70.260818213343(9005070);Dalvik/2.1.0 " +
-                "(Linux; U; Android ${Build.VERSION.RELEASE}; ${Build.MODEL} Build/${Build.ID})",
+        NeteaseAndroidClientProfile.eapiConfig(
+            osVersion = Build.VERSION.RELEASE,
+            model = Build.MODEL,
+            buildId = Build.ID,
+            resolution = "${metrics.widthPixels}x${metrics.heightPixels}",
         )
     }
 
@@ -172,8 +166,9 @@ class NeteaseInterceptor : Interceptor {
         val nmcid = originalRequest.header(NMCID_HEADER)?.takeIf(String::isNotBlank)
         val nmdi = originalRequest.header(NMDI_HEADER)?.takeIf(String::isNotBlank)
         val nmtid = originalRequest.header(NMTID_HEADER)?.takeIf(String::isNotBlank)
+        val preferences = accountPreferences()
         val ursAppId = originalRequest.header(URS_APP_ID_HEADER)?.takeIf(String::isNotBlank)
-            ?: AppContext.instance.dataStore[NeteaseUrsAppIdKey]?.takeIf(String::isNotBlank)
+            ?: preferences[NeteaseUrsAppIdKey]?.takeIf(String::isNotBlank)
         val withoutAccount = originalRequest.header(WITHOUT_ACCOUNT_HEADER) == "true"
         val webSessionOverride = originalRequest.header(NETEASE_WEB_SESSION_HEADER)
         val builder = originalRequest.newBuilder()
@@ -215,37 +210,24 @@ class NeteaseInterceptor : Interceptor {
             )
         }
 
-        val accountPreferences = runBlocking { AppContext.instance.dataStore.data.first() }
-        val storedMusicU = webSessionOverride ?: accountPreferences[CookieKey].orEmpty()
+        val storedMusicU = webSessionOverride ?: preferences[CookieKey].orEmpty()
         val hasMobileSession = webSessionOverride == null &&
-            accountPreferences.neteaseSessionType() == NeteaseSessionType.Mobile
-        val usesAndroidEapiIdentity = !isPlaybackHistoryProfile && usesOfficialAndroidIdentity(
+            preferences.neteaseSessionType() == NeteaseSessionType.Mobile
+        val usesAndroidEapiIdentity = usesOfficialAndroidIdentity(
             cryptoMode = cryptoMode,
             encodedPath = originalRequest.url.encodedPath,
             hasMobileSession = hasMobileSession,
         )
         val usesXeapiIdentity = cryptoMode == "xeapi"
         val config = when {
-            isPlaybackHistoryProfile -> mapOf(
-                "os" to "osx",
-                "osver" to "15.5",
-                "appver" to "3.1.10.5100",
-                "versioncode" to "140",
-                "channel" to "netease",
-                "resolution" to "1920x1080",
-                "buildver" to (System.currentTimeMillis() / 1_000L).toString(),
-            )
             cryptoMode == "eapi" && !usesAndroidEapiIdentity -> EAPI_CONFIG
             else -> ANDROID_CONFIG
         }
-        val requestOs = if (isPlaybackHistoryProfile) {
-            config["os"]!!
-        } else {
-            cookieOsOverride ?: config["os"]!!
-        }
+        val requestOs = cookieOsOverride ?: config["os"]!!
 
-        val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
-        val storedSDeviceId = AppContext.instance.dataStore[SDeviceIdKey].orEmpty()
+        val deviceId = preferences[DeviceIdKey]?.takeIf(String::isNotBlank)
+            ?: if (hasMobileSession) error("NetEase mobile device identity is unavailable") else getDeviceId()
+        val storedSDeviceId = preferences[SDeviceIdKey].orEmpty()
         val sDeviceId = storedSDeviceId
         val musicU = if (withoutAccount) {
             ""
@@ -255,19 +237,18 @@ class NeteaseInterceptor : Interceptor {
         val musicA = if (withoutAccount || !hasMobileSession) {
             ""
         } else {
-            AppContext.instance.dataStore[NeteaseMusicAKey].orEmpty()
+            preferences[NeteaseMusicAKey].orEmpty()
         }
         val rawBody = getBodyString(originalRequest.body)
-        val requiresCheckToken = !isPlaybackHistoryProfile && (
+        val requiresCheckToken = (
             originalRequest.header(CHECK_TOKEN_HEADER) == "true" ||
             rawBody.contains("\"checkToken\"")
         )
         val antiCheatToken = suppliedAntiCheatToken ?: extractCheckToken(rawBody) ?: checkToken
         val csrfToken = when {
-            isPlaybackHistoryProfile -> ""
             !usesAndroidEapiIdentity -> CONST_CSRF
             withoutAccount || !hasMobileSession -> cachedAndroidCsrf
-            else -> AppContext.instance.dataStore[NeteaseCsrfKey]
+            else -> preferences[NeteaseCsrfKey]
                 ?.takeIf(String::isNotBlank)
                 ?: cachedAndroidCsrf
         }
@@ -288,7 +269,7 @@ class NeteaseInterceptor : Interceptor {
             put("deviceId", deviceId)
             sDeviceId.takeIf(String::isNotBlank)?.let { put("sDeviceId", it) }
             put("brand", Build.BRAND)
-            put("packageType", "release")
+            put("packageType", NeteaseAndroidClientProfile.PACKAGE_TYPE)
             put("ntes_kaola_ad", "1")
             if (!usesXeapiIdentity) {
                 put("_ntes_nuid", cachedNuid)
@@ -339,12 +320,16 @@ class NeteaseInterceptor : Interceptor {
             if (musicU.isNotEmpty()) this.MUSIC_U = musicU
             if (musicA.isNotEmpty()) this.MUSIC_A = musicA
         }
-        val useEApiHeaderCookie = isPlaybackHistoryProfile || (cryptoMode == "eapi" &&
+        val useEApiHeaderCookie = cryptoMode == "eapi" && if (
+            isPlaybackHistoryProfile || originalRequest.url.encodedPath.endsWith("/feedback/weblog")
+        ) {
+            !usesAndroidEapiIdentity
+        } else {
             originalRequest.url.encodedPath in setOf(
                 "/api/playlist/subscribe",
                 "/api/playlist/unsubscribe",
-                "/api/feedback/weblog",
-            ))
+            )
+        }
         val cookie = if (useEApiHeaderCookie) {
             buildEApiCookieString(
                 neteaseHeader,
@@ -364,18 +349,14 @@ class NeteaseInterceptor : Interceptor {
         // weapi: 永远使用 PC Web UA (Chrome/Edge)，这是 weapi 协议的特性
         // eapi: 使用 Config 中指定的 UA (PC Desktop)
         // api: 使用 Config 中指定的 UA (Android)
-        val userAgent = if (isPlaybackHistoryProfile) {
-            PLAYBACK_HISTORY_USER_AGENT
-        } else {
-            userAgentOverride ?: when (cryptoMode) {
-                "weapi" -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
-                else -> config["ua"]!!
-            }
+        val userAgent = userAgentOverride ?: when (cryptoMode) {
+            "weapi" -> "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+            else -> config["ua"]!!
         }
         if (isPlaybackHistoryProfile) {
             builder
                 .header("Accept", "*/*")
-                .header("User-Agent", PLAYBACK_HISTORY_USER_AGENT)
+                .header("User-Agent", userAgent)
         } else {
             builder.addHeader("User-Agent", userAgent)
         }
@@ -408,7 +389,7 @@ class NeteaseInterceptor : Interceptor {
             builder.addHeader("X-Forwarded-For", fakeIP)
         }
         if (isPlaybackHistoryProfile &&
-            (BuildConfig.DEBUG || AppContext.instance.dataStore[DebugKey] == true)
+            (BuildConfig.DEBUG || preferences[DebugKey] == true)
         ) {
             logPlaybackHistory(
                 Log.DEBUG,

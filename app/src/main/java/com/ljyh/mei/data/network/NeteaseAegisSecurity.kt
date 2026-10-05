@@ -247,8 +247,7 @@ class NeteaseAegisSecurity @Inject constructor(
             .toString(Charsets.UTF_8)
 
     private fun officialUserAgent(): String =
-        "${NeteaseLoginSecurity.OFFICIAL_ANDROID_USER_AGENT} " +
-            "(Linux; U; Android ${Build.VERSION.RELEASE}; ${Build.MODEL} Build/${Build.ID})"
+        NeteaseAndroidClientProfile.userAgent(Build.VERSION.RELEASE, Build.MODEL, Build.ID)
 
     @Keep
     internal class AegisNetworkLayer(

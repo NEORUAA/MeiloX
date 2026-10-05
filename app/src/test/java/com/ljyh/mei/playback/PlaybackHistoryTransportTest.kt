@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+import com.ljyh.mei.data.repository.PlaybackLogResponse
 import com.ljyh.mei.data.repository.playbackHistoryPlayFields
 import com.ljyh.mei.data.repository.submitPlaybackHistoryLog
 import com.ljyh.mei.data.repository.submitPlaybackHistoryStart
@@ -39,6 +40,34 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 class PlaybackHistoryTransportTest {
+    @Test
+    fun mobileStartAndCompletionNeverClaimToBeWebPlayback() = runBlocking {
+        var startFields: Map<String, Any>? = null
+        submitPlaybackHistoryStart(123456L, 789L, "album", 1_790_006_390_000L, isMobileSession = true) { _, fields ->
+            startFields = fields
+            PlaybackLogResponse(httpAccepted = true, code = 200, message = null)
+        }
+        val endFields = playbackHistoryPlayFields(
+            123456L, 789L, "album", 70L, 1_790_006_390_000L, 1_790_006_463_000L, "ui",
+            isMobileSession = true,
+        )
+        listOf(startFields!!, endFields).forEach { fields ->
+            assertFalse(fields.containsKey("mainsite"))
+            assertFalse(fields.containsKey("mainsiteWeb"))
+            assertEquals(1_790_006_390L, fields["startlogtime"])
+        }
+        assertEquals(70L, endFields["time"])
+    }
+
+    @Test
+    fun webPlaybackKeepsItsWebSessionMarkers() {
+        val fields = playbackHistoryPlayFields(
+            123456L, 789L, "album", 70L, 1_790_006_390_000L, 1_790_006_463_000L, "ui",
+        )
+        assertEquals("1", fields["mainsite"])
+        assertEquals("1", fields["mainsiteWeb"])
+    }
+
     @Test
     fun playbackStartSendsOnlyStartplayWithoutAZeroDurationCompletion() = runBlocking {
         val transport = MemoryTransport(

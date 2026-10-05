@@ -66,23 +66,22 @@ class NcblPayloadTest {
     }
 
     private fun session(startedAtMs: Long, durationMs: Long?) = NcblSessionContext(
-        credentials = NcblCredentials("token-not-for-logs", "DEVICE123"),
+        credentials = NcblCredentials("token-not-for-logs", "urs-from-login"),
         device = NcblDeviceInfo(
             deviceId = "DEVICE123",
+            sDeviceId = "SERVER456",
             osVersion = "16",
             model = "Pixel 10 Pro",
             brand = "Google",
             processName = "com.neoruaa.meilox",
-            buildType = "debug",
+            buildType = "release",
             pid = 42,
             buildId = "AP4A",
         ),
-        profile = NcblClientProfile.Android,
         song = NcblSongInfo(123456L, "Track title", "Artist One, Artist Two", durationMs),
         source = "track",
         sourceId = "456",
         startedAtMs = startedAtMs,
-        buildVersion = (startedAtMs / 1_000L).toString(),
         sessionId = "captured-session-id",
     )
 

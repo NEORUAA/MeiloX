@@ -1,5 +1,7 @@
 package com.ljyh.mei.data.network.netease
 
+import com.google.gson.JsonParser
+import com.ljyh.mei.data.network.NeteaseAndroidClientProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -7,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -19,6 +22,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -55,12 +60,51 @@ class NeteaseClientLogClientTest {
         assertEquals("true", request.url.queryParameter("multiupload"))
         assertEquals("android", request.header("X-Os"))
         assertEquals("DEVICE123", request.header("X-DeviceId"))
-        assertEquals("8.20.20.231215173437", request.header("User-Agent")
-            ?.substringAfter("NeteaseMusic/")
-            ?.substringBefore('('))
+        assertEquals(NeteaseAndroidClientProfile.userAgent("16", "Pixel 10 Pro", "AP4A"), request.header("User-Agent"))
+        assertEquals("SERVER456", request.header("X-SDeviceId"))
+        assertEquals(NeteaseAndroidClientProfile.APP_VERSION, request.header("X-Appver"))
+        assertEquals(NeteaseAndroidClientProfile.BUILD_VERSION, request.header("X-Buildver"))
         assertTrue(request.header("Cookie").orEmpty().contains("deviceId=DEVICE123"))
+        assertTrue(request.header("Cookie").orEmpty().contains("sDeviceId=SERVER456"))
+        assertTrue(request.header("Cookie").orEmpty().contains("URS_APPID=urs-from-login"))
+        assertTrue(request.header("Cookie").orEmpty().contains("MUSIC_A=music-a-from-login"))
+        assertTrue(request.header("Cookie").orEmpty().contains("__csrf=csrf-from-login"))
+        assertTrue(request.header("Cookie").orEmpty().contains("packageType=release"))
         assertTrue(request.header("Cookie").orEmpty().contains("MUSIC_U=token-not-for-logs"))
         assertNull(request.header("Mconfig-Info"))
+    }
+
+    @Test
+    fun startAndEndUseLoginBuildVersionInBothCookieAndEncryptedMetadata() = runBlocking {
+        val requests = mutableListOf<Request>()
+        val client = client { request ->
+            requests += request
+            okResponse(request, 200, """{"code":200,"data":{"successfiles":["${fileName(request)}"]}}""")
+        }
+        val session = session()
+        client.submitStart(session, eventTimeMs = session.startedAtMs)
+        client.submitEnd(session, playedDurationMs = 70_000L, eventTimeMs = session.startedAtMs + 73_000L, endReason = "ui")
+
+        assertEquals(2, requests.size)
+        requests.forEach { request ->
+            val encoded = Buffer().apply {
+                (request.body as MultipartBody).parts.single().body.writeTo(this)
+            }.readByteArray()
+            val header = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN)
+            val endOfMeta = header.getShort(8).toInt() and 0xffff
+            val meta = NcblCodec.chacha20(
+                key = encoded.copyOfRange(26, 58),
+                initialCounter = header.getInt(22) ushr 2,
+                nonce = encoded.copyOfRange(10, 22),
+                input = encoded.copyOfRange(74, endOfMeta),
+            ).toString(Charsets.UTF_8).let(JsonParser::parseString).asJsonObject
+            assertEquals(NeteaseAndroidClientProfile.APP_VERSION, meta["appver"].asString)
+            assertEquals(NeteaseAndroidClientProfile.BUILD_VERSION, meta["buildver"].asString)
+            assertEquals("urs-from-login", meta["URS_APPID"].asString)
+            assertEquals(session.credentials.musicU, meta["MUSIC_U"].asString)
+            assertTrue(request.header("Cookie").orEmpty().contains("buildver=${meta["buildver"].asString}"))
+            assertFalse(meta["buildver"].asString == (session.startedAtMs / 1_000L).toString())
+        }
     }
 
     @Test
@@ -163,23 +207,22 @@ class NeteaseClientLogClientTest {
     }
 
     private fun session() = NcblSessionContext(
-        credentials = NcblCredentials("token-not-for-logs", "DEVICE123"),
+        credentials = NcblCredentials("token-not-for-logs", "urs-from-login", "music-a-from-login", "csrf-from-login"),
         device = NcblDeviceInfo(
             deviceId = "DEVICE123",
+            sDeviceId = "SERVER456",
             osVersion = "16",
             model = "Pixel 10 Pro",
             brand = "Google",
             processName = "com.neoruaa.meilox",
-            buildType = "debug",
+            buildType = "release",
             pid = 42,
             buildId = "AP4A",
         ),
-        profile = NcblClientProfile.Android,
         song = NcblSongInfo(123456L, "Track title", "Artist", 241_000L),
         source = "track",
         sourceId = "456",
         startedAtMs = 1_790_006_390_987L,
-        buildVersion = "1790006390",
         sessionId = "test-session",
     )
 

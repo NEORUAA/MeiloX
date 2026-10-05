@@ -9,6 +9,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -71,6 +72,7 @@ import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.readNeteaseLoginCookies
 import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.neteaseSessionType
 import com.ljyh.mei.data.network.requireNeteaseMobileSession
 import com.ljyh.mei.constants.NeteaseSessionTypeKey
 import com.ljyh.mei.di.NETEASE_WEB_SESSION_HEADER
@@ -665,13 +667,15 @@ class MeloXRepository @Inject constructor(
         startedAtMs: Long,
     ): PlaybackLogResponse? {
         if (songId <= 0L) return null
-        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
+        val preferences = authenticatedPlaybackHistoryPreferences() ?: return null
+        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
 
         return submitPlaybackHistoryStart(
             songId = songId,
             sourceId = sourceId,
             source = source,
             startedAtMs = startedAtMs,
+            isMobileSession = preferences.neteaseSessionType() == NeteaseSessionType.Mobile,
         ) { action, fields ->
             submitPlaybackHistoryLog(eapi, action, fields).also { response ->
                 logPlaybackHistoryDebug(action, fields, response, debugEnabled)
@@ -689,7 +693,8 @@ class MeloXRepository @Inject constructor(
         endReason: String,
     ): PlaybackLogResponse? {
         if (songId <= 0L) return null
-        val debugEnabled = authenticatedPlaybackHistoryDebugEnabled() ?: return null
+        val preferences = authenticatedPlaybackHistoryPreferences() ?: return null
+        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
         val fields = playbackHistoryPlayFields(
             songId = songId,
             sourceId = sourceId,
@@ -698,16 +703,17 @@ class MeloXRepository @Inject constructor(
             startedAtMs = startedAtMs,
             endedAtMs = endedAtMs,
             endReason = endReason,
+            isMobileSession = preferences.neteaseSessionType() == NeteaseSessionType.Mobile,
         )
         return submitPlaybackHistoryLog(eapi, "play", fields).also { response ->
             logPlaybackHistoryDebug("play", fields, response, debugEnabled)
         }
     }
 
-    private suspend fun authenticatedPlaybackHistoryDebugEnabled(): Boolean? {
+    private suspend fun authenticatedPlaybackHistoryPreferences(): Preferences? {
         val preferences = context.dataStore.data.first()
         if (preferences[CookieKey].isNullOrBlank()) return null
-        return BuildConfig.DEBUG || preferences[DebugKey] == true
+        return preferences
     }
 
     private fun logPlaybackHistoryDebug(
@@ -1389,13 +1395,14 @@ internal suspend fun submitPlaybackHistoryStart(
     sourceId: Long,
     source: String,
     startedAtMs: Long,
+    isMobileSession: Boolean = false,
     submit: suspend (String, Map<String, Any>) -> PlaybackLogResponse,
 ): PlaybackLogResponse {
     require(songId > 0L) { "songId must be positive" }
     // A play event closes a session; sending play(time=0) here creates a false completion.
     return submit(
         "startplay",
-        playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, startedAtMs),
+        playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, startedAtMs, isMobileSession),
     )
 }
 
@@ -1407,7 +1414,8 @@ internal fun playbackHistoryPlayFields(
     startedAtMs: Long,
     endedAtMs: Long,
     endReason: String,
-): Map<String, Any> = playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, endedAtMs) + mapOf(
+    isMobileSession: Boolean = false,
+): Map<String, Any> = playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, endedAtMs, isMobileSession) + mapOf(
     "download" to 0,
     "end" to endReason,
     "time" to timeSeconds.coerceAtLeast(0L),
@@ -1420,6 +1428,7 @@ private fun playbackHistoryBaseFields(
     source: String,
     startedAtMs: Long,
     loggedAtMs: Long,
+    isMobileSession: Boolean,
 ): Map<String, Any> {
     require(songId > 0L) { "songId must be positive" }
     val knownSource = source.takeIf { it in PLAYBACK_SOURCES }
@@ -1436,10 +1445,8 @@ private fun playbackHistoryBaseFields(
         "sourceId" to safeSourceId.toString(),
         "source" to safeSource,
         "sourcetype" to safeSource,
-        "mainsite" to "1",
-        "mainsiteWeb" to "1",
         "content" to "id=$safeSourceId",
-    )
+    ) + if (isMobileSession) emptyMap() else mapOf("mainsite" to "1", "mainsiteWeb" to "1")
 }
 
 internal fun parsePlaybackHistoryBody(body: String?): PlaybackBodyParseResult {

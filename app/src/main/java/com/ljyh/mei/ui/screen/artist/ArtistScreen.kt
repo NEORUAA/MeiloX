@@ -270,7 +270,7 @@ fun ArtistScreen(
                 item(key = "all-artist-albums") {
                     IosListRow(
                         title = stringResource(R.string.artist_all_albums_count, albumCount),
-                        modifier = Modifier.padding(horizontal = 6.dp),
+                        modifier = Modifier.padding(horizontal = 6.dp).padding(top = 10.dp),
                         onClick = onAllAlbumsClick,
                         trailing = {
                             SfIcon(
