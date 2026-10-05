@@ -13,9 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.IosGroupedList
@@ -26,7 +24,9 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.ui.screen.account.logoutNetease
+import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.ui.screen.account.rememberNeteaseSessionType
+import androidx.compose.ui.draw.alpha
 import com.ljyh.mei.utils.rememberPreference
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,8 +35,7 @@ fun SettingScreen(
     @Suppress("UNUSED_PARAMETER") scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val navController = LocalNavController.current
-    val context = LocalContext.current
-    val (cookie) = rememberPreference(CookieKey, "")
+    val sessionType = rememberNeteaseSessionType()
     val (userNickname) = rememberPreference(UserNicknameKey, "")
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     IosPinnedListPage(
@@ -47,7 +46,7 @@ fun SettingScreen(
         item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
         item {
             IosGroupedList {
-                if (cookie.isBlank()) {
+                if (sessionType == NeteaseSessionType.None) {
                     SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
                         Screen.NeteaseLogin.navigate(navController)
                     }
@@ -59,12 +58,16 @@ fun SettingScreen(
                     ) {
                         Screen.AccountHome.navigate(navController)
                     }
-                    SettingsEntry(stringResource(R.string.pc_qr_login), "viewfinder") {
-                        Screen.PcQrLogin.navigate(navController)
-                    }
-                    SettingsEntry(stringResource(R.string.netease_logout), "rectangle.portrait.and.arrow.forward") {
-                        logoutNetease(context)
-                    }
+                    val canAuthorize = sessionType == NeteaseSessionType.Mobile
+                    IosListRow(
+                        title = stringResource(R.string.pc_qr_login),
+                        systemName = "viewfinder",
+                        subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
+                        modifier = Modifier.alpha(if (canAuthorize) 1f else 0.38f),
+                        onClick = if (canAuthorize) {
+                            { Screen.PcQrLogin.navigate(navController) }
+                        } else null,
+                    )
                 }
             }
         }

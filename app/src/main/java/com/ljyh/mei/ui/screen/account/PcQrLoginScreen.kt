@@ -97,6 +97,7 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
+import com.ljyh.mei.data.network.NeteaseSessionType
 import com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge
 import com.ljyh.mei.data.network.NeteaseUrsUpSmsRequiredException
 import com.ljyh.mei.ui.glass.GlassButton
@@ -138,7 +139,9 @@ fun PcQrLoginScreen(viewModel: PcQrLoginViewModel = hiltViewModel()) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val cookie by rememberPreference(CookieKey, "")
     val userId by rememberPreference(UserIdKey, "")
-    val isSignedIn = cookie.isNotBlank() && userId.toLongOrNull()?.let { it > 0 } == true
+    val sessionType = rememberNeteaseSessionType()
+    val isSignedIn = sessionType == NeteaseSessionType.Mobile &&
+        cookie.isNotBlank() && userId.toLongOrNull()?.let { it > 0 } == true
     val hasCamera = remember(context) {
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
@@ -236,6 +239,7 @@ fun PcQrLoginScreen(viewModel: PcQrLoginViewModel = hiltViewModel()) {
                     when {
                         !isSignedIn -> AccountRequiredContent(
                             onLogin = { showMobileLoginSheet = true },
+                            hasWebSession = sessionType == NeteaseSessionType.Web,
                         )
                         !hasCamera -> UnavailableCameraContent()
                         !permissionGranted -> CameraPermissionContent(
@@ -393,10 +397,13 @@ fun PcQrLoginScreen(viewModel: PcQrLoginViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun AccountRequiredContent(onLogin: () -> Unit) {
+private fun AccountRequiredContent(onLogin: () -> Unit, hasWebSession: Boolean = false) {
     PlaceholderContent(
         icon = "person.crop.circle.badge.exclamationmark",
-        title = stringResource(R.string.pc_qr_login_account_required),
+        title = stringResource(
+            if (hasWebSession) R.string.pc_qr_login_mobile_session_required
+            else R.string.pc_qr_login_account_required,
+        ),
         actionLabel = stringResource(R.string.netease_mobile_login),
         onAction = onLogin,
     )

@@ -482,7 +482,16 @@
     <string name="pc_qr_login_request_failed">无法连接网易云音乐，请检查网络后重试。</string>
     <string name="pc_qr_login_cancel_failed">未能通知电脑端取消。本次登录没有获得授权，二维码将自动失效。</string>
     <string name="pc_qr_login_camera_error">无法启动相机</string>
-    <string name="netease_logout">退出网易云音乐</string>
+    <string name="netease_logout">退出登录（移动端）</string>
+    <string name="netease_logout_web">退出登录（网页端）</string>
+    <string name="netease_logout_confirm_message">确定退出本应用中的当前账号吗？退出后需重新登录才能使用账号相关功能。</string>
+    <string name="netease_logout_confirm">确认退出</string>
+    <string name="netease_web_login">网页端 Cookie 登录</string>
+    <string name="pc_qr_login_mobile_only">仅限移动端会话</string>
+    <string name="netease_web_session_notice_title">现已支持移动端登录</string>
+    <string name="netease_web_session_notice_message">你原有的网页端会话可能无法使用完整功能。MeiloX 现已支持使用网易云官方移动端会话登录，包括网页 / PC 扫码授权。建议通过手机号登录切换；新登录成功前会保留当前会话。</string>
+    <string name="netease_web_session_do_not_remind">不再提醒</string>
+    <string name="netease_web_session_sign_in_again">重新登录</string>
     <string name="done">完成</string>
     <string name="account_home">账号主页</string>
     <string name="account_playlists">歌单 · %1$d</string>

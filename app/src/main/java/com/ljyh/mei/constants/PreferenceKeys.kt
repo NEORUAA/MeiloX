@@ -41,6 +41,8 @@ val NeteaseCsrfKey = stringPreferencesKey("neteaseCsrf")
 val NeteaseMusicAKey = stringPreferencesKey("neteaseMusicA")
 val NeteaseRefreshTokenKey = stringPreferencesKey("neteaseRefreshToken")
 val NeteaseUrsAppIdKey = stringPreferencesKey("neteaseUrsAppId")
+val NeteaseSessionTypeKey = stringPreferencesKey("neteaseSessionType")
+val NeteaseWebSessionNoticeDismissedKey = booleanPreferencesKey("neteaseWebSessionNoticeDismissed")
 val MusicQualityKey = stringPreferencesKey("musicQuality")
 
 

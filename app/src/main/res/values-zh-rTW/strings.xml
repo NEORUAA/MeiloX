@@ -482,7 +482,16 @@
     <string name="pc_qr_login_request_failed">無法連接網易雲音樂，請檢查網路後重試。</string>
     <string name="pc_qr_login_cancel_failed">未能通知電腦端取消。本次登入沒有獲得授權，QR Code 將自動失效。</string>
     <string name="pc_qr_login_camera_error">無法啟動相機</string>
-    <string name="netease_logout">登出網易雲音樂</string>
+    <string name="netease_logout">登出（行動端）</string>
+    <string name="netease_logout_web">登出（網頁端）</string>
+    <string name="netease_logout_confirm_message">確定登出本應用程式中的目前帳號嗎？登出後需重新登入才能使用帳號相關功能。</string>
+    <string name="netease_logout_confirm">確認登出</string>
+    <string name="netease_web_login">網頁端 Cookie 登入</string>
+    <string name="pc_qr_login_mobile_only">僅限行動端工作階段</string>
+    <string name="netease_web_session_notice_title">現已支援行動端登入</string>
+    <string name="netease_web_session_notice_message">你原有的網頁端工作階段可能無法使用完整功能。MeiloX 現已支援使用網易雲官方行動端工作階段登入，包括網頁 / PC 掃碼授權。建議透過手機號碼登入切換；新登入成功前會保留目前工作階段。</string>
+    <string name="netease_web_session_do_not_remind">不再提醒</string>
+    <string name="netease_web_session_sign_in_again">重新登入</string>
     <string name="done">完成</string>
     <string name="account_home">帳號主頁</string>
     <string name="account_playlists">歌單 · %1$d</string>

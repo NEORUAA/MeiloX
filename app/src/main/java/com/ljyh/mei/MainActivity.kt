@@ -184,6 +184,7 @@ import com.ljyh.mei.ui.glass.rememberSharedGlassBackdrop
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import com.ljyh.mei.ui.screen.Index
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.screen.account.NeteaseLegacyWebSessionNotice
 import com.ljyh.mei.ui.screen.navigationEntry
 import com.ljyh.mei.ui.screen.search.SearchScreen
 import com.ljyh.mei.ui.navigation.MeiNavEntryViewModelStoreOwner
@@ -1073,6 +1074,7 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                        if (!pictureInPictureMode) NeteaseLegacyWebSessionNotice()
                         VersionUpdateAlert(
                             result = startupUpdateResult,
                             onDismiss = { startupUpdateResult = null },

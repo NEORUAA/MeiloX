@@ -483,7 +483,16 @@
     <string name="pc_qr_login_request_failed">Could not contact NetEase Cloud Music. Check your network and try again.</string>
     <string name="pc_qr_login_cancel_failed">The cancellation could not be sent. No sign-in was authorized, and the QR code will expire automatically.</string>
     <string name="pc_qr_login_camera_error">Could not start the camera</string>
-    <string name="netease_logout">Sign out of NetEase Cloud Music</string>
+    <string name="netease_logout">Sign Out (Mobile)</string>
+    <string name="netease_logout_web">Sign Out (Web)</string>
+    <string name="netease_logout_confirm_message">Sign out of the current account on this app? You will need to sign in again to use account features.</string>
+    <string name="netease_logout_confirm">Sign Out</string>
+    <string name="netease_web_login">Web Cookie Sign-In</string>
+    <string name="pc_qr_login_mobile_only">Requires mobile sign-in</string>
+    <string name="netease_web_session_notice_title">Mobile Sign-In Is Now Available</string>
+    <string name="netease_web_session_notice_message">Your existing web session may not support all features. MeiloX now supports official NetEase mobile account sessions, including Web / PC QR authorization. Sign in with your phone to switch. Your current session stays signed in until the new sign-in succeeds.</string>
+    <string name="netease_web_session_do_not_remind">Do Not Remind Again</string>
+    <string name="netease_web_session_sign_in_again">Sign In Again</string>
     <string name="done">Done</string>
     <string name="account_home">Account</string>
     <string name="account_playlists">Playlists · %1$d</string>

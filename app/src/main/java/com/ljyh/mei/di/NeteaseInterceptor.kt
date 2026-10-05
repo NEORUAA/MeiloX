@@ -18,6 +18,10 @@ import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.NeteaseAegisSecurity
+import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.neteaseSessionType
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.encrypt.createRandomKey
 import com.ljyh.mei.utils.encrypt.decryptEApi
@@ -47,6 +51,7 @@ import java.util.zip.GZIPInputStream
 import kotlin.apply
 
 internal const val NETEASE_EAPI_PROFILE_HEADER = "X-Netease-Eapi-Profile"
+internal const val NETEASE_WEB_SESSION_HEADER = "X-Netease-Web-Session"
 internal const val PLAYBACK_HISTORY_PROFILE = "playback-history"
 internal const val MAX_PLAYBACK_HISTORY_RESPONSE_BYTES = 16_384
 
@@ -170,6 +175,7 @@ class NeteaseInterceptor : Interceptor {
         val ursAppId = originalRequest.header(URS_APP_ID_HEADER)?.takeIf(String::isNotBlank)
             ?: AppContext.instance.dataStore[NeteaseUrsAppIdKey]?.takeIf(String::isNotBlank)
         val withoutAccount = originalRequest.header(WITHOUT_ACCOUNT_HEADER) == "true"
+        val webSessionOverride = originalRequest.header(NETEASE_WEB_SESSION_HEADER)
         val builder = originalRequest.newBuilder()
             .removeHeader(CRYPTO_MODE_HEADER)
             .removeHeader(CHECK_TOKEN_HEADER)
@@ -184,6 +190,7 @@ class NeteaseInterceptor : Interceptor {
             .removeHeader(COOKIE_OS_HEADER)
             .removeHeader(USER_AGENT_HEADER)
             .removeHeader(NETEASE_EAPI_PROFILE_HEADER)
+            .removeHeader(NETEASE_WEB_SESSION_HEADER)
 
         if (isPlaybackHistoryProfile) {
             originalRequest.headers.names()
@@ -208,8 +215,10 @@ class NeteaseInterceptor : Interceptor {
             )
         }
 
-        val storedMusicU = AppContext.instance.dataStore[CookieKey].orEmpty()
-        val hasMobileSession = storedMusicU.isNotBlank()
+        val accountPreferences = runBlocking { AppContext.instance.dataStore.data.first() }
+        val storedMusicU = webSessionOverride ?: accountPreferences[CookieKey].orEmpty()
+        val hasMobileSession = webSessionOverride == null &&
+            accountPreferences.neteaseSessionType() == NeteaseSessionType.Mobile
         val usesAndroidEapiIdentity = !isPlaybackHistoryProfile && usesOfficialAndroidIdentity(
             cryptoMode = cryptoMode,
             encodedPath = originalRequest.url.encodedPath,
@@ -238,7 +247,7 @@ class NeteaseInterceptor : Interceptor {
         val deviceId = AppContext.instance.dataStore[DeviceIdKey] ?: getDeviceId()
         val storedSDeviceId = AppContext.instance.dataStore[SDeviceIdKey].orEmpty()
         val sDeviceId = storedSDeviceId
-        val musicU = if (withoutAccount || !hasMobileSession) {
+        val musicU = if (withoutAccount) {
             ""
         } else {
             storedMusicU

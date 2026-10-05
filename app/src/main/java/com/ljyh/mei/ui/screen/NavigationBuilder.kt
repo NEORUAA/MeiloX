@@ -50,6 +50,7 @@ import com.ljyh.mei.ui.screen.social.MessageContactsScreen
 import com.ljyh.mei.ui.screen.listentogether.ListenTogetherScreen
 import com.ljyh.mei.ui.screen.recognition.SongRecognitionScreen
 import com.ljyh.mei.ui.screen.account.NeteaseLoginScreen
+import com.ljyh.mei.ui.screen.account.NeteaseWebLoginScreen
 import com.ljyh.mei.ui.screen.account.PcQrLoginScreen
 import com.ljyh.mei.ui.screen.account.AccountHomeScreen
 import com.ljyh.mei.ui.screen.account.ListeningRankScreen
@@ -131,6 +132,9 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable(Screen.NeteaseLogin.route) {
         NeteaseLoginScreen()
+    }
+    composable(Screen.NeteaseWebLogin.route) {
+        NeteaseWebLoginScreen()
     }
 
     composable(Screen.PcQrLogin.route) {
@@ -368,6 +372,7 @@ fun navigationEntry(
         route == Screen.ListenTogether.route -> ListenTogetherScreen()
         route == Screen.SongRecognition.route -> SongRecognitionScreen()
         route == Screen.NeteaseLogin.route -> NeteaseLoginScreen()
+        route == Screen.NeteaseWebLogin.route -> NeteaseWebLoginScreen()
         route == Screen.PcQrLogin.route -> PcQrLoginScreen()
         route == Screen.AccountHome.route -> AccountHomeScreen()
         route == Screen.Test.route -> Test()

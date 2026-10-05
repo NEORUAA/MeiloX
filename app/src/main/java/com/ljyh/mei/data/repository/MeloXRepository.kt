@@ -70,6 +70,10 @@ import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.readNeteaseLoginCookies
+import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.requireNeteaseMobileSession
+import com.ljyh.mei.constants.NeteaseSessionTypeKey
+import com.ljyh.mei.di.NETEASE_WEB_SESSION_HEADER
 import com.ljyh.mei.data.network.NeteaseOfficialDeviceId
 import com.ljyh.mei.data.network.NeteaseUrsSmsLogin
 import com.ljyh.mei.utils.dataStore
@@ -212,11 +216,19 @@ class MeloXRepository @Inject constructor(
         return SearchDiscovery(recommendations)
     }
 
-    suspend fun accountProfile(): AccountProfile {
-        val response = runCatching { requestEapi("/api/w/nuser/account/get") }
+    suspend fun accountProfile(webCookie: String? = null): AccountProfile {
+        suspend fun profileRequest(path: String): JsonObject = if (webCookie == null) {
+            requestEapi(path)
+        } else {
+            validate(eapi.post(
+                path = path.replaceFirst("/api/", "/eapi/"),
+                headers = mapOf(NETEASE_WEB_SESSION_HEADER to webCookie),
+            ))
+        }
+        val response = runCatching { profileRequest("/api/w/nuser/account/get") }
             .getOrElse { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                requestEapi("/api/nuser/account/get")
+                profileRequest("/api/nuser/account/get")
             }
         return parseAccountProfile(response.objectOrNull("profile"))
             ?: error("NetEase account profile is unavailable")
@@ -349,6 +361,7 @@ class MeloXRepository @Inject constructor(
         }
         context.dataStore.edit { preferences ->
             preferences[CookieKey] = musicU
+            preferences[NeteaseSessionTypeKey] = NeteaseSessionType.Mobile.name
             preferences[NeteaseCsrfKey] = csrf
             preferences[NeteaseUrsAppIdKey] = loginUrsAppId
             if (musicA == null) preferences.remove(NeteaseMusicAKey)
@@ -384,6 +397,7 @@ class MeloXRepository @Inject constructor(
 
     suspend fun preparePcQrLoginSecurity() {
         val preferences = context.dataStore.data.first()
+        preferences.requireNeteaseMobileSession()
         check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
         check(preferences[UserIdKey]?.toLongOrNull()?.let { it > 0 } == true) {
             "NetEase account user ID is unavailable"
@@ -421,6 +435,7 @@ class MeloXRepository @Inject constructor(
             "Action start action=${action.name} trace=${!clientTraceId.isNullOrBlank()}",
         )
         val preferences = context.dataStore.data.first()
+        preferences.requireNeteaseMobileSession()
         check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
         val userId = preferences[UserIdKey]?.toLongOrNull()?.takeIf { it > 0 }
             ?: error("NetEase account user ID is unavailable")
