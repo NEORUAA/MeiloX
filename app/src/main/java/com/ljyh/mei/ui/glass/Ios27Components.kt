@@ -674,6 +674,7 @@ fun IosContextMenu(
     menuAlpha: Float = animationProgress,
     contentAlpha: Float = animationProgress,
     shadowAlpha: Float = animationProgress,
+    highlightAlpha: Float? = null,
     opensAbove: Boolean = false,
     itemCount: Int = 1,
     compact: Boolean = false,
@@ -803,7 +804,10 @@ fun IosContextMenu(
                                 blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
                             },
                             highlight = {
-                                Highlight.Default.copy(alpha = progress * (0.46f + 0.18f * pulse))
+                                Highlight.Default.copy(
+                                    alpha = highlightAlpha?.coerceIn(0f, 1f)
+                                        ?: progress * (0.46f + 0.18f * pulse),
+                                )
                             },
                             shadow = {
                                 Shadow(
@@ -850,6 +854,7 @@ fun IosPopupMenu(
     backdrop: Backdrop = LocalBlurBackdrop.current,
     keepAnchorVisible: Boolean = false,
     forceBelowAnchor: Boolean = false,
+    fullScreen: Boolean = false,
     externalAnchorBounds: androidx.compose.ui.geometry.Rect? = null,
     menuWidth: androidx.compose.ui.unit.Dp = PopupMenuWidth,
     menuScale: Float = 1f,
@@ -1048,21 +1053,36 @@ fun IosPopupMenu(
                     opensAbove = resolved
                 }
             }
-            Popup(
-                popupPositionProvider = if (externalAnchorBounds == null) positionProvider else
-                    object : PopupPositionProvider {
-                        override fun calculatePosition(
-                            anchorBounds: IntRect,
-                            windowSize: IntSize,
-                            layoutDirection: LayoutDirection,
-                            popupContentSize: IntSize,
-                        ): IntOffset = positionProvider.calculatePosition(
-                            IntRect(
-                                externalAnchorBounds.left.toInt(), externalAnchorBounds.top.toInt(),
-                                externalAnchorBounds.right.toInt(), externalAnchorBounds.bottom.toInt(),
-                            ), windowSize, layoutDirection, popupContentSize,
+            var fullScreenMenuOffset by remember(positionProvider, externalAnchorBounds, fullScreen) {
+                mutableStateOf<IntOffset?>(null)
+            }
+            val popupPositionProvider = remember(positionProvider, externalAnchorBounds, fullScreen) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize,
+                    ): IntOffset {
+                        val menuOffset = positionProvider.calculatePosition(
+                            externalAnchorBounds?.let {
+                                IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+                            } ?: anchorBounds,
+                            windowSize,
+                            layoutDirection,
+                            popupContentSize,
                         )
-                    },
+                        return if (fullScreen) {
+                            fullScreenMenuOffset = menuOffset
+                            IntOffset.Zero
+                        } else {
+                            menuOffset
+                        }
+                    }
+                }
+            }
+            Popup(
+                popupPositionProvider = popupPositionProvider,
                 onDismissRequest = { onExpandedChange(false) },
                 properties = PopupProperties(
                     focusable = expanded,
@@ -1074,14 +1094,25 @@ fun IosPopupMenu(
                 // The overshoot margin is invisible window area; treat taps there like
                 // outside taps (dismiss) instead of letting them vanish into the window.
                 Box(
-                    Modifier.clickable(
-                        interactionSource = null,
-                        indication = null,
-                    ) { onExpandedChange(false) },
+                    Modifier
+                        .then(if (fullScreen) Modifier.fillMaxSize() else Modifier)
+                        .clickable(
+                            interactionSource = null,
+                            indication = null,
+                        ) { onExpandedChange(false) },
                 ) {
                     CompositionLocalProvider(LocalIosPopupMenuInteractive provides expanded) {
+                        // Wide cascading menus exceed the platform Popup's measured width.
+                        // Keep their window at screen size and position the existing animation
+                        // shell inside it so its right-hand shadow is not cut off by the window.
+                        if (fullScreen && fullScreenMenuOffset == null) return@CompositionLocalProvider
                         IosContextMenu(
                             visible = true,
+                            modifier = if (fullScreen) {
+                                Modifier.offset { fullScreenMenuOffset ?: IntOffset.Zero }
+                            } else {
+                                Modifier
+                            },
                             backdrop = backdrop,
                             animationProgress = progress.value,
                             animationVelocity = progress.velocity,

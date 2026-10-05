@@ -143,6 +143,7 @@ fun IosCascadingMenu(
         backdrop = backdrop,
         externalAnchorBounds = anchorBounds,
         keepAnchorVisible = true,
+        fullScreen = true,
         menuScale = 1f - 0.04f * child.value.coerceIn(0f, 1f),
         onMenuBoundsChanged = { menuBounds = it },
         onMenuAlphaChanged = { onTriggerAlphaChanged?.invoke(1f - it) },
@@ -253,6 +254,7 @@ fun IosCascadingMenu(
                     menuWidth = menuWidth,
                     heightOverride = 64.dp + (targetHeight - 64.dp) * p,
                     shadowAlpha = p,
+                    highlightAlpha = p,
                     itemCount = selected.children.size + 1,
                 ) { childBackdrop ->
                     IosMenuItem(
