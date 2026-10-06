@@ -1,4 +1,17 @@
 <resources>
+    <string name="artist_info_title">Artist information</string>
+    <string name="artist_play_hot_songs">Play popular songs</string>
+    <string name="artist_hot_songs">Popular songs</string>
+    <string name="artist_albums">Albums</string>
+    <string name="artist_info_works">Discography</string>
+    <string name="artist_info_songs">Songs</string>
+    <string name="artist_info_albums">Albums</string>
+    <string name="artist_info_music_videos">Music videos</string>
+    <string name="artist_info_identities">Artist identities</string>
+    <string name="artist_info_expertise">Creative roles</string>
+    <string name="artist_info_translated_names">Translated names</string>
+    <string name="artist_info_aliases">Aliases</string>
+    <string name="artist_info_biography">Biography</string>
     <string name="artist_follow">Follow</string>
     <string name="artist_following">Following</string>
     <string name="artist_unavailable_title">Artist unavailable</string>

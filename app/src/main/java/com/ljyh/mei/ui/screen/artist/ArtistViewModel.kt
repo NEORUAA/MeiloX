@@ -2,13 +2,16 @@ package com.ljyh.mei.ui.screen.artist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ljyh.mei.AppContext
 import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.ArtistRepository
 import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.di.repository.ColorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -18,10 +21,17 @@ import javax.inject.Inject
 class ArtistViewModel @Inject constructor(
     private val repository: ArtistRepository,
     private val meloXRepository: MeloXRepository,
+    private val colorRepository: ColorRepository,
 ) : ViewModel() {
+
+    fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
+
+    suspend fun getOrExtractColor(url: String) =
+        colorRepository.getColorOrExtract(AppContext.instance, url)
 
     private val _artistDetail = MutableStateFlow<Resource<ArtistDetail>>(Resource.Loading)
     val artistDetail: StateFlow<Resource<ArtistDetail>> = _artistDetail
+    private var artistDetailJob: Job? = null
 
     private val _artistAlbums = MutableStateFlow<Resource<ArtistAlbum>>(Resource.Loading)
     val artistAlbums: StateFlow<Resource<ArtistAlbum>> = _artistAlbums
@@ -33,7 +43,9 @@ class ArtistViewModel @Inject constructor(
     val followMutation: StateFlow<Resource<Boolean>?> = _followMutation
 
     fun getArtistDetail(id: String) {
-        viewModelScope.launch {
+        if (artistDetailJob?.isActive == true) return
+        _artistDetail.value = Resource.Loading
+        artistDetailJob = viewModelScope.launch {
             _artistDetail.value = repository.getArtistDetail(id)
         }
     }

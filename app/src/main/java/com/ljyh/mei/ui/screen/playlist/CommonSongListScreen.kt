@@ -2,10 +2,8 @@ package com.ljyh.mei.ui.screen.playlist
 
 import com.ljyh.mei.constants.MusicQuality
 
-import androidx.compose.animation.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
@@ -39,9 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -57,6 +52,7 @@ import com.ljyh.mei.constants.PlaylistCoverStyleKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.ui.component.player.OverlayState
+import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.IosPinnedListPage
@@ -76,11 +72,6 @@ import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
 import com.ljyh.mei.ui.screen.playlist.component.playlistTrackItems
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
-import com.ljyh.mei.utils.color.ColorExtractionUtils
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 @Composable
 fun CommonSongListScreen(
@@ -126,7 +117,6 @@ fun CommonSongListScreen(
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val colors = LocalGlassColors.current
     val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val backgroundCover = if (useCoverBackground) {
         when (coverStyle) {
@@ -134,53 +124,12 @@ fun CommonSongListScreen(
             else -> uiData.cover
         }
     } else ""
-    var coverColor by remember(viewModel, backgroundCover) {
-        mutableStateOf(viewModel.getCachedColor(backgroundCover)?.takeUnless { it == Color.Black })
-    }
-    LaunchedEffect(viewModel, backgroundCover) {
-        if (backgroundCover.isBlank()) return@LaunchedEffect
-        try {
-            coverColor = viewModel.getOrExtractColor(backgroundCover).takeUnless { it == Color.Black }
-        } catch (cause: CancellationException) {
-            throw cause
-        } catch (_: Exception) {
-            // Keep the cached seed or the regular page background if extraction fails.
-        }
-    }
-    val targetBackground = remember(coverColor, colors.isDark, colors.groupedBackground) {
-        coverColor?.let {
-            ColorExtractionUtils.detailBackgroundColor(it, colors.isDark)
-        } ?: colors.groupedBackground
-    }
-    val targetBackgroundEnd = remember(targetBackground, coverColor) {
-        if (coverColor == null) targetBackground
-        else ColorExtractionUtils.detailBackgroundEndColor(targetBackground)
-    }
-    // Start from the neutral page surface even when the cover seed is already cached.
-    // Recreate it on theme changes so the new text colors never cross the old luminance.
-    val backgroundAnimation = remember(viewModel, backgroundCover, colors.isDark) {
-        Animatable(colors.groupedBackground)
-    }
-    val backgroundEndAnimation = remember(viewModel, backgroundCover, colors.isDark) {
-        Animatable(colors.groupedBackground)
-    }
-    LaunchedEffect(backgroundAnimation, backgroundEndAnimation, targetBackground, targetBackgroundEnd) {
-        coroutineScope {
-            launch { backgroundAnimation.animateTo(targetBackground, tween(600)) }
-            launch { backgroundEndAnimation.animateTo(targetBackgroundEnd, tween(600)) }
-        }
-    }
-    val pageBackground = backgroundAnimation.value
-    val animatedBackgroundEnd = backgroundEndAnimation.value
-    // Near black, a single 8-bit channel step can exceed 10% relative luminance.
-    val pageBackgroundEnd = if (
-        abs(animatedBackgroundEnd.luminance() - pageBackground.luminance()) <=
-        pageBackground.luminance() * 0.1f
-    ) animatedBackgroundEnd else pageBackground
-    val pageBackgroundBrush = remember(useCoverBackground, pageBackground, pageBackgroundEnd) {
-        if (useCoverBackground) Brush.verticalGradient(listOf(pageBackground, pageBackgroundEnd))
-        else null
-    }
+    val coverBackground = rememberCoverBackground(
+        coverUrl = backgroundCover,
+        getCachedColor = viewModel::getCachedColor,
+        getOrExtractColor = viewModel::getOrExtractColor,
+        ownerKey = viewModel,
+    )
     val listBackgroundAlpha = if (useCoverBackground) {
         SheetGroupedListBackgroundAlpha
     } else LocalGroupedListBackgroundAlpha.current
@@ -208,8 +157,8 @@ fun CommonSongListScreen(
                 },
                 showsLargeTitle = false,
                 listState = listState,
-                backgroundColor = pageBackground,
-                backgroundBrush = pageBackgroundBrush,
+                backgroundColor = coverBackground.color,
+                backgroundBrush = coverBackground.brush.takeIf { useCoverBackground },
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,

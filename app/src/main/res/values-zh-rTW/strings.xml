@@ -1,4 +1,17 @@
 <resources>
+    <string name="artist_info_title">歌手資訊</string>
+    <string name="artist_play_hot_songs">播放熱門單曲</string>
+    <string name="artist_hot_songs">熱門單曲</string>
+    <string name="artist_albums">專輯</string>
+    <string name="artist_info_works">作品</string>
+    <string name="artist_info_songs">單曲</string>
+    <string name="artist_info_albums">專輯</string>
+    <string name="artist_info_music_videos">MV</string>
+    <string name="artist_info_identities">歌手身分</string>
+    <string name="artist_info_expertise">創作領域</string>
+    <string name="artist_info_translated_names">譯名</string>
+    <string name="artist_info_aliases">別名</string>
+    <string name="artist_info_biography">簡介</string>
     <string name="artist_follow">關注</string>
     <string name="artist_following">已關注</string>
     <string name="artist_unavailable_title">無相關藝人</string>

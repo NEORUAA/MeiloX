@@ -34,6 +34,7 @@ sealed class Screen(val route:String) {
     data object EveryDay:Screen("everyday")
     data object Album: Screen("album")
     data object Artist: Screen("artist")
+    data object ArtistInfo: Screen("artist-info")
     data object ArtistSongs: Screen("artist-songs")
     data object ArtistAlbums: Screen("artist-albums")
     data object History: Screen("history")

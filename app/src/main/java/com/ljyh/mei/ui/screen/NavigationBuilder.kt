@@ -29,6 +29,7 @@ import com.ljyh.mei.ui.screen.setting.AppearanceSettings
 import com.ljyh.mei.ui.screen.artist.ArtistSongsScreen
 import com.ljyh.mei.ui.screen.artist.ArtistAlbumsScreen
 import com.ljyh.mei.ui.screen.artist.ArtistScreen
+import com.ljyh.mei.ui.screen.artist.ArtistInfoScreen
 import com.ljyh.mei.ui.screen.main.findmusic.FindMusicScreen
 import com.ljyh.mei.ui.screen.setting.ContentsSetting
 import com.ljyh.mei.ui.screen.setting.DownloadManageScreen
@@ -311,6 +312,13 @@ fun NavGraphBuilder.navigationBuilder(
     }
 
     composable(
+        route = "${Screen.ArtistInfo.route}/{id}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+    ) {
+        ArtistInfoScreen(id = it.arguments!!.getString("id")!!)
+    }
+
+    composable(
         route = "${Screen.ArtistSongs.route}/{id}",
         arguments = listOf(navArgument("id") { type = NavType.StringType }),
     ) {
@@ -461,6 +469,9 @@ fun navigationEntry(
         route.startsWith("${Screen.Album.route}/") -> {
             route.substringAfter("${Screen.Album.route}/").toLongOrNull()
                 ?.let { AlbumDetailScreen(id = it) }
+        }
+        route.startsWith("${Screen.ArtistInfo.route}/") -> {
+            ArtistInfoScreen(id = route.substringAfter("${Screen.ArtistInfo.route}/"))
         }
         route.startsWith("${Screen.ArtistSongs.route}/") -> {
             ArtistSongsScreen(id = route.substringAfter("${Screen.ArtistSongs.route}/"))

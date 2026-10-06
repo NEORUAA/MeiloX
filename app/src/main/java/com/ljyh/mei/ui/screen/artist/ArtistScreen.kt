@@ -1,20 +1,17 @@
 package com.ljyh.mei.ui.screen.artist
 
 import androidx.annotation.OptIn
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,8 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,17 +36,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
@@ -63,16 +62,20 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.item.Track
+import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.shimmer.ListItemPlaceHolder
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassEmphasis
+import com.ljyh.mei.ui.glass.GlassIconButton
+import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -89,32 +92,34 @@ import java.util.UUID
 @Composable
 fun ArtistScreen(
     id: String,
-    viewModel: ArtistViewModel = hiltViewModel()
+    viewModel: ArtistViewModel = hiltViewModel(key = "artist:$id"),
 ) {
     val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
 
     val artistDetail by viewModel.artistDetail.collectAsState()
     val artistAlbums by viewModel.artistAlbums.collectAsState()
     val artistSongs by viewModel.artistSongs.collectAsState()
     val followMutation by viewModel.followMutation.collectAsState()
     var isFollowed by remember(id) { mutableStateOf(false) }
-    var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
+    var currentOverlay by remember(id) { mutableStateOf<OverlayState>(OverlayState.None) }
     val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
     val onAllAlbumsClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") }
+    val onInfoClick = { navController.navigate("${Screen.ArtistInfo.route}/$id") }
     val artistData = (artistDetail as? Resource.Success)?.data?.data
     val isArtistUnavailable = artistDetail is Resource.Success && artistData?.artist == null
+    val heroCover = artistData?.artist?.let { artist ->
+        artist.cover.takeIf(String::isNotBlank) ?: artist.avatar
+    }.orEmpty()
+    val background = rememberCoverBackground(
+        coverUrl = heroCover,
+        getCachedColor = viewModel::getCachedColor,
+        getOrExtractColor = viewModel::getOrExtractColor,
+        ownerKey = viewModel,
+    )
+    val hotSongs = (artistSongs as? Resource.Success)?.data?.hotSongs.orEmpty()
 
     val scrollState = rememberLazyListState()
-    // Hero 高度 320dp，当滚过约 60% 时显示 TopBar 标题
-    val heroHeightPx = with(LocalDensity.current) { 320.dp.toPx() }
-    val topBarCollapseProgress by remember {
-        derivedStateOf {
-            if (scrollState.firstVisibleItemIndex > 0) 1f
-            else (scrollState.firstVisibleItemScrollOffset / (heroHeightPx * 0.6f))
-                .coerceIn(0f, 1f)
-        }
-    }
     LaunchedEffect(id) {
         viewModel.getArtistDetail(id)
         viewModel.getArtistAlbums(id)
@@ -129,12 +134,23 @@ fun ArtistScreen(
         (followMutation as? Resource.Success)?.data?.let { isFollowed = it }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The square hero follows the actual page width, including split-screen resizing.
+        val heroHeightPx = with(LocalDensity.current) { maxWidth.toPx() }
+        val topBarCollapseProgress by remember(scrollState, heroHeightPx) {
+            derivedStateOf {
+                if (scrollState.firstVisibleItemIndex > 0) 1f
+                else (scrollState.firstVisibleItemScrollOffset / (heroHeightPx * 0.6f).coerceAtLeast(1f))
+                    .coerceIn(0f, 1f)
+            }
+        }
         IosPinnedPage(
             title = artistData?.artist?.name.orEmpty(),
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             collapseProgress = topBarCollapseProgress,
             onNavigateBack = navController::popBackStack,
+            backgroundColor = background.color,
+            backgroundBrush = background.brush,
         ) { contentPadding ->
             if (isArtistUnavailable) {
                 ArtistUnavailableState(
@@ -149,141 +165,159 @@ fun ArtistScreen(
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
                 ) {
-            // --- 1. Hero + Info Header ---
-            item {
-                when (val detail = artistDetail) {
-                    is Resource.Success -> {
-                        val data = detail.data.data
-                        val artist = data?.artist
-                        if (artist != null) {
-                            ArtistHeader(
-                                artist = artist,
-                                onSongsClick = onAllSongsClick,
-                                onAlbumsClick = onAllAlbumsClick,
-                                isFollowed = isFollowed,
-                                isFollowLoading = followMutation is Resource.Loading,
-                                onFollowClick = {
-                                    viewModel.setArtistFollowed(artist.id.toLong(), !isFollowed)
-                                },
-                                expertIdentities = data.secondaryExpertIdentiy.orEmpty()
-                                    .filter { it.expertIdentiyCount > 0 }
-                            )
-                        } else {
-                            ErrorItem(detail.data.message ?: "Unable to load artist")
-                        }
-                    }
-                    is Resource.Loading -> ArtistHeaderShimmer()
-                    is Resource.Error -> ErrorItem(detail.message)
-                }
-            }
-
-            // --- 2. Hot Songs ---
-            item { SectionTitle("热门单曲") }
-
-            when (val songsResource = artistSongs) {
-                is Resource.Success -> {
-                    val songs = songsResource.data.hotSongs.orEmpty()
-                    items(songs.take(10), key = { it.id }) { song ->
-                        Track(
-                            track = song.toMediaMetadata(),
-                            onClick = {
-                                val allIds = songs.map {
-                                    it.id.toString() to it.toMediaMetadata().toMediaItem()
-                                }
-                                playerConnection.onTrackClicked(
-                                    trackId = song.id.toString(),
-                                    buildQueue = {
-                                        ListQueue(
-                                            UUID.randomUUID().toString(),
-                                            "Hot Songs",
-                                            allIds,
-                                            songs.indexOf(song)
-                                        )
-                                    }
-                                )
-                            },
-                            onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), it) }
-                        )
-                    }
-                }
-                is Resource.Loading -> items(5) { ShimmerHost { ListItemPlaceHolder() } }
-                is Resource.Error -> item { ErrorItem(songsResource.message) }
-            }
-
-            val songCount = artistData?.artist?.musicSize
-                ?: (artistSongs as? Resource.Success)?.data?.artist?.musicSize
-            if (songCount != null) {
-                item(key = "all-artist-songs") {
-                    IosListRow(
-                        title = stringResource(R.string.artist_all_songs_count, songCount),
-                        modifier = Modifier.padding(horizontal = 6.dp),
-                        onClick = onAllSongsClick,
-                        trailing = {
-                            SfIcon(
-                                "chevron.forward",
-                                null,
-                                modifier = Modifier.padding(start = 8.dp),
-                                size = 12.dp,
-                                tint = LocalGlassColors.current.secondaryContent,
-                            )
-                        },
-                    )
-                }
-            }
-
-            // --- 3. Albums ---
-            item { SectionTitle("专辑") }
-
-            when (val albumsResource = artistAlbums) {
-                is Resource.Success -> {
-                    val albums = albumsResource.data.hotAlbums.orEmpty()
+                    // --- 1. Hero + Info Header ---
                     item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(albums, key = { it.id }) { hotAlbum ->
-                                AlbumCard(
-                                    album = hotAlbum.toAlbum(),
-                                    onClick = {
-                                        navController.navigate("${Screen.Album.route}/$it")
-                                    }
-                                )
+                        when (val detail = artistDetail) {
+                            is Resource.Success -> {
+                                val data = detail.data.data
+                                val artist = data?.artist
+                                if (artist != null) {
+                                    ArtistHeader(
+                                        artist = artist,
+                                        cover = heroCover,
+                                        canPlayHotSongs = playerConnection != null && hotSongs.isNotEmpty(),
+                                        onInfoClick = onInfoClick,
+                                        onPlayHotSongs = {
+                                            if (hotSongs.isNotEmpty()) {
+                                                playerConnection?.playQueue(
+                                                    ListQueue(
+                                                        UUID.randomUUID().toString(),
+                                                        artist.name,
+                                                        hotSongs.map { song ->
+                                                            song.id.toString() to song.toMediaMetadata().toMediaItem()
+                                                        },
+                                                        0,
+                                                    ),
+                                                    shuffle = false,
+                                                )
+                                            }
+                                        },
+                                        isFollowed = isFollowed,
+                                        isFollowLoading = followMutation is Resource.Loading,
+                                        onFollowClick = {
+                                            viewModel.setArtistFollowed(artist.id.toLong(), !isFollowed)
+                                        },
+                                    )
+                                } else {
+                                    ErrorItem(detail.data.message ?: "Unable to load artist")
+                                }
+                            }
+                            is Resource.Loading -> ArtistHeaderShimmer()
+                            is Resource.Error -> {
+                                Box(Modifier.padding(top = contentPadding.calculateTopPadding())) {
+                                    ErrorItem(detail.message)
+                                }
                             }
                         }
                     }
-                }
-                is Resource.Loading -> item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(4) { ShimmerHost { AlbumCardShimmer() } }
-                    }
-                }
-                is Resource.Error -> item { ErrorItem(albumsResource.message) }
-            }
 
-            val albumCount = artistData?.artist?.albumSize
-                ?: (artistAlbums as? Resource.Success)?.data?.artist?.albumSize
-            if (albumCount != null) {
-                item(key = "all-artist-albums") {
-                    IosListRow(
-                        title = stringResource(R.string.artist_all_albums_count, albumCount),
-                        modifier = Modifier.padding(horizontal = 6.dp).padding(top = 10.dp),
-                        onClick = onAllAlbumsClick,
-                        trailing = {
-                            SfIcon(
-                                "chevron.forward",
-                                null,
-                                modifier = Modifier.padding(start = 8.dp),
-                                size = 12.dp,
-                                tint = LocalGlassColors.current.secondaryContent,
+                    // --- 2. Hot Songs ---
+                    item { SectionTitle(stringResource(R.string.artist_hot_songs)) }
+
+                    when (val songsResource = artistSongs) {
+                        is Resource.Success -> {
+                            val songs = songsResource.data.hotSongs.orEmpty()
+                            items(songs.take(10), key = { it.id }) { song ->
+                                Track(
+                                    track = song.toMediaMetadata(),
+                                    onClick = {
+                                        val allIds = songs.map {
+                                            it.id.toString() to it.toMediaMetadata().toMediaItem()
+                                        }
+                                        playerConnection?.onTrackClicked(
+                                            trackId = song.id.toString(),
+                                            buildQueue = {
+                                                ListQueue(
+                                                    UUID.randomUUID().toString(),
+                                                    "Hot Songs",
+                                                    allIds,
+                                                    songs.indexOf(song)
+                                                )
+                                            }
+                                        )
+                                    },
+                                    onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), it) }
+                                )
+                            }
+                        }
+                        is Resource.Loading -> items(5) { ShimmerHost { ListItemPlaceHolder() } }
+                        is Resource.Error -> item { ErrorItem(songsResource.message) }
+                    }
+
+                    val songCount = artistData?.artist?.musicSize
+                        ?: (artistSongs as? Resource.Success)?.data?.artist?.musicSize
+                    if (songCount != null) {
+                        item(key = "all-artist-songs") {
+                            IosListRow(
+                                title = stringResource(R.string.artist_all_songs_count, songCount),
+                                modifier = Modifier.padding(horizontal = 6.dp),
+                                onClick = onAllSongsClick,
+                                trailing = {
+                                    SfIcon(
+                                        "chevron.forward",
+                                        null,
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        size = 12.dp,
+                                        tint = LocalGlassColors.current.secondaryContent,
+                                    )
+                                },
                             )
-                        },
-                    )
-                }
-            }
+                        }
+                    }
+
+                    // --- 3. Albums ---
+                    item { SectionTitle(stringResource(R.string.artist_albums)) }
+
+                    when (val albumsResource = artistAlbums) {
+                        is Resource.Success -> {
+                            val albums = albumsResource.data.hotAlbums.orEmpty()
+                            item {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 20.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(albums, key = { it.id }) { hotAlbum ->
+                                        AlbumCard(
+                                            album = hotAlbum.toAlbum(),
+                                            onClick = {
+                                                navController.navigate("${Screen.Album.route}/$it")
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        is Resource.Loading -> item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(4) { ShimmerHost { AlbumCardShimmer() } }
+                            }
+                        }
+                        is Resource.Error -> item { ErrorItem(albumsResource.message) }
+                    }
+
+                    val albumCount = artistData?.artist?.albumSize
+                        ?: (artistAlbums as? Resource.Success)?.data?.artist?.albumSize
+                    if (albumCount != null) {
+                        item(key = "all-artist-albums") {
+                            IosListRow(
+                                title = stringResource(R.string.artist_all_albums_count, albumCount),
+                                modifier = Modifier.padding(horizontal = 6.dp).padding(top = 10.dp),
+                                onClick = onAllAlbumsClick,
+                                trailing = {
+                                    SfIcon(
+                                        "chevron.forward",
+                                        null,
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        size = 12.dp,
+                                        tint = LocalGlassColors.current.secondaryContent,
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -334,263 +368,130 @@ private fun ArtistUnavailableState(
 }
 
 
-// ─── Hero + Info Header ───────────────────────────────────────────────────────
+// ─── Artist Hero ─────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ArtistHeader(
+private fun ArtistHeader(
     artist: ArtistDetail.Data.Artist,
-    expertIdentities: List<ArtistDetail.Data.SecondaryExpertIdentiy>,
+    cover: String,
+    canPlayHotSongs: Boolean,
     isFollowed: Boolean,
     isFollowLoading: Boolean,
+    onInfoClick: () -> Unit,
+    onPlayHotSongs: () -> Unit,
     onFollowClick: () -> Unit,
-    onSongsClick: () -> Unit,
-    onAlbumsClick: () -> Unit,
 ) {
-    var descExpanded by remember { mutableStateOf(false) }
-    val bgColor = MaterialTheme.colorScheme.background
+    val colors = LocalGlassColors.current
+    val regularButtonBackground = colors.elevatedBackground.copy(
+        alpha = SheetGroupedListBackgroundAlpha,
+    )
+    val subtitle = remember(artist) {
+        (artist.transNames + artist.alias.filterIsInstance<String>())
+            .map(String::trim)
+            .filter { it.isNotEmpty() && !it.equals(artist.name, ignoreCase = true) }
+            .distinct()
+            .joinToString(" · ")
+    }
+    val playHotSongsLabel = stringResource(R.string.artist_play_hot_songs)
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-
-        // ── Hero: cover 图 + 底部渐变收口 ──────────────────────────────────────
-        Box(
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AsyncImage(
+            model = cover,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(320.dp)
-        ) {
-            // 封面图铺满
-            AsyncImage(
-                model = artist.cover,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                .aspectRatio(1f)
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    // Reveal the same page gradient beneath the image to avoid a solid seam.
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Black,
+                            0.45f to Color.Black,
+                            0.70f to Color.Black.copy(alpha = 0.45f),
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
+        )
+
+        Text(
+            text = artist.name,
+            style = IosTypography.title2,
+            color = colors.content,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
+        )
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = subtitle,
+                style = IosTypography.subheadline,
+                color = colors.secondaryContent,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 7.dp),
             )
-
-            // 底部渐变：透明 → bgColor，让 Hero 与 body 无缝衔接
-            // 中间留一段纯透明区让封面透出来，底部收口到完全不透明
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.00f to bgColor.copy(alpha = 0.20f), // 顶部轻压
-                                0.35f to Color.Transparent,           // 中段封面完全露出
-                                0.62f to bgColor.copy(alpha = 0.55f),
-                                0.80f to bgColor.copy(alpha = 0.88f),
-                                1.00f to bgColor                      // 底部完全不透明
-                            )
-                        )
-                    )
-            )
-
-            // Hero 内容：badges + 头像 + 名字 + 副标题 + 统计
-            // 贴底部排列，向上延伸
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
-            ) {
-                // 认证/身份 badges
-                val allTags = artist.identifyTag ?: (emptyList<String>() + artist.identities)
-                if (allTags.isNotEmpty()) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(bottom = 10.dp)
-                    ) {
-                        allTags.take(3).forEach { tag ->
-                            HeroBadge(tag)
-                        }
-                    }
-                }
-
-                // 头像 + 名字/副标题横排
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    AsyncImage(
-                        model = artist.avatar,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = artist.name,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        val subtitleParts = buildList {
-                            if (artist.transNames.isNotEmpty()) addAll(artist.transNames)
-                            if (artist.alias.isNotEmpty()) addAll(artist.alias)
-                        }
-                        if (subtitleParts.isNotEmpty()) {
-                            Text(
-                                text = subtitleParts.joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.48f),
-                                modifier = Modifier.padding(top = 2.dp),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 统计数字行
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    StatItem(
-                        value = artist.musicSize.formatCount(),
-                        label = "单曲",
-                        modifier = Modifier.clickable(role = Role.Button, onClick = onSongsClick),
-                    )
-                    StatItem(
-                        value = artist.albumSize.toString(),
-                        label = "专辑",
-                        modifier = Modifier.clickable(role = Role.Button, onClick = onAlbumsClick),
-                    )
-                    StatItem(value = artist.mvSize.toString(), label = "MV")
-                }
-            }
         }
 
-        // ── Body: 关注 + 创作领域 + 简介 ─────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+        Row(
+            modifier = Modifier.padding(top = 18.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 关注按钮
+            GlassIconButton(
+                onClick = onInfoClick,
+                style = GlassSurfaceStyle.Navigation,
+                navigationSurfaceColor = regularButtonBackground,
+                navigationSurfaceAlphaMultiplier = 1f,
+                sampleBackdrop = false,
+            ) {
+                SfIcon(
+                    "info",
+                    stringResource(R.string.artist_info_title),
+                    size = 24.dp,
+                    weight = FontWeight.SemiBold,
+                )
+            }
             GlassButton(
+                onClick = onPlayHotSongs,
+                modifier = Modifier.semantics { contentDescription = playHotSongsLabel },
+                style = GlassSurfaceStyle.Navigation,
+                enabled = canPlayHotSongs,
+                emphasis = GlassEmphasis.Prominent,
+            ) {
+                SfIcon("play.fill", null, size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.pip_play),
+                    style = IosTypography.headline,
+                )
+            }
+            GlassIconButton(
                 onClick = onFollowClick,
                 enabled = !isFollowLoading,
+                style = GlassSurfaceStyle.Navigation,
+                navigationSurfaceColor = regularButtonBackground.takeUnless { isFollowed },
+                navigationSurfaceAlphaMultiplier = if (isFollowed) 1.25f else 1f,
                 emphasis = if (isFollowed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 16.dp)
+                sampleBackdrop = isFollowed,
             ) {
-                Text(
-                    stringResource(
-                        if (isFollowed) R.string.artist_following else R.string.artist_follow,
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-
-            // 创作领域 chips
-            if (expertIdentities.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(bottom = 14.dp)
-                ) {
-                    expertIdentities.forEach { expert ->
-                        ExpertiseChip(
-                            name = expert.expertIdentiyName,
-                            count = expert.expertIdentiyCount
-                        )
-                    }
-                }
-            }
-
-            // 简介
-            if (artist.briefDesc.isNotBlank()) {
-                Text(
-                    text = artist.briefDesc,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
-                    lineHeight = 20.sp,
-                    maxLines = if (descExpanded) Int.MAX_VALUE else 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (descExpanded) "收起" else "展开全部",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(top = 4.dp, bottom = 8.dp)
-                        .clickable { descExpanded = !descExpanded }
+                SfIcon(
+                    if (isFollowed) "checkmark" else "plus",
+                    stringResource(if (isFollowed) R.string.artist_following else R.string.artist_follow),
+                    size = 24.dp,
+                    weight = FontWeight.SemiBold,
                 )
             }
         }
-    }
-}
-
-
-// ─── Hero Badge ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun HeroBadge(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
-        modifier = Modifier
-            .background(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
-                shape = ContinuousRoundedRectangle(20.dp)
-            )
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    )
-}
-
-
-// ─── Stat Item ────────────────────────────────────────────────────────────────
-
-@Composable
-private fun StatItem(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
-            modifier = Modifier.padding(top = 1.dp)
-        )
-    }
-}
-
-
-// ─── Expertise Chip ───────────────────────────────────────────────────────────
-
-@Composable
-private fun ExpertiseChip(name: String, count: Int) {
-    Row(
-        modifier = Modifier
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = ContinuousRoundedRectangle(6.dp)
-            )
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = count.formatCount(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-        )
     }
 }
 
@@ -653,62 +554,32 @@ fun AlbumCardShimmer() {
 @Composable
 fun ArtistHeaderShimmer() {
     ShimmerHost {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Hero 占位
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(320.dp)
+                    .aspectRatio(1f)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.BottomStart
+            )
+            TextPlaceholder(Modifier.padding(top = 8.dp).width(180.dp).height(22.dp))
+            TextPlaceholder(Modifier.padding(top = 7.dp).width(120.dp).height(16.dp))
+            Row(
+                modifier = Modifier.padding(top = 18.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Spacer(
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            TextPlaceholder(Modifier.width(160.dp).height(22.dp))
-                            Spacer(modifier = Modifier.height(6.dp))
-                            TextPlaceholder(Modifier.width(100.dp).height(13.dp))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        repeat(3) {
-                            Column {
-                                TextPlaceholder(Modifier.width(36.dp).height(18.dp))
-                                Spacer(modifier = Modifier.height(4.dp))
-                                TextPlaceholder(Modifier.width(24.dp).height(11.dp))
-                            }
-                        }
-                    }
+                listOf(44.dp, 122.dp, 44.dp).forEach { width ->
+                    Spacer(
+                        modifier = Modifier
+                            .width(width)
+                            .height(44.dp)
+                            .clip(ContinuousRoundedRectangle(50))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    )
                 }
-            }
-            // Body 占位
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                Spacer(
-                    modifier = Modifier
-                        .padding(vertical = 16.dp)
-                        .fillMaxWidth()
-                        .height(40.dp)
-                        .clip(ContinuousRoundedRectangle(50))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-                TextPlaceholder(Modifier.fillMaxWidth().height(13.dp))
-                Spacer(modifier = Modifier.height(6.dp))
-                TextPlaceholder(Modifier.fillMaxWidth(0.82f).height(13.dp))
-                Spacer(modifier = Modifier.height(6.dp))
-                TextPlaceholder(Modifier.fillMaxWidth(0.6f).height(13.dp))
             }
         }
     }
@@ -734,10 +605,4 @@ fun ErrorItem(message: String) {
         modifier = Modifier.padding(20.dp),
         color = MaterialTheme.colorScheme.error
     )
-}
-
-private fun Int.formatCount(): String = when {
-    this >= 100_000_000 -> "${this / 100_000_000}亿"
-    this >= 10_000 -> "${this / 10_000}万"
-    else -> this.toString()
 }
