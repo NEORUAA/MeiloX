@@ -337,6 +337,7 @@ fun PlaylistScreen(
         }
     } else {
         CommonSongListScreen(
+            useCoverBackground = true,
             uiData = uiData,
             pagingItems = lazyPagingItems,
             isLoading = playlistDetail is Resource.Loading,

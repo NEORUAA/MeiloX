@@ -318,6 +318,7 @@ fun AlbumDetailScreen(
         }
     } else {
         CommonSongListScreen(
+            useCoverBackground = true,
             uiData = displayedUiData,
             pagingItems = null, // 专辑通常一次性加载，不需要 paging
             isLoading = albumDetail is Resource.Loading,

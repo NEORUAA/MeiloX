@@ -482,6 +482,7 @@ fun PodcastDetailScreen(
         playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index), shuffle = shuffle)
     }
     com.ljyh.mei.ui.screen.playlist.CommonSongListScreen(
+        useCoverBackground = true,
         uiData = com.ljyh.mei.ui.model.UiPlaylist(
             id = id, title = detail?.podcast?.name.orEmpty(), count = count,
             subscriberCount = detail?.podcast?.subscriberCount ?: 0,

@@ -39,6 +39,7 @@ import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.rememberEnumPreference
 
@@ -65,6 +66,11 @@ fun PlaylistHeader(
     onShufflePlay: () -> Unit = onPlayAll,
 ) {
     val colors = LocalGlassColors.current
+    val groupedListBackgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
+    val useGroupedListButtonBackground = groupedListBackgroundAlpha < 1f
+    val regularButtonBackground = colors.elevatedBackground
+        .copy(alpha = groupedListBackgroundAlpha)
+        .takeIf { useGroupedListButtonBackground }
     val playlistCoverStyle by rememberEnumPreference(
         PlaylistCoverStyleKey,
         defaultValue = PlaylistCoverStyle.Cover,
@@ -120,7 +126,14 @@ fun PlaylistHeader(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GlassIconButton(onClick = onShufflePlay, enabled = count > 0, style = GlassSurfaceStyle.Navigation) {
+            GlassIconButton(
+                onClick = onShufflePlay,
+                enabled = count > 0,
+                style = GlassSurfaceStyle.Navigation,
+                navigationSurfaceColor = regularButtonBackground,
+                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground) 1f else 1.25f,
+                sampleBackdrop = !useGroupedListButtonBackground,
+            ) {
                 SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
             }
             GlassButton(
@@ -139,7 +152,10 @@ fun PlaylistHeader(
             GlassIconButton(
                 onClick = { onSubscribed(isSubscribed) },
                 style = GlassSurfaceStyle.Navigation,
+                navigationSurfaceColor = regularButtonBackground.takeUnless { isSubscribed },
+                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !isSubscribed) 1f else 1.25f,
                 emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
+                sampleBackdrop = !useGroupedListButtonBackground || isSubscribed,
             ) {
                 SfIcon(
                     if (isSubscribed) "checkmark" else "plus",

@@ -2,11 +2,79 @@ package com.ljyh.mei.utils.color
 
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
+import com.materialkolor.hct.Hct
+import kotlin.math.abs
+import kotlin.math.pow
 
 object ColorExtractionUtils {
+
+    /** Preserves the cover's RGB hue with bounded chroma and perceptual lightness. */
+    fun detailBackgroundColor(seedColor: Color, isDark: Boolean): Color {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(seedColor.toArgb(), hsl)
+        val saturation = if (hsl[1] < 0.01f) {
+            0f
+        } else {
+            hsl[1].coerceAtMost(if (isDark) 0.60f else 0.90f)
+        }
+        val tone = if (isDark) 22.0 else 85.0
+        val targetLuminance = ((tone + 16.0) / 116.0).pow(3.0)
+        fun colorAtSaturation(value: Float): Int {
+            hsl[1] = value
+            var lowerLightness = 0f
+            var upperLightness = 1f
+            var bestColor = seedColor.toArgb()
+            var bestDifference = Double.POSITIVE_INFINITY
+            repeat(16) {
+                hsl[2] = (lowerLightness + upperLightness) / 2f
+                val candidate = ColorUtils.HSLToColor(hsl)
+                val luminance = ColorUtils.calculateLuminance(candidate)
+                val difference = abs(luminance - targetLuminance)
+                if (difference < bestDifference) {
+                    bestColor = candidate
+                    bestDifference = difference
+                }
+                if (luminance < targetLuminance) lowerLightness = hsl[2]
+                else upperLightness = hsl[2]
+            }
+            return bestColor
+        }
+
+        val chromaLimit = if (isDark) 28.0 else 30.0
+        val initialColor = colorAtSaturation(saturation)
+        if (Hct.fromInt(initialColor).chroma <= chromaLimit) return Color(initialColor)
+
+        // Equal HSL saturation can make greens and yellows much more vivid than blues.
+        // Measure chroma without remapping the RGB hue as the lightness changes.
+        var lowerSaturation = 0f
+        var upperSaturation = saturation
+        var bestColor = colorAtSaturation(0f)
+        repeat(10) {
+            val candidateSaturation = (lowerSaturation + upperSaturation) / 2f
+            val candidate = colorAtSaturation(candidateSaturation)
+            if (Hct.fromInt(candidate).chroma <= chromaLimit) {
+                bestColor = candidate
+                lowerSaturation = candidateSaturation
+            } else upperSaturation = candidateSaturation
+        }
+        return Color(bestColor)
+    }
+
+    /** Scales linear RGB to 95% for a subtly darker gradient endpoint. */
+    fun detailBackgroundEndColor(backgroundColor: Color): Color {
+        val linear = backgroundColor.convert(ColorSpaces.LinearSrgb)
+        return Color(
+            red = linear.red * 0.95f,
+            green = linear.green * 0.95f,
+            blue = linear.blue * 0.95f,
+            alpha = backgroundColor.alpha,
+            colorSpace = ColorSpaces.LinearSrgb,
+        ).convert(backgroundColor.colorSpace)
+    }
 
     /**
      * Extracts a vibrant theme seed color from a bitmap using Android's Palette API.

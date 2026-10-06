@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
@@ -254,6 +255,7 @@ fun IosPinnedListPage(
     onNavigateBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     backgroundColor: Color? = null,
+    backgroundBrush: Brush? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val collapseDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
@@ -277,6 +279,7 @@ fun IosPinnedListPage(
         actions = actions,
         collapseProgress = collapseProgress,
         backgroundColor = backgroundColor,
+        backgroundBrush = backgroundBrush,
     ) { contentPadding ->
         LazyColumn(
             state = listState,
@@ -344,6 +347,7 @@ fun IosPinnedPage(
     collapseProgress: Float = 1f,
     backgroundColor: Color? = null,
     topBarBlurProgress: Float = collapseProgress,
+    backgroundBrush: Brush? = null,
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val pageBackdrop = rememberLayerBackdrop()
@@ -366,7 +370,10 @@ fun IosPinnedPage(
                 Modifier
                     .fillMaxSize()
                     .layerBackdrop(pageBackdrop)
-                    .background(pageBackground),
+                    .then(
+                        if (backgroundBrush != null) Modifier.background(backgroundBrush)
+                        else Modifier.background(pageBackground),
+                    ),
             ) {
                 content(contentPadding)
             }

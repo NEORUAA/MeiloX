@@ -41,6 +41,7 @@ import androidx.paging.compose.itemKey
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.utils.rememberPreference
 
@@ -304,6 +305,7 @@ internal fun PlaylistSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalGlassColors.current
+    val backgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
     val shape = RoundedCornerShape(
         topStart = if (isFirst) 26.dp else 0.dp,
         topEnd = if (isFirst) 26.dp else 0.dp,
@@ -314,7 +316,7 @@ internal fun PlaylistSurface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.elevatedBackground),
+            .background(colors.elevatedBackground.copy(alpha = backgroundAlpha)),
         content = content,
     )
 }

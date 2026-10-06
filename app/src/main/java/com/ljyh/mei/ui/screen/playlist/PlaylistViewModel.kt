@@ -26,6 +26,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.UserRepository
+import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
@@ -53,10 +54,17 @@ class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
     private val userRepository: UserRepository,
     private val likeRepository: LikeRepository,
+    private val colorRepository: ColorRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
     val apiService: ApiService
 ) : ViewModel() {
     val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
+
+    fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
+
+    suspend fun getOrExtractColor(url: String) =
+        colorRepository.getColorOrExtract(AppContext.instance, url)
+
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
 
