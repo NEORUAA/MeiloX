@@ -40,7 +40,7 @@ data class ArtistAlbum(
         @SerializedName("img1v1Url")
         val img1v1Url: String,
         @SerializedName("followed")
-        val followed: Boolean,
+        val followed: Boolean?,
         @SerializedName("trans")
         val trans: String,
         @SerializedName("alias")

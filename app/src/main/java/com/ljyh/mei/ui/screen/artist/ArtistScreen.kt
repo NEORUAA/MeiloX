@@ -101,7 +101,8 @@ fun ArtistScreen(
     val artistAlbums by viewModel.artistAlbums.collectAsState()
     val artistSongs by viewModel.artistSongs.collectAsState()
     val followMutation by viewModel.followMutation.collectAsState()
-    var isFollowed by remember(id) { mutableStateOf(false) }
+    val confirmedFollowed by viewModel.confirmedFollowed.collectAsState()
+    val isFollowed = resolveArtistFollowed(id, artistSongs, artistAlbums, confirmedFollowed)
     var currentOverlay by remember(id) { mutableStateOf<OverlayState>(OverlayState.None) }
     val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
     val onAllAlbumsClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") }
@@ -124,14 +125,6 @@ fun ArtistScreen(
         viewModel.getArtistDetail(id)
         viewModel.getArtistAlbums(id)
         viewModel.getArtistSongs(id)
-    }
-    LaunchedEffect(artistDetail) {
-        (artistDetail as? Resource.Success)?.data?.data?.user?.followed?.let {
-            isFollowed = it
-        }
-    }
-    LaunchedEffect(followMutation) {
-        (followMutation as? Resource.Success)?.data?.let { isFollowed = it }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -192,10 +185,12 @@ fun ArtistScreen(
                                                 )
                                             }
                                         },
-                                        isFollowed = isFollowed,
-                                        isFollowLoading = followMutation is Resource.Loading,
+                                        isFollowed = isFollowed == true,
+                                        isFollowLoading = isFollowed == null || followMutation is Resource.Loading,
                                         onFollowClick = {
-                                            viewModel.setArtistFollowed(artist.id.toLong(), !isFollowed)
+                                            isFollowed?.let { followed ->
+                                                viewModel.setArtistFollowed(artist.id.toLong(), !followed)
+                                            }
                                         },
                                     )
                                 } else {
