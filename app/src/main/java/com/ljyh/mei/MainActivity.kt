@@ -61,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
@@ -167,6 +168,8 @@ import com.ljyh.mei.ui.local.LocalDatabase
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
+import com.ljyh.mei.ui.local.LocalPageAppearance
+import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.local.LocalUserData
 import com.ljyh.mei.ui.glass.GlassBottomBar
 import com.ljyh.mei.ui.glass.GlassIconButton
@@ -191,6 +194,7 @@ import com.ljyh.mei.ui.navigation.MeiNavEntryViewModelStoreOwner
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiRoute
 import com.ljyh.mei.ui.theme.MusicTheme
+import com.ljyh.mei.ui.theme.LocalAccentSeedColor
 import com.ljyh.mei.utils.log.CrashHandler
 import com.ljyh.mei.utils.cache.preloadImage
 import com.ljyh.mei.utils.dataStore
@@ -262,6 +266,18 @@ class MainActivity : ComponentActivity() {
             val backStack = rememberNavBackStack(MeiRoute(Screen.Home.route))
             val navController = remember(backStack) {
                 MeiNavigator(context = context, backStack = backStack)
+            }
+            val pageAppearanceOverrides = remember {
+                mutableStateMapOf<String, Pair<Any, Boolean>>()
+            }
+            val registerPageAppearance: (String, Any, Boolean?) -> Unit = remember {
+                { route, owner, isDark ->
+                    if (isDark != null) {
+                        pageAppearanceOverrides[route] = owner to isDark
+                    } else if (pageAppearanceOverrides[route]?.first === owner) {
+                        pageAppearanceOverrides.remove(route)
+                    }
+                }
             }
             var active by rememberSaveable {
                 mutableStateOf(false)
@@ -436,6 +452,11 @@ class MainActivity : ComponentActivity() {
                 Color(accentColorArgb.toInt())
             }
             val effectiveAccent = if (dynamicTheme) targetThemeColor ?: defaultAccent else configuredAccent
+            val accentSeedColor = if (dynamicTheme) {
+                targetThemeColor
+            } else {
+                Color(accentColorArgb.toInt()).takeUnless { accentColorArgb == DefaultAccentColorArgb }
+            }
             MusicTheme(
                 seedColor = effectiveAccent,
                 isDark = effectiveDark,
@@ -469,6 +490,8 @@ class MainActivity : ComponentActivity() {
                     LocalGlassBackdrop provides glassBackdrop,
                     LocalGlassColors provides glassColors,
                     LocalBlurBackdrop provides bottomControlsBackdrop,
+                    LocalAccentSeedColor provides accentSeedColor,
+                    LocalPageAppearance provides registerPageAppearance,
                 ) {
                     BoxWithConstraints(
                         modifier = Modifier
@@ -614,6 +637,8 @@ class MainActivity : ComponentActivity() {
                     val playerDismissed by remember(playerBottomSheetState) {
                         derivedStateOf { playerBottomSheetState.isDismissed }
                     }
+                    val pageDarkAppearance = currentRoute?.let { pageAppearanceOverrides[it]?.second }
+                    val statusBarDark = isPlayerPage || (pageDarkAppearance ?: effectiveDark)
                     SideEffect {
                         val transparent = android.graphics.Color.TRANSPARENT
                         enableEdgeToEdge(
@@ -622,7 +647,7 @@ class MainActivity : ComponentActivity() {
                                 // keep its foreground white regardless of the app theme.
                                 SystemBarStyle.dark(transparent)
                             } else {
-                                SystemBarStyle.auto(transparent, transparent) { effectiveDark }
+                                SystemBarStyle.auto(transparent, transparent) { statusBarDark }
                             },
                             navigationBarStyle = SystemBarStyle.auto(transparent, transparent) {
                                 effectiveDark
@@ -631,7 +656,7 @@ class MainActivity : ComponentActivity() {
                         // Keep this explicit because the API 35+ edge-to-edge implementation can
                         // retain the previous appearance while the bottom sheet settles.
                         windowInsetsController.isAppearanceLightStatusBars =
-                            !isPlayerPage && !effectiveDark
+                            !statusBarDark
                         if (isPlayerPage && keepScreenOnInPlayer) {
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         } else {
@@ -939,6 +964,7 @@ class MainActivity : ComponentActivity() {
                             compactProgress = compactMiniPlayerProgress,
                             state = playerBottomSheetState,
                             backdrop = bottomControlsBackdrop,
+                            pageDarkAppearance = pageDarkAppearance,
                         )
                         AnimatedVisibility(
                             visible = active,
@@ -1114,6 +1140,7 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
     compactProgress: State<Float>,
     state: BottomSheetState,
     backdrop: Backdrop,
+    pageDarkAppearance: Boolean?,
 ) {
     val miniPlayerVerticalOffset = remember(compactProgress) {
         { (NavigationBarHeight - 16.dp) * compactProgress.value }
@@ -1127,6 +1154,7 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
             // MiniPlayer is rendered by BottomSheetPlayer's collapsed content. Give it the page
             // sample layer while keeping page/player glass out of that source.
             LocalGlassBackdrop provides backdrop,
+            LocalMiniPlayerAppearance provides pageDarkAppearance,
         ) {
             BottomSheetPlayer(
                 state = state,

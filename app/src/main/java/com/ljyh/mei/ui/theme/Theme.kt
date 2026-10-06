@@ -13,6 +13,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -22,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
+
+/** Raw custom or dynamic accent; null selects the current mode's default accent. */
+val LocalAccentSeedColor = staticCompositionLocalOf<Color?> { null }
 
 private val SfProFamily = FontFamily(Font(R.font.sf_pro, FontWeight.Normal))
 

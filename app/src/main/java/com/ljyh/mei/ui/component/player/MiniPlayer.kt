@@ -23,11 +23,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -63,10 +65,16 @@ import com.ljyh.mei.extensions.togglePlayPause
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
+import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.local.LocalPlayerConnection
+import com.ljyh.mei.ui.theme.LocalAccentSeedColor
+import com.ljyh.mei.ui.theme.MusicTheme
 import kotlin.math.roundToInt
+
+internal val LocalMiniPlayerAppearance = staticCompositionLocalOf<Boolean?> { null }
 
 private fun Modifier.compactMiniPlayerHorizontalPadding(
     compactProgress: State<Float>,
@@ -111,6 +119,32 @@ fun MiniPlayer(
     compactProgress: State<Float>,
     onClick: () -> Unit,
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
+) {
+    val appearance = LocalMiniPlayerAppearance.current
+    if (appearance == null) {
+        MiniPlayerContent(modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged)
+    } else {
+        MusicTheme(
+            seedColor = LocalAccentSeedColor.current ?: defaultGlassColors(appearance).accent,
+            isDark = appearance,
+        ) {
+            CompositionLocalProvider(
+                LocalGlassColors provides defaultGlassColors(appearance, MaterialTheme.colorScheme.primary),
+            ) {
+                MiniPlayerContent(modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged)
+            }
+        }
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun MiniPlayerContent(
+    modifier: Modifier,
+    backdrop: Backdrop,
+    compactProgress: State<Float>,
+    onClick: () -> Unit,
+    onCoverBoundsChanged: ((Rect) -> Unit)?,
 ) {
     val sheet = LocalPlayerSheet.current
     val sheetTransitioning by remember(sheet) {

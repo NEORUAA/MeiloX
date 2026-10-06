@@ -36,6 +36,11 @@ class ArtistViewModel internal constructor(
     suspend fun getOrExtractColor(url: String) =
         colorRepository.getColorOrExtract(AppContext.instance, url)
 
+    fun getCachedCoverIsDark(url: String) = colorRepository.getCachedCoverIsDark(url)
+
+    suspend fun getCoverIsDarkOrExtract(url: String) =
+        colorRepository.getCoverIsDarkOrExtract(AppContext.instance, url)
+
     private val _artistDetail = MutableStateFlow<Resource<ArtistDetail>>(Resource.Loading)
     val artistDetail: StateFlow<Resource<ArtistDetail>> = _artistDetail
     private var artistDetailJob: Job? = null

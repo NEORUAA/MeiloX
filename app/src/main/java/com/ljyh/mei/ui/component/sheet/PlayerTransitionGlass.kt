@@ -11,8 +11,10 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.GlassMorphRenderer
+import com.ljyh.mei.ui.glass.defaultGlassColors
 
 /** The sheet keeps its approved motion; only the glass renderer is shared with home controls. */
 @Composable
@@ -21,7 +23,9 @@ internal fun PlayerTransitionGlass(
     renderer: GlassMorphRenderer,
     expandedCornerRadius: Float,
 ) {
-    val tint = LocalGlassColors.current.container
+    val appearance = LocalMiniPlayerAppearance.current
+    val tint = appearance?.let { defaultGlassColors(it).container }
+        ?: LocalGlassColors.current.container
     val recording = remember(renderer) { SheetGlassCoordinates() }
     Canvas(Modifier.fillMaxSize().onGloballyPositioned { recording.coordinates = it }) {
         val coordinates = recording.coordinates ?: return@Canvas
