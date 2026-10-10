@@ -269,7 +269,7 @@ private fun HomeBlockItem(
     // 解析逻辑缓存，只要 block 不变，就不会重新解析 JSON
     val blockData = remember(block) {
         Timber.tag("Block").d(block.positionCode)
-        selectSpecialField(block.dslData)
+        block.dslData?.takeIf { it.isJsonObject }?.asJsonObject?.let(::selectSpecialField)
     } ?: return
 
     Timber.tag("Block").d(block.positionCode)

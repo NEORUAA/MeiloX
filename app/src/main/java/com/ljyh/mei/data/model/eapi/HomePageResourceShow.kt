@@ -1,6 +1,6 @@
 package com.ljyh.mei.data.model.eapi
 
-import com.google.gson.JsonObject
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import com.ljyh.mei.di.SpecialKey
 
@@ -81,8 +81,9 @@ data class HomePageResourceShow(
             val crossPlatformConfig: CrossPlatformConfig,
             @SerializedName("nativeConfig")
             val nativeConfig: Any,
+            // Non-DSL modules can return JSON null, which Gson's JsonObject adapter rejects.
             @SerializedName("dslData")
-            val dslData: JsonObject,
+            val dslData: JsonElement? = null,
             @SerializedName("rnData")
             val rnData: Any,
             @SerializedName("nativeData")

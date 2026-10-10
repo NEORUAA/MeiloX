@@ -1,28 +1,19 @@
 package com.ljyh.mei.data.repository
 
 import android.content.Context
-import android.util.Log
 import androidx.datastore.preferences.core.edit
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.ljyh.mei.AppContext
-import com.ljyh.mei.constants.LastHomePageData_1
-import com.ljyh.mei.constants.LastHomePageData_2
 import com.ljyh.mei.constants.LastHomePageTime
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
-import com.ljyh.mei.data.model.api.GetSearch
-import com.ljyh.mei.data.model.api.SearchResult
-import com.ljyh.mei.data.model.weapi.GetHomePageResourceShow
 import com.ljyh.mei.data.model.weapi.buildGetHomePageResourceShow
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
-import com.ljyh.mei.utils.cache.CacheFile
 import com.ljyh.mei.utils.cache.CacheFile.isNewDay
 import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.utils.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -34,31 +25,19 @@ class HomeRepository(private val eApiService: EApiService, private val apiServic
     val context = AppContext.instance
     suspend fun getHomePageResourceShow(
         refresh: Boolean = false
-    ): Resource<List<HomePageResourceShow.Data.Block>> {
-        Timber.tag("NewDay").d(isNewDay(getLastFetchTime(context)).toString())
-        Timber.tag("refresh").d(refresh.toString())
-        if (isNewDay(getLastFetchTime(context)) || refresh) {
-            Timber.tag("getHomePageResourceShow").d("新加载")
-            val page1 =
-                eApiService.getHomePageResourceShow(buildGetHomePageResourceShow(refresh = refresh.toString()))
-//            val page2 = eApiService.getHomePageResourceShow(
-//                buildGetHomePageResourceShow(refresh = refresh.toString())
-//            )
-            saveLastHomePage(context, 1, page1.data.blocks)
-//            saveLastHomePage(context, 2, page2.data.blocks)
-
-            Timber.tag("getHomePageResourceShow").d("更新缓存")
-            return withContext(Dispatchers.IO) {
-                safeApiCall {
-                    page1.data.blocks
-//                    page1.data.blocks + page2.data.blocks
-                }
+    ): Resource<List<HomePageResourceShow.Data.Block>> = withContext(Dispatchers.IO) {
+        safeApiCall {
+            if (refresh || isNewDay(getLastFetchTime(context))) {
+                Timber.tag("getHomePageResourceShow").d("Fetching home page")
+                val page = eApiService.getHomePageResourceShow(
+                    buildGetHomePageResourceShow(refresh = refresh.toString())
+                )
+                saveLastHomePage(context, 1, page.data.blocks)
+                page.data.blocks
+            } else {
+                Timber.tag("getHomePageResourceShow").d("Loading cached home page")
+                getLastHomePage(context, 1)
             }
-        } else {
-            Timber.tag("getHomePageResourceShow").d("加载缓存")
-            val page1 = getLastHomePage(context, 1)
-//            val page2 = getLastHomePage(context, 2)
-            return Resource.Success(page1)
         }
     }
 
