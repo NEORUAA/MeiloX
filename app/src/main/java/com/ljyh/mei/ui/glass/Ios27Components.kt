@@ -409,11 +409,12 @@ fun IosBottomSearchToolbar(
     onQueryChange: (TextFieldValue) -> Unit,
     onSearch: (String) -> Unit,
     onCancel: () -> Unit,
-    @Suppress("UNUSED_PARAMETER") cancelLabel: String,
+    cancelLabel: String,
     placeholder: String,
     modifier: Modifier = Modifier,
     style: GlassSurfaceStyle = GlassSurfaceStyle.Navigation,
     focusRequester: FocusRequester = remember { FocusRequester() },
+    autoFocus: Boolean = true,
 ) {
     val colors = LocalGlassColors.current
     val backdrop = LocalGlassBackdrop.current
@@ -466,10 +467,12 @@ fun IosBottomSearchToolbar(
             style = style,
             modifier = Modifier.size(56.dp),
         ) {
-            SfIcon("xmark", null, size = 20.dp, tint = colors.content)
+            SfIcon("xmark", cancelLabel, size = 20.dp, tint = colors.content)
         }
     }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) focusRequester.requestFocus()
+    }
 }
 
 /** Figma node 5661:33949: 52dp table text field with iOS separators. */

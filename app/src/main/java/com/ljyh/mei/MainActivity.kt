@@ -279,9 +279,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            var active by rememberSaveable {
-                mutableStateOf(false)
-            }
+            // Search chrome belongs to the search destination, including back navigation.
+            val active = navController.currentRoute == Screen.Search.route
+            var focusSearchOnEntry by remember { mutableStateOf(false) }
             val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
             val accentColorArgb by rememberPreference(AccentColorKey, DefaultAccentColorArgb)
             val appAppearance by rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
@@ -671,29 +671,27 @@ class MainActivity : ComponentActivity() {
                     val (query, onQueryChange) = rememberSaveable(stateSaver = TextFieldValue.Saver) {
                         mutableStateOf(TextFieldValue())
                     }
-                    val onActiveChange: (Boolean) -> Unit = { newActive ->
-                        active = newActive
-                        if (!newActive) {
-                            focusManager.clearFocus()
-                            if (navigationItems.fastAny { it.route == currentRoute } ||
-                                currentRoute == Screen.Search.route
-                            ) {
-                                onQueryChange(TextFieldValue())
-                            }
+                    val clearSearchInput = {
+                        focusManager.clearFocus()
+                        onQueryChange(TextFieldValue())
+                        focusSearchOnEntry = false
+                    }
+                    LaunchedEffect(active) {
+                        if (!active) {
+                            clearSearchInput()
                         }
                     }
 
                     val onSearchCancel = {
-                        val isSearchRoute = currentRoute == Screen.Search.route
-                        onActiveChange(false)
-                        if (isSearchRoute) {
+                        clearSearchInput()
+                        if (navController.currentRoute == Screen.Search.route) {
                             navController.popBackStack()
                         }
                     }
 
                     val onSearch: (String) -> Unit = {
                         if (it.isNotEmpty()) {
-                            onActiveChange(false)
+                            clearSearchInput()
                             Screen.SearchResult.navigate(navController){
                                 addPath(Uri.encode(it))
                                 addPath("1") // 默认所搜单曲
@@ -947,9 +945,7 @@ class MainActivity : ComponentActivity() {
                                                             addPath(type.toString())
                                                         }
                                                     },
-                                                    onDismiss = {
-                                                        onActiveChange(false)
-                                                    },
+                                                    onDismiss = clearSearchInput,
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .padding(top = windowsInsets.asPaddingValues().calculateTopPadding())
@@ -983,6 +979,7 @@ class MainActivity : ComponentActivity() {
                                     cancelLabel = stringResource(R.string.cancel),
                                     placeholder = stringResource(R.string.search_bar_search),
                                     focusRequester = searchBarFocusRequester,
+                                    autoFocus = focusSearchOnEntry,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp)
@@ -1027,10 +1024,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onSearchClick = {
+                                    focusSearchOnEntry = true
                                     if (currentRoute != Screen.Search.route) {
                                         navController.navigate(Screen.Search.route)
                                     }
-                                    onActiveChange(true)
                                 },
                                 backdrop = bottomControlsBackdrop,
                                 playerBottomSheetState = playerBottomSheetState,
