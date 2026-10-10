@@ -11,6 +11,7 @@ import com.ljyh.mei.data.model.api.CreatePlaylist
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
 import com.ljyh.mei.data.model.api.DeletePlaylist
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
+import com.ljyh.mei.data.model.api.EApiUnsubscribePlaylist
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.GetSongUrl
@@ -133,8 +134,10 @@ class PlaylistRepository(
                         } else {
                             val headerToken = freshCheckToken()
                             check(subscriptionAccount() == key.account) { "NetEase account changed before playlist subscription" }
+                            val body = EApiUnsubscribePlaylist(id = id.toLong().toString())
                             val response = eApiService.unSubscribePlaylist(
-                                EApiSubscribePlaylist(id = id.toLong()),
+                                body,
+                                id = body.id,
                                 antiCheatToken = headerToken,
                             )
                             if (response.code == 200) {

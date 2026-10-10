@@ -21,11 +21,16 @@ data class SubscribePlaylist(
 )
 
 /**
- * EAPI playlist subscription request. The playlist id must be encoded as a number.
+ * EAPI playlist subscription request with a numeric playlist id.
  */
 data class EApiSubscribePlaylist(
     val id: Long,
     val checkToken: String? = null
+)
+
+/** The official unsubscribe request copies its query id into the EAPI body as a string. */
+data class EApiUnsubscribePlaylist(
+    val id: String,
 )
 
 /**

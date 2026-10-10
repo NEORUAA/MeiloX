@@ -1,9 +1,9 @@
 package com.ljyh.mei.data.repository
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.api.BaseResponse
-import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
@@ -28,7 +28,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -173,7 +172,7 @@ class PlaylistSubscriptionLifecycleTest {
         runCurrent()
         assertEquals(2, fixture.writes.size)
         assertFalse(fixture.writes.last().subscribed)
-        assertNull(fixture.writes.last().body.checkToken)
+        assertFalse(fixture.writes.last().body.has("checkToken"))
         assertEquals(0, fixture.detailCalls)
 
         fixture.writes.last().response.complete(200)
@@ -233,6 +232,41 @@ class PlaylistSubscriptionLifecycleTest {
         assertFalse(fixture.repository.getPlaylistDetail("42").subscribed())
     }
 
+    @Test(timeout = 10_000)
+    fun unsubscriptionUsesTheSameStringIdInQueryAndBodyWithAFreshHeaderToken() = runTest(dispatcher) {
+        val playlistId = "8668352495"
+        val result = async { fixture.repository.unSubscribePlaylist(playlistId) }
+        runCurrent()
+        val write = fixture.writes.single()
+        assertFalse(write.subscribed)
+        assertTrue(write.body.getAsJsonPrimitive("id").isString)
+        assertEquals(playlistId, write.body.get("id").asString)
+        assertEquals(playlistId, write.queryId)
+        assertFalse(write.body.has("checkToken"))
+        assertEquals("fresh-token-1", write.headerToken)
+        assertEquals(1, fixture.tokenCalls)
+
+        write.response.complete(200)
+        runCurrent()
+        assertEquals(200, result.await().code())
+    }
+
+    @Test(timeout = 10_000)
+    fun failedUnsubscriptionPreserves501WithoutCleanupRetryOrReadback() = runTest(dispatcher) {
+        fixture.serverSubscribed = true
+        val result = async { fixture.repository.unSubscribePlaylist("42") }
+        runCurrent()
+        fixture.writes.single().response.complete(501)
+        runCurrent()
+
+        assertEquals(501, result.await().code())
+        assertTrue(fixture.serverSubscribed)
+        assertTrue(fixture.cleanedPlaylists.isEmpty())
+        assertEquals(1, fixture.writes.size)
+        assertEquals(1, fixture.tokenCalls)
+        assertEquals(0, fixture.detailCalls)
+    }
+
     private class Fixture(dispatcher: TestDispatcher) {
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
         var account = "test-session"
@@ -267,9 +301,12 @@ class PlaylistSubscriptionLifecycleTest {
             check(method.name in setOf("subscribePlaylist", "unSubscribePlaylist")) {
                 "Unexpected EAPI request: ${method.name}"
             }
+            val subscribed = method.name == "subscribePlaylist"
             val write = PendingWrite(
-                subscribed = method.name == "subscribePlaylist",
-                body = arguments!![0] as EApiSubscribePlaylist,
+                subscribed = subscribed,
+                body = Gson().toJsonTree(arguments!![0]).asJsonObject,
+                queryId = if (subscribed) null else arguments[1] as String,
+                headerToken = arguments[if (subscribed) 1 else 2] as String,
             )
             writes += write
             suspendResponse(arguments.last()) {
@@ -304,7 +341,12 @@ class PlaylistSubscriptionLifecycleTest {
         )
     }
 
-    private class PendingWrite(val subscribed: Boolean, val body: EApiSubscribePlaylist) {
+    private class PendingWrite(
+        val subscribed: Boolean,
+        val body: JsonObject,
+        val queryId: String?,
+        val headerToken: String,
+    ) {
         val response = CompletableDeferred<Int>()
     }
 

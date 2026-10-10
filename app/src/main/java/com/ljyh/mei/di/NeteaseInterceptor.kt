@@ -325,7 +325,7 @@ class NeteaseInterceptor internal constructor(
         ) {
             !usesAndroidEapiIdentity
         } else {
-            originalRequest.url.encodedPath in setOf(
+            originalRequest.url.encodedPath.trimEnd('/') in setOf(
                 "/api/playlist/subscribe",
                 "/api/playlist/unsubscribe",
             )
