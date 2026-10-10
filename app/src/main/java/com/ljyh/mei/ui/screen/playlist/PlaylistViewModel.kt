@@ -67,6 +67,10 @@ class PlaylistViewModel @Inject constructor(
 
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
+    private var playlistDetailRequestGeneration = 0
+    private var activePlaylistId: String? = null
+    private val _confirmedSubscription = MutableStateFlow<Boolean?>(null)
+    val confirmedSubscription: StateFlow<Boolean?> = _confirmedSubscription
 
     private val _removedTrackIds = MutableStateFlow<Set<Long>>(emptySet())
     val removedTrackIds: StateFlow<Set<Long>> = _removedTrackIds
@@ -94,15 +98,28 @@ class PlaylistViewModel @Inject constructor(
     private val _unSubscribePlaylist = MutableStateFlow<Resource<BaseResponse>>(Resource.Loading)
     val unSubscribePlaylist: StateFlow<Resource<BaseResponse>> = _unSubscribePlaylist
 
+    private val _subscriptionUpdating = MutableStateFlow(false)
+    val subscriptionUpdating: StateFlow<Boolean> = _subscriptionUpdating
+
     // 删除歌单状态
     private val _deletePlaylist = MutableStateFlow<Resource<BaseMessageResponse>>(Resource.Loading)
     val deletePlaylist: StateFlow<Resource<BaseMessageResponse>> = _deletePlaylist
 
     fun getPlaylistDetail(id: String) {
+        if (activePlaylistId != id) {
+            activePlaylistId = id
+            _confirmedSubscription.value = null
+        }
+        val generation = ++playlistDetailRequestGeneration
         viewModelScope.launch {
             _removedTrackIds.value = emptySet()
             _playlistDetail.value = Resource.Loading
-            _playlistDetail.value = repository.getPlaylistDetail(id)
+            val result = repository.getPlaylistDetail(id)
+            if (generation != playlistDetailRequestGeneration) return@launch
+            _playlistDetail.value = result
+            if (result is Resource.Success) {
+                _confirmedSubscription.value = result.data.playlist.subscribed
+            }
             localPlaylistRepository.touchPlaylist(id, System.currentTimeMillis())
         }
     }
@@ -241,9 +258,20 @@ class PlaylistViewModel @Inject constructor(
      * 收藏歌单
      */
     fun subscribePlaylist(id: String) {
+        if (_subscriptionUpdating.value || activePlaylistId != id || _playlistDetail.value !is Resource.Success) return
+        _subscriptionUpdating.value = true
+        playlistDetailRequestGeneration++
         viewModelScope.launch {
             _subscribePlaylist.value = Resource.Loading
-            _subscribePlaylist.value = repository.subscribePlaylist(id)
+            try {
+                val result = repository.subscribePlaylist(id)
+                if (result is Resource.Success && result.data.code == 200) {
+                    updateConfirmedSubscription(id, subscribed = true)
+                }
+                _subscribePlaylist.value = result
+            } finally {
+                _subscriptionUpdating.value = false
+            }
         }
     }
 
@@ -251,11 +279,25 @@ class PlaylistViewModel @Inject constructor(
      * 取消收藏歌单
      */
     fun unsubscribePlaylist(id: String) {
+        if (_subscriptionUpdating.value || activePlaylistId != id || _playlistDetail.value !is Resource.Success) return
+        _subscriptionUpdating.value = true
+        playlistDetailRequestGeneration++
         viewModelScope.launch {
             _unSubscribePlaylist.value = Resource.Loading
-            _unSubscribePlaylist.value = repository.unSubscribePlaylist(id)
-            localPlaylistRepository.deletePlaylistById(id)
+            try {
+                val result = repository.unSubscribePlaylist(id)
+                if (result is Resource.Success && result.data.code == 200) {
+                    updateConfirmedSubscription(id, subscribed = false)
+                }
+                _unSubscribePlaylist.value = result
+            } finally {
+                _subscriptionUpdating.value = false
+            }
         }
+    }
+
+    private fun updateConfirmedSubscription(id: String, subscribed: Boolean) {
+        if (activePlaylistId == id) _confirmedSubscription.value = subscribed
     }
 
     /*

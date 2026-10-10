@@ -84,6 +84,7 @@ fun CommonSongListScreen(
     headerActionIcon: ImageVector,
     headerActionLabel: String,
     isSubscribed: Boolean = uiData.isSubscribed,
+    headerActionPending: Boolean = false,
     onTrackClick: (MediaMetadata, Int) -> Unit,
     onTrackDownload: ((MediaMetadata, MusicQuality) -> Unit)? = null,
     onBack: () -> Unit,
@@ -312,6 +313,7 @@ fun CommonSongListScreen(
                             playCount = uiData.playCount ?: -1L,
                             subscribeCount = uiData.subscriberCount,
                             isSubscribed = isSubscribed,
+                            isSubscriptionPending = headerActionPending,
                             onSubscribed = { onHeaderAction() },
                         )
                     }

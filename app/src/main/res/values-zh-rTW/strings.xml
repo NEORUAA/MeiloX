@@ -680,6 +680,7 @@
 
     <string name="detail_playlist_menu">歌單操作</string>
     <string name="detail_playlist_subscribe">收藏歌單</string>
+    <string name="playlist_subscription_updating">正在更新收藏…</string>
     <string name="detail_playlist_unsubscribe">取消收藏歌單</string>
     <string name="detail_podcast_menu">播客操作</string>
     <string name="detail_podcast_unsubscribe">取消訂閱</string>

@@ -91,13 +91,14 @@ fun detailMenuItems(
     onSelect: () -> Unit,
     onSubscribe: () -> Unit,
     onRefresh: () -> Unit,
+    subscriptionEnabled: Boolean = true,
 ): List<IosCascadingMenuItem> {
     return listOf(
         IosCascadingMenuItem(downloadTitle, "arrow.down.circle", children = MusicQuality.entries.map { quality ->
             IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { onDownload(quality) })
         }),
         IosCascadingMenuItem(stringResource(R.string.album_multi_select), "checklist", onClick = onSelect),
-        IosCascadingMenuItem(subscriptionTitle, if (subscribed) "checkmark" else "plus", separatorBefore = true, onClick = onSubscribe),
+        IosCascadingMenuItem(subscriptionTitle, if (subscribed) "checkmark" else "plus", separatorBefore = true, enabled = subscriptionEnabled, onClick = onSubscribe),
         IosCascadingMenuItem(stringResource(R.string.album_refresh), "arrow.clockwise", onClick = onRefresh),
     )
 }

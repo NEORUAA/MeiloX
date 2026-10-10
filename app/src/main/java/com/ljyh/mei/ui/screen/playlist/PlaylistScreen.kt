@@ -70,6 +70,8 @@ fun PlaylistScreen(
     val removedTrackIds by viewModel.removedTrackIds.collectAsState()
     val subscriberState by viewModel.subscribePlaylist.collectAsState()
     val unSubscriberState by viewModel.unSubscribePlaylist.collectAsState()
+    val isSubscriptionUpdating by viewModel.subscriptionUpdating.collectAsState()
+    val confirmedSubscription by viewModel.confirmedSubscription.collectAsState()
 
     // 3. Paging 数据
     var isPlaylistSearchActive by remember { mutableStateOf(false) }
@@ -87,22 +89,14 @@ fun PlaylistScreen(
     val (downloadPath) = rememberPreference(DownloadPathKey, DownloadManager.getDefaultDownloadPath())
     val (downloadQuality) = rememberEnumPreference(DownloadQualityKey, DownloadQuality.EXHIGH)
 
-    // 4. 管理收藏状态 (乐观更新核心)
-    // 默认 false，等待数据加载后同步
-    var isSubscribed by remember { mutableStateOf(false) }
-
-    // 当网络数据(playlistDetail)加载成功时，同步初始状态
-    LaunchedEffect(playlistDetail) {
-        if (playlistDetail is Resource.Success) {
-            isSubscribed = (playlistDetail as Resource.Success).data.playlist.subscribed
-        }
-    }
+    // A checkmark represents server-confirmed state, not an in-flight write.
+    val isSubscribed = confirmedSubscription
+        ?: ((playlistDetail as? Resource.Success)?.data?.playlist?.subscribed == true)
 
     LaunchedEffect(subscriberState) {
         when(val result=subscriberState){
             is Resource.Success ->{
                 if(result.data.code!=200){
-                    isSubscribed = false // 回滚为未收藏
                     Toast.makeText(context, "收藏失败: 错误码:${result.data.code}", Toast.LENGTH_SHORT).show()
                 }else{
                     Toast.makeText(context, "收藏成功", Toast.LENGTH_SHORT).show()
@@ -111,7 +105,6 @@ fun PlaylistScreen(
                 Timber.tag("PlaylistScreen").d(result.data.toString())
             }
             is Resource.Error->{
-                isSubscribed = false // 回滚为未收藏
                 Toast.makeText(context, "收藏失败: ${(subscriberState as Resource.Error).message}", Toast.LENGTH_SHORT).show()
             }
             else -> {}
@@ -123,14 +116,12 @@ fun PlaylistScreen(
             is Resource.Success ->{
                 Timber.tag("PlaylistScreen").d(result.data.toString())
                 if(result.data.code!=200){
-                    isSubscribed = true // 回滚为未收藏
                     Toast.makeText(context, "取消收藏失败: 错误码:${result.data.code}", Toast.LENGTH_SHORT).show()
                 }else{
                     Toast.makeText(context, "取消收藏成功", Toast.LENGTH_SHORT).show()
                 }
             }
             is Resource.Error->{
-                isSubscribed = true // 回滚为未收藏
                 Toast.makeText(context, "取消收藏失败: ${result.message}", Toast.LENGTH_SHORT).show()
             }
             else -> {}
@@ -157,7 +148,7 @@ fun PlaylistScreen(
                     .filterNot { it.id in removedTrackIds },
                 trackCount = visibleTrackCount,
                 playCount = data.playCount,
-                isSubscribed = data.subscribed // 注意：这里仅用于 UI 初始化，后续由 isSubscribed 状态变量控制
+                isSubscribed = data.subscribed
             )
         } else {
             UiPlaylist(
@@ -283,13 +274,13 @@ fun PlaylistScreen(
     }
 
     fun toggleSubscription() {
+        if (isSubscriptionUpdating || playlistDetail !is Resource.Success) return
         if (uiData.isCreator) {
             Toast.makeText(context, "不能收藏自己创建的歌单", Toast.LENGTH_SHORT).show()
             return
         }
-        isSubscribed = !isSubscribed
-        if (isSubscribed) viewModel.subscribePlaylist(id.toString())
-        else viewModel.unsubscribePlaylist(id.toString())
+        if (isSubscribed) viewModel.unsubscribePlaylist(id.toString())
+        else viewModel.subscribePlaylist(id.toString())
     }
 
     DetailSelectionToolbar(
@@ -302,8 +293,11 @@ fun PlaylistScreen(
     val menu = detailMenuItems(
         downloadTitle = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_download_all, uiData.count),
         subscriptionTitle = androidx.compose.ui.res.stringResource(
-            if (isSubscribed) com.ljyh.mei.R.string.detail_playlist_unsubscribe else com.ljyh.mei.R.string.detail_playlist_subscribe),
+            if (isSubscriptionUpdating) com.ljyh.mei.R.string.playlist_subscription_updating
+            else if (isSubscribed) com.ljyh.mei.R.string.detail_playlist_unsubscribe
+            else com.ljyh.mei.R.string.detail_playlist_subscribe),
         subscribed = isSubscribed,
+        subscriptionEnabled = !isSubscriptionUpdating && playlistDetail is Resource.Success,
         onDownload = { prepareDownload(quality = it) },
         onSelect = selection::start,
         onSubscribe = ::toggleSubscription,
@@ -344,7 +338,10 @@ fun PlaylistScreen(
 
             // 收藏按钮逻辑
             headerActionIcon = if (isSubscribed) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            headerActionLabel = if (isSubscribed) "取消收藏" else "收藏",
+            headerActionLabel = if (isSubscriptionUpdating) {
+                androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.playlist_subscription_updating)
+            } else if (isSubscribed) "取消收藏" else "收藏",
+            headerActionPending = isSubscriptionUpdating,
             isSubscribed = isSubscribed,
             onHeaderAction = ::toggleSubscription,
             detailMenu = menu,

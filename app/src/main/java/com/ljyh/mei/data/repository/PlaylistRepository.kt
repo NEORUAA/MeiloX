@@ -1,7 +1,6 @@
 package com.ljyh.mei.data.repository
 
 import com.ljyh.mei.constants.MusicQuality
-import com.ljyh.mei.constants.checkToken
 import com.ljyh.mei.data.model.AlbumDetail
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
@@ -30,24 +29,142 @@ import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.data.network.safeApiCall
 import com.ljyh.mei.playback.playbackQualityFallbacks
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 class PlaylistRepository(
     private val apiService: ApiService,
     private val weApiService: WeApiService,
-    private val eApiService: EApiService
+    private val eApiService: EApiService,
+    private val freshCheckToken: suspend () -> String,
+    private val subscriptionAccount: () -> String,
+    private val onUnsubscribed: suspend (String) -> Unit = {},
+    private val subscriptionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    private val subscriptionLock = Any()
+    private val subscriptions = mutableMapOf<SubscriptionKey, SubscriptionEntry>()
+
+    private data class SubscriptionKey(val account: String, val playlistId: String)
+
+    private class SubscriptionEntry {
+        var revision = 0L
+        var readers = 0
+        var pending: SubscriptionWrite? = null
+    }
+
+    private class SubscriptionWrite(
+        val subscribed: Boolean,
+        val result: Deferred<Resource<BaseResponse>>,
+    )
+
     suspend fun getPlaylistDetail(id: String): Resource<PlaylistDetail> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.getPlaylistDetail(
-                    GetPlaylistDetail(
-                        id = id
-                    )
-                )
+        val key = SubscriptionKey(subscriptionAccount(), id)
+        val entry = synchronized(subscriptionLock) {
+            subscriptions.getOrPut(key, ::SubscriptionEntry).also { it.readers++ }
+        }
+        try {
+            while (true) {
+                val (pending, revision) = synchronized(subscriptionLock) {
+                    entry.pending to entry.revision
+                }
+                if (pending != null) {
+                    pending.result.join()
+                    continue
+                }
+                val response = withContext(ioDispatcher) {
+                    safeApiCall {
+                        apiService.getPlaylistDetail(GetPlaylistDetail(id = id))
+                    }
+                }
+                // A read started before a write must not publish its old subscription state.
+                val current = synchronized(subscriptionLock) {
+                    entry.pending == null && entry.revision == revision
+                }
+                if (subscriptionAccount() != key.account) {
+                    return Resource.Error("NetEase account changed during the playlist request")
+                }
+                if (current) return response
+            }
+        } finally {
+            synchronized(subscriptionLock) {
+                entry.readers--
+                removeIdleSubscription(key, entry)
             }
         }
+    }
+
+    private fun removeIdleSubscription(key: SubscriptionKey, entry: SubscriptionEntry) {
+        // Keep the revision alive while a reader can still return an older response.
+        if (entry.readers == 0 && entry.pending == null && subscriptions[key] === entry) {
+            subscriptions.remove(key)
+        }
+    }
+
+    private suspend fun changePlaylistSubscription(id: String, subscribed: Boolean): Resource<BaseResponse> {
+        val key = SubscriptionKey(subscriptionAccount(), id)
+        if (key.account.isBlank()) return Resource.Error("NetEase account is not signed in")
+        val operation = synchronized(subscriptionLock) {
+            val entry = subscriptions.getOrPut(key, ::SubscriptionEntry)
+            val previous = entry.pending
+            if (previous?.subscribed == subscribed && !previous.result.isCompleted) {
+                previous.result
+            } else {
+                // Register before the caller's first suspension. Navigation can cancel its
+                // await, but accepted writes belong to this singleton repository's scope.
+                val result = subscriptionScope.async(start = CoroutineStart.LAZY) {
+                    previous?.result?.join()
+                    safeApiCall {
+                        if (subscribed) {
+                            val bodyToken = freshCheckToken()
+                            val headerToken = freshCheckToken()
+                            check(subscriptionAccount() == key.account) { "NetEase account changed before playlist subscription" }
+                            eApiService.subscribePlaylist(
+                                EApiSubscribePlaylist(id = id.toLong(), checkToken = bodyToken),
+                                antiCheatToken = headerToken,
+                            )
+                        } else {
+                            val headerToken = freshCheckToken()
+                            check(subscriptionAccount() == key.account) { "NetEase account changed before playlist subscription" }
+                            val response = eApiService.unSubscribePlaylist(
+                                EApiSubscribePlaylist(id = id.toLong()),
+                                antiCheatToken = headerToken,
+                            )
+                            if (response.code == 200) {
+                                try {
+                                    onUnsubscribed(id)
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    // A local cleanup failure cannot undo a confirmed server write.
+                                    Timber.w("Playlist local cleanup failed: %s", error.javaClass.simpleName)
+                                }
+                            }
+                            response
+                        }
+                    }
+                }
+                val write = SubscriptionWrite(subscribed, result)
+                entry.pending = write
+                entry.revision++
+                result.invokeOnCompletion {
+                    synchronized(subscriptionLock) {
+                        if (entry.pending === write) entry.pending = null
+                        removeIdleSubscription(key, entry)
+                    }
+                }
+                result
+            }
+        }
+        operation.start()
+        return operation.await()
     }
 
     suspend fun getCompletePlaylistTracks(detail: PlaylistDetail): List<MediaMetadata> {
@@ -179,32 +296,11 @@ class PlaylistRepository(
 
     suspend fun subscribePlaylist(
         id: String
-    ): Resource<BaseResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                eApiService.subscribePlaylist(
-                    EApiSubscribePlaylist(
-                        id = id.toLong(),
-                        checkToken = checkToken
-                    )
-                )
-            }
-        }
-    }
+    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = true)
 
     suspend fun unSubscribePlaylist(
         id: String
-    ): Resource<BaseResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                eApiService.unSubscribePlaylist(
-                    EApiSubscribePlaylist(
-                        id = id.toLong(),
-                    )
-                )
-            }
-        }
-    }
+    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = false)
 
 
     suspend fun subscribeAlbum(id: String): Resource<BaseResponse> {

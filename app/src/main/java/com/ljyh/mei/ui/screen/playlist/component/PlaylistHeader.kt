@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -22,6 +24,8 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +68,7 @@ fun PlaylistHeader(
     actionLabel: String,
     metadata: String? = null,
     onShufflePlay: () -> Unit = onPlayAll,
+    isSubscriptionPending: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val groupedListBackgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
@@ -151,18 +156,27 @@ fun PlaylistHeader(
             }
             GlassIconButton(
                 onClick = { onSubscribed(isSubscribed) },
+                enabled = !isSubscriptionPending,
                 style = GlassSurfaceStyle.Navigation,
                 navigationSurfaceColor = regularButtonBackground.takeUnless { isSubscribed },
                 navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !isSubscribed) 1f else 1.25f,
                 emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
                 sampleBackdrop = !useGroupedListButtonBackground || isSubscribed,
             ) {
-                SfIcon(
-                    if (isSubscribed) "checkmark" else "plus",
-                    actionLabel,
-                    size = 24.dp,
-                    weight = FontWeight.SemiBold,
-                )
+                if (isSubscriptionPending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).semantics { contentDescription = actionLabel },
+                        color = LocalContentColor.current,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    SfIcon(
+                        if (isSubscribed) "checkmark" else "plus",
+                        actionLabel,
+                        size = 24.dp,
+                        weight = FontWeight.SemiBold,
+                    )
+                }
             }
             onDownload?.let { download ->
                 GlassIconButton(onClick = download) {

@@ -681,6 +681,7 @@
 
     <string name="detail_playlist_menu">Playlist actions</string>
     <string name="detail_playlist_subscribe">Save playlist</string>
+    <string name="playlist_subscription_updating">Updating saved playlist…</string>
     <string name="detail_playlist_unsubscribe">Remove playlist</string>
     <string name="detail_podcast_menu">Podcast actions</string>
     <string name="detail_podcast_unsubscribe">Unsubscribe</string>
