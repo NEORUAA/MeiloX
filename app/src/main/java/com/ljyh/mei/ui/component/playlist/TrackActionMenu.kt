@@ -2,6 +2,11 @@ package com.ljyh.mei.ui.component.playlist
 
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -12,6 +17,11 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.ui.glass.IosCascadingMenu
 import com.ljyh.mei.ui.glass.IosCascadingMenuItem
 import com.ljyh.mei.ui.local.LocalPlayerConnection
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.ljyh.mei.ui.component.player.PlayerViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 @Composable
 fun TrackActionMenu(
@@ -29,6 +39,23 @@ fun TrackActionMenu(
     if (targetTrack == null) return
     val context = LocalContext.current
     val connection = LocalPlayerConnection.current
+    val canDownload = onDownloadTrack != null && !targetTrack.isLocal && !targetTrack.isPodcast
+    val downloadViewModel = if (canDownload) hiltViewModel<PlayerViewModel>() else null
+    var downloadQualities by remember(targetTrack.id, downloadViewModel) {
+        mutableStateOf<List<MusicQuality>?>(null)
+    }
+    LaunchedEffect(targetTrack.id, downloadViewModel) {
+        if (downloadViewModel == null) return@LaunchedEffect
+        val qualities = try {
+            downloadViewModel.getAvailableDownloadQualities(targetTrack.id)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
+        }
+        currentCoroutineContext().ensureActive()
+        downloadQualities = qualities
+    }
     val items = mutableListOf<IosCascadingMenuItem>()
     if (connection != null) {
         items += IosCascadingMenuItem(
@@ -62,13 +89,25 @@ fun TrackActionMenu(
         onClick = onShare,
     )
 
-    onDownloadTrack?.let { download ->
+    onDownloadTrack?.takeIf { canDownload }?.let { download ->
+        val qualityOptions = downloadQualities
+        val children = if (qualityOptions.isNullOrEmpty()) {
+            listOf(IosCascadingMenuItem(
+                title = stringResource(
+                    if (qualityOptions == null) R.string.track_quality_loading
+                    else R.string.track_quality_unavailable,
+                ),
+                enabled = false,
+            ))
+        } else {
+            qualityOptions.map { quality ->
+                IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { download(quality) })
+            }
+        }
         items += IosCascadingMenuItem(
             title = stringResource(R.string.track_action_download_song),
             systemName = "arrow.down.circle",
-            children = MusicQuality.entries.map { quality ->
-                IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { download(quality) })
-            },
+            children = children,
         )
     }
     if (isCreator) {

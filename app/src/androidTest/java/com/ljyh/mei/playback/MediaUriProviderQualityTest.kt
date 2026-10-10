@@ -214,8 +214,129 @@ class MediaUriProviderQualityTest {
         assertEquals(2, calls.get())
     }
 
+    @Test
+    fun localCloudCopyStillOffersDownloadQualitiesWithoutChangingAnotherPlayingSong() = runBlocking {
+        val localSong = Song(
+            id = "1", title = "Downloaded song", artist = emptyList(), album = "", cover = "", duration = 1,
+            path = "content://example.test/local-copy",
+        )
+        val provider = provider(
+            catalog = """{"l":{"br":128000},"sq":{"size":12345},"jm":{"size":23456},"dl":{"size":34567}}""",
+            localSong = localSong,
+        ) { request -> source(request.level, "${request.level}-download") }
+        val observed = mutableListOf<Pair<String, ResolvedMediaSource>>()
+        provider.onSourceResolved = { id, source -> observed += id to source }
+        provider.rememberCachedSource(
+            "2", "exhigh", playbackCacheKey("2", "exhigh", "playing-source", 12345),
+            Uri.parse("https://example.test/playing-source"),
+        )
+        val playing = provider.resolvedMediaSource("2")
+
+        assertTrue(provider.getAvailableMusicQualities("1", supportDolby = false).isEmpty())
+        assertEquals(
+            listOf(MusicQuality.STANDARD, MusicQuality.LOSSLESS, MusicQuality.JYMASTER, MusicQuality.DOLBY),
+            provider.getAvailableDownloadQualities("1"),
+        )
+        assertEquals(playing, provider.resolvedMediaSource("2"))
+        assertEquals(null, provider.resolvedMediaSource("1"))
+        assertEquals(listOf("2" to playing), observed)
+    }
+
+    @Test
+    fun decoderRejectedSourceRemainsDownloadableWithIndependentAvailabilityCache() = runBlocking {
+        val calls = AtomicInteger()
+        val started = CompletableDeferred<Unit>()
+        val complete = CompletableDeferred<Unit>()
+        val provider = provider(catalog = """{"jm":{"size":12345},"dl":{"size":23456}}""") { request ->
+            calls.incrementAndGet()
+            if (request.level == "dolby" && !complete.isCompleted) {
+                started.complete(Unit)
+                complete.await()
+            }
+            source(request.level, "${request.level}-source")
+        }
+        provider.resolveMediaSource("1", "jymaster")
+        val downloadQuery = async { provider.getAvailableDownloadQualities("1") }
+        started.await()
+        assertTrue(provider.rejectCurrentSource("1"))
+        complete.complete(Unit)
+        assertEquals(
+            listOf(MusicQuality.JYMASTER, MusicQuality.DOLBY),
+            downloadQuery.await(),
+        )
+        val callsBeforeRejection = calls.get()
+
+        assertEquals(
+            listOf(MusicQuality.JYMASTER, MusicQuality.DOLBY),
+            provider.getAvailableDownloadQualities("1"),
+        )
+        assertEquals(callsBeforeRejection, calls.get())
+        assertEquals(listOf(MusicQuality.DOLBY), provider.getAvailableMusicQualities("1", true))
+        assertEquals("jymaster", provider.resolvedMediaSource("1")?.actualQuality)
+    }
+
+    @Test
+    fun downloadMenuUsesReportedFullLevelsAndExcludesTrialsAndUnavailableSources() = runBlocking {
+        val provider = provider(
+            catalog = """{"l":{"br":128000},"h":{"br":320000},"sq":{"size":12345},"jm":{"size":23456},"dl":{"size":34567}}""",
+        ) { request ->
+            when (request.level) {
+                "standard" -> source("standard", "standard-source")
+                "exhigh" -> source("exhigh", "unavailable", code = 404)
+                "lossless" -> source("lossless", "trial", trial = true)
+                "jymaster" -> source("jyeffect", "actual-surround-source")
+                "dolby" -> source("dolby", "dolby-source")
+                else -> error("Unexpected candidate")
+            }
+        }
+
+        assertEquals(
+            listOf(MusicQuality.STANDARD, MusicQuality.JYEFFECT, MusicQuality.DOLBY),
+            provider.getAvailableDownloadQualities("1"),
+        )
+        assertEquals(null, provider.resolvedMediaSource("1"))
+    }
+
+    @Test
+    fun downloadMenuDoesNotSeedUnverifiedPlayingQuality() = runBlocking {
+        val provider = provider(catalog = "{}") { error("No catalog candidate should be queried") }
+        provider.rememberCachedSource(
+            "1", "jymaster", playbackCacheKey("1", "jymaster", "saved-source", 12345),
+            Uri.parse("https://example.test/saved-source"),
+        )
+
+        assertTrue(provider.getAvailableDownloadQualities("1").isEmpty())
+        assertEquals(listOf(MusicQuality.JYMASTER), provider.getAvailableMusicQualities("1", true))
+    }
+
+    @Test
+    fun accountChangesDiscardInFlightDownloadAvailabilityAndUrls() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val complete = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        val provider = provider(catalog = """{"jm":{"size":12345}}""") { request ->
+            if (calls.incrementAndGet() == 1) {
+                started.complete(Unit)
+                complete.await()
+                source(request.level, "old-account-source")
+            } else {
+                source(request.level, "new-account-source")
+            }
+        }
+        val query = async { provider.getAvailableDownloadQualities("1") }
+        started.await()
+        provider.clearQualityState()
+        complete.complete(Unit)
+
+        assertTrue(query.await().isEmpty())
+        assertEquals(listOf(MusicQuality.JYMASTER), provider.getAvailableDownloadQualities("1"))
+        assertEquals("new-account-source", provider.resolveMediaSource("1", "jymaster").sourceIdentity)
+        assertEquals(2, calls.get())
+    }
+
     private fun provider(
         catalog: String,
+        localSong: Song? = null,
         response: suspend (GetSongUrlV1) -> SongUrl,
     ): MediaUriProvider {
         val track = gson.fromJson(catalog, JsonObject::class.java).apply { addProperty("id", 1) }
@@ -243,9 +364,9 @@ class MediaUriProviderQualityTest {
         val songDao = Proxy.newProxyInstance(
             SongDao::class.java.classLoader,
             arrayOf(SongDao::class.java),
-        ) { _, method, _ ->
+        ) { _, method, arguments ->
             check(method.name == "getSong") { "Unexpected database call: ${method.name}" }
-            flowOf<Song?>(null)
+            flowOf(localSong?.takeIf { it.id == arguments!![0] })
         } as SongDao
         return MediaUriProvider(api, SongRepository(songDao))
     }

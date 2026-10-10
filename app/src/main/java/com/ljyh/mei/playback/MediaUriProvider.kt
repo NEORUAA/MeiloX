@@ -56,6 +56,7 @@ class MediaUriProvider @Inject constructor(
     private val resolvedSources = ConcurrentHashMap<String, ResolvedMediaSource>()
     private val rejectedSources = ConcurrentHashMap<String, MutableSet<String>>()
     private val qualityStateVersion = AtomicLong()
+    private val accountStateVersion = AtomicLong()
     private val qualityStateLock = Any()
 
     @Volatile
@@ -83,7 +84,7 @@ class MediaUriProvider @Inject constructor(
         resolveMediaSource(mediaId, quality).uri
 
     internal suspend fun resolveMediaSource(mediaId: String, quality: String): ResolvedMediaSource {
-        val stateVersion = qualityStateVersion.get()
+        val stateVersion = synchronized(qualityStateLock) { qualityStateVersion.get() }
         val requestedQuality = normalizePlaybackQuality(quality)
         localUri(mediaId)?.let { uri ->
             return synchronized(qualityStateLock) {
@@ -156,17 +157,30 @@ class MediaUriProvider @Inject constructor(
     }
 
     /** Verifies catalog hints against full URLs for this account and device. */
-    suspend fun getAvailableMusicQualities(mediaId: String, supportDolby: Boolean): List<MusicQuality> {
-        val stateVersion = qualityStateVersion.get()
-        if (localUri(mediaId) != null) return emptyList()
-        val availabilityKey = "$mediaId:$supportDolby"
+    suspend fun getAvailableMusicQualities(mediaId: String, supportDolby: Boolean): List<MusicQuality> =
+        getAvailableQualities(mediaId, supportDolby, forDownload = false)
+
+    /** Download availability depends on the account's full sources, regardless of local playback. */
+    suspend fun getAvailableDownloadQualities(mediaId: String): List<MusicQuality> =
+        getAvailableQualities(mediaId, supportDolby = true, forDownload = true)
+
+    private suspend fun getAvailableQualities(
+        mediaId: String,
+        supportDolby: Boolean,
+        forDownload: Boolean,
+    ): List<MusicQuality> {
+        val stateVersion = synchronized(qualityStateLock) { availabilityStateVersion(forDownload) }
+        if (!forDownload && localUri(mediaId) != null) return emptyList()
+        val availabilityKey = if (forDownload) "download:$mediaId" else "$mediaId:$supportDolby"
         val now = System.currentTimeMillis()
         availableQualityCache[availabilityKey]?.let { cached ->
-            if (cached.expiresAtMs > now) return cached.qualities
+            if (cached.expiresAtMs > now) return synchronized(qualityStateLock) {
+                if (availabilityStateVersion(forDownload) == stateVersion) cached.qualities else emptyList()
+            }
             availableQualityCache.remove(availabilityKey, cached)
         }
 
-        val knownSource = resolvedSources[mediaId]
+        val knownSource = resolvedSources[mediaId].takeUnless { forDownload }
             ?.takeIf { it.sourceIdentity != null && !sourceIsRejected(mediaId, it.sourceIdentity) }
         val knownQuality = MusicQuality.entries.firstOrNull { it.text == knownSource?.actualQuality }
             ?.takeIf { supportDolby || it != MusicQuality.DOLBY }
@@ -186,13 +200,13 @@ class MediaUriProvider @Inject constructor(
         val verified = coroutineScope {
             candidates.map { quality ->
                 async {
-                    semaphore.withPermit { verifyAvailableQuality(mediaId, quality, stateVersion) }
+                    semaphore.withPermit { verifyAvailableQuality(mediaId, quality, stateVersion, forDownload) }
                 }
             }.awaitAll().filterNotNull().filter { supportDolby || it != MusicQuality.DOLBY }
         }
         val available = (verified + listOfNotNull(knownQuality)).distinct().sortedBy { it.ordinal }
         return synchronized(qualityStateLock) {
-            if (qualityStateVersion.get() != stateVersion) return@synchronized emptyList()
+            if (availabilityStateVersion(forDownload) != stateVersion) return@synchronized emptyList()
             availableQualityCache[availabilityKey] = AvailableQualities(
                 qualities = available,
                 expiresAtMs = System.currentTimeMillis() + AVAILABLE_QUALITY_CACHE_TTL_MS,
@@ -218,12 +232,15 @@ class MediaUriProvider @Inject constructor(
         qualityStateVersion.incrementAndGet()
         rejectedSources.keys.forEach(::invalidate)
         rejectedSources.clear()
-        availableQualityCache.clear()
+        availableQualityCache.keys
+            .filterNot { it.startsWith("download:") }
+            .forEach(availableQualityCache::remove)
     }
 
     /** Account changes must not reuse entitlement, URL, or decoder state from the previous account. */
     internal fun clearQualityState() = synchronized(qualityStateLock) {
         qualityStateVersion.incrementAndGet()
+        accountStateVersion.incrementAndGet()
         urlCache.clear()
         availableQualityCache.clear()
         rejectedSources.clear()
@@ -242,25 +259,27 @@ class MediaUriProvider @Inject constructor(
         mediaId: String,
         quality: MusicQuality,
         stateVersion: Long,
+        forDownload: Boolean,
     ): MusicQuality? {
         val now = System.currentTimeMillis()
         val cached = urlCache["$mediaId:${quality.text}"]
         if (cached != null && cached.expiresAtMs > now &&
-            cached.actualQuality == quality.text && !sourceIsRejected(mediaId, cached.sourceIdentity)
+            cached.actualQuality == quality.text &&
+            (forDownload || !sourceIsRejected(mediaId, cached.sourceIdentity))
         ) {
             return quality
         }
         return try {
             val response = apiService.getSongUrlV1(GetSongUrlV1(ids = "[$mediaId]", level = quality.text))
-            if (qualityStateVersion.get() != stateVersion) return null
+            if (availabilityStateVersion(forDownload) != stateVersion) return null
             val source = response.fullSourceFor(mediaId) ?: return null
             if (source.level.isNullOrBlank()) return null
             // A downgrade proves the returned level is available, rather than the requested
             // level. Only cache its actual level so probes cannot poison higher-quality aliases.
             val cacheEntry = source.toCachedUrl(mediaId, quality.text, now) ?: return null
             synchronized(qualityStateLock) {
-                if (qualityStateVersion.get() != stateVersion ||
-                    sourceIsRejected(mediaId, cacheEntry.sourceIdentity)
+                if (availabilityStateVersion(forDownload) != stateVersion ||
+                    (!forDownload && sourceIsRejected(mediaId, cacheEntry.sourceIdentity))
                 ) return@synchronized null
                 cacheEffectiveSource(mediaId, cacheEntry)
                 MusicQuality.entries.firstOrNull { it.text == cacheEntry.actualQuality }
@@ -284,6 +303,9 @@ class MediaUriProvider @Inject constructor(
 
     private fun sourceIsRejected(mediaId: String, identity: String): Boolean =
         rejectedSources[mediaId]?.contains(identity) == true
+
+    private fun availabilityStateVersion(forDownload: Boolean): Long =
+        if (forDownload) accountStateVersion.get() else qualityStateVersion.get()
 
     private fun ensureCurrentState(stateVersion: Long) {
         if (qualityStateVersion.get() != stateVersion) {

@@ -28,6 +28,7 @@ import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.QQSongRepository
+import com.ljyh.mei.playback.MediaUriProvider
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.SortOrder
@@ -36,6 +37,7 @@ import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.lyric.LyricManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +51,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -61,7 +64,8 @@ class PlayerViewModel @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val likeRepository: LikeRepository,
     private val colorRepository: ColorRepository,
-    val lyricManager: LyricManager
+    val lyricManager: LyricManager,
+    private val mediaUriProvider: MediaUriProvider,
 ) : ViewModel() {
     val searchResult: StateFlow<Resource<SearchResult>> = lyricManager.qqSearchResult
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
@@ -87,6 +91,11 @@ class PlayerViewModel @Inject constructor(
 
 
     var mediaMetadata: MediaMetadata? = null
+
+    suspend fun getAvailableDownloadQualities(mediaId: Long): List<MusicQuality> =
+        withContext(Dispatchers.IO) {
+            mediaUriProvider.getAvailableDownloadQualities(mediaId.toString())
+        }
 
     val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
 
