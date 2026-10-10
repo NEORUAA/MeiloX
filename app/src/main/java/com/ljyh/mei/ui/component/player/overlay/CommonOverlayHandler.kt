@@ -3,6 +3,7 @@ package com.ljyh.mei.ui.component.player.overlay
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
@@ -10,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
@@ -28,7 +30,6 @@ import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.R
 import com.ljyh.mei.ui.glass.IosAlertDialog
 import com.ljyh.mei.ui.glass.IosGroupedList
@@ -172,20 +173,27 @@ fun CommonOverlayHandler(
 
         is OverlayState.MusicQualitySelection -> {
             val playerConnection = LocalPlayerConnection.current
+            val currentQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
+            val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
+            val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
+            val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
+            LaunchedEffect(playerConnection, mediaMetadata?.id) {
+                playerConnection?.refreshAvailableMusicQualities()
+            }
             IosAlertDialog(
                 onDismissRequest = overlayHandler::dismiss,
                 title = stringResource(R.string.music_quality),
             ) {
                 IosGroupedList {
-                    MusicQuality.entries.forEachIndexed { index, quality ->
+                    availableQualities.forEachIndexed { index, quality ->
                         IosListRow(
-                            title = "${quality.explanation} · ${quality.text}",
+                            title = stringResource(quality.labelRes),
                             showTopSeparator = index != 0,
                             onClick = {
                                 playerConnection?.changeQuality(quality)
                                 overlayHandler.dismiss()
                             },
-                            trailing = if (quality.ordinal == overlay.current) {
+                            trailing = if (quality == currentQuality) {
                                 {
                                     SfIcon(
                                         "checkmark",
@@ -197,6 +205,15 @@ fun CommonOverlayHandler(
                             } else {
                                 null
                             },
+                        )
+                    }
+                    if (isLoadingQualities || availableQualities.isEmpty()) {
+                        IosListRow(
+                            title = stringResource(
+                                if (isLoadingQualities) R.string.track_quality_loading
+                                else R.string.track_quality_unavailable,
+                            ),
+                            showTopSeparator = availableQualities.isNotEmpty(),
                         )
                     }
                 }

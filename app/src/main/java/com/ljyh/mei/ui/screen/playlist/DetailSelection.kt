@@ -92,14 +92,9 @@ fun detailMenuItems(
     onSubscribe: () -> Unit,
     onRefresh: () -> Unit,
 ): List<IosCascadingMenuItem> {
-    val qualityTitles = listOf(
-        R.string.track_quality_standard, R.string.track_quality_high,
-        R.string.track_quality_lossless, R.string.track_quality_hires,
-        R.string.track_quality_surround, R.string.track_quality_spatial, R.string.track_quality_master,
-    ).map { stringResource(it) }
     return listOf(
-        IosCascadingMenuItem(downloadTitle, "arrow.down.circle", children = MusicQuality.entries.mapIndexed { index, quality ->
-            IosCascadingMenuItem(qualityTitles[index], onClick = { onDownload(quality) })
+        IosCascadingMenuItem(downloadTitle, "arrow.down.circle", children = MusicQuality.entries.map { quality ->
+            IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { onDownload(quality) })
         }),
         IosCascadingMenuItem(stringResource(R.string.album_multi_select), "checklist", onClick = onSelect),
         IosCascadingMenuItem(subscriptionTitle, if (subscribed) "checkmark" else "plus", separatorBefore = true, onClick = onSubscribe),

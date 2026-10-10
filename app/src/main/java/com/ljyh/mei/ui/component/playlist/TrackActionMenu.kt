@@ -29,15 +29,6 @@ fun TrackActionMenu(
     if (targetTrack == null) return
     val context = LocalContext.current
     val connection = LocalPlayerConnection.current
-    val qualityTitles = listOf(
-        R.string.track_quality_standard,
-        R.string.track_quality_high,
-        R.string.track_quality_lossless,
-        R.string.track_quality_hires,
-        R.string.track_quality_surround,
-        R.string.track_quality_spatial,
-        R.string.track_quality_master,
-    ).map { stringResource(it) }
     val items = mutableListOf<IosCascadingMenuItem>()
     if (connection != null) {
         items += IosCascadingMenuItem(
@@ -75,8 +66,8 @@ fun TrackActionMenu(
         items += IosCascadingMenuItem(
             title = stringResource(R.string.track_action_download_song),
             systemName = "arrow.down.circle",
-            children = MusicQuality.entries.mapIndexed { index, quality ->
-                IosCascadingMenuItem(qualityTitles[index], onClick = { download(quality) })
+            children = MusicQuality.entries.map { quality ->
+                IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { download(quality) })
             },
         )
     }

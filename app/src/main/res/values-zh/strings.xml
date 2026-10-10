@@ -662,6 +662,9 @@
     <string name="track_quality_surround">高清环绕声</string>
     <string name="track_quality_spatial">沉浸环绕声</string>
     <string name="track_quality_master">超清母带</string>
+    <string name="track_quality_dolby">杜比全景声</string>
+    <string name="track_quality_loading">正在查询可用音质…</string>
+    <string name="track_quality_unavailable">暂无可用音质信息</string>
     <string name="menu_expanded">已展开</string>
     <string name="menu_collapsed">已收起</string>
     <string name="track_action_share">分享</string>

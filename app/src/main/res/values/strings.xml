@@ -663,6 +663,9 @@
     <string name="track_quality_surround">HD Surround</string>
     <string name="track_quality_spatial">Immersive Surround</string>
     <string name="track_quality_master">Master</string>
+    <string name="track_quality_dolby">Dolby Atmos</string>
+    <string name="track_quality_loading">Checking available qualities…</string>
+    <string name="track_quality_unavailable">No available quality information</string>
     <string name="menu_expanded">Expanded</string>
     <string name="menu_collapsed">Collapsed</string>
     <string name="track_action_share">Share</string>

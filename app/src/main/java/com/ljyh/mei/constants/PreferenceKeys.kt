@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.ljyh.mei.R
 import com.ljyh.mei.playback.PlayMode
 import com.materialkolor.scheme.DynamicScheme
 
@@ -174,15 +175,15 @@ enum class LyricTextAlignment {
 enum class LyricVisualStyle { AppleMusic, EVA, TextPV, Skyline }
 
 
-// standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带) 进行音质判断
-enum class MusicQuality(val text: String, val explanation:String) {
-    STANDARD("standard", "标准"),
-    EXHIGH("exhigh","极高"),
-    LOSSLESS("lossless","无损"),
-    HIRES("hires","Hi-Res"),
-    JYEFFECT("jyeffect", "高清环绕声"),
-    SKY("sky", "沉浸环绕声"),
-    JYMASTER("jymaster", "超清母带")
+enum class MusicQuality(val text: String, val explanation: String, val labelRes: Int) {
+    STANDARD("standard", "标准", R.string.track_quality_standard),
+    EXHIGH("exhigh", "极高", R.string.track_quality_high),
+    LOSSLESS("lossless", "无损", R.string.track_quality_lossless),
+    HIRES("hires", "Hi-Res", R.string.track_quality_hires),
+    JYEFFECT("jyeffect", "高清环绕声", R.string.track_quality_surround),
+    SKY("sky", "沉浸环绕声", R.string.track_quality_spatial),
+    JYMASTER("jymaster", "超清母带", R.string.track_quality_master),
+    DOLBY("dolby", "杜比全景声", R.string.track_quality_dolby)
 }
 
 

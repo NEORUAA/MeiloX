@@ -60,6 +60,15 @@ internal fun playbackQualityFallbacks(requestedQuality: String): List<String> = 
         MusicQuality.EXHIGH.text,
         MusicQuality.STANDARD.text,
     )
+    MusicQuality.DOLBY.text -> listOf(
+        MusicQuality.DOLBY.text,
+        MusicQuality.SKY.text,
+        MusicQuality.JYEFFECT.text,
+        MusicQuality.HIRES.text,
+        MusicQuality.LOSSLESS.text,
+        MusicQuality.EXHIGH.text,
+        MusicQuality.STANDARD.text,
+    )
     else -> listOf(
         MusicQuality.EXHIGH.text,
         MusicQuality.STANDARD.text,
@@ -100,3 +109,17 @@ internal fun playbackCacheKey(
 /** Returns whether the current source should be invalidated and retried in place. */
 internal fun shouldRefreshPlaybackSource(errorCode: Int): Boolean =
     errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+
+/** Retries a different full source when the device cannot decode or render these bytes. */
+internal fun shouldTryLowerPlaybackQuality(errorCode: Int): Boolean = when (errorCode) {
+    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+    PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
+    else -> false
+}

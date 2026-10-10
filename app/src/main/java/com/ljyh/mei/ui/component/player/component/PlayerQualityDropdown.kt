@@ -13,11 +13,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.ui.glass.IosMenuItem
 import com.ljyh.mei.ui.glass.IosPopupMenu
@@ -25,18 +27,29 @@ import com.ljyh.mei.ui.glass.SfIcon
 
 @Composable
 fun PlayerQualityDropdown(
-    quality: MusicQuality,
+    quality: MusicQuality?,
+    availableQualities: List<MusicQuality>,
+    isLoading: Boolean,
+    onMenuOpened: () -> Unit,
     onQualitySelected: (MusicQuality) -> Unit,
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val statusTitle = when {
+        isLoading -> stringResource(R.string.track_quality_loading)
+        availableQualities.isEmpty() -> stringResource(R.string.track_quality_unavailable)
+        else -> null
+    }
 
     IosPopupMenu(
         expanded = expanded,
-        onExpandedChange = { expanded = it },
-        itemCount = MusicQuality.entries.size,
+        onExpandedChange = {
+            if (it && !expanded) onMenuOpened()
+            expanded = it
+        },
+        itemCount = availableQualities.size + if (statusTitle != null) 1 else 0,
         modifier = modifier.background(Color.White.copy(alpha = 0.15f), ContinuousRoundedRectangle(6.dp)),
         anchor = { onClick ->
             Row(
@@ -56,7 +69,7 @@ fun PlayerQualityDropdown(
                     modifier = Modifier.padding(end = 4.dp),
                 )
                 Text(
-                    text = quality.explanation,
+                    text = stringResource(quality?.labelRes ?: R.string.music_quality),
                     style = style,
                     color = color,
                     maxLines = 1,
@@ -65,14 +78,22 @@ fun PlayerQualityDropdown(
             }
         },
     ) { childBackdrop, close ->
-        MusicQuality.entries.forEach { option ->
+        availableQualities.forEach { option ->
             IosMenuItem(
-                title = "${option.explanation} · ${option.text}",
+                title = stringResource(option.labelRes),
                 onClick = {
                     onQualitySelected(option)
                     close()
                 },
                 systemName = if (option == quality) "checkmark" else null,
+                backdrop = childBackdrop,
+            )
+        }
+        statusTitle?.let {
+            IosMenuItem(
+                title = it,
+                onClick = {},
+                enabled = false,
                 backdrop = childBackdrop,
             )
         }

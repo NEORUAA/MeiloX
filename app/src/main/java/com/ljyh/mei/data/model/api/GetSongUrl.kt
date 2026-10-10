@@ -6,16 +6,20 @@ data class GetSongUrlV1(
     @SerializedName("ids")
     var ids: String,
     @SerializedName("level")
-    //采用 standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带) 进行音质判断
     var level: String,
     @SerializedName("encodeType")
     var encodeType: String = "flac",
     @SerializedName("immerseType")
-    var immerseType: String? = null
+    var immerseType: String? = null,
+    @SerializedName("supportDolby")
+    var supportDolby: Boolean? = null
 ) {
     init {
         if (level == "sky") {
             immerseType = "c51"
+        }
+        if (level == "dolby") {
+            supportDolby = true
         }
     }
 }

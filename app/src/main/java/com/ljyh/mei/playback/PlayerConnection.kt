@@ -88,6 +88,9 @@ class PlayerConnection(
     val canSkipNext = MutableStateFlow(true)
 
     val error = MutableStateFlow<PlaybackException?>(null)
+    val availableMusicQualities = service.availableMusicQualities
+    val currentMusicQuality = service.currentMusicQuality
+    val isLoadingMusicQualities = service.isLoadingMusicQualities
 
     private var qualityChangeJob: Job? = null
 
@@ -156,6 +159,8 @@ class PlayerConnection(
         service.addToQueue(items)
     }
 
+    fun refreshAvailableMusicQualities() = service.refreshAvailableMusicQualities()
+
     fun changeQuality(quality: MusicQuality) {
         qualityChangeJob?.cancel()
         qualityChangeJob = scope.launch {
@@ -170,11 +175,8 @@ class PlayerConnection(
 
             // Keep the playlist intact, but force every source that may have been
             // prepared at the previous quality to be discarded.
-            service.resetPlaybackSourcesForQualityChange()
-            player.refreshMediaItemSource(index)
-            player.seekTo(index, position)
-            player.prepare()
-            player.playWhenReady = shouldPlay
+            service.resetRejectedPlaybackSources()
+            service.refreshPlaybackSource(index, position, shouldPlay)
         }
     }
 

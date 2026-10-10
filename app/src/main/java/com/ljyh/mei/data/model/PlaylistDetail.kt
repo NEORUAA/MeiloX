@@ -335,13 +335,13 @@ data class PlaylistDetail(
             @SerializedName("ftype")
             val ftype: Int,
             @SerializedName("h")
-            val h: H,
+            val h: H?,
             @SerializedName("hr")
-            val hr: Hr,
+            val hr: Hr?,
             @SerializedName("id")
             val id: Long,
             @SerializedName("l")
-            val l: L,
+            val l: L?,
             @SerializedName("m")
             val m: M,
             @SerializedName("mark")
@@ -385,7 +385,7 @@ data class PlaylistDetail(
             @SerializedName("songJumpInfo")
             val songJumpInfo: Any,
             @SerializedName("sq")
-            val sq: Sq,
+            val sq: Sq?,
             @SerializedName("st")
             val st: Int,
             @SerializedName("t")
@@ -397,8 +397,25 @@ data class PlaylistDetail(
             @SerializedName("v")
             val v: Int,
             @SerializedName("version")
-            val version: Int
+            val version: Int,
+            @SerializedName("je")
+            val je: AudioResource? = null,
+            @SerializedName("sk")
+            val sk: AudioResource? = null,
+            @SerializedName("jm")
+            val jm: AudioResource? = null,
+            @SerializedName("dl")
+            val dl: AudioResource? = null
         ) {
+            data class AudioResource(
+                @SerializedName("br")
+                val br: Int = 0,
+                @SerializedName("fid")
+                val fId: Long = 0,
+                @SerializedName("size")
+                val size: Long = 0
+            )
+
             data class Al(
                 @SerializedName("id")
                 val Id: Long,

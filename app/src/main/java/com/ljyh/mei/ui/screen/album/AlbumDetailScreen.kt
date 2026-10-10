@@ -211,12 +211,6 @@ fun AlbumDetailScreen(
         }
     }
 
-    val qualityTitles = listOf(
-        com.ljyh.mei.R.string.track_quality_standard, com.ljyh.mei.R.string.track_quality_high,
-        com.ljyh.mei.R.string.track_quality_lossless, com.ljyh.mei.R.string.track_quality_hires,
-        com.ljyh.mei.R.string.track_quality_surround, com.ljyh.mei.R.string.track_quality_spatial,
-        com.ljyh.mei.R.string.track_quality_master,
-    ).map { androidx.compose.ui.res.stringResource(it) }
     fun toggleSubscription() {
         isSubscribed = !isSubscribed
         if (isSubscribed) viewModel.subscribeAlbum(id.toString())
@@ -226,8 +220,8 @@ fun AlbumDetailScreen(
         com.ljyh.mei.ui.glass.IosCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_download_all, uiData.tracks.size),
             "arrow.down.circle",
-            children = MusicQuality.entries.mapIndexed { index, quality ->
-                com.ljyh.mei.ui.glass.IosCascadingMenuItem(qualityTitles[index], onClick = { doDownload(uiData.tracks, quality) })
+            children = MusicQuality.entries.map { quality ->
+                com.ljyh.mei.ui.glass.IosCascadingMenuItem(androidx.compose.ui.res.stringResource(quality.labelRes), onClick = { doDownload(uiData.tracks, quality) })
             },
         ),
         com.ljyh.mei.ui.glass.IosCascadingMenuItem(

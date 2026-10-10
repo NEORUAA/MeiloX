@@ -18,6 +18,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY
@@ -35,6 +36,7 @@ import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
@@ -57,6 +59,7 @@ import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.IsShuffleModeKey
 import com.ljyh.mei.constants.CloudShuffleEnabledKey
+import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.MusicQualityKey
 import com.ljyh.mei.constants.NoAudioSourceKey
@@ -94,6 +97,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -144,6 +148,19 @@ class MusicService : MediaLibraryService(),
     private lateinit var preloadManager: DefaultPreloadManager
     private val preloadStrategy = MusicPreloadStrategy()
     val currentMediaMetadata = MutableStateFlow<MediaMetadata?>(null)
+    val availableMusicQualities = MutableStateFlow<List<MusicQuality>>(emptyList())
+    val currentMusicQuality = MutableStateFlow<MusicQuality?>(null)
+    val isLoadingMusicQualities = MutableStateFlow(false)
+    private var availableQualitiesJob: Job? = null
+    private var qualityMediaId: String? = null
+    private var qualityGeneration = 0L
+    private var isRefreshingPlaybackSource = false
+    private val supportsDolby by lazy {
+        runCatching {
+            MediaCodecUtil.getDecoderInfos(MimeTypes.AUDIO_E_AC3_JOC, false, false).isNotEmpty() ||
+                MediaCodecUtil.getDecoderInfos(MimeTypes.AUDIO_E_AC3, false, false).isNotEmpty()
+        }.getOrDefault(false)
+    }
 
     @Inject
     lateinit var mediaUriProvider: MediaUriProvider
@@ -151,7 +168,9 @@ class MusicService : MediaLibraryService(),
     private var errorCount = 0 // 记录连续错误的次数，防止死循环
     private var sourceRecoveryJob: Job? = null
     private var sourceRecoveryMediaId: String? = null
+    private var sourceRecoveryEntryId: String? = null
     private var sourceRecoveryAttempts = 0
+    private var rangeRecoveryAttempts = 0
 
     private val binder = MusicBinder()
 
@@ -183,6 +202,16 @@ class MusicService : MediaLibraryService(),
 
     override fun onCreate() {
         super.onCreate()
+        mediaUriProvider.clearQualityState()
+        mediaUriProvider.onSourceResolved = { mediaId, source ->
+            scope.launch {
+                if (::player.isInitialized && player.currentMediaItem?.mediaId == mediaId &&
+                    mediaUriProvider.resolvedMediaSource(mediaId) == source
+                ) {
+                    publishResolvedQuality(source)
+                }
+            }
+        }
         playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
         baseMediaSourceFactory = DefaultMediaSourceFactory(createDataSourceFactory())
@@ -357,6 +386,12 @@ class MusicService : MediaLibraryService(),
 
 
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
+        scope.launch {
+            context.dataStore.data.map { it[CookieKey] }.distinctUntilChanged().drop(1).collect {
+                mediaUriProvider.clearQualityState()
+                resetCurrentQualityState(player.currentMediaItem?.mediaId)
+            }
+        }
         restorePlayerState()
         periodicSnapshotJob = scope.launch {
             while (true) {
@@ -498,6 +533,86 @@ class MusicService : MediaLibraryService(),
         if (::preloadManager.isInitialized) {
             // BasePreloadManager requires all lifecycle calls on its construction thread.
             preloadManager.reset()
+        }
+    }
+
+    /** Restarts only the current entry, preserving its position and queue order. */
+    internal fun refreshPlaybackSource(index: Int, positionMs: Long, resumePlayback: Boolean) {
+        resetPlaybackSourcesForQualityChange()
+        isRefreshingPlaybackSource = true
+        try {
+            player.refreshMediaItemSource(index)
+            player.seekTo(index, positionMs)
+            player.prepare()
+            player.playWhenReady = resumePlayback
+        } finally {
+            isRefreshingPlaybackSource = false
+        }
+        refreshAvailableMusicQualities()
+    }
+
+    fun resetRejectedPlaybackSources() {
+        sourceRecoveryJob?.cancel()
+        sourceRecoveryJob = null
+        sourceRecoveryAttempts = 0
+        rangeRecoveryAttempts = 0
+        mediaUriProvider.resetRejectedSources()
+        resetCurrentQualityState(player.currentMediaItem?.mediaId, refresh = false)
+    }
+
+    private fun publishResolvedQuality(source: ResolvedMediaSource) {
+        val mediaId = player.currentMediaItem?.mediaId ?: return
+        if (source.cacheKey?.let { mediaUriProvider.isRejectedCachedSource(mediaId, it) } == true) return
+        val quality = source.actualQuality.takeIf { source.cacheKey != null }?.let { actual ->
+            MusicQuality.entries.firstOrNull { it.text == normalizePlaybackQuality(actual) }
+        }
+        currentMusicQuality.value = quality
+        if (quality != null && quality !in availableMusicQualities.value) {
+            availableMusicQualities.value = (availableMusicQualities.value + quality).sortedBy { it.ordinal }
+        }
+    }
+
+    private fun resetCurrentQualityState(mediaId: String?, refresh: Boolean = true) {
+        availableQualitiesJob?.cancel()
+        availableQualitiesJob = null
+        qualityGeneration++
+        qualityMediaId = mediaId
+        availableMusicQualities.value = emptyList()
+        currentMusicQuality.value = null
+        isLoadingMusicQualities.value = false
+        if (mediaId != null) {
+            mediaUriProvider.resolvedMediaSource(mediaId)?.let(::publishResolvedQuality)
+            if (refresh) refreshAvailableMusicQualities()
+        }
+    }
+
+    fun refreshAvailableMusicQualities() {
+        val mediaId = player.currentMediaItem?.mediaId ?: return
+        if (qualityMediaId != mediaId) {
+            resetCurrentQualityState(mediaId)
+            return
+        }
+        if (availableQualitiesJob?.isActive == true) return
+        val generation = qualityGeneration
+        isLoadingMusicQualities.value = true
+        availableQualitiesJob = scope.launch {
+            try {
+                val qualities = withContext(Dispatchers.IO) {
+                    mediaUriProvider.getAvailableMusicQualities(mediaId, supportsDolby)
+                }
+                if (generation == qualityGeneration && player.currentMediaItem?.mediaId == mediaId) {
+                    availableMusicQualities.value = (qualities + listOfNotNull(currentMusicQuality.value))
+                        .distinct().sortedBy { it.ordinal }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.tag("MusicService").w(error, "Unable to obtain available qualities for %s", mediaId)
+            } finally {
+                if (generation == qualityGeneration && player.currentMediaItem?.mediaId == mediaId) {
+                    isLoadingMusicQualities.value = false
+                }
+            }
         }
     }
 
@@ -728,6 +843,8 @@ class MusicService : MediaLibraryService(),
 
     override fun onDestroy() {
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
+        mediaUriProvider.onSourceResolved = null
+        availableQualitiesJob?.cancel()
         sourceRecoveryJob?.cancel()
         periodicSnapshotJob?.cancel()
         playbackRestoreJob?.cancel()
@@ -792,8 +909,9 @@ class MusicService : MediaLibraryService(),
                 }
             }
             val fullyCachedKey = findFullyCachedPlaybackKey(simpleCache, mediaId, quality)
-            if (fullyCachedKey != null) {
+            if (fullyCachedKey != null && !mediaUriProvider.isRejectedCachedSource(mediaId, fullyCachedKey)) {
                 Timber.tag("ResolvingDataSource").d("Fully cached on disk: $mediaId")
+                mediaUriProvider.rememberCachedSource(mediaId, quality, fullyCachedKey, dataSpec.uri)
                 return@Factory dataSpec.buildUpon()
                     .setKey(fullyCachedKey)
                     .build()
@@ -831,7 +949,7 @@ class MusicService : MediaLibraryService(),
                         SonicAudioProcessor()
                     )
                 ).build()
-        }
+        }.setEnableDecoderFallback(true)
 
     inner class MusicBinder : Binder() {
         val service: MusicService
@@ -847,6 +965,21 @@ class MusicService : MediaLibraryService(),
                 Toast.makeText(context, "播放源刷新失败，请稍后重试", Toast.LENGTH_SHORT).show()
             }
             return
+        }
+
+        if (shouldTryLowerPlaybackQuality(error.errorCode)) {
+            val mediaId = player.currentMediaItem?.mediaId
+            val failedQuality = currentMusicQuality.value
+            val failedCacheKey = mediaId?.let { mediaUriProvider.resolvedMediaSource(it)?.cacheKey }
+            if (mediaId != null && mediaUriProvider.rejectCurrentSource(mediaId)) {
+                availableQualitiesJob?.cancel()
+                availableQualitiesJob = null
+                qualityGeneration++
+                currentMusicQuality.value = null
+                availableMusicQualities.value = availableMusicQualities.value - listOfNotNull(failedQuality).toSet()
+                isLoadingMusicQualities.value = false
+                if (scheduleSourceRecovery(qualityFallback = true, failedCacheKey = failedCacheKey)) return
+            }
         }
 
         val isSourceError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
@@ -888,42 +1021,56 @@ class MusicService : MediaLibraryService(),
         }
     }
 
-    private fun scheduleSourceRecovery(): Boolean {
+    private fun scheduleSourceRecovery(qualityFallback: Boolean = false, failedCacheKey: String? = null): Boolean {
         val mediaItem = player.currentMediaItem ?: return false
         val mediaId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return false
-        if (sourceRecoveryMediaId != mediaId) {
+        val entryId = mediaItem.queueEntryId
+        val index = player.currentMediaItemIndex
+        if (sourceRecoveryMediaId != mediaId || sourceRecoveryEntryId != entryId) {
             sourceRecoveryMediaId = mediaId
+            sourceRecoveryEntryId = entryId
             sourceRecoveryAttempts = 0
+            rangeRecoveryAttempts = 0
         }
         if (sourceRecoveryJob?.isActive == true) return true
-        if (sourceRecoveryAttempts >= MAX_SOURCE_RECOVERY_ATTEMPTS) return false
+        val attemptLimit = if (qualityFallback) MusicQuality.entries.size else MAX_SOURCE_RECOVERY_ATTEMPTS
+        val attempts = if (qualityFallback) sourceRecoveryAttempts else rangeRecoveryAttempts
+        if (attempts >= attemptLimit) return false
 
-        sourceRecoveryAttempts++
+        if (qualityFallback) sourceRecoveryAttempts++ else rangeRecoveryAttempts++
         val recoveryPositionMs = player.currentPosition.coerceAtLeast(0L)
         val resumePlayback = player.playWhenReady
         sourceRecoveryJob = scope.launch {
             try {
                 Timber.tag("MusicService").w(
-                    "Refreshing source after out-of-range read: id=%s position=%s attempt=%s",
+                    "Refreshing playback source: id=%s position=%s attempt=%s qualityFallback=%s",
                     mediaId,
                     recoveryPositionMs,
-                    sourceRecoveryAttempts,
+                    attempts + 1,
+                    qualityFallback,
                 )
                 mediaUriProvider.invalidate(mediaId)
                 resetPlaybackSourcesForQualityChange()
                 val removedEntries = withContext(Dispatchers.IO) {
-                    removePlaybackEntries(CacheManager.getSimpleCache(context), mediaId)
+                    val cache = CacheManager.getSimpleCache(context)
+                    if (qualityFallback) {
+                        failedCacheKey?.let(cache::removeResource)
+                        if (failedCacheKey == null) 0 else 1
+                    } else {
+                        removePlaybackEntries(cache, mediaId)
+                    }
                 }
-                if (player.currentMediaItem?.mediaId != mediaId) return@launch
+                if (player.currentMediaItem?.mediaId != mediaId ||
+                    player.currentMediaItem?.queueEntryId != entryId ||
+                    player.currentMediaItemIndex != index
+                ) return@launch
 
                 Timber.tag("MusicService").d(
                     "Retrying refreshed source: id=%s removedCacheEntries=%s",
                     mediaId,
                     removedEntries,
                 )
-                player.seekTo(recoveryPositionMs)
-                player.prepare()
-                player.playWhenReady = resumePlayback
+                refreshPlaybackSource(index, recoveryPositionMs, resumePlayback)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -935,6 +1082,8 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (isRefreshingPlaybackSource) return
+        if (mediaItem?.mediaId != qualityMediaId) resetCurrentQualityState(mediaItem?.mediaId)
         recordPlaybackDuration(
             playbackHistorySession.onMediaItemTransition(
                 mediaId = mediaItem?.mediaId,
@@ -942,11 +1091,13 @@ class MusicService : MediaLibraryService(),
                 realtimeMs = SystemClock.elapsedRealtime(),
             ),
         )
-        if (mediaItem?.mediaId != sourceRecoveryMediaId) {
+        if (mediaItem?.mediaId != sourceRecoveryMediaId || mediaItem?.queueEntryId != sourceRecoveryEntryId) {
             sourceRecoveryJob?.cancel()
             sourceRecoveryJob = null
             sourceRecoveryMediaId = mediaItem?.mediaId
+            sourceRecoveryEntryId = mediaItem?.queueEntryId
             sourceRecoveryAttempts = 0
+            rangeRecoveryAttempts = 0
         }
         // 如果成功切歌，重置错误计数器
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||

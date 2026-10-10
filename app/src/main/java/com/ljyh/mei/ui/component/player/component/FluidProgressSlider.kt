@@ -35,11 +35,9 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ljyh.mei.constants.MusicQuality
-import com.ljyh.mei.constants.MusicQualityKey
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
-import com.ljyh.mei.utils.rememberEnumPreference
 import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,8 +48,10 @@ fun FluidProgressSlider(
     onPositionChange: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val musicQuality by rememberEnumPreference(MusicQualityKey, MusicQuality.EXHIGH)
     val playerConnection = LocalPlayerConnection.current
+    val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
+    val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
     val isDurationValid = remember(duration) { duration > 0 }
     val valueRange = remember(duration) { 0f..(duration.takeIf { it > 0 } ?: 1).toFloat() }
 
@@ -208,6 +208,9 @@ fun FluidProgressSlider(
             // 中间：音质 (复用你原本的逻辑)
             PlayerQualityDropdown(
                 quality = musicQuality,
+                availableQualities = availableQualities,
+                isLoading = isLoadingQualities,
+                onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 style = commonTextStyle.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.6f),
