@@ -6,6 +6,7 @@ import com.ljyh.mei.AppContext
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.HomeRepository
+import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.di.repository.ColorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,8 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: HomeRepository,
-    private val colorRepository: ColorRepository
+    private val colorRepository: ColorRepository,
+    private val meloXRepository: MeloXRepository,
 ) : ViewModel() {
     val context= AppContext.instance
 
@@ -36,6 +38,8 @@ class HomeViewModel @Inject constructor(
         }
     }
     fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
+
+    suspend fun podcastProgram(id: Long) = meloXRepository.podcastProgram(id)
 
     suspend fun getOrExtractColor(url: String) = colorRepository.getColorOrExtract(context, url)
 }

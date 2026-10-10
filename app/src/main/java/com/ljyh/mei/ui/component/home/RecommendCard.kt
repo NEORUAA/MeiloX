@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -60,6 +61,7 @@ fun RecommendCard(
     title: String? = null,
     extInfo: CardExtInfo,
     showPlay: Boolean = false,
+    isLoading: Boolean = false,
     cardWidth: Dp = RecommendCardWidth,
     cardHeight: Dp = RecommendCardHeight,
     viewModel: HomeViewModel,
@@ -109,7 +111,7 @@ fun RecommendCard(
         modifier = Modifier
             .width(cardWidth)
             .clip(ContinuousRoundedRectangle(8.dp))
-            .clickable { onClick() }
+            .clickable(enabled = !isLoading) { onClick() }
     ) {
         Column {
             // Cover image and the top metadata row.
@@ -207,7 +209,16 @@ fun RecommendCard(
                         )
                     }
 
-                    if (showPlay) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .size(28.dp),
+                            color = LocalContentColor.current,
+                            strokeWidth = 2.dp,
+                        )
+                    } else if (showPlay) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
                             contentDescription = "Play",

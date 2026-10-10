@@ -34,6 +34,15 @@ License: https://www.apache.org/licenses/LICENSE-2.0
 The media metadata output follows this public player integration contract:
 https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/blob/main/docs/PLAYER_INTEGRATION.md
 
+Accompanist Lyrics UI
+---------------------
+`PlayerLyricsView.kt` adapts the top-level `KaraokeLyricsView` from
+`com.mocharealm.accompanist:lyrics-ui:1.0.19` while reusing its line renderers.
+Scrolling is managed by the player to support timed manual lyric browsing.
+Copyright 2025 6xingyv. Licensed under the Apache License, Version 2.0:
+https://github.com/6xingyv/accompanist-lyrics-ui
+License: https://www.apache.org/licenses/LICENSE-2.0
+
 SuperLyricApi
 -------------
 The `com.github.HChenX:SuperLyricApi:3.4` dependency is Copyright (C)

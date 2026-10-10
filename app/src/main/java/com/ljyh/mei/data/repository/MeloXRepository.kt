@@ -168,6 +168,14 @@ class MeloXRepository @Inject constructor(
             )
         }
 
+    suspend fun podcastProgram(id: Long): PodcastProgram {
+        require(id > 0) { "Invalid podcast program ID" }
+        return parsePodcastProgramDetail(
+            request("/api/dj/program/detail", mapOf("id" to id)),
+            id,
+        )
+    }
+
     suspend fun podcastPrograms(id: Long, offset: Int = 0, limit: Int = 50): PodcastProgramPage {
         val response = request(
             "/api/dj/program/byradio",
@@ -1735,6 +1743,14 @@ private fun parsePodcast(element: JsonElement?): Podcast? {
         isSubscribed = value.boolean("subed") ?: false,
         feeType = value.int("radioFeeType"),
     )
+}
+
+internal fun parsePodcastProgramDetail(response: JsonObject, requestedId: Long): PodcastProgram {
+    val program = parseProgram(response.get("program"))
+    check(program != null && program.id == requestedId && (program.mainSongId ?: 0L) > 0L) {
+        "Playable podcast program $requestedId was not returned by NetEase"
+    }
+    return program
 }
 
 private fun parseProgram(element: JsonElement?): PodcastProgram? {

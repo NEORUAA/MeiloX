@@ -9,6 +9,7 @@ import androidx.media3.common.MediaMetadata.MEDIA_TYPE_MUSIC
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.api.ArtistSong
+import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import androidx.core.net.toUri
 import com.ljyh.mei.utils.netease.NeteaseUtils.getResourceLink
@@ -52,6 +53,16 @@ data class MediaMetadata(
 }
 
 const val PLACEHOLDER_URI = "https://placeholder.media"
+
+fun PodcastProgram.toMediaMetadata() = MediaMetadata(
+    id = mainSongId ?: -id,
+    title = name,
+    coverUrl = coverUrl.orEmpty(),
+    artists = listOf(MediaMetadata.Artist(host?.id ?: 0, host?.nickname ?: radioName)),
+    duration = durationMs,
+    album = MediaMetadata.Album(radioId, radioName),
+    isPodcast = true,
+)
 
 fun PlaylistDetail.Playlist.Track.toMediaMetadata() = MediaMetadata(
     id = id,

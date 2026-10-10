@@ -55,8 +55,8 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.Podcast
-import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.model.toMediaItem
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.item.Track
@@ -398,7 +398,7 @@ fun PodcastDetailScreen(
         searching = true
         try {
             kotlinx.coroutines.delay(200)
-            searchResults = viewModel.allPrograms(id).map { it.asMediaMetadata() }
+            searchResults = viewModel.allPrograms(id).map { it.toMediaMetadata() }
                 .filter { it.matchesPlaylistSearch(query) }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
@@ -414,7 +414,7 @@ fun PodcastDetailScreen(
             if (totalItemsCount > 0 && lastVisibleIndex >= totalItemsCount - 1) viewModel.loadMore()
         }
     }
-    val tracks = if (query.isBlank()) detail?.programs.orEmpty().map { it.asMediaMetadata() } else searchResults
+    val tracks = if (query.isBlank()) detail?.programs.orEmpty().map { it.toMediaMetadata() } else searchResults
     val count = maxOf(detail?.totalCount ?: 0, detail?.podcast?.programCount ?: 0, detail?.programs?.size ?: 0)
 
     fun download(tracks: List<MediaMetadata>, quality: com.ljyh.mei.constants.MusicQuality) {
@@ -449,7 +449,7 @@ fun PodcastDetailScreen(
         preparingDownload = true
         scope.launch {
             try {
-                val selected = viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.asMediaMetadata() }
+                val selected = viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.toMediaMetadata() }
                     .filter { ids == null || it.id.toString() in ids }
                 if (selected.isEmpty()) {
                     android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
@@ -461,7 +461,7 @@ fun PodcastDetailScreen(
     }
     DetailSelectionToolbar(selection,
         onSelectAll = {
-            viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.asMediaMetadata() }
+            viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.toMediaMetadata() }
                 .filter { it.matchesPlaylistSearch(query) }.map { it.id.toString() }.toSet()
         },
         onDownload = { prepareDownload(ids = selection.ids) },
@@ -476,7 +476,7 @@ fun PodcastDetailScreen(
     )
     fun play(trackId: Long? = null, shuffle: Boolean = false) {
         val playable = detail?.programs.orEmpty().filter { it.mainSongId != null }
-        val items = playable.map { it.asMediaMetadata().toMediaItem().let { song -> song.mediaId to song } }
+        val items = playable.map { it.toMediaMetadata().toMediaItem().let { song -> song.mediaId to song } }
         if (items.isEmpty()) return
         val index = if (shuffle) items.indices.random() else playable.indexOfFirst { it.mainSongId == trackId }.coerceAtLeast(0)
         playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index), shuffle = shuffle)
@@ -502,7 +502,7 @@ fun PodcastDetailScreen(
             if (selection.active) { if (track.id > 0) selection.toggle(track.id.toString()) }
             else if (track.id > 0) {
                 // Search may return a program outside the pages loaded for scrolling.
-                val playable = if (query.isBlank()) detail?.programs.orEmpty().map { it.asMediaMetadata() } else tracks
+                val playable = if (query.isBlank()) detail?.programs.orEmpty().map { it.toMediaMetadata() } else tracks
                 val items = playable.filter { it.id > 0 }.map { it.toMediaItem().let { song -> song.mediaId to song } }
                 val index = items.indexOfFirst { it.first == track.id.toString() }.coerceAtLeast(0)
                 playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index))
@@ -536,16 +536,6 @@ fun PodcastDetailScreen(
         )
     }
 }
-
-private fun PodcastProgram.asMediaMetadata() = MediaMetadata(
-    id = mainSongId ?: -id,
-    title = name,
-    coverUrl = coverUrl.orEmpty(),
-    artists = listOf(MediaMetadata.Artist(host?.id ?: 0, host?.nickname ?: radioName)),
-    duration = durationMs,
-    album = MediaMetadata.Album(radioId, radioName),
-    isPodcast = true,
-)
 
 @Composable
 private fun InlineLoadingState() {

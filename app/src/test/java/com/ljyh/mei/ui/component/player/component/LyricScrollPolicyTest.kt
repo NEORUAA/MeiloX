@@ -4,6 +4,8 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricScrollPolicyTest {
@@ -98,5 +100,41 @@ class LyricScrollPolicyTest {
     @Test
     fun emptyLyricsHaveASafeInitialIndex() {
         assertEquals(0, lyricFocusLineIndex(emptyList(), 32_000))
+    }
+
+    @Test
+    fun prelayoutRowsOutsideTheActualViewportAreNotVisible() {
+        assertFalse(isLyricLineVisible(50, 100, 0, 1_000, 200))
+        assertFalse(isLyricLineVisible(850, 100, 0, 1_000, 200))
+    }
+
+    @Test
+    fun rowsTouchingViewportEdgesWithoutOverlapAreNotVisible() {
+        assertFalse(isLyricLineVisible(100, 100, 0, 1_000, 200))
+        assertFalse(isLyricLineVisible(800, 100, 0, 1_000, 200))
+    }
+
+    @Test
+    fun evenOneVisiblePixelCountsAsAPartiallyVisibleLine() {
+        assertTrue(isLyricLineVisible(101, 100, 0, 1_000, 200))
+        assertTrue(isLyricLineVisible(799, 100, 0, 1_000, 200))
+    }
+
+    @Test
+    fun aLineLargerThanTheViewportStillCountsAsVisible() {
+        assertTrue(isLyricLineVisible(0, 1_000, 0, 1_000, 200))
+    }
+
+    @Test
+    fun viewportOffsetsAreIncludedWhenExcludingKeepAliveRows() {
+        assertFalse(isLyricLineVisible(-100, 100, -200, 1_200, 200))
+        assertTrue(isLyricLineVisible(-99, 100, -200, 1_200, 200))
+        assertTrue(isLyricLineVisible(999, 100, -200, 1_200, 200))
+        assertFalse(isLyricLineVisible(1_000, 100, -200, 1_200, 200))
+    }
+
+    @Test
+    fun zeroHeightRowsDoNotCountAsVisible() {
+        assertFalse(isLyricLineVisible(500, 0, 0, 1_000, 200))
     }
 }

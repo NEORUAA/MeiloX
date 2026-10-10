@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.screen.main.home
 
 import android.os.Build
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,12 +39,15 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +93,8 @@ import com.ljyh.mei.utils.positionComparator
 import com.ljyh.mei.utils.rememberPreference
 import java.util.UUID
 import kotlin.math.ceil
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -261,6 +267,9 @@ private fun HomeBlockItem(
 ) {
     val gson = remember { Gson() }
     val playerConnection = LocalPlayerConnection.current ?: return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var loadingPodcastId by remember { mutableStateOf<String?>(null) }
 
     val playlistCardSize = if (device.isTablet) PlaylistCardSizeTablet else PlaylistCardSize
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
@@ -300,6 +309,7 @@ private fun HomeBlockItem(
                     ),
                     cardWidth = recommendCardWidth,
                     cardHeight = recommendCardHeight,
+                    isLoading = loadingPodcastId == resource.resourceId,
                     viewModel = viewModel
                 ) {
                     when (resource.resourceType) {
@@ -317,6 +327,33 @@ private fun HomeBlockItem(
                             // 私人FM
                             playerConnection.fmStart(resource.resourceId)
 
+                        }
+
+                        "podcast", "djprogram" -> {
+                            if (loadingPodcastId == null) {
+                                loadingPodcastId = resource.resourceId
+                                scope.launch {
+                                    try {
+                                        val program = viewModel.podcastProgram(resource.resourceId.toLong())
+                                        val item = program.toMediaMetadata().toMediaItem()
+                                        playerConnection.playQueue(
+                                            ListQueue(
+                                                id = "home_podcast_${program.id}",
+                                                title = resource.subTitle,
+                                                items = listOf(item.mediaId to item),
+                                                startIndex = 0,
+                                            )
+                                        )
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        Timber.tag("HomePodcast").e(error, "Unable to play program %s", resource.resourceId)
+                                        Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        loadingPodcastId = null
+                                    }
+                                }
+                            }
                         }
 
                         "musicPodcast" -> resource.toMusicPodcastMediaMetadata()?.let { metadata ->
