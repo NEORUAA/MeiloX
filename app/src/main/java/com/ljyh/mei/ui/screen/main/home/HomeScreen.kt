@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -270,6 +271,7 @@ private fun HomeBlockItem(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loadingPodcastId by remember { mutableStateOf<String?>(null) }
+    var playbackRequestGeneration by remember { mutableIntStateOf(0) }
 
     val playlistCardSize = if (device.isTablet) PlaylistCardSizeTablet else PlaylistCardSize
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
@@ -312,6 +314,9 @@ private fun HomeBlockItem(
                     isLoading = loadingPodcastId == resource.resourceId,
                     viewModel = viewModel
                 ) {
+                    if (loadingPodcastId == resource.resourceId) return@RecommendCard
+                    val requestGeneration = ++playbackRequestGeneration
+                    loadingPodcastId = null
                     when (resource.resourceType) {
                         "dailySongs" -> Screen.EveryDay.navigate(navController)
                         "star" -> {
@@ -330,26 +335,29 @@ private fun HomeBlockItem(
                         }
 
                         "podcast", "djprogram" -> {
-                            if (loadingPodcastId == null) {
-                                loadingPodcastId = resource.resourceId
-                                scope.launch {
-                                    try {
-                                        val program = viewModel.podcastProgram(resource.resourceId.toLong())
-                                        val item = program.toMediaMetadata().toMediaItem()
-                                        playerConnection.playQueue(
-                                            ListQueue(
-                                                id = "home_podcast_${program.id}",
-                                                title = resource.subTitle,
-                                                items = listOf(item.mediaId to item),
-                                                startIndex = 0,
-                                            )
+                            loadingPodcastId = resource.resourceId
+                            scope.launch {
+                                try {
+                                    val program = viewModel.podcastProgram(resource.resourceId.toLong())
+                                    if (requestGeneration != playbackRequestGeneration) return@launch
+                                    val item = program.toMediaMetadata().toMediaItem()
+                                    playerConnection.playQueue(
+                                        ListQueue(
+                                            id = "home_podcast_${program.id}",
+                                            title = resource.subTitle,
+                                            items = listOf(item.mediaId to item),
+                                            startIndex = 0,
                                         )
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (error: Exception) {
-                                        Timber.tag("HomePodcast").e(error, "Unable to play program %s", resource.resourceId)
+                                    )
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    Timber.tag("HomePodcast").e(error, "Unable to play program %s", resource.resourceId)
+                                    if (requestGeneration == playbackRequestGeneration) {
                                         Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show()
-                                    } finally {
+                                    }
+                                } finally {
+                                    if (requestGeneration == playbackRequestGeneration) {
                                         loadingPodcastId = null
                                     }
                                 }
