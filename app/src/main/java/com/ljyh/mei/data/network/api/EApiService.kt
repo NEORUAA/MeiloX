@@ -5,13 +5,11 @@ import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.api.GetUserPhotoAlbum
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
-import com.ljyh.mei.data.model.api.EApiUnsubscribePlaylist
 import com.ljyh.mei.data.model.weapi.GetHomePageResourceShow
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.POST
-import retrofit2.http.Query
 
 
 interface EApiService {
@@ -29,10 +27,9 @@ interface EApiService {
     ): BaseResponse
 
     @Headers("X-Netease-Crypto: eapi", "X-Netease-Check-Token: true")
-    @POST("/api/playlist/unsubscribe/")
+    @POST("/api/playlist/unsubscribe")
     suspend fun unSubscribePlaylist(
-        @Body body: EApiUnsubscribePlaylist,
-        @Query("id") id: String,
+        @Body body: EApiSubscribePlaylist,
         @Header("X-Netease-Anti-Cheat-Token") antiCheatToken: String,
     ): BaseResponse
 }

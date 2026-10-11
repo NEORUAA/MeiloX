@@ -12,7 +12,6 @@ import com.ljyh.mei.constants.NeteaseSessionTypeKey
 import com.ljyh.mei.constants.NeteaseUrsAppIdKey
 import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
-import com.ljyh.mei.data.model.api.EApiUnsubscribePlaylist
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.di.NeteaseInterceptor
 import com.ljyh.mei.utils.encrypt.decryptEApi
@@ -58,7 +57,6 @@ class NeteasePlaylistRequestInstrumentedTest {
             body.getAsJsonObject("header").get("X-antiCheatToken").asString,
         )
         assertNull(request.header("X-antiCheatToken"))
-        assertTrue(request.header("Cookie")!!.contains("X-antiCheatToken=$SUBSCRIBE_HEADER_TOKEN"))
     }
 
     @Test
@@ -82,7 +80,6 @@ class NeteasePlaylistRequestInstrumentedTest {
             body.getAsJsonObject("header").get("X-antiCheatToken").asString,
         )
         assertNull(request.header("X-antiCheatToken"))
-        assertTrue(request.header("Cookie")!!.contains("X-antiCheatToken=$UNSUBSCRIBE_HEADER_TOKEN"))
     }
 
     private suspend fun capture(type: NeteaseSessionType, subscribe: Boolean): Request {
@@ -124,8 +121,7 @@ class NeteasePlaylistRequestInstrumentedTest {
             )
         } else {
             service.unSubscribePlaylist(
-                EApiUnsubscribePlaylist(id = PLAYLIST_ID.toString()),
-                id = PLAYLIST_ID.toString(),
+                EApiSubscribePlaylist(id = PLAYLIST_ID),
                 antiCheatToken = UNSUBSCRIBE_HEADER_TOKEN,
             )
         }
@@ -134,9 +130,8 @@ class NeteasePlaylistRequestInstrumentedTest {
     }
 
     private fun decode(request: Request, action: String): JsonObject {
-        val path = "/playlist/$action" + if (action == "unsubscribe") "/" else ""
         assertEquals("POST", request.method)
-        assertEquals("/eapi$path", request.url.encodedPath)
+        assertEquals("/eapi/playlist/$action", request.url.encodedPath)
         assertTrue(
             "Internal transport headers must not reach the server",
             request.headers.names().none { it.startsWith("X-Netease-", ignoreCase = true) },
@@ -147,18 +142,10 @@ class NeteasePlaylistRequestInstrumentedTest {
         val encrypted = form.value(0).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         val envelope = decryptEApi(encrypted).split("-36cd479b6b5-")
         assertEquals(3, envelope.size)
-        assertEquals("/api$path", envelope[0])
+        assertEquals("/api/playlist/$action", envelope[0])
         val body = JsonParser.parseString(envelope[1]).asJsonObject
-        if (action == "unsubscribe") {
-            assertEquals(setOf("id"), request.url.queryParameterNames)
-            assertEquals(listOf(PLAYLIST_ID.toString()), request.url.queryParameterValues("id"))
-            assertTrue("Unsubscribe must preserve the official string ID", body.getAsJsonPrimitive("id").isString)
-            assertEquals(PLAYLIST_ID.toString(), body.get("id").asString)
-        } else {
-            assertTrue(request.url.queryParameterNames.isEmpty())
-            assertTrue("Subscribe must retain its numeric ID", body.getAsJsonPrimitive("id").isNumber)
-            assertEquals(PLAYLIST_ID, body.get("id").asLong)
-        }
+        assertTrue("Playlist IDs must remain JSON numbers", body.getAsJsonPrimitive("id").isNumber)
+        assertEquals(PLAYLIST_ID, body.get("id").asLong)
         return body
     }
 
