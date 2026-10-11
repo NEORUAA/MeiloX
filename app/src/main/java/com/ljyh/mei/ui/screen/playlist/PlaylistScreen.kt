@@ -273,6 +273,8 @@ fun PlaylistScreen(
         }
     }
 
+    // Use lambdas at call sites: local function references can compare equal
+    // across captured subscription state changes.
     fun toggleSubscription() {
         if (isSubscriptionUpdating || playlistDetail !is Resource.Success) return
         if (uiData.isCreator) {
@@ -300,7 +302,7 @@ fun PlaylistScreen(
         subscriptionEnabled = !isSubscriptionUpdating && playlistDetail is Resource.Success,
         onDownload = { prepareDownload(quality = it) },
         onSelect = selection::start,
-        onSubscribe = ::toggleSubscription,
+        onSubscribe = { toggleSubscription() },
         onRefresh = { selection.finish(); viewModel.getPlaylistDetail(id.toString()) },
     )
 
@@ -343,7 +345,7 @@ fun PlaylistScreen(
             } else if (isSubscribed) "取消收藏" else "收藏",
             headerActionPending = isSubscriptionUpdating,
             isSubscribed = isSubscribed,
-            onHeaderAction = ::toggleSubscription,
+            onHeaderAction = { toggleSubscription() },
             detailMenu = menu,
             detailMenuTitle = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.detail_playlist_menu),
             selectionMode = selection.active,
