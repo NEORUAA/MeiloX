@@ -31,7 +31,11 @@ jobs:
       - uses: gradle/gradle-build-action@v2
         with:
           gradle-version: current
-          arguments: assembleRelease
+          arguments: >-
+            assembleRelease
+            -Pmei.buildCommitSha=${{ github.sha }}
+            -Pmei.ciRunNumber=${{ github.run_number }}
+            -Pmei.ciRunAttempt=${{ github.run_attempt }}
 
       - uses: r0adkll/sign-android-release@v1
         id: sign_app
@@ -57,7 +61,7 @@ jobs:
           fi
 
           release_date="$(TZ=Asia/Hong_Kong date +%y%m%d)"
-          echo "artifact_name=MeiloX-${version_name}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=MeiloX-${version_name}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
           echo "release_name=${release_date}_${version_name}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${version_name}" >> "$GITHUB_OUTPUT"
 

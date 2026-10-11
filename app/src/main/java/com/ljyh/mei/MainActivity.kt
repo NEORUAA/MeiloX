@@ -121,6 +121,7 @@ import coil3.request.crossfade
 import com.ljyh.mei.constants.AppBarHeight
 import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
+import com.ljyh.mei.constants.BetaUpdatesEnabledKey
 import com.ljyh.mei.constants.DeviceIdKey
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.AccentColorKey
@@ -210,8 +211,10 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Interceptor
@@ -308,9 +311,23 @@ class MainActivity : ComponentActivity() {
             var startupUpdateResult by remember { mutableStateOf<VersionUpdateResult?>(null) }
 
             LaunchedEffect(Unit) {
-                val result = VersionUpdateChecker.check(BuildConfig.VERSION_NAME)
-                if (result is VersionUpdateResult.UpdateAvailable) {
-                    startupUpdateResult = result
+                try {
+                    val betaUpdatesEnabled = context.dataStore.data.first()[BetaUpdatesEnabledKey] ?: false
+                    val result = VersionUpdateChecker.check(
+                        BuildConfig.VERSION_NAME,
+                        betaUpdatesEnabled = betaUpdatesEnabled,
+                    )
+                    val currentBetaUpdatesEnabled = context.dataStore.data.first()[BetaUpdatesEnabledKey] ?: false
+                    if (result is VersionUpdateResult.UpdateAvailable &&
+                        result.comparisonKnown &&
+                        currentBetaUpdatesEnabled == betaUpdatesEnabled
+                    ) {
+                        startupUpdateResult = result
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    return@LaunchedEffect
                 }
             }
 

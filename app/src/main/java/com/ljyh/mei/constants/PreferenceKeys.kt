@@ -130,6 +130,7 @@ val NavigationTabOrderKey = stringPreferencesKey("navigation.tabOrder")
 val AppAppearanceKey = stringPreferencesKey("application.appearance")
 val LastSelectedTabKey = stringPreferencesKey("navigation.lastSelectedTab")
 val RecognizeClipboardLinksKey = booleanPreferencesKey("application.recognizeClipboardLinks")
+val BetaUpdatesEnabledKey = booleanPreferencesKey("application.betaUpdatesEnabled")
 val QqTimeoutKey = stringPreferencesKey("qq_timeout")
 
 enum class QqTimeout(val seconds: Int, val label: String) {

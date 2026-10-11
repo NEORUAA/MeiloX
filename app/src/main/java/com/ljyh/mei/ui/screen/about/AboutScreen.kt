@@ -33,14 +33,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.edit
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.BetaUpdatesEnabledKey
 import com.ljyh.mei.constants.DevModeKey
 import com.ljyh.mei.constants.Github
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassIconButton
+import com.ljyh.mei.ui.glass.GlassToggle
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -51,8 +54,11 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.component.VersionUpdateAlert
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.VersionUpdateChecker
 import com.ljyh.mei.utils.VersionUpdateResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -62,17 +68,48 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (devMode, onDevModeChange) = rememberPreference(DevModeKey, false)
+    val betaUpdatesEnabled by rememberPreference(BetaUpdatesEnabledKey, false)
     var clickCount by remember { mutableIntStateOf(0) }
     val updateCheckScope = rememberCoroutineScope()
     var isCheckingUpdate by remember { mutableStateOf(false) }
+    var isSavingBetaPreference by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<VersionUpdateResult?>(null) }
 
+    fun setBetaUpdatesEnabled(enabled: Boolean) {
+        if (isCheckingUpdate || isSavingBetaPreference) return
+        isSavingBetaPreference = true
+        updateCheckScope.launch {
+            try {
+                context.dataStore.edit { preferences ->
+                    preferences[BetaUpdatesEnabledKey] = enabled
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                updateResult = VersionUpdateResult.Failed
+            } finally {
+                isSavingBetaPreference = false
+            }
+        }
+    }
+
     fun checkForUpdates() {
-        if (isCheckingUpdate) return
+        if (isCheckingUpdate || isSavingBetaPreference) return
         isCheckingUpdate = true
         updateCheckScope.launch {
-            updateResult = VersionUpdateChecker.check(BuildConfig.VERSION_NAME)
-            isCheckingUpdate = false
+            try {
+                val checkBetaUpdates = context.dataStore.data.first()[BetaUpdatesEnabledKey] ?: false
+                updateResult = VersionUpdateChecker.check(
+                    BuildConfig.VERSION_NAME,
+                    betaUpdatesEnabled = checkBetaUpdates,
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                updateResult = VersionUpdateResult.Failed
+            } finally {
+                isCheckingUpdate = false
+            }
         }
     }
 
@@ -122,6 +159,23 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                     },
 //                    stringResource(R.string.about_check_updates_description),
                 ) { checkForUpdates() }
+                GlassCard(
+                    Modifier.fillMaxWidth(),
+                    onClick = if (isCheckingUpdate || isSavingBetaPreference) null else ({ setBetaUpdatesEnabled(!betaUpdatesEnabled) }),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SfIcon("moon", null, size = 21.dp)
+                        Text(
+                            stringResource(R.string.about_check_beta_updates),
+                            modifier = Modifier.weight(1f).padding(horizontal = 13.dp),
+                        )
+                        GlassToggle(
+                            checked = betaUpdatesEnabled,
+                            onCheckedChange = ::setBetaUpdatesEnabled,
+                            enabled = !isCheckingUpdate && !isSavingBetaPreference,
+                        )
+                    }
+                }
             }
         }
         item {

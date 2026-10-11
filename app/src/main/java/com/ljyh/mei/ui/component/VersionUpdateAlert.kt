@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.component
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -23,11 +24,15 @@ fun VersionUpdateAlert(
         is VersionUpdateResult.UpdateAvailable -> {
             IosAlertDialog(
                 onDismissRequest = onDismiss,
-                title = stringResource(R.string.about_update_available_title),
+                title = stringResource(
+                    if (result.comparisonKnown) R.string.about_update_available_title
+                    else R.string.about_beta_latest_build_title,
+                ),
                 message = stringResource(
-                    R.string.about_update_available_message,
+                    if (result.comparisonKnown) R.string.about_update_available_message
+                    else R.string.about_beta_comparison_unavailable_message,
                     result.latestTag,
-                    BuildConfig.VERSION_NAME,
+                    result.currentBuildLabel ?: BuildConfig.VERSION_NAME,
                 ),
                 buttons = listOf(
                     IosAlertButtonSpec(
@@ -40,6 +45,13 @@ fun VersionUpdateAlert(
                         onClick = {
                             onDismiss()
                             runCatching {
+                                if (result.isBeta) {
+                                    Toast.makeText(
+                                        context,
+                                        R.string.about_beta_download_login_required,
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
                                 context.startActivity(
                                     Intent(Intent.ACTION_VIEW, Uri.parse(result.releaseUrl)),
                                 )

@@ -42,6 +42,7 @@
             android:name="android.test.mock"
             android:required="false" />
 
+        <meta-data android:name="${applicationId}.BUILD_ID" android:value="${mei_build_id}" />
         <meta-data android:name="lyricon_module" android:value="true" />
         <meta-data android:name="lyricon_module_author" android:value="NEORUAA" />
         <meta-data android:name="lyricon_module_description" android:value="@string/system_lyrics_description" />

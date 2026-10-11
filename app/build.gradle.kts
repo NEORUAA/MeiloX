@@ -1,5 +1,13 @@
 @file:Suppress("UnstableApiUsage")
 
+import java.io.ByteArrayOutputStream
+import java.io.File
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -10,8 +18,68 @@ plugins {
 
 }
 
+abstract class SourceBuildMetadata : ValueSource<String, SourceBuildMetadata.Parameters> {
+    interface Parameters : ValueSourceParameters {
+        val sourceDirectory: DirectoryProperty
+    }
 
+    @get:Inject
+    abstract val execOperations: ExecOperations
 
+    override fun obtain(): String {
+        val sourceDirectory = parameters.sourceDirectory.get().asFile
+        fun git(vararg arguments: String): String? = runCatching {
+            val output = ByteArrayOutputStream()
+            val result = execOperations.exec {
+                workingDir(sourceDirectory)
+                commandLine(listOf("git") + arguments)
+                environment.keys.removeAll { it.startsWith("GIT_") }
+                standardOutput = output
+                errorOutput = ByteArrayOutputStream()
+                isIgnoreExitValue = true
+            }
+            output.toString(Charsets.UTF_8.name()).trim().takeIf { result.exitValue == 0 }
+        }.getOrNull()
+
+        // Archives nested in another checkout must not inherit that checkout's identity.
+        val isSourceCheckout = git("rev-parse", "--show-toplevel")?.let { checkoutPath ->
+            runCatching { File(checkoutPath).canonicalFile == sourceDirectory.canonicalFile }
+                .getOrDefault(false)
+        } ?: false
+        val commitSha = if (isSourceCheckout) git("rev-parse", "HEAD").orEmpty() else ""
+        val commitEpoch = if (commitSha.isNotEmpty()) {
+            git("show", "-s", "--format=%ct", "HEAD")?.toLongOrNull()?.takeIf { it > 0 }
+        } else null
+        val sourceDirty = if (commitSha.isNotEmpty()) {
+            git("status", "--porcelain=v1", "--untracked-files=normal")?.isNotEmpty() ?: true
+        } else true
+        val buildNumber = commitEpoch ?: (System.currentTimeMillis() / 1_000).coerceAtLeast(1)
+        return "$buildNumber\n$commitSha\n$sourceDirty"
+    }
+}
+
+val sourceBuildMetadata = providers.of(SourceBuildMetadata::class) {
+    parameters.sourceDirectory.set(rootProject.layout.projectDirectory)
+}.get().lines()
+val buildNumber = sourceBuildMetadata[0].toLong()
+val buildCommitSha = sourceBuildMetadata[1].ifBlank {
+    providers.gradleProperty("mei.buildCommitSha").orElse("").get().trim()
+}.takeIf { it.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) }.orEmpty().lowercase()
+val buildSourceDirty = sourceBuildMetadata[2].toBoolean()
+val isCanonicalCi = providers.environmentVariable("GITHUB_REPOSITORY").orElse("").get()
+    .equals("NEORUAA/MeiloX", ignoreCase = true) &&
+    providers.environmentVariable("GITHUB_WORKFLOW_REF").orElse("").get().substringBefore('@')
+        .equals("NEORUAA/MeiloX/.github/workflows/main.yml", ignoreCase = true)
+val ciRunNumber = if (isCanonicalCi) providers.gradleProperty("mei.ciRunNumber")
+    .orElse(providers.environmentVariable("GITHUB_RUN_NUMBER"))
+    .orElse("0")
+    .get().toLong().also { require(it >= 0) { "CI run number must not be negative." } } else 0L
+val ciRunAttempt = if (isCanonicalCi) providers.gradleProperty("mei.ciRunAttempt")
+    .orElse(providers.environmentVariable("GITHUB_RUN_ATTEMPT"))
+    .orElse(if (ciRunNumber > 0) "1" else "0")
+    .get().toInt().also {
+        require(if (ciRunNumber > 0) it > 0 else it == 0) { "CI run attempt must match the run number." }
+    } else 0
 
 android {
     namespace = "com.ljyh.mei"
@@ -27,7 +95,14 @@ android {
         targetSdk = 37
         versionCode = 11
         versionName = "1.54.6"
+        buildConfigField("long", "BUILD_NUMBER", "${buildNumber}L")
+        buildConfigField("String", "BUILD_COMMIT_SHA", "\"$buildCommitSha\"")
+        buildConfigField("boolean", "BUILD_SOURCE_DIRTY", buildSourceDirty.toString())
+        buildConfigField("long", "CI_RUN_NUMBER", "${ciRunNumber}L")
+        buildConfigField("int", "CI_RUN_ATTEMPT", ciRunAttempt.toString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["mei_build_id"] =
+            "number=$buildNumber;sha=$buildCommitSha;dirty=$buildSourceDirty;ci=$ciRunNumber.$ciRunAttempt"
         manifestPlaceholders["superlyricapi_version_name"] = "3.4"
         manifestPlaceholders["superlyricapi_version_code"] = "34"
         ndk {
