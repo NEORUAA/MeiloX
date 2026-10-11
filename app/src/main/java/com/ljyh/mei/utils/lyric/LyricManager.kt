@@ -164,9 +164,10 @@ class LyricManager @Inject constructor(
                     cachedLyricRepository.get(songId).firstOrNull()
                 }
                 if (dbCached != null && currentSongId == songId) {
-                    val data = dbCached.toLyricData()
-                    _lyricData.value = data
-                    lyricCache[songId] = data
+                    dbCached.toLyricData()?.let { data ->
+                        _lyricData.value = data
+                        lyricCache[songId] = data
+                    }
                 }
             }
 
@@ -484,10 +485,13 @@ class LyricManager @Inject constructor(
         ) return
 
         // 守卫：同一源不重复更新 UI
-        val currentSource = _lyricData.value.source
+        val currentLyrics = _lyricData.value
+        val currentSource = currentLyrics.source
         val skipUiUpdate =
             currentSource != LyricSource.Loading && currentSource != LyricSource.Empty
+                    && currentLyrics.lyricLine.lines.isNotEmpty()
                     && mergeResult.lyricData.source == currentSource
+                    && mergeResult.lyricData.isVerbatim == currentLyrics.isVerbatim
         val cacheContent = mergeResult.cacheContent
 
         if (!skipUiUpdate) {
@@ -536,7 +540,7 @@ class LyricManager @Inject constructor(
                 } else {
                     duetDetector.singleDuet(netease)
                 }
-                if (dueted != null) {
+                if (dueted != null && dueted.lyricLine.lines.isNotEmpty()) {
                     _lyricData.value = dueted
                     lyricCache[songIdAtStart] = dueted
                 }
@@ -658,74 +662,70 @@ class LyricManager @Inject constructor(
         }
     }
 
-    /**
-     * 从合并源和结果中提取 Room 持久化所需信息
-     *
-     * @return Triple(原始歌词文本, 翻译文本, 解析器类型)
-     *   对逐字歌词（TTML/YRC/QRC），第一项为 null 表示不缓存
-     */
-    private fun buildCacheInfo(
-        sources: List<LyricSourceData>,
-        lyricData: LyricData
-    ): Triple<String?, String?, String> {
-        return when (lyricData.source) {
-            LyricSource.AM -> Triple(null, null, "TTML")
-            LyricSource.NetEaseCloudMusic -> {
-                val netease = sources.filterIsInstance<LyricSourceData.NetEase>().firstOrNull()
-                if (lyricData.isVerbatim) {
-                    Triple(null, null, "YRC")
-                } else {
-                    val lrc = netease?.lyric?.lrc?.lyric?.takeIf { it.isNotBlank() }
-                    val translation = netease?.lyric?.tlyric?.lyric?.takeIf { it.isNotBlank() }
-                    Triple(lrc, translation, "LRC")
-                }
-            }
+}
 
-            LyricSource.QQMusic -> {
-                val qq = sources.filterIsInstance<LyricSourceData.QQMusic>().firstOrNull()
+/** Returns raw text and its matching parser for persistent lyric caching. */
+internal fun buildCacheInfo(
+    sources: List<LyricSourceData>,
+    lyricData: LyricData
+): Triple<String?, String?, String> {
+    return when (lyricData.source) {
+        LyricSource.AM -> Triple(null, null, "TTML")
+        LyricSource.NetEaseCloudMusic -> {
+            val netease = sources.filterIsInstance<LyricSourceData.NetEase>().firstOrNull()
+            if (lyricData.isVerbatim) {
+                Triple(null, null, "YRC")
+            } else {
+                val lrc = netease?.lyric?.lrc?.lyric?.takeIf { it.isNotBlank() }
+                val translation = netease?.lyric?.tlyric?.lyric?.takeIf { it.isNotBlank() }
+                Triple(lrc, translation, "LRC")
+            }
+        }
+
+        LyricSource.QQMusic -> {
+            val qq = sources.filterIsInstance<LyricSourceData.QQMusic>().firstOrNull()
+            val translation = qq?.lyric?.trans?.takeIf { it.isNotBlank() }
+            if (lyricData.isVerbatim) {
+                // QRC must retain its word timestamps, never the LRC fallback.
+                Triple(qq?.lyric?.lyric?.takeIf { it.isNotBlank() }, translation, "QRC")
+            } else {
                 val lrc = qq?.lrcContent?.takeIf { it.isNotBlank() }
                     ?: qq?.lyric?.lyric?.takeIf { it.isNotBlank() }
-                val translation = qq?.lyric?.trans?.takeIf { it.isNotBlank() }
-                if (lyricData.isVerbatim) {
-                    Triple(lrc, translation, "QRC")
-                } else {
-                    Triple(lrc, translation, "LRC")
-                }
+                Triple(lrc, translation, "LRC")
             }
-
-            else -> Triple(null, null, "LRC")
         }
+
+        else -> Triple(null, null, "LRC")
     }
+}
 
-    /**
-
-     * 从 Room 缓存恢复 [LyricData]
-     *
-     * 根据 parserType 选择对应的解析器：
-     * - TTML → TTMLParser
-     * - YRC  → YRCParser
-     * - QRC  → QRCParser (decoded trans)
-     * - LRC  → LRCParser (default)
-     */
-    fun CachedLyric.toLyricData(): LyricData = LyricData(
-        isVerbatim = isVerbatim,
+/** Restores cached lyrics, including legacy LRC entries incorrectly tagged as QRC. */
+internal fun CachedLyric.toLyricData(): LyricData? {
+    var restoredVerbatim = isVerbatim
+    val lyrics = when (parserType) {
+        "TTML" -> TTMLParser().parse(content)
+        "YRC" -> YRCParser.parse(content, translation)
+        "QRC" -> {
+            // Cache text and translation have already been decoded before insertion.
+            val qrc = QRCParser.parse(content, translation)
+            if (qrc.lines.isNotEmpty()) {
+                qrc
+            } else {
+                restoredVerbatim = false
+                LRCParser.parse(content, translation)
+            }
+        }
+        else -> LRCParser.parse(content, translation)
+    }
+    if (lyrics.lines.isEmpty()) return null
+    return LyricData(
+        isVerbatim = restoredVerbatim,
         isPureMusic = isPureMusic,
         source = try {
             LyricSource.valueOf(sourceName)
-        } catch (_: Exception) {
+        } catch (_: IllegalArgumentException) {
             LyricSource.Empty
         },
-        lyricLine = when (parserType) {
-            "TTML" -> TTMLParser().parse(content)
-            "YRC" -> YRCParser.parse(content, translation ?: "")
-            "QRC" -> {
-                val decoded = translation?.let { QRCUtils.decodeLyric(it) } ?: ""
-                QRCParser.parse(content, decoded)
-            }
-
-            else -> LRCParser.parse(content, translation)
-        }
+        lyricLine = lyrics
     )
-
-
 }

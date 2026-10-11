@@ -76,20 +76,29 @@ class DuetDetector @Inject constructor() {
         source: LyricSource
     ): LyricData? {
         if (verbatim != null) {
-            val lyrics = YRCParser.parse(verbatim, translation ?: "")
-            return LyricData(
-                isVerbatim = true, isPureMusic = false,
-                source = source,
-                lyricLine = if (duet != null) applyDuetAlignment(lyrics, duet, line) else lyrics
-            )
+            val parsed = when (source) {
+                LyricSource.QQMusic -> QRCParser.parse(verbatim, translation)
+                else -> YRCParser.parse(verbatim, translation)
+            }
+            val lyrics = if (duet != null) applyDuetAlignment(parsed, duet, line) else parsed
+            if (lyrics.lines.isNotEmpty()) {
+                return LyricData(
+                    isVerbatim = true, isPureMusic = false,
+                    source = source,
+                    lyricLine = lyrics
+                )
+            }
         }
         if (line != null) {
-            val lyrics = LRCParser.parse(line, translation)
-            return LyricData(
-                isVerbatim = false, isPureMusic = false,
-                source = source,
-                lyricLine = if (duet != null) applyDuetAlignment(lyrics, duet) else lyrics
-            )
+            val parsed = LRCParser.parse(line, translation)
+            val lyrics = if (duet != null) applyDuetAlignment(parsed, duet) else parsed
+            if (lyrics.lines.isNotEmpty()) {
+                return LyricData(
+                    isVerbatim = false, isPureMusic = false,
+                    source = source,
+                    lyricLine = lyrics
+                )
+            }
         }
         return null
     }
