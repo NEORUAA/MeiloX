@@ -38,6 +38,7 @@ internal fun AppleMusicMarqueeText(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val edgeWidthPx = with(density) { edgeWidth.toPx() }
     key(text) {
         var viewportWidth by remember { mutableIntStateOf(0) }
         var textWidth by remember { mutableIntStateOf(0) }
@@ -61,7 +62,11 @@ internal fun AppleMusicMarqueeText(
                 }
                 .onSizeChanged { viewportWidth = it.width }
                 .graphicsLayer {
-                    compositingStrategy = CompositingStrategy.Offscreen
+                    // Only the fade mask needs an isolated destination. Use the layer's
+                    // current size so resizing cannot leave DstIn on an unisolated layer.
+                    compositingStrategy = if (size.width > 0f && textWidth + edgeWidthPx > size.width) {
+                        CompositingStrategy.Offscreen
+                    } else CompositingStrategy.Auto
                     clip = true
                 }
                 .drawWithCache {
@@ -82,7 +87,7 @@ internal fun AppleMusicMarqueeText(
                     )
                     onDrawWithContent {
                         drawContent()
-                        if (size.width > 0f && textWidth + edgeWidth.toPx() > size.width) {
+                        if (size.width > 0f && textWidth + edgeWidthPx > size.width) {
                             drawRect(mask, blendMode = BlendMode.DstIn)
                         }
                     }

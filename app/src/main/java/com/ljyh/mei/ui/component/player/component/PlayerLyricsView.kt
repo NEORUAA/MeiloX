@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.ljyh.mei.utils.lyric.karaokeRenderTimeWindow
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
@@ -102,6 +103,7 @@ internal fun PlayerLyricsView(
     onLinePressed: (ISyncedLine) -> Unit,
     isManualScrolling: Boolean,
     modifier: Modifier = Modifier,
+    listModifier: Modifier = modifier,
     normalLineTextStyle: TextStyle = LocalTextStyle.current.copy(
         fontSize = 34.sp,
         fontWeight = FontWeight.Bold,
@@ -238,7 +240,7 @@ internal fun PlayerLyricsView(
             Box(modifier = modifier.clipToBounds()) {
                 LazyColumn(
                     state = listState,
-                    modifier = modifier
+                    modifier = listModifier
                         .fillMaxSize()
                         .then(contentModifier)
                         .graphicsLayer {
@@ -374,6 +376,16 @@ internal fun PlayerLyricsView(
                             when (line) {
                                 is KaraokeLine -> {
                                     if (line is KaraokeLine.MainKaraokeLine) {
+                                        val renderTimeProvider = remember(line, timeProvider) {
+                                            val window = karaokeRenderTimeWindow(line)
+                                            if (window == null) timeProvider else {
+                                                // Reuse static row pixels; every active animation
+                                                // still receives the original playback clock.
+                                                val renderTime = derivedStateOf { window.sample(timeProvider()) }
+                                                val provider: () -> Int = { renderTime.value }
+                                                provider
+                                            }
+                                        }
                                         LyricsLineItem(
                                             isFocused = isCurrentFocusLine,
                                             isRightAligned = isVisualRightAligned,
@@ -395,7 +407,7 @@ internal fun PlayerLyricsView(
                                                 CompositionLocalProvider(LocalTextStyle provides translationTextStyle) {
                                                     KaraokeLineText(
                                                         line = line,
-                                                        currentTimeProvider = timeProvider,
+                                                        currentTimeProvider = renderTimeProvider,
                                                         normalLineTextStyle = stableNormalTextStyle,
                                                         accompanimentLineTextStyle = stableAccompanimentTextStyle,
                                                         phoneticTextStyle = stablePhoneticTextStyle,

@@ -71,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -851,6 +852,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val selectionToolbar = remember { com.ljyh.mei.ui.local.SelectionToolbarState() }
+                    val pageVisible = remember(playerBottomSheetState, playerBackgroundReady) {
+                        derivedStateOf {
+                            !playerBottomSheetState.isExpanded || !playerBackgroundReady.value
+                        }
+                    }
+                    val pageCacheActive = remember(playerBottomSheetState) {
+                        derivedStateOf { playerBottomSheetState.isTransitioning }
+                    }
                     CompositionLocalProvider(
                         com.ljyh.mei.ui.local.LocalSelectionToolbar provides selectionToolbar,
                         LocalDatabase provides database,
@@ -900,12 +909,23 @@ class MainActivity : ComponentActivity() {
                                         layout(placeable.width, placeable.height) {
                                             // Stop drawing page text, images and glass once the
                                             // expanded mesh background can cover them completely.
-                                            if (!playerBottomSheetState.isExpanded || !playerBackgroundReady.value) {
+                                            if (pageVisible.value) {
                                                 placeable.place(0, 0)
                                             }
                                         }
                                     }
-                                    .graphicsLayer()
+                                    .graphicsLayer {
+                                        // Reuse native-resolution page pixels while the sheet moves.
+                                        // Child updates still invalidate this live render layer.
+                                        compositingStrategy = if (pageCacheActive.value) {
+                                            CompositingStrategy.Offscreen
+                                        } else {
+                                            CompositingStrategy.Auto
+                                        }
+                                    }
+                                    // Match the opaque root behind transparent page content. Keep
+                                    // this outside the backdrop recording so glass samples are intact.
+                                    .background(MaterialTheme.colorScheme.background)
                                     .layerBackdrop(bottomBackdrop)
                                     .trackBackdropPosition(bottomBackdrop),
                             ) {

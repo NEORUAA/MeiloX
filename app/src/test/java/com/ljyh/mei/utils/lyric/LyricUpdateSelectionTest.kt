@@ -12,6 +12,7 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.UncheckedSyncedLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
@@ -278,6 +279,106 @@ class LyricUpdateSelectionTest {
         }
         assertEquals(timingLyrics(), original)
     }
+
+    @Test
+    fun renderTimeWindowKeepsShortSyllableAnimationAndSeeksLive() {
+        val line = renderLine(1_000, 1_050, "字")
+        val window = requireNotNull(karaokeRenderTimeWindow(line))
+
+        assertEquals(984, window.first)
+        assertEquals(1_716, window.last)
+        // Re-entering after a forward or backward seek must immediately return raw time.
+        for (time in listOf(5_000, 1_400, 1_000, 0, 1_699, 1_700, 1_701, 1_050)) {
+            val sampled = window.sample(time)
+            assertEquals(time.coerceIn(window.first, window.last), sampled)
+            assertEquals(line.syllables.single().progress(time), line.syllables.single().progress(sampled), 0f)
+            assertEquals(
+                ((time - line.start) / 700f).coerceIn(0f, 1f),
+                ((sampled - line.start) / 700f).coerceIn(0f, 1f),
+                0f,
+            )
+        }
+    }
+
+    @Test
+    fun renderTimeWindowIncludesEarlyAndLateBackgroundVocals() {
+        val early = KaraokeLine.AccompanimentKaraokeLine(
+            listOf(KaraokeSyllable("Early", 200, 900, phonetic = "early")),
+            "Early translation", KaraokeAlignment.Start, 200, 900,
+        )
+        val late = early.copy(
+            syllables = listOf(KaraokeSyllable("Late", 2_600, 4_000)),
+            start = 2_600, end = 4_000,
+        )
+        val original = renderLine(1_000, 2_000).copy(accompanimentLines = listOf(early, late))
+        val window = requireNotNull(karaokeRenderTimeWindow(original))
+
+        assertEquals(-416, window.first)
+        assertEquals(4_616, window.last)
+        val times = listOf(-5_000, 10_000) + listOf(early, late).flatMap {
+            listOf(it.start - 601, it.start - 600, it.start - 599, it.end + 599, it.end + 600, it.end + 601)
+        }
+        for (time in times) {
+            val sampled = window.sample(time)
+            for (background in listOf(early, late)) {
+                assertEquals(
+                    time in (background.start - 600)..(background.end + 600),
+                    sampled in (background.start - 600)..(background.end + 600),
+                )
+            }
+        }
+        assertEquals(listOf(early, late), original.accompanimentLines)
+    }
+
+    @Test
+    fun renderTimeWindowSupportsNegativeOffsetsAndPreservesUnsafeRawArithmetic() {
+        val shifted = renderLine(-500, 1_000).copy(syllables = listOf(
+            KaraokeSyllable(" lead", -500, -400, phonetic = "lead"),
+            KaraokeSyllable("back ", 300, 1_000, phonetic = "back"),
+        ))
+        val window = requireNotNull(karaokeRenderTimeWindow(shifted))
+        assertEquals(-516, window.first)
+        assertEquals(1_016, window.last)
+        assertEquals(window.first, window.sample(-10_000))
+        assertEquals(window.last, window.sample(10_000))
+        assertEquals(Int.MIN_VALUE, window.sample(Int.MIN_VALUE))
+        assertEquals(Int.MAX_VALUE, window.sample(Int.MAX_VALUE))
+        for (time in listOf(-500, -401, -400, 0, 300, 999, 1_000)) {
+            assertEquals(time, window.sample(time))
+        }
+        // Token order and whitespace affect layout, but do not narrow the timing envelope.
+        val reversed = shifted.copy(syllables = shifted.syllables.reversed())
+        val reversedWindow = requireNotNull(karaokeRenderTimeWindow(reversed))
+        assertEquals(window.first, reversedWindow.first)
+        assertEquals(window.last, reversedWindow.last)
+    }
+
+    @Test
+    fun unsupportedRenderTimingsKeepTheUnboundedClock() {
+        val valid = renderLine(1_000, 2_000)
+        val emptyBackground = KaraokeLine.AccompanimentKaraokeLine(
+            emptyList(), null, KaraokeAlignment.Start, 1_000, 2_000,
+        )
+        val cases = listOf(
+            valid.copy(syllables = emptyList()),
+            valid.copy(syllables = listOf(KaraokeSyllable("", 1_000, 2_000))),
+            renderLine(1_000, 1_000),
+            valid.copy(syllables = listOf(KaraokeSyllable("Zero", 1_000, 1_000))),
+            valid.copy(accompanimentLines = listOf(emptyBackground)),
+            renderLine(Int.MAX_VALUE - 1_000, Int.MAX_VALUE),
+            renderLine(Int.MIN_VALUE, Int.MIN_VALUE + 1_000),
+            renderLine(-(1 shl 24) + 1_000, (1 shl 24) - 1_000),
+            renderLine((1 shl 24) - 700, (1 shl 24) - 16),
+        )
+        for (line in cases) assertNull(karaokeRenderTimeWindow(line))
+    }
+
+    private fun renderLine(start: Int, end: Int, text: String = "Verse") =
+        KaraokeLine.MainKaraokeLine(
+            listOf(KaraokeSyllable(text, start, end, phonetic = "verse")),
+            "Translation", KaraokeAlignment.Start, start, end,
+            phonetic = "Line phonetic",
+        )
 
     private fun timingLyrics(): LyricData {
         val background = KaraokeLine.AccompanimentKaraokeLine(

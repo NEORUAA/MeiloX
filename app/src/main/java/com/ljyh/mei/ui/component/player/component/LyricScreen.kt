@@ -41,6 +41,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
@@ -393,10 +394,17 @@ fun LyricScreen(
                                 modifier = Modifier
                                     .padding(vertical = rendererVerticalPadding)
                                     .graphicsLayer {
-                                        alpha = lyricAlpha.value
+                                        // The former nested layers applied this entry fade twice.
+                                        val fraction = lyricAlpha.value
+                                        alpha = fraction * fraction
                                         blendMode = BlendMode.Plus
                                         compositingStrategy = CompositingStrategy.Offscreen
                                     },
+                                // Keep the second inset and its former buffer clip, without
+                                // another full-viewport additive offscreen layer.
+                                listModifier = Modifier
+                                    .padding(vertical = rendererVerticalPadding)
+                                    .clipToBounds(),
                                 normalLineTextStyle = LocalTextStyle.current.copy(
                                     fontSize = normalLyricTextSize.text.sp,
                                     fontWeight = if (normalLyricTextBold) FontWeight.Bold else FontWeight.Normal,
