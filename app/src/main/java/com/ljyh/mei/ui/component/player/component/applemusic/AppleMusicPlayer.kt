@@ -516,7 +516,7 @@ fun AppleMusicPlayer(
                             onTitleClick = {
                                 overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
                             },
-                            enabled = sheetExpanded && showLyrics && headerInteractive,
+                            enabled = sheetExpanded && showDetail && headerInteractive,
                             marqueeEdgeWidth = AppleMusicDimensions.headerMarqueeEdgeWidth,
                             marqueeEnabled = sheetExpanded && headerInfoVisible,
                             titleStyle = MaterialTheme.typography.titleMedium.copy(
