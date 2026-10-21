@@ -22,6 +22,7 @@ sealed class Screen(val route:String) {
     data object AccountHome:Screen("account/home")
     data object AccountConnections:Screen("account/connections")
     data object AccountListeningRank:Screen("account/listening_rank")
+    data object ListeningStats:Screen("account/listening_stats")
     data object AppearanceSettings:Screen("setting/appearance")
     data object GeneralSettings:Screen("setting/general")
     data object LyricsSettings:Screen("setting/lyrics")

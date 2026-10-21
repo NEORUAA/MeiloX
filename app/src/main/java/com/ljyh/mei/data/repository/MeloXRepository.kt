@@ -68,6 +68,10 @@ import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.melox.UserPlayRecord
+import com.ljyh.mei.data.model.melox.ListeningStatsPeriod
+import com.ljyh.mei.data.model.melox.ListeningStatsReport
+import com.ljyh.mei.data.model.melox.ListeningStatsSummary
+import com.ljyh.mei.data.model.melox.ListeningStatsYear
 import com.ljyh.mei.data.network.api.MeloXDirectService
 import com.ljyh.mei.data.network.NeteaseLoginSecurity
 import com.ljyh.mei.data.network.readNeteaseLoginCookies
@@ -677,6 +681,31 @@ class MeloXRepository @Inject constructor(
         )
         return parseUserPlayRecords(response, allTime)
     }
+
+    suspend fun listeningStatsSummary(): ListeningStatsSummary = parseListeningStatsSummary(
+        request("/api/content/activity/listen/data/total"),
+    )
+
+    suspend fun listeningStatsReport(
+        period: ListeningStatsPeriod,
+        endTimeMs: Long? = null,
+    ): ListeningStatsReport {
+        require(period != ListeningStatsPeriod.Year) { "Annual listening summaries use listeningStatsYears" }
+        require(endTimeMs == null || endTimeMs > 0) { "A valid listening report end time is required" }
+        val isCurrent = endTimeMs == null
+        val path = if (isCurrent) "realtime/report" else "report"
+        val body = buildMap<String, Any> {
+            put("type", period.wireValue)
+            if (endTimeMs != null) put("endTime", endTimeMs)
+        }
+        return parseListeningStatsReport(
+            request("/api/content/activity/listen/data/$path", body), period, isCurrent,
+        )
+    }
+
+    suspend fun listeningStatsYears(): List<ListeningStatsYear> = parseListeningStatsYears(
+        request("/api/content/activity/listen/data/year/report"),
+    )
 
     suspend fun recentSongs(limit: Int = 100): List<AccountSong> {
         val response = request(

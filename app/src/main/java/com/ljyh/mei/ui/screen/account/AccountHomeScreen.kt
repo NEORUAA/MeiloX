@@ -2,12 +2,16 @@ package com.ljyh.mei.ui.screen.account
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,9 +36,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -59,6 +65,7 @@ import com.ljyh.mei.data.model.melox.AccountDetail
 import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
+import com.ljyh.mei.data.model.melox.ListeningStatsSummary
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
@@ -67,13 +74,14 @@ import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassSurface
+import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
+import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -84,6 +92,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -102,6 +111,8 @@ data class AccountHomeState(
     val playlists: List<AccountPlaylist> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
+    val listeningSummary: ListeningStatsSummary? = null,
+    val summaryLoading: Boolean = true,
 )
 
 @HiltViewModel
@@ -112,14 +123,17 @@ class AccountHomeViewModel @Inject constructor(
     private val _state = MutableStateFlow(AccountHomeState())
     val state: StateFlow<AccountHomeState> = _state
 
+    private var refreshJob: Job? = null
+
     init {
         refresh()
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            _state.value = _state.value.copy(loading = true, summaryLoading = true, error = null)
+            try {
                 val profile = repository.accountProfile()
                 context.dataStore.edit { preferences ->
                     preferences[UserIdKey] = profile.id.toString()
@@ -129,12 +143,32 @@ class AccountHomeViewModel @Inject constructor(
                 coroutineScope {
                     val detail = async { runCatching { repository.accountDetail(profile.id) }.getOrNull() }
                     val playlists = async { runCatching { repository.accountPlaylists(profile.id) }.getOrDefault(emptyList()) }
-                    AccountHomeState(profile, detail.await(), playlists.await(), loading = false)
+                    val listeningSummary = async { runCatching { repository.listeningStatsSummary() } }
+                    val account = AccountHomeState(
+                        profile = profile,
+                        detail = detail.await(),
+                        playlists = playlists.await(),
+                        loading = false,
+                        listeningSummary = _state.value.listeningSummary.takeIf { _state.value.profile?.id == profile.id },
+                    )
+                    ensureActive()
+                    _state.value = account
+                    val summary = listeningSummary.await()
+                    ensureActive()
+                    _state.value = account.copy(
+                        listeningSummary = summary.getOrNull() ?: account.listeningSummary,
+                        summaryLoading = false,
+                    )
                 }
-            }.onSuccess { _state.value = it }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                ensureActive()
+                _state.value = _state.value.copy(loading = false, summaryLoading = false, error = error.message)
+            }
         }
     }
+
 }
 
 @Composable
@@ -161,6 +195,9 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                         profile = displayedProfile,
                         detail = state.detail,
                         playlistCount = state.playlists.size,
+                        listeningSummary = state.listeningSummary,
+                        summaryLoading = state.summaryLoading,
+                        onListeningStats = { Screen.ListeningStats.navigate(navController) },
                         onConnections = { type ->
                             Screen.AccountConnections.navigate(navController) {
                                 addPath(displayedProfile.id.toString())
@@ -243,82 +280,125 @@ private fun AccountHero(
     profile: AccountProfile,
     detail: AccountDetail?,
     playlistCount: Int,
+    listeningSummary: ListeningStatsSummary?,
+    summaryLoading: Boolean,
+    onListeningStats: () -> Unit,
     onConnections: (AccountConnectionType) -> Unit,
     onRankings: () -> Unit,
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            AsyncImage(
-                model = profile.avatarUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(132.dp).clip(CircleShape),
-            )
-            Text(
-                profile.nickname,
-                style = MaterialTheme.typography.headlineSmall,
-                color = LocalGlassColors.current.content,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
-            profile.signature?.takeIf(String::isNotBlank)?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 3)
-            }
-            detail?.let {
+        Column(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 24.dp, bottom = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                AsyncImage(
+                    model = profile.avatarUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(132.dp).clip(CircleShape),
+                )
                 Text(
-                    stringResource(
-                        R.string.listening_account_level_summary,
-                        it.level,
-                        it.listenSongs?.let { count -> NumberFormat.getIntegerInstance().format(count) } ?: "—",
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
+                    profile.nickname,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = LocalGlassColors.current.content,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                profile.signature?.takeIf(String::isNotBlank)?.let {
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 3)
+                }
+                detail?.let {
+                    Text(
+                        stringResource(
+                            R.string.listening_account_level_summary,
+                            it.level,
+                            it.listenSongs?.let { count -> NumberFormat.getIntegerInstance().format(count) } ?: "—",
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SfIcon(SfSymbol.Clock, null, size = 14.dp, tint = LocalGlassColors.current.secondaryContent)
+                    Text(
+                        stringResource(R.string.listening_stats_total) + " " +
+                            (listeningSummary?.let { listeningDuration(it.totalSeconds / 60, it.totalSeconds > 0) }
+                                ?: if (summaryLoading) "—" else stringResource(R.string.listening_stats_load_failed)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LocalGlassColors.current.secondaryContent,
+                    )
+                }
+                Text(
+                    stringResource(R.string.account_user_id, profile.id),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                stringResource(R.string.account_user_id, profile.id),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Row(Modifier.fillMaxWidth()) {
+                AccountMetric(
+                    profile.follows,
+                    stringResource(R.string.account_follows),
+                    Modifier.weight(1f),
+                    onClick = { onConnections(AccountConnectionType.Following) },
+                )
+                AccountMetric(
+                    profile.followers,
+                    stringResource(R.string.account_followers),
+                    Modifier.weight(1f),
+                    onClick = { onConnections(AccountConnectionType.Followers) },
+                )
+                AccountMetric(
+                    profile.playlistCount ?: playlistCount,
+                    stringResource(R.string.account_playlist_metric),
+                    Modifier.weight(1f),
+                )
+            }
+            IosListRow(
+                title = stringResource(R.string.listening_stats_entry),
+                systemName = "clock",
+                onClick = onListeningStats,
             )
-            GlassSurface(Modifier.fillMaxWidth(), shape = ContinuousRoundedRectangle(18.dp)) {
-                Row(Modifier.fillMaxWidth()) {
-                    AccountMetric(
-                        profile.follows,
-                        stringResource(R.string.account_follows),
-                        Modifier.weight(1f),
-                        onClick = { onConnections(AccountConnectionType.Following) },
-                    )
-                    AccountMetric(
-                        profile.followers,
-                        stringResource(R.string.account_followers),
-                        Modifier.weight(1f),
-                        onClick = { onConnections(AccountConnectionType.Followers) },
-                    )
-                    AccountMetric(profile.playlistCount ?: playlistCount, stringResource(R.string.account_playlist_metric), Modifier.weight(1f))
-                }
-            }
-            GlassButton(onRankings, emphasis = GlassEmphasis.Prominent) {
-                SfIcon("chart.bar.xaxis", null, size = 18.dp)
-                Text(stringResource(R.string.account_listening_rank), modifier = Modifier.padding(start = 8.dp))
-            }
+            IosListRow(
+                title = stringResource(R.string.account_listening_rank),
+                systemName = "chart.bar.xaxis",
+                onClick = onRankings,
+            )
         }
     }
 }
 
 @Composable
 private fun AccountMetric(value: Int?, label: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    val colors = LocalGlassColors.current
+    val scope = rememberCoroutineScope()
+    val highlight = remember(scope) { InteractiveHighlight(scope) }
+    val shape = ContinuousRoundedRectangle(24.dp)
     Column(
         modifier
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(vertical = 12.dp),
+            .heightIn(min = 76.dp)
+            .clip(shape)
+            .background(Color.Black.copy(alpha = 0.15f * highlight.pressProgress), shape)
+            .then(
+                if (onClick != null) Modifier.clickable(
+                    interactionSource = null,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                ).then(highlight.gestureModifier) else Modifier,
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Text(value?.toString() ?: "—", fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold, color = colors.content)
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = IosTypography.subheadline, color = colors.content,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
