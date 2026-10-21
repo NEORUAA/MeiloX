@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.component.player.component
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -72,6 +75,7 @@ fun FluidBackground(
     val currentSubdivision by rememberUpdatedState(subdivision)
     val renderer = remember { MeshGradientRenderer() }
     val meshLayer = rememberGraphicsLayer()
+    val initialReveal = remember { Animatable(0f) }
     val frameVersion = remember { mutableIntStateOf(0) }
     val shouldAnimate = !meshPlaying || isPlaying
     val audioReactive = backgroundActive && expanded && isPlaying && !staticMode && sensitivity > 0f
@@ -94,13 +98,27 @@ fun FluidBackground(
         }
     }
 
-    LaunchedEffect(renderer, album, flowSpeed, staticMode, shouldAnimate) {
+    LaunchedEffect(renderer, flowSpeed, staticMode, shouldAnimate) {
         renderer.flowSpeed = flowSpeed
         renderer.staticMode = staticMode
         renderer.isPlaying = shouldAnimate
+        frameVersion.intValue++
+    }
+
+    LaunchedEffect(renderer, album) {
         album?.let(renderer::setAlbum)
         frameVersion.intValue++
-        // Publish readiness from the observable album effect, never from drawing.
+        if (renderer.hasAlbum && initialReveal.value < 1f) {
+            if (backgroundActive) {
+                initialReveal.animateTo(
+                    1f,
+                    tween(durationMillis = 200, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
+                )
+            } else {
+                initialReveal.snapTo(1f)
+            }
+        }
+        // Keep the underlying page until the first visible mesh is fully opaque.
         onBackgroundReadyChanged(renderer.hasAlbum)
     }
 
@@ -139,7 +157,7 @@ fun FluidBackground(
             .graphicsLayer {
                 // The mesh renderer already flattens album crossfades into one texture.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
-                this.alpha = alpha.coerceIn(0f, 1f) *
+                this.alpha = alpha.coerceIn(0f, 1f) * initialReveal.value *
                     (sheet?.state?.progress?.let(::playerBackgroundAlpha) ?: 1f)
             },
     ) {

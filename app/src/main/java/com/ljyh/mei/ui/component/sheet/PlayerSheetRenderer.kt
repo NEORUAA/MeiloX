@@ -575,23 +575,20 @@ fun BottomSheet(
                 expandedCornerRadius = expandedCornerRadius,
             )
         }
-        // Retain the mesh state and album across the collapsed anchor. FluidBackground
-        // stops advancing hidden frames while keeping the next opening continuous.
-        if (state.hasBeenShown) {
-            Box(
-                Modifier.fillMaxSize()
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        layout(placeable.width, placeable.height) {
-                            // Keep the hidden background out of drawing and hit testing.
-                            if (active || expanded) placeable.place(0, 0)
-                        }
+        // Prepare the Compose mesh before the first opening. Its unplaced host
+        // neither draws nor receives input, and FluidBackground stops hidden frames.
+        Box(
+            Modifier.fillMaxSize()
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, placeable.height) {
+                        if (active || expanded) placeable.place(0, 0)
                     }
-                    .clipPlayerBackground(layers, expandedCornerRadius)
-                    .clearAndSetSemantics { },
-            ) {
-                backgroundContent()
-            }
+                }
+                .clipPlayerBackground(layers, expandedCornerRadius)
+                .clearAndSetSemantics { },
+        ) {
+            backgroundContent()
         }
         run {
             val visible = active || expanded
