@@ -109,11 +109,11 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
-import androidx.navigation3.scene.NavigationBackHandler
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.scene.SinglePaneSceneStrategy
 import androidx.navigation3.scene.rememberNavigationEventState
 import androidx.navigation3.scene.rememberSceneState
+import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
@@ -1034,17 +1034,23 @@ class MainActivity : ComponentActivity() {
                                         onBack = navController::popBackStack,
                                     )
                                     val navigationEventState = rememberNavigationEventState(sceneState)
-                                    NavigationBackHandler(sceneState, navigationEventState, navController::popBackStack)
-                                    // The display never sees gesture progress through this unregistered state, so
-                                    // a completed back gesture plays the regular pop transition instead.
-                                    val idleNavigationEventState = rememberNavigationEventState(sceneState)
+                                    val nonDisplayNavigationEventState = rememberNavigationEventState(sceneState)
+                                    val canGoBack = sceneState.currentScene.previousEntries.isNotEmpty()
+                                    // Keep both handlers registered so toggling preserves child back-handler priority.
+                                    NavigationBackHandler(
+                                        state = navigationEventState,
+                                        isBackEnabled = predictiveBackAnimationEnabled && canGoBack,
+                                        onBackCompleted = { navController.popBackStack() },
+                                    )
+                                    NavigationBackHandler(
+                                        state = nonDisplayNavigationEventState,
+                                        isBackEnabled = !predictiveBackAnimationEnabled && canGoBack,
+                                        onBackCompleted = { navController.popBackStack() },
+                                    )
                                     NavDisplay(
                                         sceneState = sceneState,
-                                        navigationEventState = if (predictiveBackAnimationEnabled) {
-                                            navigationEventState
-                                        } else {
-                                            idleNavigationEventState
-                                        },
+                                        // NavDisplay retains this state in remembered gesture calculations.
+                                        navigationEventState = navigationEventState,
                                         modifier = Modifier.fillMaxSize(),
                                         transitionSpec = {
                                             if (usesHomeAlphaTransition()) {
