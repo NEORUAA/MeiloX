@@ -1,22 +1,21 @@
 package com.ljyh.mei.ui.component.player.component.applemusic
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import com.ljyh.mei.R
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
@@ -114,49 +114,59 @@ fun Title(
                 .then(actionsModifier)
         ) {
             // Like Button
-            IconButton(
-                onClick = onLikeClick,
-                enabled = enabled,
+            Box(
                 modifier = Modifier
-                    .size(34.dp),
+                    .size(34.dp)
+                    // Half the icon's size increase keeps its left edge fixed.
+                    .absoluteOffset(x = 1.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onLikeClick,
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .requiredSize(34.dp)
-                        .background(Color.White.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
+                if (isLiked) {
                     SfIcon(
-                        symbol = if (isLiked) SfSymbol.StarFilled else SfSymbol.Star,
-                        contentDescription = stringResource(R.string.app_tab_library_songs),
-                        tint = iconColor.copy(alpha = 0.8f),
-                        size = 22.dp,
-                        weight = FontWeight.Bold
+                        symbol = SfSymbol.StarFilled,
+                        contentDescription = null,
+                        modifier = Modifier.blur(2.dp, BlurredEdgeTreatment.Unbounded),
+                        tint = iconColor.copy(alpha = 0.28f),
+                        size = 24.dp,
+                        weight = FontWeight.Bold,
                     )
                 }
+                SfIcon(
+                    symbol = if (isLiked) SfSymbol.StarFilled else SfSymbol.Star,
+                    contentDescription = stringResource(R.string.app_tab_library_songs),
+                    tint = iconColor.copy(alpha = 0.8f),
+                    size = 24.dp,
+                    weight = FontWeight.Bold
+                )
             }
 
             // More Button
-            IconButton(
-                onClick = onMoreClick,
-                enabled = enabled,
+            Box(
                 modifier = Modifier
-                    .size(34.dp),
+                    .size(34.dp)
+                    .onGloballyPositioned(onMoreButtonPositioned)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onMoreClick,
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .requiredSize(34.dp)
-                        .onGloballyPositioned(onMoreButtonPositioned)
-                        .background(Color.White.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    SfIcon(
-                        symbol = SfSymbol.Ellipsis,
-                        contentDescription = stringResource(R.string.more_actions_title),
-                        tint = iconColor.copy(alpha = 0.8f),
-                        size = 22.dp,
-                    )
-                }
+                SfIcon(
+                    symbol = SfSymbol.Ellipsis,
+                    contentDescription = stringResource(R.string.more_actions_title),
+                    tint = iconColor.copy(alpha = 0.8f),
+                    size = 22.dp,
+                )
             }
         }
     }

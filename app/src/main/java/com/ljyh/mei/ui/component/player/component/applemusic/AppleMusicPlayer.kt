@@ -106,7 +106,6 @@ import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.BottomSheet
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
-import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -128,7 +127,6 @@ fun AppleMusicPlayer(
     miniPlayerVerticalOffset: () -> Dp,
 ) {
     val density = LocalDensity.current
-    val isDark = LocalGlassColors.current.isDark
     val configuration = LocalConfiguration.current
 
     // --- Apple Music 特定状态 ---
@@ -343,7 +341,7 @@ fun AppleMusicPlayer(
                         .size(width = 58.dp, height = 4.dp)
                         .playerAdditiveBlend()
                         .background(
-                            Color.White.copy(alpha = if (isDark) 0.48f else 0.62f),
+                            Color.White.copy(alpha = 0.3f),
                             Capsule(),
                         ),
                 )
