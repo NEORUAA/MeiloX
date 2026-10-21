@@ -12,26 +12,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppleMusicPlaybackMotionTest {
-    @Test fun pauseShrinksMonotonicallyToTheExistingSizeIn480Milliseconds() {
+    @Test fun pauseShrinksMonotonicallyToThreeQuarterSizeIn480Milliseconds() {
         val animation = TargetBasedAnimation(appleMusicPlaybackSpec(false), Float.VectorConverter, 0f, 1f)
         assertEquals(480_000_000L, animation.durationNanos)
         var previousScale = 1f
         for (millis in 0..480 step 8) {
-            val scale = 1f - 0.1f * animation.getValueFromNanos(millis * 1_000_000L)
+            val scale = 1f - 0.25f * animation.getValueFromNanos(millis * 1_000_000L)
             assertTrue(scale <= previousScale)
-            assertTrue(scale >= 0.9f)
+            assertTrue(scale >= 0.75f)
             previousScale = scale
         }
-        assertEquals(0.9f, previousScale, 0f)
+        assertEquals(0.75f, previousScale, 0f)
     }
 
     @Test fun playingReboundsAndSettlesAtTheOriginalPlayingSize() {
         val animation = TargetBasedAnimation(appleMusicPlaybackSpec(true), Float.VectorConverter, 1f, 0f)
         val scales = (0L..animation.durationNanos step 8_000_000L)
-            .map { 1f - 0.1f * animation.getValueFromNanos(it) }
+            .map { 1f - 0.25f * animation.getValueFromNanos(it) }
         assertTrue(scales.any { it > 1f })
-        assertTrue(scales.max() < 1.01f)
-        assertEquals(1f, 1f - 0.1f * animation.getValueFromNanos(animation.durationNanos), 0f)
+        assertTrue(scales.max() < 1.025f)
+        assertEquals(1f, 1f - 0.25f * animation.getValueFromNanos(animation.durationNanos), 0f)
     }
 
     @Test fun reversingPauseToPlayKeepsCurrentPosition() = runBlocking {

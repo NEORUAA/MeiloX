@@ -110,7 +110,7 @@ fun Cover(
     )
 
     val coverScale = rememberUpdatedState(
-        if (sheetExpanded) animatedCoverScale else if (isPlaying) 1f else 0.9f,
+        if (sheetExpanded) animatedCoverScale else if (isPlaying) 1f else if (playerStyle == PlayerStyle.AppleMusic) 0.75f else 0.9f,
     )
 
     var showFullImage by remember { mutableStateOf(false) }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -228,7 +231,11 @@ fun <T> GlassBottomBar(
     val selectedIndexState = rememberUpdatedState(selectedIndex)
     val tabItemsState = rememberUpdatedState(tabItems)
 
-    BoxWithConstraints(modifier.height(64.dp), contentAlignment = Alignment.CenterStart) {
+    val dragCoordinateSpace = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    BoxWithConstraints(
+        modifier.height(64.dp).onGloballyPositioned { dragCoordinateSpace.value = it },
+        contentAlignment = Alignment.CenterStart,
+    ) {
         val density = LocalDensity.current
         val fullWidthPx = constraints.maxWidth.toFloat()
         val compactWidthPx = with(density) { compactSize.toPx() }
@@ -297,6 +304,7 @@ fun <T> GlassBottomBar(
             }
         }
         val offsetAnimation = remember { Animatable(0f) }
+        val selectionPressOrigin = remember { mutableStateOf(true) }
         val dragAnimation = remember(animationScope, tabItems.size, isLtr) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -305,7 +313,8 @@ fun <T> GlassBottomBar(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
-                onDragStarted = {},
+                dragCoordinateSpace = { dragCoordinateSpace.value },
+                onDragStarted = { selectionPressOrigin.value = compactState.value == 0f },
                 onDragStopped = {
                     if (compactState.value >= 0.74f) {
                         onExpandState.value()
@@ -331,10 +340,20 @@ fun <T> GlassBottomBar(
                 },
             )
         }
-        LaunchedEffect(selectedIndex, compactMode) {
+        LaunchedEffect(selectedIndex, dragAnimation) {
             // Route and preference updates only move the indicator. Navigation callbacks
             // belong to user input, including while the bar is fading out on a detail page.
-            dragAnimation.animateToValue(selectedIndex.toFloat())
+            if (dragAnimation.targetValue != selectedIndex.toFloat()) {
+                selectionPressOrigin.value = compactState.value == 0f
+                dragAnimation.animateToValue(selectedIndex.toFloat())
+            }
+        }
+        // Compact input keeps panel feedback without pressing the emerging selection.
+        val selectionFeedbackEnabled = remember(compactState, selectionPressOrigin) {
+            derivedStateOf { selectionPressOrigin.value && compactState.value == 0f }
+        }
+        val selectionPressProgressState = remember(dragAnimation, selectionFeedbackEnabled) {
+            derivedStateOf { if (selectionFeedbackEnabled.value) dragAnimation.pressProgress else 0f }
         }
         val interactiveHighlight = remember(
             animationScope,
@@ -366,6 +385,11 @@ fun <T> GlassBottomBar(
                 },
             )
         }
+        val selectionHighlightModifier = remember(interactiveHighlight, selectionFeedbackEnabled) {
+            interactiveHighlight.highlightModifier(
+                progressProvider = { if (selectionFeedbackEnabled.value) interactiveHighlight.pressProgress else 0f },
+            )
+        }
         val commonTransform = remember(density, fullWidthPx, compactWidthPx, isLtr) {
             Modifier.graphicsLayer {
                 val progress = compactState.value
@@ -384,7 +408,7 @@ fun <T> GlassBottomBar(
         val pressProgressState = dragAnimation.pressProgressState
         val selectedIconColorFilterState: State<ColorFilter> = remember(
             compactState,
-            pressProgressState,
+            selectionPressProgressState,
             colors.accent,
             colors.content,
         ) {
@@ -398,7 +422,7 @@ fun <T> GlassBottomBar(
                     androidx.compose.ui.graphics.lerp(
                         compactTint,
                         colors.content,
-                        pressProgressState.value,
+                        selectionPressProgressState.value,
                     ),
                 )
             }
@@ -417,9 +441,9 @@ fun <T> GlassBottomBar(
                 (1f - compactState.value).coerceAtLeast(CompactTabContentScaleFloor)
             }
         }
-        val lensSourceTabContentScale = remember(pressProgressState, compactState) {
+        val lensSourceTabContentScale = remember(selectionPressProgressState, compactState) {
             {
-                lerp(1f, 1.2f, pressProgressState.value) *
+                lerp(1f, 1.2f, selectionPressProgressState.value) *
                     (1f - compactState.value).coerceAtLeast(CompactTabContentScaleFloor)
             }
         }
@@ -451,8 +475,18 @@ fun <T> GlassBottomBar(
                 scaleY = panelPressScale.value
             }
         }
-        val tabPanelScale: (Int) -> Float = remember(dragAnimation, panelPressScale) {
-            { index -> navigationTabPanelScale(index, dragAnimation.value, panelPressScale.value) }
+        val lensAnchoring = if (appearance.usesRefraction) 1f else 0f
+        val tabPanelScale: (Int) -> Float = remember(dragAnimation, panelPressScale, lensAnchoring) {
+            { index ->
+                navigationTabPanelScale(index, dragAnimation.value, panelPressScale.value, lensAnchoring)
+            }
+        }
+        val indicatorPanelScale = remember(panelPressScale, lensAnchoring, selectionFeedbackEnabled) {
+            derivedStateOf {
+                if (selectionFeedbackEnabled.value) {
+                    navigationTabPanelScale(0, 0f, panelPressScale.value, lensAnchoring)
+                } else 1f
+            }
         }
         val selectedTabPanelScale: () -> Float = remember(tabPanelScale, selectedIndex) {
             { tabPanelScale(selectedIndex) }
@@ -533,7 +567,7 @@ fun <T> GlassBottomBar(
             tint = containerColor,
             navigationMaterial = appearance.usesBackdrop,
             isDark = colors.isDark,
-            pressProgress = { pressProgressState.value },
+            pressProgress = { selectionPressProgressState.value },
             layerBlock = {},
             tintMultiplier = 1f,
             lensSource = true,
@@ -544,14 +578,14 @@ fun <T> GlassBottomBar(
             isLight,
             hiddenInnerShadows,
             appearance,
-            pressProgressState,
+            selectionPressProgressState,
         ) {
             Modifier
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { Capsule() },
                     effects = {
-                        val press = pressProgressState.value
+                        val press = selectionPressProgressState.value
                         vibrancy()
                         blur(8.dp.toPx())
                         lens(
@@ -563,7 +597,7 @@ fun <T> GlassBottomBar(
                         if (isLight && appearance.usesBackdrop) liftNavigationShadows()
                     },
                     highlight = {
-                        Highlight.Default.copy(alpha = 0.94f * pressProgressState.value)
+                        Highlight.Default.copy(alpha = 0.94f * selectionPressProgressState.value)
                     },
                     onDrawSurface = {
                         if (appearance.usesBackdrop) {
@@ -582,6 +616,7 @@ fun <T> GlassBottomBar(
             compactState,
             offsetAnimation,
             dragAnimation,
+            indicatorPanelScale,
             isLtr,
             fullWidthPx,
             compactWidthPx,
@@ -626,17 +661,21 @@ fun <T> GlassBottomBar(
                     val fraction = (offsetAnimation.value / fullWidthPx).fastCoerceIn(-1f, 1f)
                     translationX = surfaceBaseLeft + indicatorLeft - directionalBase +
                         paddingPx * fraction.sign * EaseOut.transform(abs(fraction))
+                    translationX += navigationPanelCenterOffset(
+                        indicatorLeft + indicatorWidth / 2f, currentWidth / 2f, indicatorPanelScale.value,
+                    )
                 }
             }
         }
         val indicatorBackdropLayerBlock: GraphicsLayerScope.() -> Unit = remember(
             dragAnimation,
             innerGlassVisibilityState,
+            selectionFeedbackEnabled,
         ) {
             {
-                scaleX = dragAnimation.scaleX
-                scaleY = dragAnimation.scaleY
-                val velocity = dragAnimation.velocity / 10f
+                scaleX = if (selectionFeedbackEnabled.value) dragAnimation.scaleX else 1f
+                scaleY = if (selectionFeedbackEnabled.value) dragAnimation.scaleY else 1f
+                val velocity = if (selectionFeedbackEnabled.value) dragAnimation.velocity / 10f else 0f
                 scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
                 scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                 // drawBackdrop installs this block on the backdrop layer itself. Keep the
@@ -653,6 +692,7 @@ fun <T> GlassBottomBar(
                 containerColor,
                 isLight,
                 indicatorBackdropLayerBlock,
+                selectionPressProgressState,
                 appearance,
             ) {
                 Modifier
@@ -660,7 +700,7 @@ fun <T> GlassBottomBar(
                         backdrop = if (appearance.usesRefraction) indicatorBackdrop else emptyBackdrop(),
                         shape = { Capsule() },
                         effects = {
-                            val press = pressProgressState.value
+                            val press = selectionPressProgressState.value
                             val opticalIntensity = press * expandedIndicatorVisibilityState.value
                             if (appearance.usesRefraction) {
                                 lens(
@@ -672,18 +712,18 @@ fun <T> GlassBottomBar(
                         },
                         highlight = {
                             Highlight.Default.copy(
-                                alpha = 0.90f * pressProgressState.value *
+                                alpha = 0.90f * selectionPressProgressState.value *
                                     expandedIndicatorVisibilityState.value,
                             )
                         },
                         shadow = {
                             Shadow(
-                                alpha = 0.84f * pressProgressState.value *
+                                alpha = 0.84f * selectionPressProgressState.value *
                                     expandedIndicatorVisibilityState.value,
                             )
                         },
                         innerShadow = {
-                            val strength = pressProgressState.value * expandedIndicatorVisibilityState.value
+                            val strength = selectionPressProgressState.value * expandedIndicatorVisibilityState.value
                             InnerShadow(
                                 radius = 10.dp * strength,
                                 alpha = 0.86f * strength,
@@ -691,7 +731,7 @@ fun <T> GlassBottomBar(
                         },
                         layerBlock = indicatorBackdropLayerBlock,
                         onDrawSurface = {
-                            val press = pressProgressState.value
+                            val press = selectionPressProgressState.value
                             val indicatorBaseColor = if (isLight) {
                                 Color.Black.copy(alpha = 0.10f)
                             } else {
@@ -794,7 +834,7 @@ fun <T> GlassBottomBar(
                         .then(hiddenSourceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
-                        .then(interactiveHighlight.modifier)
+                        .then(selectionHighlightModifier)
                         .padding(horizontal = 4.dp)
                         .clip(Capsule()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -805,22 +845,18 @@ fun <T> GlassBottomBar(
                             .fillMaxHeight()
                             .then(lensSourceAccentModifier),
                     ) {
-                        Box(Modifier.fillMaxSize().graphicsLayer(pressLayerBlock)) {
-                            FullTabContent(
-                                items = stableItems,
-                                selectedKey = selectedItem.key,
-                                onSelected = stableOnSelected,
-                                // The hidden source retains the original tab hit targets and tint.
-                                enabled = !compactMode,
-                                alpha = tabContentAlpha,
-                                selectedColorFilter = selectedIconColorFilterState,
-                                hideSelectedItem = true,
-                                expandedTabWidthPx = expandedTabWidthPx,
-                                compactTabWidthPx = compactInnerWidthPx / tabItems.size,
-                                compactProgress = compactState,
-                                pressCorrection = tabPressCorrection,
-                            )
-                        }
+                        FullTabContent(
+                            items = stableItems,
+                            selectedKey = selectedItem.key,
+                            onSelected = stableOnSelected,
+                            enabled = !compactMode,
+                            alpha = tabContentAlpha,
+                            selectedColorFilter = selectedIconColorFilterState,
+                            hideSelectedItem = true,
+                            expandedTabWidthPx = expandedTabWidthPx,
+                            compactTabWidthPx = compactInnerWidthPx / tabItems.size,
+                            compactProgress = compactState,
+                        )
                         MorphingSelectedNavigationItem(
                             item = selectedItem,
                             compactProgress = compactState,
@@ -834,7 +870,6 @@ fun <T> GlassBottomBar(
                             labelAlpha = tabContentAlpha,
                             selectedIconColorFilter = hiddenSelectedIconColorFilterState,
                             contentColor = colors.content,
-                            panelScale = selectedTabPanelScale,
                         )
                     }
                 }
@@ -1104,7 +1139,8 @@ internal fun <T> BoxScope.MorphingSelectedNavigationItem(
                 val compactCenter = compactContentWidth / 2f
                 val targetCenter = lerp(expandedCenter, compactCenter, progress)
                 val tabScale = panelScale()
-                translationX = (targetCenter - currentContentWidth / 2f) * tabScale
+                translationX = targetCenter - currentContentWidth / 2f +
+                    navigationPanelCenterOffset(targetCenter, currentContentWidth / 2f, tabScale)
                 // Scale the selected icon and label as one tab item. The shared tab scale owns
                 // press deformation and the <= 0.74 morph; the late correction only reconciles
                 // the expanded icon size with the compact control endpoint.

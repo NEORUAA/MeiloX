@@ -7,13 +7,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -23,9 +26,12 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import com.ljyh.mei.ui.component.player.component.applemusic.playerInfoMotion
 import kotlin.math.roundToInt
@@ -75,6 +81,77 @@ class AppleMusicTitleRenderingTest {
         val initial = image()
         compose.mainClock.advanceTimeBy(8_000)
         assertTrue("Fitting metadata must not scroll or fade", samePixels(initial, image()))
+    }
+
+    @Test fun albumMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.albumMarqueeEdgeWidth, LayoutDirection.Ltr)
+
+    @Test fun headerMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.headerMarqueeEdgeWidth, LayoutDirection.Ltr)
+
+    @Test fun rtlAlbumMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.albumMarqueeEdgeWidth, LayoutDirection.Rtl)
+
+    @Test fun rtlHeaderMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.headerMarqueeEdgeWidth, LayoutDirection.Rtl)
+
+    private fun assertLeadingFadeVisible(edgeWidth: Dp, direction: LayoutDirection) {
+        compose.mainClock.autoAdvance = false
+        val opacity = mutableStateOf(1f)
+        val progress = mutableStateOf(0f)
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                    val destination = Offset(0f, with(LocalDensity.current) { 48.dp.toPx() })
+                    val outsets = if (direction == LayoutDirection.Rtl) {
+                        LayerOutsets(right = edgeWidth)
+                    } else LayerOutsets(left = edgeWidth)
+                    Box(
+                        Modifier.width(360.dp).height(160.dp).background(Color.Black)
+                            .testTag("metadata").padding(horizontal = 40.dp),
+                    ) {
+                        Title(
+                            title = "M".repeat(80),
+                            subTitle = "M".repeat(80),
+                            isLiked = false,
+                            onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
+                            titleStyle = TextStyle(fontSize = 18.sp, lineHeight = 24.sp),
+                            subTitleStyle = TextStyle(fontSize = 17.sp, lineHeight = 24.sp),
+                            needShadow = false,
+                            marqueeEdgeWidth = edgeWidth,
+                            textModifier = Modifier.playerInfoMotion(
+                                opacity, progress, Offset.Zero, destination, true,
+                                layerOutsets = outsets,
+                            ),
+                            modifier = Modifier.width(280.dp),
+                        )
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        fun hasLeadingInk(): Boolean {
+            val bitmap = image()
+            val pixels = bitmap.toPixelMap()
+            val scale = bitmap.width / 360f
+            val start = if (direction == LayoutDirection.Ltr) 40f - edgeWidth.value else 320f
+            val end = if (direction == LayoutDirection.Ltr) 40f else 320f + edgeWidth.value
+            for (x in (start * scale).roundToInt() until (end * scale).roundToInt()) {
+                for (y in 0 until bitmap.height) {
+                    if (pixels[x, y].red > 0.05f) return true
+                }
+            }
+            return false
+        }
+        assertFalse("Resting metadata must retain its original leading alignment", hasLeadingInk())
+        compose.mainClock.advanceTimeBy(5_000)
+        assertTrue("Moving metadata must enter the leading fade outside its parent bounds", hasLeadingInk())
+        compose.runOnIdle {
+            progress.value = 0.5f
+            opacity.value = 0.5f
+        }
+        compose.mainClock.advanceTimeByFrame()
+        assertTrue("The leading fade must remain visible during metadata motion", hasLeadingInk())
     }
 
     @Test fun pressingMetadataDoesNotDarkenItAndStillInvokesTheAction() {

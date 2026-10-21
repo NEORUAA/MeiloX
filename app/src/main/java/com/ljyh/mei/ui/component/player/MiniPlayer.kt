@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -237,7 +238,14 @@ private fun MiniPlayerContent(
                             if (isPlaying) R.string.player_pause else R.string.player_play,
                         ),
                         tint = MaterialTheme.colorScheme.onSurface,
-                        size = 22.dp,
+                        size = when {
+                            isPlaying -> 20.dp
+                            playbackState == Player.STATE_ENDED -> 22.dp
+                            else -> 18.dp
+                        },
+                        modifier = if (!isPlaying && playbackState != Player.STATE_ENDED) {
+                            Modifier.offset(x = 1.dp)
+                        } else Modifier,
                         weight = FontWeight.SemiBold,
                     )
                 }
@@ -265,7 +273,8 @@ private fun MiniPlayerContent(
                                 symbol = SfSymbol.ForwardFilled,
                                 contentDescription = stringResource(R.string.player_next),
                                 tint = MaterialTheme.colorScheme.onSurface,
-                                size = 22.dp,
+                                size = 26.dp,
+                                modifier = Modifier.offset(x = 1.dp),
                                 weight = FontWeight.SemiBold,
                             )
                         }

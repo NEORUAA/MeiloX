@@ -9,11 +9,19 @@ internal fun navigationPressScale(width: Float, expansion: Float, press: Float):
     1f + expansion * press / width.coerceAtLeast(1f)
 
 /** The live lens, not the committed route, determines which tab is anchored. */
-internal fun navigationTabPanelScale(index: Int, lensPosition: Float, panelScale: Float): Float {
+internal fun navigationTabPanelScale(
+    index: Int,
+    lensPosition: Float,
+    panelScale: Float,
+    lensAnchoring: Float = 1f,
+): Float {
     val distance = kotlin.math.abs(lensPosition - index).coerceIn(0f, 1f)
     val follow = distance * distance * (3f - 2f * distance)
-    return 1f + (panelScale - 1f) * follow
+    return panelScale - (panelScale - 1f) * (1f - follow) * lensAnchoring
 }
+
+internal fun navigationPanelCenterOffset(center: Float, panelCenter: Float, scale: Float): Float =
+    (center - panelCenter) * (scale - 1f)
 
 /** Compensate the row's parent scale to match the independent selected overlay. */
 internal fun navigationTabPressOffset(center: Float, panelCenter: Float, panelScale: Float, tabScale: Float): Float =

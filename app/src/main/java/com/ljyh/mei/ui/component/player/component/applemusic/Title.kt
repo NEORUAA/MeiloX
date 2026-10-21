@@ -52,7 +52,7 @@ fun Title(
     actionsModifier: Modifier = Modifier,
     onTextSizeChanged: (IntSize) -> Unit = {},
     onActionsSizeChanged: (IntSize) -> Unit = {},
-    marqueeEdgeWidth: Dp = 26.dp,
+    marqueeEdgeWidth: Dp = AppleMusicDimensions.albumMarqueeEdgeWidth,
     marqueeEnabled: Boolean = true,
 ) {
     val shadowStyle = if (needShadow) Shadow(
@@ -94,7 +94,7 @@ fun Title(
                 style = subTitleStyle.copy(
                     shadow = shadowStyle,
                 ),
-                color = Color.White.copy(alpha = 0.35f),
+                color = Color.White.copy(alpha = 0.4f),
                 edgeWidth = marqueeEdgeWidth,
                 enabled = marqueeEnabled,
             )
