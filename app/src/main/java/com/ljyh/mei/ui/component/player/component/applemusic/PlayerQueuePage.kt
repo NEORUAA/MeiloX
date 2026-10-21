@@ -117,6 +117,7 @@ fun PlayerQueuePage(
     horizontalPadding: Dp = AppleMusicDimensions.lyricTextInset,
     indication: Indication? = LocalIndication.current,
     controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
+    active: Boolean = true,
 ) {
     val selectionPadding = 5.dp
     val artworkCornerRadius = 5.dp
@@ -146,13 +147,19 @@ fun PlayerQueuePage(
     val currentQueueIndex = entries.indexOfFirst { it.rawIndex == currentIndex }
     val autoplayQueueIndex = entries.indexOfFirst { it.key == autoplayStartEntryId }
 
-    LaunchedEffect(entries.size, currentQueueIndex) {
+    LaunchedEffect(active) {
+        if (!active) menuExpanded = false
+    }
+
+    LaunchedEffect(entries.size, currentQueueIndex, autoplayQueueIndex, autoplayEnabled, active) {
         if (initialScrollPending && currentQueueIndex in entries.indices) {
             // Start with Up Next while keeping earlier queue entries reachable by scrolling.
             val nextIndex = (currentQueueIndex + 1).coerceAtMost(entries.lastIndex)
             val sectionOffset = if (autoplayEnabled && autoplayQueueIndex in 0..nextIndex) 1 else 0
             listState.scrollToItem(nextIndex + sectionOffset)
-            initialScrollPending = false
+            // Prewarming may precede the first visit by several tracks. Follow
+            // playback until that visit, then preserve the user's scroll position.
+            if (active) initialScrollPending = false
         }
     }
 
@@ -195,8 +202,8 @@ fun PlayerQueuePage(
         }
     }
 
-    LaunchedEffect(reorderState.isAnyItemDragging) {
-        if (reorderState.isAnyItemDragging) {
+    LaunchedEffect(active, reorderState.isAnyItemDragging) {
+        if (active && reorderState.isAnyItemDragging) {
             // Drag translations do not change LazyList layout info; refresh their viewport masks.
             while (isActive) withFrameNanos { dragFrame++ }
         }

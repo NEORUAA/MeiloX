@@ -8,8 +8,6 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
@@ -54,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.State
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.draw.clipToBounds
@@ -80,6 +79,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -163,6 +164,7 @@ fun AppleMusicPlayer(
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
     val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
+    val sheetContentVisible by remember(state) { derivedStateOf { state.isContentVisible } }
 
     // --- Apple Music 特定的 LaunchedEffect ---
     BackHandler(enabled = sheetExpanded && showDetail) {
@@ -374,19 +376,13 @@ fun AppleMusicPlayer(
                     Column(Modifier.fillMaxSize()) {
                         Spacer(modifier = Modifier.height(with(density) { lyricViewportTop.toDp() }))
 
-                        AnimatedContent(
-                            targetState = if (showDetail) showQueue else lastDetailPage == AppleMusicPlayerPage.Queue,
-                            transitionSpec = {
-                                if (showDetail && headerInteractive) {
-                                    fadeIn(tween(180)) togetherWith fadeOut(tween(180))
-                                } else {
-                                    EnterTransition.None togetherWith ExitTransition.None
-                                }
-                            },
+                        AppleMusicDetailPages(
+                            queueSelected = if (showDetail) showQueue else lastDetailPage == AppleMusicPlayerPage.Queue,
+                            active = showDetail && sheetContentVisible,
+                            animate = showDetail && headerInteractive,
+                            preloadQueue = sheetExpanded,
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            label = "PlayerDetailPage",
-                        ) { queuePage ->
-                            if (queuePage) {
+                            queue = { active ->
                                 val queueBottom = progressTrackTopInRoot
                                     ?.minus(playerBoundsInRoot?.top ?: 0f)
                                     ?: (maxHeightPx - controlsHeightPx)
@@ -398,6 +394,7 @@ fun AppleMusicPlayer(
                                 ) {
                                     PlayerQueuePage(
                                         playerConnection = stateContainer.playerConnection,
+                                        active = active,
                                         indication = null,
                                         controlsFadeRange = { listHeight ->
                                             appleMusicLyricsControlsFadeRange(
@@ -413,10 +410,11 @@ fun AppleMusicPlayer(
                                             .padding(top = 16.dp),
                                     )
                                 }
-                            } else {
+                            },
+                            lyrics = { active ->
                                 LyricScreen(
                                     lyricData = lyricLine,
-                                    active = showLyrics,
+                                    active = active,
                                     showSourceBadge = false,
                                     topFadeHeight = AppleMusicDimensions.lyricTopFade,
                                     bottomFadeHeight = AppleMusicDimensions.lyricBottomFade,
@@ -442,8 +440,8 @@ fun AppleMusicPlayer(
                                     controlsVisible = stateContainer.controlsVisible,
                                     onToggleControls = { stateContainer.controlsVisible = it },
                                 )
-                            }
-                        }
+                            },
+                        )
                     }
                 }
 
@@ -714,8 +712,74 @@ fun AppleMusicPlayer(
     }
 }
 
+/** Keep expensive page state alive; only the selected page owns input and clocks. */
+@Composable
+internal fun AppleMusicDetailPages(
+    queueSelected: Boolean,
+    active: Boolean,
+    animate: Boolean,
+    preloadQueue: Boolean,
+    modifier: Modifier = Modifier,
+    lyrics: @Composable (active: Boolean) -> Unit,
+    queue: @Composable (active: Boolean) -> Unit,
+) {
+    var queuePrepared by remember { mutableStateOf(false) }
+    LaunchedEffect(preloadQueue) {
+        if (preloadQueue && !queuePrepared) {
+            // Leave the sheet's settling frame free of queue initialization.
+            withFrameNanos { }
+            queuePrepared = true
+        }
+    }
+    LaunchedEffect(queueSelected) {
+        if (queueSelected) queuePrepared = true
+    }
+    val queueOpacity = remember { Animatable(if (queueSelected) 1f else 0f) }
+    LaunchedEffect(queueSelected, animate) {
+        val target = if (queueSelected) 1f else 0f
+        if (animate) queueOpacity.animateTo(target, tween(300))
+        else queueOpacity.snapTo(target)
+    }
+    val lyricOpacity = remember { derivedStateOf { 1f - queueOpacity.value } }
+    Box(modifier) {
+        val lyricsActive = active && !queueSelected
+        Box(Modifier.fillMaxSize().playerDetailPage(lyricOpacity, lyricsActive)) {
+            lyrics(lyricsActive)
+        }
+        if (queuePrepared || queueSelected) {
+            val queueActive = active && queueSelected
+            Box(Modifier.fillMaxSize().playerDetailPage(queueOpacity.asState(), queueActive)) {
+                queue(queueActive)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Modifier.playerDetailPage(opacity: State<Float>, active: Boolean): Modifier {
+    val visible = remember(opacity) { derivedStateOf { opacity.value > 0f } }
+    return layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        layout(placeable.width, placeable.height) {
+            if (visible.value) placeable.place(0, 0)
+        }
+    }
+        .playerContentFade(opacity)
+        .then(if (active) Modifier else Modifier.clearAndSetSemantics { })
+        .pointerInput(active) {
+            // Consume inactive-page gestures, including empty space, until its
+            // fade finishes. Keep draw order stable when a fade reverses.
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (!active) event.changes.forEach { it.consume() }
+                }
+            }
+        }
+}
+
 internal fun Modifier.playerQueueViewport(height: Dp): Modifier =
-    // AnimatedContent can pass a full-height minimum. Release it before measuring
+    // The resident host can pass a full-height minimum. Release it before measuring
     // the queue, keep the viewport top-aligned, and clip before translating content.
     wrapContentHeight(align = Alignment.Top, unbounded = true)
         .height(height)

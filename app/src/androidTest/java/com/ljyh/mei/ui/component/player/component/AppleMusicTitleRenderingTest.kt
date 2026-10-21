@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -35,6 +37,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.click
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import com.ljyh.mei.ui.component.player.component.applemusic.playerInfoMotion
 import com.ljyh.mei.ui.component.player.component.applemusic.queueViewportFade
 import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicLyricsControlsFadeRange
 import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueViewport
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -60,6 +65,135 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppleMusicTitleRenderingTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun detailPagesPreloadOnceAndRetainTheirStateAcrossSwitches() {
+        val queueSelected = mutableStateOf(false)
+        val preload = mutableStateOf(false)
+        val entryCount = mutableStateOf(30)
+        var lyricMounts = 0
+        var queueMounts = 0
+        var disposals = 0
+        var queueScroll: LazyListState? = null
+        compose.setContent {
+            AppleMusicDetailPages(
+                queueSelected = queueSelected.value,
+                active = true,
+                animate = true,
+                preloadQueue = preload.value,
+                modifier = Modifier.width(160.dp).height(240.dp),
+                lyrics = {
+                    DisposableEffect(Unit) {
+                        lyricMounts++
+                        onDispose { disposals++ }
+                    }
+                    Box(Modifier.fillMaxSize().testTag("retained_lyrics"))
+                },
+                queue = {
+                    DisposableEffect(Unit) {
+                        queueMounts++
+                        onDispose { disposals++ }
+                    }
+                    val listState = rememberLazyListState()
+                    queueScroll = listState
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("retained_queue")) {
+                        items(entryCount.value) { Box(Modifier.fillMaxWidth().height(40.dp)) }
+                    }
+                },
+            )
+        }
+        compose.runOnIdle {
+            assertEquals(1, lyricMounts)
+            assertEquals(0, queueMounts)
+            preload.value = true
+        }
+        compose.runOnIdle {
+            assertEquals(1, queueMounts)
+            queueSelected.value = true
+        }
+        compose.onNodeWithTag("retained_queue").performScrollToIndex(10)
+        compose.runOnIdle {
+            assertEquals(10, queueScroll!!.firstVisibleItemIndex)
+            queueSelected.value = false
+        }
+        compose.runOnIdle {
+            // Timeline changes may still arrive while this page is hidden.
+            entryCount.value = 31
+        }
+        compose.runOnIdle { queueSelected.value = true }
+        compose.runOnIdle {
+            assertEquals(31, queueScroll!!.layoutInfo.totalItemsCount)
+            assertEquals(10, queueScroll!!.firstVisibleItemIndex)
+            assertEquals(1, lyricMounts)
+            assertEquals(1, queueMounts)
+            assertEquals(0, disposals)
+        }
+    }
+
+    @Test fun detailCrossfadeReversesWithoutAJumpAndBlocksInactiveInput() {
+        compose.mainClock.autoAdvance = false
+        val queueSelected = mutableStateOf(false)
+        val active = mutableStateOf(true)
+        var lyricClicks = 0
+        var queueClicks = 0
+        compose.setContent {
+            Box(Modifier.width(160.dp).height(240.dp).background(Color.Black).testTag("detail_host")) {
+                AppleMusicDetailPages(
+                    queueSelected = queueSelected.value,
+                    active = active.value,
+                    animate = true,
+                    preloadQueue = true,
+                    modifier = Modifier.fillMaxSize(),
+                    lyrics = {
+                        Box(Modifier.fillMaxSize().background(Color.Red).clickable { lyricClicks++ })
+                    },
+                    queue = {
+                        Box(Modifier.fillMaxSize().background(Color.Blue).clickable { queueClicks++ })
+                    },
+                )
+            }
+        }
+        fun centerColor(): Color {
+            val bitmap = compose.onNodeWithTag("detail_host").captureToImage()
+            return bitmap.toPixelMap()[bitmap.width / 2, bitmap.height / 2]
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
+        compose.runOnIdle {
+            assertEquals(1, lyricClicks)
+            assertEquals(0, queueClicks)
+            queueSelected.value = true
+        }
+        compose.mainClock.advanceTimeBy(80)
+        val outgoing = centerColor()
+        assertTrue(outgoing.red > 0f && outgoing.blue > 0f)
+        compose.runOnIdle { queueSelected.value = false }
+        compose.mainClock.advanceTimeByFrame()
+        val reversed = centerColor()
+        assertEquals(outgoing.red, reversed.red, 0.02f)
+        assertEquals(outgoing.blue, reversed.blue, 0.02f)
+        compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
+        compose.runOnIdle {
+            assertEquals(0, queueClicks)
+            assertEquals(1, lyricClicks)
+        }
+        compose.mainClock.advanceTimeBy(360)
+        assertEquals(1f, centerColor().red, 0.01f)
+        compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
+        compose.runOnIdle {
+            assertEquals(2, lyricClicks)
+            queueSelected.value = true
+        }
+        compose.mainClock.advanceTimeBy(360)
+        assertEquals(1f, centerColor().blue, 0.01f)
+        compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
+        compose.runOnIdle {
+            assertEquals(1, queueClicks)
+            active.value = false
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
+        compose.runOnIdle { assertEquals(1, queueClicks) }
+    }
 
     @Test fun queueViewportClipsBeforeControlsUnderFullHeightParentConstraints() {
         val entryOffset = mutableStateOf(0.dp)
