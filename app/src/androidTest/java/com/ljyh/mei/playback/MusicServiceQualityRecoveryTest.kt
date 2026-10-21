@@ -6,10 +6,12 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.annotation.OptIn
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.constants.MusicQuality
@@ -32,13 +34,50 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Exercises the production service without changing preferences, the queue, or audible playback. */
+/** Exercises paused production recovery while retaining the queue, preferences, and existing cache. */
 @OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class MusicServiceQualityRecoveryTest {
     @Test
     fun injectedDecoderFailureRecreatesTheCurrentPausedSourceAndPreservesItsQueue() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("issue38Recovery") == "true")
+        verifyPausedSourceRecovery(
+            listOf(RecoveryFailure(
+                PlaybackException("Injected source decoder failure", null, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED),
+                rejectsIdentity = true,
+            )),
+        )
+    }
+
+    @Test
+    fun stalledSourceRetriesItsQualityThenRejectsOnlyTheRepeatedSource() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("issue57Recovery") == "true")
+        verifyPausedSourceRecovery(
+            listOf(
+                RecoveryFailure(
+                    PlaybackException(
+                        "Injected loading stall",
+                        StuckPlayerException(StuckPlayerException.STUCK_BUFFERING_NO_PROGRESS, 30_000),
+                        PlaybackException.ERROR_CODE_TIMEOUT,
+                    ),
+                    rejectsIdentity = false,
+                ),
+                RecoveryFailure(
+                    PlaybackException(
+                        "Injected repeated loading stall",
+                        StuckPlayerException(StuckPlayerException.STUCK_BUFFERING_NOT_LOADING, 4_000),
+                        PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+                    ),
+                    rejectsIdentity = true,
+                ),
+            ),
+            verifyCache = true,
+        )
+    }
+
+    private data class RecoveryFailure(val error: PlaybackException, val rejectsIdentity: Boolean)
+
+    private fun verifyPausedSourceRecovery(failures: List<RecoveryFailure>, verifyCache: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val connected = CountDownLatch(1)
@@ -63,6 +102,9 @@ class MusicServiceQualityRecoveryTest {
         var injected = false
         var preservedQueue: QueueSnapshot? = null
         var preservedItems: List<MediaItem> = emptyList()
+        val fakeCacheKeys = mutableListOf<String>()
+        val retainedProbeKeys = mutableListOf<String>()
+        val cache = CacheManager.getSimpleCache(context)
         try {
             assertTrue("The service did not bind within the bounded wait", connected.await(10, TimeUnit.SECONDS))
             val currentService = serviceReference.get()
@@ -85,20 +127,6 @@ class MusicServiceQualityRecoveryTest {
             val preferenceBefore = runBlocking { context.dataStore.data.first()[MusicQualityKey] }
             lateinit var before: QueueSnapshot
             lateinit var mediaId: String
-            lateinit var fakeIdentity: String
-            val actualSource = AtomicReference<ResolvedMediaSource?>()
-            val sourceResolved = CountDownLatch(1)
-            val readyAfterRecovery = CountDownLatch(1)
-            val recreatedSourceBuffered = AtomicBoolean(false)
-            val recoveryListener = object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_BUFFERING) recreatedSourceBuffered.set(true)
-                    if (playbackState == Player.STATE_READY && recreatedSourceBuffered.get() && actualSource.get() != null) {
-                        readyAfterRecovery.countDown()
-                    }
-                }
-            }
-
             instrumentation.runOnMainSync {
                 val player = currentService.player
                 assertFalse("Run this opt-in regression with the current song paused", player.playWhenReady)
@@ -113,98 +141,152 @@ class MusicServiceQualityRecoveryTest {
                 preservedQueue = before
                 preservedItems = List(player.mediaItemCount) { player.getMediaItemAt(it) }
                 assertTrue("Every queue entry must retain its stable identity", before.entryIds.all { it != null })
-                val originalSource = currentService.mediaUriProvider.resolvedMediaSource(mediaId)
-                assertTrue("A local resolved source cannot verify online recovery", originalSource == null || originalSource.cacheKey != null)
-                val uri = originalSource?.uri ?: item.localConfiguration?.uri
-                assertNotNull("The current source must have a URI", uri)
-
                 player.removeListener(readyListener)
-                player.addListener(recoveryListener)
-                listener = recoveryListener
-                val provider = currentService.mediaUriProvider
-                previousObserver = provider.onSourceResolved
-                fakeIdentity = "issue38-probe-${UUID.randomUUID()}"
-                provider.onSourceResolved = { id, source ->
-                    // Forward without entering Main synchronously: provider callbacks own a lock.
-                    previousObserver?.invoke(id, source)
-                    if (id == mediaId && source.sourceIdentity != null && source.sourceIdentity != fakeIdentity) {
-                        actualSource.set(source)
-                        sourceResolved.countDown()
-                    }
-                }
-                observerInstalled = true
+            }
+            listener = null
+            val protectedSpans = if (verifyCache) cache.keys
+                .filter { it.startsWith(playbackCacheKeyPrefix(mediaId)) }
+                .flatMap { key -> cache.getCachedSpans(key).map { Triple(key, it.position, it.length) } }
+            else emptyList()
+            val provider = currentService.mediaUriProvider
+            previousObserver = provider.onSourceResolved
+
+            for (failure in failures) {
+                val fakeIdentity = "quality-recovery-probe-${UUID.randomUUID()}"
+                val originalSource = provider.resolvedMediaSource(mediaId)
+                assertTrue("A local resolved source cannot verify online recovery", originalSource == null || originalSource.cacheKey != null)
                 val quality = originalSource?.actualQuality
                     ?: preferenceBefore?.let(::normalizePlaybackQuality)
                     ?: MusicQuality.EXHIGH.text
-                provider.rememberCachedSource(
-                    mediaId, quality, playbackCacheKey(mediaId, quality, fakeIdentity, 1L), uri!!,
-                )
-                injected = true
-                currentService.onPlayerError(
-                    PlaybackException("Injected source decoder failure", null, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED),
-                )
-            }
-
-            val recoveryDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
-            assertTrue("Production recovery must resolve fresh real source bytes", sourceResolved.await(20, TimeUnit.SECONDS))
-            instrumentation.runOnMainSync {
-                if (recreatedSourceBuffered.get() && currentService.player.playbackState == Player.STATE_READY) {
-                    readyAfterRecovery.countDown()
+                val fakeKey = playbackCacheKey(mediaId, quality, fakeIdentity, 1L)
+                fakeCacheKeys += fakeKey
+                if (verifyCache) writeIncompleteProbeSpan(cache, fakeKey)
+                val actualSource = AtomicReference<ResolvedMediaSource?>()
+                val sourceResolved = CountDownLatch(1)
+                val readyAfterRecovery = CountDownLatch(1)
+                val recreatedSourceBuffered = AtomicBoolean(false)
+                val recoveryListener = object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_BUFFERING) recreatedSourceBuffered.set(true)
+                        if (playbackState == Player.STATE_READY && recreatedSourceBuffered.get() && actualSource.get() != null) {
+                            readyAfterRecovery.countDown()
+                        }
+                    }
                 }
-            }
-            val remainingNanos = (recoveryDeadline - System.nanoTime()).coerceAtLeast(0L)
-            assertTrue("The recreated source must reach READY within 20 seconds", readyAfterRecovery.await(remainingNanos, TimeUnit.NANOSECONDS))
-            // This main-thread turn follows the service's asynchronous source observer.
-            instrumentation.runOnMainSync {
-                val player = currentService.player
-                val after = QueueSnapshot.capture(player)
-                assertEquals("Recovery must retain queue order and every entry identity", before.mediaIds, after.mediaIds)
-                assertEquals(before.entryIds, after.entryIds)
-                assertEquals("Recovery must retain the current entry", before.index, after.index)
-                assertEquals(before.shuffleOrder, after.shuffleOrder)
-                assertEquals(before.shuffleEnabled, after.shuffleEnabled)
-                assertEquals(before.repeatMode, after.repeatMode)
-                assertTrue("Recovery must retain the paused playback position", abs(before.positionMs - after.positionMs) <= 500L)
-                assertFalse("Injected recovery must remain inaudible", player.playWhenReady)
-                assertEquals(Player.STATE_READY, player.playbackState)
-                assertEquals(null, player.playerError)
-                val source = actualSource.get()!!
-                assertEquals(
-                    "The menu selection must show the effective server quality",
-                    MusicQuality.entries.firstOrNull { it.text == source.actualQuality },
-                    currentService.currentMusicQuality.value,
-                )
-                assertNotNull(currentService.currentMusicQuality.value)
-            }
-            val preferenceAfter = runBlocking { context.dataStore.data.first()[MusicQualityKey] }
-            assertEquals("Recovery must never rewrite the user's preferred quality", preferenceBefore, preferenceAfter)
-        } finally {
-            service?.let { currentService ->
                 instrumentation.runOnMainSync {
-                    listener?.let(currentService.player::removeListener)
-                    if (observerInstalled) currentService.mediaUriProvider.onSourceResolved = previousObserver
-                    if (injected) {
-                        currentService.resetRejectedPlaybackSources()
-                        preservedQueue?.let { original ->
-                            val player = currentService.player
-                            val after = QueueSnapshot.capture(player)
-                            if (original.copy(positionMs = after.positionMs) != after ||
-                                abs(original.positionMs - after.positionMs) > 500L || player.playWhenReady
-                            ) {
-                                currentService.resetPlaybackSourcesForQualityChange()
-                                player.activeDeck.setMediaItems(preservedItems, original.index, original.positionMs)
-                                player.setPlaybackOrder(original.shuffleOrder)
-                                player.shuffleModeEnabled = original.shuffleEnabled
-                                player.repeatMode = original.repeatMode
-                                player.playWhenReady = false
-                                player.prepare()
+                    val player = currentService.player
+                    val uri = originalSource?.uri ?: player.currentMediaItem?.localConfiguration?.uri
+                    assertNotNull("The current source must have a URI", uri)
+                    listener?.let(player::removeListener)
+                    player.addListener(recoveryListener)
+                    listener = recoveryListener
+                    provider.onSourceResolved = { id, source ->
+                        // Forward without entering Main synchronously: provider callbacks own a lock.
+                        previousObserver?.invoke(id, source)
+                        if (id == mediaId && source.sourceIdentity != null && source.sourceIdentity != fakeIdentity) {
+                            actualSource.set(source)
+                            sourceResolved.countDown()
+                        }
+                    }
+                    observerInstalled = true
+                    provider.rememberCachedSource(mediaId, quality, fakeKey, uri!!)
+                    injected = true
+                    currentService.onPlayerError(failure.error)
+                }
+
+                val recoveryDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+                assertTrue("Production recovery must resolve real source bytes", sourceResolved.await(20, TimeUnit.SECONDS))
+                instrumentation.runOnMainSync {
+                    if (recreatedSourceBuffered.get() && currentService.player.playbackState == Player.STATE_READY) {
+                        readyAfterRecovery.countDown()
+                    }
+                }
+                val remainingNanos = (recoveryDeadline - System.nanoTime()).coerceAtLeast(0L)
+                assertTrue("The recreated source must reach READY within 20 seconds", readyAfterRecovery.await(remainingNanos, TimeUnit.NANOSECONDS))
+                instrumentation.runOnMainSync {
+                    val player = currentService.player
+                    val after = QueueSnapshot.capture(player)
+                    assertEquals("Recovery must retain queue order and every entry identity", before.mediaIds, after.mediaIds)
+                    assertEquals(before.entryIds, after.entryIds)
+                    assertEquals("Recovery must retain the current entry", before.index, after.index)
+                    assertEquals(before.shuffleOrder, after.shuffleOrder)
+                    assertEquals(before.shuffleEnabled, after.shuffleEnabled)
+                    assertEquals(before.repeatMode, after.repeatMode)
+                    assertTrue("Recovery must retain the paused playback position", abs(before.positionMs - after.positionMs) <= 500L)
+                    assertFalse("Injected recovery must remain inaudible", player.playWhenReady)
+                    assertEquals(Player.STATE_READY, player.playbackState)
+                    assertEquals(null, player.playerError)
+                    val source = actualSource.get()!!
+                    if (!failure.rejectsIdentity) {
+                        assertEquals("The first stall must retry the same effective quality", quality, source.actualQuality)
+                    }
+                    assertEquals(
+                        "The menu selection must show the effective server quality",
+                        MusicQuality.entries.firstOrNull { it.text == source.actualQuality },
+                        currentService.currentMusicQuality.value,
+                    )
+                    assertNotNull(currentService.currentMusicQuality.value)
+                    assertEquals("Only a repeated or decoder failure may reject the source", failure.rejectsIdentity,
+                        provider.isRejectedCachedSource(mediaId, fakeKey))
+                }
+                if (verifyCache) {
+                    assertEquals("Only rejected probe bytes may be removed", !failure.rejectsIdentity, cache.isCached(fakeKey, 0L, 16L))
+                    retainedProbeKeys.forEach { key ->
+                        assertTrue("Recovery must retain the previous retry's cached bytes", cache.isCached(key, 0L, 16L))
+                    }
+                    protectedSpans.forEach { (key, position, length) ->
+                        assertTrue("Recovery must retain pre-existing source cache spans", cache.isCached(key, position, length))
+                    }
+                    if (!failure.rejectsIdentity) retainedProbeKeys += fakeKey
+                }
+                val preferenceAfter = runBlocking { context.dataStore.data.first()[MusicQualityKey] }
+                assertEquals("Recovery must never rewrite the user's preferred quality", preferenceBefore, preferenceAfter)
+            }
+        } finally {
+            try {
+                service?.let { currentService ->
+                    instrumentation.runOnMainSync {
+                        listener?.let(currentService.player::removeListener)
+                        if (observerInstalled) currentService.mediaUriProvider.onSourceResolved = previousObserver
+                        if (injected) {
+                            currentService.resetRejectedPlaybackSources()
+                            preservedQueue?.let { original ->
+                                val player = currentService.player
+                                val after = QueueSnapshot.capture(player)
+                                if (original.copy(positionMs = after.positionMs) != after ||
+                                    abs(original.positionMs - after.positionMs) > 500L || player.playWhenReady
+                                ) {
+                                    currentService.resetPlaybackSourcesForQualityChange()
+                                    player.activeDeck.setMediaItems(preservedItems, original.index, original.positionMs)
+                                    player.setPlaybackOrder(original.shuffleOrder)
+                                    player.shuffleModeEnabled = original.shuffleEnabled
+                                    player.repeatMode = original.repeatMode
+                                    player.playWhenReady = false
+                                    player.prepare()
+                                }
                             }
                         }
                     }
                 }
+            } finally {
+                fakeCacheKeys.forEach(cache::removeResource)
+                context.unbindService(connection)
             }
-            context.unbindService(connection)
         }
+    }
+
+    private fun writeIncompleteProbeSpan(cache: SimpleCache, key: String) {
+        val hole = cache.startReadWrite(key, 0L, 16L)
+        try {
+            assertTrue("A unique probe cache key must own a new hole", hole.isHoleSpan)
+            val file = cache.startFile(key, 0L, 16L)
+            file.writeBytes(ByteArray(16))
+            cache.commitFile(file, 16L)
+        } finally {
+            cache.releaseHoleSpan(hole)
+        }
+        assertTrue(cache.isCached(key, 0L, 16L))
+        assertFalse("A probe must never masquerade as a complete playable source", CacheManager.isContentFullyCached(cache, key))
     }
 
     private data class QueueSnapshot(

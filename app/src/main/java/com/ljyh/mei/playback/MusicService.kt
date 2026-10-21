@@ -22,6 +22,7 @@ import androidx.core.net.toUri
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -30,6 +31,7 @@ import androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY
 import androidx.media3.common.Player.EVENT_TIMELINE_CHANGED
 import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
@@ -40,11 +42,13 @@ import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERR
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
@@ -205,6 +209,7 @@ class MusicService : MediaLibraryService(),
     private var sourceRecoveryEntryId: String? = null
     private var sourceRecoveryAttempts = 0
     private var rangeRecoveryAttempts = 0
+    private var stallRecoveryAttempts = 0
 
     private val binder = MusicBinder()
 
@@ -290,6 +295,7 @@ class MusicService : MediaLibraryService(),
         // continuous timestamps for karaoke highlighting and beat synchronization.
         val firstDeck = ExoPlayer.Builder(this)
             .experimentalSetDynamicSchedulingEnabled(false)
+            .setStuckBufferingDetectionTimeoutMs(STUCK_BUFFERING_TIMEOUT_MS)
             //媒体源工厂
             .setMediaSourceFactory(playerMediaSourceFactory)
             //渲染器工厂
@@ -313,6 +319,7 @@ class MusicService : MediaLibraryService(),
             }
         val secondDeck = ExoPlayer.Builder(this)
             .experimentalSetDynamicSchedulingEnabled(false)
+            .setStuckBufferingDetectionTimeoutMs(STUCK_BUFFERING_TIMEOUT_MS)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(createDataSourceFactory())
                     .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()),
@@ -325,6 +332,40 @@ class MusicService : MediaLibraryService(),
             .setSeekForwardIncrementMs(5000)
             .build()
         player = StableDeckPlayer(firstDeck, secondDeck, playbackAudioAttributes)
+        listOf(firstDeck, secondDeck).forEachIndexed { index, deck ->
+            deck.addAnalyticsListener(object : AnalyticsListener {
+                override fun onAudioDecoderInitialized(
+                    eventTime: AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    Timber.tag("PlaybackAudio").i("deck=%s decoder=%s initMs=%s", index, decoderName, initializationDurationMs)
+                }
+
+                override fun onAudioInputFormatChanged(
+                    eventTime: AnalyticsListener.EventTime,
+                    format: Format,
+                    decoderReuseEvaluation: DecoderReuseEvaluation?,
+                ) {
+                    Timber.tag("PlaybackAudio").i(
+                        "deck=%s mime=%s sampleRate=%s channels=%s pcm=%s",
+                        index, format.sampleMimeType, format.sampleRate, format.channelCount, format.pcmEncoding,
+                    )
+                }
+
+                override fun onAudioTrackInitialized(
+                    eventTime: AnalyticsListener.EventTime,
+                    audioTrackConfig: AudioSink.AudioTrackConfig,
+                ) {
+                    Timber.tag("PlaybackAudio").i(
+                        "deck=%s outputRate=%s encoding=%s channels=%s buffer=%s offload=%s",
+                        index, audioTrackConfig.sampleRate, audioTrackConfig.encoding,
+                        audioTrackConfig.channelConfig, audioTrackConfig.bufferSize, audioTrackConfig.offload,
+                    )
+                }
+            })
+        }
         player.addListener(this)
         sleepTimerNotification = SleepTimerNotification(this)
         sleepTimer = SleepTimer(scope, player, onStateChanged = sleepTimerNotification::update)
@@ -622,6 +663,7 @@ class MusicService : MediaLibraryService(),
         sourceRecoveryJob = null
         sourceRecoveryAttempts = 0
         rangeRecoveryAttempts = 0
+        stallRecoveryAttempts = 0
         mediaUriProvider.resetRejectedSources()
         resetCurrentQualityState(player.currentMediaItem?.mediaId, refresh = false)
     }
@@ -1223,7 +1265,23 @@ class MusicService : MediaLibraryService(),
 
     override fun onBind(intent: Intent?) = super.onBind(intent) ?: binder
     override fun onPlayerError(error: PlaybackException) {
-        Timber.tag("MusicService").e( "Player Error: ${error.errorCodeName}, ${error.message}")
+        val causeTypes = generateSequence(error.cause) { it.cause }.take(16)
+            .joinToString(" -> ") { it.javaClass.simpleName }
+        Timber.tag("MusicService").e(
+            "Player Error: %s, %s, causes=%s", error.errorCodeName, error.message, causeTypes,
+        )
+
+        val stalled = shouldRecoverStalledPlayback(error.errorCode, error.cause)
+        if (stalled) {
+            val stuck = generateSequence(error.cause) { it.cause }.take(16)
+                .filterIsInstance<StuckPlayerException>().first()
+            Timber.tag("PlaybackAudio").w(
+                "Playback stalled: id=%s quality=%s position=%s buffered=%s type=%s timeoutMs=%s",
+                player.currentMediaItem?.mediaId, currentMusicQuality.value,
+                player.currentPosition, player.bufferedPosition, stuck.stuckType, stuck.timeoutMs,
+            )
+        }
+        if (stalled && scheduleSourceRecovery(preserveCache = true)) return
 
         if (shouldRefreshPlaybackSource(error.errorCode)) {
             if (!scheduleSourceRecovery()) {
@@ -1232,7 +1290,7 @@ class MusicService : MediaLibraryService(),
             return
         }
 
-        if (shouldTryLowerPlaybackQuality(error.errorCode)) {
+        if (stalled || shouldTryLowerPlaybackQuality(error.errorCode)) {
             val mediaId = player.currentMediaItem?.mediaId
             val failedQuality = currentMusicQuality.value
             val failedCacheKey = mediaId?.let { mediaUriProvider.resolvedMediaSource(it)?.cacheKey }
@@ -1285,7 +1343,11 @@ class MusicService : MediaLibraryService(),
         }
     }
 
-    private fun scheduleSourceRecovery(qualityFallback: Boolean = false, failedCacheKey: String? = null): Boolean {
+    private fun scheduleSourceRecovery(
+        qualityFallback: Boolean = false,
+        failedCacheKey: String? = null,
+        preserveCache: Boolean = false,
+    ): Boolean {
         val mediaItem = player.currentMediaItem ?: return false
         val mediaId = mediaItem.mediaId.takeIf(String::isNotBlank) ?: return false
         val entryId = mediaItem.queueEntryId
@@ -1295,27 +1357,38 @@ class MusicService : MediaLibraryService(),
             sourceRecoveryEntryId = entryId
             sourceRecoveryAttempts = 0
             rangeRecoveryAttempts = 0
+            stallRecoveryAttempts = 0
         }
         if (sourceRecoveryJob?.isActive == true) return true
         val attemptLimit = if (qualityFallback) MusicQuality.entries.size else MAX_SOURCE_RECOVERY_ATTEMPTS
-        val attempts = if (qualityFallback) sourceRecoveryAttempts else rangeRecoveryAttempts
+        val attempts = when {
+            qualityFallback -> sourceRecoveryAttempts
+            preserveCache -> stallRecoveryAttempts
+            else -> rangeRecoveryAttempts
+        }
         if (attempts >= attemptLimit) return false
 
-        if (qualityFallback) sourceRecoveryAttempts++ else rangeRecoveryAttempts++
+        when {
+            qualityFallback -> sourceRecoveryAttempts++
+            preserveCache -> stallRecoveryAttempts++
+            else -> rangeRecoveryAttempts++
+        }
         val recoveryPositionMs = player.currentPosition.coerceAtLeast(0L)
-        val resumePlayback = player.playWhenReady
         sourceRecoveryJob = scope.launch {
             try {
                 Timber.tag("MusicService").w(
-                    "Refreshing playback source: id=%s position=%s attempt=%s qualityFallback=%s",
+                    "Refreshing playback source: id=%s position=%s attempt=%s qualityFallback=%s preserveCache=%s",
                     mediaId,
                     recoveryPositionMs,
                     attempts + 1,
                     qualityFallback,
+                    preserveCache,
                 )
                 mediaUriProvider.invalidate(mediaId)
                 resetPlaybackSourcesForQualityChange()
-                val removedEntries = withContext(Dispatchers.IO) {
+                // A stalled loader or decoder does not prove that cached media is corrupt.
+                // Retry the selected quality once before rejecting its exact source bytes.
+                val removedEntries = if (preserveCache) 0 else withContext(Dispatchers.IO) {
                     val cache = CacheManager.getSimpleCache(context)
                     if (qualityFallback) {
                         failedCacheKey?.let(cache::removeResource)
@@ -1334,7 +1407,8 @@ class MusicService : MediaLibraryService(),
                     mediaId,
                     removedEntries,
                 )
-                refreshPlaybackSource(index, recoveryPositionMs, resumePlayback)
+                // Honor seeking and playback intent received during asynchronous cache cleanup.
+                refreshPlaybackSource(index, player.currentPosition.coerceAtLeast(0L), player.playWhenReady)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1362,6 +1436,10 @@ class MusicService : MediaLibraryService(),
             sourceRecoveryEntryId = mediaItem?.queueEntryId
             sourceRecoveryAttempts = 0
             rangeRecoveryAttempts = 0
+            stallRecoveryAttempts = 0
+        } else if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+            // A completed loop allows one fresh retry without reopening rejected source bytes.
+            stallRecoveryAttempts = 0
         }
         // 如果成功切歌，重置错误计数器
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
@@ -1400,6 +1478,7 @@ class MusicService : MediaLibraryService(),
         private const val FLOATING_LYRICS_NOTIFICATION_ID = 889
         private const val PLAYBACK_SNAPSHOT_DEBOUNCE_MS = 500L
         private const val MAX_SOURCE_RECOVERY_ATTEMPTS = 1
+        private const val STUCK_BUFFERING_TIMEOUT_MS = 30_000
         private const val PLAYBACK_SNAPSHOT_INTERVAL_MS = 5_000L
         private const val AUTOMATIC_CACHE_DELAY_MS = 5_000L
         const val ACTION_CANCEL_SLEEP_TIMER = "com.ljyh.mei.action.CANCEL_SLEEP_TIMER"
