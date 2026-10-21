@@ -117,6 +117,7 @@ const val DefaultBottomFloatingContentExtraSpacing = 8
 const val MaxBottomFloatingContentExtraSpacing = 64
 val LiquidGlassEnabledKey = booleanPreferencesKey("appearance.liquidGlassEnabled")
 val ReduceTransparencyKey = booleanPreferencesKey("appearance.reduceTransparency")
+val PredictiveBackAnimationEnabledKey = booleanPreferencesKey("appearance.predictiveBackAnimationEnabled")
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
 val PlayerKeepScreenOnKey = booleanPreferencesKey("player.keepScreenOn")

@@ -7,5 +7,7 @@
     <string name="appearance_liquid_glass_description">使用光线折射和流动玻璃效果，关闭后显示普通毛玻璃。</string>
     <string name="appearance_reduce_transparency">降低透明度</string>
     <string name="appearance_reduce_transparency_description">使用不透明背景，让控件和文字更清晰。</string>
+    <string name="appearance_predictive_back">预见式返回动画</string>
+    <string name="appearance_predictive_back_description">返回手势时预览上一页，关闭后仅在手势完成时返回。</string>
     <string name="appearance_library_default_page">默认页</string>
 </resources>
