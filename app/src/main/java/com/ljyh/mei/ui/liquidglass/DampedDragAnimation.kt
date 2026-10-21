@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filter
@@ -30,6 +32,7 @@ class DampedDragAnimation(
     val onDrag: DampedDragAnimation.(size: IntSize, dragAmount: Offset) -> Unit,
     consumeGestures: Boolean = false,
     val onDragCancelled: DampedDragAnimation.() -> Unit = onDragStopped,
+    private val dragCoordinateSpace: (() -> LayoutCoordinates?)? = null,
 ) {
 
     private val valueAnimationSpec =
@@ -67,25 +70,39 @@ class DampedDragAnimation(
     val scaleY: Float get() = scaleYAnimation.value
     val velocity: Float get() = velocityAnimation.value
 
-    val modifier: Modifier = Modifier.pointerInput(this) {
-        inspectDragGestures(
-            consumeGestures = consumeGestures,
-            onDragStart = { down ->
-                onDragStarted(down.position)
-                press()
-            },
-            onDragEnd = {
-                onDragStopped()
-                release()
-            },
-            onDragCancel = {
-                onDragCancelled()
-                release()
+    private var dragCoordinates: LayoutCoordinates? = null
+
+    val modifier: Modifier = Modifier
+        .then(if (dragCoordinateSpace != null) {
+            Modifier.onGloballyPositioned { dragCoordinates = it }
+        } else Modifier)
+        .pointerInput(this) {
+            inspectDragGestures(
+                consumeGestures = consumeGestures,
+                onDragStart = { down ->
+                    onDragStarted(down.position)
+                    press()
+                },
+                onDragEnd = {
+                    onDragStopped()
+                    release()
+                },
+                onDragCancel = {
+                    onDragCancelled()
+                    release()
+                }
+            ) { change, dragAmount ->
+                val source = dragCoordinates
+                val destination = dragCoordinateSpace?.invoke()
+                val amount = if (source?.isAttached == true && destination?.isAttached == true) {
+                    // Convert a vector at the current transform; subtract origins so the
+                    // moving indicator itself cannot contribute extra finger travel.
+                    destination.localPositionOf(source, dragAmount) -
+                        destination.localPositionOf(source, Offset.Zero)
+                } else dragAmount
+                onDrag(size, amount)
             }
-        ) { change, dragAmount ->
-            onDrag(size, dragAmount)
         }
-    }
 
     fun press() {
         velocityTracker.resetTracking()

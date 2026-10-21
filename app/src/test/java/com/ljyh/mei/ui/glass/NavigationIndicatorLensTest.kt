@@ -6,6 +6,38 @@ import org.junit.Test
 
 class NavigationIndicatorLensTest {
     @Test
+    fun sharedPanelTransformAlignsTheIndicatorAndIconsWithAndWithoutLensAnchoring() {
+        listOf(1f, 2.75f, 3.5f).forEach { density ->
+            val width = 280f * density
+            listOf(0f, 0.3f, 1f).forEach { press ->
+                val panelScale = navigationPressScale(width, 16f * density, press)
+                listOf(0f, 1f).forEach { anchoring ->
+                    listOf(41.5f, 140f, 238.5f).forEachIndexed { index, centerDp ->
+                        listOf(centerDp, 280f - centerDp).forEach { directionalCenter ->
+                            val center = directionalCenter * density
+                            listOf(0f, 0.5f, 1f, 1.5f, 2f).forEach { lensPosition ->
+                                val tabScale = navigationTabPanelScale(index, lensPosition, panelScale, anchoring)
+                                val correction = navigationTabPressOffset(center, width / 2f, panelScale, tabScale)
+                                val rowCenter = width / 2f + (center + correction - width / 2f) * panelScale
+                                val sharedCenter = center + navigationPanelCenterOffset(center, width / 2f, tabScale)
+                                assertEquals(rowCenter, sharedCenter, 0.001f)
+                                if (anchoring == 0f) assertEquals(panelScale, tabScale, 0f)
+                            }
+                            val alignedScale = navigationTabPanelScale(index, index.toFloat(), panelScale, anchoring)
+                            val indicatorScale = navigationTabPanelScale(0, 0f, panelScale, anchoring)
+                            assertEquals(
+                                center + navigationPanelCenterOffset(center, width / 2f, alignedScale),
+                                center + navigationPanelCenterOffset(center, width / 2f, indicatorScale),
+                                0.001f,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun departingTabFollowsThePanelBeforeTheRouteCommitsAndReanchorsOnReturn() {
         val panelScale = navigationPressScale(280f, 16f, 1f)
         val forward = (0..100).map { step -> navigationTabPanelScale(0, step / 100f, panelScale) }

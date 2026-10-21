@@ -90,20 +90,13 @@ class GlassBottomBarInteractionTest {
     private var expansions = 0
 
     @Test
-    fun outerTabPressKeepsSelectedCenterWhileOtherTabsFollowThePanel() {
+    fun outerTabPressAnchorsOnlyTheRefractedSelectionAndOtherwiseScalesTheWholePanel() {
         showBar()
 
         fun iconBounds(): Map<String, Rect> = items.value.associate { item ->
             // The separate selected item is painted after its transparent row placeholder.
             item.key to compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
                 .fetchSemanticsNodes().last().boundsInRoot
-        }
-
-        fun assertSelectedCenter(key: String, before: Map<String, Rect>) {
-            assertEquals(
-                "Press must not move the selected icon horizontally",
-                before.getValue(key).center.x, iconBounds().getValue(key).center.x, 0.75f,
-            )
         }
 
         fun assertRestingCenters(expected: Map<String, Rect>) {
@@ -114,7 +107,11 @@ class GlassBottomBarInteractionTest {
         }
 
         try {
-            listOf(GlassAppearance(), GlassAppearance(reduceTransparency = true)).forEach { appearance ->
+            listOf(
+                GlassAppearance(),
+                GlassAppearance(liquidGlassEnabled = false),
+                GlassAppearance(reduceTransparency = true),
+            ).forEach { appearance ->
                 listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { direction ->
                     listOf(home, library).forEach { selected ->
                         compose.runOnIdle {
@@ -132,16 +129,22 @@ class GlassBottomBarInteractionTest {
                         }
                         listOf(16L, 96L, 320L).forEach { duration ->
                             compose.mainClock.advanceTimeBy(duration)
-                            assertSelectedCenter(selected.key, before)
+                            if (appearance.usesRefraction) {
+                                assertEquals(
+                                    "The refracted selection keeps its horizontal center",
+                                    before.getValue(selected.key).center.x,
+                                    iconBounds().getValue(selected.key).center.x, 0.75f,
+                                )
+                            }
                         }
                         val pressed = iconBounds()
                         // The 64dp panel expands by 16dp, independently of density.
                         val scale = 1f + barBounds.height / (4f * barBounds.width)
-                        before.filterKeys { it != selected.key }.forEach { (key, bounds) ->
+                        before.filterKeys { !appearance.usesRefraction || it != selected.key }.forEach { (key, bounds) ->
                             val expectedCenter = barBounds.center.x +
                                 (bounds.center.x - barBounds.center.x) * scale
-                            assertEquals("Unselected $key follows the panel", expectedCenter, pressed.getValue(key).center.x, 0.75f)
-                            assertTrue("Unselected $key retains its panel scale", pressed.getValue(key).width > bounds.width + 0.25f)
+                            assertEquals("Tab $key follows the panel", expectedCenter, pressed.getValue(key).center.x, 0.75f)
+                            assertEquals("Tab $key has only the panel scale", bounds.width * scale, pressed.getValue(key).width, 0.75f)
                         }
                         bar.performTouchInput { up() }
                         compose.mainClock.advanceTimeBy(1000L)
@@ -157,6 +160,7 @@ class GlassBottomBarInteractionTest {
 
     @Test
     fun heldDragReturnsTheDepartedIconToPanelMotionBeforeSelectionCommits() {
+        glassAppearance.value = GlassAppearance()
         showBar()
 
         fun iconBounds(item: GlassTabItem<String>): Rect =
@@ -224,6 +228,57 @@ class GlassBottomBarInteractionTest {
         listOf(library.key, radio.key, home.key).forEach { destination ->
             compose.runOnIdle { selectedKey.value = destination }
             compose.runOnIdle { assertTrue(selections.isEmpty()) }
+        }
+    }
+
+    @Test
+    fun heldDragReachesTheOppositeTabWithoutLeavingTheBar() {
+        showBar()
+        try {
+            listOf(
+                GlassAppearance(),
+                GlassAppearance(liquidGlassEnabled = false),
+                GlassAppearance(reduceTransparency = true),
+            ).forEach { appearance ->
+                listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { direction ->
+                    listOf(home, library).forEach { outgoing ->
+                        val incoming = if (outgoing == home) library else home
+                        compose.runOnIdle {
+                            glassAppearance.value = appearance
+                            barLayoutDirection.value = direction
+                            selectedKey.value = outgoing.key
+                            selections.clear()
+                        }
+                        compose.waitForIdle()
+                        val bar = compose.onNodeWithTag("bottomBar")
+                        val barBounds = bar.fetchSemanticsNode().boundsInRoot
+                        fun center(item: GlassTabItem<String>): Offset {
+                            val icon = compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
+                                .fetchSemanticsNodes().last().boundsInRoot
+                            return Offset(icon.center.x - barBounds.left, barBounds.height / 2f)
+                        }
+                        val start = center(outgoing)
+                        compose.mainClock.autoAdvance = false
+                        bar.performTouchInput { down(start) }
+                        compose.mainClock.advanceTimeBy(500L)
+                        val end = center(incoming)
+                        assertTrue(end.x in 0f..barBounds.width)
+                        bar.performTouchInput { moveTo(end) }
+                        compose.mainClock.advanceTimeBy(700L)
+                        bar.performTouchInput { moveTo(start) }
+                        compose.mainClock.advanceTimeBy(700L)
+                        bar.performTouchInput { moveTo(end) }
+                        compose.mainClock.advanceTimeBy(700L)
+                        compose.runOnIdle { assertTrue("Dragging must not commit a destination", selections.isEmpty()) }
+                        bar.performTouchInput { up() }
+                        compose.mainClock.autoAdvance = true
+                        compose.waitForIdle()
+                        compose.runOnIdle { assertEquals(listOf(incoming.key), selections) }
+                    }
+                }
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
     }
 
