@@ -77,6 +77,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import com.ljyh.mei.constants.NavigationBarSurfaceHeight
 import com.ljyh.mei.ui.liquidglass.DampedDragAnimation
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import kotlinx.coroutines.launch
@@ -105,7 +106,7 @@ internal val LocalLiquidTabScale = staticCompositionLocalOf { { 1f } }
 val CompactBottomControlIconSize = 22.dp
 
 private val ExpandedNavigationIconSize = 28.dp
-private val ExpandedNavigationItemHeight = 56.dp
+private val ExpandedNavigationItemHeight = NavigationBarSurfaceHeight - 8.dp
 private val ExpandedNavigationItemMinWidth = 75.dp
 private val NavigationItemIconClearance = 4.dp
 
@@ -233,7 +234,7 @@ fun <T> GlassBottomBar(
 
     val dragCoordinateSpace = remember { mutableStateOf<LayoutCoordinates?>(null) }
     BoxWithConstraints(
-        modifier.height(64.dp).onGloballyPositioned { dragCoordinateSpace.value = it },
+        modifier.height(NavigationBarSurfaceHeight).onGloballyPositioned { dragCoordinateSpace.value = it },
         contentAlignment = Alignment.CenterStart,
     ) {
         val density = LocalDensity.current
@@ -251,7 +252,7 @@ fun <T> GlassBottomBar(
                     morphSurfaceWidthPx(fullWidthPx, compactWidthPx, progress).roundToInt(),
                 )
                 val height = constraints.constrainHeight(
-                    androidx.compose.ui.unit.lerp(64.dp, compactSize, progress).roundToPx(),
+                    androidx.compose.ui.unit.lerp(NavigationBarSurfaceHeight, compactSize, progress).roundToPx(),
                 )
                 val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(width, height))
                 layout(width, height) { placeable.placeRelative(0, 0) }
@@ -552,7 +553,7 @@ fun <T> GlassBottomBar(
                 )
                 val height = constraints.constrainHeight(
                     navigationLensSourceHeight(
-                        androidx.compose.ui.unit.lerp(64.dp, compactSize, progress).toPx(),
+                        androidx.compose.ui.unit.lerp(NavigationBarSurfaceHeight, compactSize, progress).toPx(),
                         paddingPx,
                     ).roundToInt(),
                 )

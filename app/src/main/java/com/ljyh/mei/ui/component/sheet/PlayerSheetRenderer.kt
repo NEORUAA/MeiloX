@@ -726,7 +726,7 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                     scaleY = bounds.height / size.height.coerceAtLeast(1f)
                     translationX = bounds.left
                     translationY = bounds.top
-                    val sourceRadius = com.ljyh.mei.constants.ThumbnailCornerRadius.toPx()
+                    val sourceRadius = com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius.toPx()
                     val targetRadius = if (layers.circularArtwork) target.width / 2f else
                         layers.artworkCornerRadius().toPx() * target.width / logicalTargetWidth
                     val radius = mix(sourceRadius, targetRadius, progress) /

@@ -8,7 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,8 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -48,7 +49,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.PlaybackException
@@ -61,9 +61,10 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
 import com.ljyh.mei.constants.NavigationBarBottomMargin
-import com.ljyh.mei.constants.ThumbnailCornerRadius
+import com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.extensions.togglePlayPause
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
@@ -190,7 +191,7 @@ private fun MiniPlayerContent(
             modifier = Modifier
                 .fillMaxSize()
                 .onGloballyPositioned { sheet?.miniLayoutCoordinates = it }
-                .padding(horizontal = 4.dp, vertical = 2.dp)
+                .padding(horizontal = 4.dp)
                 .onGloballyPositioned {
                     sheet?.miniContentCoordinates = it
                     sheet?.miniLayoutBounds(it)?.let { bounds -> sheet.miniContentBounds = bounds }
@@ -214,69 +215,71 @@ private fun MiniPlayerContent(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    modifier = Modifier.size(40.dp),
-                    onClick = {
-                        if (playbackState == Player.STATE_ENDED) {
-                            playerConnection.player.seekTo(0, 0)
-                            playerConnection.player.playWhenReady = true
-                        } else {
-                            playerConnection.player.togglePlayPause()
-                        }
-                    },
+            CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                Row(
+                    modifier = Modifier.offset(x = (-4).dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SfIcon(
-                        symbol = when {
-                            playbackState == Player.STATE_ENDED -> SfSymbol.ArrowClockwise
-                            isPlaying -> SfSymbol.PauseFilled
-                            else -> SfSymbol.PlayFilled
+                    IconButton(
+                        modifier = Modifier.size(40.dp),
+                        onClick = {
+                            if (playbackState == Player.STATE_ENDED) {
+                                playerConnection.player.seekTo(0, 0)
+                                playerConnection.player.playWhenReady = true
+                            } else {
+                                playerConnection.player.togglePlayPause()
+                            }
                         },
-                        contentDescription = stringResource(
-                            if (isPlaying) R.string.player_pause else R.string.player_play,
-                        ),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        size = when {
-                            isPlaying -> 20.dp
-                            playbackState == Player.STATE_ENDED -> 22.dp
-                            else -> 18.dp
-                        },
-                        modifier = if (!isPlaying && playbackState != Player.STATE_ENDED) {
-                            Modifier.offset(x = 1.dp)
-                        } else Modifier,
-                        weight = FontWeight.SemiBold,
-                    )
-                }
-
-                if (showNextButton) {
-                    Box(
-                        modifier = Modifier
-                            .compactNextButtonWidth(compactProgress)
-                            .graphicsLayer {
-                                val nextVisibility = 1f - compactProgress.value.coerceIn(0f, 1f)
-                                alpha = nextVisibility
-                                val scale = 0.82f + 0.18f * nextVisibility
-                                scaleX = scale
-                                scaleY = scale
-                                clip = true
-                            },
-                        contentAlignment = Alignment.Center,
                     ) {
-                        IconButton(
-                            modifier = Modifier.size(40.dp),
-                            enabled = canSkipNext,
-                            onClick = playerConnection::seekToNext,
+                        SfIcon(
+                            symbol = when {
+                                playbackState == Player.STATE_ENDED -> SfSymbol.ArrowClockwise
+                                isPlaying -> SfSymbol.PauseFilled
+                                else -> SfSymbol.PlayFilled
+                            },
+                            contentDescription = stringResource(
+                                if (isPlaying) R.string.player_pause else R.string.player_play,
+                            ),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            size = when {
+                                isPlaying -> 18.dp
+                                playbackState == Player.STATE_ENDED -> 22.dp
+                                else -> 16.dp
+                            },
+                            modifier = if (!isPlaying && playbackState != Player.STATE_ENDED) {
+                                Modifier.offset(x = 1.dp)
+                            } else Modifier,
+                            weight = FontWeight.SemiBold,
+                        )
+                    }
+
+                    if (showNextButton) {
+                        Box(
+                            modifier = Modifier
+                                .compactNextButtonWidth(compactProgress)
+                                .graphicsLayer {
+                                    val nextVisibility = 1f - compactProgress.value.coerceIn(0f, 1f)
+                                    alpha = nextVisibility
+                                    val scale = 0.82f + 0.18f * nextVisibility
+                                    scaleX = scale
+                                    scaleY = scale
+                                    clip = true
+                                },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            SfIcon(
-                                symbol = SfSymbol.ForwardFilled,
-                                contentDescription = stringResource(R.string.player_next),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                size = 26.dp,
-                                modifier = Modifier.offset(x = 1.dp),
-                                weight = FontWeight.SemiBold,
-                            )
+                            IconButton(
+                                modifier = Modifier.size(40.dp),
+                                enabled = canSkipNext,
+                                onClick = playerConnection::seekToNext,
+                            ) {
+                                SfIcon(
+                                    symbol = SfSymbol.ForwardFilled,
+                                    contentDescription = stringResource(R.string.player_next),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    size = 26.dp,
+                                    weight = FontWeight.SemiBold,
+                                )
+                            }
                         }
                     }
                 }
@@ -293,12 +296,15 @@ fun MiniMediaInfo(
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
 ) {
     val sheet = LocalPlayerSheet.current
+    val marqueeEnabled by remember(sheet) {
+        derivedStateOf { sheet == null || sheet.state.isCollapsed }
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier,
+        modifier = modifier.padding(start = 4.dp),
     ) {
         Box(modifier = Modifier.padding(4.dp)) {
-            Spacer(modifier = Modifier.size(32.dp))
+            Spacer(modifier = Modifier.size(28.dp))
             val artwork = LocalPlayerArtwork.current
             AnimatedContent(
                 targetState = artwork,
@@ -307,7 +313,7 @@ fun MiniMediaInfo(
                         .togetherWith(fadeOut(tween(400)))
                 },
                 label = "MiniCoverTransition",
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(28.dp)
                     .onGloballyPositioned { coordinates ->
                         val bounds = coordinates.boundsInRoot()
                         sheet?.miniArtworkCoordinates = coordinates
@@ -317,7 +323,7 @@ fun MiniMediaInfo(
                         onCoverBoundsChanged?.invoke(bounds)
                     }
                     .drawWithContent { if (sheet?.sharesArtwork != true) drawContent() }
-                    .clip(ContinuousRoundedRectangle(ThumbnailCornerRadius)),
+                    .clip(ContinuousRoundedRectangle(MiniPlayerArtworkCornerRadius)),
             ) { cover ->
                 if (cover != null) Image(
                     painter = cover.second,
@@ -333,10 +339,10 @@ fun MiniMediaInfo(
             ) {
                 Box(
                     Modifier
-                        .size(32.dp)
+                        .size(28.dp)
                         .background(
                             color = Color.Black.copy(alpha = 0.6f),
-                            shape = ContinuousRoundedRectangle(ThumbnailCornerRadius),
+                            shape = ContinuousRoundedRectangle(MiniPlayerArtworkCornerRadius),
                         ),
                 ) {
                     SfIcon(
@@ -351,26 +357,29 @@ fun MiniMediaInfo(
         }
 
         Column(
+            verticalArrangement = Arrangement.spacedBy((-1).dp),
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 6.dp),
+                .padding(start = 4.dp, end = 6.dp),
         ) {
-            Text(
+            AppleMusicMarqueeText(
                 text = mediaMetadata.title,
+                style = LocalTextStyle.current.copy(
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.basicMarquee(),
+                edgeWidth = 8.dp,
+                enabled = marqueeEnabled,
             )
-            Text(
+            AppleMusicMarqueeText(
                 text = mediaMetadata.artists.joinToString { it.name },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.basicMarquee(),
+                style = LocalTextStyle.current.copy(
+                    fontSize = 11.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                edgeWidth = 8.dp,
+                enabled = marqueeEnabled,
             )
         }
     }

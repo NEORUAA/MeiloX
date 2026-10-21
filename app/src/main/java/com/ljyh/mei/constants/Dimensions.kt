@@ -17,9 +17,10 @@ val PlaylistCardSpacing = 20.dp
 val PlaylistCardSize = 120.dp
 val PlaylistCardSizeTablet = 170.dp
 
-val NavigationBarHeight = 80.dp
+val NavigationBarHeight = 76.dp
+val NavigationBarSurfaceHeight = 60.dp
 val NavigationBarBottomMargin = 8.dp
-val MiniPlayerHeight = 48.dp
+val MiniPlayerHeight = 44.dp
 val QueuePeekHeight = 64.dp
 val AppBarHeight = 64.dp
 
@@ -37,6 +38,7 @@ val PlaylistThumbnailSize = 56.dp
 val TrackThumbnailSize = 56.dp
 val CommonImageRadius = 8.dp
 val ThumbnailCornerRadius = 6.dp
+val MiniPlayerArtworkCornerRadius = 5.dp
 
 val NavigationBarAnimationSpec = spring<Dp>(stiffness = Spring.StiffnessMediumLow)
 
