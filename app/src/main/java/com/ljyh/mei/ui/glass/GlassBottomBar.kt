@@ -436,15 +436,44 @@ fun <T> GlassBottomBar(
                 )
             }
         }
-        val pressLayerBlock: GraphicsLayerScope.() -> Unit = remember(
-            pressProgressState,
-            density,
-        ) {
+        val panelPressScale = remember(pressProgressState, compactState, fullWidthPx, compactWidthPx, density) {
+            derivedStateOf {
+                navigationPressScale(
+                    width = morphSurfaceWidthPx(fullWidthPx, compactWidthPx, compactState.value).roundToInt().toFloat(),
+                    expansion = with(density) { 16.dp.toPx() },
+                    press = pressProgressState.value,
+                )
+            }
+        }
+        val pressLayerBlock: GraphicsLayerScope.() -> Unit = remember(panelPressScale) {
             {
-                val press = pressProgressState.value
-                val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, press)
-                scaleX = scale
-                scaleY = scale
+                scaleX = panelPressScale.value
+                scaleY = panelPressScale.value
+            }
+        }
+        val tabPanelScale: (Int) -> Float = remember(dragAnimation, panelPressScale) {
+            { index -> navigationTabPanelScale(index, dragAnimation.value, panelPressScale.value) }
+        }
+        val selectedTabPanelScale: () -> Float = remember(tabPanelScale, selectedIndex) {
+            { tabPanelScale(selectedIndex) }
+        }
+        val tabPressCorrection: GraphicsLayerScope.(Int) -> Unit = remember(
+            compactState, fullWidthPx, compactWidthPx, paddingPx, expandedTabWidthPx,
+            compactInnerWidthPx, tabItems.size, isLtr, panelPressScale, tabPanelScale,
+        ) {
+            { index ->
+                val progress = compactState.value
+                val contentWidth = morphSurfaceWidthPx(fullWidthPx, compactWidthPx, progress) - 2f * paddingPx
+                val itemWidth = lerp(expandedTabWidthPx, compactInnerWidthPx / tabItems.size, progress)
+                    .roundToInt().toFloat().coerceAtMost(contentWidth)
+                val step = if (tabItems.size > 1) (contentWidth - itemWidth) / (tabItems.size - 1) else 0f
+                val center = itemWidth / 2f + index * step
+                val physicalCenter = if (isLtr) center else contentWidth - center
+                val panelScale = panelPressScale.value
+                val tabScale = tabPanelScale(index)
+                translationX = navigationTabPressOffset(physicalCenter, contentWidth / 2f, panelScale, tabScale)
+                scaleX *= tabScale / panelScale
+                scaleY *= tabScale / panelScale
             }
         }
         val morphingNavigationGlass = rememberMorphingNavigationGlass(
@@ -481,6 +510,22 @@ fun <T> GlassBottomBar(
         val hiddenLayerBackdropModifier = remember(tabsBackdrop) {
             Modifier.layerBackdrop(tabsBackdrop)
         }
+        val hiddenSourceSizeModifier = remember(compactState, fullWidthPx, compactWidthPx, compactSize, density) {
+            Modifier.layout { measurable, constraints ->
+                val progress = compactState.value
+                val width = constraints.constrainWidth(
+                    morphSurfaceWidthPx(fullWidthPx, compactWidthPx, progress).roundToInt(),
+                )
+                val height = constraints.constrainHeight(
+                    navigationLensSourceHeight(
+                        androidx.compose.ui.unit.lerp(64.dp, compactSize, progress).toPx(),
+                        paddingPx,
+                    ).roundToInt(),
+                )
+                val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(width, height))
+                layout(width, height) { placeable.placeRelative(0, 0) }
+            }
+        }
         val morphingHiddenGlass = rememberMorphingNavigationGlass(
             backdrop = backdrop,
             active = morphing && appearance.usesRefraction,
@@ -489,7 +534,7 @@ fun <T> GlassBottomBar(
             navigationMaterial = appearance.usesBackdrop,
             isDark = colors.isDark,
             pressProgress = { pressProgressState.value },
-            layerBlock = pressLayerBlock,
+            layerBlock = {},
             tintMultiplier = 1f,
             lensSource = true,
         )
@@ -500,7 +545,6 @@ fun <T> GlassBottomBar(
             hiddenInnerShadows,
             appearance,
             pressProgressState,
-            pressLayerBlock,
         ) {
             Modifier
                 .drawBackdrop(
@@ -521,7 +565,6 @@ fun <T> GlassBottomBar(
                     highlight = {
                         Highlight.Default.copy(alpha = 0.94f * pressProgressState.value)
                     },
-                    layerBlock = pressLayerBlock,
                     onDrawSurface = {
                         if (appearance.usesBackdrop) {
                             drawNavigationGlassMaterial(containerColor, colors.isDark, 1f)
@@ -621,9 +664,8 @@ fun <T> GlassBottomBar(
                             val opticalIntensity = press * expandedIndicatorVisibilityState.value
                             if (appearance.usesRefraction) {
                                 lens(
-                                    14.dp.toPx() * opticalIntensity,
-                                    22.dp.toPx() * opticalIntensity,
-                                    depthEffect = opticalIntensity > 0.01f,
+                                    NavigationIndicatorRefractionHeight.toPx() * opticalIntensity,
+                                    NavigationIndicatorRefractionAmount.toPx() * opticalIntensity,
                                     chromaticAberration = true,
                                 )
                             }
@@ -683,12 +725,18 @@ fun <T> GlassBottomBar(
             LocalLiquidTabScale provides visibleTabContentScale,
             LocalViewConfiguration provides navigationViewConfiguration,
         ) {
-            Row(
+            // Glass and unselected tabs follow the panel; the selected item has its own center.
+            Box(
                 modifier = Modifier
                     .then(surfaceSizeModifier)
                     .then(commonTransform)
                     .then(navigationGlassModifier)
-                    .then(interactiveHighlight.modifier)
+                    .then(interactiveHighlight.modifier),
+            )
+            Row(
+                modifier = Modifier
+                    .then(surfaceSizeModifier)
+                    .then(commonTransform)
                     .then(if (compactMode) Modifier.clearAndSetSemantics {} else Modifier)
                     .padding(4.dp)
                     .clip(Capsule()),
@@ -699,18 +747,21 @@ fun <T> GlassBottomBar(
                         .weight(1f)
                         .fillMaxHeight(),
                 ) {
-                    FullTabContent(
-                        items = stableItems,
-                        selectedKey = selectedItem.key,
-                        onSelected = stableOnSelected,
-                        enabled = !compactMode,
-                        alpha = tabContentAlpha,
-                        selectedColorFilter = selectedIconColorFilterState,
-                        hideSelectedItem = true,
-                        expandedTabWidthPx = expandedTabWidthPx,
-                        compactTabWidthPx = compactInnerWidthPx / tabItems.size,
-                        compactProgress = compactState,
-                    )
+                    Box(Modifier.fillMaxSize().graphicsLayer(pressLayerBlock)) {
+                        FullTabContent(
+                            items = stableItems,
+                            selectedKey = selectedItem.key,
+                            onSelected = stableOnSelected,
+                            enabled = !compactMode,
+                            alpha = tabContentAlpha,
+                            selectedColorFilter = selectedIconColorFilterState,
+                            hideSelectedItem = true,
+                            expandedTabWidthPx = expandedTabWidthPx,
+                            compactTabWidthPx = compactInnerWidthPx / tabItems.size,
+                            compactProgress = compactState,
+                            pressCorrection = tabPressCorrection,
+                        )
+                    }
                     MorphingSelectedNavigationItem(
                         item = selectedItem,
                         compactProgress = compactState,
@@ -724,6 +775,7 @@ fun <T> GlassBottomBar(
                         labelAlpha = tabContentAlpha,
                         selectedIconColorFilter = selectedIconColorFilterState,
                         contentColor = colors.content,
+                        panelScale = selectedTabPanelScale,
                     )
                 }
             }
@@ -739,11 +791,11 @@ fun <T> GlassBottomBar(
                         .clearAndSetSemantics {}
                         .alpha(0f)
                         .then(hiddenLayerBackdropModifier)
-                        .then(surfaceSizeModifier)
+                        .then(hiddenSourceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
                         .then(interactiveHighlight.modifier)
-                        .padding(4.dp)
+                        .padding(horizontal = 4.dp)
                         .clip(Capsule()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -753,22 +805,22 @@ fun <T> GlassBottomBar(
                             .fillMaxHeight()
                             .then(lensSourceAccentModifier),
                     ) {
-                        FullTabContent(
-                            items = stableItems,
-                            selectedKey = selectedItem.key,
-                            onSelected = stableOnSelected,
-                            // Keep the exported source interactive just like LiquidBottomTabs. It
-                            // is visually hidden, but it sits above the visible row in the hit-test tree.
-                            // The source content is accent-filtered as one unit so every item
-                            // sampled through the Lens uses the same emphasis color.
-                            enabled = !compactMode,
-                            alpha = tabContentAlpha,
-                            selectedColorFilter = selectedIconColorFilterState,
-                            hideSelectedItem = true,
-                            expandedTabWidthPx = expandedTabWidthPx,
-                            compactTabWidthPx = compactInnerWidthPx / tabItems.size,
-                            compactProgress = compactState,
-                        )
+                        Box(Modifier.fillMaxSize().graphicsLayer(pressLayerBlock)) {
+                            FullTabContent(
+                                items = stableItems,
+                                selectedKey = selectedItem.key,
+                                onSelected = stableOnSelected,
+                                // The hidden source retains the original tab hit targets and tint.
+                                enabled = !compactMode,
+                                alpha = tabContentAlpha,
+                                selectedColorFilter = selectedIconColorFilterState,
+                                hideSelectedItem = true,
+                                expandedTabWidthPx = expandedTabWidthPx,
+                                compactTabWidthPx = compactInnerWidthPx / tabItems.size,
+                                compactProgress = compactState,
+                                pressCorrection = tabPressCorrection,
+                            )
+                        }
                         MorphingSelectedNavigationItem(
                             item = selectedItem,
                             compactProgress = compactState,
@@ -782,6 +834,7 @@ fun <T> GlassBottomBar(
                             labelAlpha = tabContentAlpha,
                             selectedIconColorFilter = hiddenSelectedIconColorFilterState,
                             contentColor = colors.content,
+                            panelScale = selectedTabPanelScale,
                         )
                     }
                 }
@@ -830,6 +883,7 @@ private fun <T> FullTabContent(
     compactTabWidthPx: Float,
     compactProgress: State<Float>,
     hideSelectedItem: Boolean = false,
+    pressCorrection: GraphicsLayerScope.(Int) -> Unit = {},
 ) {
     val scale = LocalLiquidTabScale.current
     Layout(
@@ -857,6 +911,7 @@ private fun <T> FullTabContent(
                                     val contentScale = scale()
                                     scaleX = contentScale
                                     scaleY = contentScale
+                                    pressCorrection(index)
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
@@ -1003,6 +1058,7 @@ internal fun <T> BoxScope.MorphingSelectedNavigationItem(
     labelAlpha: () -> Float,
     selectedIconColorFilter: State<ColorFilter>?,
     contentColor: Color,
+    panelScale: () -> Float = { 1f },
 ) {
     val sharedTabScale = LocalLiquidTabScale.current
     val density = LocalDensity.current
@@ -1047,11 +1103,12 @@ internal fun <T> BoxScope.MorphingSelectedNavigationItem(
                 }
                 val compactCenter = compactContentWidth / 2f
                 val targetCenter = lerp(expandedCenter, compactCenter, progress)
-                translationX = targetCenter - currentContentWidth / 2f
+                val tabScale = panelScale()
+                translationX = (targetCenter - currentContentWidth / 2f) * tabScale
                 // Scale the selected icon and label as one tab item. The shared tab scale owns
                 // press deformation and the <= 0.74 morph; the late correction only reconciles
                 // the expanded icon size with the compact control endpoint.
-                val scale = sharedTabScale() * selectedContentLateScale()
+                val scale = sharedTabScale() * selectedContentLateScale() * tabScale
                 scaleX = scale
                 scaleY = scale
             },

@@ -22,6 +22,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -41,14 +42,17 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.lerp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kyant.backdrop.backdrops.emptyBackdrop
@@ -61,6 +65,7 @@ import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.collapsedAnchor
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
+import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
@@ -79,8 +84,138 @@ class GlassBottomBarInteractionTest {
     private val items = mutableStateOf(listOf(home, radio, library))
     private val selectedKey = mutableStateOf(home.key)
     private val compactProgress = mutableFloatStateOf(0f)
+    private val glassAppearance = mutableStateOf(GlassAppearance(reduceTransparency = true))
+    private val barLayoutDirection = mutableStateOf(LayoutDirection.Ltr)
     private val selections = mutableListOf<String>()
     private var expansions = 0
+
+    @Test
+    fun outerTabPressKeepsSelectedCenterWhileOtherTabsFollowThePanel() {
+        showBar()
+
+        fun iconBounds(): Map<String, Rect> = items.value.associate { item ->
+            // The separate selected item is painted after its transparent row placeholder.
+            item.key to compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
+                .fetchSemanticsNodes().last().boundsInRoot
+        }
+
+        fun assertSelectedCenter(key: String, before: Map<String, Rect>) {
+            assertEquals(
+                "Press must not move the selected icon horizontally",
+                before.getValue(key).center.x, iconBounds().getValue(key).center.x, 0.75f,
+            )
+        }
+
+        fun assertRestingCenters(expected: Map<String, Rect>) {
+            val actual = iconBounds()
+            expected.forEach { (key, bounds) ->
+                assertEquals("Release must restore $key", bounds.center.x, actual.getValue(key).center.x, 0.75f)
+            }
+        }
+
+        try {
+            listOf(GlassAppearance(), GlassAppearance(reduceTransparency = true)).forEach { appearance ->
+                listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { direction ->
+                    listOf(home, library).forEach { selected ->
+                        compose.runOnIdle {
+                            glassAppearance.value = appearance
+                            barLayoutDirection.value = direction
+                            selectedKey.value = selected.key
+                        }
+                        compose.waitForIdle()
+                        val before = iconBounds()
+                        val bar = compose.onNodeWithTag("bottomBar")
+                        val barBounds = bar.fetchSemanticsNode().boundsInRoot
+                        compose.mainClock.autoAdvance = false
+                        bar.performTouchInput {
+                            down(Offset(before.getValue(selected.key).center.x - barBounds.left, center.y))
+                        }
+                        listOf(16L, 96L, 320L).forEach { duration ->
+                            compose.mainClock.advanceTimeBy(duration)
+                            assertSelectedCenter(selected.key, before)
+                        }
+                        val pressed = iconBounds()
+                        // The 64dp panel expands by 16dp, independently of density.
+                        val scale = 1f + barBounds.height / (4f * barBounds.width)
+                        before.filterKeys { it != selected.key }.forEach { (key, bounds) ->
+                            val expectedCenter = barBounds.center.x +
+                                (bounds.center.x - barBounds.center.x) * scale
+                            assertEquals("Unselected $key follows the panel", expectedCenter, pressed.getValue(key).center.x, 0.75f)
+                            assertTrue("Unselected $key retains its panel scale", pressed.getValue(key).width > bounds.width + 0.25f)
+                        }
+                        bar.performTouchInput { up() }
+                        compose.mainClock.advanceTimeBy(1000L)
+                        assertRestingCenters(before)
+                        compose.mainClock.autoAdvance = true
+                    }
+                }
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun heldDragReturnsTheDepartedIconToPanelMotionBeforeSelectionCommits() {
+        showBar()
+
+        fun iconBounds(item: GlassTabItem<String>): Rect =
+            compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
+                .fetchSemanticsNodes().last().boundsInRoot
+
+        try {
+            listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { direction ->
+                listOf(home, library).forEach { outgoing ->
+                    val incoming = if (outgoing == home) library else home
+                    compose.runOnIdle {
+                        barLayoutDirection.value = direction
+                        selectedKey.value = outgoing.key
+                        selections.clear()
+                    }
+                    compose.waitForIdle()
+                    val bar = compose.onNodeWithTag("bottomBar")
+                    val barBounds = bar.fetchSemanticsNode().boundsInRoot
+                    val outgoingBefore = iconBounds(outgoing)
+                    val incomingBefore = iconBounds(incoming)
+                    val middleBefore = iconBounds(radio)
+                    val scale = 1f + barBounds.height / (4f * barBounds.width)
+                    val startX = outgoingBefore.center.x - barBounds.left
+                    val toRight = incomingBefore.center.x > outgoingBefore.center.x
+                    val destinationX = if (toRight) 2f * barBounds.width else -barBounds.width
+                    compose.mainClock.autoAdvance = false
+                    bar.performTouchInput { down(Offset(startX, center.y)) }
+                    compose.mainClock.advanceTimeBy(500L)
+
+                    fun dragAwayAndAssert() {
+                        bar.performTouchInput { moveTo(Offset(destinationX, center.y)) }
+                        compose.mainClock.advanceTimeBy(700L)
+                        val commonShift = iconBounds(radio).center.x - middleBefore.center.x
+                        val expectedOutgoing = barBounds.center.x +
+                            (outgoingBefore.center.x - barBounds.center.x) * scale + commonShift
+                        assertEquals("Departed icon follows the panel while held", expectedOutgoing, iconBounds(outgoing).center.x, 0.75f)
+                        assertEquals("Incoming icon is already centered before commit", incomingBefore.center.x + commonShift, iconBounds(incoming).center.x, 0.75f)
+                        compose.runOnIdle {
+                            assertEquals(outgoing.key, selectedKey.value)
+                            assertTrue("Dragging must not navigate", selections.isEmpty())
+                        }
+                    }
+
+                    dragAwayAndAssert()
+                    bar.performTouchInput { moveTo(Offset(startX, center.y)) }
+                    compose.mainClock.advanceTimeBy(700L)
+                    val commonShift = iconBounds(radio).center.x - middleBefore.center.x
+                    assertEquals("Reversing reanchors the original icon", outgoingBefore.center.x + commonShift, iconBounds(outgoing).center.x, 0.75f)
+                    dragAwayAndAssert()
+                    bar.performTouchInput { up() }
+                    compose.mainClock.autoAdvance = true
+                    compose.waitForIdle()
+                    compose.runOnIdle { assertEquals(listOf(incoming.key), selections) }
+                }
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
 
     @Test
     fun destinationUpdatesNeverRequestAnotherNavigation() {
@@ -159,6 +294,72 @@ class GlassBottomBarInteractionTest {
         compose.runOnIdle {
             assertEquals(2, expansions)
             assertTrue(selections.isEmpty())
+        }
+    }
+
+    @Test
+    fun morphingPressHighlightStaysInsideTheCurrentOutline() {
+        val press = mutableFloatStateOf(0f)
+        val width = mutableStateOf(48.dp)
+        val height = mutableStateOf(48.dp)
+        val roundedRectangle = mutableStateOf(false)
+        val backing = Color(0xFF2E233B)
+        compose.setContent {
+            val scope = rememberCoroutineScope()
+            val highlight = remember(scope) { InteractiveHighlight(scope) }
+            val shape = if (roundedRectangle.value) ContinuousRoundedRectangle(26.dp) else Capsule()
+            CompositionLocalProvider(
+                LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+            ) {
+                val glass = rememberMorphingNavigationGlass(
+                    backdrop = emptyBackdrop(),
+                    active = true,
+                    shape = shape,
+                    tint = Color.Black,
+                    navigationMaterial = false,
+                    pressProgress = { 0f },
+                    layerBlock = {},
+                    lensSource = true,
+                )
+                Box(
+                    Modifier.size(width.value, height.value).background(backing)
+                        .testTag("morphPressSurface")
+                        .then(glass)
+                        .then(highlight.highlightModifier(
+                            progressProvider = { press.floatValue },
+                            positionProvider = { size -> Offset(size.width / 2f, size.height / 2f) },
+                        )),
+                )
+            }
+        }
+
+        listOf(false, true).forEach { useRoundedRectangle ->
+            listOf(48 to 48, 80 to 48, 160 to 64, 80 to 48, 48 to 48).forEach { (w, h) ->
+                compose.runOnIdle {
+                    roundedRectangle.value = useRoundedRectangle
+                    width.value = w.dp
+                    height.value = h.dp
+                    press.floatValue = 0f
+                }
+                val surface = compose.onNodeWithTag("morphPressSurface")
+                val resting = surface.captureToImage().toPixelMap()
+                compose.runOnIdle { press.floatValue = 1f }
+                val pressed = surface.captureToImage().toPixelMap()
+                listOf(
+                    1 to 1,
+                    pressed.width - 2 to 1,
+                    1 to pressed.height - 2,
+                    pressed.width - 2 to pressed.height - 2,
+                ).forEach { (x, y) ->
+                    val corner = pressed[x, y]
+                    assertEquals("Press wash must leave the exterior red unchanged", backing.red, corner.red, 1f / 255f)
+                    assertEquals("Press wash must leave the exterior green unchanged", backing.green, corner.green, 1f / 255f)
+                    assertEquals("Press wash must leave the exterior blue unchanged", backing.blue, corner.blue, 1f / 255f)
+                }
+                val x = pressed.width / 2
+                val y = pressed.height / 2
+                assertTrue("Clipping must preserve the interior press light", pressed[x, y].red > resting[x, y].red + 0.02f)
+            }
         }
     }
 
@@ -995,7 +1196,8 @@ class GlassBottomBarInteractionTest {
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
-                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                    LocalGlassAppearance provides glassAppearance.value,
+                    LocalLayoutDirection provides barLayoutDirection.value,
                 ) {
                     GlassBottomBar(
                         items = items.value,
