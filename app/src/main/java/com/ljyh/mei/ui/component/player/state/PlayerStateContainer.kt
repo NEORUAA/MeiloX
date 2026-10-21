@@ -144,9 +144,8 @@ fun rememberPlayerStateContainer(
         }
     }
 
-    // The collapsed player does not render a progress indicator. Avoid publishing a periodic
-    // Compose-state tick while it is hidden, but resume immediately as soon as the expanded
-    // player starts consuming the position.
+    // Refresh as soon as sheet motion begins, before the full foreground fades in.
+    // Keep the same clock during collapse; stop only when the player is fully hidden.
     LifecycleStartedEffect(
         container.playbackState.value,
         container.isPlaying.value,

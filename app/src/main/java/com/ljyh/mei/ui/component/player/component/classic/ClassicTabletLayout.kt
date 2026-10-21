@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -131,7 +132,8 @@ fun ClassicTabletLayout(
                         mediaMetadata = it,
                         isPlaying = isPlaying,
                         modifier = Modifier
-                            .fillMaxWidth(0.6f)
+                            .weight(1f, fill = false)
+                            .widthIn(max = paneWidth * 0.6f)
                             .aspectRatio(1f)
                     )
                 }

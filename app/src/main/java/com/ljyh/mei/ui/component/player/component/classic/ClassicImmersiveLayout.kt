@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -75,7 +76,7 @@ fun ClassicImmersiveLayout(
                         mediaMetadata = it,
                         isPlaying = isPlaying,
                         modifier = Modifier
-                            .fillMaxWidth(0.75f)
+                            .widthIn(max = coverPaneWidth * 0.75f)
                             .aspectRatio(1f),
                         onDoubleClick = { offset, width ->
 

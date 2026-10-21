@@ -8,6 +8,8 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
@@ -220,6 +222,16 @@ fun AppleMusicPlayer(
 
         val bottomControlsHeightDp = if (isCompactHeight || isLandscape) 220.dp else 300.dp
         val bottomControlsHeight = with(density) { bottomControlsHeightDp.toPx() }
+        var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
+        var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
+        val measuredControlsHeight = controlsHeightPx.takeIf { it > 0 }?.toFloat() ?: bottomControlsHeight
+        val albumInformationHeight = albumRowSize.height.takeIf { it > 0 }?.toFloat()
+            ?: with(density) { 42.sp.toPx() }
+        val showAlbumInfo = !isCompactHeight && !isLandscape
+        val albumTop = appleMusicAlbumInfoTop(
+            maxHeightPx, measuredControlsHeight, albumInformationHeight,
+            with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
+        )
         val controlsShown = !showLyrics || stateContainer.controlsVisible
         val controlsFadeShift = animateFloatAsState(
             targetValue = if (controlsShown) 0f else 0.6f,
@@ -247,6 +259,8 @@ fun AppleMusicPlayer(
             // Flamingo uses 15.dp outer padding plus 9.dp inner padding while playing.
             horizontalInset = with(density) { AppleMusicDimensions.artworkInset.toPx() },
             topLimit = topSafeArea + with(density) { 12.dp.toPx() },
+            bottomLimit = if (showAlbumInfo) albumTop - minTopMargin
+                else maxHeightPx - measuredControlsHeight - minTopMargin,
         )
         val normalSize = normalBounds.width
 
@@ -333,15 +347,8 @@ fun AppleMusicPlayer(
                 )
 
 
-                var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
                 var progressTrackTopInRoot by remember(screenWidth, maxHeightPx) { mutableStateOf<Float?>(null) }
-                var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
-                val showAlbumInfo = !isCompactHeight && !isLandscape
                 val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
-                val albumTop = appleMusicAlbumInfoTop(
-                    maxHeightPx, controlsHeightPx.toFloat(), albumRowSize.height.toFloat(),
-                    with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
-                )
                 val lyricEntryTranslationY = {
                     if (showAlbumInfo) {
                         appleMusicLyricsTranslationY(
@@ -369,7 +376,13 @@ fun AppleMusicPlayer(
 
                         AnimatedContent(
                             targetState = if (showDetail) showQueue else lastDetailPage == AppleMusicPlayerPage.Queue,
-                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
+                            transitionSpec = {
+                                if (showDetail && headerInteractive) {
+                                    fadeIn(tween(180)) togetherWith fadeOut(tween(180))
+                                } else {
+                                    EnterTransition.None togetherWith ExitTransition.None
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             label = "PlayerDetailPage",
                         ) { queuePage ->
@@ -377,16 +390,27 @@ fun AppleMusicPlayer(
                                 val queueBottom = progressTrackTopInRoot
                                     ?.minus(playerBoundsInRoot?.top ?: 0f)
                                     ?: (maxHeightPx - controlsHeightPx)
-                                Box(Modifier.fillMaxSize()) {
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .playerQueueViewport(with(density) {
+                                            (queueBottom - lyricViewportTop).coerceAtLeast(0f).toDp()
+                                        }),
+                                ) {
                                     PlayerQueuePage(
                                         playerConnection = stateContainer.playerConnection,
+                                        indication = null,
+                                        controlsFadeRange = { listHeight ->
+                                            appleMusicLyricsControlsFadeRange(
+                                                viewportHeight = maxHeightPx - lyricViewportTop,
+                                                shift = controlsFadeShift.value,
+                                                translationY = lyricEntryTranslationY(),
+                                                controlsTop = listHeight,
+                                            )
+                                        },
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(with(density) {
-                                                (queueBottom - lyricViewportTop).coerceAtLeast(0f).toDp()
-                                            })
-                                            .padding(top = 16.dp)
-                                            .clipToBounds(),
+                                            .fillMaxSize()
+                                            .graphicsLayer { translationY = lyricEntryTranslationY() }
+                                            .padding(top = 16.dp),
                                     )
                                 }
                             } else {
@@ -689,6 +713,13 @@ fun AppleMusicPlayer(
         }
     }
 }
+
+internal fun Modifier.playerQueueViewport(height: Dp): Modifier =
+    // AnimatedContent can pass a full-height minimum. Release it before measuring
+    // the queue, keep the viewport top-aligned, and clip before translating content.
+    wrapContentHeight(align = Alignment.Top, unbounded = true)
+        .height(height)
+        .clipToBounds()
 
 internal fun Modifier.playerContentFade(alpha: State<Float>): Modifier = graphicsLayer {
     this.alpha = alpha.value

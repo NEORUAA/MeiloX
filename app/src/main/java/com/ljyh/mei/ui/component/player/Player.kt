@@ -88,11 +88,11 @@ fun BottomSheetPlayer(
     val playerStyle by rememberEnumPreference(PlayerStyleKey, defaultValue = PlayerStyle.AppleMusic)
 
     // 创建公共状态容器
-    val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
+    val progressUpdatesEnabled by remember(state) { derivedStateOf { state.isContentVisible } }
     val stateContainer = rememberPlayerStateContainer(
         playerViewModel = playerViewModel,
         playerConnection = playerConnection,
-        progressUpdatesEnabled = sheetExpanded,
+        progressUpdatesEnabled = progressUpdatesEnabled,
     )
 
     // 创建弹窗处理器

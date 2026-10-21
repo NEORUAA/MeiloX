@@ -79,10 +79,12 @@ internal fun appleMusicAlbumBounds(
     viewportWidth: Float,
     horizontalInset: Float,
     topLimit: Float,
+    bottomLimit: Float = previous.bottom,
 ): Rect {
-    val size = minOf(viewportWidth - horizontalInset * 2f, previous.bottom - topLimit).coerceAtLeast(1f)
+    val bottom = minOf(previous.bottom, bottomLimit).coerceAtLeast(topLimit)
+    val size = minOf((viewportWidth - horizontalInset * 2f).coerceAtLeast(0f), bottom - topLimit)
     val left = (viewportWidth - size) / 2f
-    return Rect(left, previous.bottom - size, left + size, previous.bottom)
+    return Rect(left, bottom - size, left + size, bottom)
 }
 
 /** Visual pixels, independent of the image's fixed layout size. */

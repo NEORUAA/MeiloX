@@ -163,7 +163,6 @@ fun ClassicPhoneLayout(
                                 mediaMetadata = it,
                                 isPlaying = isPlaying,
                                 modifier = Modifier
-                                    .fillMaxWidth()
                                     .aspectRatio(1f)
                             )
                         }
