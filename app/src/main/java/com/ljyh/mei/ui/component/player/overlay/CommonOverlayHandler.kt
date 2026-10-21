@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.player.component.localPlaybackQualityTitle
+import com.ljyh.mei.ui.component.player.component.PlayerNavigationMenu
 import com.ljyh.mei.ui.component.player.component.sheet.AlbumArtistBottomSheet
 import com.ljyh.mei.ui.component.player.component.sheet.MoreActionsSheet
 import com.ljyh.mei.ui.component.player.component.sheet.PlayerActionSettingsSheet
@@ -73,24 +74,44 @@ fun CommonOverlayHandler(
         }
 
         is OverlayState.AlbumArtist -> {
-            AlbumArtistBottomSheet(
-                coverUrl = overlay.cover,
-                albumInfo = overlay.album,
-                artistList = overlay.artists,
-                onAlbumClick = { id ->
-                    Screen.Album.navigate(navController) {
-                        addPath(id.toString())
-                    }
-                    sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
-                },
-                onArtistClick = { id ->
-                    Screen.Artist.navigate(navController) {
-                        addPath(id.toString())
-                    }
-                    sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
-                },
-                onDismissRequest = { overlayHandler.dismiss() },
-            )
+            val onAlbumClick: (Long) -> Unit = { id ->
+                Screen.Album.navigate(navController) { addPath(id.toString()) }
+                sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+            }
+            val onArtistClick: (Long) -> Unit = { id ->
+                Screen.Artist.navigate(navController) { addPath(id.toString()) }
+                sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+            }
+            val anchor = overlay.anchorBounds
+            if (anchor != null) {
+                PlayerNavigationMenu(
+                    album = overlay.album,
+                    artists = overlay.artists,
+                    playlistTitle = overlay.playlistTitle,
+                    anchorBounds = anchor,
+                    onAlbumClick = onAlbumClick,
+                    onArtistClick = onArtistClick,
+                    onPlaylistClick = {
+                        val playlistId = overlay.playlistId
+                        if (playlistId != null && playlistId > 0) {
+                            Screen.PlayList.navigate(navController) { addPath(playlistId.toString()) }
+                            sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                        } else {
+                            overlayHandler.showPlaylist()
+                        }
+                    },
+                    onDismiss = overlayHandler::dismiss,
+                )
+            } else {
+                AlbumArtistBottomSheet(
+                    coverUrl = overlay.cover,
+                    albumInfo = overlay.album,
+                    artistList = overlay.artists,
+                    onAlbumClick = onAlbumClick,
+                    onArtistClick = onArtistClick,
+                    onDismissRequest = overlayHandler::dismiss,
+                )
+            }
         }
 
         is OverlayState.SongInfo -> {

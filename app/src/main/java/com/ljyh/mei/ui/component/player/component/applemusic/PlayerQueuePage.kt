@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +36,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -46,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -74,6 +74,8 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.playbackOrderIndices
 import com.ljyh.mei.playback.queueEntryId
+import com.ljyh.mei.ui.glass.IosMenuItem
+import com.ljyh.mei.ui.glass.IosPopupMenu
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.smallImage
@@ -133,6 +135,9 @@ fun PlayerQueuePage(
     var dragFrame by remember { mutableIntStateOf(0) }
     var initialScrollPending by remember(player) { mutableStateOf(true) }
     var menuEntryKey by remember { mutableStateOf<String?>(null) }
+    var menuAnchorBounds by remember { mutableStateOf<Rect?>(null) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var menuRemovalRequested by remember { mutableStateOf(false) }
     val currentQueueIndex = entries.indexOfFirst { it.rawIndex == currentIndex }
     val autoplayQueueIndex = entries.indexOfFirst { it.key == autoplayStartEntryId }
 
@@ -286,6 +291,7 @@ fun PlayerQueuePage(
                     }
                     item(key = entry.key) {
                         ReorderableItem(reorderState, key = entry.key) {
+                            var entryCoordinates by remember(entry.key) { mutableStateOf<LayoutCoordinates?>(null) }
                             val item = entry.mediaItem
                             val metadata = item.metadata
                             val display = item.mediaMetadata
@@ -311,12 +317,21 @@ fun PlayerQueuePage(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Row(
-                                        modifier = Modifier.weight(1f).fillMaxHeight().combinedClickable(
-                                            onClick = {
-                                                playerConnection.service.queueManager.seekToQueueEntry(entry.key)
-                                            },
-                                            onLongClick = { menuEntryKey = entry.key },
-                                        ),
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                            .onGloballyPositioned { entryCoordinates = it }
+                                            .combinedClickable(
+                                                onClick = {
+                                                    playerConnection.service.queueManager.seekToQueueEntry(entry.key)
+                                                },
+                                                onLongClick = {
+                                                    entryCoordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let { bounds ->
+                                                        menuAnchorBounds = bounds
+                                                        menuEntryKey = entry.key
+                                                        menuRemovalRequested = false
+                                                        menuExpanded = true
+                                                    }
+                                                },
+                                            ),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         AsyncImage(
@@ -370,25 +385,6 @@ fun PlayerQueuePage(
                                         )
                                     }
                                 }
-                                DropdownMenu(
-                                    expanded = menuEntryKey == entry.key,
-                                    onDismissRequest = { menuEntryKey = null },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.queue_remove)) },
-                                        onClick = {
-                                            menuEntryKey = null
-                                            val currentEntries = player.phoneQueueEntries()
-                                            if (currentEntries.size > 1) {
-                                                currentEntries.firstOrNull { it.key == entry.key }?.let {
-                                                    player.removeMediaItem(it.rawIndex)
-                                                }
-                                            } else {
-                                                Toast.makeText(context, R.string.queue_cannot_remove_last, Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                    )
-                                }
                             }
                         }
                     }
@@ -401,6 +397,50 @@ fun PlayerQueuePage(
                 item(key = "queue_bottom_space") { Spacer(Modifier.height(8.dp)) }
             }
         }
+    }
+
+    // Keep the popup outside lazy items so removal cannot dispose its closing animation.
+    IosPopupMenu(
+        expanded = menuExpanded,
+        onExpandedChange = { menuExpanded = it },
+        itemCount = 1,
+        externalAnchorBounds = menuAnchorBounds,
+        alignToAnchorStart = true,
+        expandFromAnchor = Alignment.Start,
+        forceBelowAnchor = true,
+        keepAnchorVisible = true,
+        fullScreen = true,
+        onClosed = {
+            if (!menuExpanded) {
+                val selectedKey = menuEntryKey
+                val removeRequested = menuRemovalRequested
+                menuEntryKey = null
+                menuAnchorBounds = null
+                menuRemovalRequested = false
+                if (removeRequested && selectedKey != null) {
+                    val currentEntries = player.phoneQueueEntries()
+                    currentEntries.firstOrNull { it.key == selectedKey }?.let { selected ->
+                        if (currentEntries.size > 1) {
+                            player.removeMediaItem(selected.rawIndex)
+                        } else {
+                            Toast.makeText(context, R.string.queue_cannot_remove_last, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        },
+        anchor = { Spacer(Modifier.size(1.dp)) },
+    ) { childBackdrop, close ->
+        IosMenuItem(
+            title = stringResource(R.string.queue_remove),
+            systemName = "trash",
+            destructive = true,
+            backdrop = childBackdrop,
+            onClick = {
+                menuRemovalRequested = true
+                close()
+            },
+        )
     }
 }
 

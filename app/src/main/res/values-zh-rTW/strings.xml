@@ -78,6 +78,10 @@
     <string name="queue_autoplay">自動連播</string>
     <string name="queue_autoplay_description">將繼續播放類似音樂</string>
     <string name="queue_reorder">調整歌曲順序</string>
+    <string name="player_navigation_title">前往</string>
+    <string name="player_navigation_artist">前往藝人</string>
+    <string name="player_navigation_album">前往專輯</string>
+    <string name="player_navigation_playlist">前往播放列表</string>
     <string name="player_action_lyrics">歌詞</string>
     <string name="player_action_customize">自訂播放器動作</string>
     <string name="player_action_customize_hint">點選加入或移除，最多顯示五個動作。</string>

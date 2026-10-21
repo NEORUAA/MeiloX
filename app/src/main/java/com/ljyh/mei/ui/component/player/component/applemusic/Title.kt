@@ -18,9 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
@@ -51,6 +53,8 @@ fun Title(
     textModifier: Modifier = Modifier,
     actionsModifier: Modifier = Modifier,
     onTextSizeChanged: (IntSize) -> Unit = {},
+    onTextPositioned: (LayoutCoordinates) -> Unit = {},
+    onRowPositioned: (LayoutCoordinates) -> Unit = {},
     onActionsSizeChanged: (IntSize) -> Unit = {},
     marqueeEdgeWidth: Dp = AppleMusicDimensions.albumMarqueeEdgeWidth,
     marqueeEnabled: Boolean = true,
@@ -62,7 +66,7 @@ fun Title(
     ) else null
 
     Row(
-        modifier = modifier,
+        modifier = modifier.onGloballyPositioned(onRowPositioned),
         verticalAlignment = Alignment.CenterVertically, // 垂直居中
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -71,6 +75,7 @@ fun Title(
             modifier = Modifier.weight(1f)
                 .onSizeChanged(onTextSizeChanged)
                 .then(textModifier)
+                .onGloballyPositioned(onTextPositioned)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -154,5 +159,18 @@ fun Title(
                 }
             }
         }
+    }
+}
+
+internal fun playerMetadataAnchorBounds(
+    textCoordinates: LayoutCoordinates?,
+    rowCoordinates: LayoutCoordinates?,
+): Rect? {
+    val textBounds = textCoordinates?.takeIf { it.isAttached }?.boundsInWindow()
+    val rowBounds = rowCoordinates?.takeIf { it.isAttached }?.boundsInWindow()
+    return when {
+        textBounds == null -> rowBounds
+        rowBounds == null -> textBounds
+        else -> Rect(rowBounds.left, textBounds.top, rowBounds.right, textBounds.bottom)
     }
 }

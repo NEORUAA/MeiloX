@@ -15,7 +15,14 @@ sealed interface OverlayState {
         val mediaMetadata: MediaMetadata
     ): OverlayState
 
-    data class AlbumArtist(val album: MediaMetadata.Album, val artists: List<MediaMetadata.Artist>,val cover:String): OverlayState
+    data class AlbumArtist(
+        val album: MediaMetadata.Album,
+        val artists: List<MediaMetadata.Artist>,
+        val cover: String,
+        val anchorBounds: Rect? = null,
+        val playlistTitle: String? = null,
+        val playlistId: Long? = null,
+    ) : OverlayState
     data class SongInfo(val metadata: MediaMetadata): OverlayState
     data object MoreAction: OverlayState
     data class Share(val metadata: MediaMetadata): OverlayState

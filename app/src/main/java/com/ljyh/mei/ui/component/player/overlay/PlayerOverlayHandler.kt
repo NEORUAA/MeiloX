@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -99,8 +100,18 @@ class PlayerOverlayHandler(
     /**
      * 显示专辑艺术家弹窗
      */
-    fun showAlbumArtist(album: MediaMetadata.Album, artists: List<MediaMetadata.Artist>, cover: String) {
-        _currentOverlay.value = OverlayState.AlbumArtist(album, artists, cover)
+    fun showAlbumArtist(
+        album: MediaMetadata.Album,
+        artists: List<MediaMetadata.Artist>,
+        cover: String,
+        anchorBounds: Rect? = null,
+    ) {
+        val connection = stateContainer.playerConnection
+        _currentOverlay.value = OverlayState.AlbumArtist(
+            album, artists, cover, anchorBounds,
+            playlistTitle = connection.queueTitle.value,
+            playlistId = connection.service.queueManager.playlistSource?.playlistId,
+        )
     }
 
     /**

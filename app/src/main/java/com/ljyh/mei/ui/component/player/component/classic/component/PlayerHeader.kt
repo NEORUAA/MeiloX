@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
@@ -48,6 +50,8 @@ fun PlayerHeader(
     iconColor: Color = Color.White,
     needShadow: Boolean = true,
     appleMusicStyle: Boolean = false,
+    onTextPositioned: (LayoutCoordinates) -> Unit = {},
+    onRowPositioned: (LayoutCoordinates) -> Unit = {},
 ) {
     val marqueeEnabled = LocalPlayerSheet.current?.state?.isExpanded != false
     val metadataClick = if (appleMusicStyle) {
@@ -68,7 +72,8 @@ fun PlayerHeader(
         modifier = modifier
             .statusBarsPadding()
             .fillMaxWidth()
-            .then(metadataClick),
+            .then(metadataClick)
+            .onGloballyPositioned(onRowPositioned),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 左侧：标题和副标题
@@ -77,6 +82,7 @@ fun PlayerHeader(
             modifier = Modifier
                 .weight(1f) // 占据剩余空间
                 .padding(end = if (appleMusicStyle) 0.dp else 8.dp)
+                .onGloballyPositioned(onTextPositioned)
         ) {
             // --- 标题部分 ---
             if (appleMusicStyle) {

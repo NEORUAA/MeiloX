@@ -94,6 +94,9 @@ fun PlayerQualityDropdown(
         itemCount = availableQualities.size + (if (localPlaybackInfo != null) 1 else 0) +
             (if (statusTitle != null) 1 else 0),
         modifier = modifier.background(backgroundColor, ContinuousRoundedRectangle(cornerRadius)),
+        fullScreen = true,
+        centerHorizontally = true,
+        expandFromAnchor = Alignment.CenterHorizontally,
         anchor = { onClick ->
             Row(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp).clickable(

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
@@ -140,9 +142,14 @@ private class IosPopupPositionProvider(
     private val targetMenuWidthPx: Int,
     private val horizontalInsetPx: Int,
     private val forceBelowAnchor: Boolean,
+    private val centerHorizontally: Boolean,
+    private val alignToAnchorStart: Boolean,
+    private val anchorAlignment: Alignment.Horizontal,
+    private val horizontalOvershootMarginPx: Int,
     private val visualHostWidthPx: Int,
     private val visualHostHeightPx: Int,
     private val anchorOvershootVerticalPx: Int,
+    private val onAnchorOriginResolved: (Float) -> Unit,
     private val onDirectionResolved: (opensAbove: Boolean) -> Unit,
 ) : PopupPositionProvider {
     private var opensAbove: Boolean? = null
@@ -170,18 +177,28 @@ private class IosPopupPositionProvider(
         val inset = horizontalInsetPx.coerceAtMost(
             ((windowSize.width - targetMenuWidthPx) / 2).coerceAtLeast(0),
         )
-        val menuLeft = (anchorBounds.right - targetMenuWidthPx).coerceIn(
+        val requestedLeft = if (centerHorizontally) {
+            (windowSize.width - targetMenuWidthPx) / 2
+        } else if (alignToAnchorStart) {
+            if (layoutDirection == LayoutDirection.Rtl) anchorBounds.right - targetMenuWidthPx else anchorBounds.left
+        } else {
+            anchorBounds.right - targetMenuWidthPx
+        }
+        val menuLeft = requestedLeft.coerceIn(
             inset,
             (windowSize.width - targetMenuWidthPx - inset).coerceAtLeast(inset),
         )
-        val x = menuLeft - (visualHostWidthPx - targetMenuWidthPx)
-        // The forced-below variant is used by message bubbles. Its popup host contains the
-        // vertical overshoot margin plus the 15% spring shell, so positioning the host at
-        // `anchorBounds.bottom` would leave the menu beside the bubble. Offset the host by the
-        // exact distance from its top edge to the resting menu top instead.
-        val menuTopInHost = (
-            visualHostHeightPx - targetMenuHeightPx
-        ).coerceAtLeast(0)
+        val anchorX = anchorBounds.left + anchorAlignment.align(0, anchorBounds.width, layoutDirection)
+        onAnchorOriginResolved((anchorX - menuLeft).toFloat() / targetMenuWidthPx.coerceAtLeast(1))
+        val menuLeftInHost = if (layoutDirection == LayoutDirection.Rtl) {
+            horizontalOvershootMarginPx
+        } else {
+            visualHostWidthPx - targetMenuWidthPx
+        }
+        val x = menuLeft - menuLeftInHost
+        // The bottom-aligned inner host leaves one fixed margin above the resting menu.
+        // The spring overshoot space sits below it and must not shift the menu over its anchor.
+        val menuTopInHost = anchorOvershootVerticalPx
         val visualY = if (forceBelowAnchor) {
             anchorBounds.bottom - menuTopInHost
         } else if (resolvedDirection) {
@@ -712,6 +729,7 @@ fun IosContextMenu(
     heightOverride: androidx.compose.ui.unit.Dp? = null,
     menuWidth: androidx.compose.ui.unit.Dp = PopupMenuWidth,
     menuScale: Float = 1f,
+    initialTransformOrigin: TransformOrigin? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     content: @Composable ColumnScope.(LayerBackdrop) -> Unit,
 ) {
@@ -730,7 +748,7 @@ fun IosContextMenu(
     val radius = 34.dp
     val menuShape = remember(radius) { RoundedRectangle(radius) }
     val transitionScale = 0.24f + 0.76f * animationProgress
-    val startOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
+    val startOrigin = initialTransformOrigin ?: TransformOrigin(1f, if (opensAbove) 1f else 0f)
     val originProgress = transformOriginProgress.coerceIn(0f, 1f)
     val transitionOrigin = TransformOrigin(
         pivotFractionX = startOrigin.pivotFractionX +
@@ -901,6 +919,9 @@ fun IosPopupMenu(
     keepAnchorVisible: Boolean = false,
     forceBelowAnchor: Boolean = false,
     fullScreen: Boolean = false,
+    centerHorizontally: Boolean = false,
+    alignToAnchorStart: Boolean = false,
+    expandFromAnchor: Alignment.Horizontal? = null,
     externalAnchorBounds: androidx.compose.ui.geometry.Rect? = null,
     menuWidth: androidx.compose.ui.unit.Dp = PopupMenuWidth,
     menuScale: Float = 1f,
@@ -914,6 +935,7 @@ fun IosPopupMenu(
     var anchorSize by remember { mutableStateOf(IntSize.Zero) }
     var popupAlive by remember { mutableStateOf(expanded) }
     var opensAbove by remember { mutableStateOf(false) }
+    var anchorFractionX by remember { mutableFloatStateOf(1f) }
     val progress = remember { Animatable(if (expanded) 1f else 0f) }
     val transformOriginProgress = remember { Animatable(if (expanded) 1f else 0f) }
     val menuAlpha = remember { Animatable(if (expanded) 1f else 0f) }
@@ -1082,6 +1104,9 @@ fun IosPopupMenu(
                 targetMenuWidthPx,
                 horizontalInsetPx,
                 forceBelowAnchor,
+                centerHorizontally,
+                alignToAnchorStart,
+                expandFromAnchor,
                 visualHostWidthPx,
                 visualHostHeightPx,
             ) {
@@ -1090,11 +1115,16 @@ fun IosPopupMenu(
                     targetMenuWidthPx = targetMenuWidthPx,
                     horizontalInsetPx = horizontalInsetPx,
                     forceBelowAnchor = forceBelowAnchor,
+                    centerHorizontally = centerHorizontally,
+                    alignToAnchorStart = alignToAnchorStart,
+                    anchorAlignment = expandFromAnchor ?: Alignment.Start,
+                    horizontalOvershootMarginPx = with(density) { PopupMenuOvershootMarginStart.roundToPx() },
                     visualHostWidthPx = visualHostWidthPx,
                     visualHostHeightPx = visualHostHeightPx,
                     anchorOvershootVerticalPx = with(density) {
                         PopupMenuOvershootMarginVertical.roundToPx()
                     },
+                    onAnchorOriginResolved = { anchorFractionX = it },
                 ) { resolved ->
                     opensAbove = resolved
                 }
@@ -1146,6 +1176,7 @@ fun IosPopupMenu(
                             interactionSource = null,
                             indication = null,
                         ) { onExpandedChange(false) },
+                    contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
                 ) {
                     CompositionLocalProvider(LocalIosPopupMenuInteractive provides expanded) {
                         // Wide cascading menus exceed the platform Popup's measured width.
@@ -1155,7 +1186,7 @@ fun IosPopupMenu(
                         IosContextMenu(
                             visible = true,
                             modifier = if (fullScreen) {
-                                Modifier.offset { fullScreenMenuOffset ?: IntOffset.Zero }
+                                Modifier.absoluteOffset { fullScreenMenuOffset ?: IntOffset.Zero }
                             } else {
                                 Modifier
                             },
@@ -1170,6 +1201,9 @@ fun IosPopupMenu(
                             itemCount = itemCount,
                             heightOverride = heightOverride,
                             menuScale = menuScale,
+                            initialTransformOrigin = if (expandFromAnchor != null) {
+                                TransformOrigin(anchorFractionX, if (opensAbove) 1f else 0f)
+                            } else null,
                             menuWidth = menuWidth,
                             onMenuBoundsChanged = onMenuBoundsChanged,
                         ) { childBackdrop ->
@@ -1254,6 +1288,7 @@ fun IosMenuItem(
     enabled: Boolean = true,
     iconTint: Color? = null,
     fontWeight: FontWeight? = null,
+    subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
@@ -1262,7 +1297,7 @@ fun IosMenuItem(
     Row(
         modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(if (subtitle == null) 44.dp else 56.dp)
             .background(
                 color = Color.Black.copy(alpha = 0.15f * highlight.pressProgress),
                 shape = Capsule(),
@@ -1287,11 +1322,20 @@ fun IosMenuItem(
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            title, modifier = Modifier.weight(1f), style = IosTypography.body,
-            fontWeight = fontWeight, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            color = if (destructive) LocalGlassColors.current.destructive else LocalGlassColors.current.content,
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                title, style = IosTypography.body,
+                fontWeight = fontWeight, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (destructive) LocalGlassColors.current.destructive else LocalGlassColors.current.content,
+            )
+            subtitle?.let {
+                Text(
+                    it, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = LocalGlassColors.current.secondaryContent,
+                )
+            }
+        }
         trailing?.invoke()
     }
 }

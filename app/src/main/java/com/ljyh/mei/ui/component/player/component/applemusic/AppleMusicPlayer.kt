@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -134,6 +135,10 @@ fun AppleMusicPlayer(
     val showDetail = page != AppleMusicPlayerPage.Artwork
     var lastDetailPage by remember { mutableStateOf(AppleMusicPlayerPage.Lyrics) }
     var playerBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    var albumTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var albumRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     LaunchedEffect(page) {
         if (showDetail) lastDetailPage = page
@@ -476,7 +481,12 @@ fun AppleMusicPlayer(
                                 onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 onTitleClick = {
-                                    overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
+                                    overlayHandler.showAlbumArtist(
+                                        metadata.album,
+                                        metadata.artists,
+                                        metadata.coverUrl,
+                                        anchorBounds = playerMetadataAnchorBounds(albumTextCoordinates, albumRowCoordinates),
+                                    )
                                 },
                                 enabled = sheetExpanded && !showDetail && albumInteractive,
                                 marqueeEnabled = sheetExpanded && albumInfoVisible,
@@ -484,6 +494,8 @@ fun AppleMusicPlayer(
                                 subTitleStyle = albumArtistStyle,
                                 needShadow = false,
                                 onTextSizeChanged = { albumTextSize = it },
+                                onTextPositioned = { albumTextCoordinates = it },
+                                onRowPositioned = { albumRowCoordinates = it },
                                 onActionsSizeChanged = { albumActionsSize = it },
                                 textModifier = Modifier.playerInfoMotion(
                                     albumInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, true,
@@ -514,7 +526,12 @@ fun AppleMusicPlayer(
                             onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = {
-                                overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
+                                overlayHandler.showAlbumArtist(
+                                    metadata.album,
+                                    metadata.artists,
+                                    metadata.coverUrl,
+                                    anchorBounds = playerMetadataAnchorBounds(headerTextCoordinates, headerRowCoordinates),
+                                )
                             },
                             enabled = sheetExpanded && showDetail && headerInteractive,
                             marqueeEdgeWidth = AppleMusicDimensions.headerMarqueeEdgeWidth,
@@ -527,6 +544,8 @@ fun AppleMusicPlayer(
                             ),
                             needShadow = false,
                             onTextSizeChanged = { headerTextSize = it },
+                            onTextPositioned = { headerTextCoordinates = it },
+                            onRowPositioned = { headerRowCoordinates = it },
                             onActionsSizeChanged = { headerActionsSize = it },
                             textModifier = Modifier.playerInfoMotion(
                                 headerInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, false,

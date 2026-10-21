@@ -29,10 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -47,6 +50,7 @@ import com.ljyh.mei.ui.component.player.component.LyricScreen
 import com.ljyh.mei.ui.component.player.component.PlayerActionToolbar
 import com.ljyh.mei.ui.component.player.component.PlayerProgressSlider
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueuePage
+import com.ljyh.mei.ui.component.player.component.applemusic.playerMetadataAnchorBounds
 import com.ljyh.mei.ui.component.player.component.classic.component.Cover
 import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
@@ -67,6 +71,8 @@ fun ClassicPhoneLayout(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val pagerState = rememberPagerState(pageCount = { 3 })
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) { derivedStateOf { sheet?.state?.isExpanded == true } }
@@ -117,8 +123,15 @@ fun ClassicPhoneLayout(
                     .fillMaxWidth()
                     .padding(horizontal = PlayerHorizontalPadding),
                 onClick = {
-                    overlayHandler.showAlbumArtist(it.album, it.artists, it.coverUrl)
+                    overlayHandler.showAlbumArtist(
+                        it.album,
+                        it.artists,
+                        it.coverUrl,
+                        anchorBounds = playerMetadataAnchorBounds(headerTextCoordinates, headerRowCoordinates),
+                    )
                 },
+                onTextPositioned = { headerTextCoordinates = it },
+                onRowPositioned = { headerRowCoordinates = it },
                 onMoreClick = {
                     overlayHandler.showMoreAction()
                 },

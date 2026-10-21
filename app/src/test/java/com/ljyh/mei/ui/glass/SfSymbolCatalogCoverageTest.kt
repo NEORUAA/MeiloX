@@ -20,6 +20,7 @@ class SfSymbolCatalogCoverageTest {
             .map { it.groupValues[1] }
             .toSet()
         val direct = Regex("SfIcon\\(\\s*(?:systemName\\s*=\\s*)?\\\"([A-Za-z][A-Za-z0-9.]+)\\\"")
+        val named = Regex("\\bsystemName\\s*=\\s*\\\"([A-Za-z][A-Za-z0-9.]+)\\\"")
         val forwarded = Regex(
             "(?:Appearance(?:Toggle|Choice|FloatChoice)|General(?:Toggle|Choice)|AboutEntry|" +
                 "ContentFeatureSetting|Storage(?:UsageRow|ActionRow)|ToggleRow|ValueRow|" +
@@ -36,7 +37,7 @@ class SfSymbolCatalogCoverageTest {
             .filter { it.isFile && it.extension == "kt" }
             .flatMap { file ->
                 val source = file.readText()
-                val fixed = sequenceOf(direct, forwarded).flatMap { regex ->
+                val fixed = sequenceOf(direct, named, forwarded).flatMap { regex ->
                     regex.findAll(source).map { it.groupValues[1] }
                 }
                 val conditional = conditionalSymbols.findAll(source).flatMap { match ->

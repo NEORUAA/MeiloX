@@ -130,6 +130,7 @@ internal object SfSymbolCatalog {
         "minus.circle.fill" to 0x10004F,
         "mic" to 0x1002B0,
         "microphone" to 0x1002B0,
+        "microphone.dynamic.on.stand" to 0x10046B,
         "moon" to 0x1001B9,
         "moon.fill" to 0x1001BA,
         "moon.stars.fill" to 0x1001C1,

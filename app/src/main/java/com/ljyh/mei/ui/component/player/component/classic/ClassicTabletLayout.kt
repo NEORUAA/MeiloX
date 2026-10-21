@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -49,6 +50,7 @@ import com.ljyh.mei.constants.PlayerHorizontalPadding
 import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
+import com.ljyh.mei.ui.component.player.component.applemusic.playerMetadataAnchorBounds
 import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.constants.TabletAnimationStyle
@@ -75,6 +77,8 @@ fun ClassicTabletLayout(
     overlayHandler: PlayerOverlayHandler
 ) {
     val context = LocalContext.current
+    var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val mediaMetadata by stateContainer.mediaMetadata
     val isPlaying by stateContainer.isPlaying
     val playbackState by stateContainer.playbackState
@@ -144,8 +148,15 @@ fun ClassicTabletLayout(
                             .fillMaxWidth(0.7f)
                             .padding(horizontal = PlayerHorizontalPadding),
                         onClick = {
-                            overlayHandler.showAlbumArtist(it.album, it.artists, it.coverUrl)
+                            overlayHandler.showAlbumArtist(
+                                it.album,
+                                it.artists,
+                                it.coverUrl,
+                                anchorBounds = playerMetadataAnchorBounds(headerTextCoordinates, headerRowCoordinates),
+                            )
                         },
+                        onTextPositioned = { headerTextCoordinates = it },
+                        onRowPositioned = { headerRowCoordinates = it },
                         onMoreClick = {
                             overlayHandler.showMoreAction()
                         },

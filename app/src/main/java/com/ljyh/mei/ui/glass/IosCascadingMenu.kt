@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
@@ -21,7 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
@@ -67,6 +68,7 @@ data class IosCascadingMenuItem(
     val children: List<IosCascadingMenuItem> = emptyList(),
     val enabled: Boolean = true,
     val onClick: () -> Unit = {},
+    val subtitle: String? = null,
 )
 
 private object ScreenMenuPosition : PopupPositionProvider {
@@ -91,6 +93,9 @@ fun IosCascadingMenu(
     headerActions: List<IosCascadingMenuItem> = emptyList(),
     onTriggerAlphaChanged: ((Float) -> Unit)? = null,
     useAccentIcons: Boolean = true,
+    centerHorizontally: Boolean = false,
+    expandFromAnchor: Alignment.Horizontal? = null,
+    forceBelowAnchor: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     var started by remember { mutableStateOf(false) }
@@ -103,6 +108,7 @@ fun IosCascadingMenu(
     var selectedBounds by remember { mutableStateOf<Rect?>(null) }
     val colors = LocalGlassColors.current
     val headerRows = if (headerActions.isEmpty()) 0 else 2
+    val itemHeights = items.map { if (it.subtitle == null) 44 else 56 }
     val textMeasurer = rememberTextMeasurer()
     val longestActionWidth = headerActions.maxOfOrNull {
         textMeasurer.measure(it.title, style = IosTypography.subheadline, maxLines = 1).size.width
@@ -130,6 +136,7 @@ fun IosCascadingMenu(
     }
 
     fun close(action: (() -> Unit)? = null) {
+        if (!open) return
         pendingAction = action
         childExpanded = false
         open = false
@@ -139,12 +146,16 @@ fun IosCascadingMenu(
         expanded = open,
         onExpandedChange = { if (!it) close() },
         itemCount = items.size + headerRows,
-        heightOverride = 20.dp + 44.dp * (items.size + headerRows) + 12.dp * items.count { it.separatorBefore },
+        heightOverride = 20.dp + 44.dp * headerRows + itemHeights.sum().dp +
+            12.dp * items.count { it.separatorBefore },
         menuWidth = menuWidth,
         backdrop = backdrop,
         externalAnchorBounds = anchorBounds,
         keepAnchorVisible = true,
         fullScreen = true,
+        centerHorizontally = centerHorizontally,
+        expandFromAnchor = expandFromAnchor,
+        forceBelowAnchor = forceBelowAnchor,
         menuScale = 1f - 0.04f * child.value.coerceIn(0f, 1f),
         onMenuBoundsChanged = { menuBounds = it },
         onMenuAlphaChanged = { onTriggerAlphaChanged?.invoke(1f - it) },
@@ -186,6 +197,7 @@ fun IosCascadingMenu(
             }
             IosMenuItem(
                 title = item.title,
+                subtitle = item.subtitle,
                 systemName = item.systemName,
                 destructive = item.destructive,
                 backdrop = childBackdrop,
@@ -204,8 +216,11 @@ fun IosCascadingMenu(
                             // Use the resting menu layout and the shared row metrics, never
                             // the pressed row's transformed screen coordinates.
                             val inset = with(density) { 10.dp.toPx() }
-                            val rowHeight = with(density) { 44.dp.toPx() }
-                            val top = bounds.top + inset + rowHeight * (index + headerRows) +
+                            val rowHeight = with(density) { itemHeights[index].dp.toPx() }
+                            val previousRowsHeight = with(density) {
+                                (44 * headerRows + itemHeights.take(index).sum()).dp.toPx()
+                            }
+                            val top = bounds.top + inset + previousRowsHeight +
                                 with(density) { 12.dp.toPx() } * items.take(index + 1).count { it.separatorBefore }
                             selectedBounds = Rect(
                                 bounds.left + inset, top, bounds.right - inset, top + rowHeight,
@@ -231,6 +246,7 @@ fun IosCascadingMenu(
                 Modifier.fillMaxSize().onGloballyPositioned {
                     windowOrigin = it.localToScreen(Offset.Zero)
                 }.semantics { paneTitle = title },
+                contentAlignment = AbsoluteAlignment.TopLeft,
             ) {
                 val origin = windowOrigin ?: return@BoxWithConstraints
                 val density = LocalDensity.current
@@ -241,7 +257,12 @@ fun IosCascadingMenu(
                 val bottomInset = with(density) {
                     androidx.compose.foundation.layout.WindowInsets.safeDrawing.getBottom(this).toDp()
                 } + 12.dp
-                val targetHeight = minOf(20.dp + 44.dp * (selected.children.size + 1) + 12.dp, maxHeight - topInset - bottomInset)
+                val selectedRowHeight = if (selected.subtitle == null) 44.dp else 56.dp
+                val collapsedHeight = 20.dp + selectedRowHeight
+                val targetHeight = minOf(
+                    collapsedHeight + 44.dp * selected.children.size + 12.dp,
+                    maxHeight - topInset - bottomInset,
+                )
                 val rowTop = with(density) { (bounds.top - origin.y).toDp() } - 10.dp
                 val targetTop = rowTop.coerceIn(topInset, (maxHeight - bottomInset - targetHeight).coerceAtLeast(topInset))
                 val top = rowTop + (targetTop - rowTop) * p
@@ -249,17 +270,18 @@ fun IosCascadingMenu(
                 Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null) { childExpanded = false })
                 IosContextMenu(
                     visible = true,
-                    modifier = Modifier.offset(left, top),
+                    modifier = Modifier.absoluteOffset(left, top),
                     backdrop = backdrop,
                     compact = true,
                     menuWidth = menuWidth,
-                    heightOverride = 64.dp + (targetHeight - 64.dp) * p,
+                    heightOverride = collapsedHeight + (targetHeight - collapsedHeight) * p,
                     shadowAlpha = p,
                     highlightAlpha = p,
                     itemCount = selected.children.size + 1,
                 ) { childBackdrop ->
                     IosMenuItem(
                         title = selected.title,
+                        subtitle = selected.subtitle,
                         systemName = selected.systemName,
                         iconTint = if (selected.destructive) colors.destructive else if (useAccentIcons) colors.accent else colors.content,
                         destructive = selected.destructive,
