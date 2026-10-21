@@ -535,20 +535,26 @@ class MusicService : MediaLibraryService(),
                     val restoredItems = restoredState.second
                     val restoredIndex = snapshot.currentIndex.coerceIn(restoredItems.indices)
                     queueTitle = snapshot.queueTitle
-                    queueManager.restoreFmMode(snapshot.isFmMode, snapshot.similarFmSourceIds)
+                    queueManager.restoreFmMode(
+                        snapshot.isFmMode,
+                        snapshot.similarFmSourceIds,
+                        snapshot.queueAutoplayEnabled,
+                    )
                     player.shuffleModeEnabled = false
                     player.setMediaItems(
                         restoredItems,
                         restoredIndex,
                         snapshot.positionMs.coerceAtLeast(0L),
                     )
+                    queueManager.restoreQueueAutoplayStartIndex(snapshot.queueAutoplayStartIndex)
                     player.repeatMode = snapshot.repeatMode.coerceIn(
                         Player.REPEAT_MODE_OFF,
                         Player.REPEAT_MODE_ALL,
                     )
                     snapshot.shuffleOrder?.takeIf { it.isPlaybackPermutation(restoredItems.size) }
                         ?.let { player.setPlaybackOrder(it) }
-                    player.shuffleModeEnabled = snapshot.shuffleModeEnabled && !snapshot.isFmMode
+                    player.shuffleModeEnabled = snapshot.shuffleModeEnabled &&
+                        (!snapshot.isFmMode || snapshot.queueAutoplayEnabled)
                     queueManager.restorePlaylistSource(snapshot.playlistSource)
                     player.playWhenReady = snapshot.playWhenReady
                     player.prepare()
@@ -583,7 +589,7 @@ class MusicService : MediaLibraryService(),
         }
     }
 
-    private fun schedulePlaybackSnapshot() {
+    internal fun schedulePlaybackSnapshot() {
         if (isRestoringPlayback || !::playbackPersistence.isInitialized) return
         playbackSnapshotJob?.cancel()
         playbackSnapshotJob = scope.launch {
@@ -600,6 +606,8 @@ class MusicService : MediaLibraryService(),
             isFmMode = queueManager.isFmMode,
             playlistSource = queueManager.playlistSource,
             similarFmSourceIds = queueManager.similarFmSourceIds,
+            queueAutoplayEnabled = queueManager.queueAutoplayEnabled.value,
+            queueAutoplayStartEntryId = queueManager.queueAutoplayStartEntryId.value,
         )
         withContext(NonCancellable) {
             runCatching { playbackPersistence.save(snapshot) }
@@ -612,6 +620,7 @@ class MusicService : MediaLibraryService(),
         val snapshot = playbackPersistence.capture(
             player, queueTitle, queueManager.isFmMode, queueManager.playlistSource,
             queueManager.similarFmSourceIds,
+            queueManager.queueAutoplayEnabled.value, queueManager.queueAutoplayStartEntryId.value,
         )
         runCatching {
             runBlocking(Dispatchers.IO) { playbackPersistence.save(snapshot) }
@@ -1460,8 +1469,14 @@ class MusicService : MediaLibraryService(),
         val current = player.currentMediaItemIndex
         val total = player.mediaItemCount
         val threshold = 3 // 剩余少于3首时加载
+        val remaining = if (queueManager.queueAutoplayEnabled.value) {
+            val order = player.playbackOrderIndices()
+            order.indexOf(current).takeIf { it >= 0 }?.let { order.size - it } ?: (total - current)
+        } else {
+            total - current
+        }
 
-        if (total - current <= threshold) {
+        if (remaining <= threshold) {
             scope.launch {
                 queueManager.fetchAndAppendFmRecommendations()
             }

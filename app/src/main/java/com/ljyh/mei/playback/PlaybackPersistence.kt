@@ -84,9 +84,11 @@ data class PlaybackSnapshot(
     val shuffleOrder: List<Int>? = null,
     val playlistSource: PlaylistQueueSource? = null,
     val similarFmSourceIds: List<String>? = null,
+    val queueAutoplayEnabled: Boolean = false,
+    val queueAutoplayStartIndex: Int? = null,
 ) {
     val isFmMode: Boolean
-        get() = sourceType == SOURCE_PERSONAL_FM
+        get() = sourceType == SOURCE_PERSONAL_FM || queueAutoplayEnabled
 
     companion object {
         const val SOURCE_QUEUE = "queue"
@@ -136,6 +138,8 @@ class PlaybackPersistence(
         isFmMode: Boolean,
         playlistSource: PlaylistQueueSource? = null,
         similarFmSourceIds: List<String>? = null,
+        queueAutoplayEnabled: Boolean = false,
+        queueAutoplayStartEntryId: String? = null,
     ): PlaybackSnapshot {
         val items = cachedItems ?: buildList(player.mediaItemCount) {
             repeat(player.mediaItemCount) { index ->
@@ -145,6 +149,7 @@ class PlaybackPersistence(
         val currentIndex = player.currentMediaItemIndex
             .takeIf { it in items.indices }
             ?: 0
+        val preserveQueueAutoplay = isFmMode && queueAutoplayEnabled
         return PlaybackSnapshot(
             items = items,
             currentIndex = currentIndex,
@@ -154,9 +159,13 @@ class PlaybackPersistence(
             playWhenReady = player.playWhenReady,
             queueTitle = queueTitle,
             shuffleOrder = cachedOrder ?: player.playbackOrderIndices(true).also { cachedOrder = it },
-            playlistSource = if (isFmMode) null else playlistSource,
+            playlistSource = if (!isFmMode || preserveQueueAutoplay) playlistSource else null,
             similarFmSourceIds = if (isFmMode) similarFmSourceIds else null,
-            sourceType = if (isFmMode) {
+            queueAutoplayEnabled = preserveQueueAutoplay,
+            queueAutoplayStartIndex = queueAutoplayStartEntryId?.takeIf { preserveQueueAutoplay }?.let { id ->
+                (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).queueEntryId == id }
+            },
+            sourceType = if (isFmMode && !preserveQueueAutoplay) {
                 PlaybackSnapshot.SOURCE_PERSONAL_FM
             } else {
                 PlaybackSnapshot.SOURCE_QUEUE
@@ -171,7 +180,9 @@ class PlaybackPersistence(
                 val sameQueue = previous != null && previous.items === snapshot.items &&
                     previous.shuffleOrder === snapshot.shuffleOrder && previous.queueTitle == snapshot.queueTitle &&
                     previous.sourceType == snapshot.sourceType && previous.playlistSource == snapshot.playlistSource &&
-                    previous.similarFmSourceIds == snapshot.similarFmSourceIds
+                    previous.similarFmSourceIds == snapshot.similarFmSourceIds &&
+                    previous.queueAutoplayEnabled == snapshot.queueAutoplayEnabled &&
+                    previous.queueAutoplayStartIndex == snapshot.queueAutoplayStartIndex
                 if (!sameQueue) {
                     val queue = snapshot.copy(savedAtEpochMs = maxOf(snapshot.savedAtEpochMs, (previous?.savedAtEpochMs ?: 0L) + 1))
                     val encoded = gson.toJson(queue)

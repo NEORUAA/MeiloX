@@ -204,28 +204,135 @@ class SimilarFmPlaybackTest {
         assertNull(fixture.manager.similarFmSourceIds)
     }
 
+    @Test(timeout = 10_000)
+    fun queueAutoplayAppendsWithoutChangingThePausedQueueSourcePositionOrModes() = runTest(dispatcher) {
+        fixture.items.clear()
+        fixture.items.addAll(listOf(item("11"), item("42"), item("19")))
+        fixture.currentIndex = 1
+        fixture.position = 12_345L
+        fixture.shuffle = true
+        fixture.repeat = Player.REPEAT_MODE_ONE
+        val source = PlaylistQueueSource(88L, "existing-source")
+        fixture.manager.restorePlaylistSource(source)
+
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(true))
+        runCurrent()
+        assertEquals(listOf("11", "42", "19"), fixture.ids())
+        assertEquals("[42]", fixture.requests.single().body["sourceIds"])
+        fixture.requests.single().response.complete(radio(42, 101, 101, 102))
+        runCurrent()
+
+        assertEquals(listOf("11", "42", "19", "101", "102"), fixture.ids())
+        assertEquals(1, fixture.currentIndex)
+        assertEquals(12_345L, fixture.position)
+        assertFalse(fixture.playWhenReady)
+        assertTrue(fixture.shuffle)
+        assertEquals(Player.REPEAT_MODE_ONE, fixture.repeat)
+        assertEquals(source, fixture.manager.playlistSource)
+        assertEquals(0, fixture.destructivePlaybackCalls)
+        assertTrue(fixture.manager.queueAutoplayEnabled.value)
+        assertTrue(fixture.manager.isFmMode)
+
+        fixture.manager.setShuffleModeEnabled(false)
+        runCurrent()
+        assertFalse(fixture.shuffle)
+        fixture.manager.setShuffleModeEnabled(true)
+        runCurrent()
+        assertTrue(fixture.shuffle)
+    }
+
+    @Test(timeout = 10_000)
+    fun queueAutoplayRejectsAnOldRefillAcrossOffOnAndKeepsAlreadyAddedSongsWhenDisabled() = runTest(dispatcher) {
+        fixture.items.clear()
+        fixture.items += item("42")
+        fixture.playWhenReady = true
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(true))
+        runCurrent()
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(false))
+        assertFalse(fixture.manager.isFmMode)
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(true))
+        runCurrent()
+        assertEquals(2, fixture.requests.size)
+
+        fixture.requests.first().response.complete(radio(101))
+        runCurrent()
+        assertEquals(listOf("42"), fixture.ids())
+        fixture.requests.last().response.complete(radio(201))
+        runCurrent()
+        assertEquals(listOf("42", "201"), fixture.ids())
+
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(false))
+        fixture.manager.fetchAndAppendFmRecommendations()
+        runCurrent()
+        assertEquals(2, fixture.requests.size)
+        assertEquals(listOf("42", "201"), fixture.ids())
+        assertTrue(fixture.playWhenReady)
+        assertEquals(0, fixture.destructivePlaybackCalls)
+    }
+
+    @Test(timeout = 10_000)
+    fun queueAutoplayRejectsUnsupportedSeedsAndDoesNotReplaceIntentionalFm() = runTest(dispatcher) {
+        assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        fixture.items.clear()
+        assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        fixture.items += item("42")
+        fixture.manager.restoreFmMode(true)
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(false))
+        assertTrue(fixture.manager.isFmMode)
+        assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        runCurrent()
+        assertTrue(fixture.requests.isEmpty())
+        assertEquals(listOf("42"), fixture.ids())
+        assertEquals(0, fixture.destructivePlaybackCalls)
+    }
+
+    @Test
+    fun deletingRecommendationBoundariesKeepsLaterRefillsAndNeverSelectsTheOriginalQueue() {
+        var previous = listOf("original", "first", "second")
+        var start: String? = "first"
+        fun updateQueue(current: List<String>): String? {
+            start = repairQueueAutoplayStartEntryId(start, previous, current)
+            previous = current
+            return start
+        }
+        assertEquals("second", updateQueue(listOf("original", "second")))
+        assertEquals("second", updateQueue(listOf("original", "second", "refill-first", "refill-second")))
+        assertEquals("refill-first", updateQueue(listOf("original", "refill-first", "refill-second")))
+        assertEquals("refill-second", updateQueue(listOf("original", "refill-second")))
+        assertNull(updateQueue(listOf("original")))
+        assertEquals(listOf("original"), previous)
+    }
+
     private class Fixture(val scope: CoroutineScope) {
         val items = mutableListOf(item("old"))
         val requests = mutableListOf<PendingRadio>()
         var played = false
-        private var shuffle = false
-        private var repeat = Player.REPEAT_MODE_OFF
+        var shuffle = false
+        var repeat = Player.REPEAT_MODE_OFF
+        var currentIndex = 0
+        var position = 0L
+        var playWhenReady = false
+        var destructivePlaybackCalls = 0
         private val player = Proxy.newProxyInstance(
             Player::class.java.classLoader,
             arrayOf(Player::class.java),
         ) { _, method, arguments ->
             when (method.name) {
                 "getMediaItemCount" -> items.size
-                "getCurrentMediaItemIndex" -> 0
-                "getCurrentMediaItem" -> items.firstOrNull()
+                "getCurrentMediaItemIndex" -> currentIndex
+                "getCurrentMediaItem" -> items.getOrNull(currentIndex)
+                "getCurrentPosition" -> position
+                "getPlayWhenReady" -> playWhenReady
+                "setPlayWhenReady" -> { playWhenReady = arguments!![0] as Boolean; null }
                 "getMediaItemAt" -> items[arguments!![0] as Int]
                 "getCurrentTimeline" -> Timeline.EMPTY
                 "getShuffleModeEnabled" -> shuffle
                 "setShuffleModeEnabled" -> { shuffle = arguments!![0] as Boolean; null }
                 "getRepeatMode" -> repeat
                 "setRepeatMode" -> { repeat = arguments!![0] as Int; null }
-                "clearMediaItems" -> { items.clear(); null }
+                "clearMediaItems" -> { destructivePlaybackCalls++; items.clear(); null }
                 "setMediaItems" -> {
+                    destructivePlaybackCalls++
                     items.clear()
                     @Suppress("UNCHECKED_CAST")
                     items.addAll(arguments!![0] as List<MediaItem>)
@@ -237,8 +344,9 @@ class SimilarFmPlaybackTest {
                     null
                 }
                 "addMediaItem" -> { items.add(arguments!![0] as MediaItem); null }
-                "play" -> { played = true; null }
-                "addListener", "removeListener", "stop", "prepare" -> null
+                "play" -> { destructivePlaybackCalls++; played = true; null }
+                "stop", "prepare" -> { destructivePlaybackCalls++; null }
+                "addListener", "removeListener" -> null
                 else -> error("Unexpected player call: ${method.name}")
             }
         } as Player

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,9 +25,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -49,6 +55,8 @@ import timber.log.Timber
 @Composable
 fun PlayerActionToolbar(
     modifier: Modifier = Modifier,
+    lyricsVisible: Boolean,
+    queueVisible: Boolean = false,
     onLyricClick: () -> Unit,
     onPlaylistClick: () -> Unit,
     onSleepTimerClick: () -> Unit,
@@ -85,8 +93,9 @@ fun PlayerActionToolbar(
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
+        // Apply shared opacity after the lyrics cutout has been composed.
         modifier = modifier.fillMaxWidth()
-            .then(if (playerStyle == PlayerStyle.AppleMusic) Modifier.alpha(0.6f) else Modifier)
+            .then(if (playerStyle == PlayerStyle.AppleMusic) Modifier.alpha(0.5f) else Modifier)
     ) {
 
         actions.forEach { action ->
@@ -101,26 +110,32 @@ fun PlayerActionToolbar(
                             PlayMode.SHUFFLE_MODE_ALL -> "shuffle"
                         }
                         AnimatedContent(targetState = systemName, label = "PlayModeIcon") { target ->
-                            SfIcon(target, stringResource(com.ljyh.mei.R.string.player_action_play_mode), tint = Color.White)
+                            SfIcon(
+                                target,
+                                stringResource(com.ljyh.mei.R.string.player_action_play_mode),
+                                tint = Color.White,
+                                weight = FontWeight.Medium,
+                            )
                         }
                     }
                 }
 
                 PlayerAction.QUEUE -> {
-                    ShadowedIconButton(
+                    PlayerPageActionButton(
+                        systemName = action.systemName,
+                        contentDescription = stringResource(action.labelRes),
+                        isSelected = queueVisible,
                         onClick = onPlaylistClick
-                    ) {
-                        SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
-                    }
+                    )
                 }
 
                 PlayerAction.LYRICS -> {
-                    ShadowedIconButton(
+                    PlayerPageActionButton(
+                        systemName = if (lyricsVisible) "quote.bubble.fill" else action.systemName,
+                        contentDescription = stringResource(action.labelRes),
+                        isSelected = lyricsVisible,
                         onClick = onLyricClick
-                    ) {
-                        SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
-                    }
-
+                    )
                 }
 
                 PlayerAction.SLEEP_TIMER -> {
@@ -157,7 +172,12 @@ fun PlayerActionToolbar(
                                 ShadowedIconButton(
                                     onClick = onSleepTimerClick
                                 ) {
-                                    SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
+                                    SfIcon(
+                                        action.systemName,
+                                        stringResource(action.labelRes),
+                                        tint = Color.White,
+                                        weight = FontWeight.Medium,
+                                    )
                                 }
                             }
                         }
@@ -168,7 +188,12 @@ fun PlayerActionToolbar(
                     ShadowedIconButton(
                         onClick = onAddToPlaylistClick
                     ) {
-                        SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
+                        SfIcon(
+                            action.systemName,
+                            stringResource(action.labelRes),
+                            tint = Color.White,
+                            weight = FontWeight.Medium,
+                        )
                     }
                 }
 
@@ -176,7 +201,12 @@ fun PlayerActionToolbar(
                     ShadowedIconButton(
                         onClick = onDownloadClick,
                     ) {
-                        SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
+                        SfIcon(
+                            action.systemName,
+                            stringResource(action.labelRes),
+                            tint = Color.White,
+                            weight = FontWeight.Medium,
+                        )
                     }
                 }
 
@@ -184,12 +214,54 @@ fun PlayerActionToolbar(
                     ShadowedIconButton(
                         onClick = onMoreClick
                     ) {
-                        SfIcon(action.systemName, stringResource(action.labelRes), tint = Color.White)
+                        SfIcon(
+                            action.systemName,
+                            stringResource(action.labelRes),
+                            tint = Color.White,
+                            weight = FontWeight.Medium,
+                        )
                     }
                 }
             }
         }
 
+    }
+}
+
+@Composable
+private fun PlayerPageActionButton(
+    systemName: String,
+    contentDescription: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    ShadowedIconButton(
+        modifier = Modifier.semantics { selected = isSelected },
+        onClick = onClick,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .then(
+                    if (isSelected) Modifier.graphicsLayer {
+                        // Keep the glyph cutout inside the button background.
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    } else Modifier
+                )
+                .background(if (isSelected) Color.White else Color.Transparent, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            SfIcon(
+                systemName = systemName,
+                contentDescription = contentDescription,
+                modifier = if (isSelected) Modifier.graphicsLayer {
+                    blendMode = BlendMode.DstOut
+                    compositingStrategy = CompositingStrategy.Offscreen
+                } else Modifier,
+                tint = Color.White,
+                weight = FontWeight.Medium,
+            )
+        }
     }
 }
 

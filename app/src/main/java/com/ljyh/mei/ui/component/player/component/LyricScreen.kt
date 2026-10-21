@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AccompanimentLyricTextBoldKey
@@ -129,6 +130,7 @@ fun LyricScreen(
     val sheet = LocalPlayerSheet.current
     val expanded by remember(sheet) { derivedStateOf { sheet == null || sheet.state.isExpanded } }
     val contentVisible by remember(sheet) { derivedStateOf { sheet == null || sheet.state.isContentVisible } }
+    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val (normalLyricTextSize, _) = rememberEnumPreference(
         NormalLyricTextSizeKey,
         LyricTextSize.Size28
@@ -146,8 +148,8 @@ fun LyricScreen(
         if (!active) manualScroll.onHidden()
     }
 
-    LifecycleStartedEffect(controlsVisible, expanded, active) {
-        if (controlsVisible && expanded && active) {
+    LifecycleStartedEffect(controlsVisible, expanded, active, isPlaying) {
+        if (controlsVisible && expanded && active && isPlaying) {
             delay(5000)
             onToggleControls(false)
         }

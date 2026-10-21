@@ -34,6 +34,8 @@ fun PlayerControlsSection(
     isPlaying: Boolean,
     playbackState: Int,
     playerConnection: PlayerConnection,
+    lyricsVisible: Boolean,
+    queueVisible: Boolean,
     onLyricClick: () -> Unit,
     onPlaylistClick: () -> Unit,
     onSleepTimerClick: () -> Unit,
@@ -76,6 +78,8 @@ fun PlayerControlsSection(
             Spacer(Modifier.height(spacerHeight))
             PlayerActionToolbar(
                 modifier = Modifier.padding(horizontal = PlayerHorizontalPadding).playerAdditiveBlend(),
+                lyricsVisible = lyricsVisible,
+                queueVisible = queueVisible,
                 onLyricClick = onLyricClick,
                 onPlaylistClick = onPlaylistClick,
                 onSleepTimerClick = onSleepTimerClick,

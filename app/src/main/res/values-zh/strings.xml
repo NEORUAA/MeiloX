@@ -73,6 +73,11 @@
     <string name="queue_close">关闭播放队列</string>
     <string name="queue_remove">从队列移除</string>
     <string name="queue_cannot_remove_last">不能移除最后一首歌曲</string>
+    <string name="queue_continue_playing">继续播放</string>
+    <string name="queue_from_source">来自 %1$s</string>
+    <string name="queue_autoplay">自动连播</string>
+    <string name="queue_autoplay_description">将继续播放类似音乐</string>
+    <string name="queue_reorder">调整歌曲顺序</string>
     <string name="player_action_lyrics">歌词</string>
     <string name="player_action_customize">自定义播放器操作</string>
     <string name="player_action_customize_hint">轻点添加或移除，最多显示五个操作。</string>

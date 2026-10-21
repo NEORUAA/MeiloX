@@ -43,11 +43,18 @@ class PlayerOverlayHandler(
     val currentOverlayValue: OverlayState
         get() = _currentOverlay.value
 
-    /**
-     * 显示播放列表弹窗
-     */
+    /** Optional inline queue route supplied by the active phone layout. */
+    internal var onShowPlaylist: (() -> Unit)? = null
+
+    /** Open the inline queue when available, otherwise use the shared sheet. */
     fun showPlaylist() {
-        _currentOverlay.value = OverlayState.Playlist
+        val openPlaylist = onShowPlaylist
+        if (openPlaylist != null) {
+            dismiss()
+            openPlaylist()
+        } else {
+            _currentOverlay.value = OverlayState.Playlist
+        }
     }
 
     /**

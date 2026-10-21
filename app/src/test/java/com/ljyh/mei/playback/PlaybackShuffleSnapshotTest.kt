@@ -45,6 +45,8 @@ class PlaybackShuffleSnapshotTest {
         assertTrue(restored.shuffleModeEnabled)
         assertNull(restored.shuffleOrder)
         assertNull(restored.playlistSource)
+        assertFalse(restored.queueAutoplayEnabled)
+        assertNull(restored.queueAutoplayStartIndex)
     }
 
     @Test
@@ -93,6 +95,31 @@ class PlaybackShuffleSnapshotTest {
         )
         assertTrue(restored.isFmMode)
         assertNull(restored.similarFmSourceIds)
+    }
+
+    @Test
+    fun queueAutoplayRoundTripKeepsTheOriginalQueueSourceModesAndPausedProgress() {
+        val original = PlaybackSnapshot(
+            items = listOf("11", "42", "101").map { PlaybackItemSnapshot(mediaId = it) },
+            currentIndex = 1,
+            positionMs = 12_345L,
+            repeatMode = 1,
+            shuffleModeEnabled = true,
+            shuffleOrder = listOf(1, 0, 2),
+            playWhenReady = false,
+            queueTitle = "Original playlist",
+            playlistSource = PlaylistQueueSource(88L, "existing-source"),
+            similarFmSourceIds = listOf("42"),
+            queueAutoplayEnabled = true,
+            queueAutoplayStartIndex = 2,
+        )
+        val restored = gson.fromJson(gson.toJson(original), PlaybackSnapshot::class.java)
+        assertEquals(original, restored)
+        assertEquals(PlaybackSnapshot.SOURCE_QUEUE, restored.sourceType)
+        assertTrue(restored.isFmMode)
+        assertTrue(restored.queueAutoplayEnabled)
+        assertFalse(restored.playWhenReady)
+        assertEquals(listOf("42"), restored.similarFmSourceIds)
     }
 
     @Test

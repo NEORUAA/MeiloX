@@ -80,6 +80,8 @@ class PlayerConnection(
     val currentMediaItemIndex = MutableStateFlow(-1)
     val currentWindowIndex = MutableStateFlow(-1)
     val isFMMode = MutableStateFlow(service.isFmMode())
+    val queueAutoplayEnabled = service.queueManager.queueAutoplayEnabled
+    val queueAutoplayStartEntryId = service.queueManager.queueAutoplayStartEntryId
 
     // 这里 repeatMode 我们存储对应的 PlayMode 枚举值(int)，用于 UI 显示
     val repeatMode = MutableStateFlow(PlayMode.SHUFFLE_MODE_ALL.mode)
@@ -152,6 +154,14 @@ class PlayerConnection(
             }
         }
     }.await()
+
+    fun setQueueAutoplayEnabled(enabled: Boolean): Boolean {
+        val accepted = service.queueManager.setQueueAutoplayEnabled(enabled)
+        isFMMode.value = service.isFmMode()
+        updateCanSkipPreviousAndNext()
+        if (accepted) service.schedulePlaybackSnapshot()
+        return accepted
+    }
 
 
     fun playQueue(queue: ListQueue, shuffle: Boolean? = null) {

@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +68,11 @@ class PlaybackQueueManager(
     private val _isShuffleModeEnabled = MutableStateFlow(false)
     var isFmMode = false
     private var fetchingFmGeneration: Long? = null
+    private val _queueAutoplayEnabled = MutableStateFlow(false)
+    val queueAutoplayEnabled = _queueAutoplayEnabled.asStateFlow()
+    private val _queueAutoplayStartEntryId = MutableStateFlow<String?>(null)
+    val queueAutoplayStartEntryId = _queueAutoplayStartEntryId.asStateFlow()
+    private var queueAutoplayQueueEntryIds = emptyList<String>()
 
 
     init {
@@ -74,7 +80,11 @@ class PlaybackQueueManager(
         (player as? StableDeckPlayer)?.onQueueEdited = { replaced ->
             cancelServerShuffle()
             queueSelectionJob?.cancel()
-            if (replaced) playlistSource = null
+            if (replaced) {
+                playlistSource = null
+                _queueAutoplayStartEntryId.value = null
+                queueAutoplayQueueEntryIds = emptyList()
+            }
         }
         (player as? StableDeckPlayer)?.onSeekRequested = {
             queueSelectionJob?.cancel()
@@ -153,6 +163,7 @@ class PlaybackQueueManager(
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+        refreshQueueAutoplayBoundary()
         checkAndLoadMetadata()
     }
 
@@ -306,6 +317,8 @@ class PlaybackQueueManager(
                 pendingSimilarGeneration = null
                 similarFmRequest = request
                 isFmMode = true
+                _queueAutoplayEnabled.value = false
+                _queueAutoplayStartEntryId.value = null
                 activeFmGeneration = generation
                 playlistSource = null
                 player.stop()
@@ -336,12 +349,56 @@ class PlaybackQueueManager(
         return result
     }
 
-    fun restoreFmMode(enabled: Boolean, similarSourceIds: List<String>? = null) {
+    fun setQueueAutoplayEnabled(enabled: Boolean): Boolean {
+        if (enabled == _queueAutoplayEnabled.value) return true
+        if (enabled) {
+            // Queue autoplay must not replace an intentional personal/similar FM session.
+            if (isFmMode) return false
+            val current = player.currentMediaItem ?: return false
+            if (current.metadata?.isLocal == true || current.metadata?.isPodcast == true) return false
+            val request = SimilarFmRequest.fromSongIds(listOf(current.mediaId)) ?: return false
+            cancelActiveQueueBuild(clearPlaylistSource = false)
+            restoreFmMode(true, request.sourceIds, queueAutoplay = true)
+            scope.launch { fetchAndAppendFmRecommendations(current.mediaId) }
+        } else {
+            // Invalidate even a transport that finishes after a quick off/on toggle.
+            cancelActiveQueueBuild(clearPlaylistSource = false)
+            restoreFmMode(false)
+        }
+        return true
+    }
+
+    fun restoreFmMode(
+        enabled: Boolean,
+        similarSourceIds: List<String>? = null,
+        queueAutoplay: Boolean = false,
+    ) {
         similarFmRequest = similarSourceIds?.let(SimilarFmRequest::fromSongIds)
         // An invalid saved similar context must not silently request personal FM.
-        isFmMode = enabled && (similarSourceIds == null || similarFmRequest != null)
+        isFmMode = enabled && (similarSourceIds == null || similarFmRequest != null) &&
+            (!queueAutoplay || similarFmRequest != null)
         if (!isFmMode) similarFmRequest = null
         activeFmGeneration = queueBuildGeneration.takeIf { isFmMode }
+        _queueAutoplayEnabled.value = isFmMode && queueAutoplay
+        _queueAutoplayStartEntryId.value = null
+        queueAutoplayQueueEntryIds = emptyList()
+    }
+
+    fun restoreQueueAutoplayStartIndex(index: Int?) {
+        _queueAutoplayStartEntryId.value = index?.takeIf {
+            _queueAutoplayEnabled.value && it in 0 until player.mediaItemCount
+        }?.let { player.getMediaItemAt(it).queueEntryId }
+        queueAutoplayQueueEntryIds = (0 until player.mediaItemCount)
+            .mapNotNull { player.getMediaItemAt(it).queueEntryId }
+    }
+
+    private fun refreshQueueAutoplayBoundary() {
+        if (!_queueAutoplayEnabled.value) return
+        val currentIds = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).queueEntryId }
+        _queueAutoplayStartEntryId.value = repairQueueAutoplayStartEntryId(
+            _queueAutoplayStartEntryId.value, queueAutoplayQueueEntryIds, currentIds,
+        )
+        queueAutoplayQueueEntryIds = currentIds
     }
 
     private suspend fun startFmPlayback(seedItem: MediaItem?, generation: Long) {
@@ -349,6 +406,8 @@ class PlaybackQueueManager(
 
         isFmMode = true
         similarFmRequest = null
+        _queueAutoplayEnabled.value = false
+        _queueAutoplayStartEntryId.value = null
         activeFmGeneration = generation
         _queueState.value = QueueState.Loading("私人 FM")
 
@@ -398,7 +457,14 @@ class PlaybackQueueManager(
                     }
                     val additions = items.filter { it.mediaId != currentId && it.mediaId !in queuedIds }
                         .let { if (request == null) it else it.distinctBy(MediaItem::mediaId) }
-                    if (additions.isNotEmpty()) player.addMediaItems(additions)
+                    if (additions.isNotEmpty()) {
+                        val firstAdditionIndex = player.mediaItemCount
+                        player.addMediaItems(additions)
+                        if (_queueAutoplayEnabled.value && _queueAutoplayStartEntryId.value == null) {
+                            restoreQueueAutoplayStartIndex(firstAdditionIndex)
+                        }
+                        refreshQueueAutoplayBoundary()
+                    }
 
                     _queueState.value = QueueState.Playing(
                         if (request == null) "私人 FM" else SIMILAR_FM_TITLE,
@@ -501,6 +567,8 @@ class PlaybackQueueManager(
                 isFmMode = false
                 activeFmGeneration = null
                 similarFmRequest = null
+                _queueAutoplayEnabled.value = false
+                _queueAutoplayStartEntryId.value = null
                 player.stop()
                 player.clearMediaItems()
 
@@ -563,24 +631,30 @@ class PlaybackQueueManager(
         // --- 新增 FM 边界检查 ---
         if (isFmMode) {
             val currentIndex = player.currentMediaItemIndex
-            val totalCount = player.mediaItemCount
+            val remaining = if (_queueAutoplayEnabled.value) {
+                val order = player.playbackOrderIndices()
+                order.indexOf(currentIndex).takeIf { it >= 0 }?.let { order.size - it }
+                    ?: (player.mediaItemCount - currentIndex)
+            } else {
+                player.mediaItemCount - currentIndex
+            }
 
             // 当播放到倒数第 2 首时，自动拉取新歌
-            if (totalCount - currentIndex <= 2) {
+            if (remaining <= 2) {
                 scope.launch {
                     fetchAndAppendFmRecommendations()
                 }
             }
 
             // 可选：清理历史，防止内存溢出（保留当前和上一首，删除更早的）
-            if (currentIndex > 5) {
+            if (!_queueAutoplayEnabled.value && currentIndex > 5) {
                 player.removeMediaItems(0, currentIndex - 1)
             }
         }
     }
 
     fun setShuffleModeEnabled(enabled: Boolean) {
-        if (isFmMode && enabled) {
+        if (isFmMode && !_queueAutoplayEnabled.value && enabled) {
             Log.w(TAG, "Shuffle is not allowed in FM mode")
             return
         }
@@ -810,6 +884,18 @@ class PlaybackQueueManager(
         object Completed : QueueState()
         object Empty : QueueState()
     }
+}
+
+internal fun repairQueueAutoplayStartEntryId(
+    startEntryId: String?,
+    previousEntryIds: List<String>,
+    currentEntryIds: List<String>,
+): String? {
+    if (startEntryId == null || startEntryId in currentEntryIds) return startEntryId
+    val previousStart = previousEntryIds.indexOf(startEntryId)
+    if (previousStart < 0) return null
+    val remainingIds = currentEntryIds.toSet()
+    return previousEntryIds.drop(previousStart + 1).firstOrNull { it in remainingIds }
 }
 
 internal fun isPlaceholderMediaItem(item: MediaItem): Boolean =

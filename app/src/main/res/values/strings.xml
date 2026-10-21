@@ -73,6 +73,11 @@
     <string name="queue_close">Close queue</string>
     <string name="queue_remove">Remove from queue</string>
     <string name="queue_cannot_remove_last">The final song cannot be removed</string>
+    <string name="queue_continue_playing">Continue Playing</string>
+    <string name="queue_from_source">From %1$s</string>
+    <string name="queue_autoplay">Autoplay</string>
+    <string name="queue_autoplay_description">Similar music will keep playing</string>
+    <string name="queue_reorder">Reorder song</string>
     <string name="player_action_lyrics">Lyrics</string>
     <string name="player_action_customize">Customize Player Actions</string>
     <string name="player_action_customize_hint">Tap to add or remove actions. Up to five actions can be shown.</string>

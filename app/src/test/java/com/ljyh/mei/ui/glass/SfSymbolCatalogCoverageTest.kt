@@ -23,7 +23,7 @@ class SfSymbolCatalogCoverageTest {
         val forwarded = Regex(
             "(?:Appearance(?:Toggle|Choice|FloatChoice)|General(?:Toggle|Choice)|AboutEntry|" +
                 "ContentFeatureSetting|Storage(?:UsageRow|ActionRow)|ToggleRow|ValueRow|" +
-                "BenefitCard|ShareModeButton|WikiArtworkRow)\\s*\\(" +
+                "BenefitCard|ShareModeButton|WikiArtworkRow|QueueModeButton)\\s*\\(" +
                 "[\\s\\S]{0,220}?\\\"([A-Za-z][A-Za-z0-9.]+)\\\"",
         )
         val enumSymbols = Regex(
