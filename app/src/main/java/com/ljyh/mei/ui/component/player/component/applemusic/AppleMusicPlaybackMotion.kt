@@ -36,7 +36,7 @@ internal fun rememberAppleMusicPlaybackScale(isPlaying: Boolean, expanded: Boole
         animationSpec = if (expanded) appleMusicPlaybackSpec(isPlaying) else snap(),
         label = "AppleMusicPlaybackFraction",
     )
-    return remember(pausedFraction) { derivedStateOf { 1f - 0.1f * pausedFraction.value } }
+    return remember(pausedFraction) { derivedStateOf { 1f - 0.25f * pausedFraction.value } }
 }
 
 @Composable

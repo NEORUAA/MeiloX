@@ -7,6 +7,8 @@ internal object AppleMusicDimensions {
     val artworkInset = 26.dp
     val progressInset = 26.dp
     val albumInfoInset = 28.dp
+    val albumMarqueeEdgeWidth = albumInfoInset
+    val headerMarqueeEdgeWidth = 12.dp
     val headerInset = 28.5.dp
     val lyricTextInset = 28.dp
     val lyricRendererInset = 16.dp

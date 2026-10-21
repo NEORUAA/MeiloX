@@ -65,6 +65,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -240,7 +241,7 @@ fun AppleMusicPlayer(
             derivedStateOf {
                 appleMusicArtworkFrame(
                     normalBounds, headerBounds, normalRadius, headerRadius, normalShadow,
-                    if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.9f,
+                    if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.75f,
                     lyricAnimFraction.value,
                 )
             }
@@ -443,6 +444,9 @@ fun AppleMusicPlayer(
                                 onActionsSizeChanged = { albumActionsSize = it },
                                 textModifier = Modifier.playerInfoMotion(
                                     albumInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, true,
+                                    layerOutsets = if (infoRtl) {
+                                        LayerOutsets(right = AppleMusicDimensions.albumMarqueeEdgeWidth)
+                                    } else LayerOutsets(left = AppleMusicDimensions.albumMarqueeEdgeWidth),
                                 ),
                                 actionsModifier = Modifier.playerInfoMotion(
                                     albumInfoAlpha, lyricProgress, albumActionsOrigin, headerActionsOrigin, true,
@@ -470,7 +474,7 @@ fun AppleMusicPlayer(
                                 overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
                             },
                             enabled = sheetExpanded && showLyrics && headerInteractive,
-                            marqueeEdgeWidth = 12.dp,
+                            marqueeEdgeWidth = AppleMusicDimensions.headerMarqueeEdgeWidth,
                             marqueeEnabled = sheetExpanded && headerInfoVisible,
                             titleStyle = MaterialTheme.typography.titleMedium.copy(
                                 fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold,
@@ -483,6 +487,9 @@ fun AppleMusicPlayer(
                             onActionsSizeChanged = { headerActionsSize = it },
                             textModifier = Modifier.playerInfoMotion(
                                 headerInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, false,
+                                layerOutsets = if (infoRtl) {
+                                    LayerOutsets(right = AppleMusicDimensions.headerMarqueeEdgeWidth)
+                                } else LayerOutsets(left = AppleMusicDimensions.headerMarqueeEdgeWidth),
                             ),
                             actionsModifier = Modifier.playerInfoMotion(
                                 headerInfoAlpha, lyricProgress, albumActionsOrigin, headerActionsOrigin, false,
@@ -638,12 +645,15 @@ internal fun Modifier.playerInfoMotion(
     albumOrigin: Offset,
     headerOrigin: Offset,
     fromAlbum: Boolean,
+    layerOutsets: LayerOutsets = LayerOutsets.Zero,
 ): Modifier = graphicsLayer {
     val offset = appleMusicInfoOffset(albumOrigin, headerOrigin, progress.value, fromAlbum)
     translationX = offset.x
     translationY = offset.y
     alpha = opacity.value
     clip = false
+    // Keep the leading marquee fade inside the additive layer's offscreen buffer.
+    outsets = layerOutsets
     blendMode = BlendMode.Plus
     compositingStrategy = CompositingStrategy.Offscreen
 }
