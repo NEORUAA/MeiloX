@@ -22,17 +22,56 @@ import androidx.compose.ui.unit.Dp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
+import com.ljyh.mei.playback.LocalPlaybackInfo
 import com.ljyh.mei.ui.glass.IosMenuItem
 import com.ljyh.mei.ui.glass.IosPopupMenu
 import com.ljyh.mei.ui.glass.SfIcon
+import java.util.Locale
+import kotlin.math.roundToInt
+
+@Composable
+internal fun localPlaybackQualityTitle(
+    info: LocalPlaybackInfo?,
+    includeSource: Boolean = false,
+): String {
+    val localTitle = stringResource(R.string.track_quality_local_file)
+    val format = when (info?.mimeType?.substringBefore(';')?.lowercase(Locale.ROOT)) {
+        "audio/mpeg" -> "MP3"
+        "audio/flac", "audio/x-flac" -> "FLAC"
+        "audio/mp4a-latm", "audio/aac" -> "AAC"
+        "audio/mp4" -> "M4A"
+        "audio/opus" -> "Opus"
+        "audio/vorbis", "audio/ogg" -> "Ogg"
+        "audio/alac" -> "ALAC"
+        "audio/ac3" -> "AC-3"
+        "audio/eac3", "audio/eac3-joc" -> "E-AC-3"
+        "audio/raw" -> "PCM"
+        "audio/wav", "audio/x-wav" -> "WAV"
+        else -> null
+    }
+    val bitrate = info?.bitrate?.takeIf { it > 0 }?.let { "${(it / 1_000f).roundToInt()} kbps" }
+    val sampleRate = info?.sampleRate?.takeIf { it > 0 }?.let { rate ->
+        val khz = rate / 1_000f
+        "${if (rate % 1_000 == 0) khz.toInt().toString() else String.format(Locale.ROOT, "%.1f", khz)} kHz"
+    }
+    val details = listOfNotNull(format, bitrate ?: sampleRate).joinToString(" · ")
+    return when {
+        details.isEmpty() -> localTitle
+        includeSource -> "$localTitle · ${format ?: bitrate ?: sampleRate}"
+        else -> details
+    }
+}
 
 @Composable
 fun PlayerQualityDropdown(
     quality: MusicQuality?,
     availableQualities: List<MusicQuality>,
     isLoading: Boolean,
+    localPlaybackInfo: LocalPlaybackInfo?,
+    isPlayingLocalSource: Boolean,
     onMenuOpened: () -> Unit,
     onQualitySelected: (MusicQuality) -> Unit,
+    onLocalSourceSelected: () -> Unit,
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
@@ -42,7 +81,7 @@ fun PlayerQualityDropdown(
     var expanded by remember { mutableStateOf(false) }
     val statusTitle = when {
         isLoading -> stringResource(R.string.track_quality_loading)
-        availableQualities.isEmpty() -> stringResource(R.string.track_quality_unavailable)
+        availableQualities.isEmpty() && localPlaybackInfo == null -> stringResource(R.string.track_quality_unavailable)
         else -> null
     }
 
@@ -52,7 +91,8 @@ fun PlayerQualityDropdown(
             if (it && !expanded) onMenuOpened()
             expanded = it
         },
-        itemCount = availableQualities.size + if (statusTitle != null) 1 else 0,
+        itemCount = availableQualities.size + (if (localPlaybackInfo != null) 1 else 0) +
+            (if (statusTitle != null) 1 else 0),
         modifier = modifier.background(backgroundColor, ContinuousRoundedRectangle(cornerRadius)),
         anchor = { onClick ->
             Row(
@@ -72,7 +112,8 @@ fun PlayerQualityDropdown(
                     modifier = Modifier.padding(end = 4.dp),
                 )
                 Text(
-                    text = stringResource(quality?.labelRes ?: R.string.music_quality),
+                    text = if (isPlayingLocalSource) localPlaybackQualityTitle(localPlaybackInfo)
+                    else stringResource(quality?.labelRes ?: R.string.music_quality),
                     style = style,
                     color = color,
                     maxLines = 1,
@@ -81,6 +122,17 @@ fun PlayerQualityDropdown(
             }
         },
     ) { childBackdrop, close ->
+        localPlaybackInfo?.let { info ->
+            IosMenuItem(
+                title = localPlaybackQualityTitle(info, includeSource = true),
+                onClick = {
+                    onLocalSourceSelected()
+                    close()
+                },
+                systemName = if (isPlayingLocalSource) "checkmark" else null,
+                backdrop = childBackdrop,
+            )
+        }
         availableQualities.forEach { option ->
             IosMenuItem(
                 title = stringResource(option.labelRes),
@@ -88,7 +140,7 @@ fun PlayerQualityDropdown(
                     onQualitySelected(option)
                     close()
                 },
-                systemName = if (option == quality) "checkmark" else null,
+                systemName = if (!isPlayingLocalSource && option == quality) "checkmark" else null,
                 backdrop = childBackdrop,
             )
         }

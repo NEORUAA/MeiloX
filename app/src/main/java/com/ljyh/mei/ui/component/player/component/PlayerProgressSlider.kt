@@ -63,6 +63,8 @@ fun PlayerProgressSlider(
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
     val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
+    val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
+    val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
     val isDurationValid = remember(duration) { duration > 0 }
     val valueRange = remember(duration) { 0f..(duration.takeIf { it > 0 } ?: 1).toFloat() }
 
@@ -242,8 +244,11 @@ fun PlayerProgressSlider(
                 quality = musicQuality,
                 availableQualities = availableQualities,
                 isLoading = isLoadingQualities,
+                localPlaybackInfo = localPlaybackInfo,
+                isPlayingLocalSource = isPlayingLocalSource,
                 onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
+                onLocalSourceSelected = { playerConnection?.useLocalSource() },
                 style = timeTextStyle,
                 color = Color.White.copy(alpha = 0.8f),
             )

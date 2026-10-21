@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.audiofx.AudioEffect
 import android.net.ConnectivityManager
-import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.Handler
@@ -132,7 +131,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import timber.log.Timber
-import java.io.File
 import java.lang.ref.WeakReference
 import java.util.Locale.getDefault
 import java.util.concurrent.ConcurrentHashMap
@@ -188,6 +186,8 @@ class MusicService : MediaLibraryService(),
     val currentMediaMetadata = MutableStateFlow<MediaMetadata?>(null)
     val availableMusicQualities = MutableStateFlow<List<MusicQuality>>(emptyList())
     val currentMusicQuality = MutableStateFlow<MusicQuality?>(null)
+    val localPlaybackInfo = MutableStateFlow<LocalPlaybackInfo?>(null)
+    val isPlayingLocalSource = MutableStateFlow(false)
     val isLoadingMusicQualities = MutableStateFlow(false)
     private var availableQualitiesJob: Job? = null
     private var qualityMediaId: String? = null
@@ -490,8 +490,20 @@ class MusicService : MediaLibraryService(),
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
         scope.launch {
             context.dataStore.data.map { it[CookieKey] }.distinctUntilChanged().drop(1).collect {
+                val mediaId = player.currentMediaItem?.mediaId
+                val hasOpenedSource = player.playbackState == Player.STATE_READY
+                val playingQuality = currentMusicQuality.value
+                val playingLocal = isPlayingLocalSource.value
+                val localInfo = localPlaybackInfo.value
                 mediaUriProvider.clearQualityState()
-                resetCurrentQualityState(player.currentMediaItem?.mediaId)
+                resetCurrentQualityState(mediaId)
+                // Already prepared bytes retain their actual format. Entitlement and URL
+                // caches are still cleared, and the new account gets a fresh quality catalog.
+                if (hasOpenedSource && player.currentMediaItem?.mediaId == mediaId) {
+                    currentMusicQuality.value = playingQuality
+                    isPlayingLocalSource.value = playingLocal
+                    localPlaybackInfo.value = localInfo
+                }
             }
         }
         restorePlayerState()
@@ -680,7 +692,10 @@ class MusicService : MediaLibraryService(),
     private fun publishResolvedQuality(source: ResolvedMediaSource) {
         val mediaId = player.currentMediaItem?.mediaId ?: return
         if (source.cacheKey?.let { mediaUriProvider.isRejectedCachedSource(mediaId, it) } == true) return
-        val quality = source.actualQuality.takeIf { source.cacheKey != null }?.let { actual ->
+        val isLocal = source.cacheKey == null
+        isPlayingLocalSource.value = isLocal
+        if (isLocal) localPlaybackInfo.value = source.localPlaybackInfo ?: LocalPlaybackInfo()
+        val quality = source.actualQuality.takeIf { !isLocal }?.let { actual ->
             MusicQuality.entries.firstOrNull { it.text == normalizePlaybackQuality(actual) }
         }
         currentMusicQuality.value = quality
@@ -696,6 +711,8 @@ class MusicService : MediaLibraryService(),
         qualityMediaId = mediaId
         availableMusicQualities.value = emptyList()
         currentMusicQuality.value = null
+        localPlaybackInfo.value = null
+        isPlayingLocalSource.value = false
         isLoadingMusicQualities.value = false
         if (mediaId != null) {
             mediaUriProvider.resolvedMediaSource(mediaId)?.let(::publishResolvedQuality)
@@ -714,8 +731,15 @@ class MusicService : MediaLibraryService(),
         isLoadingMusicQualities.value = true
         availableQualitiesJob = scope.launch {
             try {
-                val qualities = withContext(Dispatchers.IO) {
-                    mediaUriProvider.getAvailableMusicQualities(mediaId, supportsDolby)
+                val localInfo = withContext(Dispatchers.IO) {
+                    mediaUriProvider.getLocalPlaybackInfo(mediaId)
+                }
+                if (generation != qualityGeneration || player.currentMediaItem?.mediaId != mediaId) return@launch
+                localPlaybackInfo.value = localInfo
+                val qualities = if (player.currentMediaItem?.metadata?.isLocal == true) emptyList() else {
+                    withContext(Dispatchers.IO) {
+                        mediaUriProvider.getAvailableMusicQualities(mediaId, supportsDolby)
+                    }
                 }
                 if (generation == qualityGeneration && player.currentMediaItem?.mediaId == mediaId) {
                     availableMusicQualities.value = (qualities + listOfNotNull(currentMusicQuality.value))
@@ -1209,20 +1233,13 @@ class MusicService : MediaLibraryService(),
             val quality = context.dataStore[MusicQualityKey]
                 ?.let(::normalizePlaybackQuality)
                 ?: MusicQuality.EXHIGH.text
-            val localFilePath = runBlocking {
-                val song = songRepository.getSong(mediaId).firstOrNull()
-                    ?: songRepository.getSong("local_$mediaId").firstOrNull()
-                song?.path
-            }
-            if (localFilePath != null) {
-                val file = File(localFilePath)
-                if (file.exists()) {
-                    Timber.tag("ResolvingDataSource").d("Using local file for mediaId: $mediaId, filePath: ${file.path}")
-                    return@Factory dataSpec.buildUpon()
-                        .setUri(Uri.fromFile(file))
-                        .setKey(null)
-                        .build()
-                }
+            val localSource = runBlocking { mediaUriProvider.resolveLocalSource(mediaId) }
+            if (localSource != null) {
+                Timber.tag("ResolvingDataSource").d("Using local source for mediaId: %s", mediaId)
+                return@Factory dataSpec.buildUpon()
+                    .setUri(localSource.uri)
+                    .setKey(null)
+                    .build()
             }
             val fullyCachedKey = findFullyCachedPlaybackKey(simpleCache, mediaId, quality)
             if (fullyCachedKey != null && !mediaUriProvider.isRejectedCachedSource(mediaId, fullyCachedKey)) {

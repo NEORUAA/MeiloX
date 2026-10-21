@@ -82,6 +82,8 @@ internal fun AppleMusicProgressSlider(
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
     val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
+    val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
+    val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
     val drag = remember(mediaId) { AppleMusicSeekGesture() }
     val previewFraction = drag.fraction
     var pointerPressed by remember(mediaId) { mutableStateOf(false) }
@@ -273,8 +275,11 @@ internal fun AppleMusicProgressSlider(
                 quality = musicQuality,
                 availableQualities = availableQualities,
                 isLoading = isLoadingQualities,
+                localPlaybackInfo = localPlaybackInfo,
+                isPlayingLocalSource = isPlayingLocalSource,
                 onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
+                onLocalSourceSelected = { playerConnection?.useLocalSource() },
                 style = textStyle.copy(fontSize = 11.sp),
                 color = Color.White.copy(alpha = 0.45f),
                 backgroundColor = Color(0x14FFFFFF),

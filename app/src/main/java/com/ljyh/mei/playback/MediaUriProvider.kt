@@ -1,5 +1,9 @@
 package com.ljyh.mei.playback
 
+import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.core.net.toUri
 import com.ljyh.mei.constants.MusicQuality
@@ -7,15 +11,20 @@ import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.availableMusicQualities
+import com.ljyh.mei.data.model.room.Song
+import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.di.repository.SongRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
@@ -26,17 +35,25 @@ import javax.inject.Singleton
 
 class SourceNotFoundException(message: String) : IOException(message)
 
+data class LocalPlaybackInfo(
+    val mimeType: String? = null,
+    val bitrate: Int? = null,
+    val sampleRate: Int? = null,
+)
+
 internal data class ResolvedMediaSource(
     val uri: Uri,
     val actualQuality: String,
     val cacheKey: String?,
     val sourceIdentity: String? = null,
+    val localPlaybackInfo: LocalPlaybackInfo? = null,
 )
 
 @Singleton
 class MediaUriProvider @Inject constructor(
     private val apiService: ApiService,
     private val songRepository: SongRepository,
+    @ApplicationContext private val context: Context,
 ) {
     private data class CachedUrl(
         val url: String,
@@ -55,6 +72,7 @@ class MediaUriProvider @Inject constructor(
     private val availableQualityCache = ConcurrentHashMap<String, AvailableQualities>()
     private val resolvedSources = ConcurrentHashMap<String, ResolvedMediaSource>()
     private val rejectedSources = ConcurrentHashMap<String, MutableSet<String>>()
+    private val onlineSourceOverrides = ConcurrentHashMap.newKeySet<String>()
     private val qualityStateVersion = AtomicLong()
     private val accountStateVersion = AtomicLong()
     private val qualityStateLock = Any()
@@ -92,17 +110,48 @@ class MediaUriProvider @Inject constructor(
     suspend fun resolveMediaUri(mediaId: String, quality: String): Uri =
         resolveMediaSource(mediaId, quality).uri
 
+    /** Explicit online selections bypass an existing downloaded copy for this session. */
+    internal fun preferOnlineSource(mediaId: String) = synchronized(qualityStateLock) {
+        onlineSourceOverrides.add(mediaId)
+        qualityStateVersion.incrementAndGet()
+        resolvedSources.remove(mediaId)
+    }
+
+    internal fun preferLocalSource(mediaId: String) = synchronized(qualityStateLock) {
+        onlineSourceOverrides.remove(mediaId)
+        qualityStateVersion.incrementAndGet()
+        resolvedSources.remove(mediaId)
+    }
+
+    /** Reads the existing file independently of the selected online playback source. */
+    suspend fun getLocalPlaybackInfo(mediaId: String): LocalPlaybackInfo? {
+        val song = localSong(mediaId) ?: return null
+        val uri = localUri(song) ?: return null
+        return readLocalPlaybackInfo(uri)
+    }
+
+    /** All local opens publish the same source information as streaming and disk cache hits. */
+    internal suspend fun resolveLocalSource(mediaId: String): ResolvedMediaSource? {
+        val stateVersion = synchronized(qualityStateLock) { qualityStateVersion.get() }
+        val song = localSong(mediaId) ?: return null
+        if (song.sourceType != SourceType.LOCAL && onlineSourceOverrides.contains(mediaId)) return null
+        val uri = localUri(song) ?: return null
+        val info = readLocalPlaybackInfo(uri)
+        return synchronized(qualityStateLock) {
+            ensureCurrentState(stateVersion)
+            rememberResolvedSource(
+                mediaId,
+                ResolvedMediaSource(uri, actualQuality = "", cacheKey = null, localPlaybackInfo = info),
+            )
+        }
+    }
+
     internal suspend fun resolveMediaSource(mediaId: String, quality: String): ResolvedMediaSource {
         val stateVersion = synchronized(qualityStateLock) { qualityStateVersion.get() }
         val requestedQuality = normalizePlaybackQuality(quality)
-        localUri(mediaId)?.let { uri ->
-            return synchronized(qualityStateLock) {
-                ensureCurrentState(stateVersion)
-                rememberResolvedSource(
-                    mediaId,
-                    ResolvedMediaSource(uri, requestedQuality, cacheKey = null),
-                )
-            }
+        resolveLocalSource(mediaId)?.let { return it }
+        if (!canResolveOnline(mediaId)) {
+            throw SourceNotFoundException("No local source for $mediaId")
         }
 
         val attemptedQualities = mutableListOf<String>()
@@ -181,7 +230,7 @@ class MediaUriProvider @Inject constructor(
         forDownload: Boolean,
     ): List<MusicQuality> {
         val stateVersion = synchronized(qualityStateLock) { availabilityStateVersion(forDownload) }
-        if (!forDownload && localUri(mediaId) != null) return emptyList()
+        if (!canResolveOnline(mediaId)) return emptyList()
         val availabilityKey = if (forDownload) "download:$mediaId" else "$mediaId:$supportDolby"
         val now = System.currentTimeMillis()
         availableQualityCache[availabilityKey]?.let { cached ->
@@ -256,6 +305,7 @@ class MediaUriProvider @Inject constructor(
         availableQualityCache.clear()
         rejectedSources.clear()
         resolvedSources.clear()
+        onlineSourceOverrides.clear()
     }
 
     /** Forces the next request for this song to obtain a fresh signed URL and source identity. */
@@ -304,13 +354,70 @@ class MediaUriProvider @Inject constructor(
         }
     }
 
-    private suspend fun localUri(mediaId: String): Uri? {
-        val localPath = songRepository.getSong(mediaId).firstOrNull()?.path
-            ?: songRepository.getSong("local_$mediaId").firstOrNull()?.path
-            ?: return null
-        if (localPath.startsWith("content://")) return Uri.parse(localPath)
-        val file = File(localPath)
+    private suspend fun localSong(mediaId: String): Song? {
+        val exact = songRepository.getSong(mediaId).firstOrNull()
+        if (!exact?.path.isNullOrBlank()) return exact
+        val prefixed = songRepository.getSong("local_$mediaId").firstOrNull()
+        return prefixed?.takeIf { !it.path.isNullOrBlank() } ?: exact ?: prefixed
+    }
+
+    private suspend fun canResolveOnline(mediaId: String): Boolean =
+        !mediaId.startsWith("local_") && mediaId.toLongOrNull()?.let { it > 0L } == true &&
+            localSong(mediaId)?.sourceType != SourceType.LOCAL
+
+    private fun localUri(song: Song): Uri? {
+        val path = song.path ?: return null
+        val uri = Uri.parse(path)
+        if (uri.scheme == "content") return uri
+        val file = if (uri.scheme == "file") File(uri.path ?: return null) else File(path)
         return file.takeIf(File::exists)?.let(Uri::fromFile)
+    }
+
+    private suspend fun readLocalPlaybackInfo(uri: Uri): LocalPlaybackInfo = withContext(Dispatchers.IO) {
+        var mimeType: String? = null
+        var bitrate: Int? = null
+        var sampleRate: Int? = null
+        var extractor: MediaExtractor? = null
+        try {
+            extractor = MediaExtractor()
+            extractor.setDataSource(context, uri, null)
+            for (index in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(index)
+                val mime = format.getString(MediaFormat.KEY_MIME)
+                if (mime?.startsWith("audio/") != true) continue
+                mimeType = mime
+                if (format.containsKey(MediaFormat.KEY_BIT_RATE)) {
+                    bitrate = format.getInteger(MediaFormat.KEY_BIT_RATE).takeIf { it > 0 }
+                }
+                if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE).takeIf { it > 0 }
+                }
+                break
+            }
+        } catch (error: Exception) {
+            Timber.tag("MediaUriProvider").d("Unable to inspect local audio: %s", error.javaClass.simpleName)
+        } finally {
+            runCatching { extractor?.release() }
+        }
+        if (bitrate == null || mimeType == null) {
+            var retriever: MediaMetadataRetriever? = null
+            try {
+                retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+                if (mimeType == null) {
+                    mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+                }
+                if (bitrate == null) {
+                    bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                        ?.toIntOrNull()?.takeIf { it > 0 }
+                }
+            } catch (error: Exception) {
+                Timber.tag("MediaUriProvider").d("Unable to read local audio metadata: %s", error.javaClass.simpleName)
+            } finally {
+                runCatching { retriever?.release() }
+            }
+        }
+        LocalPlaybackInfo(mimeType, bitrate, sampleRate)
     }
 
     private fun sourceIsRejected(mediaId: String, identity: String): Boolean =

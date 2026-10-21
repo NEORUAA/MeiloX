@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
+import com.ljyh.mei.ui.component.player.component.localPlaybackQualityTitle
 import com.ljyh.mei.ui.component.player.component.sheet.AlbumArtistBottomSheet
 import com.ljyh.mei.ui.component.player.component.sheet.MoreActionsSheet
 import com.ljyh.mei.ui.component.player.component.sheet.PlayerActionSettingsSheet
@@ -197,6 +198,8 @@ fun CommonOverlayHandler(
             val currentQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
             val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
             val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
+            val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
+            val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
             val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
             LaunchedEffect(playerConnection, mediaMetadata?.id) {
                 playerConnection?.refreshAvailableMusicQualities()
@@ -206,15 +209,15 @@ fun CommonOverlayHandler(
                 title = stringResource(R.string.music_quality),
             ) {
                 IosGroupedList {
-                    availableQualities.forEachIndexed { index, quality ->
+                    localPlaybackInfo?.let { info ->
                         IosListRow(
-                            title = stringResource(quality.labelRes),
-                            showTopSeparator = index != 0,
+                            title = localPlaybackQualityTitle(info, includeSource = true),
+                            showTopSeparator = false,
                             onClick = {
-                                playerConnection?.changeQuality(quality)
+                                playerConnection?.useLocalSource()
                                 overlayHandler.dismiss()
                             },
-                            trailing = if (quality == currentQuality) {
+                            trailing = if (isPlayingLocalSource) {
                                 {
                                     SfIcon(
                                         "checkmark",
@@ -228,13 +231,35 @@ fun CommonOverlayHandler(
                             },
                         )
                     }
-                    if (isLoadingQualities || availableQualities.isEmpty()) {
+                    availableQualities.forEachIndexed { index, quality ->
+                        IosListRow(
+                            title = stringResource(quality.labelRes),
+                            showTopSeparator = index != 0 || localPlaybackInfo != null,
+                            onClick = {
+                                playerConnection?.changeQuality(quality)
+                                overlayHandler.dismiss()
+                            },
+                            trailing = if (!isPlayingLocalSource && quality == currentQuality) {
+                                {
+                                    SfIcon(
+                                        "checkmark",
+                                        contentDescription = null,
+                                        size = 17.dp,
+                                        tint = LocalGlassColors.current.content,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    if (isLoadingQualities || (availableQualities.isEmpty() && localPlaybackInfo == null)) {
                         IosListRow(
                             title = stringResource(
                                 if (isLoadingQualities) R.string.track_quality_loading
                                 else R.string.track_quality_unavailable,
                             ),
-                            showTopSeparator = availableQualities.isNotEmpty(),
+                            showTopSeparator = availableQualities.isNotEmpty() || localPlaybackInfo != null,
                         )
                     }
                 }

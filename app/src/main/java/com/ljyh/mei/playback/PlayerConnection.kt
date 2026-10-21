@@ -94,6 +94,8 @@ class PlayerConnection(
     val error = MutableStateFlow<PlaybackException?>(null)
     val availableMusicQualities = service.availableMusicQualities
     val currentMusicQuality = service.currentMusicQuality
+    val localPlaybackInfo = service.localPlaybackInfo
+    val isPlayingLocalSource = service.isPlayingLocalSource
     val isLoadingMusicQualities = service.isLoadingMusicQualities
 
     private var qualityChangeJob: Job? = null
@@ -190,18 +192,45 @@ class PlayerConnection(
 
     fun changeQuality(quality: MusicQuality) {
         qualityChangeJob?.cancel()
+        val selectedItem = player.currentMediaItem
+        val mediaId = selectedItem?.mediaId
+        val entryId = selectedItem?.queueEntryId
+        val index = player.currentMediaItemIndex
         qualityChangeJob = scope.launch {
             service.dataStore.edit { it[MusicQualityKey] = quality.name }
             currentCoroutineContext().ensureActive()
 
-            val index = player.currentMediaItemIndex
-            if (player.currentMediaItem == null) return@launch
-            if (index !in 0 until player.mediaItemCount) return@launch
+            val currentItem = player.currentMediaItem
+            if (mediaId == null || currentItem?.mediaId != mediaId || currentItem?.queueEntryId != entryId ||
+                player.currentMediaItemIndex != index || index !in 0 until player.mediaItemCount
+            ) return@launch
             val position = player.currentPosition
             val shouldPlay = player.playWhenReady
 
             // Keep the playlist intact, but force every source that may have been
             // prepared at the previous quality to be discarded.
+            service.mediaUriProvider.preferOnlineSource(mediaId)
+            service.resetRejectedPlaybackSources()
+            service.refreshPlaybackSource(index, position, shouldPlay)
+        }
+    }
+
+    fun useLocalSource() {
+        qualityChangeJob?.cancel()
+        val selectedItem = player.currentMediaItem
+        val mediaId = selectedItem?.mediaId
+        val entryId = selectedItem?.queueEntryId
+        val index = player.currentMediaItemIndex
+        qualityChangeJob = scope.launch {
+            val currentItem = player.currentMediaItem
+            if (mediaId == null || currentItem?.mediaId != mediaId || currentItem?.queueEntryId != entryId ||
+                player.currentMediaItemIndex != index || index !in 0 until player.mediaItemCount
+            ) return@launch
+            if (service.localPlaybackInfo.value == null || service.isPlayingLocalSource.value) return@launch
+            val position = player.currentPosition
+            val shouldPlay = player.playWhenReady
+
+            service.mediaUriProvider.preferLocalSource(mediaId)
             service.resetRejectedPlaybackSources()
             service.refreshPlaybackSource(index, position, shouldPlay)
         }
