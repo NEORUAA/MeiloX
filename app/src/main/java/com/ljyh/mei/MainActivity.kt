@@ -106,9 +106,14 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
+import androidx.navigation3.scene.SinglePaneSceneStrategy
+import androidx.navigation3.scene.rememberNavigationEventState
+import androidx.navigation3.scene.rememberSceneState
+import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
@@ -145,6 +150,7 @@ import com.ljyh.mei.constants.BottomFloatingContentExtraSpacingKey
 import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
+import com.ljyh.mei.constants.PredictiveBackAnimationEnabledKey
 import com.ljyh.mei.constants.ReduceTransparencyKey
 import com.ljyh.mei.constants.LastSelectedTabKey
 import com.ljyh.mei.constants.PlayerKeepScreenOnKey
@@ -318,6 +324,8 @@ class MainActivity : ComponentActivity() {
                     .coerceIn(0, MaxBottomFloatingContentExtraSpacing).dp
             val liquidGlassEnabled = navigationPreferences?.get(LiquidGlassEnabledKey) ?: true
             val reduceTransparency = navigationPreferences?.get(ReduceTransparencyKey) ?: false
+            val predictiveBackAnimationEnabled =
+                navigationPreferences?.get(PredictiveBackAnimationEnabledKey) ?: true
             val podcastsEnabled = navigationPreferences?.get(PodcastsEnabledKey) ?: true
             val downloadsEnabled = navigationPreferences?.get(DownloadsEnabledKey) ?: true
             val cloudMusicEnabled = navigationPreferences?.get(CloudMusicEnabledKey) ?: true
@@ -953,53 +961,12 @@ class MainActivity : ComponentActivity() {
                                             },
                                         )
                                     }
-                                    NavDisplay(
+                                    val navEntries = rememberDecoratedNavEntries(
                                         backStack = backStack,
-                                        modifier = Modifier.fillMaxSize(),
-                                        onBack = navController::popBackStack,
                                         entryDecorators = listOf(
                                             rememberSaveableStateHolderNavEntryDecorator(),
                                             viewModelEntryDecorator,
                                         ),
-                                        transitionSpec = {
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultTransitionSpec<NavKey>().invoke(this)
-                                            }
-                                        },
-                                        popTransitionSpec = {
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultPopTransitionSpec<NavKey>().invoke(this)
-                                            }
-                                        },
-                                        predictivePopTransitionSpec = { swipeEdge ->
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultPredictivePopTransitionSpec<NavKey>()
-                                                    .invoke(this, swipeEdge)
-                                            }
-                                        },
-                                        transitionEffects = remember(
-                                            navController.usesMiuixTransitionEffects,
-                                        ) {
-                                            if (navController.usesMiuixTransitionEffects) {
-                                                NavDisplayTransitionEffects(
-                                                    enableCornerClip = true,
-                                                    dimAmount = 0.5f,
-                                                    blockInputDuringTransition = false,
-                                                )
-                                            } else {
-                                                NavDisplayTransitionEffects(
-                                                    enableCornerClip = false,
-                                                    dimAmount = 0f,
-                                                    blockInputDuringTransition = false,
-                                                )
-                                            }
-                                        },
                                         entryProvider = { route ->
                                             val meiRoute = route as MeiRoute
                                             NavEntry(
@@ -1057,6 +1024,71 @@ class MainActivity : ComponentActivity() {
                                                         },
                                                     )
                                                 }
+                                            }
+                                        },
+                                    )
+                                    val sceneStrategies = remember { listOf(SinglePaneSceneStrategy<NavKey>()) }
+                                    val sceneState = rememberSceneState(
+                                        entries = navEntries,
+                                        sceneStrategies = sceneStrategies,
+                                        onBack = navController::popBackStack,
+                                    )
+                                    val navigationEventState = rememberNavigationEventState(sceneState)
+                                    val nonDisplayNavigationEventState = rememberNavigationEventState(sceneState)
+                                    val canGoBack = sceneState.currentScene.previousEntries.isNotEmpty()
+                                    // Keep both handlers registered so toggling preserves child back-handler priority.
+                                    NavigationBackHandler(
+                                        state = navigationEventState,
+                                        isBackEnabled = predictiveBackAnimationEnabled && canGoBack,
+                                        onBackCompleted = { navController.popBackStack() },
+                                    )
+                                    NavigationBackHandler(
+                                        state = nonDisplayNavigationEventState,
+                                        isBackEnabled = !predictiveBackAnimationEnabled && canGoBack,
+                                        onBackCompleted = { navController.popBackStack() },
+                                    )
+                                    NavDisplay(
+                                        sceneState = sceneState,
+                                        // NavDisplay retains this state in remembered gesture calculations.
+                                        navigationEventState = navigationEventState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        transitionSpec = {
+                                            if (usesHomeAlphaTransition()) {
+                                                homeAlphaTransition()
+                                            } else {
+                                                defaultTransitionSpec<NavKey>().invoke(this)
+                                            }
+                                        },
+                                        popTransitionSpec = {
+                                            if (usesHomeAlphaTransition()) {
+                                                homeAlphaTransition()
+                                            } else {
+                                                defaultPopTransitionSpec<NavKey>().invoke(this)
+                                            }
+                                        },
+                                        predictivePopTransitionSpec = { swipeEdge ->
+                                            if (usesHomeAlphaTransition()) {
+                                                homeAlphaTransition()
+                                            } else {
+                                                defaultPredictivePopTransitionSpec<NavKey>()
+                                                    .invoke(this, swipeEdge)
+                                            }
+                                        },
+                                        transitionEffects = remember(
+                                            navController.usesMiuixTransitionEffects,
+                                        ) {
+                                            if (navController.usesMiuixTransitionEffects) {
+                                                NavDisplayTransitionEffects(
+                                                    enableCornerClip = true,
+                                                    dimAmount = 0.5f,
+                                                    blockInputDuringTransition = false,
+                                                )
+                                            } else {
+                                                NavDisplayTransitionEffects(
+                                                    enableCornerClip = false,
+                                                    dimAmount = 0f,
+                                                    blockInputDuringTransition = false,
+                                                )
                                             }
                                         },
                                     )

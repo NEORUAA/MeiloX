@@ -56,6 +56,7 @@ import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
 import com.ljyh.mei.constants.ReduceTransparencyKey
+import com.ljyh.mei.constants.PredictiveBackAnimationEnabledKey
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
@@ -108,6 +109,8 @@ fun AppearanceSettings(
         rememberPreference(BottomFloatingContentExtraSpacingKey, DefaultBottomFloatingContentExtraSpacing)
     val (liquidGlassEnabled, setLiquidGlassEnabled) = rememberPreference(LiquidGlassEnabledKey, true)
     val (reduceTransparency, setReduceTransparency) = rememberPreference(ReduceTransparencyKey, false)
+    val (predictiveBackAnimation, setPredictiveBackAnimation) =
+        rememberPreference(PredictiveBackAnimationEnabledKey, true)
     val podcastsEnabled by rememberPreference(PodcastsEnabledKey, true)
     val downloadsEnabled by rememberPreference(DownloadsEnabledKey, true)
     val cloudMusicEnabled by rememberPreference(CloudMusicEnabledKey, true)
@@ -196,6 +199,13 @@ fun AppearanceSettings(
                     "circle.lefthalf.filled",
                     reduceTransparency,
                     setReduceTransparency,
+                )
+                AppearanceToggle(
+                    R.string.appearance_predictive_back,
+                    R.string.appearance_predictive_back_description,
+                    "arrow.uturn.backward.circle",
+                    predictiveBackAnimation,
+                    setPredictiveBackAnimation,
                 )
             }
         }
