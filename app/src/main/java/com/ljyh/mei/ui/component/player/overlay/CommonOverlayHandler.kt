@@ -29,6 +29,10 @@ import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
+import com.ljyh.mei.ui.model.LyricSource
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
+import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.R
 import com.ljyh.mei.ui.glass.IosAlertDialog
@@ -56,6 +60,7 @@ fun CommonOverlayHandler(
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerViewModel = stateContainer.playerViewModel
+    val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
     when (val overlay = overlayHandler.currentOverlayValue) {
         OverlayState.None -> {}
@@ -160,7 +165,23 @@ fun CommonOverlayHandler(
                     }
 
                 },
-                viewModel = playerViewModel
+                viewModel = playerViewModel,
+                onFindLyrics = if (playerStyle == PlayerStyle.AppleMusic && stateContainer.mediaMetadata.value != null) {
+                    {
+                        stateContainer.mediaMetadata.value?.let { metadata ->
+                            playerViewModel.searchQQSong(metadata.title)
+                            overlayHandler.showQQMusicSelection(metadata)
+                        }
+                    }
+                } else null,
+                onFindLyricsLongClick = if (stateContainer.lyricLine.source == LyricSource.QQMusic) {
+                    {
+                        stateContainer.mediaMetadata.value?.let { metadata ->
+                            playerViewModel.deleteSongById(metadata.id.toString())
+                            android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else null,
             )
         }
 

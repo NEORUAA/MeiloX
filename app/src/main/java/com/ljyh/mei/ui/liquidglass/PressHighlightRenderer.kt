@@ -40,13 +40,14 @@ half4 main(float2 coord) {
         progress: Float,
         position: Offset,
         sourceBounds: Rect = Rect(Offset.Zero, scope.size),
+        clampPosition: Boolean = true,
     ) = with(scope) {
         if (progress <= 0f) return@with
         val radius = (sourceBounds.size.minDimension * 1.5f).coerceAtLeast(1f)
-        val lightPosition = Offset(
+        val lightPosition = if (clampPosition) Offset(
             position.x.fastCoerceIn(sourceBounds.left, sourceBounds.right),
             position.y.fastCoerceIn(sourceBounds.top, sourceBounds.bottom),
-        )
+        ) else position
         if (shader != null) {
             shader.apply {
                 setFloatUniform("size", sourceBounds.width, sourceBounds.height)

@@ -34,6 +34,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,7 +83,6 @@ import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.defaultGlassColors
-import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -374,7 +374,8 @@ private fun ArtistCoverTheme(
                 ownerKey = viewModel,
             )
             // Body controls and their popups sample the cover-local surface, not the app theme.
-            val backdrop = rememberCanvasBackdrop { drawRect(brush = background.brush) }
+            val backdropBrush = rememberUpdatedState(background.brush)
+            val backdrop = rememberCanvasBackdrop { drawRect(brush = backdropBrush.value) }
             CompositionLocalProvider(
                 LocalGlassBackdrop provides backdrop,
                 LocalBlurBackdrop provides backdrop,
@@ -438,9 +439,6 @@ private fun ArtistHeader(
     onFollowClick: () -> Unit,
 ) {
     val colors = LocalGlassColors.current
-    val regularButtonBackground = colors.elevatedBackground.copy(
-        alpha = SheetGroupedListBackgroundAlpha,
-    )
     val subtitle = remember(artist) {
         (artist.transNames + artist.alias.filterIsInstance<String>())
             .map(String::trim)
@@ -506,9 +504,7 @@ private fun ArtistHeader(
             GlassIconButton(
                 onClick = onInfoClick,
                 style = GlassSurfaceStyle.Navigation,
-                navigationSurfaceColor = regularButtonBackground,
-                navigationSurfaceAlphaMultiplier = 1f,
-                sampleBackdrop = false,
+                detailAction = true,
             ) {
                 SfIcon(
                     "info",
@@ -521,6 +517,7 @@ private fun ArtistHeader(
                 onClick = onPlayHotSongs,
                 modifier = Modifier.semantics { contentDescription = playHotSongsLabel },
                 style = GlassSurfaceStyle.Navigation,
+                detailAction = true,
                 enabled = canPlayHotSongs,
                 emphasis = GlassEmphasis.Prominent,
             ) {
@@ -535,10 +532,8 @@ private fun ArtistHeader(
                 onClick = onFollowClick,
                 enabled = !isFollowLoading,
                 style = GlassSurfaceStyle.Navigation,
-                navigationSurfaceColor = regularButtonBackground.takeUnless { isFollowed },
-                navigationSurfaceAlphaMultiplier = if (isFollowed) 1.25f else 1f,
+                detailAction = true,
                 emphasis = if (isFollowed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
-                sampleBackdrop = isFollowed,
             ) {
                 SfIcon(
                     if (isFollowed) "checkmark" else "plus",

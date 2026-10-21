@@ -34,7 +34,7 @@ enum class MoreAction(
     SONG_WIKI("song_wiki", R.string.song_wiki, "book.pages", 5, 1),
 
     // --- 评论 ---
-    COMMENT("comment", R.string.more_action_comments, "bubble.left", 7, 1);
+    COMMENT("comment", R.string.more_action_comments, "bubble.left.and.bubble.right", 7, 1);
 
     companion object {
         // 简单工厂方法

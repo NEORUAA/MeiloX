@@ -1,4 +1,5 @@
 <resources>
+    <string name="player_find_lyrics">尋找歌詞</string>
     <string name="artist_info_title">歌手資訊</string>
     <string name="artist_play_hot_songs">播放熱門單曲</string>
     <string name="artist_hot_songs">熱門單曲</string>
@@ -208,6 +209,9 @@
     <string name="appearance_theme">主題</string>
     <string name="appearance_letter_spacing">介面字間距</string>
     <string name="appearance_letter_spacing_value">%1$.1f sp</string>
+    <string name="appearance_bottom_floating_extra_spacing">底部懸浮內容額外抬高</string>
+    <string name="appearance_bottom_floating_extra_spacing_value">%1$d dp</string>
+    <string name="appearance_bottom_floating_extra_spacing_description">將底部導覽、搜尋列和迷你播放器向上移動。</string>
     <string name="appearance_dynamic_theme">歌曲動態主題</string>
     <string name="appearance_dynamic_theme_description">根據目前歌曲封面為介面著色。</string>
     <string name="appearance_accent_color">強調色</string>
@@ -546,6 +550,9 @@
     <string name="account_user_id">使用者 ID %1$d</string>
     <string name="account_follows">關注</string>
     <string name="account_followers">粉絲</string>
+    <string name="account_no_follows">暫無關注</string>
+    <string name="account_no_followers">暫無粉絲</string>
+    <string name="account_load_more">載入更多</string>
     <string name="account_playlist_metric">歌單</string>
     <string name="account_listening_rank">我的聽歌排行</string>
     <string name="account_week">最近一週</string>
@@ -726,4 +733,20 @@
     <string name="artist_all_albums_count">全部 %1$d 張專輯</string>
     <string name="artist_all_albums">全部專輯</string>
     <string name="artist_albums_empty">暫無專輯</string>
+
+    <string name="lyric_selection_title">歌詞來源</string>
+    <string name="lyric_selection_close">關閉歌詞來源</string>
+    <string name="lyric_selection_best_match">最佳匹配</string>
+    <string name="lyric_selection_source_netease">網易雲音樂</string>
+    <string name="lyric_selection_source_qq">QQ 音樂</string>
+    <string name="lyric_selection_source_am">Apple Music</string>
+    <string name="lyric_selection_source_other">歌詞來源</string>
+    <string name="lyric_selection_empty">找不到歌詞來源</string>
+    <string name="lyric_selection_delay">歌詞延遲</string>
+    <string name="lyric_selection_offset">%1$+.1f 秒</string>
+    <string name="lyric_selection_earlier">−0.5 秒</string>
+    <string name="lyric_selection_later">+0.5 秒</string>
+    <string name="lyric_selection_delay_hint">負值提前，正值延後，僅對這首歌生效。</string>
+    <string name="lyric_selection_reset_delay">恢復預設延遲</string>
+    <string name="lyric_selection_reset_source">恢復預設來源</string>
 </resources>

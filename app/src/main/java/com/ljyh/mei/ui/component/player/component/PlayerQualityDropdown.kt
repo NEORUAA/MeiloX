@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
@@ -35,6 +36,8 @@ fun PlayerQualityDropdown(
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
+    backgroundColor: Color = Color.White.copy(alpha = 0.15f),
+    cornerRadius: Dp = 6.dp,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val statusTitle = when {
@@ -50,7 +53,7 @@ fun PlayerQualityDropdown(
             expanded = it
         },
         itemCount = availableQualities.size + if (statusTitle != null) 1 else 0,
-        modifier = modifier.background(Color.White.copy(alpha = 0.15f), ContinuousRoundedRectangle(6.dp)),
+        modifier = modifier.background(backgroundColor, ContinuousRoundedRectangle(cornerRadius)),
         anchor = { onClick ->
             Row(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp).clickable(

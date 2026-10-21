@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.screen.account
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +56,7 @@ import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.data.model.melox.AccountDetail
+import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.UserPlayRecord
@@ -158,6 +161,12 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                         profile = displayedProfile,
                         detail = state.detail,
                         playlistCount = state.playlists.size,
+                        onConnections = { type ->
+                            Screen.AccountConnections.navigate(navController) {
+                                addPath(displayedProfile.id.toString())
+                                addPath(type.name)
+                            }
+                        },
                         onRankings = {
                             Screen.AccountListeningRank.navigate(navController) {
                                 addPath(displayedProfile.id.toString())
@@ -234,6 +243,7 @@ private fun AccountHero(
     profile: AccountProfile,
     detail: AccountDetail?,
     playlistCount: Int,
+    onConnections: (AccountConnectionType) -> Unit,
     onRankings: () -> Unit,
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
@@ -275,9 +285,19 @@ private fun AccountHero(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             GlassSurface(Modifier.fillMaxWidth(), shape = ContinuousRoundedRectangle(18.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                    AccountMetric(profile.follows, stringResource(R.string.account_follows), Modifier.weight(1f))
-                    AccountMetric(profile.followers, stringResource(R.string.account_followers), Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth()) {
+                    AccountMetric(
+                        profile.follows,
+                        stringResource(R.string.account_follows),
+                        Modifier.weight(1f),
+                        onClick = { onConnections(AccountConnectionType.Following) },
+                    )
+                    AccountMetric(
+                        profile.followers,
+                        stringResource(R.string.account_followers),
+                        Modifier.weight(1f),
+                        onClick = { onConnections(AccountConnectionType.Followers) },
+                    )
                     AccountMetric(profile.playlistCount ?: playlistCount, stringResource(R.string.account_playlist_metric), Modifier.weight(1f))
                 }
             }
@@ -290,8 +310,13 @@ private fun AccountHero(
 }
 
 @Composable
-private fun AccountMetric(value: Int?, label: String, modifier: Modifier = Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+private fun AccountMetric(value: Int?, label: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    Column(
+        modifier
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(value?.toString() ?: "—", fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

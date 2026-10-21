@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import coil3.imageLoader
@@ -136,6 +137,8 @@ fun FluidBackground(
             .fillMaxSize()
             // Presentation fades outside the recording so glass samples the full mesh.
             .graphicsLayer {
+                // The mesh renderer already flattens album crossfades into one texture.
+                compositingStrategy = CompositingStrategy.ModulateAlpha
                 this.alpha = alpha.coerceIn(0f, 1f) *
                     (sheet?.state?.progress?.let(::playerBackgroundAlpha) ?: 1f)
             },

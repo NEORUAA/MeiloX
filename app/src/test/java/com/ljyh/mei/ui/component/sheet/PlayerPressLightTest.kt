@@ -13,6 +13,54 @@ import org.junit.Test
 class PlayerPressLightTest {
     private val pressed = GlassPressHighlight(0.8f, Offset(0.25f, 0.7f))
 
+    @Test fun heldPointerMovesIndependentlyOfTheFrozenMiniPlayerGeometry() = runBlocking {
+        val light = PlayerPressLight(this)
+        val source = Rect(16f, 700f, 388f, 750f)
+        light.capture(pressed)
+        light.updatePointer(Offset(295f, 720f))
+        val current = light.current(0.25f, source)
+        assertEquals(Offset(0.75f, 0.4f), current.position)
+        assertEquals(pressed.progress * playerPressHighlightAlpha(0.25f), current.progress, 0f)
+    }
+
+    @Test fun heldLightStaysUnderTheFingerWhileTheShellMovesAndReverses() = runBlocking {
+        val light = PlayerPressLight(this)
+        val source = Rect(16f, 700f, 388f, 750f)
+        val page = Rect(0f, 0f, 400f, 800f)
+        val pointer = Offset(300f, 710f)
+        light.capture(pressed)
+        light.updatePointer(pointer)
+        for (step in (0..100) + (100 downTo 0)) {
+            val p = step / 100f
+            val bounds = playerPressHighlightRect(source.size, playerContainerRect(source, page, p))
+            val current = light.current(p, bounds)
+            assertEquals(pointer.x, bounds.left + bounds.width * current.position.x, 0.0001f)
+            assertEquals(pointer.y, bounds.top + bounds.height * current.position.y, 0.0001f)
+            assertEquals(source.size, bounds.size)
+            if (step == 50) assertTrue(current.position.y > 1f)
+        }
+    }
+
+    @Test fun releaseFreezesTheLastPointerPositionAndIgnoresLaterMoves() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val light = PlayerPressLight(CoroutineScope(coroutineContext + clock))
+        try {
+            val source = Rect(16f, 700f, 388f, 750f)
+            light.capture(pressed)
+            light.updatePointer(Offset(295f, 720f))
+            val before = light.current(0.25f, source)
+            light.release(0.25f, source)
+            light.updatePointer(Offset(20f, 705f))
+            assertEquals(before, light.current(0f, source.translate(Offset(10f, 20f))))
+            repeat(4) { yield(); clock.sendFrame(it * 16_666_667L); yield() }
+            val released = light.current(0f, source)
+            assertEquals(before.position, released.position)
+            assertTrue(released.progress < before.progress)
+            light.capture(pressed)
+            assertEquals(pressed, light.current(0f, source))
+        } finally { light.clear() }
+    }
+
     @Test fun firstTransitionFramePreservesPartialPressAndPosition() = runBlocking {
         val light = PlayerPressLight(this)
         light.capture(pressed)

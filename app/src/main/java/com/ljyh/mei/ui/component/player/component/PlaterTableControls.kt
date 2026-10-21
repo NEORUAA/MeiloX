@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -21,9 +22,13 @@ import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.common.util.UnstableApi
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.extensions.togglePlayPause
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.playback.PlayMode
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseIcon
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.utils.rememberEnumPreference
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -36,6 +41,12 @@ fun PlayerTableControls(
     playbackState: Int,
     onPlaylistClick: () -> Unit
 ){
+    val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
+    val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
+    val skipTargetSize = if (appleMusicStyle) 61.dp else 48.dp
+    val playTargetSize = if (appleMusicStyle) 60.5.dp else 84.dp
+    val skipIconSize = if (appleMusicStyle) 44.dp else 30.dp
+    val playIconSize = if (appleMusicStyle) 44.dp else 48.dp
     val playModeValue by playerConnection.repeatMode.collectAsState()
     val playMode = remember(playModeValue) {
         PlayMode.fromInt(playModeValue) ?: PlayMode.REPEAT_MODE_ALL
@@ -45,6 +56,7 @@ fun PlayerTableControls(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (appleMusicStyle) Modifier.height(84.dp) else Modifier)
         ) {
 
             Box(modifier = Modifier.weight(1f)){
@@ -73,25 +85,26 @@ fun PlayerTableControls(
 
             //previous
             Box(modifier = Modifier.weight(1f)) {
-                IconButton(
+                PlayerTransportButton(
+                    appleMusicStyle = appleMusicStyle,
                     enabled = canSkipPrevious,
                     onClick = playerConnection::seekToPrevious,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(skipTargetSize)
                         .align(Alignment.Center)
-                        .clip(ContinuousRoundedRectangle(4.dp))
                 ) {
                     SfIcon(
                         systemName = "backward.fill",
                         contentDescription = null,
                         tint = Color.White,
-                        size = 30.dp,
+                        size = skipIconSize,
                     )
                 }
             }
             //play/pause
             Box(modifier = Modifier.weight(1f)) {
-                IconButton(
+                PlayerTransportButton(
+                    appleMusicStyle = appleMusicStyle,
                     onClick = {
                         if (playbackState == STATE_ENDED) {
                             playerConnection.player.seekTo(0, 0)
@@ -100,33 +113,38 @@ fun PlayerTableControls(
                             playerConnection.player.togglePlayPause()
                         }
                     },
-                    modifier = Modifier.size(84.dp).align(Alignment.Center).clip(ContinuousRoundedRectangle(4.dp)),
+                    modifier = Modifier.size(playTargetSize).align(Alignment.Center),
                 ) {
-                    SfIcon(
-                        systemName = if (playbackState == STATE_ENDED) "arrow.counterclockwise" else if (isPlaying) "pause.fill" else "play.fill",
-                        contentDescription = null,
-                        tint = Color.White,
-                        size = 48.dp,
-                    )
+                    val systemName = if (playbackState == STATE_ENDED) "arrow.counterclockwise" else if (isPlaying) "pause.fill" else "play.fill"
+                    if (appleMusicStyle) {
+                        AppleMusicPlayPauseIcon(systemName)
+                    } else {
+                        SfIcon(
+                            systemName = systemName,
+                            contentDescription = null,
+                            tint = Color.White,
+                            size = playIconSize,
+                        )
+                    }
                 }
             }
 
 
             //next
             Box(modifier = Modifier.weight(1f)) {
-                IconButton(
+                PlayerTransportButton(
+                    appleMusicStyle = appleMusicStyle,
                     enabled = canSkipNext,
                     onClick = playerConnection::seekToNext,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(skipTargetSize)
                         .align(Alignment.Center)
-                        .clip(ContinuousRoundedRectangle(4.dp))
                 ) {
                     SfIcon(
                         systemName = "forward.fill",
                         contentDescription = null,
                         tint = Color.White,
-                        size = 30.dp,
+                        size = skipIconSize,
                     )
                 }
             }

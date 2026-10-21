@@ -20,6 +20,7 @@ sealed class Screen(val route:String) {
     data object NeteaseWebLogin:Screen("account/web_login")
     data object PcQrLogin:Screen("account/pc_qr_login")
     data object AccountHome:Screen("account/home")
+    data object AccountConnections:Screen("account/connections")
     data object AccountListeningRank:Screen("account/listening_rank")
     data object AppearanceSettings:Screen("setting/appearance")
     data object GeneralSettings:Screen("setting/general")

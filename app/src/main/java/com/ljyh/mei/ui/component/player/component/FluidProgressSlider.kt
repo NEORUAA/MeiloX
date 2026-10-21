@@ -36,8 +36,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicProgressSlider
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
+import com.ljyh.mei.utils.rememberEnumPreference
 import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,8 +50,14 @@ fun FluidProgressSlider(
     position: Long,
     duration: Long,
     onPositionChange: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTrackTopChanged: ((Float) -> Unit)? = null,
 ) {
+    val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
+    if (playerStyle == PlayerStyle.AppleMusic) {
+        AppleMusicProgressSlider(position, duration, onPositionChange, modifier, onTrackTopChanged)
+        return
+    }
     val playerConnection = LocalPlayerConnection.current
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()

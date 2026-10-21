@@ -31,6 +31,7 @@ import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.playback.MediaUriProvider
+import com.ljyh.mei.ui.model.LyricCandidate
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.SortOrder
@@ -71,6 +72,8 @@ class PlayerViewModel @Inject constructor(
 ) : ViewModel() {
     val searchResult: StateFlow<Resource<SearchResult>> = lyricManager.qqSearchResult
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
+    val lyricCandidates: StateFlow<List<LyricCandidate>> = lyricManager.lyricCandidates
+    val lyricOffsetMs: StateFlow<Int> = lyricManager.lyricOffsetMs
 
     private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
     val like: StateFlow<Resource<Boolean>> = _like
@@ -167,6 +170,22 @@ class PlayerViewModel @Inject constructor(
         lyricManager.selectQQSongForLyric(metadata, song)
     }
 
+    fun selectLyricCandidate(metadata: MediaMetadata, candidate: LyricCandidate) {
+        lyricManager.selectLyricCandidate(metadata, candidate)
+    }
+
+    fun adjustLyricOffset(metadata: MediaMetadata, deltaMs: Int) {
+        lyricManager.adjustLyricOffset(metadata, deltaMs)
+    }
+
+    fun resetLyricOffset(metadata: MediaMetadata) {
+        lyricManager.resetLyricOffset(metadata)
+    }
+
+    fun resetLyricSource(metadata: MediaMetadata) {
+        lyricManager.resetLyricSource(metadata)
+    }
+
     fun insertSong(song: QQSong) {
         viewModelScope.launch {
             qqSongRepository.insertSong(song)
@@ -174,10 +193,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun deleteSongById(id: String) {
-        viewModelScope.launch {
-            qqSongRepository.deleteSongById(id)
-            lyricManager.loadLyrics(mediaMetadata ?: return@launch, forceReload = true)
-        }
+        val metadata = mediaMetadata ?: return
+        if (metadata.id.toString() == id) lyricManager.resetLyricSource(metadata)
     }
 
     suspend fun getQQSongId(metadataId: Long): String? {

@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.compose.LazyPagingItems
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
 import com.ljyh.mei.constants.PlaylistCoverStyle
@@ -59,6 +61,7 @@ import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassDimensions
 import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
@@ -133,6 +136,11 @@ fun CommonSongListScreen(
         getOrExtractColor = viewModel::getOrExtractColor,
         ownerKey = viewModel,
     )
+    val headerBackdropBrush = rememberUpdatedState(coverBackground.brush)
+    val headerBackdrop = if (useCoverBackground) {
+        // Observe the animation during sampling so its changes invalidate the glass layer.
+        rememberCanvasBackdrop { drawRect(brush = headerBackdropBrush.value) }
+    } else null
     val listBackgroundAlpha = if (useCoverBackground) {
         SheetGroupedListBackgroundAlpha
     } else LocalGroupedListBackgroundAlpha.current
@@ -301,24 +309,34 @@ fun CommonSongListScreen(
                     }
                 } else {
                     item(key = "playlist-hero") {
-                        PlaylistHeader(
-                            title = uiData.title,
-                            metadata = headerMetadata,
-                            cover = uiData.cover,
-                            coverList = uiData.coverList,
-                            creator = uiData.creatorName,
-                            onPlayAll = onPlayAll,
-                            onShufflePlay = onShufflePlay,
-                            onDownload = onDownload,
-                            actionIcon = headerActionIcon,
-                            actionLabel = headerActionLabel,
-                            count = uiData.count,
-                            playCount = uiData.playCount ?: -1L,
-                            subscribeCount = uiData.subscriberCount,
-                            isSubscribed = isSubscribed,
-                            isSubscriptionPending = headerActionPending,
-                            onSubscribed = { onHeaderAction() },
-                        )
+                        val headerContent: @Composable () -> Unit = {
+                            PlaylistHeader(
+                                title = uiData.title,
+                                metadata = headerMetadata,
+                                cover = uiData.cover,
+                                coverList = uiData.coverList,
+                                creator = uiData.creatorName,
+                                onPlayAll = onPlayAll,
+                                onShufflePlay = onShufflePlay,
+                                onDownload = onDownload,
+                                actionIcon = headerActionIcon,
+                                actionLabel = headerActionLabel,
+                                count = uiData.count,
+                                playCount = uiData.playCount ?: -1L,
+                                subscribeCount = uiData.subscriberCount,
+                                isSubscribed = isSubscribed,
+                                isSubscriptionPending = headerActionPending,
+                                onSubscribed = { onHeaderAction() },
+                                detailAction = useCoverBackground,
+                            )
+                        }
+                        if (headerBackdrop != null) {
+                            CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) {
+                                headerContent()
+                            }
+                        } else {
+                            headerContent()
+                        }
                     }
                     playlistTrackItems(
                         pagingItems = pagingItems,

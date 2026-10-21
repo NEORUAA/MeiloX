@@ -39,6 +39,27 @@ internal fun selectLyricUpdate(
     return candidate
 }
 
+/** A manual choice bypasses automatic source priority without changing source data. */
+internal fun selectPreferredLyricUpdate(
+    current: LyricData,
+    candidate: LyricData,
+    preferredSource: LyricSource?,
+    sourcesFinished: Boolean,
+    alignmentFinished: Boolean,
+): LyricData {
+    val previous = if (preferredSource != null && current.source != preferredSource) {
+        createDefaultLyricData("歌词加载中", source = LyricSource.Loading)
+    } else current
+    return selectLyricUpdate(previous, candidate, sourcesFinished, alignmentFinished)
+}
+
+internal fun selectLyricSources(
+    sources: List<LyricSourceData>,
+    preferredSource: LyricSource?,
+): List<LyricSourceData> = if (preferredSource == null) sources else sources.filter {
+    it.source == preferredSource
+}
+
 private fun LyricData.displayPriority(): Int {
     if (lyricLine.lines.isEmpty()) return 0
     return when (source) {

@@ -11,6 +11,7 @@ import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricSourceData
 import com.ljyh.mei.utils.encrypt.QRCUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -42,7 +43,14 @@ class LyricPreloader @Inject constructor(
      */
     suspend fun preload(metadata: MediaMetadata): LyricData? {
         val songId = metadata.id.toString()
-        return fetchAndMerge(metadata, songId)
+        return try {
+            fetchAndMerge(metadata, songId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            Timber.tag(TAG).w(error, "Unable to preload lyrics for %s", songId)
+            null
+        }
     }
 
     private suspend fun fetchAndMerge(metadata: MediaMetadata, songId: String): LyricData? {

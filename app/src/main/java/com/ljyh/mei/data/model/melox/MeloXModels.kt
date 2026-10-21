@@ -286,6 +286,14 @@ data class SearchDiscoveryPlaylist(
     val creatorNickname: String?,
 )
 
+enum class AccountConnectionType { Following, Followers }
+
+data class AccountConnectionPage(
+    val users: List<AccountProfile>,
+    val hasMore: Boolean,
+    val nextOffset: Int,
+)
+
 data class AccountProfile(
     val id: Long,
     val nickname: String,
@@ -297,6 +305,8 @@ data class AccountProfile(
     val eventCount: Int?,
     val playlistCount: Int?,
     val playlistSubscribedCount: Int?,
+    val artistId: Long? = null,
+    val hasVerifiedIdentity: Boolean = false,
 )
 
 data class AccountDetail(

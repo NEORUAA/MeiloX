@@ -112,8 +112,12 @@ val MeshSubdivisionKey = intPreferencesKey("meshSubdivision")
 val LibraryStyleKey = stringPreferencesKey("libraryStyle")
 val LibraryDefaultPageKey = stringPreferencesKey("libraryDefaultPage")
 val KeepBottomBarExpandedKey = booleanPreferencesKey("appearance.keepBottomBarExpanded")
+val BottomFloatingContentExtraSpacingKey = intPreferencesKey("appearance.bottomFloatingContentExtraSpacing")
+const val DefaultBottomFloatingContentExtraSpacing = 8
+const val MaxBottomFloatingContentExtraSpacing = 64
 val LiquidGlassEnabledKey = booleanPreferencesKey("appearance.liquidGlassEnabled")
 val ReduceTransparencyKey = booleanPreferencesKey("appearance.reduceTransparency")
+val PredictiveBackAnimationEnabledKey = booleanPreferencesKey("appearance.predictiveBackAnimationEnabled")
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
 val PlayerKeepScreenOnKey = booleanPreferencesKey("player.keepScreenOn")

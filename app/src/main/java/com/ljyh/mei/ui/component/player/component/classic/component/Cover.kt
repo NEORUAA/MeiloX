@@ -55,7 +55,10 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.CoverStyle
 import com.ljyh.mei.constants.CoverStyleKey
 import com.ljyh.mei.constants.OriginalCoverKey
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.ui.component.player.component.applemusic.rememberAppleMusicPlaybackScale
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.utils.image.saveImageToGallery
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -80,8 +83,10 @@ fun Cover(
     val sheetExpanded by remember(sheet) {
         derivedStateOf { sheet == null || sheet.state.isExpanded }
     }
-    // 获取当前的封面样式设置
-    val coverStyle by rememberEnumPreference(CoverStyleKey, defaultValue = CoverStyle.Square)
+    val playerStyle by rememberEnumPreference(PlayerStyleKey, defaultValue = PlayerStyle.AppleMusic)
+    val savedCoverStyle by rememberEnumPreference(CoverStyleKey, defaultValue = CoverStyle.Square)
+    // AppleMusic reuses this cover in landscape but keeps its rounded-square shape.
+    val coverStyle = if (playerStyle == PlayerStyle.Classic) savedCoverStyle else CoverStyle.Square
     val originalCover by rememberPreference(
         OriginalCoverKey,
         defaultValue = false
@@ -93,7 +98,9 @@ fun Cover(
         ContinuousRoundedRectangle(12.dp)
     }
 
-    val animatedCoverScale by animateFloatAsState(
+    val animatedCoverScale by if (playerStyle == PlayerStyle.AppleMusic) {
+        rememberAppleMusicPlaybackScale(isPlaying, sheetExpanded)
+    } else animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.9f,
         animationSpec = if (sheetExpanded) spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,

@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -100,7 +102,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
@@ -351,11 +352,13 @@ fun IosTopToolbar(
 fun IosSheetTopToolbar(
     title: String,
     modifier: Modifier = Modifier,
+    navigation: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     IosTopToolbar(
         title = title,
         modifier = modifier.offset(y = (-5).dp),
+        navigation = navigation,
         actions = actions,
     )
 }
@@ -365,6 +368,7 @@ fun IosSheetTopToolbarButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = LocalGlassColors.current
@@ -376,6 +380,29 @@ fun IosSheetTopToolbarButton(
         modifier = modifier,
         enabled = enabled,
         navigationSurfaceColor = groupedListBackground,
+        navigationSurfaceAlphaMultiplier = 1f,
+        sampleBackdrop = false,
+        onLongClick = onLongClick,
+        content = content,
+    )
+}
+
+/** Text actions share the sheet toolbar's tint, highlight, and press physics. */
+@Composable
+fun IosSheetButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    GlassButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        navigationSurfaceColor = colors.elevatedBackground.copy(
+            alpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f),
+        ),
         navigationSurfaceAlphaMultiplier = 1f,
         sampleBackdrop = false,
         content = content,
@@ -701,6 +728,7 @@ fun IosContextMenu(
     ).coerceIn(0f, 1f)
     val menuHeight = heightOverride ?: (20.dp + 44.dp * itemCount)
     val radius = 34.dp
+    val menuShape = remember(radius) { RoundedRectangle(radius) }
     val transitionScale = 0.24f + 0.76f * animationProgress
     val startOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
     val originProgress = transformOriginProgress.coerceIn(0f, 1f)
@@ -711,6 +739,7 @@ fun IosContextMenu(
             (0.5f - startOrigin.pivotFractionY) * originProgress,
     )
     val appearance = LocalGlassAppearance.current
+    val innerShadows = rememberNavigationInnerShadows(true)
     val childBackdrop = rememberLayerBackdrop()
     // Context menus render in a separate Popup window. Map their sampling coordinates back
     // to the source window so the menu refracts the content physically behind its position.
@@ -719,8 +748,9 @@ fun IosContextMenu(
     } else {
         emptyBackdrop()
     }
-    val isLight = !LocalGlassColors.current.isDark
-    val elevatedBackground = LocalGlassColors.current.elevatedBackground
+    val colors = LocalGlassColors.current
+    val isLight = !colors.isDark
+    val elevatedBackground = colors.elevatedBackground
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
         transformOrigin = startOrigin
         applyGlassDragScale(
@@ -797,7 +827,7 @@ fun IosContextMenu(
                         )
                     }
                     .navigationGlassBoxShadow(
-                        shape = { RoundedRectangle(radius) },
+                        shape = { menuShape },
                         alpha = GlassBoxShadowAlpha * shadowAlpha.coerceIn(0f, 1f),
                         layerBlock = menuLayerBlock,
                     ),
@@ -808,7 +838,7 @@ fun IosContextMenu(
                         .drawBackdrop(
                             backdrop = samplingBackdrop,
                             exportedBackdrop = childBackdrop.takeIf { appearance.usesBackdrop },
-                            shape = { RoundedRectangle(radius) },
+                            shape = { menuShape },
                             effects = {
                                 if (appearance.usesBackdrop) {
                                     blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
@@ -829,7 +859,7 @@ fun IosContextMenu(
                                         shadowAlpha.coerceIn(0f, 1f),
                                 )
                             },
-                            innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.10f * progress) },
+                            innerShadow = null,
                             layerBlock = menuLayerBlock,
                             onDrawSurface = {
                                 drawRect(
@@ -837,6 +867,7 @@ fun IosContextMenu(
                                         alpha = if (appearance.usesBackdrop) 0.70f * progress else 1f,
                                     ),
                                 )
+                                innerShadows?.draw(this, menuShape, isDark = colors.isDark)
                             },
                         )
                         .then(interactiveHighlight.modifier)
@@ -1392,6 +1423,7 @@ fun IosAlertSurface(
 ) {
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
+    val innerShadows = rememberNavigationInnerShadows(true)
     val light = !colors.isDark
     val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
     SideEffect {
@@ -1433,6 +1465,7 @@ fun IosAlertSurface(
                         }
                     },
                     highlight = { Highlight.Plain },
+                    innerShadow = null,
                     layerBlock = alertLayerBlock,
                     onDrawSurface = {
                         if (!appearance.usesBackdrop) {
@@ -1460,6 +1493,7 @@ fun IosAlertSurface(
                                 blendMode = BlendMode.Lighten,
                             )
                         }
+                        innerShadows?.draw(this, alertShape, isDark = colors.isDark)
                     },
                 )
                 .then(interactiveHighlight.modifier)
@@ -1614,6 +1648,7 @@ fun IosModalOverlay(
 
 /** Figma node 10525:1632. The glass shell reaches behind system navigation. */
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("DEPRECATION")
 @Composable
 fun IosModalSheet(
     onDismissRequest: () -> Unit,
@@ -1621,6 +1656,8 @@ fun IosModalSheet(
     skipPartiallyExpanded: Boolean = true,
     backdrop: Backdrop = LocalBlurBackdrop.current,
     contentWindowInsets: @Composable () -> WindowInsets = { WindowInsets.statusBars },
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded),
+    contentNavigationBarInsets: @Composable () -> WindowInsets = { WindowInsets.navigationBars },
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val animationScope = rememberCoroutineScope()
@@ -1629,7 +1666,7 @@ fun IosModalSheet(
     }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded),
+        sheetState = sheetState,
         modifier = modifier.graphicsLayer {
             clip = false
             applyGlassDragScale(
@@ -1645,6 +1682,14 @@ fun IosModalSheet(
         dragHandle = null,
         contentWindowInsets = contentWindowInsets,
     ) {
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.apply {
+                navigationBarColor = android.graphics.Color.TRANSPARENT
+                navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+                isNavigationBarContrastEnforced = false
+            }
+        }
         IosSheetSurface(
             modifier = Modifier.fillMaxWidth(),
             backdrop = backdrop,
@@ -1653,7 +1698,7 @@ fun IosModalSheet(
             applyDragScale = false,
         ) {
             Column(
-                Modifier.fillMaxWidth().navigationBarsPadding(),
+                Modifier.fillMaxWidth().windowInsetsPadding(contentNavigationBarInsets()),
             ) {
                 Box(
                     Modifier.fillMaxWidth().height(16.dp),
@@ -1685,6 +1730,7 @@ fun IosSheetSurface(
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
     val isLight = !colors.isDark
+    val innerShadows = rememberNavigationInnerShadows(true)
     val animationScope = rememberCoroutineScope()
     val activeInteractiveHighlight = interactiveHighlight ?: remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
@@ -1722,7 +1768,7 @@ fun IosSheetSurface(
                     effects = {},
                     highlight = { Highlight.Default.copy(alpha = if (isLight) 0.58f else 0.38f) },
                     shadow = { Shadow(radius = 48.dp, alpha = 0.25f) },
-                    innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.12f) },
+                    innerShadow = null,
                     layerBlock = sheetLayerBlock,
                     onDrawSurface = {
                         drawRect(
@@ -1733,6 +1779,7 @@ fun IosSheetSurface(
                         if (appearance.usesBackdrop) {
                             drawRect(Color.White.copy(alpha = if (isLight) 0.12f else 0.04f))
                         }
+                        innerShadows?.draw(this, shape, isDark = colors.isDark)
                     },
                 )
                 .then(activeInteractiveHighlight.modifier)

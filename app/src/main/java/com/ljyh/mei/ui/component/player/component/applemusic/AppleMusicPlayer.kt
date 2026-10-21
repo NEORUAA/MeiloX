@@ -7,10 +7,11 @@ import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -30,13 +31,14 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -44,11 +46,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.foundation.Image
 import com.ljyh.mei.ui.component.player.LocalPlayerArtwork
 import com.ljyh.mei.ui.component.sheet.playerArtwork
@@ -58,20 +63,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.media3.common.util.UnstableApi
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
@@ -82,7 +92,6 @@ import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.PlayerHorizontalPadding
 import com.ljyh.mei.constants.ThumbnailCornerRadius
 import com.ljyh.mei.ui.component.player.MiniPlayer
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.component.FluidBackground
 import com.ljyh.mei.ui.component.player.component.LyricScreen
 import com.ljyh.mei.ui.component.player.component.PlayerControlsSection
@@ -93,7 +102,6 @@ import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.trackBackdropPosition
-import com.ljyh.mei.ui.model.LyricSource
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -112,7 +120,6 @@ fun AppleMusicPlayer(
     miniPlayerVerticalOffset: () -> Dp,
 ) {
     val density = LocalDensity.current
-    val context = LocalContext.current
     val isDark = LocalGlassColors.current.isDark
     val configuration = LocalConfiguration.current
 
@@ -153,21 +160,15 @@ fun AppleMusicPlayer(
     val albumInfoVisible by remember { derivedStateOf { albumInfoAlpha.value > 0f } }
     val headerInfoVisible by remember { derivedStateOf { headerInfoAlpha.value > 0f } }
 
-    // Keep the same default fade spring as AnimatedVisibility without disposing lyrics.
-    val lyricVisibilityAlpha = animateFloatAsState(
-        targetValue = if (showLyrics) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "LyricsVisibility",
-    )
+    // Metadata travel follows the same reversible clock as the artwork.
+    val lyricProgress = lyricAnimFraction.asState()
+    val lyricVisibilityAlpha = remember { derivedStateOf { appleMusicLyricsAlpha(lyricAnimFraction.value) } }
+    val albumInteractive by remember { derivedStateOf { lyricAnimFraction.value == 0f } }
+    val headerInteractive by remember { derivedStateOf { lyricAnimFraction.value == 1f } }
 
-    val animatedPlaybackCoverScale = animateFloatAsState(
-        targetValue = if (isPlaying) 1f else 0.9f,
-        animationSpec = if (sheetExpanded) spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ) else androidx.compose.animation.core.snap(),
-        label = "AppleMusicCoverScale"
-    )
+    val animatedPlaybackCoverScale = rememberAppleMusicPlaybackScale(isPlaying, sheetExpanded)
+    val currentPlaying = rememberUpdatedState(isPlaying)
+    val currentExpanded = rememberUpdatedState(sheetExpanded)
 
 
     BoxWithConstraints(
@@ -194,52 +195,52 @@ fun AppleMusicPlayer(
 
         val bottomControlsHeightDp = if (isCompactHeight || isLandscape) 220.dp else 300.dp
         val bottomControlsHeight = with(density) { bottomControlsHeightDp.toPx() }
-        var albumMoreAnchor by remember(screenWidth, maxHeightPx, isLandscape, isCompactHeight) {
-            mutableStateOf<Offset?>(null)
-        }
-        val controlsSpacerHeight = animateDpAsState(
-            targetValue = if (stateContainer.controlsVisible) bottomControlsHeightDp else 16.dp,
-            label = "spacer",
+        val controlsShown = !showLyrics || stateContainer.controlsVisible
+        val controlsFadeShift = animateFloatAsState(
+            targetValue = if (controlsShown) 0f else 0.6f,
+            animationSpec = appleMusicControlsFadeSpring(controlsShown),
+            label = "LyricControlsFade",
         )
-        val sourceBadgeAnchorProgress = remember(controlsSpacerHeight, bottomControlsHeightDp) {
-            {
-                ((controlsSpacerHeight.value - 16.dp) / (bottomControlsHeightDp - 16.dp))
-                    .coerceIn(0f, 1f)
-            }
-        }
-
         // --- 动态计算封面大小 ---
+        // Recover the existing bottom edge before changing the visible cover width.
         val normalPaddingH = with(density) { (PlayerHorizontalPadding + 24.dp).toPx() }
         val maxAvailableWidth = maxWidthPx - (normalPaddingH * 2)
 
         val minTopMargin = with(density) { 16.dp.toPx() }
         val availableVerticalSpace = maxHeightPx - bottomControlsHeight - topSafeArea - minTopMargin
 
-        val normalSize = min(maxAvailableWidth, availableVerticalSpace.coerceAtLeast(0f)).coerceAtLeast(1f)
+        val previousSize = min(maxAvailableWidth, availableVerticalSpace.coerceAtLeast(0f)).coerceAtLeast(1f)
 
         val realAvailableHeight = (maxHeightPx - bottomControlsHeight - topSafeArea)
-        val verticalBias = (realAvailableHeight - normalSize) / 2
-        val normalTop = topSafeArea + verticalBias.coerceAtLeast(with(density) { 12.dp.toPx() })
+        val verticalBias = (realAvailableHeight - previousSize) / 2
+        val previousTop = topSafeArea + verticalBias.coerceAtLeast(with(density) { 12.dp.toPx() })
 
-        val normalStart = (maxWidthPx - normalSize) / 2
+        val previousStart = (maxWidthPx - previousSize) / 2
+        val normalBounds = appleMusicAlbumBounds(
+            Rect(previousStart, previousTop, previousStart + previousSize, previousTop + previousSize),
+            viewportWidth = maxWidthPx,
+            // Flamingo uses 15.dp outer padding plus 9.dp inner padding while playing.
+            horizontalInset = with(density) { AppleMusicDimensions.artworkInset.toPx() },
+            topLimit = topSafeArea + with(density) { 12.dp.toPx() },
+        )
+        val normalSize = normalBounds.width
 
         // C. Header (Top Left Small)
-        val headerSize = with(density) { 46.dp.toPx() }
-        val headerTop = topSafeArea + with(density) { 40.dp.toPx() }
-        val headerStart = with(density) { PlayerHorizontalPadding.toPx() }
-        val headerRadius = with(density) { 4.dp.toPx() }
-
-        val normalBounds = Rect(normalStart, normalTop, normalStart + normalSize, normalTop + normalSize)
+        val headerSize = with(density) { AppleMusicDimensions.headerSize.toPx() }
+        val headerTop = topSafeArea + with(density) { AppleMusicDimensions.headerTopInset.toPx() }
+        val lyricViewportTop = headerTop + headerSize - with(density) { 2.dp.toPx() }
+        val headerStart = with(density) { AppleMusicDimensions.headerInset.toPx() }
+        val headerRadius = with(density) { AppleMusicDimensions.headerCorner.toPx() }
         val headerBounds = Rect(headerStart, headerTop, headerStart + headerSize, headerTop + headerSize)
         val normalRadius = with(density) { 12.dp.toPx() }
         val normalShadow = with(density) { 16.dp.toPx() }
         // Keep image measurement stable; only layer properties observe animation frames.
         val artworkLayoutSize = normalSize.roundToInt().coerceAtLeast(1)
-        val artworkFrame = remember(normalBounds, headerBounds, density, sheetExpanded, isPlaying) {
+        val artworkFrame = remember(normalBounds, headerBounds, density) {
             derivedStateOf {
                 appleMusicArtworkFrame(
                     normalBounds, headerBounds, normalRadius, headerRadius, normalShadow,
-                    if (sheetExpanded) animatedPlaybackCoverScale.value else if (isPlaying) 1f else 0.9f,
+                    if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.9f,
                     lyricAnimFraction.value,
                 )
             }
@@ -297,14 +298,32 @@ fun AppleMusicPlayer(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = with(density) { topSafeArea.toDp() } + 7.dp)
+                        .padding(top = with(density) { topSafeArea.toDp() } + AppleMusicDimensions.handleTopInset)
                         .size(width = 58.dp, height = 4.dp)
+                        .playerAdditiveBlend()
                         .background(
                             Color.White.copy(alpha = if (isDark) 0.48f else 0.62f),
                             Capsule(),
                         ),
                 )
 
+
+                var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
+                var progressTrackTopInRoot by remember(screenWidth, maxHeightPx) { mutableStateOf<Float?>(null) }
+                var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
+                val showAlbumInfo = !isCompactHeight && !isLandscape
+                val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
+                val albumTop = appleMusicAlbumInfoTop(
+                    maxHeightPx, controlsHeightPx.toFloat(), albumRowSize.height.toFloat(),
+                    with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
+                )
+                val lyricEntryTranslationY = {
+                    if (showAlbumInfo) {
+                        appleMusicLyricsTranslationY(
+                            lyricProgress.value, albumTop + albumRowSize.height, lyricViewportTop,
+                        )
+                    } else 0f
+                }
 
                 // Mode B: Lyric Player
                 Box(
@@ -317,136 +336,182 @@ fun AppleMusicPlayer(
                                 if (showLyrics || lyricVisibilityAlpha.value > 0f) placeable.place(0, 0)
                             }
                         }
-                        .graphicsLayer { alpha = lyricVisibilityAlpha.value }
+                        .playerContentFade(lyricVisibilityAlpha)
                         .then(if (showLyrics && sheetExpanded) Modifier else Modifier.clearAndSetSemantics { }),
                 ) {
                     Column(Modifier.fillMaxSize()) {
-                        Spacer(modifier = Modifier.height(with(density) { (headerTop + headerSize).toDp() + 16.dp }))
+                        Spacer(modifier = Modifier.height(with(density) { lyricViewportTop.toDp() }))
 
                         LyricScreen(
                             lyricData = lyricLine,
                             active = showLyrics,
-                            // The header ends 12.dp from the edge, with 10.dp inside Title.
-                            sourceBadgeEndOffset = PlayerHorizontalPadding - 22.dp,
-                            sourceBadgeAnchor = albumMoreAnchor,
-                            sourceBadgeAnchorProgress = sourceBadgeAnchorProgress,
+                            showSourceBadge = false,
+                            topFadeHeight = AppleMusicDimensions.lyricTopFade,
+                            bottomFadeHeight = AppleMusicDimensions.lyricBottomFade,
+                            rendererVerticalPadding = 0.dp,
+                            synchronizeEntryWithParent = true,
+                            lyricContentModifier = Modifier.graphicsLayer {
+                                translationY = lyricEntryTranslationY()
+                            },
+                            controlsFadeRange = { viewportHeight ->
+                                appleMusicLyricsControlsFadeRange(
+                                    viewportHeight, controlsFadeShift.value, lyricEntryTranslationY(),
+                                    controlsTop = (progressTrackTopInRoot?.minus(playerBoundsInRoot?.top ?: 0f)
+                                        ?: (maxHeightPx - controlsHeightPx)) - lyricViewportTop,
+                                )
+                            },
                             playerConnection = stateContainer.playerConnection,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
-                                .padding(horizontal = PlayerHorizontalPadding),
-                            onClick = {
-                                mediaMetadata?.let {
-                                    if (overlayHandler.currentOverlayValue is OverlayState.None) {
-                                        stateContainer.playerViewModel.searchQQSong(it.title)
-                                        overlayHandler.showQQMusicSelection(
-                                            mediaMetadata = it
-                                        )
-                                    }
-                                }
-                            },
-                            onLongClick = { source ->
-                                if (source == LyricSource.QQMusic && mediaMetadata != null) {
-                                    stateContainer.playerViewModel.deleteSongById(id = mediaMetadata!!.id.toString())
-                                    android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            },
+                                // Both upstream lyric text renderers add 16.dp internally.
+                                .padding(horizontal = AppleMusicDimensions.lyricTextInset - AppleMusicDimensions.lyricRendererInset),
+                            onClick = {},
+                            onLongClick = {},
                             controlsVisible = stateContainer.controlsVisible,
                             onToggleControls = { stateContainer.controlsVisible = it },
                         )
-                        Spacer(modifier = Modifier.layout { measurable, constraints ->
-                            val height = constraints.constrainHeight(controlsSpacerHeight.value.roundToPx())
-                            val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
-                            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                        })
                     }
                 }
 
 
-                // Mode C: Header Info
-                if (mediaMetadata != null) {
-                    val headerTextWidth =
-                        screenWidth - with(density) { (headerStart + headerSize).toDp() } - 24.dp
+                // Metadata lives above the footer's animated clip. Both endpoints stay measured.
+                var albumTextSize by remember { mutableStateOf(IntSize.Zero) }
+                var albumActionsSize by remember { mutableStateOf(IntSize.Zero) }
+                var headerTextSize by remember { mutableStateOf(IntSize.Zero) }
+                var headerActionsSize by remember { mutableStateOf(IntSize.Zero) }
+                val infoRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+                val actionsGapPx = with(density) { 5.dp.toPx() }
+                val headerTextLeft = headerStart + headerSize + with(density) { 12.dp.toPx() }
+                val headerTextOrigin = Offset(
+                    headerTextLeft + if (infoRtl) headerActionsSize.width + actionsGapPx else 0f,
+                    headerTop + (headerSize - headerTextSize.height) / 2f,
+                )
+                val headerActionsOrigin = Offset(
+                    if (infoRtl) headerTextLeft else maxWidthPx - headerStart - headerActionsSize.width,
+                    headerTop + (headerSize - headerActionsSize.height) / 2f,
+                )
+                val albumTextOrigin = if (showAlbumInfo) {
+                    Offset(albumInsetPx + if (infoRtl) albumActionsSize.width + actionsGapPx else 0f,
+                        albumTop + (albumRowSize.height - albumTextSize.height) / 2f)
+                } else headerTextOrigin
+                val albumActionsOrigin = if (showAlbumInfo) {
+                    Offset(if (infoRtl) albumInsetPx else maxWidthPx - albumInsetPx - albumActionsSize.width,
+                        albumTop + (albumRowSize.height - albumActionsSize.height) / 2f)
+                } else headerActionsOrigin
 
+                mediaMetadata?.let { metadata ->
+                    if (showAlbumInfo) {
+                        val albumTitleStyle = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 18.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold,
+                        )
+                        val albumArtistStyle = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 17.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal,
+                        )
+                        // Anchor the row independently of fallback-font text height, like the lyric header.
+                        val albumInfoHeight = with(density) {
+                            maxOf(
+                                albumTitleStyle.lineHeight.toDp() + albumArtistStyle.lineHeight.toDp(),
+                                albumActionsSize.height.toDp(),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .align(AbsoluteAlignment.TopLeft)
+                                .absoluteOffset { IntOffset(albumInsetPx.roundToInt(), albumTop.roundToInt()) }
+                                .width(screenWidth - AppleMusicDimensions.albumInfoInset * 2)
+                                .height(albumInfoHeight)
+                                .onSizeChanged { albumRowSize = it }
+                                .playerInfoVisibility(albumInfoVisible),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Title(
+                                title = metadata.title,
+                                subTitle = metadata.artists.joinToString { it.name },
+                                isLiked = isLiked,
+                                onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                                onMoreClick = { overlayHandler.showMoreAction() },
+                                onTitleClick = {
+                                    overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
+                                },
+                                enabled = sheetExpanded && !showLyrics && albumInteractive,
+                                marqueeEnabled = sheetExpanded && albumInfoVisible,
+                                titleStyle = albumTitleStyle,
+                                subTitleStyle = albumArtistStyle,
+                                needShadow = false,
+                                onTextSizeChanged = { albumTextSize = it },
+                                onActionsSizeChanged = { albumActionsSize = it },
+                                textModifier = Modifier.playerInfoMotion(
+                                    albumInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, true,
+                                ),
+                                actionsModifier = Modifier.playerInfoMotion(
+                                    albumInfoAlpha, lyricProgress, albumActionsOrigin, headerActionsOrigin, true,
+                                ),
+                                modifier = Modifier.wrapContentHeight(unbounded = true),
+                            )
+                        }
+                    }
                     Box(
                         modifier = Modifier
-                            .offset(
-                                x = with(density) { (headerStart + headerSize).toDp() } + 12.dp,
-                                y = with(density) { headerTop.toDp() },
-                            )
-                            .height(with(density) { headerSize.toDp() })
-                            .width(headerTextWidth)
-                            .playerInfoFade(headerInfoAlpha, headerInfoVisible),
-                        contentAlignment = Alignment.CenterStart
+                            .align(AbsoluteAlignment.TopLeft)
+                            .absoluteOffset { IntOffset(headerTextLeft.roundToInt(), headerTop.roundToInt()) }
+                            .width(screenWidth - with(density) { headerTextLeft.toDp() } - AppleMusicDimensions.headerInset)
+                            .height(AppleMusicDimensions.headerSize)
+                            .playerInfoVisibility(headerInfoVisible),
+                        contentAlignment = Alignment.CenterStart,
                     ) {
                         Title(
-                            title = mediaMetadata!!.title,
-                            subTitle = mediaMetadata!!.artists.joinToString { it.name },
+                            title = metadata.title,
+                            subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
-                            onLikeClick = { mediaMetadata?.let { stateContainer.playerViewModel.like(it.id.toString()) } },
+                            onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = {
-                                mediaMetadata?.let {
-                                    overlayHandler.showAlbumArtist(
-                                        album = it.album,
-                                        artists = it.artists,
-                                        cover = it.coverUrl
-                                    )
-                                }
+                                overlayHandler.showAlbumArtist(metadata.album, metadata.artists, metadata.coverUrl)
                             },
-                            titleStyle = MaterialTheme.typography.titleMedium,
-                            subTitleStyle = MaterialTheme.typography.bodySmall,
+                            enabled = sheetExpanded && showLyrics && headerInteractive,
+                            marqueeEdgeWidth = 12.dp,
+                            marqueeEnabled = sheetExpanded && headerInfoVisible,
+                            titleStyle = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold,
+                            ),
+                            subTitleStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal,
+                            ),
                             needShadow = false,
-                            modifier = Modifier.padding(vertical = 2.dp)
+                            onTextSizeChanged = { headerTextSize = it },
+                            onActionsSizeChanged = { headerActionsSize = it },
+                            textModifier = Modifier.playerInfoMotion(
+                                headerInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, false,
+                            ),
+                            actionsModifier = Modifier.playerInfoMotion(
+                                headerInfoAlpha, lyricProgress, albumActionsOrigin, headerActionsOrigin, false,
+                            ),
+                            modifier = Modifier.wrapContentHeight(unbounded = true),
                         )
                     }
                 }
 
-                // --- 统一的底部控制区域 ---
                 Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(Color.Transparent)
-                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
                 ) {
-                    val isBottomBarVisible = !showLyrics || stateContainer.controlsVisible
-
                     AnimatedVisibility(
-                        visible = isBottomBarVisible,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut()
+                        visible = controlsShown,
+                        enter = slideInVertically { it },
+                        exit = slideOutVertically { it },
                     ) {
-                        Column(Modifier.fillMaxWidth()) {
-
-                            if (!isCompactHeight && !isLandscape) {
-                                mediaMetadata?.let {
-                                    Title(
-                                        title = it.title,
-                                        subTitle = it.artists.joinToString { artist -> artist.name },
-                                        isLiked = isLiked,
-                                        onLikeClick = { stateContainer.playerViewModel.like(it.id.toString()) },
-                                        onMoreClick = { overlayHandler.showMoreAction() },
-                                        onMoreButtonPositioned = {
-                                            if (!showLyrics) albumMoreAnchor = it.positionInRoot()
-                                        },
-                                        onTitleClick = {
-                                            overlayHandler.showAlbumArtist(
-                                                album = it.album,
-                                                artists = it.artists,
-                                                cover = it.coverUrl
-                                            )
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .playerInfoFade(albumInfoAlpha, albumInfoVisible)
-                                            .padding(horizontal = PlayerHorizontalPadding)
-                                            .padding(bottom = 12.dp)
-                                            .padding(start = 8.dp)
-                                    )
-                                }
-                            }
-
+                        val controlsAlpha = transition.animateFloat(
+                            transitionSpec = { spring(stiffness = Spring.StiffnessMediumLow) },
+                            label = "PlayerControlsOpacity",
+                        ) {
+                            if (it == EnterExitState.Visible) 1f else 0f
+                        }
+                        DisposableEffect(Unit) {
+                            onDispose { progressTrackTopInRoot = null }
+                        }
+                        Box(Modifier.playerContentFade(controlsAlpha)
+                            .onSizeChanged { controlsHeightPx = it.height }) {
                             PlayerControlsSection(
                                 position = { stateContainer.sliderPosition.toLong() },
                                 duration = { stateContainer.duration },
@@ -457,15 +522,14 @@ fun AppleMusicPlayer(
                                 onPlaylistClick = { overlayHandler.showPlaylist() },
                                 onSleepTimerClick = { overlayHandler.showSleepTimer() },
                                 onAddToPlaylistClick = {
-                                    mediaMetadata?.let {
-                                        overlayHandler.showAddToPlaylist(it.id)
-                                    }
+                                    mediaMetadata?.let { overlayHandler.showAddToPlaylist(it.id) }
                                 },
                                 onDownloadClick = {
                                     overlayHandler.handleMoreAction(com.ljyh.mei.ui.model.MoreAction.DOWNLOAD)
                                 },
                                 onMoreClick = { overlayHandler.showMoreAction() },
-                                isCompact = isCompactHeight || isLandscape
+                                isCompact = isCompactHeight || isLandscape,
+                                onProgressTrackTopChanged = { progressTrackTopInRoot = it },
                             )
                         }
                     }
@@ -479,7 +543,7 @@ fun AppleMusicPlayer(
                     .trackBackdropPosition(playerCoverBackdrop),
             ) {
                 AnimatedContent(
-                    targetState = mediaMetadata,
+                    targetState = coverUrl,
                     transitionSpec = {
                         (fadeIn(animationSpec = tween(durationMillis = 400)) +
                                 scaleIn(initialScale = 0.92f, animationSpec = tween(durationMillis = 400)))
@@ -527,12 +591,12 @@ fun AppleMusicPlayer(
                             else Modifier.clearAndSetSemantics { },
                         )
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                ) { currentMetadata ->
-                    if (currentMetadata != null) {
-                        val retainedPainter = remember(currentMetadata.coverUrl) {
-                            sharedArtwork?.takeIf { it.first == currentMetadata.coverUrl }?.second
+                ) { currentCoverUrl ->
+                    if (currentCoverUrl != null) {
+                        val retainedPainter = remember(currentCoverUrl) {
+                            sharedArtwork?.takeIf { it.first == currentCoverUrl }?.second
                         }
-                        val painter = sharedArtwork?.takeIf { it.first == currentMetadata.coverUrl }?.second ?: retainedPainter
+                        val painter = sharedArtwork?.takeIf { it.first == currentCoverUrl }?.second ?: retainedPainter
                         if (painter != null) Image(
                             painter = painter,
                             contentDescription = "Cover",
@@ -548,13 +612,38 @@ fun AppleMusicPlayer(
     }
 }
 
-/** Retain text measurement while transparent groups have neither layout height nor input. */
-private fun Modifier.playerInfoFade(alpha: State<Float>, visible: Boolean): Modifier =
+internal fun Modifier.playerContentFade(alpha: State<Float>): Modifier = graphicsLayer {
+    this.alpha = alpha.value
+    // Keep descendant Plus blending connected to the background during the fade.
+    compositingStrategy = CompositingStrategy.ModulateAlpha
+}
+
+internal fun Modifier.playerAdditiveBlend(): Modifier = graphicsLayer {
+    blendMode = BlendMode.Plus
+    compositingStrategy = CompositingStrategy.Offscreen
+}
+
+/** Unplace hidden endpoints without changing their measured geometry. */
+private fun Modifier.playerInfoVisibility(visible: Boolean): Modifier =
     layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
-        layout(placeable.width, if (visible) placeable.height else 0) {
+        layout(placeable.width, placeable.height) {
             if (visible) placeable.place(0, 0)
         }
-    }
-        .graphicsLayer { this.alpha = alpha.value }
-        .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
+    }.then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
+
+internal fun Modifier.playerInfoMotion(
+    opacity: State<Float>,
+    progress: State<Float>,
+    albumOrigin: Offset,
+    headerOrigin: Offset,
+    fromAlbum: Boolean,
+): Modifier = graphicsLayer {
+    val offset = appleMusicInfoOffset(albumOrigin, headerOrigin, progress.value, fromAlbum)
+    translationX = offset.x
+    translationY = offset.y
+    alpha = opacity.value
+    clip = false
+    blendMode = BlendMode.Plus
+    compositingStrategy = CompositingStrategy.Offscreen
+}

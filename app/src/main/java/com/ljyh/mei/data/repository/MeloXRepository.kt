@@ -62,6 +62,8 @@ import com.ljyh.mei.data.model.melox.SongWikiTagGroup
 import com.ljyh.mei.data.model.melox.ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.model.melox.AccountDetail
+import com.ljyh.mei.data.model.melox.AccountConnectionPage
+import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.AccountSong
@@ -89,11 +91,14 @@ import com.ljyh.mei.di.readBoundedPlaybackResponseBody
 import com.ljyh.mei.utils.log.logPlaybackHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -633,6 +638,37 @@ class MeloXRepository @Inject constructor(
             "/api/user/playlist",
             mapOf("uid" to userId, "limit" to limit.coerceIn(1, 2_000), "offset" to 0, "includeVideo" to true),
         ).array("playlist").mapNotNull(::parseAccountPlaylist)
+
+    suspend fun accountConnections(
+        userId: Long,
+        type: AccountConnectionType,
+        offset: Int = 0,
+        limit: Int = 30,
+    ): AccountConnectionPage {
+        require(userId > 0) { "A valid NetEase user ID is required" }
+        require(offset >= 0) { "The account connection offset must not be negative" }
+        val pageSize = limit.coerceIn(1, 100)
+        val path = when (type) {
+            AccountConnectionType.Following -> "/api/user/getfollows/$userId"
+            AccountConnectionType.Followers -> "/api/user/getfolloweds/$userId"
+        }
+        val body = buildMap<String, Any> {
+            put("offset", offset)
+            put("limit", pageSize)
+            when (type) {
+                AccountConnectionType.Following -> put("order", true)
+                AccountConnectionType.Followers -> {
+                    put("userId", userId)
+                    put("time", "0")
+                    put("getcounts", "true")
+                }
+            }
+        }
+        val page = parseAccountConnections(request(path, body), type, offset, pageSize)
+        return page.copy(
+            users = resolveAccountConnectionArtists(page.users) { accountDetail(it).profile },
+        )
+    }
 
     suspend fun userPlayRecords(userId: Long, allTime: Boolean): List<UserPlayRecord> {
         val response = request(
@@ -1829,8 +1865,58 @@ private fun parseCloudSong(element: JsonElement?): CloudSong? {
     )
 }
 
+internal suspend fun resolveAccountConnectionArtists(
+    users: List<AccountProfile>,
+    loadProfile: suspend (Long) -> AccountProfile,
+): List<AccountProfile> = coroutineScope {
+    val requests = Semaphore(4)
+    users.map { user ->
+        async {
+            if (!user.hasVerifiedIdentity || user.artistId != null) return@async user
+            requests.withPermit {
+                try {
+                    val profile = loadProfile(user.id)
+                    user.copy(artistId = profile.artistId?.takeIf { it > 0 && profile.id == user.id })
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    user
+                }
+            }
+        }
+    }.awaitAll()
+}
+
+internal fun parseAccountConnections(
+    response: JsonObject,
+    type: AccountConnectionType,
+    offset: Int,
+    limit: Int,
+): AccountConnectionPage {
+    check(response.int("code") == 200) {
+        response.string("message") ?: response.string("msg") ?: "Account connections are unavailable"
+    }
+    val listKey = when (type) {
+        AccountConnectionType.Following -> "follow"
+        AccountConnectionType.Followers -> "followeds"
+    }
+    val data = response.element(listKey)
+    check(data?.isJsonArray == true) { "Account connections are unavailable" }
+    val rawUsers = data.asJsonArray
+    val nextOffset = (offset.toLong() + rawUsers.size()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    return AccountConnectionPage(
+        users = rawUsers.mapNotNull { parseAccountProfile(it.objectValue()) }
+            .filter { it.id > 0 }
+            .distinctBy(AccountProfile::id),
+        hasMore = rawUsers.size() > 0 && nextOffset > offset &&
+            (response.boolean("more") ?: (rawUsers.size() >= limit)),
+        nextOffset = nextOffset,
+    )
+}
+
 private fun parseAccountProfile(value: JsonObject?): AccountProfile? = value?.let {
     val id = it.long("userId") ?: return null
+    val artistId = it.long("artistId")?.takeIf { artistId -> artistId > 0 }
     AccountProfile(
         id = id,
         nickname = it.string("nickname") ?: "NetEase user",
@@ -1842,6 +1928,11 @@ private fun parseAccountProfile(value: JsonObject?): AccountProfile? = value?.le
         eventCount = it.int("eventCount"),
         playlistCount = it.int("playlistCount"),
         playlistSubscribedCount = it.int("playlistBeSubscribedCount"),
+        artistId = artistId,
+        hasVerifiedIdentity = artistId != null || it.int("authStatus") == 1 ||
+            (it.int("userType") ?: 0) > 0 ||
+            (it.objectOrNull("mainAuthType")?.int("type") ?: 0) > 0 ||
+            it.array("allAuthTypes").any { auth -> (auth.objectValue()?.int("type") ?: 0) > 0 },
     )
 }
 

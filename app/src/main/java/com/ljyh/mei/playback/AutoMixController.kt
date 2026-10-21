@@ -384,6 +384,8 @@ class AutoMixController(
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 Timber.tag(TAG).w(error, "BeatNet analysis failed; using fixed crossfade")
+            } catch (error: OutOfMemoryError) {
+                Timber.tag(TAG).w(error, "BeatNet analysis ran out of memory; using fixed crossfade")
             } finally {
                 if (generation == sourceGeneration) {
                     analysisJob = null

@@ -9,6 +9,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
@@ -46,9 +49,11 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -120,13 +125,15 @@ internal class PlayerSheetLayers(
     private var pressHighlightSize = Size.Zero
 
     private var miniPressHighlight = GlassPressHighlight()
-    val transitionPressHighlight get() = pressLight.current(state.progress)
+    val transitionPressHighlight get() = pressLight.current(state.progress, transitionPressHighlightBounds)
     val transitionPressHighlightBounds get() = playerPressHighlightRect(
         pressHighlightSize,
         playerContainerRect(sourceContainer, hostBounds, state.progress),
     )
     val collapsedPressHighlight get() =
-        if (state.isCollapsed && pressLight.hasCapture) pressLight.current(state.progress) else null
+        if (state.isCollapsed && pressLight.hasCapture) transitionPressHighlight else null
+
+    fun updatePressHighlightPointer(rootPosition: Offset) = pressLight.updatePointer(rootPosition)
 
     fun updateMiniPressHighlight(bounds: Rect, highlight: GlassPressHighlight) {
         if (!state.isTransitioning) {
@@ -161,10 +168,15 @@ internal class PlayerSheetLayers(
     }
     val targetArtwork get() = targetArtworkGeometry.bounds
     val targetArtworkLayoutSize get() = targetArtworkGeometry.layoutSize
-    val sharesArtwork get() = isTransitioning && playerSharesArtwork(
-        true, sharedArtworkEnabled, artworkSourceAvailable,
-        sourceArtwork, targetArtwork, hostBounds,
-    )
+    // Ownership only changes when eligibility changes. Its geometry may read the
+    // press-release progress, but endpoint display lists need no per-frame invalidation.
+    private val artworkOwnership = derivedStateOf(structuralEqualityPolicy()) {
+        isTransitioning && playerSharesArtwork(
+            true, sharedArtworkEnabled, artworkSourceAvailable,
+            sourceArtwork, targetArtwork, hostBounds,
+        )
+    }
+    val sharesArtwork get() = artworkOwnership.value
 
     private fun openingBounds(layoutBounds: Rect): Rect {
         val layout = frozenContainer ?: return layoutBounds
@@ -210,7 +222,7 @@ internal class PlayerSheetLayers(
         pressLight.capture(miniPressHighlight)
     }
 
-    fun releasePressHighlight() = pressLight.release(state.progress)
+    fun releasePressHighlight() = pressLight.release(state.progress, transitionPressHighlightBounds)
 
     fun updateHost(bounds: Rect) {
         if (bounds == hostBounds) return
@@ -353,11 +365,38 @@ internal fun Modifier.playerArtwork(
         }
 }
 
+@Composable
+private fun Modifier.observePressHighlight(layers: PlayerSheetLayers): Modifier {
+    val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    return onGloballyPositioned { coordinates.value = it }
+        .pointerInput(layers) {
+            // Observe consumed moves on the existing hit path without claiming the page.
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                var pointer = down.id
+                try {
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull { it.id == pointer } ?: break
+                        coordinates.value?.takeIf { it.isAttached }?.let {
+                            layers.updatePressHighlightPointer(it.localToRoot(change.position))
+                        }
+                        val next = event.changes.firstOrNull { it.pressed } ?: break
+                        if (!change.pressed) pointer = next.id
+                    } while (true)
+                } finally {
+                    layers.releasePressHighlight()
+                }
+            }
+        }
+}
+
+@Composable
 private fun Modifier.sheetGestures(
     state: BottomSheetState,
     layers: PlayerSheetLayers,
     onHorizontalSwipe: ((HorizontalSwipeDirection) -> Unit)?,
-): Modifier = pointerInput(state, onHorizontalSwipe) {
+): Modifier = observePressHighlight(layers).pointerInput(state, onHorizontalSwipe) {
     if (onHorizontalSwipe != null) {
         val tracker = VelocityTracker()
         detectHorizontalDragGestures(
@@ -492,6 +531,13 @@ fun BottomSheet(
     val expanded by remember(state) { derivedStateOf { state.isExpanded } }
     val collapsed by remember(state) { derivedStateOf { state.isCollapsed } }
     val dismissed by remember(state) { derivedStateOf { state.isDismissed } }
+    // The hidden mini host stays at the collapsed anchor through normal player
+    // motion. Preserve live relocation/dismiss offsets without placing it every frame.
+    val miniAnchor by remember(state) {
+        derivedStateOf(structuralEqualityPolicy()) {
+            if (state.progress == 0f && !state.isDragging) state.value else state.collapsedBound
+        }
+    }
     val transitionGeometryReady by remember(layers) {
         derivedStateOf { layers.hostBounds.isUsable() && layers.sourceContainer.isUsable() }
     }
@@ -511,8 +557,7 @@ fun BottomSheet(
                 Modifier.fillMaxWidth()
                     .height(if (collapsedDragHeight > 0.dp) collapsedDragHeight else state.collapsedBound)
                     .offset {
-                        val anchor = if (state.progress == 0f && !state.isDragging) state.value else state.collapsedBound
-                        IntOffset(0, (state.expandedBound - anchor + collapsedDragOffset()).roundToPx())
+                        IntOffset(0, (state.expandedBound - miniAnchor + collapsedDragOffset()).roundToPx())
                     }
                     .clipPlayerRecordingHost(layers, expandedCornerRadius)
                     .sheetGestures(state, layers, onHorizontalSwipe)
@@ -596,6 +641,8 @@ fun BottomSheet(
 
                     val fullAlpha = playerContentAlpha(p)
                     if (fullAlpha > 0f && layers.fullContent.size.width > 0) {
+                        // Preserve descendant blend modes while the recorded controls fade.
+                        layers.fullContent.compositingStrategy = CompositingStrategy.ModulateAlpha
                         layers.fullContent.alpha = fullAlpha
                         withTransform({
                             translate(bounds.left, bounds.top)

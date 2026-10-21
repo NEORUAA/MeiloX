@@ -1,6 +1,7 @@
 package com.ljyh.mei.playback
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.StuckPlayerException
 import com.ljyh.mei.constants.MusicQuality
 import java.util.Locale
 
@@ -123,6 +124,24 @@ internal fun playbackCacheKey(
 /** Returns whether the current source should be invalidated and retried in place. */
 internal fun shouldRefreshPlaybackSource(errorCode: Int): Boolean =
     errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+
+/** Recovers only Media3's confirmed loading or playback stalls, not generic runtime failures. */
+internal fun shouldRecoverStalledPlayback(errorCode: Int, cause: Throwable?): Boolean {
+    if (errorCode != PlaybackException.ERROR_CODE_TIMEOUT &&
+        errorCode != PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK
+    ) return false
+    val stuck = generateSequence(cause) { it.cause }
+        .take(16)
+        .filterIsInstance<StuckPlayerException>()
+        .firstOrNull()
+        ?: return false
+    return when (stuck.stuckType) {
+        StuckPlayerException.STUCK_BUFFERING_NOT_LOADING,
+        StuckPlayerException.STUCK_BUFFERING_NO_PROGRESS,
+        StuckPlayerException.STUCK_PLAYING_NO_PROGRESS -> true
+        else -> false
+    }
+}
 
 /** Retries a different full source when the device cannot decode or render these bytes. */
 internal fun shouldTryLowerPlaybackQuality(errorCode: Int): Boolean = when (errorCode) {

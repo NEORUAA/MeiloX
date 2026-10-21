@@ -15,16 +15,44 @@ import kotlin.math.abs
 
 class AppleMusicArtworkMotionTest {
     private val normal = Rect(48.25f, 151.75f, 351.75f, 455.25f)
-    private val header = Rect(24f, 76f, 70f, 122f)
+    private val header = Rect(28.5f, 76f, 92.5f, 140f)
 
     private fun frame(progress: Float, playbackScale: Float = 1f, bounds: Rect = normal) =
-        appleMusicArtworkFrame(bounds, header, 12f, 4f, 16f, playbackScale, progress)
+        appleMusicArtworkFrame(bounds, header, 12f, 8f, 16f, playbackScale, progress)
+
+    @Test fun enlargedAlbumMatchesTheProgressWidthWithoutMovingItsBottom() {
+        val previous = Rect(48f, 160f, 352f, 464f)
+        val enlarged = appleMusicAlbumBounds(previous, 400f, 24f, 36f)
+        assertEquals(Rect(24f, 112f, 376f, 464f), enlarged)
+        assertEquals(previous.bottom, enlarged.bottom, 0f)
+        assertTrue(enlarged.top < previous.top)
+    }
+
+    @Test fun shortScreensKeepTheBottomAnchorWithoutCrossingTheTopSafeArea() {
+        val previous = Rect(100f, 48f, 300f, 248f)
+        val enlarged = appleMusicAlbumBounds(previous, 400f, 24f, 36f)
+        assertEquals(36f, enlarged.top, 0f)
+        assertEquals(previous.bottom, enlarged.bottom, 0f)
+        assertEquals(212f, enlarged.width, 0f)
+        assertEquals(200f, enlarged.center.x, 0f)
+    }
+
+    @Test fun newAlbumAndHeaderBoundsShareExactEndpointsAcrossInterruptedMotion() {
+        val enlarged = appleMusicAlbumBounds(normal, 400f, 24f, 36f)
+        for (progress in listOf(0f, 0.6f, 0.25f, 1f, 0.75f, 0f)) {
+            val value = frame(progress, bounds = enlarged)
+            assertTrue(value.bounds.top >= 36f)
+            assertEquals(value.bounds.width, value.bounds.height, 0.001f)
+        }
+        assertEquals(enlarged, frame(0f, bounds = enlarged).bounds)
+        assertEquals(header, frame(1f, bounds = enlarged).bounds)
+    }
 
     @Test fun normalAndHeaderKeepExactVisualEndpoints() {
         assertEquals(normal, frame(0f).bounds)
         for (scale in listOf(0.9f, 0.95f, 1f)) {
             assertEquals(header, frame(1f, scale).bounds)
-            assertEquals(4f, frame(1f, scale).cornerRadius, 0f)
+            assertEquals(8f, frame(1f, scale).cornerRadius, 0f)
             assertEquals(0f, frame(1f, scale).shadowElevation, 0f)
         }
     }

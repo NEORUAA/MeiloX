@@ -121,8 +121,8 @@ object QRCParser : ILyricsParser {
                         syllables = finalSyllables,
                         translation = null, // 翻译统一在外层处理
                         alignment = alignment,
-                        start = finalSyllables.first().start,
-                        end = finalSyllables.last().end
+                        start = finalSyllables.minOf { it.start },
+                        end = finalSyllables.maxOf { it.end }
                     )
                 )
             }
@@ -141,8 +141,8 @@ object QRCParser : ILyricsParser {
             syllables = syllables,
             translation = null,
             alignment = KaraokeAlignment.Unspecified,
-            start = syllables.first().start,
-            end = syllables.last().end
+            start = syllables.minOf { it.start },
+            end = syllables.maxOf { it.end }
         )
     }
 
@@ -181,8 +181,9 @@ private fun parseSyllablesAndMergeColons(
 
             if (next != null && (next.text == "：" || next.text == ":")) {
                 val nextStartTime = if (useAbsoluteTime) next.offset else baseStartTime + next.offset
-                val e = nextStartTime + next.duration
-                mergedSyllables.add(KaraokeSyllable(current.text + next.text, startTime, e))
+                val mergedStart = minOf(startTime, nextStartTime)
+                val mergedEnd = maxOf(startTime + current.duration, nextStartTime + next.duration)
+                mergedSyllables.add(KaraokeSyllable(current.text + next.text, mergedStart, mergedEnd))
                 i += 2
             } else {
                 val e = startTime + current.duration

@@ -55,6 +55,8 @@ import com.ljyh.mei.ui.screen.account.NeteaseLoginScreen
 import com.ljyh.mei.ui.screen.account.NeteaseWebLoginScreen
 import com.ljyh.mei.ui.screen.account.PcQrLoginScreen
 import com.ljyh.mei.ui.screen.account.AccountHomeScreen
+import com.ljyh.mei.ui.screen.account.AccountConnectionsScreen
+import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.ui.screen.account.ListeningRankScreen
 import com.ljyh.mei.ui.screen.song.SongWikiScreen
 
@@ -145,6 +147,18 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable(Screen.AccountHome.route) {
         AccountHomeScreen()
+    }
+
+    composable(
+        route = "${Screen.AccountConnections.route}/{userId}/{type}",
+        arguments = listOf(
+            navArgument("userId") { type = NavType.LongType },
+            navArgument("type") { type = NavType.StringType },
+        ),
+    ) { entry ->
+        AccountConnectionType.entries.firstOrNull { it.name == entry.arguments?.getString("type") }?.let {
+            AccountConnectionsScreen(entry.arguments!!.getLong("userId"), it)
+        }
     }
 
     composable(
@@ -417,6 +431,12 @@ fun navigationEntry(
         route.startsWith("${Screen.AccountListeningRank.route}/") -> {
             route.substringAfter("${Screen.AccountListeningRank.route}/").toLongOrNull()
                 ?.let { userId -> ListeningRankScreen(userId) }
+        }
+        route.startsWith("${Screen.AccountConnections.route}/") -> {
+            val arguments = route.substringAfter("${Screen.AccountConnections.route}/").split('/', limit = 2)
+            val userId = arguments.firstOrNull()?.toLongOrNull()
+            val type = AccountConnectionType.entries.firstOrNull { it.name == arguments.getOrNull(1) }
+            if (userId != null && type != null) AccountConnectionsScreen(userId, type)
         }
         route.startsWith("${Screen.PodcastDetail.route}/") -> {
             route.substringAfter("${Screen.PodcastDetail.route}/").toLongOrNull()

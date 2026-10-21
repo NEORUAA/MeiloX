@@ -1,13 +1,84 @@
 package com.ljyh.mei.playback
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.StuckPlayerException
 import com.ljyh.mei.constants.MusicQuality
+import java.io.IOException
+import java.net.SocketTimeoutException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackQualityRecoveryTest {
+    @Test
+    fun confirmedLoadingAndPlayingStallsRecoverForBothMedia3ErrorCodes() {
+        val stuckTypes = listOf(
+            StuckPlayerException.STUCK_BUFFERING_NOT_LOADING,
+            StuckPlayerException.STUCK_BUFFERING_NO_PROGRESS,
+            StuckPlayerException.STUCK_PLAYING_NO_PROGRESS,
+        )
+        val errorCodes = listOf(
+            PlaybackException.ERROR_CODE_TIMEOUT,
+            PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+        )
+
+        errorCodes.forEach { errorCode ->
+            stuckTypes.forEach { stuckType ->
+                val cause = StuckPlayerException(stuckType, 30_000)
+                assertTrue(shouldRecoverStalledPlayback(errorCode, cause))
+                assertTrue(shouldRecoverStalledPlayback(errorCode, IllegalStateException(cause)))
+            }
+        }
+    }
+
+    @Test
+    fun suppressedAndNotEndingStallsMustNotRestartTheCurrentSource() {
+        listOf(
+            StuckPlayerException.STUCK_SUPPRESSED,
+            StuckPlayerException.STUCK_PLAYING_NOT_ENDING,
+        ).forEach { stuckType ->
+            listOf(
+                PlaybackException.ERROR_CODE_TIMEOUT,
+                PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+            ).forEach { errorCode ->
+                assertFalse(shouldRecoverStalledPlayback(
+                    errorCode, StuckPlayerException(stuckType, 30_000),
+                ))
+            }
+        }
+    }
+
+    @Test
+    fun ordinaryTimeoutsRuntimeChecksAndNetworkFailuresMustNotTriggerStallRecovery() {
+        val ordinaryCauses = listOf(
+            null,
+            SocketTimeoutException("Player stuck buffering with no progress"),
+            IllegalStateException("STUCK_PLAYING_NO_PROGRESS"),
+            IllegalStateException(IOException("Player stuck buffering and not loading")),
+        )
+        listOf(
+            PlaybackException.ERROR_CODE_TIMEOUT,
+            PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+        ).forEach { errorCode ->
+            ordinaryCauses.forEach { cause ->
+                assertFalse(shouldRecoverStalledPlayback(errorCode, cause))
+            }
+        }
+        listOf(
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+            PlaybackException.ERROR_CODE_UNSPECIFIED,
+        ).forEach { errorCode ->
+            assertFalse(shouldRecoverStalledPlayback(
+                errorCode,
+                StuckPlayerException(StuckPlayerException.STUCK_PLAYING_NO_PROGRESS, 30_000),
+            ))
+        }
+    }
+
     @Test
     fun masterSourceDecoderFailuresCanRecoverWithAnotherQuality() {
         val sourceFailures = listOf(

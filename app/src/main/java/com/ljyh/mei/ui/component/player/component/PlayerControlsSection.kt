@@ -17,8 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.PlayerHorizontalPadding
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
+import com.ljyh.mei.ui.component.player.component.applemusic.playerAdditiveBlend
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.utils.rememberEnumPreference
 
@@ -36,24 +40,26 @@ fun PlayerControlsSection(
     onAddToPlaylistClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onMoreClick: () -> Unit,
-    isCompact: Boolean = false // 新增参数
+    isCompact: Boolean = false,
+    onProgressTrackTopChanged: ((Float) -> Unit)? = null,
 ) {
     // 紧凑模式下间距减半
     val spacerHeight = if (isCompact) 8.dp else 24.dp
 
     val isFM = playerConnection.isFMMode.collectAsStateWithLifecycle()
+    val playerStyle = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic).value
 
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        PlayerProgressSection(position, duration, isPlaying, playerConnection)
+        PlayerProgressSection(position, duration, isPlaying, playerConnection, onProgressTrackTopChanged)
 
         Spacer(Modifier.height(spacerHeight))
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = PlayerHorizontalPadding)
+                .padding(horizontal = if (playerStyle == PlayerStyle.AppleMusic) 0.dp else PlayerHorizontalPadding)
         ) {
             PlayerControls(
                 playerConnection = playerConnection,
@@ -69,7 +75,7 @@ fun PlayerControlsSection(
         if (!isCompact) {
             Spacer(Modifier.height(spacerHeight))
             PlayerActionToolbar(
-                modifier = Modifier.padding(horizontal = PlayerHorizontalPadding),
+                modifier = Modifier.padding(horizontal = PlayerHorizontalPadding).playerAdditiveBlend(),
                 onLyricClick = onLyricClick,
                 onPlaylistClick = onPlaylistClick,
                 onSleepTimerClick = onSleepTimerClick,
@@ -93,6 +99,7 @@ private fun PlayerProgressSection(
     duration: () -> Long,
     isPlaying: Boolean,
     playerConnection: PlayerConnection,
+    onProgressTrackTopChanged: ((Float) -> Unit)?,
 ) {
     // Read the ticking position here so only progress recomposes, leaving the
     // title, sheet and glass playback controls outside this update boundary.
@@ -102,12 +109,17 @@ private fun PlayerProgressSection(
     ).value
     val currentPosition = position()
     val currentDuration = duration()
+    val playerStyle = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic).value
+    val progressPadding = if (playerStyle == PlayerStyle.AppleMusic && progressBarStyle == ProgressBarStyle.LINEAR) {
+        AppleMusicDimensions.progressInset
+    } else PlayerHorizontalPadding + 8.dp
     val modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = PlayerHorizontalPadding + 8.dp)
+        .playerAdditiveBlend()
+        .padding(horizontal = progressPadding)
     val seek: (Long) -> Unit = { playerConnection.player.seekTo(it) }
     if (progressBarStyle == ProgressBarStyle.LINEAR) {
-        FluidProgressSlider(currentPosition, currentDuration, seek, modifier)
+        FluidProgressSlider(currentPosition, currentDuration, seek, modifier, onProgressTrackTopChanged)
     } else {
         PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier)
     }

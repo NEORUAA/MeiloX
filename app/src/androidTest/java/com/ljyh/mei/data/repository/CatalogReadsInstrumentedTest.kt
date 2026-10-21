@@ -12,6 +12,7 @@ import com.ljyh.mei.data.network.NeteaseSessionType
 import com.ljyh.mei.data.network.NeteaseUrsSmsLogin
 import com.ljyh.mei.data.network.neteaseSessionType
 import com.ljyh.mei.data.network.setNeteaseWebSession
+import com.ljyh.mei.data.model.melox.AccountConnectionType
 import androidx.datastore.preferences.core.edit
 import com.ljyh.mei.ui.screen.cloud.CloudMusicViewModel
 import com.ljyh.mei.di.RetrofitModule
@@ -45,6 +46,46 @@ class CatalogReadsInstrumentedTest {
     private val api = RetrofitModule.provideApiService(retrofit)
     private val eapi = RetrofitModule.provideMeloXEapiService(retrofit)
     private val weapi = RetrofitModule.provideMeloXWeapiService(webRetrofit)
+
+    @Test
+    fun accountConnectionsUseTheCurrentSessionAndAdvanceBothLists() = runBlocking<Unit> {
+        val context = AppContext.instance
+        val before = context.dataStore.data.first()
+        assumeTrue("A signed-in account is required", before.neteaseSessionType() != NeteaseSessionType.None)
+        val readOnly = readOnlyCatalogClient()
+        try {
+            val repository = MeloXRepository(
+                RetrofitModule.provideMeloXEapiService(RetrofitModule.provideRetrofit(readOnly)),
+                RetrofitModule.provideMeloXWeapiService(RetrofitModule.provideWeApiRetrofit(readOnly)),
+                context, readOnly, NeteaseLoginSecurity(context, readOnly), NeteaseUrsSmsLogin(context, readOnly),
+            )
+            val account = repository.accountProfile()
+            val detail = repository.accountDetail(account.id)
+            for (type in AccountConnectionType.entries) {
+                val count = if (type == AccountConnectionType.Following) detail.profile.follows else detail.profile.followers
+                val first = repository.accountConnections(account.id, type, limit = 1)
+                if ((count ?: 0) > 0) assertTrue("Expected an existing $type user", first.users.isNotEmpty())
+                assertEquals(first.users.size, first.users.distinctBy { it.id }.size)
+                if (first.hasMore) {
+                    val next = repository.accountConnections(account.id, type, offset = first.nextOffset, limit = 1)
+                    assertTrue("The $type cursor must advance", next.nextOffset > first.nextOffset || !next.hasMore)
+                    assertTrue("The $type page must not repeat the first user", next.users.none { user -> first.users.any { it.id == user.id } })
+                }
+                val full = repository.accountConnections(account.id, type)
+                for (user in full.users) {
+                    val expected = repository.accountDetail(user.id).profile
+                    assertEquals("The user profile must match the requested account", user.id, expected.id)
+                    assertEquals("A bound artist must remain clickable in the list", expected.artistId, user.artistId)
+                }
+                val artists = full.users.count { it.artistId != null }
+                Log.i("CatalogReads", "$type rows=${full.users.size} nextOffset=${first.nextOffset} more=${first.hasMore} artists=$artists")
+            }
+        } finally {
+            assertTrue("The existing session must remain unchanged", before[CookieKey] == context.dataStore.data.first()[CookieKey])
+            readOnly.connectionPool.evictAll()
+            readOnly.dispatcher.executorService.shutdown()
+        }
+    }
 
     @Test
     fun commentPagesAndRepliesDecodeThroughTheCurrentTransport() = runBlocking {
@@ -249,11 +290,13 @@ class CatalogReadsInstrumentedTest {
         val allowedPaths = setOf(
             "/weapi/v1/cloud/get", "/eapi/v1/cloud/get",
             "/api/search/get", "/weapi/search/get", "/eapi/search/get",
+            "/eapi/w/nuser/account/get", "/eapi/nuser/account/get",
         )
+        val accountReadPath = Regex("/(?:weapi|eapi)/user/getfollow(?:s|eds)/[0-9]+|/(?:weapi/v1|eapi/w/v1)/user/detail/[0-9]+")
         val guard = Interceptor { chain ->
             val url = chain.request().url
             if (url.host !in setOf("music.163.com", "interface.music.163.com") ||
-                url.encodedPath.trimEnd('/') !in allowedPaths
+                (url.encodedPath.trimEnd('/') !in allowedPaths && !accountReadPath.matches(url.encodedPath.trimEnd('/')))
             ) throw IOException("This regression allows catalog reads only")
             // Reading another account must not accept background session-cookie updates.
             chain.proceed(chain.request()).newBuilder()

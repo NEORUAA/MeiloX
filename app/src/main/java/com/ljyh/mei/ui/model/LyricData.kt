@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.model
 
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.qq.u.LyricResult
+import com.ljyh.mei.data.model.qq.u.SearchResult
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 
 
@@ -12,6 +13,18 @@ data class LyricData(
     val lyricLine: SyncedLyrics
 )
 
+
+/** A selectable lyric source or QQ search match for the current song. */
+data class LyricCandidate(
+    val key: String,
+    val source: LyricSource,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val coverUrl: String,
+    val durationMs: Long,
+    val qqSong: SearchResult.Request.Data.Body.ItemSong? = null,
+)
 
 sealed class LyricSourceData(val source: LyricSource, val priority: Int) {
     data class NetEase(val lyric: Lyric) : LyricSourceData(LyricSource.NetEaseCloudMusic, 2)

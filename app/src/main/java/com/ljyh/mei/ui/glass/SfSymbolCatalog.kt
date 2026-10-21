@@ -11,6 +11,7 @@ internal object SfSymbolCatalog {
         "arrow.down.circle.fill" to 0x100079,
         "arrow.down.right.and.arrow.up.left" to 0x10014B,
         "arrow.trianglehead.2.clockwise.rotate.90" to 0x1002AF,
+        "arrow.up" to 0x100128,
         "arrow.up.arrow.down" to 0x10012C,
         "arrow.up.circle.fill" to 0x100077,
         "arrow.up.left.and.arrow.down.right" to 0x10014A,

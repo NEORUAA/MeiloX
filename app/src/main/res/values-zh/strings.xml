@@ -1,4 +1,5 @@
 <resources>
+    <string name="player_find_lyrics">寻找歌词</string>
     <string name="artist_info_title">歌手信息</string>
     <string name="artist_play_hot_songs">播放热门单曲</string>
     <string name="artist_hot_songs">热门单曲</string>
@@ -208,6 +209,9 @@
     <string name="appearance_theme">主题</string>
     <string name="appearance_letter_spacing">界面字间距</string>
     <string name="appearance_letter_spacing_value">%1$.1f sp</string>
+    <string name="appearance_bottom_floating_extra_spacing">底部悬浮内容额外抬高</string>
+    <string name="appearance_bottom_floating_extra_spacing_value">%1$d dp</string>
+    <string name="appearance_bottom_floating_extra_spacing_description">将底部导航、搜索栏和迷你播放器向上移动。</string>
     <string name="appearance_dynamic_theme">歌曲动态主题</string>
     <string name="appearance_dynamic_theme_description">根据当前歌曲封面为界面着色。</string>
     <string name="appearance_accent_color">强调色</string>
@@ -546,6 +550,9 @@
     <string name="account_user_id">用户 ID %1$d</string>
     <string name="account_follows">关注</string>
     <string name="account_followers">粉丝</string>
+    <string name="account_no_follows">暂无关注</string>
+    <string name="account_no_followers">暂无粉丝</string>
+    <string name="account_load_more">加载更多</string>
     <string name="account_playlist_metric">歌单</string>
     <string name="account_listening_rank">我的听歌排行</string>
     <string name="account_week">最近一周</string>
@@ -726,4 +733,20 @@
     <string name="artist_all_albums_count">全部 %1$d 张专辑</string>
     <string name="artist_all_albums">全部专辑</string>
     <string name="artist_albums_empty">暂无专辑</string>
+
+    <string name="lyric_selection_title">歌词来源</string>
+    <string name="lyric_selection_close">关闭歌词来源</string>
+    <string name="lyric_selection_best_match">最佳匹配</string>
+    <string name="lyric_selection_source_netease">网易云音乐</string>
+    <string name="lyric_selection_source_qq">QQ 音乐</string>
+    <string name="lyric_selection_source_am">Apple Music</string>
+    <string name="lyric_selection_source_other">歌词来源</string>
+    <string name="lyric_selection_empty">没有找到歌词来源</string>
+    <string name="lyric_selection_delay">歌词延迟</string>
+    <string name="lyric_selection_offset">%1$+.1f 秒</string>
+    <string name="lyric_selection_earlier">−0.5 秒</string>
+    <string name="lyric_selection_later">+0.5 秒</string>
+    <string name="lyric_selection_delay_hint">负值提前，正值延后，仅对这首歌生效。</string>
+    <string name="lyric_selection_reset_delay">恢复默认延迟</string>
+    <string name="lyric_selection_reset_source">恢复默认来源</string>
 </resources>

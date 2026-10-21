@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -64,13 +65,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -81,6 +82,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -104,9 +106,14 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.NavigationBackHandler
 import androidx.navigation3.scene.Scene
+import androidx.navigation3.scene.SinglePaneSceneStrategy
+import androidx.navigation3.scene.rememberNavigationEventState
+import androidx.navigation3.scene.rememberSceneState
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
@@ -139,7 +146,11 @@ import com.ljyh.mei.constants.CloudMusicTabEnabledKey
 import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.KeepBottomBarExpandedKey
+import com.ljyh.mei.constants.BottomFloatingContentExtraSpacingKey
+import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
+import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
+import com.ljyh.mei.constants.PredictiveBackAnimationEnabledKey
 import com.ljyh.mei.constants.ReduceTransparencyKey
 import com.ljyh.mei.constants.LastSelectedTabKey
 import com.ljyh.mei.constants.PlayerKeepScreenOnKey
@@ -307,8 +318,14 @@ class MainActivity : ComponentActivity() {
             val navigationPreferences by context.dataStore.data
                 .collectAsState<Preferences, Preferences?>(initial = null)
             val keepBottomBarExpanded = navigationPreferences?.get(KeepBottomBarExpandedKey) ?: false
+            val bottomFloatingContentExtraSpacing =
+                (navigationPreferences?.get(BottomFloatingContentExtraSpacingKey)
+                    ?: DefaultBottomFloatingContentExtraSpacing)
+                    .coerceIn(0, MaxBottomFloatingContentExtraSpacing).dp
             val liquidGlassEnabled = navigationPreferences?.get(LiquidGlassEnabledKey) ?: true
             val reduceTransparency = navigationPreferences?.get(ReduceTransparencyKey) ?: false
+            val predictiveBackAnimationEnabled =
+                navigationPreferences?.get(PredictiveBackAnimationEnabledKey) ?: true
             val podcastsEnabled = navigationPreferences?.get(PodcastsEnabledKey) ?: true
             val downloadsEnabled = navigationPreferences?.get(DownloadsEnabledKey) ?: true
             val cloudMusicEnabled = navigationPreferences?.get(CloudMusicEnabledKey) ?: true
@@ -552,6 +569,7 @@ class MainActivity : ComponentActivity() {
                     val focusManager = LocalFocusManager.current
                     val density = LocalDensity.current
                     val windowsInsets = WindowInsets.systemBars
+                    val navigationInsets = WindowInsets.navigationBars
                     val currentRoute = navController.currentRoute
                     val handlesKeyboardInsets = active || currentRoute == Screen.Search.route ||
                         currentRoute?.startsWith("${Screen.PrivateConversation.route}/") == true ||
@@ -569,8 +587,30 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val imeInsets = WindowInsets.ime
-                    val searchBottomInset = maxOf(with(density) { imeInsets.getBottom(this).toDp() },
-                        WindowInsets.systemBars.asPaddingValues().calculateBottomPadding())
+                    // Keep IME animation reads in measurement instead of recomposing the page.
+                    // Plain padding retains the existing unconsumed-inset behavior.
+                    val bottomControlInsets = remember(navigationInsets, bottomFloatingContentExtraSpacing) {
+                        navigationInsets.only(WindowInsetsSides.Bottom)
+                            .union(WindowInsets(bottom = bottomNavigationHorizontalMargin))
+                            .add(WindowInsets(bottom = bottomFloatingContentExtraSpacing))
+                    }
+                    val searchBottomInsets = remember(
+                        imeInsets, bottomControlInsets, bottomFloatingContentExtraSpacing,
+                    ) {
+                        bottomControlInsets.union(
+                            imeInsets.add(WindowInsets(
+                                bottom = NavigationBarBottomMargin + bottomFloatingContentExtraSpacing,
+                            )),
+                        ).only(WindowInsetsSides.Bottom)
+                    }
+                    val searchToolbarBottomPadding = remember(searchBottomInsets, density) {
+                        searchBottomInsets.asPaddingValues(density)
+                    }
+                    val navigationBottomMargin by remember(bottomControlInsets, density) {
+                        derivedStateOf {
+                            with(density) { bottomControlInsets.getBottom(density).toDp() }
+                        }
+                    }
 
                     val bottomInset by remember {
                         derivedStateOf {
@@ -641,14 +681,23 @@ class MainActivity : ComponentActivity() {
                     val searchBarFocusRequester = remember { FocusRequester() }
                     // Keep the anchor stable while the navigation morphs. The mini player
                     // moves inside the collapsed host with the same continuous spring.
-                    val collapsedBottomReservation = if (shouldAllowNavigationBar || active) {
-                        NavigationBarHeight
-                    } else {
-                        NavigationBarBottomMargin
+                    val collapsedBottomReservation = when {
+                        active -> navigationBottomMargin + 56.dp + NavigationBarBottomMargin
+                        shouldAllowNavigationBar ->
+                            navigationBottomMargin + NavigationBarHeight - NavigationBarBottomMargin
+                        else -> navigationBottomMargin
                     }
-                    val collapsedBound = bottomInset +
-                        collapsedBottomReservation +
-                        MiniPlayerHeight
+                    val collapsedBound = collapsedBottomReservation + MiniPlayerHeight
+                    val searchMiniPlayerOffset = remember(
+                        active, searchToolbarBottomPadding, navigationBottomMargin,
+                    ) {
+                        {
+                            // Read IME padding during placement so both controls move together.
+                            if (active) -(searchToolbarBottomPadding.calculateBottomPadding() -
+                                navigationBottomMargin).coerceAtLeast(0.dp)
+                            else 0.dp
+                        }
+                    }
 
                     val compactNavigationProgress = animateFloatAsState(
                         targetValue = if (shouldCompactNavigationBar) 1f else 0f,
@@ -689,9 +738,19 @@ class MainActivity : ComponentActivity() {
                     val playerDismissed by remember(playerBottomSheetState) {
                         derivedStateOf { playerBottomSheetState.isDismissed }
                     }
+                    val searchResultsBottomPadding = remember(searchBottomInsets, density, playerDismissed) {
+                        searchBottomInsets.add(
+                            WindowInsets(bottom = NavigationBarHeight - NavigationBarBottomMargin +
+                                if (playerDismissed) 0.dp else MiniPlayerHeight),
+                        ).asPaddingValues(density)
+                    }
                     val pageDarkAppearance = currentRoute?.let { pageAppearanceOverrides[it]?.second }
                     val statusBarDark = isPlayerPage || (pageDarkAppearance ?: effectiveDark)
-                    SideEffect {
+                    val windowConfiguration = LocalConfiguration.current
+                    DisposableEffect(
+                        window, windowInsetsController, windowConfiguration,
+                        isPlayerPage, statusBarDark, effectiveDark, keepScreenOnInPlayer,
+                    ) {
                         val transparent = android.graphics.Color.TRANSPARENT
                         enableEdgeToEdge(
                             statusBarStyle = if (isPlayerPage) {
@@ -709,16 +768,20 @@ class MainActivity : ComponentActivity() {
                         // retain the previous appearance while the bottom sheet settles.
                         windowInsetsController.isAppearanceLightStatusBars =
                             !statusBarDark
-                        if (isPlayerPage && keepScreenOnInPlayer) {
-                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        } else {
-                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        // Even an unchanged flag dispatches window attributes and a traversal.
+                        val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                        val wantsScreenOn = isPlayerPage && keepScreenOnInPlayer
+                        val hasScreenOn = window.attributes.flags and keepScreenOnFlag != 0
+                        if (hasScreenOn != wantsScreenOn) {
+                            if (wantsScreenOn) window.addFlags(keepScreenOnFlag)
+                            else window.clearFlags(keepScreenOnFlag)
                         }
                         // Keep the navigation bar transparent instead of applying the platform
                         // contrast scrim.
                         window.navigationBarColor = transparent
                         window.isNavigationBarContrastEnforced = false
                         window.navigationBarDividerColor = transparent
+                        onDispose { }
                     }
                     val (query, onQueryChange) = rememberSaveable(stateSaver = TextFieldValue.Saver) {
                         mutableStateOf(TextFieldValue())
@@ -797,6 +860,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val selectionToolbar = remember { com.ljyh.mei.ui.local.SelectionToolbarState() }
+                    val pageVisible = remember(playerBottomSheetState, playerBackgroundReady) {
+                        derivedStateOf {
+                            !playerBottomSheetState.isExpanded || !playerBackgroundReady.value
+                        }
+                    }
+                    val pageCacheActive = remember(playerBottomSheetState) {
+                        derivedStateOf { playerBottomSheetState.isTransitioning }
+                    }
                     CompositionLocalProvider(
                         com.ljyh.mei.ui.local.LocalSelectionToolbar provides selectionToolbar,
                         LocalDatabase provides database,
@@ -846,12 +917,23 @@ class MainActivity : ComponentActivity() {
                                         layout(placeable.width, placeable.height) {
                                             // Stop drawing page text, images and glass once the
                                             // expanded mesh background can cover them completely.
-                                            if (!playerBottomSheetState.isExpanded || !playerBackgroundReady.value) {
+                                            if (pageVisible.value) {
                                                 placeable.place(0, 0)
                                             }
                                         }
                                     }
-                                    .graphicsLayer()
+                                    .graphicsLayer {
+                                        // Reuse native-resolution page pixels while the sheet moves.
+                                        // Child updates still invalidate this live render layer.
+                                        compositingStrategy = if (pageCacheActive.value) {
+                                            CompositingStrategy.Offscreen
+                                        } else {
+                                            CompositingStrategy.Auto
+                                        }
+                                    }
+                                    // Match the opaque root behind transparent page content. Keep
+                                    // this outside the backdrop recording so glass samples are intact.
+                                    .background(MaterialTheme.colorScheme.background)
                                     .layerBackdrop(bottomBackdrop)
                                     .trackBackdropPosition(bottomBackdrop),
                             ) {
@@ -879,14 +961,91 @@ class MainActivity : ComponentActivity() {
                                             },
                                         )
                                     }
-                                    NavDisplay(
+                                    val navEntries = rememberDecoratedNavEntries(
                                         backStack = backStack,
-                                        modifier = Modifier.fillMaxSize(),
-                                        onBack = navController::popBackStack,
                                         entryDecorators = listOf(
                                             rememberSaveableStateHolderNavEntryDecorator(),
                                             viewModelEntryDecorator,
                                         ),
+                                        entryProvider = { route ->
+                                            val meiRoute = route as MeiRoute
+                                            NavEntry(
+                                                key = route,
+                                                contentKey = meiRoute.route,
+                                            ) {
+                                                val entryTopAppBarScrollBehavior = appBarScrollBehavior(
+                                                    canScroll = {
+                                                        !meiRoute.route.startsWith("search_result/") &&
+                                                            (playerBottomSheetState.isCollapsed ||
+                                                                playerBottomSheetState.isDismissed)
+                                                    },
+                                                )
+                                                LaunchedEffect(currentRoute) {
+                                                    if (meiRoute.route == currentRoute) {
+                                                        entryTopAppBarScrollBehavior.state
+                                                            .resetHeightOffset()
+                                                    }
+                                                }
+                                                LaunchedEffect(active) {
+                                                    if (active && meiRoute.route == currentRoute) {
+                                                        entryTopAppBarScrollBehavior.state
+                                                            .resetHeightOffset()
+                                                    }
+                                                }
+                                                val entryPlayerAwareWindowInsets = remember(
+                                                    meiRoute.route,
+                                                    bottomInset,
+                                                    navigationBottomMargin,
+                                                    navigationItems,
+                                                    navigationBarExpanded,
+                                                    playerDismissed,
+                                                    windowsInsets,
+                                                ) {
+                                                    playerAwareWindowInsetsForRoute(
+                                                        route = meiRoute.route,
+                                                        navigationItems = navigationItems,
+                                                        navigationBarVisible = navigationBarExpanded,
+                                                        playerDismissed = playerDismissed,
+                                                        windowsInsets = windowsInsets,
+                                                        bottomInset = bottomInset,
+                                                        navigationBottomMargin = navigationBottomMargin,
+                                                    )
+                                                }
+                                                CompositionLocalProvider(
+                                                    LocalPlayerAwareWindowInsets provides
+                                                        if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
+                                                        else entryPlayerAwareWindowInsets,
+                                                ) {
+                                                    navigationEntry(
+                                                        route = meiRoute.route,
+                                                        scrollBehavior = entryTopAppBarScrollBehavior,
+                                                        isNavigationTab = navigationItems.any {
+                                                            it.route == meiRoute.route
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                    val sceneStrategies = remember { listOf(SinglePaneSceneStrategy<NavKey>()) }
+                                    val sceneState = rememberSceneState(
+                                        entries = navEntries,
+                                        sceneStrategies = sceneStrategies,
+                                        onBack = navController::popBackStack,
+                                    )
+                                    val navigationEventState = rememberNavigationEventState(sceneState)
+                                    NavigationBackHandler(sceneState, navigationEventState, navController::popBackStack)
+                                    // The display never sees gesture progress through this unregistered state, so
+                                    // a completed back gesture plays the regular pop transition instead.
+                                    val idleNavigationEventState = rememberNavigationEventState(sceneState)
+                                    NavDisplay(
+                                        sceneState = sceneState,
+                                        navigationEventState = if (predictiveBackAnimationEnabled) {
+                                            navigationEventState
+                                        } else {
+                                            idleNavigationEventState
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
                                         transitionSpec = {
                                             if (usesHomeAlphaTransition()) {
                                                 homeAlphaTransition()
@@ -926,63 +1085,6 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             }
                                         },
-                                        entryProvider = { route ->
-                                            val meiRoute = route as MeiRoute
-                                            NavEntry(
-                                                key = route,
-                                                contentKey = meiRoute.route,
-                                            ) {
-                                                val entryTopAppBarScrollBehavior = appBarScrollBehavior(
-                                                    canScroll = {
-                                                        !meiRoute.route.startsWith("search_result/") &&
-                                                            (playerBottomSheetState.isCollapsed ||
-                                                                playerBottomSheetState.isDismissed)
-                                                    },
-                                                )
-                                                LaunchedEffect(currentRoute) {
-                                                    if (meiRoute.route == currentRoute) {
-                                                        entryTopAppBarScrollBehavior.state
-                                                            .resetHeightOffset()
-                                                    }
-                                                }
-                                                LaunchedEffect(active) {
-                                                    if (active && meiRoute.route == currentRoute) {
-                                                        entryTopAppBarScrollBehavior.state
-                                                            .resetHeightOffset()
-                                                    }
-                                                }
-                                                val entryPlayerAwareWindowInsets = remember(
-                                                    meiRoute.route,
-                                                    bottomInset,
-                                                    navigationItems,
-                                                    navigationBarExpanded,
-                                                    playerDismissed,
-                                                    windowsInsets,
-                                                ) {
-                                                    playerAwareWindowInsetsForRoute(
-                                                        route = meiRoute.route,
-                                                        navigationItems = navigationItems,
-                                                        navigationBarVisible = navigationBarExpanded,
-                                                        playerDismissed = playerDismissed,
-                                                        windowsInsets = windowsInsets,
-                                                        bottomInset = bottomInset,
-                                                    )
-                                                }
-                                                CompositionLocalProvider(
-                                                    LocalPlayerAwareWindowInsets provides
-                                                        if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
-                                                        else entryPlayerAwareWindowInsets,
-                                                ) {
-                                                    navigationEntry(
-                                                        route = meiRoute.route,
-                                                        scrollBehavior = entryTopAppBarScrollBehavior,
-                                                        isNavigationTab = navigationItems.any {
-                                                            it.route == meiRoute.route
-                                                        },
-                                                    )
-                                                }
-                                            }
-                                        },
                                     )
                                     AnimatedVisibility(
                                         visible = active,
@@ -1011,7 +1113,7 @@ class MainActivity : ComponentActivity() {
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .padding(top = windowsInsets.asPaddingValues().calculateTopPadding())
-                                                        .padding(bottom = searchBottomInset + NavigationBarHeight),
+                                                        .padding(searchResultsBottomPadding),
                                                 )
                                             }
                                         }
@@ -1020,6 +1122,7 @@ class MainActivity : ComponentActivity() {
                             }
                         if (selectionToolbar.content.value == null) AnimatedMiniPlayerLayer(
                             compactProgress = compactMiniPlayerProgress,
+                            searchVerticalOffset = searchMiniPlayerOffset,
                             state = playerBottomSheetState,
                             backdrop = bottomControlsBackdrop,
                             pageDarkAppearance = pageDarkAppearance,
@@ -1045,8 +1148,10 @@ class MainActivity : ComponentActivity() {
                                     autoFocus = focusSearchOnEntry,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 20.dp)
-                                        .padding(bottom = searchBottomInset + NavigationBarBottomMargin),
+                                        .padding(horizontal = bottomNavigationHorizontalMargin)
+                                        .padding(searchToolbarBottomPadding)
+                                        // The 56dp controls are centered in a 64dp toolbar host.
+                                        .offset(y = 4.dp),
                                 )
                             }
                         }
@@ -1094,7 +1199,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 backdrop = bottomControlsBackdrop,
                                 playerBottomSheetState = playerBottomSheetState,
-                                bottomInset = bottomInset,
+                                bottomMargin = navigationBottomMargin,
                             )
                         }
                         selectionToolbar.content.value?.let { toolbar ->
@@ -1227,6 +1332,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private val homeNavigationRoutes = Screen.MainScreens.map { it.route }.toSet()
+private val bottomNavigationHorizontalMargin = 20.dp
 
 private fun Scene<NavKey>.currentRoute(): String? =
     entries.lastOrNull()?.contentKey as? String
@@ -1234,13 +1340,17 @@ private fun Scene<NavKey>.currentRoute(): String? =
 @Composable
 private fun BoxScope.AnimatedMiniPlayerLayer(
     compactProgress: State<Float>,
+    searchVerticalOffset: () -> Dp,
     state: BottomSheetState,
     backdrop: Backdrop,
     pageDarkAppearance: Boolean?,
     onBackgroundReadyChanged: (Boolean) -> Unit,
 ) {
-    val miniPlayerVerticalOffset = remember(compactProgress) {
-        { (NavigationBarHeight - 16.dp) * compactProgress.value }
+    val miniPlayerVerticalOffset = remember(compactProgress, searchVerticalOffset) {
+        {
+            (NavigationBarHeight - NavigationBarBottomMargin) * compactProgress.value +
+                searchVerticalOffset()
+        }
     }
     Box(
         modifier = Modifier
@@ -1274,17 +1384,19 @@ private fun AnimatedBottomNavigationRow(
     onSearchClick: () -> Unit,
     backdrop: Backdrop,
     playerBottomSheetState: BottomSheetState,
-    bottomInset: Dp,
+    bottomMargin: Dp,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .padding(bottom = bottomInset + NavigationBarBottomMargin)
+            .padding(horizontal = bottomNavigationHorizontalMargin)
+            .padding(bottom = bottomMargin)
             .offset {
-                val slideOffset = (bottomInset + NavigationBarHeight) *
+                val slideOffset = (bottomMargin + NavigationBarHeight) *
                     playerBottomSheetState.progress.coerceIn(0f, 1f)
-                IntOffset(x = 0, y = slideOffset.roundToPx())
+                // Compact controls shrink around the center of their 64dp hosts.
+                val compactInset = (64.dp - MiniPlayerHeight) / 2 * compactProgress.value
+                IntOffset(x = 0, y = (slideOffset + compactInset).roundToPx())
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1340,14 +1452,16 @@ private fun playerAwareWindowInsetsForRoute(
     playerDismissed: Boolean,
     windowsInsets: WindowInsets,
     bottomInset: Dp,
+    navigationBottomMargin: Dp,
 ): WindowInsets {
     val allowsNavigationBar =
         navigationItems.fastAny { it.route == route } || route == Screen.Search.route
-    var bottom = bottomInset
-    if (allowsNavigationBar && navigationBarVisible) bottom += NavigationBarHeight
+    var bottom = if (allowsNavigationBar || !playerDismissed) navigationBottomMargin else bottomInset
+    if (allowsNavigationBar && navigationBarVisible) {
+        bottom += NavigationBarHeight - NavigationBarBottomMargin
+    }
     if (!playerDismissed) {
         bottom += MiniPlayerHeight
-        if (!allowsNavigationBar) bottom += NavigationBarBottomMargin
     }
     return windowsInsets
         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)

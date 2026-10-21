@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -31,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlayerActionKey
+import com.ljyh.mei.constants.PlayerStyle
+import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.playback.PlayMode
 import com.ljyh.mei.playback.SleepTimerState
 import com.ljyh.mei.ui.glass.SfIcon
@@ -38,6 +41,7 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.utils.rememberEnumPreference
 import timber.log.Timber
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -54,6 +58,7 @@ fun PlayerActionToolbar(
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
+    val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
     val (actionString, _) = rememberPreference(
         key = PlayerActionKey,
@@ -81,6 +86,7 @@ fun PlayerActionToolbar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth()
+            .then(if (playerStyle == PlayerStyle.AppleMusic) Modifier.alpha(0.6f) else Modifier)
     ) {
 
         actions.forEach { action ->

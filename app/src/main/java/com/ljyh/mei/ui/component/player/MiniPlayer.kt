@@ -59,6 +59,7 @@ import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
+import com.ljyh.mei.constants.NavigationBarBottomMargin
 import com.ljyh.mei.constants.ThumbnailCornerRadius
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.extensions.togglePlayPause
@@ -175,7 +176,7 @@ private fun MiniPlayerContent(
         cancelPressFeedback = sheetTransitioning,
         pressHighlight = remember(sheet) { { sheet?.collapsedPressHighlight } },
         morphProgress = compactProgress,
-        morphVerticalTravel = NavigationBarHeight - 16.dp,
+        morphVerticalTravel = NavigationBarHeight - NavigationBarBottomMargin,
         style = GlassSurfaceStyle.Navigation,
         onClick = {
             sheet?.prepareTransition()

@@ -69,13 +69,14 @@ fun PlaylistHeader(
     metadata: String? = null,
     onShufflePlay: () -> Unit = onPlayAll,
     isSubscriptionPending: Boolean = false,
+    detailAction: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val groupedListBackgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
     val useGroupedListButtonBackground = groupedListBackgroundAlpha < 1f
     val regularButtonBackground = colors.elevatedBackground
         .copy(alpha = groupedListBackgroundAlpha)
-        .takeIf { useGroupedListButtonBackground }
+        .takeIf { useGroupedListButtonBackground && !detailAction }
     val playlistCoverStyle by rememberEnumPreference(
         PlaylistCoverStyleKey,
         defaultValue = PlaylistCoverStyle.Cover,
@@ -135,15 +136,17 @@ fun PlaylistHeader(
                 onClick = onShufflePlay,
                 enabled = count > 0,
                 style = GlassSurfaceStyle.Navigation,
+                detailAction = detailAction,
                 navigationSurfaceColor = regularButtonBackground,
-                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground) 1f else 1.25f,
-                sampleBackdrop = !useGroupedListButtonBackground,
+                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction) 1f else 1.25f,
+                sampleBackdrop = detailAction || !useGroupedListButtonBackground,
             ) {
                 SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
             }
             GlassButton(
                 onClick = onPlayAll,
                 style = GlassSurfaceStyle.Navigation,
+                detailAction = detailAction,
                 enabled = count > 0,
                 emphasis = GlassEmphasis.Prominent,
             ) {
@@ -158,10 +161,11 @@ fun PlaylistHeader(
                 onClick = { onSubscribed(isSubscribed) },
                 enabled = !isSubscriptionPending,
                 style = GlassSurfaceStyle.Navigation,
+                detailAction = detailAction,
                 navigationSurfaceColor = regularButtonBackground.takeUnless { isSubscribed },
-                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !isSubscribed) 1f else 1.25f,
+                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction && !isSubscribed) 1f else 1.25f,
                 emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
-                sampleBackdrop = !useGroupedListButtonBackground || isSubscribed,
+                sampleBackdrop = detailAction || !useGroupedListButtonBackground || isSubscribed,
             ) {
                 if (isSubscriptionPending) {
                     CircularProgressIndicator(

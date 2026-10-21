@@ -1,4 +1,5 @@
 <resources>
+    <string name="player_find_lyrics">Find lyrics</string>
     <string name="artist_info_title">Artist information</string>
     <string name="artist_play_hot_songs">Play popular songs</string>
     <string name="artist_hot_songs">Popular songs</string>
@@ -209,6 +210,9 @@
     <string name="appearance_theme">Theme</string>
     <string name="appearance_letter_spacing">Interface letter spacing</string>
     <string name="appearance_letter_spacing_value">%1$.1f sp</string>
+    <string name="appearance_bottom_floating_extra_spacing">Raise bottom floating controls</string>
+    <string name="appearance_bottom_floating_extra_spacing_value">%1$d dp</string>
+    <string name="appearance_bottom_floating_extra_spacing_description">Move bottom navigation, search, and the mini player farther from the screen edge.</string>
     <string name="appearance_dynamic_theme">Dynamic song theme</string>
     <string name="appearance_dynamic_theme_description">Tint the interface from the current artwork.</string>
     <string name="appearance_accent_color">Accent color</string>
@@ -547,6 +551,9 @@
     <string name="account_user_id">User ID %1$d</string>
     <string name="account_follows">Following</string>
     <string name="account_followers">Followers</string>
+    <string name="account_no_follows">Not following anyone yet</string>
+    <string name="account_no_followers">No followers yet</string>
+    <string name="account_load_more">Load More</string>
     <string name="account_playlist_metric">Playlists</string>
     <string name="account_listening_rank">Listening Rankings</string>
     <string name="account_week">Last Week</string>
@@ -727,4 +734,20 @@
     <string name="artist_all_albums_count">All %1$d albums</string>
     <string name="artist_all_albums">All Albums</string>
     <string name="artist_albums_empty">No albums available</string>
+
+    <string name="lyric_selection_title">Lyric sources</string>
+    <string name="lyric_selection_close">Close lyric sources</string>
+    <string name="lyric_selection_best_match">Best match</string>
+    <string name="lyric_selection_source_netease">NetEase Cloud Music</string>
+    <string name="lyric_selection_source_qq">QQ Music</string>
+    <string name="lyric_selection_source_am">Apple Music</string>
+    <string name="lyric_selection_source_other">Lyric source</string>
+    <string name="lyric_selection_empty">No lyric sources found</string>
+    <string name="lyric_selection_delay">Lyric delay</string>
+    <string name="lyric_selection_offset">%1$+.1f s</string>
+    <string name="lyric_selection_earlier">−0.5 s</string>
+    <string name="lyric_selection_later">+0.5 s</string>
+    <string name="lyric_selection_delay_hint">Negative is earlier, positive is later. Saved for this song.</string>
+    <string name="lyric_selection_reset_delay">Reset delay</string>
+    <string name="lyric_selection_reset_source">Default source</string>
 </resources>

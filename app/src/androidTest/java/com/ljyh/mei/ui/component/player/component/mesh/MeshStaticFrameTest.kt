@@ -3,12 +3,28 @@ package com.ljyh.mei.ui.component.player.component.mesh
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MonotonicFrameClock
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
@@ -18,11 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.ljyh.mei.playback.PlaybackBeatMeter
 import com.ljyh.mei.ui.component.player.LocalPlayerBackgroundReadyChanged
 import com.ljyh.mei.ui.component.player.component.FluidBackground
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.abs
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
@@ -42,6 +60,127 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MeshStaticFrameTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun modulatedMeshPresentationPreservesCrossfadesAndUnfadedBackdropSampling() {
+        val firstAlbum = meshTestAlbum()
+        val secondAlbum = meshTestAlbum(Color.rgb(40, 70, 210))
+        val renderer = compose.runOnIdle {
+            MeshGradientRenderer().apply {
+                isPlaying = false
+                setAlbum(firstAlbum)
+                advanceFrame(StartNanos)
+            }
+        }
+        val opacity = mutableFloatStateOf(1f)
+        val backing = mutableStateOf(ComposeColor.Black)
+        val redrawGeneration = mutableIntStateOf(0)
+        compose.setContent {
+            // Both presentation paths replay this exact renderer frame and flattened
+            // texture. Drawing either side must never advance the album transition.
+            val meshLayer = rememberGraphicsLayer()
+            val backdrops = listOf(rememberLayerBackdrop(), rememberLayerBackdrop())
+            val coordinates = remember { List(2) { mutableStateOf<LayoutCoordinates?>(null) } }
+            Row {
+                listOf(CompositingStrategy.Auto, CompositingStrategy.ModulateAlpha)
+                    .forEachIndexed { index, strategy ->
+                        Column {
+                            Box(
+                                Modifier.size(96.dp).background(backing.value)
+                                    .testTag("meshPresentation$index"),
+                            ) {
+                                Box(Modifier.fillMaxSize().graphicsLayer {
+                                    compositingStrategy = strategy
+                                    alpha = opacity.floatValue
+                                }) {
+                                    Canvas(
+                                        Modifier.fillMaxSize().layerBackdrop(backdrops[index])
+                                            .onGloballyPositioned { coordinates[index].value = it },
+                                    ) {
+                                        assertTrue("Mesh presentation requires GPU rendering", drawContext.canvas.nativeCanvas.isHardwareAccelerated)
+                                        redrawGeneration.intValue
+                                        renderer.draw(this, meshLayer, 0.75f)
+                                    }
+                                }
+                            }
+                            Canvas(Modifier.size(96.dp).testTag("meshBackdrop$index")) {
+                                redrawGeneration.intValue
+                                val sourceCoordinates = coordinates[index].value ?: return@Canvas
+                                // Sample the actual layerBackdrop recording at its source
+                                // coordinates, independently of the outer presentation fade.
+                                with(backdrops[index]) {
+                                    drawBackdrop(this@Canvas, sourceCoordinates, null)
+                                }
+                            }
+                        }
+                    }
+            }
+        }
+        fun capture(tag: String): IntArray {
+            val image = compose.onNodeWithTag(tag).captureToImage()
+            return IntArray(image.width * image.height).also { image.readPixels(it) }
+        }
+        fun assertPixels(label: String, expected: IntArray, actual: IntArray) {
+            assertEquals("$label pixel count", expected.size, actual.size)
+            var maximum = 0
+            var total = 0L
+            expected.indices.forEach { pixel ->
+                val differences = intArrayOf(
+                    abs(Color.red(expected[pixel]) - Color.red(actual[pixel])),
+                    abs(Color.green(expected[pixel]) - Color.green(actual[pixel])),
+                    abs(Color.blue(expected[pixel]) - Color.blue(actual[pixel])),
+                    abs(Color.alpha(expected[pixel]) - Color.alpha(actual[pixel])),
+                )
+                differences.forEach { error ->
+                    maximum = maxOf(maximum, error)
+                    total += error
+                }
+            }
+            val mean = total.toDouble() / (expected.size * 4)
+            assertTrue("$label maximum RGBA error: $maximum", maximum <= 2)
+            assertTrue("$label mean RGBA error: $mean", mean <= 1.0)
+        }
+        var frameNanos = StartNanos
+        var previousSource: IntArray? = null
+        repeat(3) { frame ->
+            compose.runOnIdle {
+                opacity.floatValue = 1f
+                if (frame == 1) renderer.setAlbum(secondAlbum)
+                repeat(if (frame == 1) 3 else if (frame == 2) 5 else 0) {
+                    frameNanos += FrameNanos
+                    renderer.advanceFrame(frameNanos)
+                }
+                redrawGeneration.intValue++
+            }
+            compose.waitForIdle()
+            val unfadedSource = capture("meshBackdrop0")
+            assertTrue("Frame $frame must contain an opaque mesh source", unfadedSource.all { Color.alpha(it) == 255 })
+            assertTrue("Frame $frame must contain album colors", unfadedSource.any {
+                Color.red(it) > 24 || Color.green(it) > 24 || Color.blue(it) > 24
+            })
+            previousSource?.let { previous ->
+                assertTrue("The real album crossfade must advance between frames", previous.indices.any {
+                    colorDistance(previous[it], unfadedSource[it]) > 5
+                })
+            }
+            previousSource = unfadedSource
+            listOf(ComposeColor.Black, ComposeColor(0xFF74519B)).forEach { color ->
+                listOf(0f, 0.15f, 0.5f, 1f).forEach { alpha ->
+                    compose.runOnIdle {
+                        backing.value = color
+                        opacity.floatValue = alpha
+                        redrawGeneration.intValue++
+                    }
+                    compose.waitForIdle()
+                    val label = "Mesh frame=$frame, alpha=$alpha, backing=$color"
+                    assertPixels(label, capture("meshPresentation0"), capture("meshPresentation1"))
+                    repeat(2) { output ->
+                        assertPixels("$label source=$output", unfadedSource, capture("meshBackdrop$output"))
+                    }
+                }
+            }
+        }
+    }
 
     @Test
     fun settledStaticLayerSurvivesExplicitRedrawsWithoutAnimating() {
