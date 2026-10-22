@@ -366,6 +366,71 @@ class GlassControlsInteractionTest {
     }
 
     @Test
+    fun externalToggleUpdatesKeepTheRestingThumbHeightWhileTouchStillExpandsIt() {
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassColors provides defaultGlassColors(isDark = true),
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                ) {
+                    Box(
+                        Modifier.size(120.dp, 72.dp).background(Color.Black).testTag("toggleScene"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        GlassToggle(checked.value, { checked.value = it }, Modifier.testTag("toggle"), backdrop = emptyBackdrop())
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        fun thumbHeight(): Int {
+            val image = compose.onNodeWithTag("toggleScene").captureToImage().toPixelMap()
+            val whiteRows = (0 until image.height).filter { y ->
+                (0 until image.width).any { x ->
+                    val pixel = image[x, y]
+                    pixel.red > 0.96f && pixel.green > 0.96f && pixel.blue > 0.96f
+                }
+            }
+            return whiteRows.last() - whiteRows.first() + 1
+        }
+        val restingHeight = thumbHeight()
+        try {
+            compose.mainClock.autoAdvance = false
+            listOf(true, false).forEach { target ->
+                compose.runOnIdle { checked.value = target }
+                repeat(6) {
+                    compose.mainClock.advanceTimeBy(32L)
+                    val restoredHeight = thumbHeight()
+                    assertTrue(
+                        "Restored state only moves the thumb: target=$target, resting=$restingHeight, restored=$restoredHeight",
+                        kotlin.math.abs(restoredHeight - restingHeight) <= 2,
+                    )
+                }
+                compose.mainClock.advanceTimeBy(1000L)
+            }
+            // Finish queued frame/draw work before starting a separate physical press.
+            // Keep the pointer down while the test clock drives the press to idle.
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            val settledHeight = thumbHeight()
+            val toggleBounds = toggle().fetchSemanticsNode().boundsInRoot
+            toggle().performTouchInput { down(center) }
+            compose.waitForIdle()
+            val pressedHeight = thumbHeight()
+            // This measures the bright core, not the full scaled outline: pressing also
+            // adds an inner shadow. The 24dp core must visibly grow to the 28dp track.
+            val trackHeight = toggleBounds.height.toInt()
+            assertTrue(
+                "A real held touch still expands the thumb: resting=$restingHeight, settled=$settledHeight, pressed=$pressedHeight, bounds=$toggleBounds",
+                pressedHeight > restingHeight + 2 && pressedHeight >= trackHeight - 2,
+            )
+            toggle().performTouchInput { cancel() }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
     fun toggleTapsUseLatestStateAndCallbackWithoutClickingTheParent() {
         showToggle()
         toggle().performTouchInput { down(center); up() }

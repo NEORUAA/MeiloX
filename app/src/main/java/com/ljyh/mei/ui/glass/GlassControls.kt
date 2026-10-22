@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +87,6 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.DampedDragAnimation
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
-import kotlinx.coroutines.flow.collectLatest
 
 internal val LocalMergedGlassCards = staticCompositionLocalOf { false }
 
@@ -136,6 +134,7 @@ fun GlassToggle(
                     if (fraction >= 0.5f) 1f else 0f
                 } else if (currentChecked) 0f else 1f
                 didDrag = false
+                updateValue(fraction)
                 currentOnCheckedChange(fraction == 1f)
             },
             onDrag = { _, dragAmount ->
@@ -144,23 +143,23 @@ fun GlassToggle(
                 val delta = dragAmount.x / travelPx
                 fraction = if (ltr) (fraction + delta).fastCoerceIn(0f, 1f)
                 else (fraction - delta).fastCoerceIn(0f, 1f)
+                updateValue(fraction)
             },
             consumeGestures = true,
             onDragCancelled = {
                 didDrag = false
                 fraction = if (currentChecked) 1f else 0f
+                updateValue(fraction)
             },
         )
-    }
-    LaunchedEffect(animation) {
-        snapshotFlow { fraction }.collectLatest(animation::updateValue)
     }
     LaunchedEffect(checked, enabled, animation) {
         didDrag = false
         val target = if (checked) 1f else 0f
-        if (target != fraction) {
+        if (target != fraction || target != animation.targetValue) {
             fraction = target
-            animation.animateToValue(target)
+            // Restored preferences and parent-row changes are not thumb presses.
+            animation.animateToValue(target, animatePress = false)
         }
     }
 
