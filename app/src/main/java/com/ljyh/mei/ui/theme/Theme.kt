@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -26,6 +27,7 @@ import com.ljyh.mei.utils.rememberPreference
 
 /** Raw custom or dynamic accent; null selects the current mode's default accent. */
 val LocalAccentSeedColor = staticCompositionLocalOf<Color?> { null }
+private val LocalDynamicAccent = staticCompositionLocalOf { false }
 val LocalInterfaceLetterSpacing = compositionLocalOf { DefaultInterfaceLetterSpacing.sp }
 
 private val AppShapes = Shapes(
@@ -41,18 +43,22 @@ private val AppShapes = Shapes(
 fun MusicTheme(
     seedColor: Color,
     isDark: Boolean = isSystemInDarkTheme(),
+    dynamicAccent: Boolean = LocalDynamicAccent.current,
     content: @Composable () -> Unit,
 ) {
     val savedLetterSpacing by rememberPreference(InterfaceLetterSpacingKey, LocalInterfaceLetterSpacing.current.value)
     val letterSpacing = (savedLetterSpacing.takeIf { it.isFinite() }
         ?: DefaultInterfaceLetterSpacing).coerceIn(0f, 3f).sp
     val typography = remember(letterSpacing) { appTypography(letterSpacing) }
-    val animatedSeed by animateColorAsState(seedColor, tween(600), label = "iOS accent")
-    // Recheck every animation frame: two readable endpoints can blend into an unreadable color.
-    val accent = remember(animatedSeed, isDark) {
-        ColorExtractionUtils.themeAccentColor(animatedSeed, isDark)
+    // A source change must not expose an uncorrected frame of the previous cover color.
+    val animatedSeed by key(dynamicAccent) {
+        animateColorAsState(seedColor, tween(600), label = "iOS accent")
     }
-    val onAccent = ColorExtractionUtils.accentContentColor(accent)
+    // Only artwork-derived colors need correction. Preserve default and user-selected colors.
+    val accent = remember(animatedSeed, isDark, dynamicAccent) {
+        if (dynamicAccent) ColorExtractionUtils.themeAccentColor(animatedSeed, isDark) else animatedSeed
+    }
+    val onAccent = if (dynamicAccent) ColorExtractionUtils.accentContentColor(accent) else Color.White
     val colorScheme = if (isDark) {
         darkColorScheme(
             primary = accent,
@@ -97,6 +103,7 @@ fun MusicTheme(
         shapes = AppShapes,
     ) {
         CompositionLocalProvider(
+            LocalDynamicAccent provides dynamicAccent,
             LocalInterfaceLetterSpacing provides letterSpacing,
             LocalContentColor provides colorScheme.onBackground,
             LocalTextStyle provides typography.bodyLarge,

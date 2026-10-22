@@ -469,7 +469,7 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(playerConnection, dynamicTheme) {
                 Timber.tag("MainActivity").d("playerConnection: $playerConnection")
-                if (!dynamicTheme) {
+                if (!dynamicTheme || playerConnection == null) {
                     targetThemeColor = null
                     return@LaunchedEffect
                 }
@@ -555,6 +555,7 @@ class MainActivity : ComponentActivity() {
             MusicTheme(
                 seedColor = effectiveAccent,
                 isDark = effectiveDark,
+                dynamicAccent = dynamicTheme && targetThemeColor != null,
             ) {
                 val glassColors = defaultGlassColors(
                     isDark = effectiveDark,

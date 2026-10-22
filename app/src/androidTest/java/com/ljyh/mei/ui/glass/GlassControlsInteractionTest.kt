@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -27,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -59,6 +62,8 @@ import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
+import com.ljyh.mei.ui.theme.MusicTheme
+import com.ljyh.mei.utils.color.ColorExtractionUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,6 +81,90 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun musicThemeKeepsStaticSeedsAndInheritsDynamicContrastOnlyWhenEnabled() {
+        val seed = mutableStateOf(Color.Red)
+        val dark = mutableStateOf(false)
+        val useDynamicAccent = mutableStateOf(false)
+        var defaultScheme: ColorScheme? = null
+        var parentScheme: ColorScheme? = null
+        var childScheme: ColorScheme? = null
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = dark.value) {
+                val scheme = MaterialTheme.colorScheme
+                SideEffect { defaultScheme = scheme }
+            }
+            MusicTheme(seedColor = seed.value, isDark = dark.value, dynamicAccent = useDynamicAccent.value) {
+                val scheme = MaterialTheme.colorScheme
+                SideEffect { parentScheme = scheme }
+                MusicTheme(seedColor = seed.value, isDark = !dark.value) {
+                    val nestedScheme = MaterialTheme.colorScheme
+                    SideEffect { childScheme = nestedScheme }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        fun assertReadable(foreground: Color, background: Color) {
+            val foregroundLuminance = foreground.luminance().toDouble()
+            val backgroundLuminance = background.luminance().toDouble()
+            val contrast = (maxOf(foregroundLuminance, backgroundLuminance) + 0.05) /
+                (minOf(foregroundLuminance, backgroundLuminance) + 0.05)
+            assertTrue("Dynamic theme contrast was $contrast", contrast >= 4.5)
+        }
+        fun assertScheme(scheme: ColorScheme, color: Color, isDark: Boolean, dynamicAccent: Boolean) {
+            val expected = if (dynamicAccent) ColorExtractionUtils.themeAccentColor(color, isDark) else color
+            assertEquals("Primary must retain the selected theme policy", expected.toArgb(), scheme.primary.toArgb())
+            val expectedContent = if (dynamicAccent) ColorExtractionUtils.accentContentColor(expected) else Color.White
+            assertEquals(expectedContent, scheme.onPrimary)
+            if (dynamicAccent) {
+                val backgrounds = if (isDark) listOf(Color.Black, Color(0xFF3A3A3C))
+                    else listOf(Color.White, Color(0xFFF2F2F7))
+                backgrounds.forEach { assertReadable(scheme.primary, it) }
+                assertReadable(scheme.onPrimary, scheme.primary)
+            }
+        }
+
+        try {
+            compose.mainClock.autoAdvance = false
+            for (color in listOf(Color.Red, Color(0x8034E1FF), Color(0xFF170A20))) {
+                for (isDark in listOf(false, true)) {
+                    for (dynamicAccent in listOf(false, true, false)) {
+                        compose.runOnIdle {
+                            seed.value = color
+                            dark.value = isDark
+                            useDynamicAccent.value = dynamicAccent
+                        }
+                        compose.mainClock.advanceTimeBy(1000L)
+                        compose.runOnIdle {
+                            assertScheme(requireNotNull(defaultScheme), Color.Red, isDark, false)
+                            assertScheme(requireNotNull(parentScheme), color, isDark, dynamicAccent)
+                            assertScheme(requireNotNull(childScheme), color, !isDark, dynamicAccent)
+                        }
+                    }
+                }
+            }
+            compose.runOnIdle {
+                seed.value = Color(0xFF170A20)
+                dark.value = true
+                useDynamicAccent.value = true
+            }
+            compose.mainClock.advanceTimeBy(1000L)
+            compose.runOnIdle {
+                seed.value = Color.Red
+                useDynamicAccent.value = false
+            }
+            // The first frame after changing color sources must not expose the old raw cover.
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertScheme(requireNotNull(parentScheme), Color.Red, isDark = true, dynamicAccent = false)
+                assertScheme(requireNotNull(childScheme), Color.Red, isDark = false, dynamicAccent = false)
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
 
     @Test
     fun segmentedHorizontalIntentLocksOutLaterVerticalDrift() {
