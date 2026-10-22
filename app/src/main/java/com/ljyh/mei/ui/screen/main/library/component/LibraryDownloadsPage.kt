@@ -9,9 +9,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LinearProgressIndicator
@@ -70,6 +73,8 @@ internal fun LibraryDownloadsPage(
     isCategoryPage: Boolean,
     pages: List<LibraryPage>,
     onPageSelect: (LibraryPage) -> Unit,
+    listState: LazyListState,
+    tabPosition: Animatable<Float, AnimationVector1D>,
     viewModel: LocalLibraryViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -140,6 +145,7 @@ internal fun LibraryDownloadsPage(
 
     IosPinnedListPage(
         title = pageTitle,
+        listState = listState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
         largeTitleHorizontalPadding = 0.dp,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -157,7 +163,7 @@ internal fun LibraryDownloadsPage(
             if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) {
-        item("download-search") {
+        item("library-search") {
             GlassSearchBar(
                 query = search,
                 onQueryChange = { search = it },
@@ -175,6 +181,7 @@ internal fun LibraryDownloadsPage(
                 items = pages.map { it to stringResource(it.titleRes) },
                 selected = LibraryPage.Downloads,
                 onSelected = onPageSelect,
+                positionAnimation = tabPosition,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

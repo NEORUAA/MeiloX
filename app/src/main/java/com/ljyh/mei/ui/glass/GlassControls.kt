@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.glass
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -46,6 +48,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as colorLerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -58,6 +62,10 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -527,12 +535,14 @@ fun <T> GlassSegmentedControl(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalGlassBackdrop.current,
+    positionAnimation: Animatable<Float, AnimationVector1D>? = null,
 ) {
     require(items.isNotEmpty())
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
     val isLight = !colors.isDark
     val selectedIndex = items.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
     val currentItems by rememberUpdatedState(items)
     val currentOnSelected by rememberUpdatedState(onSelected)
     val scope = rememberCoroutineScope()
@@ -545,49 +555,77 @@ fun <T> GlassSegmentedControl(
 
     // Same three-layer structure as LiquidBottomTabs:
     // visible tabs -> invisible exported tabs with labels -> movable combined-backdrop lens.
-    BoxWithConstraints(modifier.height(32.dp)) {
+    val dragCoordinateSpace = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    BoxWithConstraints(
+        modifier.height(32.dp).onGloballyPositioned { dragCoordinateSpace.value = it },
+    ) {
         val density = LocalDensity.current
         val contentWidthPx = (constraints.maxWidth - with(density) { 4.dp.roundToPx() })
             .coerceAtLeast(items.size)
             .toFloat()
         val tabWidthPx = contentWidthPx / items.size
+        val currentTabWidthPx by rememberUpdatedState(tabWidthPx)
         val trackPaddingPx = with(density) { 2.dp.toPx() }
-        val animation = remember(scope, items.size) {
+        val textMeasurer = rememberTextMeasurer()
+        val labelStyle = IosTypography.caption
+        val labelLayouts = remember(textMeasurer, items, selectedIndex, labelStyle, colors.content, tabWidthPx) {
+            items.mapIndexed { index, item ->
+                textMeasurer.measure(
+                    text = AnnotatedString(item.second),
+                    style = labelStyle.copy(
+                        color = colors.content,
+                        fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Medium,
+                    ),
+                    maxLines = 1,
+                    constraints = Constraints(maxWidth = tabWidthPx.fastRoundToInt().coerceAtLeast(1)),
+                )
+            }
+        }
+        val interactiveHighlight = remember(scope, isLtr) { InteractiveHighlight(scope) }
+        val animation = remember(scope, items.size, isLtr, positionAnimation) {
             DampedDragAnimation(
                 animationScope = scope,
                 initialValue = selectedIndex.toFloat(),
                 valueRange = 0f..items.lastIndex.coerceAtLeast(1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = 36f / 28f,
-                onDragStarted = {},
+                pressedScale = SegmentedIndicatorPressedScale,
+                dragCoordinateSpace = { dragCoordinateSpace.value },
+                sharedValueAnimation = positionAnimation,
+                horizontalDragOnly = true,
+                onDragStarted = { interactiveHighlight.startPress(it) },
                 onDragStopped = {
+                    interactiveHighlight.endPress()
                     val target = targetValue.fastRoundToInt().fastCoerceIn(0, currentItems.lastIndex)
                     currentOnSelected(currentItems[target].first)
                     animateToValue(target.toFloat())
                 },
+                onDragCancelled = {
+                    interactiveHighlight.endPress()
+                    animateToValue(currentSelectedIndex.toFloat(), animatePress = false)
+                },
                 onDrag = { _, dragAmount ->
                     updateValue(
-                        (targetValue + dragAmount.x / tabWidthPx * if (isLtr) 1f else -1f)
+                        (targetValue + dragAmount.x / currentTabWidthPx * if (isLtr) 1f else -1f)
                             .fastCoerceIn(0f, currentItems.lastIndex.toFloat()),
                     )
                 },
             )
         }
-        LaunchedEffect(selectedIndex) { animation.animateToValue(selectedIndex.toFloat()) }
-        val interactiveHighlight = remember(scope, isLtr) {
-            InteractiveHighlight(
-                animationScope = scope,
-                position = { size, _ ->
+        LaunchedEffect(selectedIndex, animation) { animation.animateToValue(selectedIndex.toFloat()) }
+        val segmentedHighlightModifier = remember(interactiveHighlight, animation, isLtr, trackPaddingPx) {
+            interactiveHighlight.highlightModifier(
+                positionProvider = { size ->
                     Offset(
                         x = if (isLtr) {
-                            trackPaddingPx + (animation.value + 0.5f) * tabWidthPx
+                            trackPaddingPx + (animation.value + 0.5f) * currentTabWidthPx
                         } else {
-                            size.width - trackPaddingPx - (animation.value + 0.5f) * tabWidthPx
+                            size.width - trackPaddingPx - (animation.value + 0.5f) * currentTabWidthPx
                         },
                         y = size.height / 2f,
                     )
                 },
+                horizontalRadiusProvider = { currentTabWidthPx * 0.65f },
             )
         }
         val hiddenGlassModifier = remember(backdrop, animation, trackColor, appearance) {
@@ -613,7 +651,7 @@ fun <T> GlassSegmentedControl(
                 onDrawSurface = { drawRect(trackColor) },
             )
         }
-        val indicatorGlassModifier = remember(indicatorBackdrop, animation, appearance) {
+        val indicatorGlassModifier = remember(indicatorBackdrop, animation, appearance, isLight, labelLayouts) {
             if (!appearance.usesBackdrop) Modifier else Modifier.drawBackdrop(
                 backdrop = indicatorBackdrop,
                 shape = { Capsule() },
@@ -621,9 +659,8 @@ fun <T> GlassSegmentedControl(
                     if (appearance.usesRefraction) {
                         val press = animation.pressProgress
                         lens(
-                            7.dp.toPx() * press,
-                            18.dp.toPx() * press,
-                            depthEffect = press > 0.01f,
+                            SegmentedIndicatorRefractionHeight.toPx() * press,
+                            SegmentedIndicatorRefractionAmount.toPx() * press,
                             chromaticAberration = true,
                         )
                     }
@@ -636,18 +673,24 @@ fun <T> GlassSegmentedControl(
                         alpha = 0.72f * animation.pressProgress,
                     )
                 },
-                layerBlock = {
-                    scaleX = animation.scaleX
-                    scaleY = animation.scaleY
-                    val velocity = animation.velocity / 10f
-                    scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.18f, 0.18f)
-                    scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.14f, 0.14f)
-                },
                 onDrawSurface = {
                     val press = animation.pressProgress
-                    // The animated pill and stationary labels are exported by tabsBackdrop.
-                    // Keep this overlay translucent so the sampled text stays visible.
+                    // The resting fill belongs to this surface, never to its sampling source.
+                    drawRect((if (isLight) Color.White else Color(0xFF636366)).copy(alpha = 1f - press))
                     drawRect(Color.White.copy(alpha = 0.10f * press))
+                    // Restore labels over the resting fill at their fixed track positions.
+                    // As the fill fades, the source's refracted labels take over.
+                    labelLayouts.forEachIndexed { index, label ->
+                        drawText(
+                            textLayoutResult = label,
+                            topLeft = Offset(
+                                size.width / 2f + (index - animation.value) * currentTabWidthPx *
+                                    (if (isLtr) 1f else -1f) - label.size.width / 2f,
+                                (size.height - label.size.height) / 2f,
+                            ),
+                            alpha = 1f - press,
+                        )
+                    }
                 },
             )
         }
@@ -670,7 +713,7 @@ fun <T> GlassSegmentedControl(
                         )
                     }
                 }
-                .then(interactiveHighlight.modifier)
+                .then(segmentedHighlightModifier)
                 .padding(2.dp),
         ) {
             SegmentedTabContent(
@@ -680,29 +723,21 @@ fun <T> GlassSegmentedControl(
             )
         }
 
-        // 2. Keep labels stationary in the sampling source, but move the pill with the
-        // lens's animated position instead of snapping its background to the target tab.
+        // 2. Keep the unscaled source at the inner height so the refractive band can
+        // cross its edge. Labels stay aligned with the visible row's 2dp padding.
         if (appearance.usesBackdrop) Row(
             Modifier
-                .fillMaxSize()
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .height(SegmentedIndicatorHeight)
                 .clearAndSetSemantics { }
                 .alpha(0f)
                 .layerBackdrop(tabsBackdrop)
                 .clip(Capsule())
                 .background(trackColor)
                 .then(hiddenGlassModifier)
-                .then(interactiveHighlight.modifier)
-                .drawBehind {
-                    val visualIndex = if (isLtr) animation.value else items.lastIndex - animation.value
-                    val pillHeight = 28.dp.toPx()
-                    drawRoundRect(
-                        color = if (isLight) Color.White else Color(0xFF636366),
-                        topLeft = Offset(trackPaddingPx + visualIndex * tabWidthPx, trackPaddingPx),
-                        size = Size(tabWidthPx.fastRoundToInt().toFloat(), pillHeight),
-                        cornerRadius = CornerRadius(pillHeight / 2f),
-                    )
-                }
-                .padding(2.dp),
+                .then(segmentedHighlightModifier)
+                .padding(horizontal = 2.dp),
         ) {
             SegmentedTabContent(
                 items = items,
@@ -721,10 +756,8 @@ fun <T> GlassSegmentedControl(
                     translationY = 2.dp.toPx()
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
                 }
-                .then(interactiveHighlight.gestureModifier)
                 .then(animation.modifier)
-                .then(indicatorGlassModifier)
-                .height(28.dp)
+                .height(SegmentedIndicatorHeight)
                 .layout { measurable, constraints ->
                     val width = tabWidthPx.fastRoundToInt()
                     val placeable = measurable.measure(
@@ -732,7 +765,28 @@ fun <T> GlassSegmentedControl(
                     )
                     layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                 },
-        )
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .layout { measurable, constraints ->
+                        val restingSize = Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+                        val visualSize = if (appearance.usesBackdrop) {
+                            segmentedIndicatorSize(
+                                restingSize, animation.scaleX, animation.scaleY,
+                                animation.velocity / 10f, SegmentedIndicatorHorizontalExpansion.toPx(),
+                            )
+                        } else restingSize
+                        val width = visualSize.width.fastRoundToInt().coerceAtLeast(1)
+                        val height = visualSize.height.fastRoundToInt().coerceAtLeast(1)
+                        val placeable = measurable.measure(Constraints.fixed(width, height))
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            placeable.place((constraints.maxWidth - width) / 2, (constraints.maxHeight - height) / 2)
+                        }
+                    }
+                    .then(indicatorGlassModifier),
+            )
+        }
     }
 }
 

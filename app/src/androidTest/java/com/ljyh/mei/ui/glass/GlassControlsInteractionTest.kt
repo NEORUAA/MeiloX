@@ -1,6 +1,9 @@
 package com.ljyh.mei.ui.glass
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -18,10 +21,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -34,17 +42,23 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
+import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
+import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -62,6 +76,294 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun segmentedHorizontalIntentLocksOutLaterVerticalDrift() {
+        val selection = mutableStateOf(0)
+        val selections = mutableListOf<Int>()
+        val state = LazyListState(1)
+        showScrollableSegments(selection, selections, state)
+        val host = compose.onNodeWithTag("scrollHost")
+        val hostBounds = host.fetchSemanticsNode().boundsInRoot
+        val first = compose.onNodeWithText("Tab 0").fetchSemanticsNode().boundsInRoot.center - hostBounds.topLeft
+        val last = compose.onNodeWithText("Tab 2").fetchSemanticsNode().boundsInRoot.center - hostBounds.topLeft
+        host.performTouchInput { down(first) }
+        host.performTouchInput { moveTo(last + Offset(0f, 24f)) }
+        compose.waitForIdle()
+        host.performTouchInput { moveBy(Offset(0f, -120f)) }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(1, state.firstVisibleItemIndex)
+            assertEquals(0, state.firstVisibleItemScrollOffset)
+            assertTrue(selections.isEmpty())
+        }
+        host.performTouchInput { up() }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(listOf(2), selections) }
+    }
+
+    @Test
+    fun segmentedCancellationAndVerticalIntentNeverCommitSelection() {
+        val selection = mutableStateOf(0)
+        val selections = mutableListOf<Int>()
+        val state = LazyListState(1)
+        val position = Animatable(0f, 0.001f)
+        showScrollableSegments(selection, selections, state, position)
+        val host = compose.onNodeWithTag("scrollHost")
+        val hostBounds = host.fetchSemanticsNode().boundsInRoot
+        val first = compose.onNodeWithText("Tab 0").fetchSemanticsNode().boundsInRoot.center - hostBounds.topLeft
+        val last = compose.onNodeWithText("Tab 2").fetchSemanticsNode().boundsInRoot.center - hostBounds.topLeft
+        host.performTouchInput { down(first); moveTo(last) }
+        compose.waitForIdle()
+        compose.runOnIdle { assertTrue(position.value > 1f) }
+        host.performTouchInput { cancel() }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(selections.isEmpty())
+            assertEquals(0f, position.value, 0.001f)
+        }
+        host.performTouchInput { down(first); moveBy(Offset(2f, -120f)) }
+        compose.waitForIdle()
+        host.performTouchInput { up() }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue(state.firstVisibleItemIndex > 1 || state.firstVisibleItemScrollOffset > 0)
+            assertTrue(selections.isEmpty())
+            assertEquals(0, selection.value)
+            assertEquals(0f, position.value, 0.001f)
+        }
+    }
+
+    private fun showScrollableSegments(
+        selection: androidx.compose.runtime.MutableState<Int>,
+        selections: MutableList<Int>,
+        state: LazyListState,
+        position: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>? = null,
+    ) {
+        compose.setContent {
+            MaterialTheme {
+                LazyColumn(Modifier.width(320.dp).height(240.dp).testTag("scrollHost"), state = state) {
+                    item { Box(Modifier.fillMaxWidth().height(48.dp)) }
+                    item("segments") {
+                        GlassSegmentedControl(
+                            items = List(3) { it to "Tab $it" },
+                            selected = selection.value,
+                            onSelected = { selection.value = it; selections += it },
+                            modifier = Modifier.fillMaxWidth(),
+                            backdrop = emptyBackdrop(),
+                            positionAnimation = position,
+                        )
+                    }
+                    items(30) { Box(Modifier.fillMaxWidth().height(48.dp)) }
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 33)
+    fun widePressLightCoversMoreOfTheSelectionWithoutChangingItsHeight() {
+        compose.setContent {
+            Column {
+                listOf(false, true).forEach { wide ->
+                    val renderer = remember(wide) { PressHighlightRenderer() }
+                    Canvas(Modifier.width(200.dp).height(32.dp).testTag(if (wide) "wideLight" else "normalLight")) {
+                        drawRect(Color.Black)
+                        renderer.draw(
+                            this, 1f, Offset(size.width / 2f, size.height / 2f),
+                            horizontalRadius = if (wide) size.width * 0.65f else null,
+                        )
+                    }
+                }
+            }
+        }
+        fun outsideTheOldLight(tag: String): Color {
+            val image = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
+            return image[image.width * 4 / 5, image.height / 2]
+        }
+        assertTrue(outsideTheOldLight("wideLight").red > outsideTheOldLight("normalLight").red + 0.10f)
+    }
+
+    @Test
+    fun categoryPositionContinuesSlidingWhenThePageHostIsReplaced() {
+        val selected = mutableStateOf(0)
+        val position = Animatable(0f, 0.001f)
+        compose.setContent {
+            MaterialTheme {
+                key(selected.value) {
+                    GlassSegmentedControl(
+                        items = List(6) { it to "Tab $it" },
+                        selected = selected.value,
+                        onSelected = { selected.value = it },
+                        modifier = Modifier.width(320.dp),
+                        backdrop = emptyBackdrop(),
+                        positionAnimation = position,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithText("Tab 5").performClick()
+            compose.mainClock.advanceTimeBy(64)
+            compose.runOnIdle { assertTrue(position.value > 0f && position.value < 5f) }
+            compose.mainClock.advanceTimeBy(1000)
+            compose.runOnIdle { assertEquals(5f, position.value, 0.001f) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun categoryRefreshChangesRetainTheContentOwnerAndListOffset() {
+        val selected = mutableStateOf(0)
+        val state = LazyListState(1, 16)
+        var disposals = 0
+        compose.setContent {
+            MaterialTheme {
+                LibraryCollectionRefresh(
+                    enabled = selected.value == 1,
+                    isRefreshing = false,
+                    topPadding = 0.dp,
+                    onRefresh = {},
+                ) {
+                    DisposableEffect(Unit) { onDispose { disposals++ } }
+                    LazyColumn(Modifier.width(320.dp).height(240.dp), state = state) {
+                        items(2) { Box(Modifier.fillMaxWidth().height(48.dp)) }
+                        item("library-pages") {
+                            GlassSegmentedControl(
+                                items = listOf(0 to "Songs", 1 to "Playlists"),
+                                selected = selected.value,
+                                onSelected = { selected.value = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                backdrop = emptyBackdrop(),
+                            )
+                        }
+                        items(30) { Box(Modifier.fillMaxWidth().height(48.dp)) }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Playlists").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(0, disposals)
+            assertEquals(1, state.firstVisibleItemIndex)
+            assertEquals(16, state.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 33)
+    fun segmentedFullPressRemovesTheOpaqueRestingPillFromTheLens() {
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassColors provides defaultGlassColors(isDark = true),
+                    LocalGlassAppearance provides GlassAppearance(),
+                ) {
+                    Box(
+                        Modifier.width(320.dp).height(72.dp).background(Color.Black).testTag("scene"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        GlassSegmentedControl(
+                            items = listOf(0 to "First", 1 to "Second"),
+                            selected = 0,
+                            onSelected = {},
+                            modifier = Modifier.width(280.dp).testTag("segments"),
+                            backdrop = rememberCanvasBackdrop { drawRect(Color.Black) },
+                        )
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val scene = compose.onNodeWithTag("scene")
+        val control = compose.onNodeWithTag("segments")
+        val sceneBounds = scene.fetchSemanticsNode().boundsInRoot
+        val bounds = control.fetchSemanticsNode().boundsInRoot
+        val sampleX = (bounds.left - sceneBounds.left + bounds.width * 0.38f).toInt()
+        val sampleY = (bounds.center.y - sceneBounds.top).toInt()
+        val resting = scene.captureToImage().toPixelMap()[sampleX, sampleY]
+        try {
+            compose.mainClock.autoAdvance = false
+            control.performTouchInput { down(Offset(width * 0.25f, center.y)) }
+            compose.mainClock.advanceTimeBy(1000)
+            val pressed = scene.captureToImage().toPixelMap()[sampleX, sampleY]
+            assertTrue("The original opaque pill must disappear during a full press", pressed.red < resting.red - 0.08f)
+            control.performTouchInput { up() }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun segmentedHeldDragCommitsOnlyOnReleaseAfterWidthAndDirectionChanges() {
+        val count = mutableStateOf(3)
+        val selection = mutableStateOf(0)
+        val direction = mutableStateOf(LayoutDirection.Ltr)
+        val width = mutableStateOf(280.dp)
+        val appearance = mutableStateOf(GlassAppearance())
+        val selections = mutableListOf<Int>()
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides direction.value,
+                    LocalGlassAppearance provides appearance.value,
+                ) {
+                    GlassSegmentedControl(
+                        items = List(count.value) { it to "Tab $it" },
+                        selected = selection.value,
+                        onSelected = { selection.value = it; selections += it },
+                        modifier = Modifier.width(width.value).testTag("segments"),
+                        backdrop = emptyBackdrop(),
+                    )
+                }
+            }
+        }
+        try {
+            listOf(GlassAppearance(), GlassAppearance(liquidGlassEnabled = false), GlassAppearance(reduceTransparency = true))
+                .forEach { mode ->
+                    listOf(2, 3, 6).forEach { itemCount ->
+                        listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { layoutDirection ->
+                            compose.runOnIdle {
+                                count.value = itemCount
+                                selection.value = 0
+                                direction.value = layoutDirection
+                                appearance.value = mode
+                                width.value = 280.dp
+                                selections.clear()
+                            }
+                            compose.waitForIdle()
+                            compose.runOnIdle { width.value = 320.dp }
+                            compose.waitForIdle()
+                            val control = compose.onNodeWithTag("segments")
+                            val bounds = control.fetchSemanticsNode().boundsInRoot
+                            val first = compose.onNodeWithText("Tab 0").fetchSemanticsNode().boundsInRoot.center - bounds.topLeft
+                            val last = compose.onNodeWithText("Tab ${itemCount - 1}").fetchSemanticsNode().boundsInRoot.center - bounds.topLeft
+                            compose.mainClock.autoAdvance = false
+                            control.performTouchInput { down(first) }
+                            compose.mainClock.advanceTimeBy(1000)
+                            control.performTouchInput { moveTo(last) }
+                            compose.mainClock.advanceTimeBy(1000)
+                            compose.runOnIdle { assertTrue(selections.isEmpty()) }
+                            control.performTouchInput { moveTo(first) }
+                            compose.mainClock.advanceTimeBy(1000)
+                            compose.runOnIdle { assertTrue(selections.isEmpty()) }
+                            control.performTouchInput { moveTo(last); up() }
+                            compose.mainClock.autoAdvance = true
+                            compose.waitForIdle()
+                            compose.runOnIdle { assertEquals(listOf(itemCount - 1), selections) }
+                        }
+                    }
+                }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
 
     @Test
     fun toggleTapsUseLatestStateAndCallbackWithoutClickingTheParent() {

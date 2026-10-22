@@ -37,6 +37,22 @@ class InteractiveHighlight(
     val pressProgress: Float get() = if (pressCancelled) 0f else pressProgressAnimation.value
     val offset: Offset get() = if (pressCancelled) Offset.Zero else positionAnimation.value - startPosition
 
+    fun startPress(position: Offset) {
+        pressCancelled = false
+        startPosition = position
+        animationScope.launch {
+            launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
+            launch { positionAnimation.snapTo(startPosition) }
+        }
+    }
+
+    fun endPress() {
+        if (!pressCancelled) animationScope.launch {
+            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+            launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
+        }
+    }
+
     /** A sheet has taken this gesture; only a new down may restore feedback. */
     fun cancelPress() {
         pressCancelled = true
@@ -53,9 +69,13 @@ class InteractiveHighlight(
     fun highlightModifier(
         progressProvider: () -> Float = { pressProgress },
         positionProvider: (Size) -> Offset = ::highlightPosition,
+        horizontalRadiusProvider: ((Size) -> Float)? = null,
     ): Modifier = Modifier.drawWithContent {
         val progress = progressProvider()
-        if (progress > 0f) renderer.draw(this, progress, positionProvider(size))
+        if (progress > 0f) renderer.draw(
+            this, progress, positionProvider(size),
+            horizontalRadius = horizontalRadiusProvider?.invoke(size),
+        )
         drawContent()
     }
 
@@ -65,24 +85,13 @@ class InteractiveHighlight(
         Modifier.pointerInput(animationScope) {
             inspectDragGestures(
                 onDragStart = { down ->
-                    pressCancelled = false
-                    startPosition = down.position
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.snapTo(startPosition) }
-                    }
+                    startPress(down.position)
                 },
                 onDragEnd = {
-                    if (!pressCancelled) animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
+                    endPress()
                 },
                 onDragCancel = {
-                    if (!pressCancelled) animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
+                    endPress()
                 }
             ) { change, _ ->
                 if (!pressCancelled) animationScope.launch { positionAnimation.snapTo(change.position) }
