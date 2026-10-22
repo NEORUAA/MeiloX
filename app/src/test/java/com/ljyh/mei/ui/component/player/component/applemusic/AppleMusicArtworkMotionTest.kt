@@ -5,6 +5,7 @@ import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Rect
+import androidx.media3.common.MediaItem
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -35,6 +36,107 @@ class AppleMusicArtworkMotionTest {
                 }
             }
         }
+    }
+
+    private fun queueSnapshot(
+        current: Int,
+        order: List<Int> = (0..12).toList(),
+        headerTop: Float = 0f,
+        controlsBottom: Float = 160f,
+        viewport: Float = 320f,
+        autoplayKey: String? = null,
+    ) = QueueRowsSnapshot(
+        entries = order.map { PhoneQueueEntry(it.toString(), MediaItem.Builder().setMediaId(it.toString()).build(), it) },
+        currentKey = current.toString(),
+        tops = mapOf(PlayerQueueCurrentHeaderKey to headerTop, "queue_upcoming_controls_bottom" to controlsBottom),
+        viewportHeight = viewport, rowHeight = 56f, historyGap = 16f,
+        autoplayKey = autoplayKey, autoplayEnabled = autoplayKey != null, autoplayHeight = 70f,
+    )
+
+    @Test fun queueNextFadesInPlaceWhileSurvivorsAndBufferedNeighborsMoveTogether() {
+        val before = queueSnapshot(3)
+        val after = queueSnapshot(4)
+        val destination = after.rows(before.rows().keys)
+        val source = before.rows(destination.keys)
+        assertTrue("A neighbor below the viewport must be available before entry", "upcoming:8" in source)
+        assertTrue("The current header is never a song animation", source.values.none { it.entry?.key == "3" })
+        assertFalse(destination.containsKey("upcoming:4"))
+        for (progress in listOf(0f, 0.2f, 0.5f, 0.8f, 1f)) {
+            val departing = queueRowPlacement(source.getValue("upcoming:4").placement, null, progress)
+            assertEquals(160f, departing.top, 0f)
+            assertEquals(1f - progress, departing.opacity, 0.0001f)
+            for (id in listOf("upcoming:5", "upcoming:6", "upcoming:7", "upcoming:8")) {
+                val start = source.getValue(id).placement
+                val row = queueRowPlacement(start, destination.getValue(id).placement, progress)
+                assertEquals(start.top - 56f * progress, row.top, 0.001f)
+                assertEquals(1f, row.opacity, 0f)
+            }
+        }
+        assertEquals(384f, source.getValue("upcoming:8").placement.top, 0f)
+        assertEquals(328f, destination.getValue("upcoming:8").placement.top, 0f)
+    }
+
+    @Test fun queuePreviousFadesAtTheFirstSlotWhileTheBottomRowMovesOutContinuously() {
+        val before = queueSnapshot(4)
+        val after = queueSnapshot(3)
+        val destination = after.rows(before.rows().keys)
+        val source = before.rows(destination.keys)
+        assertFalse(source.containsKey("upcoming:4"))
+        for (progress in listOf(0f, 0.2f, 0.5f, 0.8f, 1f)) {
+            val entering = queueRowPlacement(null, destination.getValue("upcoming:4").placement, progress)
+            assertEquals(160f, entering.top, 0f)
+            assertEquals(progress, entering.opacity, 0f)
+            for (id in listOf("upcoming:5", "upcoming:6", "upcoming:7", "upcoming:8")) {
+                val start = source.getValue(id).placement
+                val row = queueRowPlacement(start, destination.getValue(id).placement, progress)
+                assertEquals(start.top + 56f * progress, row.top, 0.001f)
+                assertEquals(1f, row.opacity, 0f)
+            }
+        }
+        assertEquals(272f, source.getValue("upcoming:7").placement.top, 0f)
+        assertEquals(328f, destination.getValue("upcoming:7").placement.top, 0f)
+    }
+
+    @Test fun historyUsesTheSameStationaryFadesWithShuffleAndAutoplaySectionGeometry() {
+        val order = listOf(6, 2, 7, 0, 8, 1, 3)
+        fun snapshot(current: Int) = queueSnapshot(current, order, 300f, 480f, 800f, "1")
+        val before = snapshot(0).rows()
+        val next = snapshot(8).rows(before.keys)
+        val previous = snapshot(7).rows(before.keys)
+        assertEquals(listOf("history:6", "history:2", "history:7"), before.keys.filter { it.startsWith("history:") })
+        assertEquals(536f, before.getValue("upcoming:autoplay_section").placement.top, 0f)
+        assertEquals(606f, before.getValue("upcoming:1").placement.top, 0f)
+        assertFalse(before.values.any { it.entry?.key == "0" })
+        for (progress in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
+            val entering = queueRowPlacement(null, next.getValue("history:0").placement, progress)
+            assertEquals(228f, entering.top, 0f)
+            assertEquals(progress, entering.opacity, 0f)
+            val leaving = queueRowPlacement(before.getValue("history:7").placement, null, progress)
+            assertEquals(228f, leaving.top, 0f)
+            assertEquals(1f - progress, leaving.opacity, 0f)
+            val up = queueRowPlacement(before.getValue("history:2").placement, next.getValue("history:2").placement, progress)
+            val down = queueRowPlacement(before.getValue("history:2").placement, previous.getValue("history:2").placement, progress)
+            assertEquals(172f - 56f * progress, up.top, 0.001f)
+            assertEquals(172f + 56f * progress, down.top, 0.001f)
+        }
+        assertTrue(queueSnapshot(0).rows().keys.none { it.startsWith("history:") })
+        assertTrue(queueSnapshot(12).rows().keys.none { it.startsWith("upcoming:") })
+    }
+
+    @Test fun queueReversalKeepsTheInterruptedPositionsAndOpacities() {
+        val first = queueSnapshot(3).rows()
+        val second = queueSnapshot(4).rows(first.keys)
+        val interrupted = (first.keys + second.keys).associateWith { id ->
+            queueRowPlacement(first[id]?.placement, second[id]?.placement, 0.4f)
+        }
+        for ((id, placement) in interrupted) {
+            assertEquals(placement, queueRowPlacement(placement, first[id]?.placement, 0f))
+            val end = queueRowPlacement(placement, first[id]?.placement, 1f)
+            assertEquals(first[id]?.placement?.top ?: placement.top, end.top, 0.001f)
+            assertEquals(if (id in first) 1f else 0f, end.opacity, 0.001f)
+        }
+        assertEquals(0.6f, interrupted.getValue("upcoming:4").opacity, 0.0001f)
+        assertEquals(193.6f, interrupted.getValue("upcoming:5").top, 0.0001f)
     }
 
     @Test fun queueTailKeepsShortHeadersReachableAndLastSongsAboveTheFade() {

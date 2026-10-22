@@ -49,7 +49,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -147,8 +146,10 @@ fun AppleMusicPlayer(
     var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var albumRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var queueHeaderTop by remember { mutableFloatStateOf(0f) }
-    var queueViewportHeight by remember { mutableFloatStateOf(0f) }
+    var queueHeaderPosition by remember { mutableStateOf<State<PlayerQueueHeaderPosition>?>(null) }
+    val queueViewportHeight = remember {
+        derivedStateOf { queueHeaderPosition?.value?.viewportHeight ?: 0f }
+    }
     var albumTextSize by remember { mutableStateOf(IntSize.Zero) }
     var albumActionsSize by remember { mutableStateOf(IntSize.Zero) }
     var headerTextSize by remember { mutableStateOf(IntSize.Zero) }
@@ -296,13 +297,13 @@ fun AppleMusicPlayer(
         val headerStart = with(density) { AppleMusicDimensions.headerInset.toPx() }
         val headerRadius = with(density) { AppleMusicDimensions.headerCorner.toPx() }
         val lyricHeaderBounds = Rect(headerStart, headerTop, headerStart + headerSize, headerTop + headerSize)
-        // Scroll and transition clocks are observed only by placement and drawing.
         val queueTarget = remember(lyricHeaderBounds, headerTop) {
             derivedStateOf {
+                val position = queueHeaderPosition?.value ?: PlayerQueueHeaderPosition(0f, 0f)
                 appleMusicQueueArtworkTarget(
-                    lyricHeaderBounds.translate(Offset(0f, queueHeaderTop)),
+                    lyricHeaderBounds.translate(Offset(0f, position.top)),
                     headerTop,
-                    headerTop + queueViewportHeight,
+                    headerTop + position.viewportHeight,
                 )
             }
         }
@@ -321,7 +322,7 @@ fun AppleMusicPlayer(
         }
         val inlineHeaderVisible = showQueue && headerInteractive && queueHeaderSettled
         val infoRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-        val actionsGapPx = with(density) { 5.dp.toPx() }
+        val actionsGapPx = with(density) { 0.dp.toPx() }
         val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
         val headerTextLeft = headerStart + headerSize + with(density) { 12.dp.toPx() }
         val headerTextOrigin = {
@@ -482,9 +483,8 @@ fun AppleMusicPlayer(
                                             )
                                             (height - fade.start).coerceAtLeast(0f).toDp()
                                         },
-                                        onHeaderPositionChanged = { top, height ->
-                                            queueHeaderTop = top
-                                            queueViewportHeight = height
+                                        onHeaderPositionChanged = { position ->
+                                            queueHeaderPosition = position
                                         },
                                         currentHeader = { headerFade ->
                                             val titleDirection = LocalLayoutDirection.current
@@ -759,7 +759,7 @@ fun AppleMusicPlayer(
                     .drawWithContent {
                         // Release the viewport continuously while artwork flies back to the album.
                         val clipProgress = lyricAnimFraction.value * queueHeaderFraction.value
-                        val bottom = size.height + (headerTop + queueViewportHeight - size.height) * clipProgress
+                        val bottom = size.height + (headerTop + queueViewportHeight.value - size.height) * clipProgress
                         clipRect(top = headerTop * clipProgress, bottom = bottom.coerceAtLeast(headerTop * clipProgress)) {
                             this@drawWithContent.drawContent()
                         }
@@ -798,7 +798,7 @@ fun AppleMusicPlayer(
                                         val clipProgress = lyricAnimFraction.value * queueHeaderFraction.value
                                         Rect(
                                             0f, headerTop * clipProgress, maxWidthPx,
-                                            maxHeightPx + (headerTop + queueViewportHeight - maxHeightPx) * clipProgress,
+                                            maxHeightPx + (headerTop + queueViewportHeight.value - maxHeightPx) * clipProgress,
                                         )
                                     } else null,
                                 )
@@ -876,14 +876,14 @@ internal fun AppleMusicDetailPages(
         val incoming = if (queueSelected) queueOpacity else lyricOpacity
         val outgoing = if (queueSelected) lyricOpacity else queueOpacity
         if (animate) {
-            // The fades overlap during 100..400ms within one 500ms switch.
+            // The fades overlap during 50..250ms within one 300ms switch.
             coroutineScope {
                 launch {
-                    if (outgoing.value > 0f) outgoing.animateTo(0f, tween(400))
+                    if (outgoing.value > 0f) outgoing.animateTo(0f, tween(250))
                 }
                 launch {
                     if (incoming.value < 1f) {
-                        incoming.animateTo(1f, tween(400, delayMillis = 100))
+                        incoming.animateTo(1f, tween(250, delayMillis = 50))
                     }
                 }
             }

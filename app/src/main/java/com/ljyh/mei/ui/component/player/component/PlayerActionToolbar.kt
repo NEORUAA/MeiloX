@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -14,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,9 +33,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.media3.common.util.UnstableApi
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlayerActionKey
@@ -67,6 +70,7 @@ fun PlayerActionToolbar(
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
+    val pressedAlpha = if (playerStyle == PlayerStyle.AppleMusic) 0.6f else 0.3f
 
     val (actionString, _) = rememberPreference(
         key = PlayerActionKey,
@@ -102,6 +106,7 @@ fun PlayerActionToolbar(
             when (action) {
                 PlayerAction.PLAY_MODE -> {
                     ShadowedIconButton(
+                        pressedAlpha = pressedAlpha,
                         onClick = { playerConnection.switchPlayMode() }
                     ) {
                         val systemName = when (playMode) {
@@ -125,6 +130,9 @@ fun PlayerActionToolbar(
                         systemName = action.systemName,
                         contentDescription = stringResource(action.labelRes),
                         isSelected = queueVisible,
+                        iconSize = 22.dp,
+                        iconWeight = FontWeight.SemiBold,
+                        pressedAlpha = pressedAlpha,
                         onClick = onPlaylistClick
                     )
                 }
@@ -134,6 +142,7 @@ fun PlayerActionToolbar(
                         systemName = if (lyricsVisible) "quote.bubble.fill" else action.systemName,
                         contentDescription = stringResource(action.labelRes),
                         isSelected = lyricsVisible,
+                        pressedAlpha = pressedAlpha,
                         onClick = onLyricClick
                     )
                 }
@@ -152,7 +161,11 @@ fun PlayerActionToolbar(
                                     modifier = Modifier
                                         .clip(ContinuousRoundedRectangle(50))
                                         .background(Color.White.copy(alpha = 0.2f))
-                                        .clickable(onClick = onSleepTimerClick)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = onSleepTimerClick,
+                                        )
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
@@ -170,12 +183,14 @@ fun PlayerActionToolbar(
                             } else {
                                 // 普通图标状态
                                 ShadowedIconButton(
+                                    pressedAlpha = pressedAlpha,
                                     onClick = onSleepTimerClick
                                 ) {
                                     SfIcon(
                                         action.systemName,
                                         stringResource(action.labelRes),
                                         tint = Color.White,
+                                        size = 22.dp,
                                         weight = FontWeight.Medium,
                                     )
                                 }
@@ -186,12 +201,14 @@ fun PlayerActionToolbar(
 
                 PlayerAction.ADD_TO_PLAYLIST -> {
                     ShadowedIconButton(
+                        pressedAlpha = pressedAlpha,
                         onClick = onAddToPlaylistClick
                     ) {
                         SfIcon(
                             action.systemName,
                             stringResource(action.labelRes),
                             tint = Color.White,
+                            size = 22.dp,
                             weight = FontWeight.Medium,
                         )
                     }
@@ -199,6 +216,7 @@ fun PlayerActionToolbar(
 
                 PlayerAction.DOWNLOAD -> {
                     ShadowedIconButton(
+                        pressedAlpha = pressedAlpha,
                         onClick = onDownloadClick,
                     ) {
                         SfIcon(
@@ -212,12 +230,14 @@ fun PlayerActionToolbar(
 
                 PlayerAction.MORE -> {
                     ShadowedIconButton(
+                        pressedAlpha = pressedAlpha,
                         onClick = onMoreClick
                     ) {
                         SfIcon(
                             action.systemName,
                             stringResource(action.labelRes),
                             tint = Color.White,
+                            size = 22.dp,
                             weight = FontWeight.Medium,
                         )
                     }
@@ -234,14 +254,19 @@ private fun PlayerPageActionButton(
     contentDescription: String,
     isSelected: Boolean,
     onClick: () -> Unit,
+    iconSize: Dp = 24.dp,
+    iconWeight: FontWeight = FontWeight.Medium,
+    pressedAlpha: Float = 0.3f,
 ) {
     ShadowedIconButton(
         modifier = Modifier.semantics { selected = isSelected },
         onClick = onClick,
+        pressedAlpha = pressedAlpha,
+        dimOnPress = !isSelected,
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(36.dp)
                 .then(
                     if (isSelected) Modifier.graphicsLayer {
                         // Keep the glyph cutout inside the button background.
@@ -259,7 +284,8 @@ private fun PlayerPageActionButton(
                     compositingStrategy = CompositingStrategy.Offscreen
                 } else Modifier,
                 tint = Color.White,
-                weight = FontWeight.Medium,
+                size = iconSize,
+                weight = iconWeight,
             )
         }
     }
@@ -270,16 +296,28 @@ fun ShadowedIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    pressedAlpha: Float = 0.3f,
+    dimOnPress: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    Box(
         modifier = modifier
-            .size(48.dp),
+            .size(48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
         Box(
-            modifier = Modifier
+            modifier = Modifier.graphicsLayer {
+                alpha = if (isPressed && dimOnPress) pressedAlpha else 1f
+            }
         ) {
             content()
         }

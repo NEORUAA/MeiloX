@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -111,6 +112,19 @@ internal fun playerProgressDuration(playerDuration: Long, metadataDuration: Long
     playerDuration.takeIf { it > 0L } ?: metadataDuration?.takeIf { it > 0L } ?: 0L
 
 @Composable
+internal fun rememberPlayerLikeState(result: Resource<Boolean>): State<Boolean> =
+    produceState(initialValue = result is Resource.Success && result.data, key1 = result) {
+        when (result) {
+            is Resource.Success -> value = result.data
+            Resource.Loading -> Unit
+            is Resource.Error -> {
+                Timber.tag("Player State").d(result.message)
+                value = false
+            }
+        }
+    }
+
+@Composable
 @UnstableApi
 fun rememberPlayerStateContainer(
     playerViewModel: PlayerViewModel = hiltViewModel(),
@@ -140,18 +154,8 @@ fun rememberPlayerStateContainer(
     container.allPlaylist = playerViewModel.localPlaylists.collectAsStateWithLifecycle()
     container.myPlaylist = playerViewModel.myPlaylists.collectAsStateWithLifecycle()
 
-    container.isLiked = remember {
-        derivedStateOf {
-            when (val result = container.checkSongLike.value) {
-                is Resource.Success -> result.data
-                Resource.Loading -> false
-                is Resource.Error -> {
-                    Timber.tag("Player State").d(result.message)
-                    false
-                }
-            }
-        }
-    }
+    // Loading a new track's status must not briefly display an unliked star.
+    container.isLiked = rememberPlayerLikeState(container.checkSongLike.value)
 
     DisposableEffect(playerConnection) {
         val player = playerConnection.player
