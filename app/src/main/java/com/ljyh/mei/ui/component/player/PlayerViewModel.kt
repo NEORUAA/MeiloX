@@ -3,6 +3,8 @@ package com.ljyh.mei.ui.component.player
 import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.datastore.dataStore
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.AppContext
@@ -24,9 +26,12 @@ import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.neteaseSessionFingerprint
 import com.ljyh.mei.data.repository.PlayerRepository
+import com.ljyh.mei.data.repository.LibraryCollectionsRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.UserRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
+import com.ljyh.mei.di.repository.observeOwnedPlaylists
+import com.ljyh.mei.di.repository.toLocalPlaylist
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.di.repository.QQSongRepository
@@ -35,11 +40,13 @@ import com.ljyh.mei.ui.model.LyricCandidate
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.SortOrder
+import com.ljyh.mei.ui.model.resolveMoreActionOrder
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.lyric.LyricManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -49,6 +56,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -69,6 +77,7 @@ class PlayerViewModel @Inject constructor(
     private val colorRepository: ColorRepository,
     val lyricManager: LyricManager,
     private val mediaUriProvider: MediaUriProvider,
+    private val collections: LibraryCollectionsRepository,
 ) : ViewModel() {
     val searchResult: StateFlow<Resource<SearchResult>> = lyricManager.qqSearchResult
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
@@ -89,8 +98,7 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private val _networkPlaylistsState = MutableStateFlow<Resource<UserPlaylist>>(Resource.Loading)
-    val networkPlaylistsState: StateFlow<Resource<UserPlaylist>> = _networkPlaylistsState
+    private var playlistChoicesJob: Job? = null
 
     private val _createPlaylist = MutableStateFlow<Resource<CreatePlaylistResult>>(Resource.Loading)
     val createPlaylist: StateFlow<Resource<CreatePlaylistResult>> = _createPlaylist
@@ -113,8 +121,6 @@ class PlayerViewModel @Inject constructor(
             mediaUriProvider.getAvailableDownloadQualities(mediaId.toString())
         }
 
-    val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
-
     val localPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
         .stateIn(
             scope = viewModelScope,
@@ -122,8 +128,9 @@ class PlayerViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    val myPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
-        .map { it.filter { p -> p.author == userId } }
+    val myPlaylists: StateFlow<List<Playlist>> = observeOwnedPlaylists(
+        localPlaylistRepository.getAllPlaylist(), collections.accounts,
+    )
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000L),
@@ -203,31 +210,21 @@ class PlayerViewModel @Inject constructor(
 
 
 
-    fun syncUserPlaylists(uid: String, limit: Int = 100) {
-        viewModelScope.launch {
-            _networkPlaylistsState.value = Resource.Loading
-            when (val networkResult = userRepository.getUserPlaylist(uid, limit)) {
-                is Resource.Success -> {
-                    val playlistsToInsert = networkResult.data.playlist.map {
-                        Playlist(
-                            id = it.id.toString(),
-                            title = it.name,
-                            cover = it.coverImgUrl,
-                            author = it.creator.userId.toString(),
-                            authorName = it.creator.nickname,
-                            authorAvatar = it.creator.avatarUrl,
-                            count = it.trackCount
-                        )
+    fun refreshPlaylistChoices() {
+        playlistChoicesJob?.cancel()
+        playlistChoicesJob = viewModelScope.launch {
+            collections.accounts.collectLatest { account ->
+                if (account == null) return@collectLatest
+                try {
+                    val playlists = collections.allPlaylists(account)
+                    if (collections.accounts.first() == account) {
+                        localPlaylistRepository.mergeRemotePlaylists(playlists.map { it.toLocalPlaylist() })
                     }
-                    localPlaylistRepository.insertPlaylists(playlistsToInsert)
-                    _networkPlaylistsState.value = networkResult
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Timber.w(error, "Unable to refresh playlist choices")
                 }
-
-                is Resource.Error -> {
-                    _networkPlaylistsState.value = networkResult
-                }
-
-                Resource.Loading -> {}
             }
         }
     }
@@ -330,31 +327,28 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private val _moreSortOrder = MutableStateFlow(SortOrder.FREQUENCY)
-    val moreSortOrder = _moreSortOrder.asStateFlow()
-    val sortedMoreActions: StateFlow<List<MoreAction>> =
-        _moreSortOrder
-            .map { sortOrder ->
-                val actions = MoreAction.entries.toMutableList()
-                sortMoreActions(actions, sortOrder)
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = MoreAction.entries.toList()
-            )
+    private val moreSortKey = stringPreferencesKey("moreActions.sort")
+    private val moreOrderKey = stringPreferencesKey("moreActions.order")
+    val moreSortOrder = AppContext.instance.dataStore.data.map { preferences ->
+        runCatching { SortOrder.valueOf(preferences[moreSortKey].orEmpty()) }.getOrDefault(SortOrder.FREQUENCY)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SortOrder.FREQUENCY)
 
-
+    val sortedMoreActions = AppContext.instance.dataStore.data.map { preferences ->
+        val order = runCatching { SortOrder.valueOf(preferences[moreSortKey].orEmpty()) }.getOrDefault(SortOrder.FREQUENCY)
+        resolveMoreActionOrder(order, preferences[moreOrderKey].orEmpty().split(','))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), resolveMoreActionOrder(SortOrder.FREQUENCY, emptyList()))
 
     fun setMoreSortOrder(order: SortOrder) {
-        _moreSortOrder.value = order
+        viewModelScope.launch { AppContext.instance.dataStore.edit { it[moreSortKey] = order.name } }
     }
 
-    // 排序函数
-    private fun sortMoreActions(actions: List<MoreAction>, order: SortOrder): List<MoreAction> {
-        return when (order) {
-            SortOrder.FREQUENCY -> actions.sortedByDescending { it.frequency }
-            SortOrder.RISK -> actions.sortedBy { it.riskLevel }
+    fun saveMoreActionOrder(actions: List<MoreAction>) {
+        val ids = resolveMoreActionOrder(SortOrder.CUSTOM, actions.map { it.id }).joinToString(",") { it.id }
+        viewModelScope.launch {
+            AppContext.instance.dataStore.edit {
+                it[moreOrderKey] = ids
+                it[moreSortKey] = SortOrder.CUSTOM.name
+            }
         }
     }
 

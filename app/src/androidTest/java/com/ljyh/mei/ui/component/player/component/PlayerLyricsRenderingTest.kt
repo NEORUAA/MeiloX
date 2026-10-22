@@ -51,6 +51,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -84,6 +85,7 @@ import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.model.LyricCandidate
+import com.ljyh.mei.ui.model.LyricVariant
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.utils.lyric.karaokeRenderTimeWindow
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
@@ -612,6 +614,50 @@ class PlayerLyricsRenderingTest {
         compose.onNodeWithText("Search unavailable").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText(candidates.first().title))
         compose.onNodeWithText(candidates.first().title).assertIsDisplayed()
+    }
+
+    @Test
+    fun lyricSelectionDistinguishesVersionsOfTheSameSongAndSelectsTheRequestedRow() {
+        val expandSheet = mutableStateOf(false)
+        val selected = AtomicReference<LyricCandidate>()
+        val words = lyricCandidate(LyricSource.NetEaseCloudMusic, "Same song").copy(
+            key = "netease-word", variant = LyricVariant.NeteaseYrc, preview = "Word timeline preview",
+            isSelected = true,
+        )
+        val lines = words.copy(
+            key = "netease-line", variant = LyricVariant.NeteaseLrc, preview = "Line timeline preview",
+            isSelected = false,
+        )
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassColors provides defaultGlassColors(false),
+                    LocalGlassBackdrop provides emptyBackdrop(),
+                    LocalBlurBackdrop provides emptyBackdrop(),
+                ) {
+                    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+                    LaunchedEffect(expandSheet.value) { if (expandSheet.value) sheetState.expand() }
+                    LyricSelectionSheet(
+                        mediaMetadata = lyricReference,
+                        candidates = listOf(words, lines),
+                        offsetMs = 500,
+                        isLoading = false,
+                        errorMessage = null,
+                        onSelectCandidate = selected::set,
+                        onAdjustOffset = {}, onResetOffset = {}, onResetSource = {}, onDismiss = {},
+                        sheetState = sheetState,
+                    )
+                }
+            }
+        }
+        compose.runOnIdle { expandSheet.value = true }
+        for (candidate in listOf(words, lines)) {
+            val tag = "lyric-candidate-${candidate.key}"
+            compose.onNodeWithTag("lyric-selection-list").performScrollToNode(hasTestTag(tag))
+            compose.onNodeWithText(candidate.preview).assertIsDisplayed()
+        }
+        compose.onNodeWithTag("lyric-candidate-${lines.key}").performClick()
+        compose.runOnIdle { assertEquals(lines, selected.get()) }
     }
 
     @Test

@@ -20,6 +20,47 @@ import org.junit.Test
 
 class LyricUpdateSelectionTest {
     @Test
+    fun timestampedPhoneticsKeepTranslationsAndUseEachLineOnlyOnce() {
+        val source = SyncedLyrics(lines = listOf(
+            SyncedLine("First", "Translation", 1_000, 1_500),
+            SyncedLine("Second", null, 1_600, 2_000),
+            SyncedLine("Distant", null, 5_000, 6_000),
+        ))
+        val parsed = attachPhonetics(source, "[00:01.20]pronunciation\n[00:08.00]too far")
+        val first = parsed.lines.first() as KaraokeLine
+        assertEquals("pronunciation", first.phonetic)
+        assertEquals("Translation", first.translation)
+        assertEquals("First", first.syllables.single().content)
+        assertTrue(parsed.lines[1] is SyncedLine)
+        assertTrue(parsed.lines[2] is SyncedLine)
+        assertTrue(source.lines.first() is SyncedLine)
+    }
+
+    @Test
+    fun existingTtmlPhoneticsAndDuetRolesSurvivePronunciationAttachment() {
+        val existing = renderLine(1_000, 2_000)
+        val next = SyncedLine("Next", null, 1_500, 2_500)
+        val result = attachPhonetics(SyncedLyrics(lines = listOf(existing, next)), "[00:01.00]replacement")
+        assertSame(existing, result.lines.first())
+        assertSame(next, result.lines[1])
+
+        val words = LyricData(
+            isVerbatim = true, source = LyricSource.QQMusic,
+            lyricLine = attachPhonetics(
+                QRCParser.parse("[1000,1000]First(1000,1000)\n[3000,1000]Second(3000,1000)", null),
+                "[1000,1000]first(1000,1000)\n[3000,1000]second(3000,1000)",
+            ),
+        )
+        val aligned = DuetDetector().alignExisting(words, "[00:01.00]Alice: First\n[00:03.00]Bob: Second")
+        assertTrue(aligned.isVerbatim)
+        assertEquals(listOf("first", "second"), aligned.lyricLine.lines.map { (it as KaraokeLine).phonetic })
+        assertEquals(
+            listOf(KaraokeAlignment.Start, KaraokeAlignment.End),
+            aligned.lyricLine.lines.map { (it as KaraokeLine).alignment },
+        )
+    }
+
+    @Test
     fun cachedWordLyricsNeverRegressToNetEaseLineLyrics() {
         val cached = qqLyrics(translation = "Translation")
         val neteaseLines = LyricData(

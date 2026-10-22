@@ -64,6 +64,7 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.LyricCandidate
 import com.ljyh.mei.ui.model.LyricSource
+import com.ljyh.mei.ui.model.LyricVariant
 import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.TimeUtils.formatSeconds
 import kotlin.math.abs
@@ -311,10 +312,18 @@ private fun LyricCandidateItem(
         LyricSource.AM -> R.drawable.am to R.string.lyric_selection_source_am
         LyricSource.Empty, LyricSource.Loading -> R.drawable.empty to R.string.lyric_selection_source_other
     }
+    val versionName = candidate.variant?.let { variant ->
+        stringResource(when (variant) {
+            LyricVariant.AppleMusic -> R.string.lyric_version_ttml
+            LyricVariant.NeteaseYrc, LyricVariant.QqQrc -> R.string.lyric_version_word
+            LyricVariant.NeteaseLrc, LyricVariant.QqLrc -> R.string.lyric_version_line
+        })
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("lyric-candidate-${candidate.key}")
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -340,7 +349,10 @@ private fun LyricCandidateItem(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (isHighlyRecommended) {
+                if (candidate.isSelected) {
+                    Spacer(Modifier.width(8.dp))
+                    SfIcon("checkmark", stringResource(R.string.lyric_version_selected), size = 16.dp)
+                } else if (isHighlyRecommended && candidate.variant == null) {
                     Spacer(Modifier.width(8.dp))
                     Surface(color = MaterialTheme.colorScheme.primary, shape = ContinuousRoundedRectangle(4.dp)) {
                         Text(
@@ -360,12 +372,22 @@ private fun LyricCandidateItem(
                     modifier = Modifier.size(14.dp),
                 )
                 Text(
-                    text = listOf(candidate.artist, candidate.album).filter(String::isNotBlank).joinToString(" · "),
+                    text = if (versionName != null) "${stringResource(sourceName)} · $versionName" else
+                        listOf(candidate.artist, candidate.album).filter(String::isNotBlank).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = secondaryColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
+                )
+            }
+            if (candidate.preview.isNotBlank()) {
+                Text(
+                    text = candidate.preview,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalGlassColors.current.secondaryContent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

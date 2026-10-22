@@ -24,7 +24,19 @@ data class LyricCandidate(
     val coverUrl: String,
     val durationMs: Long,
     val qqSong: SearchResult.Request.Data.Body.ItemSong? = null,
+    val variant: LyricVariant? = null,
+    val preview: String = "",
+    val isSelected: Boolean = false,
 )
+
+/** Stable per-song choices; a null variant retains the legacy source-only preference. */
+enum class LyricVariant(val source: LyricSource) {
+    AppleMusic(LyricSource.AM),
+    NeteaseYrc(LyricSource.NetEaseCloudMusic),
+    NeteaseLrc(LyricSource.NetEaseCloudMusic),
+    QqQrc(LyricSource.QQMusic),
+    QqLrc(LyricSource.QQMusic),
+}
 
 sealed class LyricSourceData(val source: LyricSource, val priority: Int) {
     data class NetEase(val lyric: Lyric) : LyricSourceData(LyricSource.NetEaseCloudMusic, 2)

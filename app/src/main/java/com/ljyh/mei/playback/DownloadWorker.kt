@@ -28,7 +28,6 @@ import com.ljyh.mei.utils.detectAudioFileFormat
 import com.ljyh.mei.utils.localAudioPublicationMutex
 import com.ljyh.mei.utils.LyricFetcher
 import com.ljyh.mei.utils.SongMate
-import com.ljyh.mei.utils.StringUtils.specialReplace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.coroutineScope
@@ -124,7 +123,7 @@ class DownloadWorker(
         val db = AppDatabase.getDatabase(applicationContext)
         val totalCount = songIds.size
 
-        val sanitizedPlaylistName = specialReplace(playlistName).trim()
+        val sanitizedPlaylistName = DownloadFileNames.playlistName(playlistName)
         val configuredRoot = downloadPath.trim().trim('/').ifBlank { "Music/Mei" }
         val relativePath = "$configuredRoot/$sanitizedPlaylistName"
         val tempDir = File(applicationContext.cacheDir, "download")
@@ -232,7 +231,7 @@ class DownloadWorker(
             val format = checkNotNull(detectAudioFileFormat(tempFile)) {
                 "Unsupported or malformed downloaded audio"
             }
-            val fileName = "${specialReplace("${task.songTitle} - ${task.songArtist}")}.${format.extension}"
+            val fileName = "${DownloadFileNames.songBaseName(task.songTitle, task.songArtist)}.${format.extension}"
             val lyric = async { LyricFetcher.fetchBestLyric(songId) }
             val cover = async { if (task.songCover.isNotBlank()) ImageUtils.downloadImageBytes(task.songCover) else null }
             try {

@@ -111,7 +111,7 @@ class LibraryViewModel @Inject constructor(
                     )
                 }
                 if (activeAccount != account) return@launch
-                localPlaylistRepository.insertPlaylists(mapped)
+                localPlaylistRepository.mergeRemotePlaylists(mapped)
                 if (activeAccount != account) return@launch
                 _playlists.value = previous.append(
                     LibraryCollectionPage(mapped, page.nextOffset, page.hasMore), Playlist::id,

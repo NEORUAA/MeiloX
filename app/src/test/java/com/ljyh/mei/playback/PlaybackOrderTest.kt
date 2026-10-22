@@ -4,14 +4,45 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.source.ShuffleOrder
+import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import java.lang.reflect.Proxy
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackOrderTest {
+    @Test
+    fun visibleListSelectionCorrectsAStaleIndexAndKeepsItsPlaylistSource() {
+        val source = PlaylistQueueSource(42L, "visible-list")
+        val queue = ListQueue(
+            id = "visible", title = "Visible playlist", items = listOf("10" to null, "20" to null),
+            position = 5_000, playlistSource = source,
+        )
+        val selected = requireNotNull(queue.startingAt("20"))
+        assertEquals("visible", selected.id)
+        assertEquals("Visible playlist", selected.title)
+        assertEquals(1, selected.startIndex)
+        assertEquals(0, selected.position)
+        assertEquals(2, selected.totalCount)
+        assertEquals(source, selected.playlistSource)
+    }
+
+    @Test
+    fun visibleListSelectionKeepsTheClickedDuplicateAndItsRequestedPosition() {
+        val queue = ListQueue(
+            id = "duplicates", items = listOf("10" to null, "20" to null, "10" to null),
+            startIndex = 2, position = 9_000,
+        )
+        assertSame(queue, queue.startingAt("10"))
+        assertNull(queue.startingAt("missing"))
+        assertNull(ListQueue("empty", items = emptyList()).startingAt("10"))
+    }
+
     @Test
     fun timelineTraversalUsesShuffleOrderAndIgnoresRepeatMode() {
         val timeline = OrderedTimeline(listOf(2, 0, 3, 1))

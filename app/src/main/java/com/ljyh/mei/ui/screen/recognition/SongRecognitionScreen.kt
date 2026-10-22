@@ -119,7 +119,12 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val media = song.asMediaMetadata().toMediaItem()
-                    playerConnection?.playQueue(ListQueue("recognition", recognitionTitle, listOf(media.mediaId to media)))
+                    val lastPosition = song.durationMs.takeIf { it > 0 }?.minus(1) ?: Int.MAX_VALUE.toLong()
+                    playerConnection?.playQueue(ListQueue(
+                        "recognition", recognitionTitle, listOf(media.mediaId to media),
+                        position = (song.startTimeMs ?: 0L)
+                            .coerceIn(0L, minOf(lastPosition, Int.MAX_VALUE.toLong())).toInt(),
+                    ))
                 },
             ) {
                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {

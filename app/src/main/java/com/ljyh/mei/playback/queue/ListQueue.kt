@@ -23,6 +23,14 @@ class ListQueue(
     override val loadedCount: Int = items.size
     override val preloadItem: String? = null
 
+    /** Keep the visible list and its source when selecting a track, including duplicate IDs. */
+    fun startingAt(trackId: String): ListQueue? {
+        if (items.getOrNull(startIndex)?.first == trackId) return this
+        val index = items.indexOfFirst { it.first == trackId }
+        if (index < 0) return null
+        return ListQueue(id, title, items, startIndex = index, playlistSource = playlistSource)
+    }
+
     private val _state = MutableStateFlow<Queue.QueueState>(Queue.QueueState.Idle)
     override val state: StateFlow<Queue.QueueState> = _state
 

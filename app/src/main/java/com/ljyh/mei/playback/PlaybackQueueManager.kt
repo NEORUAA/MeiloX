@@ -32,7 +32,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 import timber.log.Timber
 
 @OptIn(UnstableApi::class)
@@ -49,7 +48,8 @@ class PlaybackQueueManager(
 
     private val TAG = "QueueManager"
     private val _queueState = MutableStateFlow<QueueState>(QueueState.Idle)
-    private val loadingIds = ConcurrentHashMap.newKeySet<String>()
+    private val loadingIds = mutableMapOf<String, Long>()
+    private var released = false
     private var activeQueueBuildJob: Job? = null
     private var pendingSimilarGeneration: Long? = null
     private var queueBuildGeneration = 0L
@@ -518,6 +518,7 @@ class PlaybackQueueManager(
         queue: Queue,
         startInShuffleMode: Boolean = false,
         playWhenReady: Boolean = true,
+        repeatMode: Int = Player.REPEAT_MODE_ALL,
     ) {
         cancelServerShuffle()
         queueSelectionJob?.cancel()
@@ -581,7 +582,7 @@ class PlaybackQueueManager(
                 playlistSource = queue.playlistSource
                 serverShuffleRequested = false
 
-                player.repeatMode = Player.REPEAT_MODE_ALL
+                player.repeatMode = repeatMode
                 player.prepare()
 
                 // 如果需要，再开启随机 此时当前播放的歌曲已经定下来了，ExoPlayer 只会打乱"后面"的歌
@@ -674,13 +675,14 @@ class PlaybackQueueManager(
     private fun checkAndLoadMetadata(windowSize: Int = 3) {
         scope.launch(Dispatchers.Main) {
             // 基础状态检查 确保线程存活且列表不为空
-            if (player.mediaItemCount == 0) return@launch
+            if (released || player.mediaItemCount == 0) return@launch
 
             val timeline = player.currentTimeline
             if (timeline.isEmpty) return@launch
             if (!player.applicationLooper.thread.isAlive) return@launch
 
             val currentIndex = player.currentMediaItemIndex
+            if (currentIndex !in 0 until player.mediaItemCount) return@launch
             val indicesToCheck = mutableSetOf<Int>()
             indicesToCheck.add(currentIndex)
 
@@ -715,67 +717,52 @@ class PlaybackQueueManager(
                 }
             }
 
-            // 3. 筛选需要加载的 ID
-            val itemsNeedLoading = indicesToCheck.mapNotNull { index ->
-                if (index < 0 || index >= player.mediaItemCount) return@mapNotNull null
+            loadMetadataForIndices(indicesToCheck)
+        }
+    }
 
-                val item = player.getMediaItemAt(index)
-                val id = item.mediaId
+    /** Visible rows identify queue entries, not raw indices or decorative section headers. */
+    fun loadMetadataForQueueEntries(entryIds: List<String>): Job {
+        val requestedEntries = entryIds.toSet()
+        return scope.launch(Dispatchers.Main) {
+            if (released || requestedEntries.isEmpty()) return@launch
+            loadMetadataForIndices((0 until player.mediaItemCount).filter { index ->
+                player.getMediaItemAt(index).queueEntryId in requestedEntries
+            })
+        }
+    }
 
-                // Resolve entries without a playable local configuration, including placeholders.
-                if (needsMetadataHydration(item) && !loadingIds.contains(id)) {
-                    id
-                } else null
-            }.distinct()
-
-            if (itemsNeedLoading.isEmpty()) return@launch
-
-            loadingIds.addAll(itemsNeedLoading)
-
-            // IO 线程加载数据
-            val loadedItems = try {
-                withContext(Dispatchers.IO) {
-                    loadSongDetails(itemsNeedLoading)
-                }
-            } catch (e: CancellationException) {
-                loadingIds.removeAll(itemsNeedLoading.toSet())
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Fetch Metadata Failed", e)
-                loadingIds.removeAll(itemsNeedLoading.toSet())
-                emptyList()
+    private suspend fun loadMetadataForIndices(indices: Collection<Int>) {
+        if (released) return
+        val generation = queueBuildGeneration
+        val ids = indices.mapNotNull { index ->
+            if (index !in 0 until player.mediaItemCount) return@mapNotNull null
+            val item = player.getMediaItemAt(index)
+            item.mediaId.takeIf {
+                needsMetadataHydration(item) && loadingIds[it] != generation
             }
+        }.distinct()
+        if (ids.isEmpty()) return
+        ids.forEach { loadingIds[it] = generation }
+        try {
+            val loadedById = loadSongDetails(ids).associateBy(MediaItem::mediaId)
+            currentCoroutineContext().ensureActive()
+            if (released || generation != queueBuildGeneration || loadedById.isEmpty()) return
 
-            // Also clear IDs omitted by a partial response; otherwise a failed entry would
-            // remain marked forever and never be retried.
-            loadingIds.removeAll(itemsNeedLoading.toSet())
-
-            // 回到主线程更新
-            if (loadedItems.isNotEmpty()) {
-                loadingIds.removeAll(loadedItems.map { it.mediaId }.toSet())
-
-                // 再次检查状态，防止异步期间 Player 被释放
-                if (player.mediaItemCount == 0) return@launch
-                // 为了性能，我们只遍历我们关心的那几个位置（indicesToCheck），但是必须做 Double Check
-                indicesToCheck.forEach { index ->
-                    // 索引防越界
-                    if (index >= 0 && index < player.mediaItemCount) {
-                        val currentItem = player.getMediaItemAt(index)
-
-                        // 查找这个位置的 ID 是否有对应的新数据
-                        val newItem = loadedItems.find { it.mediaId == currentItem.mediaId }
-
-                        // 只有当 ID 匹配，且当前确实是占位符时才替换
-                        // 这样即使 index 错位了（比如变成了别的歌），因为 ID 不匹配，也不会错误替换
-                        if (newItem != null) {
-                            // 只有当它是占位符，或者我们要强制刷新时才替换
-                            if (isPlaceholderMediaItem(currentItem)) {
-                                player.replaceMediaItem(index, newItem)
-                            }
-                        }
-                    }
+            // Reordering can happen while the request runs. Match current IDs and resolve
+            // duplicate occurrences together, preserving each entry's independent identity.
+            for (index in 0 until player.mediaItemCount) {
+                val currentItem = player.getMediaItemAt(index)
+                val loaded = loadedById[currentItem.mediaId] ?: continue
+                if (needsMetadataHydration(currentItem)) {
+                    val entryId = currentItem.queueEntryId
+                    player.replaceMediaItem(index, if (entryId == null) loaded else loaded.withQueueEntryId(entryId))
                 }
             }
+        } finally {
+            // Partial responses must remain retryable. A stale request must not clear a
+            // newer queue's in-flight request for the same song.
+            ids.forEach { if (loadingIds[it] == generation) loadingIds.remove(it) }
         }
     }
 
@@ -846,6 +833,7 @@ class PlaybackQueueManager(
     }
 
     fun release() {
+        released = true
         cancelActiveQueueBuild()
         (player as? StableDeckPlayer)?.onQueueEdited = null
         (player as? StableDeckPlayer)?.onSeekRequested = null

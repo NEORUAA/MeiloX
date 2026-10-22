@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +27,9 @@ import com.ljyh.mei.ui.glass.IosModalSheet
 import com.ljyh.mei.ui.glass.IosPopupMenu
 import com.ljyh.mei.ui.glass.IosSheetTopToolbar
 import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
+import com.ljyh.mei.ui.glass.IosSheetButton
+import com.ljyh.mei.ui.glass.IosReorderableGroup
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -43,12 +49,26 @@ fun MoreActionsSheet(
     val sortOrder by viewModel.moreSortOrder.collectAsState()
     val moreActions by viewModel.sortedMoreActions.collectAsState()
     var showSortOptions by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf<List<MoreAction>?>(null) }
 
     IosModalSheet(
         onDismissRequest = onDismissRequest,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            IosSheetTopToolbar(
+            if (draft != null) IosSheetTopToolbar(
+                title = stringResource(R.string.more_actions_order_title),
+                navigation = {
+                    IosSheetTopToolbarButton(onClick = { draft = null }) {
+                        SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
+                    }
+                },
+                actions = {
+                    IosSheetButton(onClick = {
+                        draft?.let(viewModel::saveMoreActionOrder)
+                        draft = null
+                    }) { Text(stringResource(R.string.more_actions_order_done)) }
+                },
+            ) else IosSheetTopToolbar(
                 title = stringResource(R.string.more_actions_title),
                 navigation = onFindLyrics?.let { findLyrics ->
                     {
@@ -67,7 +87,7 @@ fun MoreActionsSheet(
                     IosPopupMenu(
                         expanded = showSortOptions,
                         onExpandedChange = { showSortOptions = it },
-                        itemCount = 2,
+                        itemCount = 4,
                         keepAnchorVisible = false,
                         anchor = { openMenu ->
                             IosSheetTopToolbarButton(
@@ -98,6 +118,20 @@ fun MoreActionsSheet(
                                 close()
                             },
                         )
+                        SortOptionMenuItem(
+                            title = stringResource(R.string.more_actions_sort_custom),
+                            selected = sortOrder == SortOrder.CUSTOM,
+                            backdrop = childBackdrop,
+                            onClick = {
+                                viewModel.setMoreSortOrder(SortOrder.CUSTOM)
+                                close()
+                            },
+                        )
+                        IosMenuItem(
+                            title = stringResource(R.string.more_actions_order_title),
+                            systemName = "line.3.horizontal", backdrop = childBackdrop,
+                            onClick = { draft = moreActions.toList(); close() },
+                        )
                     }
                 },
             )
@@ -111,7 +145,21 @@ fun MoreActionsSheet(
                 verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 item {
-                    IosGroupedList {
+                    val editing = draft
+                    if (editing != null) {
+                        IosReorderableGroup(
+                            items = editing,
+                            onReorder = { draft = it },
+                            dragHandleContentDescription = stringResource(R.string.reorder_drag_handle),
+                            moveUpLabel = stringResource(R.string.move_up),
+                            moveDownLabel = stringResource(R.string.move_down),
+                        ) { action ->
+                            SfIcon(action.systemName, null, tint = LocalGlassColors.current.accent)
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(action.labelRes), modifier = Modifier.weight(1f),
+                                color = LocalGlassColors.current.content)
+                        }
+                    } else IosGroupedList {
                         moreActions.forEachIndexed { index, action ->
                             IosListRow(
                                 title = stringResource(action.labelRes),

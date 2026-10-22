@@ -43,6 +43,7 @@ import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SearchResult
 import com.ljyh.mei.data.model.api.SearchSuggest
 import com.ljyh.mei.data.model.api.SubscribePlaylist
+import com.ljyh.mei.data.model.api.UpdatePlaylistTrackOrder
 import com.ljyh.mei.data.model.weapi.Comment
 import com.ljyh.mei.data.model.weapi.Like
 import com.ljyh.mei.data.model.weapi.LikeResult
@@ -64,13 +65,19 @@ interface ApiService {
     * 获取歌单详情
     * */
     @POST("/api/v6/playlist/detail")
-    suspend fun getPlaylistDetail(@Body body: GetPlaylistDetail): PlaylistDetail
+    suspend fun getPlaylistDetail(
+        @Body body: GetPlaylistDetail,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
+    ): PlaylistDetail
 
     /*
     * 获取歌曲详情
     * */
     @POST("/api/v3/song/detail")
-    suspend fun getSongDetail(@Body body: GetSongDetails): Tracks
+    suspend fun getSongDetail(
+        @Body body: GetSongDetails,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
+    ): Tracks
 
 
     /*
@@ -150,6 +157,12 @@ interface ApiService {
 
     @POST("/api/playlist/manipulate/tracks")
     suspend fun manipulateTracks(@Body body: ManipulateTrack): ManipulateTrackResult
+
+    @POST("/api/playlist/manipulate/tracks")
+    suspend fun updatePlaylistTrackOrder(
+        @Body body: UpdatePlaylistTrackOrder,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String,
+    ): BaseResponse
 
     @POST("/api/playlist/create")
     suspend fun createPlaylist(@Body body: CreatePlaylist): CreatePlaylistResult

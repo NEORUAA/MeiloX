@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,6 +150,15 @@ fun PlayerQueuePage(
 
     LaunchedEffect(active) {
         if (!active) menuExpanded = false
+    }
+
+    LaunchedEffect(playerConnection, active) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.mapNotNull { visible ->
+                entries.firstOrNull { it.key == visible.key }?.mediaItem?.queueEntryId
+            }
+        }.collect { playerConnection.service.queueManager.loadMetadataForQueueEntries(it) }
     }
 
     LaunchedEffect(entries.size, currentQueueIndex, autoplayQueueIndex, autoplayEnabled, active) {

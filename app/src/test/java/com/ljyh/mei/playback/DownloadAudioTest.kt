@@ -1,6 +1,10 @@
 package com.ljyh.mei.playback
 
 import com.ljyh.mei.utils.AudioFileFormat
+import com.ljyh.mei.data.model.Lyric
+import com.ljyh.mei.utils.DownloadLyrics
+import com.ljyh.mei.utils.ImageUtils
+import com.ljyh.mei.utils.readCoverImageInfo
 import com.ljyh.mei.utils.detectAudioFileFormat
 import com.ljyh.mei.utils.SongMate
 import java.io.ByteArrayOutputStream
@@ -8,6 +12,9 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.Base64
 import kotlinx.coroutines.runBlocking
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.flac.FlacTag
@@ -20,6 +27,68 @@ import org.junit.Test
 
 class DownloadAudioTest {
     @Test
+    fun embeddedLyricsPreferReadableSourceLrcAndKeepTranslations() {
+        val lyric = lyric(
+            lrc = "{\"t\":-1,\"c\":[{\"tx\":\"Credits\"}]}\n[00:01.00]First line",
+            tlyric = "[00:01.00]第一句",
+            yrc = "[1000,1000](1000,500,0)Word (1500,500,0)timing",
+        )
+        assertEquals("[00:01.00]First line\n[00:01.00]第一句", DownloadLyrics.select(lyric, ttml))
+        assertEquals("[00:00.00]纯音乐，请欣赏", DownloadLyrics.select(lyric.copy(pureMusic = true), ttml))
+        assertNull(DownloadLyrics.select(lyric(lrc = "{\"t\":-1,\"c\":[{\"tx\":\"Credits\"}]}"), null))
+    }
+
+    @Test
+    fun wordSyncedFallbacksProduceReadableLrcWithTranslation() {
+        assertEquals(
+            "[00:01.000]Down for\n[00:01.000]翻译",
+            DownloadLyrics.select(lyric(yrc = "[1000,2000](1000,500,0)Down (1500,500,0)for",
+                tlyric = "[00:01.00]翻译"), null),
+        )
+        assertEquals("[00:01.000]Hello world\n[00:01.000]你好世界", DownloadLyrics.select(null, ttml))
+        assertNull(DownloadLyrics.select(null, "<html>upstream error</html>"))
+    }
+
+    @Test
+    fun downloadNamesLimitUtf8WithoutSplittingEmojiOrLosingTheArtist() {
+        val playlist = DownloadFileNames.playlistName("专辑🎵".repeat(100))
+        val song = DownloadFileNames.songBaseName("歌曲🎵".repeat(100), "歌手🎤".repeat(100))
+        assertTrue(playlist.toByteArray(Charsets.UTF_8).size <= 120)
+        assertTrue(song.toByteArray(Charsets.UTF_8).size <= 180)
+        assertTrue(song.contains(" - 歌手"))
+        assertEquals(playlist, playlist.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8))
+        assertEquals(song, song.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8))
+        assertEquals("未分类", DownloadFileNames.playlistName(".. \n\u0000"))
+        assertEquals("_CON", DownloadFileNames.playlistName("CON"))
+        assertEquals("A／B＼C", DownloadFileNames.playlistName(" A/B\\C\r\n\u0000. "))
+        assertEquals("未命名歌曲 - 未知歌手", DownloadFileNames.songBaseName("", ""))
+    }
+
+    @Test
+    fun coverReadKeepsOriginalBytesAndBoundsKnownAndUnknownLengths() {
+        val png = coverPng()
+        png.toResponseBody().use { assertArrayEquals(png, ImageUtils.readCoverBytes(it)) }
+        ByteArray(0).toResponseBody().use { assertNull(ImageUtils.readCoverBytes(it)) }
+        val limit = ImageUtils.MAX_COVER_BYTES.toInt()
+        ByteArray(limit + 1).toResponseBody().use { assertNull(ImageUtils.readCoverBytes(it)) }
+        Buffer().write(ByteArray(limit + 1)).asResponseBody(contentLength = -1).use {
+            assertNull(ImageUtils.readCoverBytes(it))
+        }
+        ByteArray(limit).toResponseBody().use { assertEquals(limit, ImageUtils.readCoverBytes(it)?.size) }
+    }
+
+    @Test
+    fun coverHeadersUseActualDimensionsAndRejectTruncatedMetadata() {
+        val png = coverPng()
+        assertEquals("image/png", readCoverImageInfo(png)?.mimeType)
+        assertEquals(16, readCoverImageInfo(png)?.width)
+        assertEquals(16, readCoverImageInfo(png)?.height)
+        assertNull(readCoverImageInfo(png.copyOf(20)))
+        assertNull(readCoverImageInfo(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xc0.toByte(), 0, 8)))
+        assertNull(readCoverImageInfo("not an image".toByteArray()))
+    }
+
+    @Test
     fun writingTagsToFlacNamedMp3PreservesTheAudioAndNativeTags() = runBlocking {
         // A complete 20 ms silent FLAC stream with a small writable padding block.
         val stream = Base64.getDecoder().decode(
@@ -30,12 +99,18 @@ class DownloadAudioTest {
         val file = File.createTempFile("download-tag-", ".mp3")
         try {
             file.writeBytes(original)
-            SongMate.writeTagsWithCoverBytes("Title", "Artist", "Album", null, file.path, "Lyrics")
+            val cover = coverPng()
+            SongMate.writeTagsWithCoverBytes("Title", "Artist", "Album", cover, file.path, "Lyrics")
             assertEquals(AudioFileFormat.FLAC, detectAudioFileFormat(file))
             val audio = AudioFileIO.readAs(file, "flac")
             assertTrue(audio.tag is FlacTag)
             assertEquals("Title", audio.tag.getFirst(FieldKey.TITLE))
             assertEquals("Lyrics", audio.tag.getFirst(FieldKey.LYRICS))
+            assertArrayEquals(cover, audio.tag.firstArtwork?.binaryData)
+            assertEquals("image/png", audio.tag.firstArtwork?.mimeType)
+            assertEquals(3, audio.tag.firstArtwork?.pictureType)
+            assertEquals(16, audio.tag.firstArtwork?.width)
+            assertEquals(16, audio.tag.firstArtwork?.height)
             assertArrayEquals(flacAudioPayload(original), flacAudioPayload(file.readBytes()))
         } finally {
             file.delete()
@@ -127,6 +202,18 @@ class DownloadAudioTest {
     }
 
     private fun flac(): ByteArray = "fLaC".toByteArray() + byteArrayOf(0x80.toByte(), 0, 0, 34) + ByteArray(34)
+
+    private val ttml = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:01.500">Hello  </span><span begin="00:01.500" end="00:02.000">world</span><span ttm:role="x-translation">你好世界</span></p></div></body></tt>"""
+
+    private fun lyric(lrc: String? = null, yrc: String? = null, tlyric: String? = null) = Lyric(
+        code = 200, klyric = null, lrc = lrc?.let { Lyric.Lrc(it, 1) }, qfy = false,
+        romalrc = null, sfy = false, sgc = false, tlyric = tlyric?.let { Lyric.Tlyric(it, 1) },
+        ytlrc = null, yrc = yrc?.let { Lyric.Yrc(it, 1) }, pureMusic = false,
+    )
+
+    private fun coverPng(): ByteArray = Base64.getDecoder().decode(
+        "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAABAAAAAQBPJcTWAAAAGUlEQVR4nGOsZ6hjIAWwkKR6VMOohiGlAQBnBAE7Sw4CqQAAAABJRU5ErkJggg==",
+    )
 
     private fun flacAudioPayload(bytes: ByteArray): ByteArray {
         var offset = 4

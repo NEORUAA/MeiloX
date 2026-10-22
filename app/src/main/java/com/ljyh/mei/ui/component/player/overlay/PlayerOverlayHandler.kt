@@ -69,10 +69,7 @@ class PlayerOverlayHandler(
      * 显示添加到播放列表弹窗
      */
     fun showAddToPlaylist(mediaId: Long) {
-        val uid = stateContainer.playerViewModel.userId
-        if (uid.isNotEmpty()) {
-            stateContainer.playerViewModel.syncUserPlaylists(uid)
-        }
+        stateContainer.playerViewModel.refreshPlaylistChoices()
         _currentOverlay.value = OverlayState.AddToPlaylist(mediaId)
     }
 

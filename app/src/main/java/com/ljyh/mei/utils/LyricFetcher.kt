@@ -1,7 +1,6 @@
 package com.ljyh.mei.utils
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.di.NeteaseInterceptor
 import com.ljyh.mei.playback.DownloadWorker
@@ -34,18 +33,10 @@ object LyricFetcher {
     private val gson = Gson()
 
     suspend fun fetchBestLyric(songId: String): String? = withContext(Dispatchers.IO) {
-        val amll = fetchAMLL(songId)
-        if (!amll.isNullOrBlank()) return@withContext amll
-
-        currentCoroutineContext().ensureActive()
         val netease = fetchNeteaseLyric(songId)
-        val yrc = netease?.yrc?.lyric
-        if (!yrc.isNullOrBlank()) return@withContext yrc
-
-        val lrc = netease?.lrc?.lyric
-        if (!lrc.isNullOrBlank()) return@withContext lrc
-
-        null
+        DownloadLyrics.plainNetEase(netease)?.let { return@withContext it }
+        currentCoroutineContext().ensureActive()
+        DownloadLyrics.select(netease, fetchAMLL(songId))
     }
 
     private suspend fun fetchAMLL(songId: String): String? {

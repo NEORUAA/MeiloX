@@ -2,10 +2,6 @@ package com.ljyh.mei.utils
 
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import coil3.ImageLoader
@@ -16,12 +12,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
-import androidx.core.graphics.createBitmap
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.readDownloadResponse
 import kotlinx.coroutines.CancellationException
+import okhttp3.ResponseBody
+import timber.log.Timber
 
 fun String.smallImage(): String {
     if (this.startsWith("/")) return this
@@ -57,63 +53,34 @@ class CoilImageLoader {
 }
 
 object ImageUtils {
+    internal const val MAX_COVER_BYTES = 8L * 1024 * 1024
     private val httpClient = DownloadWorker.getDownloadClient().newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    suspend fun downloadImageBytes(imageUrl: String): ByteArray? = withContext(Dispatchers.IO) {
+    suspend fun downloadImageBytes(imageUrl: String): ByteArray? = downloadImageBytes(imageUrl, httpClient)
+
+    internal suspend fun downloadImageBytes(imageUrl: String, client: OkHttpClient): ByteArray? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(imageUrl).build()
-            val result = readDownloadResponse(httpClient, request) { response ->
-                if (response.isSuccessful) {
-                    val bytes = response.body.bytes()
-                    if (bytes[1].toInt() == 80) {
-                        pngToJpg(bytes)
-                    } else {
-                        bytes
-                    }
-                } else {
-                    null
-                }
+            readDownloadResponse(client, request) { response ->
+                if (response.isSuccessful) readCoverBytes(response.body) else null
             }
-            result
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.w(e, "Cover download failed")
             null
         }
     }
 
-
-    fun pngToJpg(pngBytes: ByteArray): ByteArray? {
-        return try {
-            // 将PNG字节数组解码为Bitmap
-            val bitmap = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size)
-            if (bitmap != null) {
-                // 创建一个空白的JPEG格式的Bitmap
-                val jpegBitmap =
-                    createBitmap(bitmap.width, bitmap.height, Bitmap.Config.RGB_565)
-
-                // 将PNG内容绘制到JPEG Bitmap上
-                val canvas = Canvas(jpegBitmap)
-                canvas.drawColor(android.graphics.Color.WHITE) // 设置背景为白色
-                val zero = 0
-                canvas.drawBitmap(bitmap, zero.toFloat(), zero.toFloat(), Paint())
-
-                // 将JPEG Bitmap压缩为字节数组
-                val outputStream = ByteArrayOutputStream()
-                jpegBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-                outputStream.toByteArray()
-            } else {
-                // 解码失败
-                ByteArray(0)
-            }
-        } catch (e: java.lang.Exception) {
-            e.printStackTrace()
-            // 处理异常
-            ByteArray(0)
-        }
+    internal fun readCoverBytes(body: ResponseBody): ByteArray? {
+        if (body.contentLength() > MAX_COVER_BYTES) return null
+        val source = body.source()
+        source.request(MAX_COVER_BYTES + 1)
+        val size = source.buffer.size
+        return if (size in 1..MAX_COVER_BYTES) source.buffer.readByteArray() else null
     }
 }

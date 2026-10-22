@@ -19,6 +19,10 @@ import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.DownloadManager
+import com.ljyh.mei.utils.DownloadLyrics
+import com.ljyh.mei.utils.ImageUtils
+import com.ljyh.mei.utils.SongMate
+import com.ljyh.mei.utils.detectAudioFileFormat
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
@@ -37,6 +41,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.tag.FieldKey
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -46,6 +52,60 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DownloadLifecycleInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test fun downloadedTagsKeepPngAndJpegCoversAcrossAudioFormats(): Unit = runBlocking {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        val lyric = checkNotNull(DownloadLyrics.select(null,
+            """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Hello world</span><span ttm:role="x-translation">你好世界</span></p></div></body></tt>"""))
+        assertEquals("[00:01.000]Hello world\n[00:01.000]你好世界", lyric)
+        for (format in listOf("mp3", "flac", "m4a")) {
+            for (imageType in listOf("png", "jpg")) {
+                val file = File.createTempFile("download-tags-", ".download", context.cacheDir)
+                try {
+                    assets.open("download-tags/blank.$format").use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val cover = assets.open("download-tags/cover.$imageType").use { it.readBytes() }
+                    SongMate.writeTagsWithCoverBytes("标题 Title", "Artist", "Album", cover, file.path, lyric)
+                    assertEquals(format, detectAudioFileFormat(file)?.extension)
+                    val saved = AudioFileIO.readAs(file, format).tag
+                    assertEquals("标题 Title", saved.getFirst(FieldKey.TITLE))
+                    assertEquals("Artist", saved.getFirst(FieldKey.ARTIST))
+                    assertEquals("Album", saved.getFirst(FieldKey.ALBUM))
+                    assertEquals(lyric, saved.getFirst(FieldKey.LYRICS))
+                    assertArrayEquals(cover, saved.firstArtwork?.binaryData)
+                    assertEquals(if (imageType == "png") "image/png" else "image/jpeg", saved.firstArtwork?.mimeType)
+                    if (format != "m4a") assertEquals(3, saved.firstArtwork?.pictureType)
+                    if (format == "flac") {
+                        assertEquals(16, saved.firstArtwork?.width)
+                        assertEquals(16, saved.firstArtwork?.height)
+                    }
+                    // Invalid replacement art must leave the previously saved cover intact.
+                    SongMate.writeTagsWithCoverBytes("标题 Title", "Artist", "Album", byteArrayOf(1), file.path, lyric)
+                    assertArrayEquals(cover, AudioFileIO.readAs(file, format).tag.firstArtwork?.binaryData)
+                } finally { file.delete() }
+            }
+        }
+    }
+
+    @Test fun coverDownloadsPreserveOriginalBytesAndCancellation(): Unit = runBlocking {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        val file = File.createTempFile("download-cover-", ".png", context.cacheDir)
+        try {
+            val cover = assets.open("download-tags/cover.png").use { it.readBytes() }
+            file.writeBytes(cover)
+            FixtureAudio(file).use { server ->
+                assertArrayEquals(cover, ImageUtils.downloadImageBytes(server.url, OkHttpClient()))
+                withTimeout(5_000) { server.sent.await() }
+            }
+        } finally { file.delete() }
+        StalledAudio().use { server ->
+            val job = async(Dispatchers.IO) { ImageUtils.downloadImageBytes(server.url, OkHttpClient()) }
+            assertTrue(server.entered.await(5, TimeUnit.SECONDS))
+            withTimeout(3_000) { job.cancelAndJoin() }
+            assertTrue(server.closed.await(3, TimeUnit.SECONDS))
+        }
+    }
 
     @Test fun retiredRequestsCannotChangePausedReplacedOrDeletedRows() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()

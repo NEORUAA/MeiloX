@@ -73,6 +73,7 @@ fun SearchResultScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val searchState by viewModel.searchResult.collectAsState()
+    val searchContext = LocalContext.current
     val selectedType by viewModel.currentTab.collectAsState()
     val playerConnection = LocalPlayerConnection.current
     val navController = LocalNavController.current
@@ -83,6 +84,9 @@ fun SearchResultScreen(
     // Keep initialization and the ViewModel's tab/cache semantics unchanged.
     LaunchedEffect(query, type) {
         viewModel.onSearchInit(query, type)
+    }
+    LaunchedEffect(query) {
+        searchContext.recordSearchHistory(query)
     }
     LaunchedEffect(query, selectedType) {
         listState.scrollToItem(0)

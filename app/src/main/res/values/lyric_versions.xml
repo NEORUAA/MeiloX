@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyric_version_word">Word by word</string>
+    <string name="lyric_version_line">Line by line</string>
+    <string name="lyric_version_ttml">TTML</string>
+    <string name="lyric_version_selected">Selected lyric version</string>
+</resources>

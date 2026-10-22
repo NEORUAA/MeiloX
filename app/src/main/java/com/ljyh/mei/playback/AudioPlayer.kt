@@ -3,21 +3,15 @@ package com.ljyh.mei.playback
 
 import android.animation.Animator
 import android.animation.ValueAnimator
-import android.media.MediaPlayer
 import android.view.animation.LinearInterpolator
 import androidx.media3.common.Player
 
 /**
- * 音频播放器（部分源码，淡入淡出部分）
- * 由 MediaPlayer 拓展，使用很简单
- *
- * AudioPlayer (Part of the source code)
- * The android.media.MediaPlayer extensions for audio play.
+ * Controls Media3 volume fades without allocating an unused platform MediaPlayer.
  *
  * These fades observe playWhenReady changes; playback commands belong to the caller.
  * Reissuing pause() after audio focus loss changes the reason to USER_REQUEST, which
  * Media3 corrects back to AUDIO_FOCUS_LOSS and can trigger an endless callback loop.
- * It is very easy to use.
  *
  * @version 20210730
  * @author Moriafly
@@ -26,9 +20,10 @@ import androidx.media3.common.Player
 class AudioPlayer(
     private val player: Player,
     private val shouldSuppressVolumeWrites: () -> Boolean = { false },
-): MediaPlayer() {
+) {
 
     private var volume = player.volume
+    private var released = false
 
     var volumeSmoothDuration: Long = 500L
         set(value) {
@@ -38,7 +33,7 @@ class AudioPlayer(
         }
 
     private fun setExoPlayerVolume(volume: Float) {
-        if (shouldSuppressVolumeWrites()) return
+        if (released || shouldSuppressVolumeWrites()) return
         player.volume = volume
     }
 
@@ -120,7 +115,8 @@ class AudioPlayer(
 
     private var isStartSmoothing: Boolean = false
 
-    override fun isPlaying(): Boolean {
+    fun isPlaying(): Boolean {
+        if (released) return false
         if (isPauseSmoothing) {
             return false
         }
@@ -131,6 +127,7 @@ class AudioPlayer(
     }
 
     fun pauseSmooth() {
+        if (released) return
         val currentVolume = player.volume
         startSmoothValueAnimator.cancel()
         pauseSmoothValueAnimator.cancel()
@@ -147,6 +144,7 @@ class AudioPlayer(
     }
 
     fun startSmooth() {
+        if (released) return
         val currentVolume = player.volume
         pauseSmoothValueAnimator.cancel()
         startSmoothValueAnimator.cancel()
@@ -162,22 +160,21 @@ class AudioPlayer(
         startSmoothValueAnimator.start()
     }
 
-    override fun setVolume(leftVolume: Float, rightVolume: Float) {
-        super.setVolume(
-            leftVolume * leftChannel,
-            rightVolume * rightChannel
-        )
-
+    fun setVolume(leftVolume: Float, @Suppress("UNUSED_PARAMETER") rightVolume: Float) {
         volume = leftVolume
         setExoPlayerVolume(leftVolume)
     }
 
-    override fun reset() {
+    fun reset() {
         pauseSmoothValueAnimator.cancel()
         startSmoothValueAnimator.cancel()
         isPauseSmoothing = false
         isStartSmoothing = false
-        super.reset()
+    }
+
+    fun release() {
+        released = true
+        reset()
     }
 
 }

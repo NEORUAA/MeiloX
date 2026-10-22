@@ -122,17 +122,21 @@ class PlayerConnection(
         return mediaMetadata.value?.id.toString() == id && isPlaying.value
     }
     fun onTrackClicked(trackId: String, buildQueue: () -> ListQueue?) {
-        val foundIndex = player.mediaItems.indexOfFirst { it.mediaId == trackId }
-        val foundItem = player.mediaItems.getOrNull(foundIndex)
-        if (foundItem != null && isPlayableMediaItem(foundItem)) {
-            player.seekToDefaultPosition(foundIndex)
-            player.play()
-        } else {
-            buildQueue()?.let {
-                playQueue(it)
-            }
-
+        // A song may also exist in a restored or unrelated queue. The tapped list owns
+        // this playback intent, while the user's current playback modes still apply.
+        val selectedQueue = buildQueue()?.startingAt(trackId)
+        if (selectedQueue != null) {
+            playQueue(selectedQueue, repeatMode = player.repeatMode)
+            return
         }
+        // A partially loaded list can still start the exact song. Reuse known local
+        // metadata without retaining the old queue or resolving a local ID online.
+        val knownItem = player.mediaItems.firstOrNull { it.mediaId == trackId }
+        if (knownItem?.let(::isPlayableMediaItem) != true && (trackId.toLongOrNull() ?: 0L) <= 0L) return
+        playQueue(
+            ListQueue(id = "track_$trackId", items = listOf(trackId to knownItem)),
+            repeatMode = player.repeatMode,
+        )
     }
 
     fun fmStart(firstSongId: String? = null) {
@@ -166,14 +170,14 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue, shuffle: Boolean? = null) {
+    fun playQueue(queue: ListQueue, shuffle: Boolean? = null, repeatMode: Int = REPEAT_MODE_ALL) {
         // 判断当前 UI 上的模式是否是随机模式
-        val startInShuffle = shuffle ?: (repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
+        val startInShuffle = shuffle ?: (this.repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         service.queueTitle = queue.title
         queueTitle.value = queue.title
         // 调用新的 playQueue 方法，传入随机意图
         service.scope.launch {
-            service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle)
+            service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle, repeatMode = repeatMode)
         }
     }
     fun playNext(item: MediaItem) = playNext(listOf(item))

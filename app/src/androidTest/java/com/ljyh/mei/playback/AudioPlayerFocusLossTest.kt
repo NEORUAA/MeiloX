@@ -2,6 +2,7 @@ package com.ljyh.mei.playback
 
 import android.media.AudioManager
 import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingSimpleBasePlayer
@@ -20,6 +21,39 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AudioPlayerFocusLossTest {
+    @Test
+    fun releaseCancelsAnActiveFadeAndIgnoresLateVolumeCommands() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        lateinit var player: ExoPlayer
+        lateinit var fades: AudioPlayer
+        var releasedVolume = 0f
+        val settled = CountDownLatch(1)
+        instrumentation.runOnMainSync {
+            player = ExoPlayer.Builder(instrumentation.targetContext).build()
+            player.volume = 0.35f
+            fades = AudioPlayer(player).apply { volumeSmoothDuration = 100L }
+            fades.startSmooth()
+            fades.release()
+            releasedVolume = player.volume
+            fades.pauseSmooth()
+            fades.startSmooth()
+            fades.setVolume(0f, 0f)
+            Handler(Looper.getMainLooper()).postDelayed({ settled.countDown() }, 200L)
+        }
+        try {
+            assertTrue(settled.await(2, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync {
+                assertEquals(releasedVolume, player.volume, 0.001f)
+                assertFalse(fades.isPlaying())
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                fades.release()
+                player.release()
+            }
+        }
+    }
+
     @Test
     fun audioFocusLossDoesNotCreateAPauseFeedbackLoop() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -95,9 +129,8 @@ class AudioPlayerFocusLossTest {
             }
         } finally {
             instrumentation.runOnMainSync {
-                player.release()
-                fades.reset()
                 fades.release()
+                player.release()
             }
         }
     }

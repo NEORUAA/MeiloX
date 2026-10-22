@@ -12,6 +12,8 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
+import com.ljyh.mei.data.model.PlaylistOrderChangedException
+import com.ljyh.mei.data.model.validatePlaylistTrackOrder
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.BaseMessageResponse
 import com.ljyh.mei.data.model.api.BaseResponse
@@ -26,6 +28,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.data.repository.LibraryCollectionsRepository
+import com.ljyh.mei.data.repository.LibraryAccount
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.utils.dataStore
@@ -38,6 +41,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -62,7 +66,7 @@ class PlaylistViewModel @Inject constructor(
     val apiService: ApiService,
     private val collections: LibraryCollectionsRepository,
 ) : ViewModel() {
-    val userId = AppContext.instance.dataStore[UserIdKey] ?: ""
+    val userId: String get() = AppContext.instance.dataStore[UserIdKey].orEmpty()
 
     fun getCachedColor(url: String) = colorRepository.getFromMemory(url)
 
@@ -73,6 +77,12 @@ class PlaylistViewModel @Inject constructor(
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
     private var playlistDetailRequestGeneration = 0
     private var activePlaylistId: String? = null
+    private val _trackOrder = MutableStateFlow<PlaylistOrderState?>(null)
+    val trackOrder: StateFlow<PlaylistOrderState?> = _trackOrder
+    private var trackOrderGeneration = 0
+    private var trackOrderJob: Job? = null
+    private var trackOrderAccount: LibraryAccount? = null
+    private val attemptedOrderMetadata = mutableSetOf<Long>()
     private val _confirmedSubscription = MutableStateFlow<Boolean?>(null)
     val confirmedSubscription: StateFlow<Boolean?> = _confirmedSubscription
 
@@ -110,7 +120,16 @@ class PlaylistViewModel @Inject constructor(
     private val _deletePlaylist = MutableStateFlow<Resource<BaseMessageResponse>>(Resource.Loading)
     val deletePlaylist: StateFlow<Resource<BaseMessageResponse>> = _deletePlaylist
 
+    init {
+        viewModelScope.launch {
+            collections.accounts.collect { account ->
+                if (trackOrderAccount != null && account != trackOrderAccount) closeTrackOrder()
+            }
+        }
+    }
+
     fun getPlaylistDetail(id: String) {
+        closeTrackOrder()
         if (activePlaylistId != id) {
             activePlaylistId = id
             _confirmedSubscription.value = null
@@ -125,6 +144,138 @@ class PlaylistViewModel @Inject constructor(
             if (result is Resource.Success) {
                 _confirmedSubscription.value = result.data.playlist.subscribed
             }
+        }
+    }
+
+    fun openTrackOrder(id: String) {
+        val displayed = (_playlistDetail.value as? Resource.Success)?.data?.playlist ?: return
+        if (activePlaylistId != id || displayed.Id.toString() != id ||
+            displayed.creator.userId.toString() != userId || _trackOrder.value != null) return
+        val generation = ++trackOrderGeneration
+        val detailGeneration = playlistDetailRequestGeneration
+        _trackOrder.value = PlaylistOrderState(playlistId = id)
+        attemptedOrderMetadata.clear()
+        trackOrderJob = viewModelScope.launch {
+            try {
+                val account = collections.accounts.first() ?: error("NetEase account is not signed in")
+                if (account.userId != displayed.creator.userId.toString()) error("Playlist owner changed")
+                trackOrderAccount = account
+                val detail = repository.loadPlaylistForOrder(id, account.userId.toLong(), account.sessionFingerprint)
+                if (!isTrackOrderCurrent(id, generation, detailGeneration, account)) return@launch
+                val ids = detail.playlist.trackIds.map { it.id }
+                validatePlaylistTrackOrder(ids, ids, ids)
+                _trackOrder.value = PlaylistOrderState(
+                    playlistId = id,
+                    items = playlistOrderItems(ids, detail.playlist.tracks.map { it.toMediaMetadata() }),
+                    originalIds = ids,
+                    loading = false,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (trackOrderGeneration == generation) {
+                    _trackOrder.value = _trackOrder.value?.copy(loading = false, error = PlaylistOrderError.LoadFailed)
+                }
+            }
+        }
+    }
+
+    fun closeTrackOrder() {
+        trackOrderGeneration++
+        trackOrderJob?.cancel()
+        trackOrderJob = null
+        trackOrderAccount = null
+        _trackOrder.value = null
+        attemptedOrderMetadata.clear()
+    }
+
+    fun moveOrderedTrack(from: Int, to: Int) {
+        val state = _trackOrder.value ?: return
+        if (state.loading || state.saving || from !in state.items.indices || to !in state.items.indices) return
+        _trackOrder.value = state.copy(items = state.items.toMutableList().apply { add(to, removeAt(from)) })
+    }
+
+    fun loadVisibleOrderTracks(ids: List<Long>) {
+        val state = _trackOrder.value ?: return
+        val account = trackOrderAccount ?: return
+        if (state.loading || state.saving) return
+        val missing = state.items.asSequence().filter { it.id in ids && it.track == null }
+            .map { it.id }.filter { attemptedOrderMetadata.add(it) }.take(200).toList()
+        if (missing.isEmpty()) return
+        val generation = trackOrderGeneration
+        val detailGeneration = playlistDetailRequestGeneration
+        viewModelScope.launch {
+            try {
+                if (!isTrackOrderCurrent(state.playlistId, generation, detailGeneration, account)) return@launch
+                val tracks = apiService.getSongDetail(
+                    GetSongDetails(missing.joinToString(",")), account.sessionFingerprint,
+                ).songs.associate { it.id to it.toMediaMetadata() }
+                if (!isTrackOrderCurrent(state.playlistId, generation, detailGeneration, account)) return@launch
+                val current = _trackOrder.value ?: return@launch
+                if (!current.saving) _trackOrder.value = current.copy(items = current.items.map {
+                    if (it.track == null) it.copy(track = tracks[it.id]) else it
+                })
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Metadata is optional; unavailable IDs remain in their original order slots.
+            }
+        }
+    }
+
+    fun saveTrackOrder() {
+        val state = _trackOrder.value ?: return
+        val account = trackOrderAccount ?: return
+        if (state.loading || state.saving || state.error == PlaylistOrderError.LoadFailed ||
+            state.error == PlaylistOrderError.PlaylistChanged) return
+        val ids = state.items.map { it.id }
+        if (ids == state.originalIds) { closeTrackOrder(); return }
+        val generation = trackOrderGeneration
+        val detailGeneration = playlistDetailRequestGeneration
+        val saving = state.copy(saving = true, error = null)
+        _trackOrder.value = saving
+        trackOrderJob = viewModelScope.launch {
+            try {
+                if (!isTrackOrderCurrent(state.playlistId, generation, detailGeneration, account)) return@launch
+                repository.updatePlaylistTrackOrder(
+                    id = state.playlistId,
+                    originalIds = state.originalIds,
+                    orderedIds = ids,
+                    ownerUserId = account.userId.toLong(),
+                    expectedSession = account.sessionFingerprint,
+                    isCurrent = { _trackOrder.value === saving && activePlaylistId == state.playlistId &&
+                        playlistDetailRequestGeneration == detailGeneration },
+                )
+                if (!isTrackOrderCurrent(state.playlistId, generation, detailGeneration, account)) return@launch
+                // Gson can populate legacy non-null DTO fields with null. Refresh the server
+                // response instead of copying the entire DTO to fabricate the saved order.
+                trackOrderJob = null
+                getPlaylistDetail(state.playlistId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (trackOrderGeneration == generation) {
+                    _trackOrder.value = _trackOrder.value?.copy(
+                        saving = false,
+                        error = if (error is PlaylistOrderChangedException) PlaylistOrderError.PlaylistChanged
+                            else PlaylistOrderError.SaveFailed,
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun isTrackOrderCurrent(
+        id: String,
+        generation: Int,
+        detailGeneration: Int,
+        account: LibraryAccount,
+    ): Boolean = trackOrderGeneration == generation && activePlaylistId == id &&
+        playlistDetailRequestGeneration == detailGeneration && trackOrderAccount == account &&
+        collections.accounts.first() == account
+
+    fun recordPlaylistPlayback(id: String) {
+        viewModelScope.launch {
             localPlaylistRepository.touchPlaylist(id, System.currentTimeMillis())
         }
     }
@@ -138,28 +289,18 @@ class PlaylistViewModel @Inject constructor(
             is Resource.Success -> {
                 val playlist = playlistDetailResource.data.playlist
 
-                // 【本人歌单】直接全量，不分页
-                if (playlist.name.endsWith("喜欢的音乐")) {
-                    flowOf(
-                        PagingData.from(
-                            playlist.tracks
-                                .map { it.toMediaMetadata() }
-                                .filterNot { it.id in removedTrackIds }
+                // Every playlist follows its canonical IDs, including liked-song playlists.
+                Pager(
+                    config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+                    pagingSourceFactory = {
+                        PlaylistTrackSource(
+                            apiService = apiService,
+                            firstData = playlist.tracks,
+                            ids = playlist.trackIds.map { it.id.toString() }
                         )
-                    )
-                } else {
-                    Pager(
-                        config = PagingConfig(pageSize = 20, enablePlaceholders = false),
-                        pagingSourceFactory = {
-                            PlaylistTrackSource(
-                                apiService = apiService,
-                                firstData = playlist.tracks,
-                                ids = playlist.trackIds.map { it.id.toString() }
-                            )
-                        }
-                    ).flow.map { pagingData ->
-                        pagingData.filter { track -> track.id !in removedTrackIds }
                     }
+                ).flow.map { pagingData ->
+                    pagingData.filter { track -> track.id !in removedTrackIds }
                 }
             }
             else -> flowOf(PagingData.empty())
@@ -234,7 +375,7 @@ class PlaylistViewModel @Inject constructor(
                             localPlayCount = existing?.localPlayCount ?: 0
                         )
                     }
-                    localPlaylistRepository.insertPlaylists(playlistsToInsert)
+                    localPlaylistRepository.mergeRemotePlaylists(playlistsToInsert)
                     val updated = localPlaylistRepository.getPlaylistByAuthor(account.userId)
                     if (collections.accounts.first() == account) _playlist.value = updated
                 } catch (error: CancellationException) {

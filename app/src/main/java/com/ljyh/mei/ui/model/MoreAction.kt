@@ -47,4 +47,14 @@ enum class MoreAction(
 enum class SortOrder {
     FREQUENCY, // 常用的靠前
     RISK, // 低风险的靠前
+    CUSTOM,
+}
+
+internal fun resolveMoreActionOrder(order: SortOrder, savedIds: List<String>): List<MoreAction> = when (order) {
+    SortOrder.FREQUENCY -> MoreAction.entries.sortedByDescending { it.frequency }
+    SortOrder.RISK -> MoreAction.entries.sortedBy { it.riskLevel }
+    SortOrder.CUSTOM -> {
+        val known = savedIds.mapNotNull(MoreAction::fromId).distinct()
+        known + MoreAction.entries.filterNot(known::contains)
+    }
 }

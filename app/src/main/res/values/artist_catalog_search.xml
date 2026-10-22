@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="artist_songs_search">Search songs or albums</string>
+    <string name="artist_albums_search">Search albums</string>
+    <string name="artist_catalog_search_progress">%1$d matches in %2$d items checked. Searching…</string>
+    <string name="artist_catalog_search_partial">%1$d matches in %2$d items checked. More items may match.</string>
+    <string name="artist_catalog_search_complete">%1$d matches in %2$d items.</string>
+    <string name="artist_catalog_search_continue">Search more items</string>
+</resources>

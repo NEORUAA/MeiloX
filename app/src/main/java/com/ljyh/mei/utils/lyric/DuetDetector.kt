@@ -61,6 +61,13 @@ class DuetDetector @Inject constructor() {
         return hasStandaloneRoles(lrc) || hasRolePrefixes(lrc)
     }
 
+    /** Retain an explicitly selected format and its phonetics while assigning singer roles. */
+    internal fun alignExisting(data: LyricData, lrc: String): LyricData {
+        if (data.source == LyricSource.AM || !isDuetLikely(lrc)) return data
+        val roles = detectDuetLocally(lrc) ?: return data
+        return data.copy(lyricLine = applyDuetAlignment(data.lyricLine, roles, lrc))
+    }
+
     private fun detectDuetLocally(lrc: String): List<DuetSegment>? {
         if (hasStandaloneRoles(lrc)) {
             detectStandaloneSegments(lrc)?.let { return it }

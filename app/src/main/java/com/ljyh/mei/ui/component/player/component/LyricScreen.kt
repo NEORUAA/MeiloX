@@ -76,6 +76,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.AccompanimentLyricTextBoldKey
 import com.ljyh.mei.constants.AccompanimentLyricTextSizeKey
 import com.ljyh.mei.constants.LyricTextSize
+import com.ljyh.mei.constants.LyricRomanizationEnabledKey
 import com.ljyh.mei.constants.NormalLyricTextBoldKey
 import com.ljyh.mei.constants.NormalLyricTextSizeKey
 import com.ljyh.mei.playback.PlayerConnection
@@ -141,6 +142,7 @@ fun LyricScreen(
         LyricTextSize.Size18
     )
     val (translationLyricTextBold, _) = rememberPreference(AccompanimentLyricTextBoldKey, true)
+    val (romanizationEnabled, _) = rememberPreference(LyricRomanizationEnabledKey, true)
     val manualScroll = remember(lyricData.lyricLine, playerConnection.player) {
         LyricManualScrollState()
     }
@@ -360,6 +362,7 @@ fun LyricScreen(
                     key(keepAliveZonePx) {
                         Box(Modifier.fillMaxSize().padding(contentPadding)) {
                             PlayerLyricsView(
+                                showPhonetic = romanizationEnabled,
                                 listState = listState,
                                 isManualScrolling = manualScroll.isBrowsing && listState.isScrollInProgress,
                                 useBlurEffect = !manualScroll.isBrowsing || focusLineVisible,

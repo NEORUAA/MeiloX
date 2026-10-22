@@ -1,0 +1,5 @@
+<resources>
+    <string name="more_actions_order_title">編輯順序</string>
+    <string name="more_actions_order_done">完成</string>
+    <string name="more_actions_sort_custom">自訂順序</string>
+</resources>

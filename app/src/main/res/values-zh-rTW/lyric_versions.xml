@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyric_version_word">逐字</string>
+    <string name="lyric_version_line">逐行</string>
+    <string name="lyric_version_ttml">TTML</string>
+    <string name="lyric_version_selected">已選歌詞版本</string>
+</resources>

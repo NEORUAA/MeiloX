@@ -1207,6 +1207,7 @@ class MusicService : MediaLibraryService(),
         queueManager.release()
         preloadManager.release()
         autoMixController.release()
+        if (::audioPlayer.isInitialized) audioPlayer.release()
         equalizerConfigurationState.release()
         listenTogetherStore.detachPlayer(player)
 

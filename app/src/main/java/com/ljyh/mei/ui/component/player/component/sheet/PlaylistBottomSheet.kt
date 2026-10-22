@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,6 +141,14 @@ fun PlaylistContent(
     val currentMediaItemIndex by playerConnection.currentMediaItemIndex.collectAsState()
     val currentQueueIndex = queueEntries.indexOfFirst { it.rawIndex == currentMediaItemIndex }
     var initialScrollPending by remember { mutableStateOf(true) }
+
+    LaunchedEffect(playerConnection) {
+        snapshotFlow {
+            lazyListState.layoutInfo.visibleItemsInfo.mapNotNull { visible ->
+                queueEntries.firstOrNull { it.key == visible.key }?.mediaItem?.queueEntryId
+            }
+        }.collect { playerConnection.service.queueManager.loadMetadataForQueueEntries(it) }
+    }
 
     LaunchedEffect(queueEntries.size, currentQueueIndex) {
         if (initialScrollPending && currentQueueIndex in queueEntries.indices) {

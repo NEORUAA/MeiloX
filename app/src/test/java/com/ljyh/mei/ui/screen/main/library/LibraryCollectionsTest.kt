@@ -4,6 +4,13 @@ import com.ljyh.mei.constants.LibraryStyle
 import com.ljyh.mei.data.repository.LibraryAccount
 import com.ljyh.mei.data.repository.LibraryCollectionPage
 import com.ljyh.mei.data.repository.collectLibraryPages
+import com.ljyh.mei.data.model.room.Playlist
+import com.ljyh.mei.di.repository.observeOwnedPlaylists
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.runBlocking
 import com.ljyh.mei.ui.navigation.ContentFeature
 import com.ljyh.mei.ui.navigation.LibraryPage
@@ -15,6 +22,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LibraryCollectionsTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun playerPlaylistChoicesFollowLoginSwitchAndLogoutWithoutDatabaseChanges() = runTest {
+        fun playlist(id: String, owner: String) = Playlist(id, id, "", owner, "", "", 1)
+        val rows = MutableStateFlow(listOf(playlist("a", "1"), playlist("b", "2")))
+        val accounts = MutableStateFlow<LibraryAccount?>(null)
+        var visible = emptyList<Playlist>()
+        backgroundScope.launch { observeOwnedPlaylists(rows, accounts).collect { visible = it } }
+        runCurrent()
+        assertTrue(visible.isEmpty())
+        accounts.value = LibraryAccount("1", "session-1")
+        runCurrent()
+        assertEquals(listOf("a"), visible.map { it.id })
+        accounts.value = LibraryAccount("2", "session-2")
+        runCurrent()
+        assertEquals(listOf("b"), visible.map { it.id })
+        rows.value += playlist("c", "2")
+        runCurrent()
+        assertEquals(listOf("b", "c"), visible.map { it.id })
+        accounts.value = null
+        runCurrent()
+        assertTrue(visible.isEmpty())
+    }
+
     @Test
     fun completePlaylistChoicesContinuePastOneHundredAndDeduplicateOverlap() = runBlocking {
         val offsets = mutableListOf<Int>()

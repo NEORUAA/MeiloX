@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_order_title">Edit Order</string>
+    <string name="playlist_order_cancel">Cancel</string>
+    <string name="playlist_order_done">Done</string>
+    <string name="playlist_order_hint">Touch and hold the handle to drag a song. Changes are saved when you tap Done.</string>
+    <string name="playlist_order_unavailable">Song unavailable</string>
+    <string name="playlist_order_drag">Touch and hold to reorder</string>
+    <string name="playlist_order_move_up">Move up</string>
+    <string name="playlist_order_move_down">Move down</string>
+    <string name="playlist_order_load_failed">Could not load the playlist. Please try again.</string>
+    <string name="playlist_order_save_failed">Could not save the order. Your changes are kept here; tap Done to retry.</string>
+    <string name="playlist_order_changed">This playlist has changed elsewhere. Reload it before editing the order again.</string>
+    <string name="playlist_order_reload">Reload playlist</string>
+</resources>

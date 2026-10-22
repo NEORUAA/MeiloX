@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.screen.search
 
 import androidx.activity.BackEventCompat
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
@@ -35,6 +37,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,15 +46,54 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SearchNavigationInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private var originalSearchHistory: String? = null
 
     @Before
     fun startsAtHome() {
+        originalSearchHistory = runBlocking(Dispatchers.IO) { compose.activity.dataStore.data.first()[SearchHistoryKey] }
         // A new activity starts at Home; LastSelectedTab only affects the tab highlight.
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithText(text(R.string.app_tab_home))
                 .fetchSemanticsNodes().isNotEmpty()
         }
         assertHome()
+    }
+
+    @After
+    fun restoreSearchHistory() = runBlocking<Unit>(Dispatchers.IO) {
+        compose.activity.dataStore.edit { preferences ->
+            originalSearchHistory?.let { preferences[SearchHistoryKey] = it }
+                ?: preferences.remove(SearchHistoryKey)
+        }
+    }
+
+    @Test
+    fun recentQueriesCanBeReusedRemovedAndCleared() {
+        val query = "MeiloX search history check"
+        runBlocking(Dispatchers.IO) { compose.activity.clearSearchHistory() }
+        openSearch()
+        searchInput().performTextInput(query)
+        searchInput().performImeAction()
+        compose.waitUntil(10_000) {
+            runBlocking(Dispatchers.IO) {
+                decodeSearchHistory(compose.activity.dataStore.data.first()[SearchHistoryKey]).firstOrNull() == query
+            }
+        }
+        navigateBack()
+        compose.onNodeWithText(query).assertIsDisplayed().performClick()
+        searchInput().assertDoesNotExist()
+        navigateBack()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.search_history_remove, query)).performClick()
+        compose.onNodeWithText(query).assertDoesNotExist()
+        runBlocking(Dispatchers.IO) {
+            compose.activity.recordSearchHistory("First recent query")
+            compose.activity.recordSearchHistory("Second recent query")
+        }
+        compose.onNodeWithText(text(R.string.search_history_clear)).performClick()
+        compose.waitUntil(5_000) {
+            runBlocking(Dispatchers.IO) { decodeSearchHistory(compose.activity.dataStore.data.first()[SearchHistoryKey]).isEmpty() }
+        }
+        compose.onNodeWithText(text(R.string.search_history_title)).assertDoesNotExist()
     }
 
     @Test
@@ -160,7 +202,7 @@ class SearchNavigationInstrumentedTest {
             toggle().assertIsOff()
 
             listOf(false, true, false, true).forEachIndexed { index, enabled ->
-                if (index > 0) toggle().performClick()
+                if (index > 0) toggle().performSemanticsAction(SemanticsActions.OnClick) { it() }
                 val expectedState = if (enabled) ToggleableState.On else ToggleableState.Off
                 compose.waitUntil(timeoutMillis = 5_000) {
                     toggle().fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == expectedState
@@ -186,7 +228,7 @@ class SearchNavigationInstrumentedTest {
             listOf(true, false).forEach { enabled ->
                 if (!enabled) {
                     openAppearance()
-                    toggle().performClick()
+                    toggle().performSemanticsAction(SemanticsActions.OnClick) { it() }
                     toggle().assertIsOff()
                 }
                 startGesture()

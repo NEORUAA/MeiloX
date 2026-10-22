@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_order_title">編輯順序</string>
+    <string name="playlist_order_cancel">取消</string>
+    <string name="playlist_order_done">完成</string>
+    <string name="playlist_order_hint">長按右側拖動手柄調整歌曲順序，點選完成後儲存。</string>
+    <string name="playlist_order_unavailable">歌曲暫不可用</string>
+    <string name="playlist_order_drag">長按拖動調整順序</string>
+    <string name="playlist_order_move_up">上移</string>
+    <string name="playlist_order_move_down">下移</string>
+    <string name="playlist_order_load_failed">歌單載入失敗，請重試。</string>
+    <string name="playlist_order_save_failed">順序儲存失敗，已保留你的調整，可點選完成重試。</string>
+    <string name="playlist_order_changed">歌單內容已在其他地方變更，請重新載入後調整順序。</string>
+    <string name="playlist_order_reload">重新載入歌單</string>
+</resources>

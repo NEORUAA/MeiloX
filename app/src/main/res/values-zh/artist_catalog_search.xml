@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="artist_songs_search">搜索歌曲或专辑</string>
+    <string name="artist_albums_search">搜索专辑</string>
+    <string name="artist_catalog_search_progress">找到 %1$d 项结果，已检索 %2$d 项，继续检索中…</string>
+    <string name="artist_catalog_search_partial">找到 %1$d 项结果，已检索 %2$d 项，还有更多内容可检索</string>
+    <string name="artist_catalog_search_complete">找到 %1$d 项结果，已检索全部 %2$d 项</string>
+    <string name="artist_catalog_search_continue">继续检索更多内容</string>
+</resources>
