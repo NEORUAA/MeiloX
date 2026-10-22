@@ -28,6 +28,8 @@ import com.ljyh.mei.ui.glass.IosPopupMenu
 import com.ljyh.mei.ui.glass.IosSheetTopToolbar
 import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
 import com.ljyh.mei.ui.glass.IosSheetButton
+import com.ljyh.mei.ui.glass.IosTypography
+import java.util.Locale
 import com.ljyh.mei.ui.glass.IosReorderableGroup
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
@@ -164,11 +166,20 @@ fun MoreActionsSheet(
                             IosListRow(
                                 title = stringResource(action.labelRes),
                                 systemName = action.systemName,
-                                detail = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.isActive == true) {
-                                    stringResource(
-                                        if (sleepTimer.state == SleepTimerState.EndOfTrack) R.string.sleep_timer_track_short
-                                        else R.string.sleep_timer_running,
-                                    )
+                                detail = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state == SleepTimerState.EndOfTrack) {
+                                    stringResource(R.string.sleep_timer_track_short)
+                                } else null,
+                                trailing = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state is SleepTimerState.Countdown) {
+                                    {
+                                        val seconds = (sleepTimer.remainingMillis + 999L) / 1_000L
+                                        Text(
+                                            text = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60),
+                                            style = IosTypography.subheadline.copy(fontFeatureSettings = "tnum"),
+                                            color = LocalGlassColors.current.secondaryContent,
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        SfIcon("chevron.forward", null, size = 12.dp, tint = LocalGlassColors.current.separator)
+                                    }
                                 } else null,
                                 showTopSeparator = index > 0,
                                 onClick = { onActionClick(action) },
