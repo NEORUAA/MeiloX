@@ -45,6 +45,7 @@ import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.glass.GlassButton
+import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassCard
 import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.IosListRow
@@ -258,10 +259,10 @@ fun CloudMusicScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlassButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
+            GlassIconButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
                 SfIcon("arrow.up.circle.fill", stringResource(R.string.cloud_upload), size = 18.dp)
             }
-            GlassButton(onClick = viewModel::refresh) {
+            GlassIconButton(onClick = viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh), size = 18.dp)
             }
             if (isNavigationTab) GlobalProfileAvatarButton()

@@ -92,6 +92,8 @@ fun IosCascadingMenu(
     backdrop: Backdrop = LocalBlurBackdrop.current,
     headerActions: List<IosCascadingMenuItem> = emptyList(),
     onTriggerAlphaChanged: ((Float) -> Unit)? = null,
+    onTriggerSeparationChanged: ((Float) -> Unit)? = null,
+    triggerSeparationEnabled: Boolean = true,
     useAccentIcons: Boolean = true,
     centerHorizontally: Boolean = false,
     expandFromAnchor: Alignment.Horizontal? = null,
@@ -159,6 +161,8 @@ fun IosCascadingMenu(
         menuScale = 1f - 0.04f * child.value.coerceIn(0f, 1f),
         onMenuBoundsChanged = { menuBounds = it },
         onMenuAlphaChanged = { onTriggerAlphaChanged?.invoke(1f - it) },
+        onAnchorSeparationChanged = onTriggerSeparationChanged,
+        anchorSeparationEnabled = triggerSeparationEnabled,
         onClosed = {
             if (started && !open) {
                 onDismiss()

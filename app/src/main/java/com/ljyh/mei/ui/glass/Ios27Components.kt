@@ -115,6 +115,7 @@ import kotlin.math.max
 import kotlin.math.sin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 val IosModalSheetShape = ContinuousRoundedRectangle(
@@ -268,6 +269,9 @@ fun IosTopToolbar(
     collapseProgress: Float = 1f,
     navigation: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    navigationStyle: IosToolbarActionStyle = IosToolbarActionStyle.Merged,
+    actionsStyle: IosToolbarActionStyle = IosToolbarActionStyle.Merged,
+    actionsSeparationProgress: Float? = null,
 ) {
     val progress = collapseProgress.coerceIn(0f, 1f)
     CompositionLocalProvider(
@@ -278,8 +282,14 @@ fun IosTopToolbar(
         when (style) {
             IosTopBarStyle.LargeTitle -> Column(modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Row(Modifier.fillMaxWidth().height(54.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { navigation?.invoke() }
-                    Row(horizontalArrangement = Arrangement.spacedBy(IosTopToolbarActionGap), content = actions)
+                    Box(Modifier.weight(1f)) {
+                        IosToolbarActionGroup(style = navigationStyle) { navigation?.invoke() }
+                    }
+                    IosToolbarActionGroup(
+                        style = actionsStyle,
+                        separationProgress = actionsSeparationProgress,
+                        content = actions,
+                    )
                 }
                 Column(Modifier.offset(y = (-10).dp)) {
                     Text(title, style = IosTypography.largeTitle, color = LocalGlassColors.current.content)
@@ -296,7 +306,11 @@ fun IosTopToolbar(
                     color = LocalGlassColors.current.content,
                     modifier = Modifier.weight(1f),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(IosTopToolbarActionGap), content = actions)
+                IosToolbarActionGroup(
+                    style = actionsStyle,
+                    separationProgress = actionsSeparationProgress,
+                    content = actions,
+                )
             }
             else -> {
                 var leadingWidth by remember { mutableIntStateOf(0) }
@@ -307,9 +321,9 @@ fun IosTopToolbar(
                 val centeredTitleSidePadding = maxOf(leadingPad, trailingPad) +
                     if (leadingWidth > 0 || trailingWidth > 0) IosTopToolbarActionGap else 0.dp
                 Box(modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp)) {
-                    Row(
+                    IosToolbarActionGroup(
                         Modifier.align(Alignment.CenterStart).onSizeChanged { leadingWidth = it.width },
-                        verticalAlignment = Alignment.CenterVertically,
+                        style = navigationStyle,
                     ) { navigation?.invoke() }
                     Column(
                         Modifier
@@ -351,9 +365,10 @@ fun IosTopToolbar(
                             )
                         }
                     }
-                    Row(
+                    IosToolbarActionGroup(
                         Modifier.align(Alignment.CenterEnd).onSizeChanged { trailingWidth = it.width },
-                        horizontalArrangement = Arrangement.spacedBy(IosTopToolbarActionGap),
+                        style = actionsStyle,
+                        separationProgress = actionsSeparationProgress,
                         content = actions,
                     )
                 }
@@ -928,18 +943,25 @@ fun IosPopupMenu(
     heightOverride: androidx.compose.ui.unit.Dp? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     onMenuAlphaChanged: ((Float) -> Unit)? = null,
+    onAnchorSeparationChanged: ((Float) -> Unit)? = null,
+    anchorSeparationEnabled: Boolean = true,
     onClosed: (() -> Unit)? = null,
     anchor: @Composable (onClick: () -> Unit) -> Unit,
     content: @Composable ColumnScope.(LayerBackdrop, close: () -> Unit) -> Unit,
 ) {
     var anchorSize by remember { mutableStateOf(IntSize.Zero) }
     var popupAlive by remember { mutableStateOf(expanded) }
+    var transitionStarted by remember { mutableStateOf(expanded) }
     var opensAbove by remember { mutableStateOf(false) }
     var anchorFractionX by remember { mutableFloatStateOf(1f) }
     val progress = remember { Animatable(if (expanded) 1f else 0f) }
     val transformOriginProgress = remember { Animatable(if (expanded) 1f else 0f) }
     val menuAlpha = remember { Animatable(if (expanded) 1f else 0f) }
     val shadowAlpha = remember { Animatable(if (expanded) 1f else 0f) }
+    val separatesToolbarAnchor = anchorSeparationEnabled &&
+        (LocalIosToolbarActionGroup.current?.sharedRuns()?.isNotEmpty() == true || onAnchorSeparationChanged != null)
+    var detachAnchorForTransition by remember { mutableStateOf(expanded && separatesToolbarAnchor) }
+    val anchorSeparation = remember { Animatable(if (expanded) 1f else 0f) }
     var contentAlpha by remember { mutableFloatStateOf(if (expanded) 1f else 0f) }
 
     LaunchedEffect(Unit) {
@@ -988,12 +1010,26 @@ fun IosPopupMenu(
     }
 
     LaunchedEffect(expanded) {
-        if (expanded) {
+        if (expanded) coroutineScope {
+            transitionStarted = true
+            detachAnchorForTransition = detachAnchorForTransition || separatesToolbarAnchor
+            if (detachAnchorForTransition) {
+                launch {
+                    anchorSeparation.animateTo(
+                        1f,
+                        spring(dampingRatio = 0.82f, stiffness = 400f, visibilityThreshold = 0.02f),
+                    )
+                }
+                // Continue as soon as the neck has separated; the spring may settle behind
+                // the menu without holding an already detached button on screen.
+                snapshotFlow { anchorSeparation.value }.first { it >= 1f }
+            }
             popupAlive = true
             coroutineScope {
                 launch {
                     progress.animateTo(
                         targetValue = 1f,
+                        initialVelocity = if (detachAnchorForTransition) anchorSeparation.velocity.coerceIn(0f, 3f) else 0f,
                         animationSpec = spring(
                             dampingRatio = 0.78f,
                             stiffness = 240f,
@@ -1013,8 +1049,10 @@ fun IosPopupMenu(
                 }
                 launch { menuAlpha.animateTo(1f, tween(120)) }
             }
-        } else {
-            coroutineScope {
+        } else coroutineScope {
+            // A second tap during detachment reverses the neck immediately; there is no
+            // popup to collapse yet, so it must not wait for the menu's closing duration.
+            if (popupAlive) {
                 launch {
                     progress.animateTo(
                         targetValue = 0f,
@@ -1035,16 +1073,34 @@ fun IosPopupMenu(
                     )
                 }
                 launch { menuAlpha.animateTo(0f, tween(400)) }
+                snapshotFlow { progress.value <= 0.001f && menuAlpha.value <= 0f }.first { it }
             }
             progress.snapTo(0f)
             transformOriginProgress.snapTo(0f)
             menuAlpha.snapTo(0f)
             popupAlive = false
-            onClosed?.invoke()
+            if (detachAnchorForTransition) {
+                anchorSeparation.animateTo(
+                    0f,
+                    spring(dampingRatio = 0.82f, stiffness = 400f, visibilityThreshold = 0.02f),
+                )
+            } else {
+                anchorSeparation.snapTo(0f)
+            }
+            detachAnchorForTransition = false
+            if (transitionStarted) {
+                transitionStarted = false
+                onClosed?.invoke()
+            }
         }
     }
 
     val currentAlphaCallback by androidx.compose.runtime.rememberUpdatedState(onMenuAlphaChanged)
+    val currentSeparationCallback by androidx.compose.runtime.rememberUpdatedState(onAnchorSeparationChanged)
+    LaunchedEffect(anchorSeparation) {
+        snapshotFlow { anchorSeparation.value.coerceIn(0f, 1f) }
+            .collect { currentSeparationCallback?.invoke(it) }
+    }
     LaunchedEffect(menuAlpha) {
         androidx.compose.runtime.snapshotFlow { menuAlpha.value.coerceIn(0f, 1f) }
             .collect { currentAlphaCallback?.invoke(it) }
@@ -1081,7 +1137,11 @@ fun IosPopupMenu(
                     }
                 },
         ) {
-            anchor { onExpandedChange(!expanded) }
+            CompositionLocalProvider(
+                LocalToolbarActionSeparation provides { anchorSeparation.value.coerceIn(0f, 1f) },
+            ) {
+                anchor { onExpandedChange(!expanded) }
+            }
         }
         if (popupAlive && (anchorSize != IntSize.Zero || externalAnchorBounds != null)) {
             val density = androidx.compose.ui.platform.LocalDensity.current

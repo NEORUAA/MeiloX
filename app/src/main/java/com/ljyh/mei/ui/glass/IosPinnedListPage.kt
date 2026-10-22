@@ -255,6 +255,8 @@ fun IosPinnedListPage(
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(10.dp),
     onNavigateBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    actionsStyle: IosToolbarActionStyle = IosToolbarActionStyle.Merged,
+    actionsSeparationProgress: Float? = null,
     backgroundColor: Color? = null,
     backgroundBrush: Brush? = null,
     content: LazyListScope.() -> Unit,
@@ -278,6 +280,8 @@ fun IosPinnedListPage(
         modifier = modifier,
         onNavigateBack = onNavigateBack,
         actions = actions,
+        actionsStyle = actionsStyle,
+        actionsSeparationProgress = actionsSeparationProgress,
         collapseProgress = collapseProgress,
         backgroundColor = backgroundColor,
         backgroundBrush = backgroundBrush,
@@ -348,6 +352,8 @@ fun IosPinnedPage(
     subtitle: String? = null,
     onNavigateBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    actionsStyle: IosToolbarActionStyle = IosToolbarActionStyle.Merged,
+    actionsSeparationProgress: Float? = null,
     collapseProgress: Float = 1f,
     backgroundColor: Color? = null,
     topBarBlurProgress: Float = collapseProgress,
@@ -426,6 +432,8 @@ fun IosPinnedPage(
                         }
                     },
                     actions = actions,
+                    actionsStyle = actionsStyle,
+                    actionsSeparationProgress = actionsSeparationProgress,
                 )
             }
         }

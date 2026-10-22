@@ -47,6 +47,7 @@ import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireGraphicsContext
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -469,6 +470,7 @@ internal fun Modifier.navigationGlassBackground(
     isDark: Boolean = false,
     containerAlphaMultiplier: Float = 1.25f,
     surfaceOverlay: (DrawScope.() -> Unit)? = null,
+    pressOverlay: (DrawScope.() -> Unit)? = null,
     accentHighlights: Boolean = false,
     pressProgress: Float = 0f,
     pressProgressState: androidx.compose.runtime.State<Float>? = null,
@@ -529,6 +531,7 @@ internal fun Modifier.navigationGlassBackground(
             if (accentHighlights) {
                 drawDetailActionHighlights(shape())
             }
+            pressOverlay?.invoke(this)
         },
     )
 
@@ -550,6 +553,7 @@ fun GlassSurface(
     onVisualBoundsChanged: ((Rect, GlassPressHighlight) -> Unit)? = null,
     pressHighlight: (() -> GlassPressHighlight?)? = null,
     cancelPressFeedback: Boolean = false,
+    groupSurfaceSeparation: (() -> Float)? = LocalToolbarActionSeparation.current,
     morphProgress: androidx.compose.runtime.State<Float>? = null,
     morphCaptureWidth: Dp? = null,
     morphVerticalTravel: Dp = 0.dp,
@@ -575,6 +579,13 @@ fun GlassSurface(
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
     }
+    val toolbarMember = rememberToolbarActionMember(
+        eligible = style == GlassSurfaceStyle.Navigation && emphasis == GlassEmphasis.Regular && !detailAction,
+        material = ToolbarActionMaterial(navigationSurfaceColor, navigationSurfaceAlphaMultiplier, sampleBackdrop),
+        separation = groupSurfaceSeparation,
+        highlight = interactiveHighlight,
+    )
+    val sharesToolbarSurface = toolbarMember?.sharesSurface == true
     LaunchedEffect(interactiveHighlight, cancelPressFeedback) {
         if (cancelPressFeedback) interactiveHighlight.cancelPress()
     }
@@ -586,9 +597,9 @@ fun GlassSurface(
         derivedStateOf { pressHighlight?.invoke()?.progress ?: interactiveHighlight.pressProgress }
     }
     val shapeProvider = remember(shape) { { shape } }
-    val dragScaleLayerBlock: GraphicsLayerScope.() -> Unit = remember(interactiveHighlight, onVisualBoundsChanged) {
+    val dragScaleLayerBlock: GraphicsLayerScope.() -> Unit = remember(interactiveHighlight, toolbarMember, onVisualBoundsChanged) {
         {
-            applyGlassDragScale(
+            if (toolbarMember != null) toolbarMember.applyPressTransform(this) else applyGlassDragScale(
                 pressProgress = interactiveHighlight.pressProgress,
                 offset = interactiveHighlight.offset,
             )
@@ -634,7 +645,9 @@ fun GlassSurface(
             morphProgress = { morphProgress.value },
         )
     } else null
-    val glassModifier = if (morphing && morphGlassModifier != null) {
+    val glassModifier = if (sharesToolbarSurface) {
+        Modifier.graphicsLayer { toolbarMember?.applyPressTransform(this) }
+    } else if (morphing && morphGlassModifier != null) {
         morphGlassModifier
     } else if (style == GlassSurfaceStyle.Navigation) {
         val containerColor = navigationSurfaceColor ?: surfaceColor
@@ -756,62 +769,77 @@ fun GlassSurface(
             )
         }
     }
-    val surfaceModifier = modifier.then(glassModifier)
-
-    Box(
-        modifier = surfaceModifier
-            .then(
-                if (pressHighlight != null) interactiveHighlight.highlightModifier(
-                    progressProvider = { pressHighlight()?.progress ?: interactiveHighlight.pressProgress },
-                    positionProvider = { size ->
-                        pressHighlight()?.let { Offset(size.width * it.position.x, size.height * it.position.y) }
-                            ?: interactiveHighlight.highlightPosition(size)
-                    },
-                ) else if (onClick != null && enabled) interactiveHighlight.modifier else Modifier,
-            )
-            .then(
-                if (onClick != null) {
-                    val click = if (onLongClick != null) Modifier.combinedClickable(
-                        enabled = enabled,
-                        interactionSource = null,
-                        indication = null,
-                        role = Role.Button,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    ) else Modifier.clickable(
-                        enabled = enabled,
-                        interactionSource = null,
-                        indication = null,
-                        role = Role.Button,
-                        onClick = onClick,
-                    )
-                    click.then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
-                } else {
-                    Modifier
-                },
-            ),
-        contentAlignment = contentAlignment,
-        content = {
-            val contentColor = if (emphasis == GlassEmphasis.Prominent) Color.White else colors.content
-            CompositionLocalProvider(
-                LocalContentColor provides contentColor,
-                LocalGlassContentColor provides contentColor,
-            ) {
-                if (accentDetailAction) {
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            blendMode = BlendMode.Plus
-                            compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+    val drawSurface: @Composable (Modifier) -> Unit = { surfaceModifier ->
+        Box(
+            modifier = surfaceModifier
+                .then(
+                    if (sharesToolbarSurface) Modifier
+                    else if (pressHighlight != null) interactiveHighlight.highlightModifier(
+                        progressProvider = { pressHighlight()?.progress ?: interactiveHighlight.pressProgress },
+                        positionProvider = { size ->
+                            pressHighlight()?.let { Offset(size.width * it.position.x, size.height * it.position.y) }
+                                ?: interactiveHighlight.highlightPosition(size)
                         },
-                        contentAlignment = contentAlignment,
-                        content = content,
-                    )
-                } else {
-                    content()
+                    ) else if (onClick != null && enabled) interactiveHighlight.modifier else Modifier,
+                )
+                .then(
+                    if (onClick != null) {
+                        val click = if (onLongClick != null) Modifier.combinedClickable(
+                            enabled = enabled,
+                            interactionSource = null,
+                            indication = null,
+                            role = Role.Button,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                        ) else Modifier.clickable(
+                            enabled = enabled,
+                            interactionSource = null,
+                            indication = null,
+                            role = Role.Button,
+                            onClick = onClick,
+                        )
+                        click.then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
+                    } else {
+                        Modifier
+                    },
+                ),
+            contentAlignment = contentAlignment,
+            content = {
+                val contentColor = if (emphasis == GlassEmphasis.Prominent) Color.White else colors.content
+                CompositionLocalProvider(
+                    LocalContentColor provides contentColor,
+                    LocalGlassContentColor provides contentColor,
+                    LocalIosToolbarActionGroup provides null,
+                    LocalToolbarActionSeparation provides null,
+                ) {
+                    if (accentDetailAction) {
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                blendMode = BlendMode.Plus
+                                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                            },
+                            contentAlignment = contentAlignment,
+                            content = content,
+                        )
+                    } else {
+                        content()
+                    }
                 }
-            }
-        },
-    )
+            },
+        )
+    }
+    if (toolbarMember == null) {
+        drawSurface(modifier.then(glassModifier))
+    } else {
+        // Register an untransformed layout wrapper. The inner surface owns press scaling,
+        // so a press cannot change adjacency or apply the same deformation twice.
+        Box(
+            modifier = modifier.onGloballyPositioned(toolbarMember::updateCoordinates),
+            propagateMinConstraints = true,
+        ) {
+            drawSurface(glassModifier)
+        }
+    }
 }
 
 @Composable
@@ -862,6 +890,7 @@ fun GlassIconButton(
     sampleBackdrop: Boolean = true,
     morphProgress: androidx.compose.runtime.State<Float>? = null,
     morphCaptureWidth: Dp? = null,
+    groupSurfaceSeparation: (() -> Float)? = LocalToolbarActionSeparation.current,
     onLongClick: (() -> Unit)? = null,
     detailAction: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
@@ -878,6 +907,7 @@ fun GlassIconButton(
         sampleBackdrop = sampleBackdrop,
         morphProgress = morphProgress,
         morphCaptureWidth = morphCaptureWidth,
+        groupSurfaceSeparation = groupSurfaceSeparation,
         onClick = onClick,
         onLongClick = onLongClick,
         detailAction = detailAction,

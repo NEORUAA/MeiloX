@@ -2,7 +2,7 @@ package com.ljyh.mei.ui.screen.playlist
 
 import com.ljyh.mei.constants.MusicQuality
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +76,10 @@ import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
 import com.ljyh.mei.ui.screen.playlist.component.playlistTrackItems
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
 
 @Composable
 fun CommonSongListScreen(
@@ -111,6 +115,7 @@ fun CommonSongListScreen(
 ) {
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuTriggerAlpha = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    val detailMenuSeparation = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val triggerFadePaint = remember { androidx.compose.ui.graphics.Paint() }
 
     var detailMenuAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -122,6 +127,13 @@ fun CommonSongListScreen(
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
     val searchFocusRequester = remember { FocusRequester() }
+    val searchTransition = remember { Animatable(if (isPlaylistSearchActive) 1f else 0f) }
+    val searchProgress = searchTransition.value.coerceIn(0f, 1f)
+    // Keep icon slots fixed while the liquid neck separates, then grow the input to the left.
+    val searchSeparation = (searchProgress / 0.7f).coerceIn(0f, 1f)
+    val searchExpansionStart = 0.7f * com.ljyh.mei.ui.glass.ToolbarDetachProgress
+    val searchExpansion = ((searchProgress - searchExpansionStart) / (1f - searchExpansionStart)).coerceIn(0f, 1f)
+        .let { it * it * (3f - 2f * it) }
     val focusManager = LocalFocusManager.current
     val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
     val backgroundCover = if (useCoverBackground) {
@@ -146,9 +158,18 @@ fun CommonSongListScreen(
     } else LocalGroupedListBackgroundAlpha.current
     val layoutState = rememberSongListLayoutState(listState, isContentReady = !isLoading && hasLoadedContent)
 
-    LaunchedEffect(isPlaylistSearchActive) {
-        if (isPlaylistSearchActive && onPlaylistSearchQueryChange != null) {
-            searchFocusRequester.requestFocus()
+    LaunchedEffect(isPlaylistSearchActive, onPlaylistSearchQueryChange != null) {
+        coroutineScope {
+            launch {
+                searchTransition.animateTo(
+                    if (isPlaylistSearchActive) 1f else 0f,
+                    spring(dampingRatio = 0.82f, stiffness = 160f),
+                )
+            }
+            if (isPlaylistSearchActive && onPlaylistSearchQueryChange != null) {
+                snapshotFlow { searchTransition.value }.first { it >= 0.85f }
+                searchFocusRequester.requestFocus()
+            }
         }
     }
 
@@ -163,9 +184,9 @@ fun CommonSongListScreen(
     ) {
         Box(Modifier.fillMaxSize()) {
             IosPinnedListPage(
-                title = if (isPlaylistSearchActive) "" else uiData.title,
+                title = if (isPlaylistSearchActive || searchProgress > 0.05f) "" else uiData.title,
                 subtitle = uiData.creatorName.takeIf {
-                    !isPlaylistSearchActive && it.isNotBlank()
+                    !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
                 },
                 showsLargeTitle = false,
                 listState = layoutState,
@@ -174,6 +195,7 @@ fun CommonSongListScreen(
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
+                actionsSeparationProgress = searchSeparation,
                 actions = {
                     if (onPlaylistSearchQueryChange != null) {
                         BoxWithConstraints(Modifier.weight(1f, fill = false)) {
@@ -181,20 +203,8 @@ fun CommonSongListScreen(
                             val buttonSize = LocalGlassDimensions.current.iconButtonSize
                             val expandedWidth = (maxWidth - buttonSize - 8.dp)
                                 .coerceAtLeast(buttonSize)
-                            val animatedWidth by animateDpAsState(
-                                targetValue = if (isPlaylistSearchActive) expandedWidth else buttonSize,
-                                animationSpec = spring(
-                                    dampingRatio = 0.78f,
-                                    stiffness = if (isPlaylistSearchActive) 240f else 400f,
-                                ),
-                                label = "PlaylistSearchWidth",
-                            )
-
-                            val searchContentAlpha by androidx.compose.animation.core.animateFloatAsState(
-                                targetValue = if (isPlaylistSearchActive) 1f else 0f,
-                                animationSpec = androidx.compose.animation.core.tween(if (isPlaylistSearchActive) 120 else 200),
-                                label = "PlaylistSearchContentAlpha",
-                            )
+                            val animatedWidth = buttonSize + (expandedWidth - buttonSize) * searchExpansion
+                            val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
                             GlassSurface(
                                 modifier = Modifier
                                     .width(animatedWidth.coerceIn(buttonSize, maxWidth.coerceAtLeast(buttonSize)))
@@ -263,7 +273,7 @@ fun CommonSongListScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         androidx.compose.animation.Crossfade(
-                                            targetState = isPlaylistSearchActive,
+                                            targetState = searchExpansion > 0.15f,
                                             animationSpec = androidx.compose.animation.core.tween(120),
                                             label = "PlaylistSearchIcon",
                                         ) { active ->
@@ -285,6 +295,7 @@ fun CommonSongListScreen(
                     } else if (detailMenu != null) {
                         com.ljyh.mei.ui.glass.GlassIconButton(
                             onClick = { detailMenuOpen = true },
+                            groupSurfaceSeparation = { detailMenuSeparation.floatValue },
                             modifier = Modifier.onGloballyPositioned { detailMenuAnchor = it.boundsInWindow() }
                                 .drawWithContent {
                                     val alpha = detailMenuTriggerAlpha.floatValue
@@ -362,6 +373,10 @@ fun CommonSongListScreen(
                     collapsedDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_collapsed),
                     onDismiss = { detailMenuOpen = false; detailMenuTriggerAlpha.floatValue = 1f },
                     onTriggerAlphaChanged = { detailMenuTriggerAlpha.floatValue = it },
+                    onTriggerSeparationChanged = if (onPlaylistSearchQueryChange != null) {
+                        { detailMenuSeparation.floatValue = it }
+                    } else null,
+                    triggerSeparationEnabled = searchSeparation < com.ljyh.mei.ui.glass.ToolbarDetachProgress,
                 )
             }
             PlaylistActionOverlay(
