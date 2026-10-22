@@ -14,8 +14,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.CompositingStrategy
@@ -107,8 +107,8 @@ fun Modifier.trackBackdropPosition(backdrop: LayerBackdrop, frameVersion: State<
  * Samples a [LayerBackdrop] that was recorded in another window (e.g. app content from a
  * dialog/sheet window). LayerBackdrop maps coordinates with localPositionOf, which cannot
  * cross compose owners and silently yields a wrong offset there, so glass in a dialog
- * samples nothing. Both windows share the screen origin, making window-space subtraction
- * the correct mapping.
+ * samples nothing. Map through screen coordinates so ancestor transforms, including
+ * predictive-back scaling, are preserved across windows.
  */
 class CrossWindowBackdrop(
     private val source: LayerBackdrop,
@@ -118,7 +118,8 @@ class CrossWindowBackdrop(
     private val sourceFrame: State<Int>? = null,
 ) : Backdrop {
 
-    private val inverseLayerScope = GraphicsLayerBlockScope()
+    private val sourceToGlass = Matrix()
+    private val screenToGlass = Matrix()
     private var recordedSourceSize = IntSize.Zero
     private var recordedSourceFrame: Int? = null
 
@@ -163,31 +164,17 @@ class CrossWindowBackdrop(
                 recordedSourceFrame = frame
             }
         } ?: source.graphicsLayer
-        // Popup/Dialog owners have their own Compose window origin. `positionInWindow()` is
-        // therefore local to that owner on Android and makes a popup sample from its host
-        // overshoot area (typically near the top edge) instead of the pixels behind the menu.
-        // Screen coordinates are shared by both owners and include the real popup placement.
-        val offset = glassCoordinates.positionOnScreen() - sourceCoordinates.positionOnScreen()
+        // Include ancestor scale/translation so the sampled page stays screen-anchored
+        // while the sheet shrinks during predictive back. This also includes layerBlock.
+        sourceToGlass.reset()
+        sourceCoordinates.transformToScreen(sourceToGlass)
+        screenToGlass.reset()
+        glassCoordinates.transformToScreen(screenToGlass)
+        screenToGlass.invert()
+        sourceToGlass *= screenToGlass
         withTransform({
-            if (layerBlock != null) {
-                // drawBackdrop applies layerBlock to the rendered glass surface. Mirror the
-                // LayerBackdrop behavior here so the sampled source stays screen-anchored while
-                // that surface is pressed and drag-scaled.
-                inverseLayerScope.reset(
-                    drawScope = density,
-                    size = Size(
-                        glassCoordinates.size.width.toFloat(),
-                        glassCoordinates.size.height.toFloat(),
-                    ),
-                )
-                layerBlock.invoke(inverseLayerScope)
-                scale(
-                    1f / inverseLayerScope.scaleX.coerceAtLeast(0.001f),
-                    1f / inverseLayerScope.scaleY.coerceAtLeast(0.001f),
-                    Offset.Zero,
-                )
-            }
-            translate(-offset.x, -offset.y + captureTop)
+            transform(sourceToGlass)
+            translate(0f, captureTop.toFloat())
             if (rasterized != null) scale(1f / renderScale, 1f / renderScale, Offset.Zero)
         }) {
             drawLayer(layer)
