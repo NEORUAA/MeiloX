@@ -127,6 +127,7 @@
     <string name="error_timeout">Timeout</string>
     <string name="error_unknown">Unknown error</string>
 
+    <string name="search_details_title">Search Details</string>
     <string name="search_bar_search">Search</string>
     <string name="navigation_back">Back</string>
     <string name="clear_search_query">Clear search</string>

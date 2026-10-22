@@ -4,7 +4,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 
-import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,14 +24,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
@@ -48,9 +50,8 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.player.OverlayState
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
 import com.ljyh.mei.ui.glass.GlassSegmentedControl
+import com.ljyh.mei.ui.glass.GlassSearchBar
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
 import com.ljyh.mei.ui.glass.IosPinnedListPage
@@ -79,27 +80,58 @@ fun SearchResultScreen(
     val navController = LocalNavController.current
     val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+    var submittedQuery by rememberSaveable(query, type) { mutableStateOf(query) }
+    var submittedType by rememberSaveable(query, type) { mutableStateOf(type) }
+    var searchQuery by rememberSaveable(query, type, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(query))
+    }
+    var searchActive by remember { mutableStateOf(false) }
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
 
-    // Keep initialization and the ViewModel's tab/cache semantics unchanged.
-    LaunchedEffect(query, type) {
-        viewModel.onSearchInit(query, type)
+    LaunchedEffect(submittedQuery, submittedType) {
+        viewModel.onSearchInit(submittedQuery, submittedType)
     }
-    LaunchedEffect(query) {
-        searchContext.recordSearchHistory(query)
+    LaunchedEffect(submittedQuery) {
+        searchContext.recordSearchHistory(submittedQuery)
     }
-    LaunchedEffect(query, selectedType) {
+    LaunchedEffect(submittedQuery, selectedType) {
         listState.scrollToItem(0)
     }
 
     Box(Modifier.fillMaxSize()) {
         IosPinnedListPage(
-            title = query,
+            title = stringResource(R.string.search_details_title),
             bottomPadding = bottomPadding,
             listState = listState,
             verticalArrangement = Arrangement.spacedBy(0.dp),
             onNavigateBack = navController::navigateUp,
         ) {
+            item(key = "search-query") {
+                GlassSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    active = searchActive,
+                    onActiveChange = { searchActive = it },
+                    onClose = {
+                        searchQuery = TextFieldValue(submittedQuery)
+                        searchActive = false
+                    },
+                    placeholder = stringResource(R.string.search_bar_search),
+                    closeContentDescription = stringResource(R.string.cancel),
+                    onSearch = { input ->
+                        val keyword = input.trim()
+                        if (keyword.isNotEmpty()) {
+                            submittedType = selectedType.type
+                            submittedQuery = keyword
+                            searchQuery = TextFieldValue(keyword)
+                            searchActive = false
+                            focusManager.clearFocus()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                )
+            }
             item(key = "search-tabs") {
                 Box(Modifier.padding(top = 10.dp)) {
                     SearchTypeFilterRow(
@@ -120,8 +152,8 @@ fun SearchResultScreen(
                     onSongClick = { songs, index ->
                         playerConnection?.playQueue(
                             ListQueue(
-                                id = "SearchQueue-$query",
-                                title = "搜索: $query",
+                                id = "SearchQueue-$submittedQuery",
+                                title = "搜索: $submittedQuery",
                                 items = songs.map { song ->
                                     song.id.toString() to song.toMediaData().toMediaItem()
                                 },
@@ -386,7 +418,6 @@ private fun ArtistSearchRow(
     showTopSeparator: Boolean,
     onClick: () -> Unit,
 ) {
-    val context = LocalContext.current
     IosListRow(
         title = artist.name,
         subtitle = artist.alias.joinToString(" ").takeIf(String::isNotBlank),
@@ -398,16 +429,6 @@ private fun ArtistSearchRow(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(44.dp).clip(CircleShape),
             )
-        },
-        trailing = {
-            GlassButton(
-                onClick = {
-                    Toast.makeText(context, "正在建设中: ${artist.name}", Toast.LENGTH_SHORT).show()
-                },
-                emphasis = GlassEmphasis.Regular,
-            ) {
-                Text(stringResource(R.string.artist_follow))
-            }
         },
         onClick = onClick,
     )

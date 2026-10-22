@@ -67,6 +67,7 @@ class SearchViewModel @Inject constructor(
     // 缓存：Key是SearchType, Value是该Tab下的数据
     // 只有当 Query 变化时，这个 Cache 才会被清空
     private val resultCache = mutableMapOf<SearchType, Resource<SearchResult>>()
+    private var queryGeneration = 0L
 
     /**
      * 初始化搜索或恢复状态
@@ -78,6 +79,7 @@ class SearchViewModel @Inject constructor(
 
         // 如果 Query 变了，说明是新的搜索，重置所有状态
         if (_currentQuery.value != query) {
+            queryGeneration++
             _currentQuery.value = query
             resultCache.clear() // 清空旧 Query 的缓存
 
@@ -113,6 +115,7 @@ class SearchViewModel @Inject constructor(
         // 2. 无缓存，发起网络请求
         _searchResult.value = Resource.Loading
 
+        val generation = queryGeneration
         viewModelScope.launch {
             // 二次检查，防止快速切换导致的竞态条件 (可选，视情况而定)
             if (_currentQuery.value != query) return@launch
@@ -122,6 +125,9 @@ class SearchViewModel @Inject constructor(
             } catch (e: Exception) {
                 Resource.Error(e.message ?: "Unknown Error")
             }
+
+            // A previous query must not overwrite this query's result or tab cache.
+            if (generation != queryGeneration) return@launch
 
             // 3. 存入缓存并更新 UI
             if (result is Resource.Success) {

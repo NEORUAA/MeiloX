@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,9 +53,9 @@ import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.ui.glass.GlassButton
+import com.ljyh.mei.ui.glass.GlassSurfaceStyle
 import com.ljyh.mei.ui.glass.IosGroupedList
 import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -273,7 +276,9 @@ internal fun SearchHistorySection(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.search_history_title), Modifier.weight(1f),
                 style = IosTypography.title2, fontWeight = FontWeight.Bold, color = colors.content)
-            GlassButton(onClick = onClear) { Text(stringResource(R.string.search_history_clear)) }
+            GlassButton(onClick = onClear, style = GlassSurfaceStyle.Navigation) {
+                Text(stringResource(R.string.search_history_clear))
+            }
         }
         IosGroupedList(Modifier.padding(top = 8.dp)) {
             history.forEachIndexed { index, query ->
@@ -281,7 +286,13 @@ internal fun SearchHistorySection(
                     title = query, systemName = "clock", showTopSeparator = index > 0,
                     onClick = { onSearch(query) },
                     trailing = {
-                        IosSheetTopToolbarButton(onClick = { onRemove(query) }) {
+                        Box(
+                            modifier = Modifier
+                                .offset(x = 8.dp)
+                                .size(44.dp)
+                                .clickable(role = Role.Button, onClick = { onRemove(query) }),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             SfIcon(SfSymbol.Close, stringResource(R.string.search_history_remove, query), size = 14.dp)
                         }
                     },

@@ -126,6 +126,7 @@
     <string name="error_no_internet">無網路連線</string>
     <string name="error_timeout">請求逾時</string>
     <string name="error_unknown">未知錯誤</string>
+    <string name="search_details_title">搜尋詳情</string>
     <string name="search_bar_search">搜尋</string>
     <string name="navigation_back">返回</string>
     <string name="clear_search_query">清除搜尋</string>

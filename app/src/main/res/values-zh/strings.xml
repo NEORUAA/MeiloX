@@ -126,6 +126,7 @@
     <string name="error_no_internet">无网络连接</string>
     <string name="error_timeout">请求超时</string>
     <string name="error_unknown">未知错误</string>
+    <string name="search_details_title">搜索详情</string>
     <string name="search_bar_search">搜索</string>
     <string name="navigation_back">返回</string>
     <string name="clear_search_query">清除搜索</string>

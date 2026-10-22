@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.datastore.preferences.core.edit
@@ -81,7 +82,7 @@ class SearchNavigationInstrumentedTest {
         }
         navigateBack()
         compose.onNodeWithText(query).assertIsDisplayed().performClick()
-        searchInput().assertDoesNotExist()
+        assertResultQuery(query)
         navigateBack()
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.search_history_remove, query)).performClick()
         compose.onNodeWithText(query).assertDoesNotExist()
@@ -126,7 +127,20 @@ class SearchNavigationInstrumentedTest {
         openSearch()
         searchInput().performTextInput("Codex navigation regression")
         searchInput().performImeAction()
-        searchInput().assertDoesNotExist()
+        assertResultQuery("Codex navigation regression")
+
+        val updatedQuery = "Updated search query"
+        searchInput().performTextReplacement("  $updatedQuery  ")
+        searchInput().performImeAction()
+        assertResultQuery(updatedQuery)
+        compose.waitUntil(5_000) {
+            runBlocking(Dispatchers.IO) {
+                decodeSearchHistory(compose.activity.dataStore.data.first()[SearchHistoryKey]).firstOrNull() == updatedQuery
+            }
+        }
+        searchInput().performClick().performTextReplacement("Unsubmitted draft")
+        compose.onNodeWithContentDescription(text(R.string.cancel)).performClick()
+        assertResultQuery(updatedQuery)
 
         navigateBack()
 
@@ -267,6 +281,13 @@ class SearchNavigationInstrumentedTest {
         searchInput().assertDoesNotExist()
         compose.onAllNodesWithText(text(R.string.app_tab_home))[0].assertIsDisplayed()
         compose.onNodeWithContentDescription(text(R.string.app_tab_search)).assertIsDisplayed()
+    }
+
+    private fun assertResultQuery(query: String) {
+        compose.onAllNodesWithText(text(R.string.search_details_title))[0].assertIsDisplayed()
+        searchInput().assertIsDisplayed().assertIsNotFocused().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(query)),
+        )
     }
 
     private fun assertEmptyQuery() {
