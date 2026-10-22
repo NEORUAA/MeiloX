@@ -32,6 +32,7 @@ data class CoverBackground(
     val color: Color,
     val endColor: Color,
     val brush: Brush,
+    val seedColor: Color? = null,
 )
 
 @Composable
@@ -89,7 +90,7 @@ fun rememberCoverBackground(
     val brush = remember(pageBackground, pageBackgroundEnd) {
         Brush.verticalGradient(listOf(pageBackground, pageBackgroundEnd))
     }
-    return CoverBackground(pageBackground, pageBackgroundEnd, brush)
+    return CoverBackground(pageBackground, pageBackgroundEnd, brush, coverColor)
 }
 
 @Composable

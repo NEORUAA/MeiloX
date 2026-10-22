@@ -3,6 +3,7 @@ package com.ljyh.mei.utils.color
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
@@ -11,6 +12,47 @@ import kotlin.math.abs
 import kotlin.math.pow
 
 object ColorExtractionUtils {
+
+    /** Keeps cover-hued detail actions readable across both ends of the page gradient. */
+    fun detailAccentColor(
+        seedColor: Color,
+        backgroundColor: Color,
+        backgroundEndColor: Color,
+    ): Color {
+        val seed = Hct.fromInt(seedColor.toArgb())
+        val chroma = if (seed.chroma < 4.0) 0.0 else (seed.chroma * 1.2).coerceAtMost(72.0)
+        val startLuminance = backgroundColor.convert(ColorSpaces.Srgb).luminance().toDouble()
+        val endLuminance = backgroundEndColor.convert(ColorSpaces.Srgb).luminance().toDouble()
+        fun minimumContrast(color: Color): Double {
+            val luminance = color.luminance().toDouble()
+            fun contrast(background: Double): Double =
+                (maxOf(luminance, background) + 0.05) / (minOf(luminance, background) + 0.05)
+            return minOf(contrast(startLuminance), contrast(endLuminance))
+        }
+
+        val darkContrast = minimumContrast(Color.Black)
+        val lightContrast = minimumContrast(Color.White)
+        val useLightAccent = lightContrast > darkContrast
+        val preferredTone = if (useLightAccent) 65.0 else 40.0
+        fun colorAtTone(tone: Double): Color = Color(Hct.from(seed.hue, chroma, tone).toInt())
+        val preferredColor = colorAtTone(preferredTone)
+        if (minimumContrast(preferredColor) >= 4.5) return preferredColor
+
+        var bestColor = if (useLightAccent) Color.White else Color.Black
+        // A gradient spanning both dark and light can have no single readable foreground.
+        if (minimumContrast(bestColor) < 4.5) return bestColor
+
+        var lowerTone = if (useLightAccent) preferredTone else 0.0
+        var upperTone = if (useLightAccent) 100.0 else preferredTone
+        repeat(12) {
+            val tone = (lowerTone + upperTone) / 2.0
+            val candidate = colorAtTone(tone)
+            val readable = minimumContrast(candidate) >= 4.5
+            if (readable) bestColor = candidate
+            if (readable == useLightAccent) upperTone = tone else lowerTone = tone
+        }
+        return bestColor
+    }
 
     /** Preserves the cover's RGB hue with bounded chroma and perceptual lightness. */
     fun detailBackgroundColor(seedColor: Color, isDark: Boolean): Color {
