@@ -19,11 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,12 +93,6 @@ fun PlayerQualityDropdown(
         quality != null -> stringResource(quality.labelRes)
         else -> pendingTitle
     }
-    val labels = MusicQuality.entries.map { stringResource(it.labelRes) } + pendingTitle
-    val textMeasurer = rememberTextMeasurer()
-    val reservedWidthPx = remember(labels, style, textMeasurer) {
-        labels.maxOf { textMeasurer.measure(it, style = style, maxLines = 1).size.width }
-    }
-    val reservedWidth = with(LocalDensity.current) { reservedWidthPx.toDp() }.coerceIn(64.dp, 136.dp)
     val titleAlpha = remember(qualityTitle, hasResolvedQuality) {
         Animatable(if (hasResolvedQuality) 0f else 1f)
     }
@@ -148,7 +140,7 @@ fun PlayerQualityDropdown(
                     text = qualityTitle,
                     style = style,
                     color = color,
-                    modifier = Modifier.widthIn(min = reservedWidth, max = 136.dp)
+                    modifier = Modifier.widthIn(max = 136.dp)
                         .graphicsLayer { alpha = titleAlpha.value },
                     textAlign = TextAlign.Center,
                     maxLines = 1,
