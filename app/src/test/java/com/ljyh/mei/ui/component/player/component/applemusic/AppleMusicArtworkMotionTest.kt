@@ -37,6 +37,27 @@ class AppleMusicArtworkMotionTest {
         assertEquals(200f, enlarged.center.x, 0f)
     }
 
+    @Test fun measuredFooterAndMetadataLimitArtworkInShortWindows() {
+        val previous = Rect(48f, 160f, 352f, 464f)
+        val limited = appleMusicAlbumBounds(previous, 400f, 26f, 36f, bottomLimit = 240f)
+        assertEquals(Rect(98f, 36f, 302f, 240f), limited)
+        val unconstrained = appleMusicAlbumBounds(previous, 400f, 26f, 36f)
+        assertEquals(unconstrained, appleMusicAlbumBounds(previous, 400f, 26f, 36f, bottomLimit = 600f))
+        assertEquals(limited, frame(0f, bounds = limited).bounds)
+        assertEquals(header, frame(1f, bounds = limited).bounds)
+    }
+
+    @Test fun exhaustedArtworkSpaceNeverProducesNegativeDimensions() {
+        val previous = Rect(48f, 160f, 352f, 464f)
+        for (bottom in listOf(0f, 20f, 36f)) {
+            val bounds = appleMusicAlbumBounds(previous, 400f, 26f, 36f, bottomLimit = bottom)
+            assertEquals(0f, bounds.width, 0f)
+            assertEquals(0f, bounds.height, 0f)
+            assertEquals(36f, bounds.top, 0f)
+            assertEquals(200f, bounds.center.x, 0f)
+        }
+    }
+
     @Test fun newAlbumAndHeaderBoundsShareExactEndpointsAcrossInterruptedMotion() {
         val enlarged = appleMusicAlbumBounds(normal, 400f, 24f, 36f)
         for (progress in listOf(0f, 0.6f, 0.25f, 1f, 0.75f, 0f)) {

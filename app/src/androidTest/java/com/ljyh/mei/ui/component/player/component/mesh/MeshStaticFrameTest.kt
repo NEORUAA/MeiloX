@@ -356,13 +356,14 @@ class MeshStaticFrameTest {
                     LocalPlayerBackgroundReadyChanged provides { events += it },
                 ) {
                     if (visible.value) {
-                        FluidBackground(
-                            imageUrl = imageUrl.value,
-                            beatMeter = beatMeter,
-                            isPlaying = false,
-                            backdrop = backdrop,
-                            modifier = Modifier.size(96.dp).testTag("fluidBackground"),
-                        )
+                        Box(Modifier.size(96.dp).background(ComposeColor.Black).testTag("fluidBackground")) {
+                            FluidBackground(
+                                imageUrl = imageUrl.value,
+                                beatMeter = beatMeter,
+                                isPlaying = false,
+                                backdrop = backdrop,
+                            )
+                        }
                     }
                 }
             }
@@ -371,11 +372,21 @@ class MeshStaticFrameTest {
                 assertTrue("An empty background must never report ready", events.none { it })
                 imageUrl.value = first.toURI().toString()
             }
+            var enteringBalance = 0.0
+            compose.waitUntil(timeoutMillis = 10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                enteringBalance = redBlueBalance()
+                enteringBalance > 5
+            }
+            assertTrue("The underlying page must remain visible during the first reveal", events.none { it })
             compose.waitUntil(timeoutMillis = 10_000) {
                 compose.mainClock.advanceTimeByFrame()
                 events.any { it }
             }
-            assertTrue("The ready background must display the first cover", redBlueBalance() > 40)
+            val settledBalance = redBlueBalance()
+            assertTrue("The first mesh must fade in instead of appearing at full opacity",
+                settledBalance > enteringBalance + 5)
+            assertTrue("The ready background must display the first cover", settledBalance > 40)
             val notReadyCount = events.count { !it }
             compose.runOnIdle { imageUrl.value = second.toURI().toString() }
             compose.waitUntil(timeoutMillis = 10_000) {

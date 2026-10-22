@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.State
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.draw.clipToBounds
@@ -78,6 +79,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -103,7 +106,6 @@ import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.BottomSheet
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
-import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.trackBackdropPosition
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -125,7 +127,6 @@ fun AppleMusicPlayer(
     miniPlayerVerticalOffset: () -> Dp,
 ) {
     val density = LocalDensity.current
-    val isDark = LocalGlassColors.current.isDark
     val configuration = LocalConfiguration.current
 
     // --- Apple Music 特定状态 ---
@@ -161,6 +162,7 @@ fun AppleMusicPlayer(
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
     val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
+    val sheetContentVisible by remember(state) { derivedStateOf { state.isContentVisible } }
 
     // --- Apple Music 特定的 LaunchedEffect ---
     BackHandler(enabled = sheetExpanded && showDetail) {
@@ -220,6 +222,16 @@ fun AppleMusicPlayer(
 
         val bottomControlsHeightDp = if (isCompactHeight || isLandscape) 220.dp else 300.dp
         val bottomControlsHeight = with(density) { bottomControlsHeightDp.toPx() }
+        var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
+        var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
+        val measuredControlsHeight = controlsHeightPx.takeIf { it > 0 }?.toFloat() ?: bottomControlsHeight
+        val albumInformationHeight = albumRowSize.height.takeIf { it > 0 }?.toFloat()
+            ?: with(density) { 42.sp.toPx() }
+        val showAlbumInfo = !isCompactHeight && !isLandscape
+        val albumTop = appleMusicAlbumInfoTop(
+            maxHeightPx, measuredControlsHeight, albumInformationHeight,
+            with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
+        )
         val controlsShown = !showLyrics || stateContainer.controlsVisible
         val controlsFadeShift = animateFloatAsState(
             targetValue = if (controlsShown) 0f else 0.6f,
@@ -247,6 +259,8 @@ fun AppleMusicPlayer(
             // Flamingo uses 15.dp outer padding plus 9.dp inner padding while playing.
             horizontalInset = with(density) { AppleMusicDimensions.artworkInset.toPx() },
             topLimit = topSafeArea + with(density) { 12.dp.toPx() },
+            bottomLimit = if (showAlbumInfo) albumTop - minTopMargin
+                else maxHeightPx - measuredControlsHeight - minTopMargin,
         )
         val normalSize = normalBounds.width
 
@@ -327,21 +341,14 @@ fun AppleMusicPlayer(
                         .size(width = 58.dp, height = 4.dp)
                         .playerAdditiveBlend()
                         .background(
-                            Color.White.copy(alpha = if (isDark) 0.48f else 0.62f),
+                            Color.White.copy(alpha = 0.3f),
                             Capsule(),
                         ),
                 )
 
 
-                var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
                 var progressTrackTopInRoot by remember(screenWidth, maxHeightPx) { mutableStateOf<Float?>(null) }
-                var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
-                val showAlbumInfo = !isCompactHeight && !isLandscape
                 val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
-                val albumTop = appleMusicAlbumInfoTop(
-                    maxHeightPx, controlsHeightPx.toFloat(), albumRowSize.height.toFloat(),
-                    with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
-                )
                 val lyricEntryTranslationY = {
                     if (showAlbumInfo) {
                         appleMusicLyricsTranslationY(
@@ -367,32 +374,45 @@ fun AppleMusicPlayer(
                     Column(Modifier.fillMaxSize()) {
                         Spacer(modifier = Modifier.height(with(density) { lyricViewportTop.toDp() }))
 
-                        AnimatedContent(
-                            targetState = if (showDetail) showQueue else lastDetailPage == AppleMusicPlayerPage.Queue,
-                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
+                        AppleMusicDetailPages(
+                            queueSelected = if (showDetail) showQueue else lastDetailPage == AppleMusicPlayerPage.Queue,
+                            active = showDetail && sheetContentVisible,
+                            animate = showDetail && headerInteractive,
+                            preloadQueue = sheetExpanded,
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            label = "PlayerDetailPage",
-                        ) { queuePage ->
-                            if (queuePage) {
+                            queue = { active ->
                                 val queueBottom = progressTrackTopInRoot
                                     ?.minus(playerBoundsInRoot?.top ?: 0f)
                                     ?: (maxHeightPx - controlsHeightPx)
-                                Box(Modifier.fillMaxSize()) {
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .playerQueueViewport(with(density) {
+                                            (queueBottom - lyricViewportTop).coerceAtLeast(0f).toDp()
+                                        }),
+                                ) {
                                     PlayerQueuePage(
                                         playerConnection = stateContainer.playerConnection,
+                                        active = active,
+                                        indication = null,
+                                        controlsFadeRange = { listHeight ->
+                                            appleMusicLyricsControlsFadeRange(
+                                                viewportHeight = maxHeightPx - lyricViewportTop,
+                                                shift = controlsFadeShift.value,
+                                                translationY = lyricEntryTranslationY(),
+                                                controlsTop = listHeight,
+                                            )
+                                        },
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(with(density) {
-                                                (queueBottom - lyricViewportTop).coerceAtLeast(0f).toDp()
-                                            })
-                                            .padding(top = 16.dp)
-                                            .clipToBounds(),
+                                            .fillMaxSize()
+                                            .graphicsLayer { translationY = lyricEntryTranslationY() }
+                                            .padding(top = 16.dp),
                                     )
                                 }
-                            } else {
+                            },
+                            lyrics = { active ->
                                 LyricScreen(
                                     lyricData = lyricLine,
-                                    active = showLyrics,
+                                    active = active,
                                     showSourceBadge = false,
                                     topFadeHeight = AppleMusicDimensions.lyricTopFade,
                                     bottomFadeHeight = AppleMusicDimensions.lyricBottomFade,
@@ -418,8 +438,8 @@ fun AppleMusicPlayer(
                                     controlsVisible = stateContainer.controlsVisible,
                                     onToggleControls = { stateContainer.controlsVisible = it },
                                 )
-                            }
-                        }
+                            },
+                        )
                     }
                 }
 
@@ -689,6 +709,79 @@ fun AppleMusicPlayer(
         }
     }
 }
+
+/** Keep expensive page state alive; only the selected page owns input and clocks. */
+@Composable
+internal fun AppleMusicDetailPages(
+    queueSelected: Boolean,
+    active: Boolean,
+    animate: Boolean,
+    preloadQueue: Boolean,
+    modifier: Modifier = Modifier,
+    lyrics: @Composable (active: Boolean) -> Unit,
+    queue: @Composable (active: Boolean) -> Unit,
+) {
+    var queuePrepared by remember { mutableStateOf(false) }
+    LaunchedEffect(preloadQueue) {
+        if (preloadQueue && !queuePrepared) {
+            // Leave the sheet's settling frame free of queue initialization.
+            withFrameNanos { }
+            queuePrepared = true
+        }
+    }
+    LaunchedEffect(queueSelected) {
+        if (queueSelected) queuePrepared = true
+    }
+    val queueOpacity = remember { Animatable(if (queueSelected) 1f else 0f) }
+    LaunchedEffect(queueSelected, animate) {
+        val target = if (queueSelected) 1f else 0f
+        if (animate) queueOpacity.animateTo(target, tween(300))
+        else queueOpacity.snapTo(target)
+    }
+    val lyricOpacity = remember { derivedStateOf { 1f - queueOpacity.value } }
+    Box(modifier) {
+        val lyricsActive = active && !queueSelected
+        Box(Modifier.fillMaxSize().playerDetailPage(lyricOpacity, lyricsActive)) {
+            lyrics(lyricsActive)
+        }
+        if (queuePrepared || queueSelected) {
+            val queueActive = active && queueSelected
+            Box(Modifier.fillMaxSize().playerDetailPage(queueOpacity.asState(), queueActive)) {
+                queue(queueActive)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Modifier.playerDetailPage(opacity: State<Float>, active: Boolean): Modifier {
+    val visible = remember(opacity) { derivedStateOf { opacity.value > 0f } }
+    return layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        layout(placeable.width, placeable.height) {
+            if (visible.value) placeable.place(0, 0)
+        }
+    }
+        .playerContentFade(opacity)
+        .then(if (active) Modifier else Modifier.clearAndSetSemantics { })
+        .pointerInput(active) {
+            // Consume inactive-page gestures, including empty space, until its
+            // fade finishes. Keep draw order stable when a fade reverses.
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (!active) event.changes.forEach { it.consume() }
+                }
+            }
+        }
+}
+
+internal fun Modifier.playerQueueViewport(height: Dp): Modifier =
+    // The resident host can pass a full-height minimum. Release it before measuring
+    // the queue, keep the viewport top-aligned, and clip before translating content.
+    wrapContentHeight(align = Alignment.Top, unbounded = true)
+        .height(height)
+        .clipToBounds()
 
 internal fun Modifier.playerContentFade(alpha: State<Float>): Modifier = graphicsLayer {
     this.alpha = alpha.value

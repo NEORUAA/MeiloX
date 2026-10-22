@@ -157,6 +157,7 @@ import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
+import com.ljyh.mei.constants.NavigationBarSurfaceHeight
 import com.ljyh.mei.constants.NavigationBarBottomMargin
 import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.UserData
@@ -1400,8 +1401,8 @@ private fun AnimatedBottomNavigationRow(
             .offset {
                 val slideOffset = (bottomMargin + NavigationBarHeight) *
                     playerBottomSheetState.progress.coerceIn(0f, 1f)
-                // Compact controls shrink around the center of their 64dp hosts.
-                val compactInset = (64.dp - MiniPlayerHeight) / 2 * compactProgress.value
+                // Compact controls shrink around the center of their expanded hosts.
+                val compactInset = (NavigationBarSurfaceHeight - MiniPlayerHeight) / 2 * compactProgress.value
                 IntOffset(x = 0, y = (slideOffset + compactInset).roundToPx())
             },
         verticalAlignment = Alignment.CenterVertically,
@@ -1418,7 +1419,7 @@ private fun AnimatedBottomNavigationRow(
         )
         Spacer(Modifier.size(width = 8.dp, height = 1.dp))
         Box(
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(NavigationBarSurfaceHeight),
             contentAlignment = Alignment.CenterEnd,
         ) {
             AnimatedHomeSearchButton(compactProgress, backdrop, onSearchClick)
@@ -1437,9 +1438,9 @@ private fun AnimatedHomeSearchButton(
         onClick = onClick,
         backdrop = backdrop,
         style = GlassSurfaceStyle.Navigation,
-        modifier = Modifier.size(64.dp - 16.dp * progress),
+        modifier = Modifier.size(NavigationBarSurfaceHeight - 16.dp * progress),
         morphProgress = compactProgress,
-        morphCaptureWidth = 64.dp,
+        morphCaptureWidth = NavigationBarSurfaceHeight,
     ) {
         SfIcon(
             SfSymbol.Search,

@@ -3,6 +3,8 @@ package com.ljyh.mei.ui.component.player.component.applemusic
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Indication
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -112,6 +115,9 @@ fun PlayerQueuePage(
     playerConnection: PlayerConnection,
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = AppleMusicDimensions.lyricTextInset,
+    indication: Indication? = LocalIndication.current,
+    controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
+    active: Boolean = true,
 ) {
     val selectionPadding = 5.dp
     val artworkCornerRadius = 5.dp
@@ -141,13 +147,19 @@ fun PlayerQueuePage(
     val currentQueueIndex = entries.indexOfFirst { it.rawIndex == currentIndex }
     val autoplayQueueIndex = entries.indexOfFirst { it.key == autoplayStartEntryId }
 
-    LaunchedEffect(entries.size, currentQueueIndex) {
+    LaunchedEffect(active) {
+        if (!active) menuExpanded = false
+    }
+
+    LaunchedEffect(entries.size, currentQueueIndex, autoplayQueueIndex, autoplayEnabled, active) {
         if (initialScrollPending && currentQueueIndex in entries.indices) {
             // Start with Up Next while keeping earlier queue entries reachable by scrolling.
             val nextIndex = (currentQueueIndex + 1).coerceAtMost(entries.lastIndex)
             val sectionOffset = if (autoplayEnabled && autoplayQueueIndex in 0..nextIndex) 1 else 0
             listState.scrollToItem(nextIndex + sectionOffset)
-            initialScrollPending = false
+            // Prewarming may precede the first visit by several tracks. Follow
+            // playback until that visit, then preserve the user's scroll position.
+            if (active) initialScrollPending = false
         }
     }
 
@@ -190,14 +202,18 @@ fun PlayerQueuePage(
         }
     }
 
-    LaunchedEffect(reorderState.isAnyItemDragging) {
-        if (reorderState.isAnyItemDragging) {
+    LaunchedEffect(active, reorderState.isAnyItemDragging) {
+        if (active && reorderState.isAnyItemDragging) {
             // Drag translations do not change LazyList layout info; refresh their viewport masks.
             while (isActive) withFrameNanos { dragFrame++ }
         }
     }
-    val normalFade = Modifier.queueViewportFade(viewportCoordinates, listState, { dragFrame })
-    val additiveFade = Modifier.queueViewportFade(viewportCoordinates, listState, { dragFrame }, additive = true)
+    val normalFade = Modifier.queueViewportFade(
+        viewportCoordinates, listState, { dragFrame }, controlsFadeRange = controlsFadeRange,
+    )
+    val additiveFade = Modifier.queueViewportFade(
+        viewportCoordinates, listState, { dragFrame }, additive = true, controlsFadeRange = controlsFadeRange,
+    )
 
     Column(modifier.testTag("player_queue_page")) {
         Row(
@@ -205,6 +221,7 @@ fun PlayerQueuePage(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             QueueModeButton(
+                indication = indication,
                 systemName = "shuffle",
                 label = stringResource(R.string.notification_mode_shuffle),
                 selected = shuffleEnabled,
@@ -213,6 +230,7 @@ fun PlayerQueuePage(
                 onClick = { playerConnection.service.setShuffleModeEnabled(!shuffleEnabled) },
             )
             QueueModeButton(
+                indication = indication,
                 systemName = if (repeatMode == Player.REPEAT_MODE_ONE) "repeat.1" else "repeat",
                 label = stringResource(R.string.loop_playback),
                 selected = repeatMode != Player.REPEAT_MODE_OFF,
@@ -228,6 +246,7 @@ fun PlayerQueuePage(
                 },
             )
             QueueModeButton(
+                indication = indication,
                 systemName = "infinity",
                 label = stringResource(R.string.queue_autoplay),
                 selected = autoplayEnabled,
@@ -236,6 +255,7 @@ fun PlayerQueuePage(
                 onClick = { playerConnection.setQueueAutoplayEnabled(!autoplayEnabled) },
             )
             QueueModeButton(
+                indication = indication,
                 systemName = "circlebadge.2",
                 label = stringResource(R.string.automix_enabled),
                 selected = autoMixEnabled,
@@ -320,6 +340,8 @@ fun PlayerQueuePage(
                                         modifier = Modifier.weight(1f).fillMaxHeight()
                                             .onGloballyPositioned { entryCoordinates = it }
                                             .combinedClickable(
+                                                interactionSource = null,
+                                                indication = indication,
                                                 onClick = {
                                                     playerConnection.service.queueManager.seekToQueueEntry(entry.key)
                                                 },
@@ -471,30 +493,40 @@ private fun QueueAutoplayHeader(modifier: Modifier) {
     }
 }
 
-private fun Modifier.queueViewportFade(
+internal fun Modifier.queueViewportFade(
     viewportCoordinates: LayoutCoordinates?,
     listState: LazyListState,
     dragFrame: () -> Int,
     additive: Boolean = false,
+    controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
 ): Modifier = composed {
     var contentCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var contentPositionInRoot by remember { mutableStateOf<Offset?>(null) }
     graphicsLayer {
         blendMode = if (additive) BlendMode.Plus else BlendMode.SrcOver
         compositingStrategy = CompositingStrategy.Offscreen
     }
-        .onGloballyPositioned { contentCoordinates = it }
+        .onGloballyPositioned {
+            contentCoordinates = it
+            // LayoutCoordinates is reused while animateItem moves the row. Snapshot its
+            // position too so cached masks redraw as content enters the viewport.
+            contentPositionInRoot = it.positionInRoot()
+        }
         .drawWithContent {
             val layout = listState.layoutInfo
             dragFrame()
             drawContent()
             val viewport = viewportCoordinates
             val content = contentCoordinates
-            if (viewport?.isAttached == true && content?.isAttached == true) {
+            if (contentPositionInRoot != null && viewport?.isAttached == true && content?.isAttached == true) {
                 val height = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
                 if (height > 0f) {
                     val top = viewport.localPositionOf(content, Offset.Zero).y
+                    val controlsRange = controlsFadeRange(height)
                     val topFade = if (listState.canScrollBackward) (8.dp.toPx() / height).coerceIn(0f, 0.5f) else 0f
-                    val bottomFade = if (listState.canScrollForward) (60.dp.toPx() / height).coerceIn(0f, 0.5f) else 0f
+                    val bottomFade = if (controlsRange == null && listState.canScrollForward) {
+                        (60.dp.toPx() / height).coerceIn(0f, 0.5f)
+                    } else 0f
                     drawRect(
                         brush = Brush.verticalGradient(
                             0f to if (topFade > 0f) Color.Transparent else Color.Black,
@@ -506,6 +538,18 @@ private fun Modifier.queueViewportFade(
                         ),
                         blendMode = BlendMode.DstIn,
                     )
+                    controlsRange?.let { range ->
+                        if (range.endInclusive > range.start) {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(Color.Black, Color.Transparent),
+                                    startY = range.start - top,
+                                    endY = range.endInclusive - top,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -518,6 +562,7 @@ private fun QueueModeButton(
     selected: Boolean,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    indication: Indication? = LocalIndication.current,
     onClick: () -> Unit,
 ) {
     Box(
@@ -527,7 +572,13 @@ private fun QueueModeButton(
             .clip(Capsule())
             .background(Color.White.copy(alpha = if (selected) 0.45f else 0.1f))
             .semantics { this.selected = selected }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .clickable(
+                interactionSource = null,
+                indication = indication,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         SfIcon(
