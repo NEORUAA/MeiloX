@@ -20,6 +20,23 @@ class AppleMusicArtworkMotionTest {
     private fun frame(progress: Float, playbackScale: Float = 1f, bounds: Rect = normal) =
         appleMusicArtworkFrame(bounds, header, 12f, 8f, 16f, playbackScale, progress)
 
+    @Test fun autoplaySectionSeparatesOnlyTheDisplayedUpcomingEntries() {
+        for (count in listOf(0, 1, 2, 7)) {
+            for (current in -1 until count) {
+                for (autoplay in -1 until count) {
+                    for (inlineCurrent in listOf(false, true)) {
+                        val displayed = (0 until count).filter { !inlineCurrent || it > current }
+                        val section = playerQueueAutoplaySectionIndex(current, autoplay, displayed.size, inlineCurrent)
+                        val queuedSongs = displayed.filter { autoplay < 0 || it < autoplay }
+                        val autoplaySongs = displayed.filter { autoplay >= 0 && it >= autoplay }
+                        assertEquals("Queued songs must precede the divider", queuedSongs, displayed.take(section))
+                        assertEquals("Autoplay songs must follow the divider", autoplaySongs, displayed.drop(section))
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun queueTailKeepsShortHeadersReachableAndLastSongsAboveTheFade() {
         val rowHeight = 56f
         for (viewport in listOf(280f, 460f, 680f)) {

@@ -115,7 +115,7 @@ class AppleMusicTitleRenderingTest {
                         marqueeEnabled = false,
                         onTextPositioned = { textRight = it.boundsInRoot().right },
                         actionsModifier = Modifier.playerInfoMotion(
-                            actionsOpacity, actionsProgress, Offset.Zero, Offset.Zero, true,
+                            actionsOpacity, actionsProgress, { Offset.Zero }, { Offset.Zero }, true,
                         ),
                         modifier = modifier,
                     )
@@ -166,8 +166,16 @@ class AppleMusicTitleRenderingTest {
             compose.mainClock.advanceTimeBy(700)
             compose.waitForIdle()
             val closedRight = textRight
-            assertTrue("Disappearing favorites must resize the title gradually", exitingRight > openRight)
-            assertTrue(exitingRight < closedRight)
+            assertTrue(
+                "Disappearing favorites must resize the title gradually: " +
+                    "useClassic=$useClassic, openRight=$openRight, exitingRight=$exitingRight, closedRight=$closedRight",
+                exitingRight > openRight,
+            )
+            assertTrue(
+                "Disappearing favorites must keep resizing: " +
+                    "useClassic=$useClassic, openRight=$openRight, exitingRight=$exitingRight, closedRight=$closedRight",
+                exitingRight < closedRight,
+            )
 
             compose.runOnIdle { local.value = false; trackId.value = 3 }
             compose.mainClock.advanceTimeBy(32)
@@ -454,6 +462,63 @@ class AppleMusicTitleRenderingTest {
         assertTrue("The shifted row must lose its old bottom mask without scrolling", blueAt(120) > 0.95f)
     }
 
+    @Test fun queueFadeCacheTracksScrollingAndStickyContentBoundsWithAdditiveBlending() {
+        val contentTop = mutableStateOf(0.dp)
+        val background = Color(0.1f, 0.2f, 0.3f)
+        lateinit var listState: LazyListState
+        var pixelsPerDp = 1f
+        var endOffset = 0
+        compose.setContent {
+            val density = LocalDensity.current
+            pixelsPerDp = density.density
+            endOffset = with(density) { 600.dp.roundToPx() - 200.dp.roundToPx() }
+            listState = rememberLazyListState(
+                initialFirstVisibleItemScrollOffset = with(density) { 40.dp.roundToPx() },
+            )
+            val viewport = remember { mutableStateOf<LayoutCoordinates?>(null) }
+            LazyColumn(
+                state = listState,
+                overscrollEffect = null,
+                modifier = Modifier.width(160.dp).height(200.dp).background(background)
+                    .testTag("queue_cached_fade")
+                    .onGloballyPositioned { viewport.value = it },
+            ) {
+                item(key = "continuous_row") {
+                    Box(
+                        Modifier.fillMaxWidth().height(600.dp)
+                            .queueViewportFade(
+                                viewport.value, listState, { 0 }, additive = true,
+                                contentTop = { with(density) { contentTop.value.toPx() } },
+                            )
+                            .background(Color(0.2f, 0.2f, 0.2f)),
+                    )
+                }
+            }
+        }
+        fun assertContributions(phase: String, vararg samples: Pair<Int, Float>) {
+            val bitmap = compose.onNodeWithTag("queue_cached_fade").captureToImage()
+            val scale = bitmap.width / 160f
+            val pixels = bitmap.toPixelMap()
+            for ((y, contribution) in samples) {
+                val actual = pixels[bitmap.width / 2, (y * scale).roundToInt()]
+                assertEquals("$phase red at $y", background.red + contribution, actual.red, 0.025f)
+                assertEquals("$phase green at $y", background.green + contribution, actual.green, 0.025f)
+                assertEquals("$phase blue at $y", background.blue + contribution, actual.blue, 0.025f)
+            }
+        }
+
+        assertContributions("Initial scroll", 4 to 0.1f, 100 to 0.2f, 170 to 0.1f)
+        compose.runOnIdle { listState.requestScrollToItem(0, (120f * pixelsPerDp).roundToInt()) }
+        assertContributions("Same row after scrolling", 4 to 0.1f, 100 to 0.2f, 170 to 0.1f)
+        compose.runOnIdle { contentTop.value = 160.dp }
+        assertContributions("Moved sticky boundary", 100 to 0f, 164 to 0.1f, 172 to 0.2f, 190 to 0.1f)
+        compose.runOnIdle {
+            contentTop.value = 32.dp
+            listState.requestScrollToItem(0, endOffset)
+        }
+        assertContributions("End of the same row", 16 to 0f, 36 to 0.1f, 100 to 0.2f, 190 to 0.2f)
+    }
+
     private fun showMarquee(text: String) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
@@ -528,7 +593,7 @@ class AppleMusicTitleRenderingTest {
                             needShadow = false,
                             marqueeEdgeWidth = edgeWidth,
                             textModifier = Modifier.playerInfoMotion(
-                                opacity, progress, Offset.Zero, destination, true,
+                                opacity, progress, { Offset.Zero }, { destination }, true,
                                 layerOutsets = outsets,
                             ),
                             modifier = Modifier.width(280.dp),
@@ -595,7 +660,7 @@ class AppleMusicTitleRenderingTest {
         compose.setContent {
             MaterialTheme {
                 val destination = Offset(0f, with(LocalDensity.current) { 96.dp.toPx() })
-                val motion = Modifier.playerInfoMotion(opacity, progress, Offset.Zero, destination, true)
+                val motion = Modifier.playerInfoMotion(opacity, progress, { Offset.Zero }, { destination }, true)
                 Box(
                     Modifier.width(360.dp).height(220.dp)
                         .background(background).testTag("metadata-blend-background"),
@@ -641,7 +706,7 @@ class AppleMusicTitleRenderingTest {
                 if (pixels[x, y].red > glyph.red) glyph = pixels[x, y]
             }
             // Sample the background with the artist so a flattened fade cannot pass.
-            val contribution = 0.35f * alpha
+            val contribution = 0.4f * alpha
             assertEquals("Artist red at motion $fraction", background.red + contribution, glyph.red, 0.03f)
             assertEquals("Artist green at motion $fraction", background.green + contribution, glyph.green, 0.03f)
             assertEquals("Artist blue at motion $fraction", background.blue + contribution, glyph.blue, 0.03f)

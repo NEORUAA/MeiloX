@@ -41,7 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -144,6 +145,17 @@ internal fun playerQueueSnapTarget(
             (scrollDirection == 0 && coverTop <= -coverHeight / 2f))) -coverHeight else 0f
 }
 
+internal fun playerQueueAutoplaySectionIndex(
+    currentQueueIndex: Int,
+    autoplayQueueIndex: Int,
+    displayedCount: Int,
+    inlineCurrent: Boolean,
+): Int = when {
+    autoplayQueueIndex < 0 || displayedCount == 0 -> displayedCount
+    inlineCurrent -> (autoplayQueueIndex - currentQueueIndex - 1).coerceIn(0, displayedCount)
+    else -> autoplayQueueIndex.coerceIn(0, displayedCount)
+}
+
 private data class PhoneQueueEntry(
     val key: String,
     val mediaItem: MediaItem,
@@ -153,14 +165,18 @@ private data class PhoneQueueEntry(
 @OptIn(UnstableApi::class)
 private fun Player.phoneQueueEntries(): List<PhoneQueueEntry> {
     val timeline = currentTimeline
+    var fallbackWindow: Timeline.Window? = null
     return playbackOrderIndices().map { index ->
         val item = getMediaItemAt(index)
-        val windowUid = if (index < timeline.windowCount) {
-            timeline.getWindow(index, Timeline.Window()).uid
-        } else null
+        val key = item.queueEntryId ?: run {
+            val windowUid = if (index < timeline.windowCount) {
+                val window = fallbackWindow ?: Timeline.Window().also { fallbackWindow = it }
+                timeline.getWindow(index, window).uid
+            } else null
+            windowUid?.let { "window:$it" } ?: "fallback:${item.mediaId}:$index"
+        }
         PhoneQueueEntry(
-            key = item.queueEntryId ?: windowUid?.let { "window:$it" }
-                ?: "fallback:${item.mediaId}:$index",
+            key = key,
             mediaItem = item,
             rawIndex = index,
         )
@@ -207,6 +223,9 @@ fun PlayerQueuePage(
     val entries = remember(player) {
         mutableStateListOf<PhoneQueueEntry>().apply { addAll(player.phoneQueueEntries()) }
     }
+    val entriesSnapshot = entries.toList()
+    val entriesByKey = remember(entriesSnapshot) { entriesSnapshot.associateBy { it.key } }
+    val latestEntriesByKey by rememberUpdatedState(entriesByKey)
     val listState = rememberLazyListState()
     var viewportCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
@@ -226,11 +245,23 @@ fun PlayerQueuePage(
     var menuAnchorBounds by remember { mutableStateOf<Rect?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
     var menuRemovalRequested by remember { mutableStateOf(false) }
-    val currentQueueIndex = entries.indexOfFirst { it.rawIndex == currentIndex }
-    val autoplayQueueIndex = entries.indexOfFirst { it.key == autoplayStartEntryId }
-    val currentEntry = entries.getOrNull(currentQueueIndex)
-    val historyEntries = entries.take(currentQueueIndex.coerceAtLeast(0))
-    val displayedEntries = if (inlineCurrent) entries.drop((currentQueueIndex + 1).coerceAtLeast(0)) else entries.toList()
+    val currentQueueIndex = remember(entriesSnapshot, currentIndex) {
+        entriesSnapshot.indexOfFirst { it.rawIndex == currentIndex }
+    }
+    val autoplayQueueIndex = remember(entriesSnapshot, autoplayStartEntryId) {
+        entriesSnapshot.indexOfFirst { it.key == autoplayStartEntryId }
+    }
+    val currentEntry = entriesSnapshot.getOrNull(currentQueueIndex)
+    val historyEntries = remember(entriesSnapshot, currentQueueIndex) {
+        entriesSnapshot.subList(0, currentQueueIndex.coerceAtLeast(0))
+    }
+    val displayedEntries = remember(entriesSnapshot, currentQueueIndex, inlineCurrent) {
+        if (inlineCurrent) entriesSnapshot.subList((currentQueueIndex + 1).coerceAtLeast(0), entriesSnapshot.size)
+        else entriesSnapshot
+    }
+    val autoplaySectionIndex = if (autoplayEnabled) {
+        playerQueueAutoplaySectionIndex(currentQueueIndex, autoplayQueueIndex, displayedEntries.size, inlineCurrent)
+    } else displayedEntries.size
     // Heading and filler precede history rows; the gap and zero-height sticky boundary precede the cover.
     val currentHeaderIndex = historyEntries.size + if (historyEntries.isNotEmpty()) 4 else 2
     val historyPaddingPx = ceil(playerQueueHistoryPadding(
@@ -263,8 +294,10 @@ fun PlayerQueuePage(
     LaunchedEffect(playerConnection, active) {
         if (!active) return@LaunchedEffect
         snapshotFlow {
+            val byKey = latestEntriesByKey
             listState.layoutInfo.visibleItemsInfo.mapNotNull { visible ->
-                entries.firstOrNull { it.key == visible.key }?.mediaItem?.queueEntryId
+                val key = visible.key as? String ?: return@mapNotNull null
+                byKey[key]?.mediaItem?.queueEntryId
             }
         }.collect { playerConnection.service.queueManager.loadMetadataForQueueEntries(it) }
     }
@@ -657,17 +690,16 @@ fun PlayerQueuePage(
                 item(key = "queue_history_padding") {
                     Spacer(Modifier.height(with(density) { historyPaddingPx.toDp() }))
                 }
-                historyEntries.forEach { entry ->
-                    item(key = entry.key) {
-                        QueueSongRow(
-                            entry = entry,
-                            indication = indication,
-                            normalFade = normalFade,
-                            additiveFade = additiveFade,
-                            onClick = { playerConnection.service.queueManager.seekToQueueEntry(entry.key) },
-                            onLongClick = { openEntryMenu(entry.key, it) },
-                        )
-                    }
+                items(count = historyEntries.size, key = { historyEntries[it].key }) { index ->
+                    val entry = historyEntries[index]
+                    QueueSongRow(
+                        entry = entry,
+                        indication = indication,
+                        normalFade = normalFade,
+                        additiveFade = additiveFade,
+                        onClick = { playerConnection.service.queueManager.seekToQueueEntry(entry.key) },
+                        onLongClick = { openEntryMenu(entry.key, it) },
+                    )
                 }
             }
             if (inlineCurrent) {
@@ -714,16 +746,12 @@ fun PlayerQueuePage(
                     )
                 }
             }
-            displayedEntries.forEachIndexed { index, entry ->
-                val queueIndex = if (inlineCurrent) currentQueueIndex + 1 + index else index
-                if (autoplayEnabled && autoplayQueueIndex >= 0 &&
-                    (queueIndex == autoplayQueueIndex || (inlineCurrent && index == 0 && autoplayQueueIndex <= currentQueueIndex))
-                ) {
-                    item(key = "autoplay_section") {
-                        QueueAutoplayHeader(autoplayHeadingModifier)
-                    }
-                }
-                item(key = entry.key) {
+            fun queueSongs(startIndex: Int, endIndex: Int) {
+                items(
+                    count = endIndex - startIndex,
+                    key = { displayedEntries[startIndex + it].key },
+                ) { index ->
+                    val entry = displayedEntries[startIndex + index]
                     ReorderableItem(reorderState, key = entry.key) {
                         QueueSongRow(
                             entry = entry,
@@ -745,11 +773,13 @@ fun PlayerQueuePage(
                     }
                 }
             }
-            if (autoplayEnabled && (autoplayQueueIndex < 0 || displayedEntries.isEmpty())) {
+            queueSongs(0, autoplaySectionIndex)
+            if (autoplayEnabled) {
                 item(key = "autoplay_section") {
                     QueueAutoplayHeader(autoplayHeadingModifier)
                 }
             }
+            queueSongs(autoplaySectionIndex, displayedEntries.size)
             item(key = "queue_bottom_space") {
                 Spacer(Modifier.height(with(density) { tailHeightPx.toDp() }))
             }
@@ -934,49 +964,87 @@ internal fun Modifier.queueViewportFade(
             // position too so cached masks redraw as content enters the viewport.
             contentPositionInRoot = it.positionInRoot()
         }
-        .drawWithContent {
-            val layout = listState.layoutInfo
-            dragFrame()
-            val viewport = viewportCoordinates
-            val content = contentCoordinates
-            val visibleTop = contentTop().coerceAtLeast(0f)
-            val clipTop = if (contentPositionInRoot != null && viewport?.isAttached == true && content?.isAttached == true) {
-                visibleTop - viewport.localPositionOf(content, Offset.Zero).y
-            } else 0f
-            clipRect(top = clipTop.coerceIn(0f, size.height)) { this@drawWithContent.drawContent() }
-            if (contentPositionInRoot != null && viewport?.isAttached == true && content?.isAttached == true) {
+        .drawWithCache {
+            val topFadeHeight = 8.dp.toPx()
+            val bottomFadeHeight = 60.dp.toPx()
+            var viewportBrush: Brush? = null
+            var cachedFadeTop = Float.NaN
+            var cachedHeight = Float.NaN
+            var cachedTopFade = Float.NaN
+            var cachedBottomFade = Float.NaN
+            var controlsBrush: Brush? = null
+            var cachedControlsStart = Float.NaN
+            var cachedControlsEnd = Float.NaN
+            onDrawWithContent {
+                val layout = listState.layoutInfo
+                dragFrame()
+                val viewport = viewportCoordinates
+                val content = contentCoordinates
+                val top = if (contentPositionInRoot != null && viewport?.isAttached == true && content?.isAttached == true) {
+                    viewport.localPositionOf(content, Offset.Zero).y
+                } else null
+                val visibleTop = contentTop().coerceAtLeast(0f)
+                val clipTop = if (top != null) visibleTop - top else 0f
+                clipRect(top = clipTop.coerceIn(0f, size.height)) { this@onDrawWithContent.drawContent() }
+                if (top == null) return@onDrawWithContent
                 val height = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
-                if (height > 0f) {
-                    val top = viewport.localPositionOf(content, Offset.Zero).y
-                    val controlsRange = controlsFadeRange(height)
-                    val fadeTop = visibleTop.coerceAtMost(height)
-                    val fadeHeight = (height - fadeTop).coerceAtLeast(1f)
-                    val topFade = if (listState.canScrollBackward) (8.dp.toPx() / fadeHeight).coerceIn(0f, 0.5f) else 0f
-                    val bottomFade = if (controlsRange == null && listState.canScrollForward) {
-                        (60.dp.toPx() / fadeHeight).coerceIn(0f, 0.5f)
-                    } else 0f
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0f to if (topFade > 0f) Color.Transparent else Color.Black,
-                            topFade to Color.Black,
-                            1f - bottomFade to Color.Black,
-                            1f to if (bottomFade > 0f) Color.Transparent else Color.Black,
-                            startY = fadeTop - top,
-                            endY = height - top,
-                        ),
-                        blendMode = BlendMode.DstIn,
+                if (height <= 0f) return@onDrawWithContent
+                val controlsRange = controlsFadeRange(height)
+                val fadeTop = visibleTop.coerceAtMost(height)
+                val fadeSpan = height - fadeTop
+                val fadeHeight = fadeSpan.coerceAtLeast(1f)
+                val topFade = if (listState.canScrollBackward) (topFadeHeight / fadeHeight).coerceIn(0f, 0.5f) else 0f
+                val bottomFade = if (controlsRange == null && listState.canScrollForward) {
+                    (bottomFadeHeight / fadeHeight).coerceIn(0f, 0.5f)
+                } else 0f
+                val needsViewportMask = (topFade > 0f && top < fadeTop + fadeSpan * topFade) ||
+                    (bottomFade > 0f && top + size.height > height - fadeSpan * bottomFade)
+                val controlsStart = controlsRange?.start ?: 0f
+                val controlsEnd = controlsRange?.endInclusive ?: 0f
+                val needsControlsMask = controlsEnd > controlsStart && top + size.height > controlsStart
+                if (!needsViewportMask && !needsControlsMask) return@onDrawWithContent
+
+                // Keep shaders in viewport coordinates; scrolling only translates their draw.
+                if (needsViewportMask && (viewportBrush == null || cachedFadeTop != fadeTop ||
+                        cachedHeight != height || cachedTopFade != topFade || cachedBottomFade != bottomFade)) {
+                    viewportBrush = Brush.verticalGradient(
+                        0f to if (topFade > 0f) Color.Transparent else Color.Black,
+                        topFade to Color.Black,
+                        1f - bottomFade to Color.Black,
+                        1f to if (bottomFade > 0f) Color.Transparent else Color.Black,
+                        startY = fadeTop,
+                        endY = height,
                     )
-                    controlsRange?.let { range ->
-                        if (range.endInclusive > range.start) {
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(Color.Black, Color.Transparent),
-                                    startY = range.start - top,
-                                    endY = range.endInclusive - top,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                        }
+                    cachedFadeTop = fadeTop
+                    cachedHeight = height
+                    cachedTopFade = topFade
+                    cachedBottomFade = bottomFade
+                }
+                if (needsControlsMask && (controlsBrush == null || cachedControlsStart != controlsStart || cachedControlsEnd != controlsEnd)) {
+                    controlsBrush = Brush.verticalGradient(
+                        colors = listOf(Color.Black, Color.Transparent),
+                        startY = controlsStart,
+                        endY = controlsEnd,
+                    )
+                    cachedControlsStart = controlsStart
+                    cachedControlsEnd = controlsEnd
+                }
+                translate(top = -top) {
+                    if (needsViewportMask) {
+                        drawRect(
+                            brush = checkNotNull(viewportBrush),
+                            topLeft = Offset(0f, top),
+                            size = size,
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    if (needsControlsMask) {
+                        drawRect(
+                            brush = checkNotNull(controlsBrush),
+                            topLeft = Offset(0f, top),
+                            size = size,
+                            blendMode = BlendMode.DstIn,
+                        )
                     }
                 }
             }

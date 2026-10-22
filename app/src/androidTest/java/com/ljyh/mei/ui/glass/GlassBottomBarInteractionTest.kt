@@ -23,6 +23,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.State
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -52,6 +54,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.lerp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -62,7 +65,10 @@ import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
+import com.ljyh.mei.ui.component.sheet.PlayerSheetLayers
 import com.ljyh.mei.ui.component.sheet.collapsedAnchor
+import com.ljyh.mei.ui.component.sheet.expandedAnchor
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
@@ -983,6 +989,49 @@ class GlassBottomBarInteractionTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test
+    fun artworkLayoutSizeResumesUpdatesAfterFrozenTransition() {
+        lateinit var sheet: BottomSheetState
+        lateinit var layers: PlayerSheetLayers
+        lateinit var layoutSize: State<IntSize>
+        compose.setContent {
+            sheet = rememberBottomSheetState(
+                dismissedBound = 0.dp,
+                collapsedBound = 48.dp,
+                expandedBound = 400.dp,
+                initialAnchor = expandedAnchor,
+            )
+            layers = rememberPlayerSheetLayers(sheet)
+            layoutSize = remember(layers) {
+                derivedStateOf(structuralEqualityPolicy()) { layers.targetArtworkLayoutSize }
+            }
+        }
+        compose.runOnIdle {
+            val original = PlayerArtworkGeometry(Rect(20f, 24f, 140f, 164f), IntSize(120, 140))
+            val updated = original.copy(layoutSize = IntSize(160, 180))
+            layers.updateHost(Rect(0f, 0f, 280f, 400f))
+            layers.fullArtworkGeometry = { original }
+            assertEquals(original.layoutSize, layoutSize.value)
+
+            sheet.beginDrag()
+            layers.updateFrozenBounds()
+            // Invalidate the live geometry dependency while the frozen branch is active.
+            layers.fullArtworkGeometry = { updated }
+            assertEquals("Dragging preserves the captured layout", original.layoutSize, layoutSize.value)
+
+            sheet.snapTo(sheet.expandedBound)
+            layers.updateFrozenBounds()
+            assertEquals("Release restores live layout updates", updated.layoutSize, layoutSize.value)
+
+            layers.fullArtworkGeometry = {
+                updated.copy(layoutSize = IntSize(layers.hostBounds.width.roundToInt(), 200))
+            }
+            assertEquals("Later geometry updates stay observable", IntSize(280, 200), layoutSize.value)
+            layers.updateHost(Rect(8f, 12f, 328f, 412f))
+            assertEquals("Host resizing stays observable", IntSize(320, 200), layoutSize.value)
         }
     }
 

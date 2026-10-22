@@ -213,6 +213,10 @@ fun AppleMusicPlayer(
     val lyricVisibilityAlpha = remember { derivedStateOf { appleMusicLyricsAlpha(lyricAnimFraction.value) } }
     val albumInteractive by remember { derivedStateOf { lyricAnimFraction.value == 0f } }
     val headerInteractive by remember { derivedStateOf { lyricAnimFraction.value == 1f } }
+    val queueHeaderSettled by remember { derivedStateOf { queueHeaderFraction.value == 1f } }
+    val animateQueueEntryScroll by remember {
+        derivedStateOf { lyricAnimFraction.value > 0f && queueHeaderFraction.value > 0f }
+    }
 
     val animatedPlaybackCoverScale = rememberAppleMusicPlaybackScale(isPlaying, sheetExpanded)
     val currentPlaying = rememberUpdatedState(isPlaying)
@@ -292,39 +296,58 @@ fun AppleMusicPlayer(
         val headerStart = with(density) { AppleMusicDimensions.headerInset.toPx() }
         val headerRadius = with(density) { AppleMusicDimensions.headerCorner.toPx() }
         val lyricHeaderBounds = Rect(headerStart, headerTop, headerStart + headerSize, headerTop + headerSize)
-        val queueTarget = appleMusicQueueArtworkTarget(
-            lyricHeaderBounds.translate(Offset(0f, queueHeaderTop)),
-            headerTop,
-            headerTop + queueViewportHeight,
-        )
-        val headerBounds = androidx.compose.ui.geometry.lerp(
-            lyricHeaderBounds, queueTarget.bounds, queueHeaderFraction.value,
-        )
-        val headerArtworkOpacity = 1f - (1f - queueTarget.opacity) * queueHeaderFraction.value
-        val artworkOpacity = rememberUpdatedState(
-            1f - (1f - headerArtworkOpacity) * lyricAnimFraction.value,
-        )
-        val inlineHeaderVisible = showQueue && headerInteractive && queueHeaderFraction.value == 1f
+        // Scroll and transition clocks are observed only by placement and drawing.
+        val queueTarget = remember(lyricHeaderBounds, headerTop) {
+            derivedStateOf {
+                appleMusicQueueArtworkTarget(
+                    lyricHeaderBounds.translate(Offset(0f, queueHeaderTop)),
+                    headerTop,
+                    headerTop + queueViewportHeight,
+                )
+            }
+        }
+        val headerBounds = remember(lyricHeaderBounds, queueTarget) {
+            derivedStateOf {
+                androidx.compose.ui.geometry.lerp(
+                    lyricHeaderBounds, queueTarget.value.bounds, queueHeaderFraction.value,
+                )
+            }
+        }
+        val headerArtworkOpacity = remember(queueTarget) {
+            derivedStateOf { 1f - (1f - queueTarget.value.opacity) * queueHeaderFraction.value }
+        }
+        val artworkOpacity = remember(headerArtworkOpacity) {
+            derivedStateOf { 1f - (1f - headerArtworkOpacity.value) * lyricAnimFraction.value }
+        }
+        val inlineHeaderVisible = showQueue && headerInteractive && queueHeaderSettled
         val infoRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
         val actionsGapPx = with(density) { 5.dp.toPx() }
         val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
         val headerTextLeft = headerStart + headerSize + with(density) { 12.dp.toPx() }
-        val headerTextOrigin = Offset(
-            headerTextLeft + if (infoRtl) headerActionsSize.width + actionsGapPx else 0f,
-            headerBounds.top + (headerSize - headerTextSize.height) / 2f,
-        )
-        val headerActionsOrigin = Offset(
-            if (infoRtl) headerTextLeft else maxWidthPx - headerStart - headerActionsSize.width,
-            headerBounds.top + (headerSize - headerActionsSize.height) / 2f,
-        )
-        val albumTextOrigin = if (showAlbumInfo) {
-            Offset(albumInsetPx + if (infoRtl) albumActionsSize.width + actionsGapPx else 0f,
-                albumTop + (albumRowSize.height - albumTextSize.height) / 2f)
-        } else headerTextOrigin
-        val albumActionsOrigin = if (showAlbumInfo) {
-            Offset(if (infoRtl) albumInsetPx else maxWidthPx - albumInsetPx - albumActionsSize.width,
-                albumTop + (albumRowSize.height - albumActionsSize.height) / 2f)
-        } else headerActionsOrigin
+        val headerTextOrigin = {
+            Offset(
+                headerTextLeft + if (infoRtl) headerActionsSize.width + actionsGapPx else 0f,
+                headerBounds.value.top + (headerSize - headerTextSize.height) / 2f,
+            )
+        }
+        val headerActionsOrigin = {
+            Offset(
+                if (infoRtl) headerTextLeft else maxWidthPx - headerStart - headerActionsSize.width,
+                headerBounds.value.top + (headerSize - headerActionsSize.height) / 2f,
+            )
+        }
+        val albumTextOrigin = {
+            if (showAlbumInfo) {
+                Offset(albumInsetPx + if (infoRtl) albumActionsSize.width + actionsGapPx else 0f,
+                    albumTop + (albumRowSize.height - albumTextSize.height) / 2f)
+            } else headerTextOrigin()
+        }
+        val albumActionsOrigin = {
+            if (showAlbumInfo) {
+                Offset(if (infoRtl) albumInsetPx else maxWidthPx - albumInsetPx - albumActionsSize.width,
+                    albumTop + (albumRowSize.height - albumActionsSize.height) / 2f)
+            } else headerActionsOrigin()
+        }
         val normalRadius = with(density) { 12.dp.toPx() }
         val normalShadow = with(density) { 16.dp.toPx() }
         // Keep image measurement stable; only layer properties observe animation frames.
@@ -332,7 +355,7 @@ fun AppleMusicPlayer(
         val artworkFrame = remember(normalBounds, headerBounds, density) {
             derivedStateOf {
                 appleMusicArtworkFrame(
-                    normalBounds, headerBounds, normalRadius, headerRadius, normalShadow,
+                    normalBounds, headerBounds.value, normalRadius, headerRadius, normalShadow,
                     if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.75f,
                     lyricAnimFraction.value,
                 )
@@ -446,7 +469,7 @@ fun AppleMusicPlayer(
                                         playerConnection = stateContainer.playerConnection,
                                         active = active,
                                         selected = showQueue,
-                                        animateEntryScroll = lyricAnimFraction.value > 0f && queueHeaderFraction.value > 0f,
+                                        animateEntryScroll = animateQueueEntryScroll,
                                         indication = null,
                                         horizontalPadding = AppleMusicDimensions.headerInset,
                                         bottomContentPadding = with(density) {
@@ -629,11 +652,11 @@ fun AppleMusicPlayer(
                     Box(
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
-                            .absoluteOffset { IntOffset(headerTextLeft.roundToInt(), headerBounds.top.roundToInt()) }
+                            .absoluteOffset { IntOffset(headerTextLeft.roundToInt(), headerBounds.value.top.roundToInt()) }
                             .width(screenWidth - with(density) { headerTextLeft.toDp() } - AppleMusicDimensions.headerInset)
                             .height(AppleMusicDimensions.headerSize)
                             .playerInfoVisibility(headerInfoVisible && !inlineHeaderVisible)
-                            .graphicsLayer { alpha = headerArtworkOpacity },
+                            .graphicsLayer { alpha = headerArtworkOpacity.value },
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         Title(
@@ -936,12 +959,12 @@ private fun Modifier.playerInfoVisibility(visible: Boolean): Modifier =
 internal fun Modifier.playerInfoMotion(
     opacity: State<Float>,
     progress: State<Float>,
-    albumOrigin: Offset,
-    headerOrigin: Offset,
+    albumOrigin: () -> Offset,
+    headerOrigin: () -> Offset,
     fromAlbum: Boolean,
     layerOutsets: LayerOutsets = LayerOutsets.Zero,
 ): Modifier = graphicsLayer {
-    val offset = appleMusicInfoOffset(albumOrigin, headerOrigin, progress.value, fromAlbum)
+    val offset = appleMusicInfoOffset(albumOrigin(), headerOrigin(), progress.value, fromAlbum)
     translationX = offset.x
     translationY = offset.y
     alpha = opacity.value

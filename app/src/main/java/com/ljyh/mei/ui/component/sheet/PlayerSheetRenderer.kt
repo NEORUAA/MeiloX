@@ -151,7 +151,7 @@ internal class PlayerSheetLayers(
     )
     val miniScaleX get() = sourceContainer.width / (frozenContainer ?: miniBounds).width.coerceAtLeast(1f)
     val miniScaleY get() = sourceContainer.height / (frozenContainer ?: miniBounds).height.coerceAtLeast(1f)
-    private var frozenTargetArtwork: PlayerArtworkGeometry? = null
+    private var frozenTargetArtwork by mutableStateOf<PlayerArtworkGeometry?>(null)
     private val recordedTransitionLayers = PlayerSheetCaptures<GraphicsLayer>()
     private var transitionCaptureActive = false
 
@@ -693,8 +693,12 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
     BoxWithConstraints(
         Modifier.fillMaxSize()
             .drawWithContent {
+                if (!layers.sharesArtwork) {
+                    drawContent()
+                    return@drawWithContent
+                }
                 val targetClip = layers.targetArtworkClipBounds
-                if (layers.sharesArtwork && targetClip != null) {
+                if (targetClip != null) {
                     val clip = playerArtworkClipRect(targetClip, layers.hostBounds, layers.state.progress)
                     clipRect(clip.left, clip.top, clip.right, clip.bottom) {
                         this@drawWithContent.drawContent()
@@ -705,7 +709,9 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
     ) {
         // Native shadows must use the same logical outline size as the live endpoint.
         val density = LocalDensity.current
-        val layoutSize = layers.targetArtworkLayoutSize
+        val layoutSize by remember(layers) {
+            derivedStateOf(structuralEqualityPolicy()) { layers.targetArtworkLayoutSize }
+        }
         val imageWidth = if (layoutSize.width > 0) with(density) { layoutSize.width.toDp() } else minOf(maxWidth, maxHeight)
         val imageHeight = if (layoutSize.height > 0) with(density) { layoutSize.height.toDp() } else imageWidth
         Image(
