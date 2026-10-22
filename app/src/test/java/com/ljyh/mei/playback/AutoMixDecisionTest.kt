@@ -14,6 +14,60 @@ import kotlin.math.sqrt
 
 class AutoMixDecisionTest {
     @Test
+    fun failedMixRecoversOnlyOneDelayedInternalEndPauseOnTheSameEntry() {
+        val recovery = AutoMixEndPauseRecovery()
+        recovery.arm("song", "outgoing")
+        assertTrue(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+        assertFalse(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+        recovery.arm("song", "outgoing")
+        assertFalse(recovery.consume("song", "duplicate", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+    }
+
+    @Test
+    fun userPlaybackIntentAndQueueOrSeekCancellationRevokeEndPauseRecovery() {
+        val recovery = AutoMixEndPauseRecovery()
+        for (playWhenReady in listOf(false, true)) {
+            recovery.arm("song", "outgoing")
+            assertFalse(recovery.consume("song", "outgoing", playWhenReady, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST))
+            assertFalse(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+        }
+        recovery.arm("song", "outgoing")
+        recovery.cancel()
+        assertFalse(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+        recovery.arm("song", "outgoing")
+        assertFalse(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS))
+        assertFalse(recovery.consume("song", "outgoing", false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM))
+    }
+
+    @Test
+    fun promotionRequiresTheExactReadyIncomingEntry() {
+        fun canPromote(
+            mediaId: String = "song",
+            entryId: String = "incoming",
+            index: Int = 2,
+            state: Int = Player.STATE_READY,
+            failed: Boolean = false,
+        ) = isAutoMixPromotionReady(
+            expectedMediaId = "song",
+            expectedEntryId = "incoming",
+            expectedIndex = 2,
+            currentMediaId = mediaId,
+            currentEntryId = entryId,
+            currentIndex = index,
+            playbackState = state,
+            hasPlayerError = failed,
+        )
+
+        assertTrue(canPromote())
+        assertFalse(canPromote(mediaId = "other"))
+        assertFalse(canPromote(entryId = "duplicate-song"))
+        assertFalse(canPromote(index = 3))
+        assertFalse(canPromote(state = Player.STATE_BUFFERING))
+        assertFalse(canPromote(state = Player.STATE_ENDED))
+        assertFalse(canPromote(failed = true))
+    }
+
+    @Test
     fun beatNetPcmBufferBoundsHighRateWindowAndIgnoresMorePcm() {
         val pcm = BeatNetPcmBuffer(durationMs = 32_000L)
         val samples = pcm.samples
