@@ -99,7 +99,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -183,6 +182,7 @@ import com.ljyh.mei.playback.DISABLE_FLOATING_LYRICS
 import androidx.lifecycle.Lifecycle
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
+import com.ljyh.mei.ui.component.sheet.syncPlaybackVisibility
 import com.ljyh.mei.ui.component.utils.appBarScrollBehavior
 import com.ljyh.mei.ui.component.utils.resetHeightOffset
 import com.ljyh.mei.ui.local.LocalDatabase
@@ -825,37 +825,26 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    LaunchedEffect(isMeasured, playerConnection) {
-                        if (isMeasured && playerConnection?.player?.currentMediaItem != null) {
-                            playerBottomSheetState.collapseSoft()
-                        }
-                    }
-
-                    LaunchedEffect(playerConnection) {
-                        val player = playerConnection?.player ?: return@LaunchedEffect
-                        if (player.currentMediaItem == null) {
-                            if (!playerBottomSheetState.isDismissed) {
-                                playerBottomSheetState.dismiss()
-                            }
-                        } else {
-                            if (playerBottomSheetState.isDismissed) {
-                                playerBottomSheetState.collapseSoft()
-                            }
-                        }
-                    }
-
-
-                    DisposableEffect(playerConnection, playerBottomSheetState) {
+                    DisposableEffect(playerConnection, playerBottomSheetState, isMeasured) {
                         val player =
                             playerConnection?.player ?: return@DisposableEffect onDispose { }
+                        if (!isMeasured) return@DisposableEffect onDispose { }
+                        fun syncPlayerVisibility() {
+                            playerBottomSheetState.syncPlaybackVisibility(player.currentMediaItem != null)
+                        }
                         val listener = object : Player.Listener {
-                            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && mediaItem != null && playerBottomSheetState.isDismissed) {
-                                    playerBottomSheetState.collapseSoft()
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                if (events.containsAny(
+                                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                                        Player.EVENT_TIMELINE_CHANGED,
+                                    )
+                                ) {
+                                    syncPlayerVisibility()
                                 }
                             }
                         }
                         player.addListener(listener)
+                        syncPlayerVisibility()
                         onDispose {
                             player.removeListener(listener)
                         }

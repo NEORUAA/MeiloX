@@ -19,6 +19,16 @@ internal fun playerSheetSpring() = spring<Dp>(
     stiffness = PlayerSheetStiffness,
 )
 
+internal fun BottomSheetState.syncPlaybackVisibility(hasCurrentMediaItem: Boolean) {
+    // Restoration can finish before dismissal settles. Reverse its target instead
+    // of waiting for isDismissed, while preserving expansion and user gestures.
+    if (hasCurrentMediaItem) {
+        if (targetAnchor == dismissedAnchor) collapseSoft()
+    } else if (targetAnchor != dismissedAnchor) {
+        dismiss()
+    }
+}
+
 internal fun easeInCubic(value: Float): Float = value.coerceIn(0f, 1f).let { it * it * it }
 internal fun easeOutCubic(value: Float): Float = 1f - easeInCubic(1f - value)
 internal fun playerBackgroundAlpha(progress: Float) = easeInCubic(progress / PlayerBackgroundHandoffEnd)
