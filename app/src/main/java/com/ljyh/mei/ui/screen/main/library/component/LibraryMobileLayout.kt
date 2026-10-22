@@ -5,6 +5,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 
 import android.text.format.DateUtils
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +30,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.LocalContentColor
@@ -196,19 +197,25 @@ fun LibraryMobileLayout(
     isCategoryPage: Boolean = false,
     mergeAlbumPodcasts: Boolean = false,
 ) {
+    val pages = LibraryPage.entries.filter { !mergeAlbumPodcasts || it != LibraryPage.Podcasts }
+    val listState = rememberLazyListState()
+    val tabPosition = remember {
+        Animatable(pages.indexOf(selectedPage).coerceAtLeast(0).toFloat(), 0.001f)
+    }
     if (selectedPage == LibraryPage.Downloads) {
         LibraryDownloadsPage(
             isNavigationTab = isNavigationTab,
             isCategoryPage = isCategoryPage,
-            pages = LibraryPage.entries.filter { !mergeAlbumPodcasts || it != LibraryPage.Podcasts },
+            pages = pages,
             onPageSelect = onPageSelect,
+            listState = listState,
+            tabPosition = tabPosition,
         )
         return
     }
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val focusManager = LocalFocusManager.current
-    val listState = rememberLazyListState()
     val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -250,7 +257,6 @@ fun LibraryMobileLayout(
             else (listState.firstVisibleItemScrollOffset / collapseDistance).coerceIn(0f, 1f)
         }
     }
-    val pages = LibraryPage.entries.filter { !mergeAlbumPodcasts || it != LibraryPage.Podcasts }
     val title = stringResource(if (isCategoryPage) selectedPage.titleRes else R.string.app_tab_library)
     val likedTitle = stringResource(R.string.app_tab_library_songs)
     val usesGroupedLazyRows = selectedPage == LibraryPage.Cloud ||
@@ -291,10 +297,6 @@ fun LibraryMobileLayout(
         LibraryPlaylistFilter.Created -> visibleCreatedPlaylists
         LibraryPlaylistFilter.Subscribed -> visibleCollectedPlaylists
     }
-    LaunchedEffect(selectedPage, playlistFilter) {
-        listState.scrollToItem(0)
-    }
-
     val collectionLoading = if (selectedPage == LibraryPage.Playlists) {
         playlistState.isLoading
     } else {
@@ -341,7 +343,7 @@ fun LibraryMobileLayout(
                     ),
                     verticalArrangement = if (usesGroupedLazyRows) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(12.dp),
                 ) {
-                    item(key = "library-title") {
+                    item(key = "ios-large-title:$title") {
                         Text(
                             title,
                             style = IosTypography.largeTitle,
@@ -374,6 +376,7 @@ fun LibraryMobileLayout(
                                 items = pages.map { it to stringResource(it.titleRes) },
                                 selected = selectedPage,
                                 onSelected = onPageSelect,
+                                positionAnimation = tabPosition,
                                 modifier = Modifier.fillMaxWidth().padding(bottom = pageSpacing),
                             )
                         }
@@ -590,31 +593,31 @@ fun LibraryMobileLayout(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryCollectionRefresh(
+internal fun LibraryCollectionRefresh(
     enabled: Boolean,
     isRefreshing: Boolean,
     topPadding: Dp,
     onRefresh: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    if (!enabled) {
-        content()
-        return
-    }
     val state = rememberPullToRefreshState()
-    PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
-        state = state,
-        modifier = Modifier.fillMaxSize(),
-        indicator = {
+    Box(
+        modifier = Modifier.fillMaxSize().pullToRefresh(
+            isRefreshing = enabled && isRefreshing,
+            enabled = enabled,
+            onRefresh = onRefresh,
+            state = state,
+        ),
+    ) {
+        content()
+        if (enabled) {
             PullToRefreshDefaults.Indicator(
                 isRefreshing = isRefreshing,
                 state = state,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = topPadding),
             )
-        },
-    ) { content() }
+        }
+    }
 }
 
 @Composable

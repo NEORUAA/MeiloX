@@ -22,10 +22,13 @@ uniform float2 sourceOrigin;
 layout(color) uniform half4 color;
 layout(color) uniform half4 washColor;
 uniform float radius;
+uniform float horizontalRadius;
 uniform float2 position;
 
 half4 main(float2 coord) {
-    float dist = distance(coord, position);
+    float2 delta = coord - position;
+    delta.x *= radius / horizontalRadius;
+    float dist = length(delta);
     float intensity = smoothstep(radius, radius * 0.5, dist);
     float2 local = coord - sourceOrigin;
     float2 outside = max(max(-local, local - size), 0.0);
@@ -41,6 +44,7 @@ half4 main(float2 coord) {
         position: Offset,
         sourceBounds: Rect = Rect(Offset.Zero, scope.size),
         clampPosition: Boolean = true,
+        horizontalRadius: Float? = null,
     ) = with(scope) {
         if (progress <= 0f) return@with
         val radius = (sourceBounds.size.minDimension * 1.5f).coerceAtLeast(1f)
@@ -55,6 +59,7 @@ half4 main(float2 coord) {
                 setColorUniform("color", Color.White.copy(0.15f * progress))
                 setColorUniform("washColor", Color.White.copy(0.08f * progress))
                 setFloatUniform("radius", radius)
+                setFloatUniform("horizontalRadius", horizontalRadius?.coerceAtLeast(radius) ?: radius)
                 setFloatUniform("position", lightPosition.x, lightPosition.y)
             }
             drawRect(ShaderBrush(shader.asComposeShader()), blendMode = BlendMode.Plus)

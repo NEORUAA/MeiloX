@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.liquidglass
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.MutatorMutex
 import androidx.compose.runtime.State
@@ -33,6 +34,8 @@ class DampedDragAnimation(
     consumeGestures: Boolean = false,
     val onDragCancelled: DampedDragAnimation.() -> Unit = onDragStopped,
     private val dragCoordinateSpace: (() -> LayoutCoordinates?)? = null,
+    sharedValueAnimation: Animatable<Float, AnimationVector1D>? = null,
+    horizontalDragOnly: Boolean = false,
 ) {
 
     private val valueAnimationSpec =
@@ -47,7 +50,7 @@ class DampedDragAnimation(
         spring(0.7f, 250f, 0.001f)
 
     private val valueAnimation =
-        Animatable(initialValue, visibilityThreshold)
+        sharedValueAnimation ?: Animatable(initialValue, visibilityThreshold)
     private val velocityAnimation =
         Animatable(0f, 5f)
     private val pressProgressAnimation =
@@ -79,6 +82,7 @@ class DampedDragAnimation(
         .pointerInput(this) {
             inspectDragGestures(
                 consumeGestures = consumeGestures,
+                horizontalDragOnly = horizontalDragOnly,
                 onDragStart = { down ->
                     onDragStarted(down.position)
                     press()
@@ -135,10 +139,10 @@ class DampedDragAnimation(
         }
     }
 
-    fun animateToValue(value: Float) {
+    fun animateToValue(value: Float, animatePress: Boolean = true) {
         animationScope.launch {
             mutatorMutex.mutate {
-                press()
+                if (animatePress) press()
                 val targetValue = value.coerceIn(valueRange)
                 launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) }
                 if (velocity != 0f) {

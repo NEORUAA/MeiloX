@@ -107,6 +107,8 @@ import com.ljyh.mei.ui.component.sheet.BottomSheet
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
 import com.ljyh.mei.ui.glass.trackBackdropPosition
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -498,6 +500,7 @@ fun AppleMusicPlayer(
                                 title = metadata.title,
                                 subTitle = metadata.artists.joinToString { it.name },
                                 isLiked = isLiked,
+                                showLikeButton = !metadata.isLocal && !metadata.isPodcast,
                                 onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 onTitleClick = {
@@ -543,6 +546,7 @@ fun AppleMusicPlayer(
                             title = metadata.title,
                             subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
+                            showLikeButton = !metadata.isLocal && !metadata.isPodcast,
                             onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = {
@@ -733,15 +737,30 @@ internal fun AppleMusicDetailPages(
         if (queueSelected) queuePrepared = true
     }
     val queueOpacity = remember { Animatable(if (queueSelected) 1f else 0f) }
+    val lyricOpacity = remember { Animatable(if (queueSelected) 0f else 1f) }
     LaunchedEffect(queueSelected, animate) {
-        val target = if (queueSelected) 1f else 0f
-        if (animate) queueOpacity.animateTo(target, tween(300))
-        else queueOpacity.snapTo(target)
+        val incoming = if (queueSelected) queueOpacity else lyricOpacity
+        val outgoing = if (queueSelected) lyricOpacity else queueOpacity
+        if (animate) {
+            // The fades overlap during 100..400ms within one 500ms switch.
+            coroutineScope {
+                launch {
+                    if (outgoing.value > 0f) outgoing.animateTo(0f, tween(400))
+                }
+                launch {
+                    if (incoming.value < 1f) {
+                        incoming.animateTo(1f, tween(400, delayMillis = 100))
+                    }
+                }
+            }
+        } else {
+            outgoing.snapTo(0f)
+            incoming.snapTo(1f)
+        }
     }
-    val lyricOpacity = remember { derivedStateOf { 1f - queueOpacity.value } }
     Box(modifier) {
         val lyricsActive = active && !queueSelected
-        Box(Modifier.fillMaxSize().playerDetailPage(lyricOpacity, lyricsActive)) {
+        Box(Modifier.fillMaxSize().playerDetailPage(lyricOpacity.asState(), lyricsActive)) {
             lyrics(lyricsActive)
         }
         if (queuePrepared || queueSelected) {

@@ -1,5 +1,9 @@
 package com.ljyh.mei.ui.glass
 
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import com.kyant.shapes.Capsule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -129,6 +133,51 @@ class NavigationIndicatorLensTest {
         val oldSourceTop = -64f * panelScale / 2f
         val oldSamples = sampleInsets(14f, 22f).map { -39f + it * (78f / 56f) }
         assertTrue(oldSamples.min() > oldSourceTop + 8f)
+    }
+
+    @Test
+    fun segmentedSamplingCrossesTheInnerSourceEdgesForNarrowAndWideSegments() {
+        listOf(1f, 2.75f, 3.5f).forEach { density ->
+            val height = SegmentedIndicatorHeight.value * density
+            val insets = sampleInsets(
+                SegmentedIndicatorRefractionHeight.value * density,
+                SegmentedIndicatorRefractionAmount.value * density,
+            )
+            val pressedHeight = height * SegmentedIndicatorPressedScale
+            val topSamples = insets.map { -pressedHeight / 2f + it }
+            assertStraddles(topSamples, -height / 2f, density)
+            assertStraddles(topSamples.map { -it }, height / 2f, density)
+            listOf(180f, 280f, 360f, 600f).forEach { widthDp ->
+                listOf(2, 3, 6).forEach { count ->
+                    val sourceWidth = widthDp * density
+                    val inset = 2f * density
+                    val tabWidth = (sourceWidth - 2f * inset) / count
+                    val visualSize = segmentedIndicatorSize(
+                        Size(tabWidth, height), SegmentedIndicatorPressedScale, SegmentedIndicatorPressedScale, 0f,
+                        SegmentedIndicatorHorizontalExpansion.value * density,
+                    )
+                    val leftSamples = insets.map { inset + tabWidth / 2f - visualSize.width / 2f + it }
+                    assertStraddles(leftSamples, 0f, density)
+                    assertStraddles(leftSamples.map { sourceWidth - it }, sourceWidth, density)
+                    val corners = Capsule().corners(visualSize, LayoutDirection.Ltr, Density(density))
+                    val radius = visualSize.minDimension / 2f
+                    assertEquals(radius, corners.topLeft, 0.001f)
+                    assertEquals(radius, corners.bottomRight, 0.001f)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun previousSegmentedLensSamplesInsideTheOpaquePillInsteadOfItsEdge() {
+        val scale = 36f / 28f
+        val topSamples = sampleInsets(7f, 18f).map { -18f + it * scale }
+        assertTrue(topSamples.min() > -14f + 3f)
+    }
+
+    private fun assertStraddles(samples: List<Float>, boundary: Float, density: Float) {
+        assertTrue("Sampling must reach outside the source", samples.min() < boundary - 0.25f * density)
+        assertTrue("Sampling must also reach inside the source", samples.max() > boundary + 0.25f * density)
     }
 
     /** Trace Backdrop's stock circular edge profile along a capsule's symmetry axes. */
