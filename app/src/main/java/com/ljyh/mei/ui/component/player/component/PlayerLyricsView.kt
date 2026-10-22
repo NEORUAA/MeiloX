@@ -26,6 +26,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +62,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.Dp
@@ -124,6 +127,7 @@ internal fun PlayerLyricsView(
     useBlurEffect: Boolean = true,
     showTranslation: Boolean = true,
     showPhonetic: Boolean = true,
+    isVerbatim: Boolean = true,
     offset: Dp = 32.dp,
     keepAliveZone: Dp = 100.dp,
     blurDelta: Float = 3f,
@@ -147,6 +151,7 @@ internal fun PlayerLyricsView(
     val textMeasurer = rememberTextMeasurer()
     val layoutCache = remember(
         lyrics,
+        isVerbatim,
         stableNormalTextStyle,
         stableAccompanimentTextStyle,
         stablePhoneticTextStyle,
@@ -155,11 +160,13 @@ internal fun PlayerLyricsView(
 
     LaunchedEffect(
         lyrics,
+        isVerbatim,
         stableNormalTextStyle,
         stableAccompanimentTextStyle,
         stablePhoneticTextStyle,
         textMeasurer
     ) {
+        if (!isVerbatim) return@LaunchedEffect
         withContext(Dispatchers.Default) {
             val normalStyle = stableNormalTextStyle.copy(textDirection = TextDirection.Content)
             val accompanimentStyle =
@@ -235,8 +242,9 @@ internal fun PlayerLyricsView(
         }
     }
 
+    val currentLyrics = lyrics
     LookaheadScope {
-        Crossfade(lyrics) { lyrics ->
+        Crossfade(lyrics to isVerbatim) { (lyrics, isVerbatim) ->
             Box(modifier = modifier.clipToBounds()) {
                 LazyColumn(
                     state = listState,
@@ -376,16 +384,6 @@ internal fun PlayerLyricsView(
                             when (line) {
                                 is KaraokeLine -> {
                                     if (line is KaraokeLine.MainKaraokeLine) {
-                                        val renderTimeProvider = remember(line, timeProvider) {
-                                            val window = karaokeRenderTimeWindow(line)
-                                            if (window == null) timeProvider else {
-                                                // Reuse static row pixels; every active animation
-                                                // still receives the original playback clock.
-                                                val renderTime = derivedStateOf { window.sample(timeProvider()) }
-                                                val provider: () -> Int = { renderTime.value }
-                                                provider
-                                            }
-                                        }
                                         LyricsLineItem(
                                             isFocused = isCurrentFocusLine,
                                             isRightAligned = isVisualRightAligned,
@@ -394,31 +392,57 @@ internal fun PlayerLyricsView(
                                             blurRadius = { blurRadiusState.value },
                                             blendMode = stableBlendMode,
                                         ) {
-                                            val precalculatedLayouts = layoutCache[index]
-                                            // The upstream renderer remembers styles and wrapping without all inputs.
-                                            key(
-                                                stableNormalTextStyle,
-                                                stableAccompanimentTextStyle,
-                                                stablePhoneticTextStyle,
-                                                textMeasurer,
-                                                precalculatedLayouts
-                                            ) {
-                                                // Translation Text inherits this style; primary and phonetic text use explicit styles.
-                                                CompositionLocalProvider(LocalTextStyle provides translationTextStyle) {
-                                                    KaraokeLineText(
-                                                        line = line,
-                                                        currentTimeProvider = renderTimeProvider,
-                                                        normalLineTextStyle = stableNormalTextStyle,
-                                                        accompanimentLineTextStyle = stableAccompanimentTextStyle,
-                                                        phoneticTextStyle = stablePhoneticTextStyle,
-                                                        activeColor = textColor,
-                                                        blendMode = stableBlendMode,
-                                                        showDebugRectangles = showDebugRectangles,
-                                                        showTranslation = showTranslation,
-                                                        showPhonetic = showPhonetic,
-                                                        precalculatedLayouts = precalculatedLayouts,
-                                                        textMeasurer = textMeasurer
-                                                    )
+                                            if (!isVerbatim) {
+                                                // Pronunciation wraps LRC in KaraokeLine without adding word timing.
+                                                LineSyncedPhoneticText(
+                                                    line = line,
+                                                    isRightAligned = isVisualRightAligned,
+                                                    textStyle = stableNormalTextStyle,
+                                                    translationTextStyle = translationTextStyle,
+                                                    phoneticTextStyle = stablePhoneticTextStyle,
+                                                    textColor = textColor,
+                                                    blendMode = stableBlendMode,
+                                                    showTranslation = showTranslation,
+                                                    showPhonetic = showPhonetic,
+                                                )
+                                            } else {
+                                                val renderTimeProvider = remember(line, timeProvider) {
+                                                    val window = karaokeRenderTimeWindow(line)
+                                                    if (window == null) timeProvider else {
+                                                        // Reuse static row pixels; every active animation
+                                                        // still receives the original playback clock.
+                                                        val renderTime = derivedStateOf { window.sample(timeProvider()) }
+                                                        val provider: () -> Int = { renderTime.value }
+                                                        provider
+                                                    }
+                                                }
+                                                // Outgoing content must not use the incoming lyric's syllable measurements.
+                                                val precalculatedLayouts = if (lyrics == currentLyrics) layoutCache[index] else null
+                                                // The upstream renderer remembers styles and wrapping without all inputs.
+                                                key(
+                                                    stableNormalTextStyle,
+                                                    stableAccompanimentTextStyle,
+                                                    stablePhoneticTextStyle,
+                                                    textMeasurer,
+                                                    precalculatedLayouts
+                                                ) {
+                                                    // Translation Text inherits this style; primary and phonetic text use explicit styles.
+                                                    CompositionLocalProvider(LocalTextStyle provides translationTextStyle) {
+                                                        KaraokeLineText(
+                                                            line = line,
+                                                            currentTimeProvider = renderTimeProvider,
+                                                            normalLineTextStyle = stableNormalTextStyle,
+                                                            accompanimentLineTextStyle = stableAccompanimentTextStyle,
+                                                            phoneticTextStyle = stablePhoneticTextStyle,
+                                                            activeColor = textColor,
+                                                            blendMode = stableBlendMode,
+                                                            showDebugRectangles = showDebugRectangles,
+                                                            showTranslation = showTranslation,
+                                                            showPhonetic = showPhonetic,
+                                                            precalculatedLayouts = precalculatedLayouts,
+                                                            textMeasurer = textMeasurer
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -456,6 +480,56 @@ internal fun PlayerLyricsView(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LineSyncedPhoneticText(
+    line: KaraokeLine.MainKaraokeLine,
+    isRightAligned: Boolean,
+    textStyle: TextStyle,
+    translationTextStyle: TextStyle,
+    phoneticTextStyle: TextStyle,
+    textColor: Color,
+    blendMode: BlendMode,
+    showTranslation: Boolean,
+    showPhonetic: Boolean,
+) {
+    val content = remember(line.syllables) { line.syllables.joinToString("") { it.content } }
+    val textAlign = if (isRightAligned) TextAlign.End else TextAlign.Start
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = if (isRightAligned) Alignment.End else Alignment.Start,
+    ) {
+        Text(
+            text = content,
+            style = textStyle.copy(lineHeight = 1.2.em),
+            color = textColor,
+            textAlign = textAlign,
+        )
+        if (showTranslation) {
+            line.translation?.let {
+                Text(
+                    text = it,
+                    style = translationTextStyle,
+                    color = textColor.copy(alpha = 0.4f),
+                    textAlign = textAlign,
+                    modifier = Modifier.graphicsLayer { this.blendMode = blendMode },
+                )
+            }
+        }
+        if (showPhonetic) {
+            line.phonetic?.let {
+                Text(
+                    text = it,
+                    style = phoneticTextStyle.copy(lineHeight = 1.2.em),
+                    color = textColor.copy(alpha = 0.6f),
+                    textAlign = textAlign,
+                    modifier = Modifier.graphicsLayer { this.blendMode = blendMode },
+                )
             }
         }
     }

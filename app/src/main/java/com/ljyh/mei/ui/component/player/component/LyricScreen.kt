@@ -363,6 +363,7 @@ fun LyricScreen(
                         Box(Modifier.fillMaxSize().padding(contentPadding)) {
                             PlayerLyricsView(
                                 showPhonetic = romanizationEnabled,
+                                isVerbatim = lyricData.isVerbatim,
                                 listState = listState,
                                 isManualScrolling = manualScroll.isBrowsing && listState.isScrollInProgress,
                                 useBlurEffect = !manualScroll.isBrowsing || focusLineVisible,

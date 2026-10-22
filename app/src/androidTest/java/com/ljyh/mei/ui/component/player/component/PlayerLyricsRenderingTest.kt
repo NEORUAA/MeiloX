@@ -85,8 +85,11 @@ import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.model.LyricCandidate
+import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricVariant
 import com.ljyh.mei.ui.model.LyricSource
+import com.ljyh.mei.utils.lyric.LRCParser
+import com.ljyh.mei.utils.lyric.attachPhonetics
 import com.ljyh.mei.utils.lyric.karaokeRenderTimeWindow
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -193,6 +196,152 @@ class PlayerLyricsRenderingTest {
         compose.runOnIdle {
             assertSame(line, clickedLine.get())
             assertEquals(2_000, clickedLine.get().start)
+        }
+    }
+
+    @Test
+    fun lineSyncedRomanizationKeepsLongLyricsWrappedAndSeekable() {
+        val primary = "手のひら零れ落ちていくその花の色"
+        val translation = "The colors spill from my hands"
+        val phonetic = "te no hi ra ko bo re o chi te i ku so no ha na no i ro"
+        val lyrics = attachPhonetics(
+            LRCParser.parse("[00:05.97]$primary\n[00:12.00]Next line", "[00:05.97]$translation"),
+            "[00:05.97]$phonetic",
+        )
+        val line = lyrics.lines.first()
+        val data = LyricData(
+            source = LyricSource.NetEaseCloudMusic,
+            isVerbatim = false,
+            lyricLine = lyrics.copy(lines = listOf(line)),
+        )
+        val width = mutableStateOf(320.dp)
+        val fontScale = mutableStateOf(1f)
+        val showPhonetic = mutableStateOf(true)
+        val pressedLine = AtomicReference<ISyncedLine>()
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale.value)) {
+                MaterialTheme {
+                    Box(Modifier.width(width.value).height(700.dp).testTag("line-lyrics-bounds")) {
+                        PlayerLyricsView(
+                            listState = rememberLazyListState(),
+                            lyrics = data.lyricLine,
+                            isVerbatim = data.isVerbatim,
+                            currentPosition = { 8_000 },
+                            onLineClicked = clickedLine::set,
+                            onLinePressed = pressedLine::set,
+                            isManualScrolling = false,
+                            normalLineTextStyle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold),
+                            translationLineTextStyle = TextStyle(fontSize = 18.sp),
+                            phoneticTextStyle = TextStyle(fontSize = 13.sp),
+                            showPhonetic = showPhonetic.value,
+                            useBlurEffect = false,
+                            offset = 32.dp,
+                            keepAliveZone = 0.dp,
+                        )
+                    }
+                }
+            }
+        }
+
+        for ((widthDp, scale) in listOf(320 to 1f, 220 to 1f, 220 to 1.5f, 320 to 1f)) {
+            compose.runOnIdle { width.value = widthDp.dp; fontScale.value = scale }
+            val layouts = mutableListOf<TextLayoutResult>()
+            val primaryNode = compose.onNodeWithText(primary, useUnmergedTree = true)
+            primaryNode.assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertTrue("The full primary lyric must wrap at width=$widthDp scale=$scale", layout.lineCount > 1)
+            assertFalse("The primary lyric must not overflow", layout.hasVisualOverflow)
+            assertEquals(primary.length, layout.getLineEnd(layout.lineCount - 1))
+            val bounds = primaryNode.getUnclippedBoundsInRoot()
+            val container = compose.onNodeWithTag("line-lyrics-bounds").getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= container.left && bounds.right <= container.right)
+            compose.onNodeWithText(translation).assertIsDisplayed()
+            compose.onNodeWithText(phonetic).assertIsDisplayed()
+        }
+
+        compose.onNodeWithText(primary).performClick()
+            .performSemanticsAction(SemanticsActions.OnLongClick) { it() }
+        compose.runOnIdle {
+            assertSame(line, clickedLine.get())
+            assertSame(line, pressedLine.get())
+            assertEquals(5_970, clickedLine.get().start)
+            showPhonetic.value = false
+        }
+        compose.onNodeWithText(primary).assertIsDisplayed()
+        compose.onNodeWithText(phonetic).assertDoesNotExist()
+        compose.runOnIdle { showPhonetic.value = true }
+        compose.onNodeWithText(phonetic).assertIsDisplayed()
+    }
+
+    @Test
+    fun lyricFormatChangesPreserveOutgoingWrappingAndAccompaniment() {
+        val primary = "手のひら零れ落ちていくその花の色"
+        val lineSynced = attachPhonetics(
+            LRCParser.parse("[00:01.00]$primary"),
+            "[00:01.00]te no hi ra ko bo re o chi te i ku",
+        )
+        val accompaniment = KaraokeLine.AccompanimentKaraokeLine(
+            syllables = listOf(KaraokeSyllable("Harmony", 1_000, 5_000)),
+            translation = "Accompaniment translation",
+            alignment = KaraokeAlignment.Start,
+            start = 1_000,
+            end = 5_000,
+        )
+        val verbatim = SyncedLyrics(lines = listOf(KaraokeLine.MainKaraokeLine(
+            syllables = listOf(
+                KaraokeSyllable("Word ", 1_000, 2_000),
+                KaraokeSyllable("timing", 2_000, 5_000),
+            ),
+            translation = "Word-timed translation",
+            alignment = KaraokeAlignment.Start,
+            start = 1_000,
+            end = 5_000,
+            accompanimentLines = listOf(accompaniment),
+        )))
+        val data = mutableStateOf(lineSynced to false)
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.width(220.dp).height(700.dp)) {
+                    PlayerLyricsView(
+                        listState = rememberLazyListState(),
+                        lyrics = data.value.first,
+                        isVerbatim = data.value.second,
+                        currentPosition = { 3_000 },
+                        onLineClicked = {},
+                        onLinePressed = {},
+                        isManualScrolling = false,
+                        useBlurEffect = false,
+                        offset = 32.dp,
+                        keepAliveZone = 0.dp,
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText(primary).assertIsDisplayed()
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { data.value = verbatim to true }
+            compose.mainClock.advanceTimeBy(64)
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(primary, useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertTrue("Outgoing line-synced lyrics must keep wrapping", layouts.single().lineCount > 1)
+            assertFalse(layouts.single().hasVisualOverflow)
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithText(primary).assertDoesNotExist()
+            compose.onNodeWithText("Accompaniment translation").assertIsDisplayed()
+
+            compose.runOnIdle { data.value = lineSynced to false }
+            compose.mainClock.advanceTimeBy(64)
+            compose.onNodeWithText("Accompaniment translation").assertIsDisplayed()
+            compose.onNodeWithText(primary).assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithText("Accompaniment translation").assertDoesNotExist()
+            compose.onNodeWithText(primary).assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
     }
 
