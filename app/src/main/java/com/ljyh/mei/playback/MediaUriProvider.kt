@@ -47,6 +47,7 @@ internal data class ResolvedMediaSource(
     val cacheKey: String?,
     val sourceIdentity: String? = null,
     val localPlaybackInfo: LocalPlaybackInfo? = null,
+    val contentLength: Long? = null,
 )
 
 @Singleton
@@ -61,6 +62,7 @@ class MediaUriProvider @Inject constructor(
         val actualQuality: String,
         val cacheKey: String,
         val sourceIdentity: String,
+        val contentLength: Long?,
     )
 
     private data class AvailableQualities(
@@ -455,6 +457,7 @@ class MediaUriProvider @Inject constructor(
         actualQuality = actualQuality,
         cacheKey = cacheKey,
         sourceIdentity = sourceIdentity,
+        contentLength = contentLength,
     )
 
     private fun CachedUrl.hasSupportedQuality(mediaId: String): Boolean =
@@ -471,6 +474,7 @@ class MediaUriProvider @Inject constructor(
             actualQuality = actualQuality,
             cacheKey = playbackCacheKey(mediaId, actualQuality, md5, size.toLong()),
             sourceIdentity = playbackSourceIdentity(md5, size.toLong()),
+            contentLength = size.toLong().takeIf { it > 0 },
         )
     }
 

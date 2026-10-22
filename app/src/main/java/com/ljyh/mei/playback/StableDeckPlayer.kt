@@ -49,14 +49,20 @@ class StableDeckPlayer(
         invalidateState()
     }
 
-    /** Forces source recreation without changing the entry identity or shuffle position. */
-    internal fun refreshMediaItemSource(index: Int) {
+    /** Recreates sources without changing entry identities or playback order. */
+    internal fun refreshMediaItemSource(index: Int, refreshQueuedSources: Boolean = false) {
         checkOnApplicationLooper()
         val deck = activeDeck
-        val item = deck.getMediaItemAt(index)
         val order = deck.playbackOrderIndices(true)
-        deck.removeMediaItem(index)
-        deck.addMediaItem(index, item)
+        if (refreshQueuedSources) {
+            // Already prepared next-item sources may still retain the previous quality.
+            val items = List(deck.mediaItemCount, deck::getMediaItemAt)
+            deck.setMediaItems(items, index, deck.currentPosition)
+        } else {
+            val item = deck.getMediaItemAt(index)
+            deck.removeMediaItem(index)
+            deck.addMediaItem(index, item)
+        }
         setPlaybackOrder(order)
     }
 

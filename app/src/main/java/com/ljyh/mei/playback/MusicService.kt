@@ -372,6 +372,7 @@ class MusicService : MediaLibraryService(),
         player.addListener(sleepTimer)
         player.addListener(object : Player.Listener {
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (isRefreshingPlaybackSource) return
                 if (::playbackPersistence.isInitialized) {
                     playbackPersistence.invalidateQueue()
                     schedulePlaybackSnapshot()
@@ -380,6 +381,7 @@ class MusicService : MediaLibraryService(),
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (isRefreshingPlaybackSource) return
                 updatePreload()
                 automaticCacheJob?.cancel()
                 if (mediaItem != null) {
@@ -439,7 +441,7 @@ class MusicService : MediaLibraryService(),
                 val quality = context.dataStore[MusicQualityKey]
                     ?.lowercase(getDefault())
                     ?: MusicQuality.EXHIGH.text
-                mediaUriProvider.resolveMediaUri(item.mediaId, quality)
+                mediaUriProvider.resolveMediaSource(item.mediaId, quality)
             },
         )
         audioPlayer = AudioPlayer(player) {
@@ -664,18 +666,24 @@ class MusicService : MediaLibraryService(),
         }
     }
 
-    /** Restarts only the current entry, preserving its position and queue order. */
-    internal fun refreshPlaybackSource(index: Int, positionMs: Long, resumePlayback: Boolean) {
+    /** Recreates prepared sources while preserving the current entry, position, and queue order. */
+    internal fun refreshPlaybackSource(
+        index: Int,
+        positionMs: Long,
+        resumePlayback: Boolean,
+        refreshQueuedSources: Boolean = false,
+    ) {
         resetPlaybackSourcesForQualityChange()
         isRefreshingPlaybackSource = true
         try {
-            player.refreshMediaItemSource(index)
+            player.refreshMediaItemSource(index, refreshQueuedSources)
             player.seekTo(index, positionMs)
             player.prepare()
             player.playWhenReady = resumePlayback
         } finally {
             isRefreshingPlaybackSource = false
         }
+        updatePreload()
         refreshAvailableMusicQualities()
     }
 

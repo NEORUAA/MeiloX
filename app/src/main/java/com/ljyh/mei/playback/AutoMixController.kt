@@ -1,7 +1,6 @@
 package com.ljyh.mei.playback
 
 import android.content.Context
-import android.net.Uri
 import androidx.datastore.preferences.core.Preferences
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -57,11 +56,11 @@ data class AutoMixRuntimeConfiguration(
  * The standby deck owns the complete playlist, seeks to the incoming start while paused, and is
  * promoted in place after the overlap. Promotion never pauses or seeks the incoming audio.
  */
-class AutoMixController(
+class AutoMixController internal constructor(
     context: Context,
     private val player: StableDeckPlayer,
     private val scope: CoroutineScope,
-    private val sourceResolver: suspend (MediaItem) -> Uri,
+    private val sourceResolver: suspend (MediaItem) -> ResolvedMediaSource,
 ) : Player.Listener {
     private data class ActiveTransition(
         val outgoingDeck: ExoPlayer,
@@ -236,7 +235,6 @@ class AutoMixController(
         analyzedAttempt = null
         resetRetryState()
         cancelTransition(prepareAfterCancel = false)
-        prepareNext(force = true)
     }
 
     private fun prepareNext(
@@ -354,10 +352,10 @@ class AutoMixController(
             try {
                 val pair = analyzer.analyzePair(
                     outgoingId = outgoing.mediaId,
-                    outgoingUri = sourceResolver(outgoing),
+                    outgoingSource = sourceResolver(outgoing),
                     outgoingDurationMs = outgoingDurationMs,
                     incomingId = incoming.mediaId,
-                    incomingUri = sourceResolver(incoming),
+                    incomingSource = sourceResolver(incoming),
                 )
                 val plan = BeatNetAutoMixAnalyzer.makePlan(
                     pair = pair,

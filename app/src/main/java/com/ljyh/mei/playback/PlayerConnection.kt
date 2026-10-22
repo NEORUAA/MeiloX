@@ -194,7 +194,7 @@ class PlayerConnection(
 
     fun refreshAvailableMusicQualities() = service.refreshAvailableMusicQualities()
 
-    fun changeQuality(quality: MusicQuality) {
+    fun changeQuality(quality: MusicQuality, preferOnlineSource: Boolean = true) {
         qualityChangeJob?.cancel()
         val selectedItem = player.currentMediaItem
         val mediaId = selectedItem?.mediaId
@@ -213,9 +213,9 @@ class PlayerConnection(
 
             // Keep the playlist intact, but force every source that may have been
             // prepared at the previous quality to be discarded.
-            service.mediaUriProvider.preferOnlineSource(mediaId)
+            if (preferOnlineSource) service.mediaUriProvider.preferOnlineSource(mediaId)
             service.resetRejectedPlaybackSources()
-            service.refreshPlaybackSource(index, position, shouldPlay)
+            service.refreshPlaybackSource(index, position, shouldPlay, refreshQueuedSources = true)
         }
     }
 

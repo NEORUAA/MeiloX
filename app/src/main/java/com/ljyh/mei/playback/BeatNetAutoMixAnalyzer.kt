@@ -5,8 +5,9 @@ import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaDataSource
 import android.net.Uri
-import com.ljyh.mei.constants.UserAgent
+import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -62,34 +63,35 @@ data class SmartAutoMixPlan(
 
 /** Android port of MeloX's BeatNet feature, inference, and temporal-decoding pipeline. */
 class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
-    private data class CacheKey(val mediaId: String, val startMs: Long)
+    private data class CacheKey(val mediaId: String, val sourceKey: String, val startMs: Long)
 
+    private val audioDecoder = AndroidAudioDecoder(context)
     private val featureExtractor = BeatNetFeatureExtractor()
     private val analysisMutex = Mutex()
     private val cache = object : LinkedHashMap<CacheKey, BeatNetTrackAnalysis>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CacheKey, BeatNetTrackAnalysis>?) = size > 8
     }
 
-    suspend fun analyzePair(
+    internal suspend fun analyzePair(
         outgoingId: String,
-        outgoingUri: Uri,
+        outgoingSource: ResolvedMediaSource,
         outgoingDurationMs: Long,
         incomingId: String,
-        incomingUri: Uri,
+        incomingSource: ResolvedMediaSource,
     ): BeatNetPairAnalysis = withContext(Dispatchers.Default) {
         analysisMutex.withLock {
             val outgoingStart = (outgoingDurationMs - WINDOW_DURATION_MS).coerceAtLeast(0)
-            val outgoing = analyze(outgoingId, outgoingUri, outgoingStart)
-            val incoming = analyze(incomingId, incomingUri, 0)
+            val outgoing = analyze(outgoingId, outgoingSource, outgoingStart)
+            val incoming = analyze(incomingId, incomingSource, 0)
             BeatNetPairAnalysis(outgoing, incoming)
         }
     }
 
-    private suspend fun analyze(mediaId: String, uri: Uri, startMs: Long): BeatNetTrackAnalysis {
-        val key = CacheKey(mediaId, startMs)
+    private suspend fun analyze(mediaId: String, source: ResolvedMediaSource, startMs: Long): BeatNetTrackAnalysis {
+        val key = CacheKey(mediaId, source.cacheKey ?: source.uri.toString(), startMs)
         synchronized(cache) { cache[key] }?.let { return it }
         val decoded = withContext(Dispatchers.IO) {
-            AndroidAudioDecoder(context).decode(uri, startMs, WINDOW_DURATION_MS)
+            audioDecoder.decode(source, startMs, WINDOW_DURATION_MS)
         }
         val features = featureExtractor.extract(decoded)
         currentCoroutineContext().ensureActive()
@@ -166,13 +168,26 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
     }
 }
 
-internal class AndroidAudioDecoder(private val context: Context) {
+internal class AndroidAudioDecoder(
+    private val context: Context,
+    cacheDataSourceFactory: CacheDataSource.Factory? = null,
+) {
+    private val cacheFactory by lazy { cacheDataSourceFactory ?: CacheManager.getCacheDataSourceFactory(context) }
+
     suspend fun decode(uri: Uri, startMs: Long, durationMs: Long): FloatArray {
+        return decode(ResolvedMediaSource(uri, actualQuality = "", cacheKey = null), startMs, durationMs)
+    }
+
+    suspend fun decode(source: ResolvedMediaSource, startMs: Long, durationMs: Long): FloatArray {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        var dataSource: MediaDataSource? = null
         try {
-            if (uri.scheme == "http" || uri.scheme == "https") {
-                extractor.setDataSource(uri.toString(), mapOf("User-Agent" to UserAgent))
+            val uri = source.uri
+            if (source.cacheKey != null || uri.scheme == "http" || uri.scheme == "https") {
+                val coroutineContext = currentCoroutineContext()
+                dataSource = CacheMediaDataSource(source, cacheFactory) { coroutineContext.ensureActive() }
+                extractor.setDataSource(dataSource)
             } else {
                 extractor.setDataSource(context, uri, emptyMap())
             }
@@ -253,6 +268,7 @@ internal class AndroidAudioDecoder(private val context: Context) {
             runCatching { codec?.stop() }
             codec?.release()
             extractor.release()
+            dataSource?.close()
         }
     }
 }

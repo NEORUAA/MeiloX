@@ -65,6 +65,7 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
@@ -77,6 +78,7 @@ fun PlaySetting(
 ) {
     val context = LocalContext.current
     val navController = LocalNavController.current
+    val playerConnection = LocalPlayerConnection.current
     val (musicQuality, onMusicQualityChange) = rememberEnumPreference(MusicQualityKey, MusicQuality.EXHIGH)
     val (loopPlayback, onLoopPlaybackChange) = rememberPreference(LoopPlaybackKey, true)
     val (cloudShuffle, onCloudShuffleChange) = rememberPreference(CloudShuffleEnabledKey, true)
@@ -153,7 +155,15 @@ fun PlaySetting(
                     IosPopupButton(
                         selected = musicQuality,
                         items = MusicQuality.entries,
-                        onSelected = onMusicQualityChange,
+                        onSelected = { quality ->
+                            if (quality != musicQuality) {
+                                if (playerConnection != null) {
+                                    playerConnection.changeQuality(quality, preferOnlineSource = false)
+                                } else {
+                                    onMusicQualityChange(quality)
+                                }
+                            }
+                        },
                         label = { "${it.explanation} · ${it.text}" },
                     )
                 }

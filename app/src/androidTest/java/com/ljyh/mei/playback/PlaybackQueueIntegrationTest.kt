@@ -4,6 +4,8 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.gson.Gson
@@ -38,6 +40,47 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackQueueIntegrationTest {
+    @Test
+    fun refreshingPlaybackSourcesRecreatesQueuedSourcesAndPreservesPausedShuffleState() {
+        Fixture().use { fixture ->
+            onMain {
+                fixture.player.seekTo(3, 400L)
+                fixture.player.playWhenReady = false
+                fixture.player.prepare()
+            }
+            runBlocking {
+                withTimeout(3_000) {
+                    while (onMain { fixture.player.playbackState != Player.STATE_READY }) delay(10)
+                }
+            }
+            val before = onMain {
+                Triple(fixture.items(), fixture.player.playbackOrderIndices(true), fixture.player.currentPosition)
+            }
+            fixture.sourceCreations.clear()
+            onMain {
+                fixture.player.refreshMediaItemSource(3, refreshQueuedSources = true)
+                fixture.player.prepare()
+            }
+            runBlocking {
+                withTimeout(3_000) {
+                    while (onMain { fixture.player.playbackState != Player.STATE_READY }) delay(10)
+                }
+            }
+            onMain {
+                assertEquals("Every queued source must be recreated", before.first.map(MediaItem::mediaId), fixture.sourceCreations.toList())
+                assertEquals(before.first, fixture.items())
+                assertEquals(before.first.map { it.queueEntryId }, fixture.items().map { it.queueEntryId })
+                assertEquals(before.second, fixture.player.playbackOrderIndices(true))
+                assertEquals(3, fixture.player.currentMediaItemIndex)
+                assertEquals(before.third, fixture.player.currentPosition)
+                assertTrue(fixture.player.shuffleModeEnabled)
+                assertEquals(Player.REPEAT_MODE_ALL, fixture.player.repeatMode)
+                assertFalse(fixture.player.playWhenReady)
+                assertEquals(null, fixture.player.playerError)
+            }
+        }
+    }
+
     @Test
     fun selectingAnExistingSongReplacesTheQueueWithTheVisibleList() {
         Fixture().use { fixture ->
@@ -158,10 +201,20 @@ class PlaybackQueueIntegrationTest {
             writeBytes(header + ByteArray(16_000))
         }
         val requests = CopyOnWriteArrayList<List<String>>()
+        val sourceCreations = CopyOnWriteArrayList<String>()
         val response = AtomicReference<(List<String>) -> List<String>>({ it })
         val player = onMain {
+            val sourceFactory = DefaultMediaSourceFactory(context)
             StableDeckPlayer(
-                ExoPlayer.Builder(context).build(), ExoPlayer.Builder(context).build(), AudioAttributes.DEFAULT,
+                ExoPlayer.Builder(context)
+                    .setMediaSourceFactory(object : MediaSource.Factory by sourceFactory {
+                        override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+                            sourceCreations += mediaItem.mediaId
+                            return sourceFactory.createMediaSource(mediaItem)
+                        }
+                    }).build(),
+                ExoPlayer.Builder(context).build(),
+                AudioAttributes.DEFAULT,
             ).apply {
                 setMediaItems((0 until 12).map { index ->
                     if (placeholders && index in setOf(5, 8)) createPlaceholder("6")
