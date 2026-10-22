@@ -4,24 +4,16 @@ package com.ljyh.mei.playback
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
 import androidx.media3.exoplayer.source.preload.TargetPreloadStatusControl
-import kotlin.math.abs
+import androidx.media3.common.C
 
-/**
- * 极简预加载策略：
- * 仅预加载下一首歌曲 (n+1)，且预加载 5 秒长度以确保起播秒开。
- * 其他位置（上一首、下下首）均不预加载，防止 URL 过期浪费。
- */
+/** Preloads only the next automatic playback entry, for up to five seconds. */
 @UnstableApi
 class MusicPreloadStrategy : TargetPreloadStatusControl<Int, DefaultPreloadManager.PreloadStatus> {
 
-    // 当前播放索引，需要由 Service 更新
-    var currentPlayingIndex: Int = -1
+    var nextPlayingIndex: Int = C.INDEX_UNSET
 
     override fun getTargetPreloadStatus(rankingData: Int): DefaultPreloadManager.PreloadStatus {
-        // 策略：只预加载下一首
-        if (rankingData == currentPlayingIndex + 1) {
-            // 参数1: 阶段 (STAGE_LOADED_TO_POSITION_MS)
-            // 参数2: 值 (5000ms = 5秒)
+        if (rankingData != C.INDEX_UNSET && rankingData == nextPlayingIndex) {
             return DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(
                 0,
                 5000L

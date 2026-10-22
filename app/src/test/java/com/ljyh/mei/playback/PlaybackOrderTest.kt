@@ -17,6 +17,17 @@ import org.junit.Test
 
 class PlaybackOrderTest {
     @Test
+    fun nextAutomaticEntryFollowsShuffleAndRepeatModes() {
+        val timeline = OrderedTimeline(listOf(2, 0, 3, 1))
+        assertEquals(3, playerFor(timeline, shuffle = true, currentIndex = 0).nextPlaybackMediaItemIndex())
+        assertEquals(1, playerFor(timeline, shuffle = false, currentIndex = 0).nextPlaybackMediaItemIndex())
+        assertEquals(C.INDEX_UNSET, playerFor(timeline, true, currentIndex = 1).nextPlaybackMediaItemIndex())
+        assertEquals(2, playerFor(timeline, true, 1, Player.REPEAT_MODE_ALL).nextPlaybackMediaItemIndex())
+        assertEquals(1, playerFor(timeline, true, 1, Player.REPEAT_MODE_ONE).nextPlaybackMediaItemIndex())
+        assertEquals(C.INDEX_UNSET, playerFor(OrderedTimeline(emptyList()), true).nextPlaybackMediaItemIndex())
+    }
+
+    @Test
     fun visibleListSelectionCorrectsAStaleIndexAndKeepsItsPlaylistSource() {
         val source = PlaylistQueueSource(42L, "visible-list")
         val queue = ListQueue(
@@ -130,13 +141,20 @@ class PlaybackOrderTest {
         return result
     }
 
-    private fun playerFor(timeline: Timeline, shuffle: Boolean): Player = Proxy.newProxyInstance(
+    private fun playerFor(
+        timeline: Timeline,
+        shuffle: Boolean,
+        currentIndex: Int = 0,
+        repeatMode: Int = Player.REPEAT_MODE_OFF,
+    ): Player = Proxy.newProxyInstance(
         Player::class.java.classLoader,
         arrayOf(Player::class.java),
     ) { _, method, _ ->
         when (method.name) {
             "getCurrentTimeline" -> timeline
             "getShuffleModeEnabled" -> shuffle
+            "getCurrentMediaItemIndex" -> currentIndex
+            "getRepeatMode" -> repeatMode
             else -> error("Unexpected player access: ${method.name}")
         }
     } as Player
@@ -152,8 +170,11 @@ class PlaybackOrderTest {
 
         override fun getNextWindowIndex(windowIndex: Int, repeatMode: Int, shuffleModeEnabled: Boolean): Int {
             repeatModes.add(repeatMode)
+            if (repeatMode == Player.REPEAT_MODE_ONE) return windowIndex
             val indices = if (shuffleModeEnabled) order else order.indices.toList()
-            return indices.getOrNull(indices.indexOf(windowIndex) + 1) ?: C.INDEX_UNSET
+            return indices.getOrNull(indices.indexOf(windowIndex) + 1)
+                ?: if (repeatMode == Player.REPEAT_MODE_ALL) indices.firstOrNull() ?: C.INDEX_UNSET
+                else C.INDEX_UNSET
         }
 
         override fun getWindow(windowIndex: Int, window: Window, defaultPositionProjectionUs: Long): Window =

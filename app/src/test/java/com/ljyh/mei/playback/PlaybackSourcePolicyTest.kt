@@ -1,6 +1,7 @@
 package com.ljyh.mei.playback
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.isFullSourceFor
@@ -12,6 +13,71 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackSourcePolicyTest {
+    @Test
+    fun consecutiveFailuresRemainBoundedAcrossUnsuccessfulTracks() {
+        val failures = PlaybackFailureTracker()
+        failures.onMediaItemTransition("entry-0", Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+        repeat(4) { index ->
+            assertFalse(failures.recordFailure())
+            failures.recordProgress("entry-$index", 0L, index * 1_000L, isPlaying = false)
+            failures.expectAutomaticSkip("entry-${index + 1}")
+            failures.onMediaItemTransition("entry-$index", Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+            failures.onMediaItemTransition("entry-${index + 1}", Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+            failures.onMediaItemTransition("entry-${index + 1}", Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+            assertEquals(index + 1, failures.consecutiveFailures)
+        }
+        assertTrue(failures.recordFailure())
+        assertEquals(5, failures.consecutiveFailures)
+        failures.reset()
+        assertFalse(failures.recordFailure())
+        assertEquals(1, failures.consecutiveFailures)
+    }
+
+    @Test
+    fun automaticTransitionsKeepFailuresButUserSelectionStartsANewAttempt() {
+        val failures = PlaybackFailureTracker()
+        failures.recordFailure()
+        failures.onMediaItemTransition("next", Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        assertEquals(1, failures.consecutiveFailures)
+        failures.expectAutomaticSkip("failed-next")
+        failures.onMediaItemTransition("selected", Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+        assertEquals(0, failures.consecutiveFailures)
+        failures.recordFailure()
+        failures.onMediaItemTransition("replacement", Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+        assertEquals(0, failures.consecutiveFailures)
+    }
+
+    @Test
+    fun onlySustainedProgressOnTheSameEntryResetsFailures() {
+        val failures = PlaybackFailureTracker()
+        failures.recordFailure()
+        failures.recordProgress("a", 0L, 0L, isPlaying = true)
+        failures.recordProgress("a", 0L, 2_000L, isPlaying = true)
+        assertEquals(1, failures.consecutiveFailures)
+        failures.recordProgress("b", 0L, 3_000L, isPlaying = true)
+        failures.recordProgress("b", 1_000L, 4_000L, isPlaying = true)
+        assertEquals(1, failures.consecutiveFailures)
+        failures.recordProgress("b", 2_000L, 5_000L, isPlaying = true)
+        assertEquals(0, failures.consecutiveFailures)
+    }
+
+    @Test
+    fun pauseAndSeekCannotCountAsSuccessfulPlayback() {
+        val failures = PlaybackFailureTracker()
+        failures.recordFailure()
+        failures.recordProgress("a", 0L, 0L, isPlaying = true)
+        failures.recordProgress("a", 1_000L, 1_000L, isPlaying = true)
+        failures.recordProgress("a", 1_000L, 2_000L, isPlaying = false)
+        failures.recordProgress("a", 1_100L, 3_000L, isPlaying = true)
+        failures.resetProgress()
+        failures.recordProgress("a", 30_000L, 4_000L, isPlaying = true)
+        assertEquals(1, failures.consecutiveFailures)
+        failures.recordProgress("a", 31_000L, 5_000L, isPlaying = true)
+        assertEquals(1, failures.consecutiveFailures)
+        failures.recordProgress("a", 32_000L, 6_000L, isPlaying = true)
+        assertEquals(0, failures.consecutiveFailures)
+    }
+
     @Test
     fun qualityFallbacksFollowTheRequestedQuality() {
         assertEquals(

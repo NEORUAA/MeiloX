@@ -29,5 +29,13 @@ internal fun Player.playbackOrderIndices(shuffle: Boolean = shuffleModeEnabled):
     return result
 }
 
+/** Returns the next automatic transition, including repeat-one and repeat-all behavior. */
+internal fun Player.nextPlaybackMediaItemIndex(): Int {
+    val timeline = currentTimeline
+    val currentIndex = currentMediaItemIndex
+    if (currentIndex !in 0 until timeline.windowCount) return C.INDEX_UNSET
+    return timeline.getNextWindowIndex(currentIndex, repeatMode, shuffleModeEnabled)
+}
+
 internal fun List<Int?>.isPlaybackPermutation(size: Int): Boolean =
     this.size == size && toSet().size == size && all { it != null && it in 0 until size }

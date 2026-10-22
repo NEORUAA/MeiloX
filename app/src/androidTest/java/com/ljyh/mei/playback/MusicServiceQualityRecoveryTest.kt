@@ -9,6 +9,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.SimpleCache
@@ -38,6 +39,127 @@ import org.junit.runner.RunWith
 @OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class MusicServiceQualityRecoveryTest {
+    @Test
+    fun repeatedSourceFailuresStopAcrossRealQueueTransitionsAndRetainTheQueue() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("issue59Recovery") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val connected = CountDownLatch(1)
+        val reference = AtomicReference<MusicService?>()
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                reference.set((binder as? MusicService.MusicBinder)?.service)
+                connected.countDown()
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) = Unit
+        }
+        assertTrue(context.bindService(Intent(context, MusicService::class.java), connection, Context.BIND_AUTO_CREATE))
+        var service: MusicService? = null
+        var original: QueueSnapshot? = null
+        var originalItems = emptyList<MediaItem>()
+        var listener: Player.Listener? = null
+        try {
+            assertTrue("The saved playback service must bind", connected.await(10, TimeUnit.SECONDS))
+            val currentService = checkNotNull(reference.get()).also { service = it }
+            val queueRestored = CountDownLatch(1)
+            val restoreListener = object : Player.Listener {
+                override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                    if (timeline.windowCount >= 6) queueRestored.countDown()
+                }
+            }
+            listener = restoreListener
+            instrumentation.runOnMainSync {
+                currentService.player.addListener(restoreListener)
+                if (currentService.player.mediaItemCount >= 6) queueRestored.countDown()
+            }
+            assertTrue("The saved queue must finish restoring before the regression starts", queueRestored.await(10, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync {
+                val player = currentService.player
+                player.removeListener(restoreListener)
+                assertFalse("Run the opt-in regression while paused", player.playWhenReady)
+                assertTrue("The saved queue needs six entries to verify the retry limit", player.mediaItemCount >= 6)
+                original = QueueSnapshot.capture(player)
+                originalItems = List(player.mediaItemCount, player::getMediaItemAt)
+                player.shuffleModeEnabled = false
+                player.repeatMode = Player.REPEAT_MODE_ALL
+                player.seekTo(0, 0L)
+            }
+            listener = null
+            repeat(5) { failureIndex ->
+                val transitioned = CountDownLatch(1)
+                var failedEntry: String? = null
+                var nextEntry: String? = null
+                val transitionListener = object : Player.Listener {
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (mediaItem?.queueEntryId == nextEntry && reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                            transitioned.countDown()
+                        }
+                    }
+                }
+                listener = transitionListener
+                instrumentation.runOnMainSync {
+                    val player = currentService.player
+                    failedEntry = player.currentMediaItem?.queueEntryId
+                    nextEntry = player.getMediaItemAt(player.nextMediaItemIndex).queueEntryId
+                    assertNotNull(failedEntry)
+                    assertNotNull(nextEntry)
+                    player.addListener(transitionListener)
+                    currentService.onPlayerError(
+                        PlaybackException("Injected unavailable source", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS),
+                    )
+                }
+                if (failureIndex < 4) {
+                    assertTrue("Automatic skip must publish its real SEEK event", transitioned.await(10, TimeUnit.SECONDS))
+                }
+                instrumentation.waitForIdleSync()
+                instrumentation.runOnMainSync {
+                    val player = currentService.player
+                    player.removeListener(transitionListener)
+                    assertEquals(original!!.entryIds, QueueSnapshot.capture(player).entryIds)
+                    assertFalse(player.playWhenReady)
+                    if (failureIndex < 4) {
+                        assertEquals(nextEntry, player.currentMediaItem?.queueEntryId)
+                    } else {
+                        assertEquals("The fifth failure must stop before another request", Player.STATE_IDLE, player.playbackState)
+                        assertEquals(failedEntry, player.currentMediaItem?.queueEntryId)
+                    }
+                }
+                listener = null
+            }
+        } finally {
+            try {
+                service?.let { currentService ->
+                    instrumentation.runOnMainSync {
+                        val player = currentService.player
+                        listener?.let(player::removeListener)
+                        original?.let { saved ->
+                            // Restoring shuffle must not start a new server shuffle after this test.
+                            currentService.queueManager.cancelServerShuffle()
+                            player.activeDeck.setMediaItems(originalItems, saved.index, saved.positionMs)
+                            player.setPlaybackOrder(saved.shuffleOrder)
+                            player.shuffleModeEnabled = saved.shuffleEnabled
+                            player.repeatMode = saved.repeatMode
+                            player.playWhenReady = false
+                            player.prepare()
+                            val restored = QueueSnapshot.capture(player)
+                            assertEquals(saved.mediaIds, restored.mediaIds)
+                            assertEquals(saved.entryIds, restored.entryIds)
+                            assertEquals(saved.index, restored.index)
+                            assertEquals(saved.shuffleOrder, restored.shuffleOrder)
+                            assertEquals(saved.shuffleEnabled, restored.shuffleEnabled)
+                            assertEquals(saved.repeatMode, restored.repeatMode)
+                            assertTrue("The original paused position must be restored", abs(saved.positionMs - restored.positionMs) <= 500L)
+                            assertFalse(player.playWhenReady)
+                        }
+                    }
+                }
+            } finally {
+                context.unbindService(connection)
+            }
+        }
+    }
+
     @Test
     fun injectedDecoderFailureRecreatesTheCurrentPausedSourceAndPreservesItsQueue() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("issue38Recovery") == "true")

@@ -12,8 +12,6 @@ import android.media.audiofx.AudioEffect
 import android.net.ConnectivityManager
 import android.os.Binder
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.ui.text.toLowerCase
@@ -183,6 +181,7 @@ class MusicService : MediaLibraryService(),
     private lateinit var baseMediaSourceFactory: DefaultMediaSourceFactory
     private lateinit var preloadManager: DefaultPreloadManager
     private val preloadStrategy = MusicPreloadStrategy()
+    private var preloadedMediaItem: MediaItem? = null
     val currentMediaMetadata = MutableStateFlow<MediaMetadata?>(null)
     val availableMusicQualities = MutableStateFlow<List<MusicQuality>>(emptyList())
     val currentMusicQuality = MutableStateFlow<MusicQuality?>(null)
@@ -203,7 +202,8 @@ class MusicService : MediaLibraryService(),
     @Inject
     lateinit var mediaUriProvider: MediaUriProvider
 
-    private var errorCount = 0 // 记录连续错误的次数，防止死循环
+    private val playbackFailures = PlaybackFailureTracker()
+    private var failureProgressJob: Job? = null
     private var sourceRecoveryJob: Job? = null
     private var sourceRecoveryMediaId: String? = null
     private var sourceRecoveryEntryId: String? = null
@@ -399,6 +399,7 @@ class MusicService : MediaLibraryService(),
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                updatePreload()
                 schedulePlaybackSnapshot()
                 scope.launch {
                     context.dataStore.edit { preferences ->
@@ -408,6 +409,7 @@ class MusicService : MediaLibraryService(),
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
+                updatePreload()
                 schedulePlaybackSnapshot()
                 scope.launch {
                     context.dataStore.edit { preferences ->
@@ -642,16 +644,17 @@ class MusicService : MediaLibraryService(),
     }
 
     private fun updatePreload() {
-        if (player.currentTimeline.isEmpty) return
-
-        val currentIndex = player.currentMediaItemIndex
-        preloadStrategy.currentPlayingIndex = currentIndex
-        if (currentIndex + 1 < player.mediaItemCount) {
-            val nextItem = player.getMediaItemAt(currentIndex + 1)
-            preloadManager.add(nextItem, currentIndex + 1)
+        val nextIndex = player.nextPlaybackMediaItemIndex().takeIf {
+            it != player.currentMediaItemIndex && it in 0 until player.mediaItemCount
+        } ?: C.INDEX_UNSET
+        val nextItem = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
+        if (nextItem == preloadedMediaItem && nextIndex == preloadStrategy.nextPlayingIndex) return
+        preloadedMediaItem?.let(preloadManager::remove)
+        preloadedMediaItem = nextItem
+        preloadStrategy.nextPlayingIndex = nextIndex
+        if (nextItem != null) {
+            preloadManager.add(nextItem, nextIndex)
         }
-
-        // 3. 触发检查
         preloadManager.invalidate()
     }
 
@@ -663,6 +666,8 @@ class MusicService : MediaLibraryService(),
         if (::preloadManager.isInitialized) {
             // BasePreloadManager requires all lifecycle calls on its construction thread.
             preloadManager.reset()
+            preloadedMediaItem = null
+            preloadStrategy.nextPlayingIndex = C.INDEX_UNSET
         }
     }
 
@@ -807,6 +812,9 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+            playbackFailures.reset()
+        }
         updateAudioEffectSession()
         if (!::audioPlayer.isInitialized) return
         if (
@@ -834,6 +842,10 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
+        if (events.contains(Player.EVENT_POSITION_DISCONTINUITY)) playbackFailures.resetProgress()
+        if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+            monitorFailureRecovery()
+        }
         if (events.containsAny(Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
                 Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED)) {
             updateNotificationButtons()
@@ -880,6 +892,25 @@ class MusicService : MediaLibraryService(),
             )
         ) {
             schedulePlaybackSnapshot()
+        }
+    }
+
+    private fun monitorFailureRecovery() {
+        failureProgressJob?.cancel()
+        failureProgressJob = null
+        playbackFailures.resetProgress()
+        if (!player.isPlaying || playbackFailures.consecutiveFailures == 0) return
+        failureProgressJob = scope.launch {
+            while (player.isPlaying && playbackFailures.consecutiveFailures > 0) {
+                val item = player.currentMediaItem
+                playbackFailures.recordProgress(
+                    entryId = item?.queueEntryId ?: item?.mediaId,
+                    positionMs = player.currentPosition,
+                    realtimeMs = SystemClock.elapsedRealtime(),
+                    isPlaying = player.isPlaying,
+                )
+                delay(FAILURE_PROGRESS_SAMPLE_MS)
+            }
         }
     }
 
@@ -1304,6 +1335,9 @@ class MusicService : MediaLibraryService(),
 
     override fun onBind(intent: Intent?) = super.onBind(intent) ?: binder
     override fun onPlayerError(error: PlaybackException) {
+        failureProgressJob?.cancel()
+        failureProgressJob = null
+        playbackFailures.resetProgress()
         val causeTypes = generateSequence(error.cause) { it.cause }.take(16)
             .joinToString(" -> ") { it.javaClass.simpleName }
         Timber.tag("MusicService").e(
@@ -1350,34 +1384,26 @@ class MusicService : MediaLibraryService(),
                 error.message?.contains("Unable to resolve url") == true
 
         if (isSourceError) {
-            errorCount++
-            Timber.tag("MusicService").e( "Play failure detected. Count: $errorCount")
-
-            // 如果连续错误超过5次，停止播放，避免无限刷 API
-            if (errorCount > 5) {
+            val limitReached = playbackFailures.recordFailure()
+            Timber.tag("MusicService").e("Play failure detected. Count: %s", playbackFailures.consecutiveFailures)
+            if (limitReached) {
                 Toast.makeText(context, "播放失败，已连续跳过多首歌曲", Toast.LENGTH_LONG).show()
+                player.pause()
                 player.stop()
-                errorCount = 0
                 return
             }
-
-            // 尝试跳到下一首
-            if (player.hasNextMediaItem()) {
-                // 不要在后台线程 Toast，发送事件或者只打印日志
-                // 如果非要提示，用 Handler
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "资源无法加载，自动跳过", Toast.LENGTH_SHORT).show()
-                }
-                player.seekToNext()
+            val nextIndex = player.nextMediaItemIndex
+            if (nextIndex in 0 until player.mediaItemCount && nextIndex != player.currentMediaItemIndex) {
+                val nextItem = player.getMediaItemAt(nextIndex)
+                playbackFailures.expectAutomaticSkip(nextItem.queueEntryId ?: nextItem.mediaId)
+                player.seekToDefaultPosition(nextIndex)
                 player.prepare()
             } else {
-                // 列表播完了，或者没有下一首
+                player.pause()
                 player.stop()
                 Toast.makeText(context, "播放结束，部分歌曲无法加载", Toast.LENGTH_SHORT).show()
             }
         } else {
-            // 其他错误（如解码器错误），重置计数器并提示
-            errorCount = 0
             Toast.makeText(context, "播放出错: ${error.errorCodeName}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1460,6 +1486,7 @@ class MusicService : MediaLibraryService(),
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (isRefreshingPlaybackSource) return
+        playbackFailures.onMediaItemTransition(mediaItem?.queueEntryId ?: mediaItem?.mediaId, reason)
         if (mediaItem?.mediaId != qualityMediaId) resetCurrentQualityState(mediaItem?.mediaId)
         recordPlaybackDuration(
             playbackHistorySession.onMediaItemTransition(
@@ -1480,14 +1507,8 @@ class MusicService : MediaLibraryService(),
             // A completed loop allows one fresh retry without reopening rejected source bytes.
             stallRecoveryAttempts = 0
         }
-        // 如果成功切歌，重置错误计数器
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
-            // 注意：这里需要延迟一点或者确认新歌曲开始缓冲后再重置，
-            // 简单的做法是：只要正常切歌了，我们暂时认为链条断了
-            errorCount = 0
-
-            // 触发 FM 模式检查 (见下文)
             checkFmModeLoadMore()
         }
         updatePreload()
@@ -1526,6 +1547,7 @@ class MusicService : MediaLibraryService(),
         private const val STUCK_BUFFERING_TIMEOUT_MS = 30_000
         private const val PLAYBACK_SNAPSHOT_INTERVAL_MS = 5_000L
         private const val AUTOMATIC_CACHE_DELAY_MS = 5_000L
+        private const val FAILURE_PROGRESS_SAMPLE_MS = 500L
         const val ACTION_CANCEL_SLEEP_TIMER = "com.ljyh.mei.action.CANCEL_SLEEP_TIMER"
         const val ACTION_TOGGLE_PLAYBACK = "com.ljyh.mei.action.TOGGLE_PLAYBACK"
         const val ACTION_PREVIOUS = "com.ljyh.mei.action.PREVIOUS"

@@ -1,6 +1,7 @@
 package com.ljyh.mei.playback
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.StuckPlayerException
 import com.ljyh.mei.constants.MusicQuality
 import java.util.Locale
@@ -155,4 +156,69 @@ internal fun shouldTryLowerPlaybackQuality(errorCode: Int): Boolean = when (erro
     PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
     PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
     else -> false
+}
+
+/** Keeps automatic source failures bounded until playback has actually made sustained progress. */
+internal class PlaybackFailureTracker(
+    private val maximumFailures: Int = 5,
+    private val healthyPlaybackDurationMs: Long = 2_000L,
+) {
+    var consecutiveFailures: Int = 0
+        private set
+    private var progressEntryId: String? = null
+    private var progressStartedAtMs = 0L
+    private var previousPositionMs = 0L
+    private var automaticSkipEntryId: String? = null
+    private var currentEntryId: String? = null
+
+    fun recordFailure(): Boolean {
+        resetProgress()
+        consecutiveFailures++
+        return consecutiveFailures >= maximumFailures
+    }
+
+    fun reset() {
+        consecutiveFailures = 0
+        automaticSkipEntryId = null
+        resetProgress()
+    }
+
+    fun expectAutomaticSkip(entryId: String) {
+        automaticSkipEntryId = entryId
+    }
+
+    fun onMediaItemTransition(entryId: String?, reason: Int) {
+        val entryChanged = entryId != currentEntryId
+        currentEntryId = entryId
+        val isAutomaticSkip = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
+            automaticSkipEntryId != null && automaticSkipEntryId == entryId
+        // Metadata hydration can replace the current MediaItem without changing its identity.
+        if (entryChanged || reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+            automaticSkipEntryId = null
+        }
+        resetProgress()
+        if ((reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK && !isAutomaticSkip) ||
+            (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && entryChanged)
+        ) {
+            reset()
+        }
+    }
+
+    fun resetProgress() {
+        progressEntryId = null
+    }
+
+    fun recordProgress(entryId: String?, positionMs: Long, realtimeMs: Long, isPlaying: Boolean) {
+        if (!isPlaying || entryId == null || consecutiveFailures == 0) {
+            resetProgress()
+            return
+        }
+        if (progressEntryId != entryId || positionMs <= previousPositionMs) {
+            progressEntryId = entryId
+            progressStartedAtMs = realtimeMs
+        } else if (realtimeMs - progressStartedAtMs >= healthyPlaybackDurationMs) {
+            reset()
+        }
+        previousPositionMs = positionMs
+    }
 }
