@@ -73,6 +73,7 @@
     <string name="queue_close">關閉播放佇列</string>
     <string name="queue_remove">從佇列移除</string>
     <string name="queue_cannot_remove_last">不能移除最後一首歌曲</string>
+    <string name="queue_history">歷史記錄</string>
     <string name="queue_continue_playing">繼續播放</string>
     <string name="queue_from_source">來自 %1$s</string>
     <string name="queue_autoplay">自動連播</string>

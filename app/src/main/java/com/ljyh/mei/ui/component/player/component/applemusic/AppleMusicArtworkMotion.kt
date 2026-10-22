@@ -109,3 +109,18 @@ internal fun appleMusicArtworkFrame(
         shadowElevation = normalShadow * (1f - p) * scale,
     )
 }
+
+internal data class AppleMusicQueueArtworkTarget(val bounds: Rect, val opacity: Float)
+
+/** Keep an offscreen endpoint at the edge it left, so reverse motion starts nearby. */
+internal fun appleMusicQueueArtworkTarget(
+    header: Rect,
+    viewportTop: Float,
+    viewportBottom: Float,
+): AppleMusicQueueArtworkTarget {
+    if (viewportBottom <= viewportTop) return AppleMusicQueueArtworkTarget(header, 1f)
+    val top = header.top.coerceIn(viewportTop - header.height, viewportBottom)
+    val bounds = Rect(header.left, top, header.right, top + header.height)
+    val visibleHeight = (minOf(bounds.bottom, viewportBottom) - maxOf(bounds.top, viewportTop)).coerceAtLeast(0f)
+    return AppleMusicQueueArtworkTarget(bounds, (visibleHeight / header.height.coerceAtLeast(1f)).coerceIn(0f, 1f))
+}

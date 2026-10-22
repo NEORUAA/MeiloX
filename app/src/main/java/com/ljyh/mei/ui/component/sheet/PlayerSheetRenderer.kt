@@ -168,6 +168,8 @@ internal class PlayerSheetLayers(
     }
     val targetArtwork get() = targetArtworkGeometry.bounds
     val targetArtworkLayoutSize get() = targetArtworkGeometry.layoutSize
+    val targetArtworkOpacity get() = targetArtworkGeometry.opacity
+    val targetArtworkClipBounds get() = targetArtworkGeometry.clipBounds
     // Ownership only changes when eligibility changes. Its geometry may read the
     // press-release progress, but endpoint display lists need no per-frame invalidation.
     private val artworkOwnership = derivedStateOf(structuralEqualityPolicy()) {
@@ -688,7 +690,19 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
     // A stable, non-zero image host exists before the first transition frame.
     // The same Coil painter supplies mini/full/overlay rendering without another
     // request, bitmap copy or endpoint draw-time recording.
-    BoxWithConstraints(Modifier.fillMaxSize().clearAndSetSemantics { }) {
+    BoxWithConstraints(
+        Modifier.fillMaxSize()
+            .drawWithContent {
+                val targetClip = layers.targetArtworkClipBounds
+                if (layers.sharesArtwork && targetClip != null) {
+                    val clip = playerArtworkClipRect(targetClip, layers.hostBounds, layers.state.progress)
+                    clipRect(clip.left, clip.top, clip.right, clip.bottom) {
+                        this@drawWithContent.drawContent()
+                    }
+                } else drawContent()
+            }
+            .clearAndSetSemantics { },
+    ) {
         // Native shadows must use the same logical outline size as the live endpoint.
         val density = LocalDensity.current
         val layoutSize = layers.targetArtworkLayoutSize
@@ -705,8 +719,8 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                         shadowElevation = 0f
                         return@graphicsLayer
                     }
-                    alpha = 1f
                     val progress = layers.state.progress
+                    alpha = playerArtworkOpacity(layers.targetArtworkOpacity, progress)
                     val target = layers.targetArtwork
                     val artworkBounds = if (layers.artworkTracksContainerTop()) {
                         playerTopAnchoredArtworkRect(

@@ -35,11 +35,47 @@ class PlayerSheetArtworkTargetTest {
 
     @Test fun hostOffsetIsAppliedOnceWithoutScalingTheHeader() {
         val offsetHost = Rect(15f, 31.5f, 415f, 831.5f)
-        val target = playerArtworkTargetGeometry(PlayerArtworkGeometry(header, layoutSize), offsetHost) {
+        val viewport = Rect(0f, 76f, 400f, 650f)
+        val target = playerArtworkTargetGeometry(
+            PlayerArtworkGeometry(header, layoutSize, opacity = 0.35f, clipBounds = viewport), offsetHost,
+        ) {
             error("Unexpected fallback")
         }
         assertEquals(Rect(39f, 107.5f, 85f, 153.5f), target.bounds)
         assertEquals(layoutSize, target.layoutSize)
+        assertEquals(0.35f, target.opacity, 0f)
+        assertEquals(Rect(15f, 107.5f, 415f, 681.5f), target.clipBounds)
+    }
+
+    @Test fun queueViewportClipExpandsContinuouslyWhenTheSheetReverses() {
+        val offsetHost = Rect(15f, 31.5f, 415f, 831.5f)
+        val viewport = Rect(0f, 76f, 400f, 650f)
+        val target = playerArtworkTargetGeometry(
+            PlayerArtworkGeometry(header, layoutSize, clipBounds = viewport), offsetHost,
+        ) { error("Unexpected fallback") }
+        val targetClip = checkNotNull(target.clipBounds)
+        assertBounds(Rect(0f, 0f, 400f, 800f), playerArtworkClipRect(targetClip, offsetHost, 0f))
+        assertBounds(viewport, playerArtworkClipRect(targetClip, offsetHost, 1f))
+        val interrupted = playerArtworkClipRect(targetClip, offsetHost, 0.65f)
+        val closing = playerArtworkClipRect(targetClip, offsetHost, 0.3f)
+        assertTrue(closing.top < interrupted.top)
+        assertTrue(closing.bottom > interrupted.bottom)
+        assertBounds(interrupted, playerArtworkClipRect(targetClip, offsetHost, 0.65f))
+    }
+
+    @Test fun offscreenQueueRetainsSharedArtworkOwnershipThroughReversedFades() {
+        for (edgeBounds in listOf(Rect(24f, 30f, 70f, 76f), Rect(24f, 650f, 70f, 696f))) {
+            val target = playerArtworkTargetGeometry(
+                PlayerArtworkGeometry(edgeBounds, layoutSize, opacity = 0f), host,
+            ) { error("An invisible queue header still has an explicit transition endpoint") }
+            assertTrue(playerSharesArtwork(true, true, true, mini, target.bounds, host))
+            assertEquals(1f, playerArtworkOpacity(target.opacity, 0f), 0f)
+            assertEquals(0f, playerArtworkOpacity(target.opacity, 1f), 0f)
+            val interruptedOpacity = playerArtworkOpacity(target.opacity, 0.65f)
+            assertTrue(playerArtworkOpacity(target.opacity, 0.3f) > interruptedOpacity)
+            assertEquals(interruptedOpacity, playerArtworkOpacity(target.opacity, 0.65f), 0f)
+            assertTrue(playerArtworkOpacity(target.opacity, 0.8f) < interruptedOpacity)
+        }
     }
 
     @Test fun reopeningAndCollapsingLyricsKeepTheSmallSharedTarget() {
@@ -90,12 +126,14 @@ class PlayerSheetArtworkTargetTest {
     }
 
     @Test fun classicPausedOpeningDoesNotReuseAPlayingSizedHiddenLayer() {
-        val measured = PlayerArtworkGeometry(normal, layoutSize)
+        val measured = PlayerArtworkGeometry(normal, layoutSize, opacity = 0.6f, clipBounds = host)
         val target = playerArtworkTargetGeometry(null, host, playbackScale = 0.9f) { measured }
         val paused = Rect(63.2f, 165.2f, 336.8f, 438.8f)
         assertBounds(paused, target.bounds)
         assertBounds(paused, playerArtworkRect(mini, target.bounds, 1f))
         assertEquals(layoutSize, target.layoutSize)
+        assertEquals(measured.opacity, target.opacity, 0f)
+        assertEquals(measured.clipBounds, target.clipBounds)
     }
 
     @Test fun classicPlayingOpeningDoesNotReuseAPausedSizedHiddenLayer() {

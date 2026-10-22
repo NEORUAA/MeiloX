@@ -73,6 +73,7 @@
     <string name="queue_close">Close queue</string>
     <string name="queue_remove">Remove from queue</string>
     <string name="queue_cannot_remove_last">The final song cannot be removed</string>
+    <string name="queue_history">History</string>
     <string name="queue_continue_playing">Continue Playing</string>
     <string name="queue_from_source">From %1$s</string>
     <string name="queue_autoplay">Autoplay</string>

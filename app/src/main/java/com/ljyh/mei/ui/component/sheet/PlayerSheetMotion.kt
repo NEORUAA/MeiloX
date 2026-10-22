@@ -91,7 +91,20 @@ internal fun playerDragValue(value: Float, deltaPx: Float, density: Float, colla
 
 internal fun Rect.isUsable() = width > 0f && height > 0f
 
-internal data class PlayerArtworkGeometry(val bounds: Rect, val layoutSize: IntSize)
+internal data class PlayerArtworkGeometry(
+    val bounds: Rect,
+    val layoutSize: IntSize,
+    val opacity: Float = 1f,
+    val clipBounds: Rect? = null,
+)
+
+/** The mini-player stays opaque while an offscreen expanded endpoint can disappear. */
+internal fun playerArtworkOpacity(targetOpacity: Float, progress: Float): Float =
+    mix(1f, targetOpacity.coerceIn(0f, 1f), progress.coerceIn(0f, 1f))
+
+/** Expand the viewport continuously as the shared cover returns to the mini-player. */
+internal fun playerArtworkClipRect(targetClip: Rect, host: Rect, progress: Float): Rect =
+    playerContainerRect(host, targetClip, progress).translate(-host.topLeft)
 
 internal fun playerArtworkTargetGeometry(
     explicitGeometry: PlayerArtworkGeometry?,
@@ -100,7 +113,10 @@ internal fun playerArtworkTargetGeometry(
     measuredGeometry: () -> PlayerArtworkGeometry,
 ): PlayerArtworkGeometry = explicitGeometry?.let {
     // Explicit visual bounds are host-local; logical image size is never visual size.
-    it.copy(bounds = it.bounds.translate(host.topLeft))
+    it.copy(
+        bounds = it.bounds.translate(host.topLeft),
+        clipBounds = it.clipBounds?.translate(host.topLeft),
+    )
 } ?: measuredGeometry().let { measured ->
     if (playbackScale == null || !measured.bounds.isUsable() ||
         measured.layoutSize.width <= 0 || measured.layoutSize.height <= 0
