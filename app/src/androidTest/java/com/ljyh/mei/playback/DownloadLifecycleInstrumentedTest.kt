@@ -4,7 +4,15 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.content.Context
+import android.net.Uri
 import android.os.Looper
+import android.provider.MediaStore
+import android.util.Log
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Song
@@ -20,18 +28,21 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Local files, Room and loopback HTTP only; no account endpoint is used. */
+/** Download fixtures use local files, Room and loopback audio without changing the service queue. */
 @RunWith(AndroidJUnit4::class)
 class DownloadLifecycleInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
@@ -198,6 +209,140 @@ class DownloadLifecycleInstrumentedTest {
             uris.forEach { resolver.delete(it, null, null) }
             first.delete(); second.delete(); directory.delete()
         }
+    }
+
+    @Test fun mismatchedMp3DownloadPublishesAndPlaysRealFlac(): Unit = runBlocking {
+        val fixturePath = InstrumentationRegistry.getArguments().getString("downloadAudioFixturePath")
+        assumeTrue("Provide downloadAudioFixturePath to opt into the real-audio fixture", !fixturePath.isNullOrBlank())
+        val supplied = File(checkNotNull(fixturePath))
+        val fixture = (if (supplied.isAbsolute) supplied else File(context.cacheDir, fixturePath)).canonicalFile
+        require(fixture.path.startsWith(context.cacheDir.canonicalPath + File.separator)) {
+            "The audio fixture must be inside the target application's cache directory"
+        }
+        assertTrue("The host-supplied FLAC fixture is missing", fixture.isFile && fixture.length() > 0)
+        val songId = "audio-format-fixture-${UUID.randomUUID()}"
+        val db = AppDatabase.getDatabase(context)
+        val resolver = context.contentResolver
+        val workManager = androidx.work.WorkManager.getInstance(context)
+        var requestId: UUID? = null
+        var published: Uri? = null
+        var player: ExoPlayer? = null
+        FixtureAudio(fixture).use { server ->
+            try {
+                DownloadManager.enqueue(context, listOf(SongDownloadInfo(
+                    songId, server.url, "FLAC format fixture $songId", listOf("Fixture"),
+                    "Download format fixture", "", 0, fileType = "mp3", quality = "jyeffect",
+                )), "Audio format fixture", downloadPath = "Music/MeiloX-test-fixtures/$songId")
+                requestId = UUID.fromString(checkNotNull(db.downloadDao().getBySongId(songId)).requestId)
+                val completed = withTimeout(120_000) {
+                    while (true) {
+                        val task = checkNotNull(db.downloadDao().getBySongId(songId))
+                        check(task.status != DownloadStatus.FAILED) { "The audio fixture download failed" }
+                        if (task.status == DownloadStatus.COMPLETED) return@withTimeout task
+                        delay(100)
+                    }
+                    @Suppress("UNREACHABLE_CODE") error("Download did not complete")
+                }
+                withTimeout(5_000) { server.sent.await() }
+                val song = checkNotNull(db.songDao().getSong(songId).first())
+                val uri = Uri.parse(checkNotNull(song.path))
+                published = uri
+                assertEquals("flac", completed.fileType)
+                assertTrue(completed.fileName.endsWith(".flac"))
+                assertEquals("flac", song.fileFormat)
+                assertTrue("Unexpected stored duration: ${song.duration}", song.duration in 284_000L..288_000L)
+                resolver.query(uri, arrayOf(MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.MIME_TYPE), null, null, null)!!.use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertTrue(cursor.getString(0).endsWith(".flac"))
+                    assertEquals("audio/flac", cursor.getString(1))
+                }
+
+                val ready = CompletableDeferred<Unit>()
+                withContext(Dispatchers.Main) {
+                    player = ExoPlayer.Builder(context).build().apply {
+                        volume = 0f
+                        addListener(object : Player.Listener {
+                            override fun onPlaybackStateChanged(playbackState: Int) {
+                                if (playbackState == Player.STATE_READY) ready.complete(Unit)
+                            }
+                            override fun onPlayerError(error: PlaybackException) {
+                                ready.completeExceptionally(error)
+                            }
+                        })
+                        setMediaItem(MediaItem.fromUri(uri))
+                        prepare()
+                    }
+                }
+                withTimeout(15_000) { ready.await() }
+                val deck = checkNotNull(player)
+                val duration = withContext(Dispatchers.Main) { deck.duration }
+                assertTrue("Unexpected decoded duration: $duration", duration in 284_000L..288_000L)
+                val startPosition = withContext(Dispatchers.Main) { deck.currentPosition.also { deck.play() } }
+                val advancedPosition = withTimeout(15_000) {
+                    var position: Long
+                    do {
+                        delay(100)
+                        position = withContext(Dispatchers.Main) {
+                            check(deck.playerError == null) { "Fixture playback failed: ${deck.playerError}" }
+                            deck.currentPosition
+                        }
+                    } while (position - startPosition <= 1_500)
+                    position
+                }
+                withContext(Dispatchers.Main) { deck.seekTo(duration - 4_000) }
+                withTimeout(15_000) {
+                    while (!withContext(Dispatchers.Main) {
+                        check(deck.playerError == null) { "Fixture end playback failed: ${deck.playerError}" }
+                        deck.playbackState == Player.STATE_ENDED
+                    }) delay(100)
+                }
+                Log.i("DownloadAudioFixture", "FLAC download completed: stored=${song.duration}, " +
+                    "decoded=$duration, advanced=$advancedPosition, end reached")
+            } finally {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) { player?.release() }
+                    requestId?.let { workManager.cancelWorkById(it).result.get(5, TimeUnit.SECONDS) }
+                    val paths = listOfNotNull(published?.toString(), db.songDao().getSong(songId).first()?.path)
+                    paths.distinct().forEach { resolver.delete(Uri.parse(it), null, null) }
+                    db.downloadDao().delete(songId)
+                    db.songDao().deleteById(songId)
+                }
+            }
+        }
+    }
+
+    private class FixtureAudio(private val file: File) : AutoCloseable {
+        private val listener = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
+        @Volatile private var socket: Socket? = null
+        val sent = CompletableDeferred<Unit>()
+        val url = "http://127.0.0.1:${listener.localPort}/audio.mp3"
+        private val thread = Thread {
+            try {
+                listener.accept().use { client ->
+                    socket = client
+                    client.soTimeout = 15_000
+                    val input = client.getInputStream()
+                    var tail = ""
+                    var headerBytes = 0
+                    while (!tail.endsWith("\r\n\r\n")) {
+                        check(++headerBytes <= 8192) { "HTTP request headers are too large" }
+                        val byte = input.read()
+                        check(byte >= 0) { "HTTP client closed before request headers" }
+                        tail = (tail + byte.toChar()).takeLast(4)
+                    }
+                    client.getOutputStream().use { output ->
+                        output.write(("HTTP/1.1 200 OK\r\nContent-Length: ${file.length()}\r\n" +
+                            "Content-Type: audio/mpeg\r\nConnection: close\r\n\r\n").toByteArray())
+                        file.inputStream().use { it.copyTo(output, 64 * 1024) }
+                        output.flush()
+                    }
+                    sent.complete(Unit)
+                }
+            } catch (error: Exception) { sent.completeExceptionally(error) }
+        }.apply { isDaemon = true; start() }
+
+        override fun close() { socket?.close(); listener.close(); thread.join(1_000) }
     }
 
     private class StalledAudio : AutoCloseable {

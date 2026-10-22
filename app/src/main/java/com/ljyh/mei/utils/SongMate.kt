@@ -27,7 +27,8 @@ object SongMate {
     fun checkTags(filePath: String): TagStatus? {
         return try {
             val file = File(filePath)
-            val audioFile = AudioFileIO.read(file)
+            val format = detectAudioFileFormat(file)?.takeIf { it.supportsTagWriting } ?: return null
+            val audioFile = AudioFileIO.readAs(file, format.extension)
             val tag = audioFile.tagOrCreateAndSetDefault
             TagStatus(
                 hasTitle = !tag.getFirst(FieldKey.TITLE).isNullOrBlank(),
@@ -64,16 +65,14 @@ object SongMate {
     ) {
         try {
             val file = File(filePath)
-            val audioFile = AudioFileIO.read(file)
+            val format = detectAudioFileFormat(file)?.takeIf { it.supportsTagWriting } ?: return
+            // API file types and HTTP MIME types can disagree with the actual audio container.
+            val audioFile = AudioFileIO.readAs(file, format.extension)
             var tag = audioFile.tagOrCreateAndSetDefault
             val isFlac = tag is FlacTag
 
-            if (!isFlac && tag !is ID3v24Tag) {
-                val oldArtwork = if (tag is AbstractID3v2Tag) {
-                    tag.firstArtwork
-                } else null
-                val v24Tag = ID3v24Tag()
-                oldArtwork?.let { v24Tag.setField(it) }
+            if (tag is AbstractID3v2Tag && tag !is ID3v24Tag) {
+                val v24Tag = ID3v24Tag(tag)
                 audioFile.tag = v24Tag
                 tag = v24Tag
             }

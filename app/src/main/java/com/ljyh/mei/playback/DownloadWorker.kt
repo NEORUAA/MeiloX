@@ -23,6 +23,8 @@ import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.ImageUtils
+import com.ljyh.mei.utils.AudioFileFormat
+import com.ljyh.mei.utils.detectAudioFileFormat
 import com.ljyh.mei.utils.localAudioPublicationMutex
 import com.ljyh.mei.utils.LyricFetcher
 import com.ljyh.mei.utils.SongMate
@@ -213,17 +215,8 @@ class DownloadWorker(
             }
         }
         updateTask(db, songId, DownloadStatus.DOWNLOADING, 0)
-        val suffix = task.fileType.ifBlank {
-            task.url.substringBefore("?").substringAfterLast("/").substringAfterLast(".", "")
-        }
-        if (suffix.isBlank()) {
-            updateTask(db, songId, DownloadStatus.FAILED, 0)
-            failedCount.incrementAndGet()
-            return@coroutineScope
-        }
-        val fileName = "${specialReplace("${task.songTitle} - ${task.songArtist}")}.$suffix"
         val tempFile = try {
-            createDownloadTempFile(tempDir, id.toString(), suffix)
+            createDownloadTempFile(tempDir, id.toString(), "download")
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             Timber.e(error, "Could not create download temporary file")
@@ -236,6 +229,10 @@ class DownloadWorker(
                 launch { updateTask(db, songId, DownloadStatus.DOWNLOADING, progress) }
             }
             currentCoroutineContext().ensureActive()
+            val format = checkNotNull(detectAudioFileFormat(tempFile)) {
+                "Unsupported or malformed downloaded audio"
+            }
+            val fileName = "${specialReplace("${task.songTitle} - ${task.songArtist}")}.${format.extension}"
             val lyric = async { LyricFetcher.fetchBestLyric(songId) }
             val cover = async { if (task.songCover.isNotBlank()) ImageUtils.downloadImageBytes(task.songCover) else null }
             try {
@@ -247,14 +244,16 @@ class DownloadWorker(
                 Timber.w(error, "Could not write optional download tags")
             }
             currentCoroutineContext().ensureActive()
-            val duration = runCatching { AudioFileIO.read(tempFile).audioHeader.trackLength.toLong() * 1_000L }
+            check(detectAudioFileFormat(tempFile) == format) { "Audio container changed while writing tags" }
+            val duration = runCatching { AudioFileIO.readAs(tempFile, format.extension).audioHeader.trackLength.toLong() * 1_000L }
                 .getOrDefault(0L)
             localAudioPublicationMutex.withLock {
                 var published: Uri? = null
                 try {
-                    published = publishDownloadedAudio(applicationContext, tempFile, fileName, suffix, relativePath)
+                    published = publishDownloadedAudio(applicationContext, tempFile, fileName, format.extension, relativePath)
                     val uri = checkNotNull(published) { "Could not publish downloaded audio" }
-                    if (saveDownloadedSong(db, songId, task, uri, duration, relativePath)) {
+                    if (saveDownloadedSong(db, songId, task, uri, duration, relativePath,
+                            format, fileName, tempFile.length())) {
                         published = null
                         completedCount.incrementAndGet()
                     }
@@ -285,7 +284,10 @@ class DownloadWorker(
         task: com.ljyh.mei.data.model.room.DownloadTask,
         uri: Uri,
         durationMs: Long,
-        relativePath: String
+        relativePath: String,
+        format: AudioFileFormat,
+        fileName: String,
+        fileSize: Long,
     ): Boolean = db.withTransaction {
         currentCoroutineContext().ensureActive()
         val current = db.downloadDao().getBySongId(songId)
@@ -304,11 +306,14 @@ class DownloadWorker(
             duration = durationMs,
             path = uri.toString(),
             sourceType = SourceType.DOWNLOAD,
+            fileFormat = format.extension,
+            fileSize = fileSize,
             folderPath = relativePath,
             addedAt = existing?.addedAt ?: System.currentTimeMillis(),
         )
         if (existing == null) db.songDao().insertSong(downloaded)
         else db.songDao().updateSong(downloaded)
+        db.downloadDao().updateFileInfo(songId, task.url, fileName, format.extension)
         check(db.downloadDao().updateOwnedProgress(songId, id.toString(), DownloadStatus.COMPLETED,
             100, System.currentTimeMillis()) == 1)
         true
@@ -365,15 +370,8 @@ internal suspend fun publishDownloadedAudio(
     fileType: String,
     relativePath: String
 ): Uri? {
-    val mimeType = when (fileType.lowercase()) {
-        "flac" -> "audio/flac"
-        "aac" -> "audio/aac"
-        "ogg" -> "audio/ogg"
-        "wav" -> "audio/wav"
-        "m4a" -> "audio/mp4"
-        "opus" -> "audio/opus"
-        else -> "audio/mpeg"
-    }
+    val mimeType = AudioFileFormat.entries.firstOrNull { it.extension == fileType.lowercase() }
+        ?.mimeType ?: "audio/mpeg"
     val contentValues = ContentValues().apply {
         put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
         put(MediaStore.Audio.Media.RELATIVE_PATH, "$relativePath/")
