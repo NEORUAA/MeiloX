@@ -6,14 +6,15 @@ import coil3.request.ImageRequest
 import coil3.size.Precision
 
 
-fun preloadImage(context: Context, url: String) {
+suspend fun preloadImage(context: Context, url: String) {
     if (url.isEmpty()) return
 
     val request = ImageRequest.Builder(context)
         .data(url)
-        .precision(Precision.EXACT)
+        .size(1440)
+        .precision(Precision.INEXACT)
         .build()
 
-    // 使用 enqueue 异步加载，不阻塞当前协程
-    context.imageLoader.enqueue(request)
+    // Structured cancellation drops a stale request when the next queue entry changes.
+    context.imageLoader.execute(request)
 }

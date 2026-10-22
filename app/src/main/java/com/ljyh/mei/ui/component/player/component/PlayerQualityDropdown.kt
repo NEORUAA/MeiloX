@@ -1,11 +1,16 @@
 package com.ljyh.mei.ui.component.player.component
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,9 +18,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -79,6 +88,26 @@ fun PlayerQualityDropdown(
     cornerRadius: Dp = 6.dp,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val pendingTitle = stringResource(R.string.player_quality_pending)
+    val hasResolvedQuality = isPlayingLocalSource || quality != null
+    val qualityTitle = when {
+        isPlayingLocalSource -> localPlaybackQualityTitle(localPlaybackInfo)
+        quality != null -> stringResource(quality.labelRes)
+        else -> pendingTitle
+    }
+    val labels = MusicQuality.entries.map { stringResource(it.labelRes) } + pendingTitle
+    val textMeasurer = rememberTextMeasurer()
+    val reservedWidthPx = remember(labels, style, textMeasurer) {
+        labels.maxOf { textMeasurer.measure(it, style = style, maxLines = 1).size.width }
+    }
+    val reservedWidth = with(LocalDensity.current) { reservedWidthPx.toDp() }.coerceIn(64.dp, 136.dp)
+    val titleAlpha = remember(qualityTitle, hasResolvedQuality) {
+        Animatable(if (hasResolvedQuality) 0f else 1f)
+    }
+    LaunchedEffect(titleAlpha) {
+        // Animatable follows the system animator duration scale, including disabled motion.
+        if (hasResolvedQuality) titleAlpha.animateTo(1f, tween(160))
+    }
     val statusTitle = when {
         isLoading -> stringResource(R.string.track_quality_loading)
         availableQualities.isEmpty() && localPlaybackInfo == null -> stringResource(R.string.track_quality_unavailable)
@@ -106,6 +135,7 @@ fun PlayerQualityDropdown(
                     onClick = onClick,
                 ),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
                 SfIcon(
                     systemName = "waveform",
@@ -115,10 +145,12 @@ fun PlayerQualityDropdown(
                     modifier = Modifier.padding(end = 4.dp),
                 )
                 Text(
-                    text = if (isPlayingLocalSource) localPlaybackQualityTitle(localPlaybackInfo)
-                    else stringResource(quality?.labelRes ?: R.string.music_quality),
+                    text = qualityTitle,
                     style = style,
                     color = color,
+                    modifier = Modifier.widthIn(min = reservedWidth, max = 136.dp)
+                        .graphicsLayer { alpha = titleAlpha.value },
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

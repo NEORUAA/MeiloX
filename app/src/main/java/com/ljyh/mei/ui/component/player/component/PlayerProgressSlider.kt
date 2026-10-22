@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -234,6 +235,7 @@ fun PlayerProgressSlider(
 
             Text(
                 text = makeTimeString(sliderPosition.toLong()),
+                modifier = Modifier.weight(1f),
                 style = timeTextStyle,
                 color = Color.White.copy(alpha = 0.9f), // 使用白色，微透
                 maxLines = 1,
@@ -256,6 +258,8 @@ fun PlayerProgressSlider(
 
             Text(
                 text = if (duration > 0) makeTimeString(duration) else "-:--",
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.End,
                 style = timeTextStyle,
                 color = Color.White.copy(alpha = 0.6f),
                 maxLines = 1,

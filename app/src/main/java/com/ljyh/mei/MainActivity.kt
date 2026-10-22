@@ -65,6 +65,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.State
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -221,6 +222,7 @@ import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.ui.theme.LocalAccentSeedColor
 import com.ljyh.mei.utils.log.CrashHandler
 import com.ljyh.mei.utils.cache.preloadImage
+import com.ljyh.mei.playback.nextPlaybackMediaItemIndex
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.log.FileLoggingTree
@@ -424,6 +426,46 @@ class MainActivity : ComponentActivity() {
                     .build()
             }
             var targetThemeColor by remember { mutableStateOf<Color?>(null) }
+            var nextCoverUrl by remember(playerConnection) { mutableStateOf<String?>(null) }
+
+            DisposableEffect(playerConnection) {
+                val player = playerConnection?.player
+                fun updateNextCover() {
+                    val nextIndex = player?.nextPlaybackMediaItemIndex() ?: C.INDEX_UNSET
+                    nextCoverUrl = if (player != null && nextIndex in 0 until player.mediaItemCount &&
+                        nextIndex != player.currentMediaItemIndex
+                    ) {
+                        player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
+                            ?.takeIf { it.isNotBlank() }
+                    } else null
+                }
+                val listener = object : Player.Listener {
+                    override fun onEvents(player: Player, events: Player.Events) {
+                        if (events.containsAny(
+                                Player.EVENT_MEDIA_ITEM_TRANSITION,
+                                Player.EVENT_TIMELINE_CHANGED,
+                                Player.EVENT_MEDIA_METADATA_CHANGED,
+                                Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                                Player.EVENT_REPEAT_MODE_CHANGED,
+                            )
+                        ) updateNextCover()
+                    }
+                }
+                player?.addListener(listener)
+                updateNextCover()
+                onDispose { player?.removeListener(listener) }
+            }
+            val preloadThemeColor by rememberUpdatedState(dynamicTheme)
+            LaunchedEffect(nextCoverUrl) {
+                // Match the shared player artwork request, regardless of theme settings.
+                nextCoverUrl?.let { url ->
+                    preloadImage(this@MainActivity, url)
+                    // The palette request can now reuse the downloaded source bytes.
+                    snapshotFlow { preloadThemeColor }.collectLatest { enabled ->
+                        if (enabled) colorRepository.getColorOrExtract(this@MainActivity, url)
+                    }
+                }
+            }
 
             LaunchedEffect(playerConnection, dynamicTheme) {
                 Timber.tag("MainActivity").d("playerConnection: $playerConnection")
@@ -432,7 +474,6 @@ class MainActivity : ComponentActivity() {
                     return@LaunchedEffect
                 }
                 val playerConnection = playerConnection ?: return@LaunchedEffect
-                val player = playerConnection.service.player
                 playerConnection.service.currentMediaMetadata.collectLatest { song ->
                     if (song == null) {
                         targetThemeColor = null
@@ -444,17 +485,6 @@ class MainActivity : ComponentActivity() {
                     targetThemeColor = color.takeUnless { it == Color.Black }
                     Timber.tag("MainActivity").d("获取歌曲颜色: $targetThemeColor")
 
-                    val nextIndex = player.nextMediaItemIndex
-                    if (nextIndex != C.INDEX_UNSET) {
-                        val nextUrl = player.getMediaItemAt(nextIndex).mediaMetadata.artworkUri?.toString()
-                        if (!nextUrl.isNullOrEmpty()) {
-                            Timber.tag("MainActivity").d("获取下一首歌曲颜色: $nextUrl")
-                            launch(Dispatchers.IO) {
-                                colorRepository.getColorOrExtract(context, nextUrl)
-                                preloadImage(context, nextUrl)
-                            }
-                        }
-                    }
                 }
 
             }

@@ -1,9 +1,9 @@
 package com.ljyh.mei.ui.component.player.state
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -12,21 +12,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.Player.STATE_READY
 import androidx.media3.common.util.UnstableApi
-import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.qq.u.SearchResult
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.PlayerConnection
+import com.ljyh.mei.playback.nextPlaybackMediaItemIndex
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.utils.LifecycleStartedEffect
-import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.utils.lyric.createDefaultLyricData
-import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import timber.log.Timber
@@ -36,10 +37,14 @@ class PlayerStateContainer(
     val playerViewModel: PlayerViewModel,
     val playerConnection: PlayerConnection
 ) {
-    var sliderPosition by mutableFloatStateOf(0f)
+    var sliderPosition by mutableFloatStateOf(playerConnection.player.currentPosition.coerceAtLeast(0L).toFloat())
         internal set
 
-    var duration by mutableLongStateOf(0L)
+    var duration by mutableLongStateOf(
+        playerConnection.player.currentMediaItem?.let {
+            playerProgressDuration(playerConnection.player.duration, it.metadata?.duration)
+        } ?: 0L
+    )
         internal set
 
     var isDragging by mutableStateOf(false)
@@ -90,11 +95,20 @@ class PlayerStateContainer(
     var controlsVisible by mutableStateOf(true)
         internal set
 
-    fun reset() {
-        sliderPosition = 0f
-        duration = 0L
+    internal fun refreshProgress() {
+        val player = playerConnection.player
+        val currentItem = player.currentMediaItem
+        duration = if (currentItem == null) 0L else {
+            playerProgressDuration(player.duration, currentItem.metadata?.duration)
+        }
+        if (!isDragging) {
+            sliderPosition = if (currentItem == null) 0f else player.currentPosition.coerceAtLeast(0L).toFloat()
+        }
     }
 }
+
+internal fun playerProgressDuration(playerDuration: Long, metadataDuration: Long?): Long =
+    playerDuration.takeIf { it > 0L } ?: metadataDuration?.takeIf { it > 0L } ?: 0L
 
 @Composable
 @UnstableApi
@@ -113,7 +127,9 @@ fun rememberPlayerStateContainer(
 
     container.playbackState = playerConnection.playbackState.collectAsStateWithLifecycle()
     container.isPlaying = playerConnection.isPlaying.collectAsStateWithLifecycle()
-    container.mediaMetadata = playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val currentMediaItem = remember(playerConnection) { mutableStateOf(playerConnection.player.currentMediaItem) }
+    container.mediaMetadata = remember(playerConnection) { derivedStateOf { currentMediaItem.value?.metadata } }
+    var nextMediaItem by remember(playerConnection) { mutableStateOf<MediaItem?>(null) }
     container.canSkipPrevious = playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
     container.canSkipNext = playerConnection.canSkipNext.collectAsStateWithLifecycle()
     container.isFMMode = playerConnection.isFMMode.collectAsStateWithLifecycle()
@@ -137,9 +153,54 @@ fun rememberPlayerStateContainer(
         }
     }
 
-    LaunchedEffect(container.mediaMetadata.value?.id) {
+    DisposableEffect(playerConnection) {
+        val player = playerConnection.player
+        fun refreshItems() {
+            currentMediaItem.value = player.currentMediaItem
+            val nextIndex = player.nextPlaybackMediaItemIndex()
+            nextMediaItem = if (nextIndex in 0 until player.mediaItemCount && nextIndex != player.currentMediaItemIndex) {
+                player.getMediaItemAt(nextIndex)
+            } else null
+        }
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(
+                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_MEDIA_METADATA_CHANGED,
+                        Player.EVENT_TIMELINE_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY,
+                        Player.EVENT_PLAYBACK_STATE_CHANGED,
+                    )
+                ) {
+                    container.refreshProgress()
+                }
+                if (events.containsAny(
+                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_MEDIA_METADATA_CHANGED,
+                        Player.EVENT_TIMELINE_CHANGED,
+                        Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_REPEAT_MODE_CHANGED,
+                    )
+                ) {
+                    refreshItems()
+                }
+            }
+        }
+        player.addListener(listener)
+        // Event updates keep paused seeks and new metadata current without a timer.
+        container.refreshProgress()
+        refreshItems()
+        onDispose { player.removeListener(listener) }
+    }
+
+    LaunchedEffect(container.mediaMetadata.value) {
         container.mediaMetadata.value?.let { meta ->
             playerViewModel.mediaMetadata = meta
+        }
+    }
+
+    LaunchedEffect(container.mediaMetadata.value?.id) {
+        container.mediaMetadata.value?.let { meta ->
             playerViewModel.getLike(meta.id)
         }
     }
@@ -160,22 +221,19 @@ fun rememberPlayerStateContainer(
 
         if (playbackState == STATE_READY && isPlaying && !isDragging) {
             while (isActive) {
-                container.sliderPosition = playerConnection.player.currentPosition.toFloat()
-                container.duration = playerConnection.player.duration.coerceAtLeast(1L)
+                container.refreshProgress()
                 // Progress needs four updates per second; lyrics and audio response
                 // use their own faster clocks.
                 delay(250)
             }
-        } else if (!isPlaying && !isDragging) {
-            container.sliderPosition = playerConnection.player.currentPosition.toFloat()
-            container.duration = playerConnection.player.duration.coerceAtLeast(1L)
+        } else if (!isDragging) {
+            container.refreshProgress()
         }
     }
 
     LaunchedEffect(container.mediaMetadata.value?.id) {
         container.mediaMetadata.value?.let { meta ->
             container.currentSongId = meta.id.toString()
-            container.reset()
             playerViewModel.lyricManager.loadLyrics(meta)
             container.lyricLine = playerViewModel.lyricManager.lyricData.value
         }
@@ -185,17 +243,10 @@ fun rememberPlayerStateContainer(
         container.lyricLine = container.lyricResult.value
     }
 
-    val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
-    val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
-
-    LaunchedEffect(currentWindowIndex, queueWindows.size) {
-        val idx = currentWindowIndex
-        if (idx >= 0 && idx + 1 < queueWindows.size) {
-            val nextMeta = queueWindows[idx + 1].mediaItem?.metadata
-            if (nextMeta != null) {
-                playerViewModel.lyricManager.preloadLyrics(nextMeta)
-            }
-        }
+    LaunchedEffect(nextMediaItem) {
+        // MediaItem includes queue-entry identity and metadata, so same-sized queue
+        // edits and metadata hydration also refresh the intended preload target.
+        nextMediaItem?.metadata?.let(playerViewModel.lyricManager::preloadLyrics)
     }
 
     return container

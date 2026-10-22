@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.media3.common.C
+import com.ljyh.mei.ui.component.player.state.playerProgressDuration
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -12,6 +14,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppleMusicPlaybackMotionTest {
+    @Test fun progressUsesMetadataUntilTheCurrentSourceReportsItsDuration() {
+        assertEquals(222_000L, playerProgressDuration(C.TIME_UNSET, 222_000L))
+        assertEquals(222_000L, playerProgressDuration(0L, 222_000L))
+        assertEquals(221_500L, playerProgressDuration(221_500L, 222_000L))
+    }
+
+    @Test fun unknownProgressDurationStaysUnavailableInsteadOfBecomingOneMillisecond() {
+        assertEquals(0L, playerProgressDuration(C.TIME_UNSET, null))
+        assertEquals(0L, playerProgressDuration(C.TIME_UNSET, C.TIME_UNSET))
+        assertEquals(0L, playerProgressDuration(0L, 0L))
+        assertEquals(0L, playerProgressDuration(-1L, -1L))
+    }
+
     @Test fun pauseShrinksMonotonicallyToThreeQuarterSizeIn480Milliseconds() {
         val animation = TargetBasedAnimation(appleMusicPlaybackSpec(false), Float.VectorConverter, 0f, 1f)
         assertEquals(480_000_000L, animation.durationNanos)

@@ -33,6 +33,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -213,8 +215,11 @@ fun FluidProgressSlider(
             // 左侧：当前时间
             Text(
                 text = makeTimeString(sliderPosition.toLong()),
+                modifier = Modifier.weight(1f),
                 style = commonTextStyle,
                 color = Color.White.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
             // 中间：音质 (复用你原本的逻辑)
@@ -236,8 +241,12 @@ fun FluidProgressSlider(
             // "-" + makeTimeString(duration - sliderPosition.toLong())
             Text(
                 text = if (duration > 0) makeTimeString(duration) else "-:--",
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.End,
                 style = commonTextStyle,
                 color = Color.White.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

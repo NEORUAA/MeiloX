@@ -715,6 +715,7 @@
     <string name="track_quality_master">超清母带</string>
     <string name="track_quality_dolby">杜比全景声</string>
     <string name="track_quality_loading">正在查询可用音质…</string>
+    <string name="player_quality_pending">音质加载中</string>
     <string name="track_quality_unavailable">暂无可用音质信息</string>
     <string name="track_quality_local_file">本地文件</string>
     <string name="menu_expanded">已展开</string>
