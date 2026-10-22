@@ -5,11 +5,45 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import com.materialkolor.hct.Hct
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
 
 class ColorExtractionUtilsTest {
+    @Test
+    fun themeAccentsRemainReadableAcrossSurfacesAndSeedAnimations() {
+        val seeds = listOf(
+            Color.Black, Color.White, Color(0xFF131018), Color(0xFF808080),
+            Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFFFFCC00),
+        )
+        for (isDark in listOf(false, true)) {
+            val backgrounds = if (isDark) listOf(Color.Black, Color(0xFF3A3A3C))
+                else listOf(Color.White, Color(0xFFF2F2F7))
+            for (from in seeds) for (to in seeds) for (step in 0..10) {
+                val seed = lerp(from, to, step / 10f)
+                val accent = ColorExtractionUtils.themeAccentColor(seed, isDark)
+                assertReadable(accent, backgrounds)
+                assertReadable(ColorExtractionUtils.accentContentColor(accent), listOf(accent))
+            }
+        }
+    }
+
+    @Test
+    fun themeAccentsKeepReadableSeedsAndCorrectUnreadableHueWithoutAddingChroma() {
+        assertEquals(Color.White, ColorExtractionUtils.themeAccentColor(Color.White, isDark = true))
+        assertEquals(Color.Black, ColorExtractionUtils.themeAccentColor(Color.Black, isDark = false))
+        for (isDark in listOf(false, true)) {
+            for (seedColor in listOf(Color(0xFF170A20), Color(0xFFFFEAD0))) {
+                val seed = Hct.fromInt(seedColor.toArgb())
+                val accent = Hct.fromInt(ColorExtractionUtils.themeAccentColor(seedColor, isDark).toArgb())
+                val hueDifference = abs(seed.hue - accent.hue).let { minOf(it, 360.0 - it) }
+                assertTrue("Cover hue drifted by $hueDifference degrees", hueDifference < 4.0)
+                assertTrue("Correcting tone should not add saturation", accent.chroma <= seed.chroma + 2.0)
+            }
+        }
+    }
+
     @Test
     fun coverAccentsKeepTheirHueAndContrastOnLightAndDarkPages() {
         val seeds = listOf(

@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.DefaultInterfaceLetterSpacing
 import com.ljyh.mei.constants.InterfaceLetterSpacingKey
+import com.ljyh.mei.utils.color.ColorExtractionUtils
 import com.ljyh.mei.utils.rememberPreference
 
 /** Raw custom or dynamic accent; null selects the current mode's default accent. */
@@ -46,11 +47,16 @@ fun MusicTheme(
     val letterSpacing = (savedLetterSpacing.takeIf { it.isFinite() }
         ?: DefaultInterfaceLetterSpacing).coerceIn(0f, 3f).sp
     val typography = remember(letterSpacing) { appTypography(letterSpacing) }
-    val accent by animateColorAsState(seedColor, tween(600), label = "iOS accent")
+    val animatedSeed by animateColorAsState(seedColor, tween(600), label = "iOS accent")
+    // Recheck every animation frame: two readable endpoints can blend into an unreadable color.
+    val accent = remember(animatedSeed, isDark) {
+        ColorExtractionUtils.themeAccentColor(animatedSeed, isDark)
+    }
+    val onAccent = ColorExtractionUtils.accentContentColor(accent)
     val colorScheme = if (isDark) {
         darkColorScheme(
             primary = accent,
-            onPrimary = Color.White,
+            onPrimary = onAccent,
             primaryContainer = accent.copy(alpha = 0.26f),
             background = Color.Black,
             onBackground = Color.White,
@@ -73,7 +79,7 @@ fun MusicTheme(
         val groupedBackground = Color(0xFFF2F2F7)
         lightColorScheme(
             primary = accent,
-            onPrimary = Color.White,
+            onPrimary = onAccent,
             primaryContainer = accent.copy(alpha = 0.16f),
             background = groupedBackground,
             onBackground = Color.Black,

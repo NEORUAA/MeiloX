@@ -18,9 +18,28 @@ object ColorExtractionUtils {
         seedColor: Color,
         backgroundColor: Color,
         backgroundEndColor: Color,
+    ): Color = contrastingAccentColor(seedColor, backgroundColor, backgroundEndColor, preserveSeed = false)
+
+    /** Corrects only unreadable seeds and also supports intermediate animation colors. */
+    fun themeAccentColor(seedColor: Color, isDark: Boolean): Color = contrastingAccentColor(
+        seedColor = seedColor,
+        backgroundColor = if (isDark) Color.Black else Color.White,
+        backgroundEndColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFF2F2F7),
+        preserveSeed = true,
+    )
+
+    fun accentContentColor(accentColor: Color): Color =
+        if (accentColor.luminance() < CoverBrightness.DARK_LUMINANCE_THRESHOLD) Color.White else Color.Black
+
+    private fun contrastingAccentColor(
+        seedColor: Color,
+        backgroundColor: Color,
+        backgroundEndColor: Color,
+        preserveSeed: Boolean,
     ): Color {
         val seed = Hct.fromInt(seedColor.toArgb())
-        val chroma = if (seed.chroma < 4.0) 0.0 else (seed.chroma * 1.2).coerceAtMost(72.0)
+        val chroma = if (seed.chroma < 4.0) 0.0
+            else if (preserveSeed) seed.chroma else (seed.chroma * 1.2).coerceAtMost(72.0)
         val startLuminance = backgroundColor.convert(ColorSpaces.Srgb).luminance().toDouble()
         val endLuminance = backgroundEndColor.convert(ColorSpaces.Srgb).luminance().toDouble()
         fun minimumContrast(color: Color): Double {
@@ -30,10 +49,12 @@ object ColorExtractionUtils {
             return minOf(contrast(startLuminance), contrast(endLuminance))
         }
 
+        val opaqueSeed = seedColor.copy(alpha = 1f)
+        if (preserveSeed && minimumContrast(opaqueSeed) >= 4.5) return opaqueSeed
         val darkContrast = minimumContrast(Color.Black)
         val lightContrast = minimumContrast(Color.White)
         val useLightAccent = lightContrast > darkContrast
-        val preferredTone = if (useLightAccent) 65.0 else 40.0
+        val preferredTone = if (preserveSeed) seed.tone else if (useLightAccent) 65.0 else 40.0
         fun colorAtTone(tone: Double): Color = Color(Hct.from(seed.hue, chroma, tone).toInt())
         val preferredColor = colorAtTone(preferredTone)
         if (minimumContrast(preferredColor) >= 4.5) return preferredColor
