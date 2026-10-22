@@ -10,6 +10,30 @@ import org.junit.Test
 
 class HomeRecommendationActionsTest {
     @Test
+    fun resourceKeysFollowCardsAcrossReorderingAndDistinguishRepeatedServerEntries() {
+        val first = resource("""{"resourceType":"playList","resourceId":"42","action":"orpheus://playlist/42"}""")
+        val second = resource("""{"resourceType":"playList","resourceId":"7","action":"orpheus://playlist/7"}""")
+        val original = homeResourceKeys(listOf(first, second))
+        assertEquals(original.reversed(), homeResourceKeys(listOf(second, first)))
+        val repeated = homeResourceKeys(listOf(first, second, first))
+        assertEquals(repeated.size, repeated.toSet().size)
+        assertEquals(original, repeated.take(2))
+    }
+
+    @Test
+    fun resourceKeysSupportMissingIdsAndDoNotConfuseFieldSeparators() {
+        val cards = listOf(
+            resource("""{"resourceType":"nonstandard","resourceId":"null","title":"First"}"""),
+            resource("""{"resourceType":"nonstandard","resourceId":"null","title":"Second"}"""),
+            resource("""{"resourceType":"a:b","resourceId":"c"}"""),
+            resource("""{"resourceType":"a","resourceId":"b:c"}"""),
+        )
+        val keys = homeResourceKeys(cards)
+        assertEquals(keys.size, keys.toSet().size)
+        assertEquals(keys.reversed(), homeResourceKeys(cards.reversed()))
+    }
+
+    @Test
     fun similarSongCardParsesAllSeedsInTheDisplayedOrder() {
         val resource = resource(
             """

@@ -37,6 +37,7 @@ import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 
 @Singleton
 class ColorRepository @Inject constructor(private val colorDao: ColorDao) {
@@ -46,6 +47,16 @@ class ColorRepository @Inject constructor(private val colorDao: ColorDao) {
     fun getFromMemory(url: String): Color? {
         if (url.isEmpty()) return null
         return memoryCache[themeColorCacheKey(url)]
+    }
+
+    /** Restores a saved seed without requesting or decoding the cover image. */
+    suspend fun getCachedColor(url: String): Color? = withContext(Dispatchers.IO) {
+        if (url.isEmpty()) return@withContext null
+        val cacheKey = themeColorCacheKey(url)
+        memoryCache[cacheKey]?.let { return@withContext it }
+        colorDao.getColor(cacheKey)?.let { entity ->
+            Color(entity.color).also { memoryCache[cacheKey] = it }
+        }
     }
 
     fun getCachedCoverIsDark(url: String): Boolean? {
@@ -73,31 +84,49 @@ class ColorRepository @Inject constructor(private val colorDao: ColorDao) {
             }
         }
 
-    suspend fun getColorOrExtract(context: Context, url: String): Color = withContext(Dispatchers.IO) {
+    suspend fun getColorOrExtract(context: Context, url: String): Color =
+        getColorOrExtract(url) { loadCoverBitmap(context, url) }
+
+    /** Reuses the displayed image without starting another size or URL variant request. */
+    suspend fun getColorOrExtract(url: String, bitmap: Bitmap): Color =
+        getColorOrExtract(url) { bitmap }
+
+    private suspend fun getColorOrExtract(url: String, loadBitmap: suspend () -> Bitmap?): Color = withContext(Dispatchers.IO) {
         if (url.isEmpty()) return@withContext Color.Black
         val cacheKey = themeColorCacheKey(url)
-        memoryCache[cacheKey]?.let { return@withContext it }
-        val dbEntity = colorDao.getColor(cacheKey)
-        if (dbEntity != null) {
-            val color = Color(dbEntity.color)
-            memoryCache[cacheKey] = color
-            return@withContext color
-        }
-        val bitmap = loadCoverBitmap(context, url)
-        val finalColor = bitmap?.let(::extractMaterialThemeColor) ?: Color.Black
-        memoryCache[cacheKey] = finalColor
-        colorDao.insertColor(CacheColor(url = cacheKey, color = finalColor.toArgb()))
-        if (bitmap != null) {
-            try {
-                cacheCoverBrightness(url, bitmap)
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                // Brightness is optional metadata; preserve the seed extraction's result.
-                Timber.w(exception, "Failed to cache cover brightness")
+        getCachedColor(url)?.let { return@withContext it }
+        val bitmap = loadBitmap()
+        val sample = bitmap?.let {
+            val largestDimension = maxOf(it.width, it.height)
+            if (largestDimension <= 128) it else {
+                val scale = 128f / largestDimension
+                Bitmap.createScaledBitmap(
+                    it,
+                    (it.width * scale).roundToInt().coerceAtLeast(1),
+                    (it.height * scale).roundToInt().coerceAtLeast(1),
+                    true,
+                )
             }
         }
-        finalColor
+        try {
+            val finalColor = sample?.let(::extractMaterialThemeColor) ?: Color.Black
+            memoryCache[cacheKey] = finalColor
+            colorDao.insertColor(CacheColor(url = cacheKey, color = finalColor.toArgb()))
+            if (sample != null) {
+                try {
+                    cacheCoverBrightness(url, sample)
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    // Brightness is optional metadata; preserve the seed extraction's result.
+                    Timber.w(exception, "Failed to cache cover brightness")
+                }
+            }
+            finalColor
+        } finally {
+            // Coil owns the displayed bitmap; only this private sampling copy may be recycled.
+            if (sample != null && sample !== bitmap) sample.recycle()
+        }
     }
 
     private suspend fun loadCoverBitmap(context: Context, url: String): Bitmap? {

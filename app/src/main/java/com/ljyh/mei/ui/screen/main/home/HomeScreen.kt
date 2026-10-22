@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -69,6 +70,7 @@ import com.ljyh.mei.constants.RecommendCardWidth
 import com.ljyh.mei.constants.RecommendCardWidthTablet
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
+import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block.DslData.BlockResource.Resource as HomeCardResource
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
@@ -94,6 +96,7 @@ import java.util.UUID
 import kotlin.math.ceil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -114,7 +117,13 @@ fun HomeScreen(
     val listState = rememberLazyListState()
 
     val homePageResourceShowPage1 by viewModel.homePageResourceShow.collectAsState()
-    val isRefreshing by remember { mutableStateOf(false) }
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.refreshErrors.collect {
+            Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
     val device = rememberDeviceInfo()
     val glassColors = LocalGlassColors.current
     val playerConnection = LocalPlayerConnection.current
@@ -540,11 +549,12 @@ private fun HomePageResourceShow.Data.Block.DslData.BlockResource.Resource.toMus
  * 优化后的水平滚动行，使用 LazyRow 提升性能
  */
 @Composable
-private fun <T> BlockWithTitle(
+private fun BlockWithTitle(
     title: String,
-    resources: List<T>,
-    content: @Composable (T) -> Unit
+    resources: List<HomeCardResource>,
+    content: @Composable (HomeCardResource) -> Unit
 ) {
+    val resourceKeys = remember(resources) { homeResourceKeys(resources) }
     Column {
         Title(title)
         LazyRow(
@@ -552,7 +562,7 @@ private fun <T> BlockWithTitle(
             contentPadding = PaddingValues(horizontal = 16.dp), // 左右留白
             horizontalArrangement = Arrangement.spacedBy(12.dp) // Item 间距
         ) {
-            items(resources) { resource ->
+            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
                 content(resource)
             }
         }

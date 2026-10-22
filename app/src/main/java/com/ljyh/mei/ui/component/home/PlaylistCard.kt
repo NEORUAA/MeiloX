@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.component.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,10 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,8 +37,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlaylistCardSize
+import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.utils.largeImage
 
 @Composable
@@ -64,13 +72,11 @@ fun PlaylistCard(
         Box(
             modifier = Modifier.size(cardSize)
         ) {
-            AsyncImage(
-                model = if (imageSize) coverImg.largeImage() else coverImg,
+            HomeCoverImage(
+                model = coverImg.takeIf(String::isNotBlank)?.let { if (imageSize) it.largeImage() else it },
                 modifier = Modifier
                     .matchParentSize()
                     .clip(ContinuousRoundedRectangle(8.dp)),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
             )
 
             // 顶部播放量
@@ -146,6 +152,49 @@ fun PlaylistCard(
             lineHeight = 18.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/** Keeps the cover's geometry and neutral placeholder stable during loading and failures. */
+@Composable
+internal fun HomeCoverImage(
+    model: Any?,
+    modifier: Modifier = Modifier,
+    onLoading: ((AsyncImagePainter.State.Loading) -> Unit)? = null,
+    onSuccess: ((AsyncImagePainter.State.Success) -> Unit)? = null,
+    onError: ((AsyncImagePainter.State.Error) -> Unit)? = null,
+) {
+    var hasImage by remember(model) { mutableStateOf(false) }
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!hasImage) {
+            SfIcon(
+                symbol = SfSymbol.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                size = 32.dp,
+            )
+        }
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop,
+            onLoading = { state ->
+                hasImage = false
+                onLoading?.invoke(state)
+            },
+            onSuccess = { state ->
+                hasImage = true
+                onSuccess?.invoke(state)
+            },
+            onError = { state ->
+                hasImage = false
+                onError?.invoke(state)
+            },
         )
     }
 }

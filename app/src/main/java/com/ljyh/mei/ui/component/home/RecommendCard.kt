@@ -88,11 +88,18 @@ fun RecommendCard(
     var extractedColor by remember(cover) {
         mutableStateOf(viewModel.getCachedColor(cover) ?: Color.DarkGray)
     }
+    var loadedBitmap by remember(coverModel) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(cover) {
+    LaunchedEffect(cover, loadedBitmap) {
         if (cover.isBlank()) return@LaunchedEffect
+        val bitmap = loadedBitmap
         try {
-            extractedColor = viewModel.getOrExtractColor(cover)
+            val cached = viewModel.loadCachedColor(cover)
+            if (cached != null) {
+                extractedColor = cached
+            } else if (bitmap != null) {
+                extractedColor = viewModel.getOrExtractColor(cover, bitmap)
+            }
         } catch (cause: CancellationException) {
             throw cause
         } catch (_: Exception) {
@@ -119,31 +126,31 @@ fun RecommendCard(
                 modifier = Modifier
                     .size(cardWidth, cardHeight)
             ) {
-                if (coverModel != null) {
-                    AsyncImage(
-                        model = coverRequest,
-                        modifier = Modifier.matchParentSize(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        onLoading = {
-                            if (currentCoverModel.value == coverModel) {
-                                upperHalfColor.value = null
-                            }
-                        },
-                        onSuccess = { state ->
-                            if (currentCoverModel.value == coverModel) {
-                                upperHalfColor.value = runCatching {
-                                    sampleUpperHalfColor(state.result.image.toBitmap())
-                                }.getOrElse { extractedColor }
-                            }
-                        },
-                        onError = {
-                            if (currentCoverModel.value == coverModel) {
-                                upperHalfColor.value = Color.DarkGray
-                            }
-                        },
-                    )
-                }
+                HomeCoverImage(
+                    model = coverRequest,
+                    modifier = Modifier.matchParentSize(),
+                    onLoading = {
+                        if (currentCoverModel.value == coverModel) {
+                            upperHalfColor.value = null
+                            loadedBitmap = null
+                        }
+                    },
+                    onSuccess = { state ->
+                        if (currentCoverModel.value == coverModel) {
+                            upperHalfColor.value = runCatching {
+                                val bitmap = state.result.image.toBitmap()
+                                loadedBitmap = bitmap
+                                sampleUpperHalfColor(bitmap)
+                            }.getOrElse { extractedColor }
+                        }
+                    },
+                    onError = {
+                        if (currentCoverModel.value == coverModel) {
+                            upperHalfColor.value = Color.DarkGray
+                            loadedBitmap = null
+                        }
+                    },
+                )
 
                 // Top gradient overlay for text readability.
                 Box(
