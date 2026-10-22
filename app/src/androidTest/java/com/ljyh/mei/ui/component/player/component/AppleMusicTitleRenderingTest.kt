@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -36,6 +37,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.click
@@ -46,6 +48,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.ljyh.mei.R
+import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
@@ -65,6 +71,134 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppleMusicTitleRenderingTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun favoritesKeepTheirTouchTargetAndAnimateBothDirectionsAcrossTrackChanges() {
+        compose.mainClock.autoAdvance = false
+        val classic = mutableStateOf(false)
+        val local = mutableStateOf(false)
+        val trackId = mutableStateOf(1L)
+        val liked = mutableStateOf(false)
+        val actionsOpacity = mutableStateOf(1f)
+        val actionsProgress = mutableStateOf(0f)
+        val likedTracks = mutableListOf<Long>()
+        var moreClicks = 0
+        var textRight = 0f
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val favorite = compose.onNodeWithContentDescription(
+            context.getString(R.string.app_tab_library_songs), useUnmergedTree = true,
+        )
+        val more = compose.onNodeWithContentDescription(
+            context.getString(R.string.more_actions_title), useUnmergedTree = true,
+        )
+        compose.setContent {
+            val id = trackId.value
+            MaterialTheme {
+                val modifier = Modifier.width(360.dp).background(Color.Black).testTag("metadata")
+                if (classic.value) {
+                    PlayerHeader(
+                        modifier = modifier,
+                        mediaMetadata = MediaMetadata(
+                            id, "Track $id", "", listOf(MediaMetadata.Artist(1, "Artist")),
+                            1_000, MediaMetadata.Album(1, "Album"), isLocal = local.value,
+                        ),
+                        isLiked = liked.value,
+                        onClick = {}, onMoreClick = { moreClicks++ },
+                        onLikeClick = { likedTracks += id },
+                        onTextPositioned = { textRight = it.boundsInRoot().right },
+                    )
+                } else {
+                    Title(
+                        title = "Track $id", subTitle = "Artist", isLiked = liked.value,
+                        showLikeButton = !local.value,
+                        onLikeClick = { likedTracks += id },
+                        onMoreClick = { moreClicks++ }, onTitleClick = {},
+                        marqueeEnabled = false,
+                        onTextPositioned = { textRight = it.boundsInRoot().right },
+                        actionsModifier = Modifier.playerInfoMotion(
+                            actionsOpacity, actionsProgress, Offset.Zero, Offset.Zero, true,
+                        ),
+                        modifier = modifier,
+                    )
+                }
+            }
+        }
+        for (useClassic in listOf(false, true)) {
+            compose.runOnIdle {
+                classic.value = useClassic
+                local.value = false
+                trackId.value = 1
+                liked.value = false
+                likedTracks.clear()
+            }
+            compose.mainClock.advanceTimeBy(700)
+            compose.waitForIdle()
+            val openRight = textRight
+            val moreX = more.fetchSemanticsNode().boundsInRoot.center.x
+            favorite.performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(listOf(1L), likedTracks) }
+
+            compose.runOnIdle { trackId.value = 2 }
+            compose.mainClock.advanceTimeByFrame()
+            favorite.performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(listOf(1L, 2L), likedTracks) }
+
+            compose.runOnIdle { liked.value = true }
+            compose.mainClock.advanceTimeByFrame()
+            val rootBounds = compose.onNodeWithTag("metadata").fetchSemanticsNode().boundsInRoot
+            val favoriteBounds = favorite.fetchSemanticsNode().boundsInRoot.translate(-rootBounds.topLeft)
+            val previousCenter = favoriteBounds.center
+            compose.runOnIdle { local.value = true; liked.value = false }
+            compose.mainClock.advanceTimeBy(32)
+            compose.waitForIdle()
+            val exitingRight = textRight
+            val pixels = image().toPixelMap()
+            var peak = 0f
+            for (y in favoriteBounds.top.roundToInt() until favoriteBounds.bottom.roundToInt()) {
+                for (x in favoriteBounds.left.roundToInt() until favoriteBounds.right.roundToInt()) {
+                    peak = maxOf(peak, pixels[x, y].red)
+                }
+            }
+            val centerIntensity = pixels[previousCenter.x.roundToInt(), previousCenter.y.roundToInt()].red
+            assertTrue("The outgoing filled star must not become an outline", centerIntensity > peak * 0.6f)
+            compose.onNodeWithTag("metadata").performTouchInput { click(previousCenter) }
+            compose.runOnIdle { assertEquals("Local tracks must reject the outgoing favorite", 2, likedTracks.size) }
+            more.performTouchInput { click(center) }
+            compose.mainClock.advanceTimeBy(700)
+            compose.waitForIdle()
+            val closedRight = textRight
+            assertTrue("Disappearing favorites must resize the title gradually", exitingRight > openRight)
+            assertTrue(exitingRight < closedRight)
+
+            compose.runOnIdle { local.value = false; trackId.value = 3 }
+            compose.mainClock.advanceTimeBy(32)
+            compose.waitForIdle()
+            assertTrue("Reappearing favorites must not jump to their full width", textRight > openRight)
+            assertTrue("Text and favorite must start moving together", textRight < closedRight)
+            val enteringPixels = image().toPixelMap()
+            var leadingInk = false
+            var trailingInk = false
+            for (y in favoriteBounds.top.roundToInt() until favoriteBounds.bottom.roundToInt()) {
+                for (x in favoriteBounds.left.roundToInt() until favoriteBounds.right.roundToInt()) {
+                    if (enteringPixels[x, y].red > 0.04f) {
+                        if (x < previousCenter.x) leadingInk = true else trailingInk = true
+                    }
+                }
+            }
+            assertTrue("The moving text boundary must not crop either side of the favorite", leadingInk && trailingInk)
+            assertEquals("More must remain anchored", moreX, more.fetchSemanticsNode().boundsInRoot.center.x, 1f)
+            compose.mainClock.advanceTimeBy(700)
+            favorite.performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(listOf(1L, 2L, 3L), likedTracks) }
+
+            compose.runOnIdle { local.value = true }
+            compose.mainClock.advanceTimeBy(48)
+            compose.runOnIdle { local.value = false; trackId.value = 4 }
+            compose.mainClock.advanceTimeBy(700)
+            favorite.performTouchInput { click(center) }
+            compose.runOnIdle { assertEquals(listOf(1L, 2L, 3L, 4L), likedTracks) }
+        }
+        compose.runOnIdle { assertEquals(2, moreClicks) }
+    }
 
     @Test fun detailPagesPreloadOnceAndRetainTheirStateAcrossSwitches() {
         val queueSelected = mutableStateOf(false)
@@ -164,6 +298,10 @@ class AppleMusicTitleRenderingTest {
             queueSelected.value = true
         }
         compose.mainClock.advanceTimeBy(80)
+        val beforeIncoming = centerColor()
+        assertTrue("The outgoing page must start fading immediately", beforeIncoming.red in 0f..0.99f)
+        assertEquals("The incoming page must wait 100ms before fading in", 0f, beforeIncoming.blue, 0.01f)
+        compose.mainClock.advanceTimeBy(160)
         val outgoing = centerColor()
         assertTrue(outgoing.red > 0f && outgoing.blue > 0f)
         compose.runOnIdle { queueSelected.value = false }
@@ -176,14 +314,18 @@ class AppleMusicTitleRenderingTest {
             assertEquals(0, queueClicks)
             assertEquals(1, lyricClicks)
         }
-        compose.mainClock.advanceTimeBy(360)
+        compose.mainClock.advanceTimeBy(700)
         assertEquals(1f, centerColor().red, 0.01f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
             assertEquals(2, lyricClicks)
             queueSelected.value = true
         }
-        compose.mainClock.advanceTimeBy(360)
+        compose.mainClock.advanceTimeBy(450)
+        val afterOutgoing = centerColor()
+        assertEquals("The outgoing page must finish within 400ms", 0f, afterOutgoing.red, 0.01f)
+        assertTrue("The incoming page must still be fading before 500ms", afterOutgoing.blue > 0f && afterOutgoing.blue < 1f)
+        compose.mainClock.advanceTimeBy(150)
         assertEquals(1f, centerColor().blue, 0.01f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
