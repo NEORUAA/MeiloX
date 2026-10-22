@@ -95,7 +95,7 @@ data class AlbumDetail(
 
         data class Al(
             @SerializedName("id")
-            val id: Int,
+            val id: Long,
             @SerializedName("name")
             val name: String,
             @SerializedName("pic_str")
@@ -436,6 +436,16 @@ data class AlbumDetail(
             }
         }
     }
+}
+
+internal fun AlbumDetail.requireValidAlbumDetail(): AlbumDetail {
+    require(code == 200) { "Album detail request failed (code: $code)" }
+    // Gson can populate null into these non-null Kotlin properties.
+    val responseAlbum: AlbumDetail.Album? = album
+    val responseSongs: List<AlbumDetail.Song>? = songs
+    checkNotNull(responseAlbum) { "Album detail is missing album data" }
+    checkNotNull(responseSongs) { "Album detail is missing songs data" }
+    return this
 }
 
 data class MiniAlbumDetail(

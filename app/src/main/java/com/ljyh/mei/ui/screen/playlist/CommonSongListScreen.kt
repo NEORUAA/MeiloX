@@ -69,6 +69,7 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistActionOverlay
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
@@ -111,8 +112,11 @@ fun CommonSongListScreen(
     headerMetadata: String? = null,
     footer: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
     useCoverBackground: Boolean = false,
+    showTrackArtwork: Boolean = true,
     hasLoadedContent: Boolean = true,
+    trackNumbers: Map<Long, Int> = emptyMap(),
 ) {
+    val currentTrackId = LocalPlayerConnection.current?.mediaMetadata?.collectAsState()?.value?.id?.toString()
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuTriggerAlpha = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
     val detailMenuSeparation = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
@@ -357,6 +361,10 @@ fun CommonSongListScreen(
                         onTrackClick = onTrackClick,
                         selectionMode = selectionMode,
                         selectedTrackIds = selectedTrackIds,
+                        flatDetailStyle = useCoverBackground,
+                        showArtwork = showTrackArtwork,
+                        currentTrackId = currentTrackId,
+                        trackNumbers = trackNumbers,
                         onMoreClick = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
                         emptyMessage = playlistSearchQuery.takeIf { it.isNotBlank() }
                             ?.let { "未找到匹配的歌曲" },

@@ -18,6 +18,7 @@ import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.api.ManipulateTrack
 import com.ljyh.mei.data.model.api.ManipulateTrackResult
 import com.ljyh.mei.data.model.api.SubscribePlaylist
+import com.ljyh.mei.data.model.requireValidAlbumDetail
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylist
@@ -359,7 +360,7 @@ class PlaylistRepository(
             safeApiCall {
                 apiService.getAlbumDetail(
                     id = id
-                )
+                ).requireValidAlbumDetail()
             }
         }
     }

@@ -23,6 +23,21 @@ class SongAudioAvailabilityTest {
     }
 
     @Test
+    fun albumSongMetadataRetainsDistinctLongAlbumIdentity() {
+        val song = gson.fromJson(
+            """{"id":3447570734,"name":"Track title","dt":180000,"ar":[{"id":1,"name":"Artist"}],"al":{"id":3000000001,"name":"Album title","pic":123}}""",
+            AlbumDetail.Song::class.java,
+        )
+
+        val metadata = song.toMediaMetadata()
+
+        assertEquals(3_447_570_734L, metadata.id)
+        assertEquals("Track title", metadata.title)
+        assertEquals(3_000_000_001L, metadata.album.id)
+        assertEquals("Album title", metadata.album.title)
+    }
+
+    @Test
     fun missingOrNullResourceFieldsDoNotInventQualities() {
         assertTrue(track("{}").availableMusicQualities().isEmpty())
         assertTrue(

@@ -3,9 +3,11 @@ package com.ljyh.mei.ui.screen.album
 import com.ljyh.mei.constants.MusicQuality
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -22,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.DownloadPathKey
@@ -34,7 +38,11 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
+import com.ljyh.mei.ui.glass.GlassButton
+import com.ljyh.mei.ui.glass.IosPinnedListPage
+import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
 import com.ljyh.mei.ui.screen.Screen
@@ -90,7 +98,12 @@ fun AlbumDetailScreen(
                 creatorName = album.artists.joinToString(", ") { it.name },
                 isCreator = false,
                 description = album.description,
-                tracks = songs.map { it.toMediaMetadata().copy(coverUrl = album.picUrl) },
+                tracks = songs.map {
+                    it.toMediaMetadata().copy(
+                        coverUrl = album.picUrl,
+                        album = MediaMetadata.Album(album.id, album.name),
+                    )
+                },
                 playCount = -1,
                 isSubscribed = isSubscribed
             )
@@ -115,6 +128,9 @@ fun AlbumDetailScreen(
     }
     var isAlbumSearchActive by remember { mutableStateOf(false) }
     var albumSearchQuery by remember { mutableStateOf("") }
+    val trackNumbers = remember(uiData.tracks) {
+        uiData.tracks.mapIndexed { index, track -> track.id to index + 1 }.toMap()
+    }
     val displayedUiData = remember(uiData, albumSearchQuery) {
         if (albumSearchQuery.isBlank()) uiData else uiData.copy(
             tracks = uiData.tracks.filter { it.matchesPlaylistSearch(albumSearchQuery) }
@@ -267,7 +283,10 @@ fun AlbumDetailScreen(
             val items = detail.data.songs.map { song ->
                 Pair(
                     song.id.toString(),
-                    song.toMediaMetadata().copy(coverUrl = detail.data.album.picUrl).toMediaItem()
+                    song.toMediaMetadata().copy(
+                        coverUrl = detail.data.album.picUrl,
+                        album = MediaMetadata.Album(detail.data.album.id, detail.data.album.name),
+                    ).toMediaItem()
                 )
             }
             return ListQueue(
@@ -282,12 +301,33 @@ fun AlbumDetailScreen(
 
     // 6. UI 渲染
     if (albumDetail is Resource.Error) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Error: ${(albumDetail as Resource.Error).message}")
+        IosPinnedListPage(
+            title = stringResource(com.ljyh.mei.R.string.playlist_table_album),
+            bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+            showsLargeTitle = false,
+            onNavigateBack = { navController.popBackStack() },
+        ) {
+            item(key = "album-load-error") {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        stringResource(com.ljyh.mei.R.string.load_failed),
+                        color = LocalGlassColors.current.secondaryContent,
+                    )
+                    GlassButton(onClick = { viewModel.getAlbumDetail(id.toString()) }) {
+                        Text(stringResource(com.ljyh.mei.R.string.retry))
+                    }
+                }
+            }
         }
     } else {
         CommonSongListScreen(
             useCoverBackground = true,
+            showTrackArtwork = false,
+            trackNumbers = trackNumbers,
             uiData = displayedUiData,
             pagingItems = null, // 专辑通常一次性加载，不需要 paging
             isLoading = albumDetail is Resource.Loading,

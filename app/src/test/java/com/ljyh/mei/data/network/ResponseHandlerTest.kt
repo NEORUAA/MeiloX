@@ -2,6 +2,8 @@ package com.ljyh.mei.data.network
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.ljyh.mei.data.model.AlbumDetail
+import com.ljyh.mei.data.model.requireValidAlbumDetail
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -39,6 +41,41 @@ class ResponseHandlerTest {
 
         assertTrue(result is Resource.Success)
         assertSame(blocks, (result as Resource.Success).data)
+    }
+
+    @Test
+    fun malformedOrIncompleteAlbumDetailsBecomeErrors() = runBlocking {
+        for (json in listOf(
+            "{",
+            "null",
+            """{"code":404}""",
+            """{"code":201,"album":{},"songs":[]}""",
+            """{"album":{},"songs":[]}""",
+            """{"code":200,"album":null,"songs":[]}""",
+            """{"code":200,"songs":[]}""",
+            """{"code":200,"album":{},"songs":null}""",
+            """{"code":200,"album":{}}""",
+        )) {
+            val result = safeApiCall {
+                Gson().fromJson(json, AlbumDetail::class.java).requireValidAlbumDetail()
+            }
+
+            assertTrue("Expected album response error for $json", result is Resource.Error)
+        }
+    }
+
+    @Test
+    fun validAlbumDetailAcceptsAnEmptySongList() = runBlocking {
+        val detail = Gson().fromJson(
+            """{"code":200,"album":{"id":3000000001},"songs":[]}""",
+            AlbumDetail::class.java,
+        )
+
+        val result = safeApiCall { detail.requireValidAlbumDetail() }
+
+        assertTrue(result is Resource.Success)
+        assertSame(detail, (result as Resource.Success).data)
+        assertTrue(result.data.songs.isEmpty())
     }
 
     @Test

@@ -97,8 +97,8 @@ fun AlbumDetail.Song.toMediaMetadata() = MediaMetadata(
     },
     duration = dt,
     album = MediaMetadata.Album(
-        id = id,
-        title = name
+        id = al.id,
+        title = al.name
     )
 )
 

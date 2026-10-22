@@ -1,6 +1,9 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,6 +40,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
@@ -132,54 +140,103 @@ fun PlaylistHeader(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GlassIconButton(
-                onClick = onShufflePlay,
-                enabled = count > 0,
-                style = GlassSurfaceStyle.Navigation,
-                detailAction = detailAction,
-                navigationSurfaceColor = regularButtonBackground,
-                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction) 1f else 1.25f,
-                sampleBackdrop = detailAction || !useGroupedListButtonBackground,
-            ) {
-                SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
-            }
-            GlassButton(
-                onClick = onPlayAll,
-                style = GlassSurfaceStyle.Navigation,
-                detailAction = detailAction,
-                enabled = count > 0,
-                emphasis = GlassEmphasis.Prominent,
-            ) {
-                SfIcon("play.fill", null, size = 18.dp)
-                Spacer(Modifier.width(8.dp))
-                androidx.compose.material3.Text(
-                    stringResource(R.string.pip_play),
-                    style = IosTypography.headline,
+            if (detailAction) {
+                FlatDetailIconButton(
+                    systemName = "shuffle",
+                    label = stringResource(R.string.notification_mode_shuffle),
+                    onClick = onShufflePlay,
+                    enabled = count > 0,
                 )
-            }
-            GlassIconButton(
-                onClick = { onSubscribed(isSubscribed) },
-                enabled = !isSubscriptionPending,
-                style = GlassSurfaceStyle.Navigation,
-                detailAction = detailAction,
-                navigationSurfaceColor = regularButtonBackground.takeUnless { isSubscribed },
-                navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction && !isSubscribed) 1f else 1.25f,
-                emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
-                sampleBackdrop = detailAction || !useGroupedListButtonBackground || isSubscribed,
-            ) {
-                if (isSubscriptionPending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp).semantics { contentDescription = actionLabel },
-                        color = LocalContentColor.current,
-                        strokeWidth = 2.dp,
+                Box(
+                    modifier = Modifier
+                        .size(width = 148.dp, height = 44.dp)
+                        .graphicsLayer {
+                            // Isolate the cutout from the cover-derived page background.
+                            compositingStrategy = CompositingStrategy.Offscreen
+                            alpha = if (count > 0) 1f else 0.38f
+                        }
+                        .clip(Capsule())
+                        .background(colors.content)
+                        .clickable(
+                            enabled = count > 0,
+                            role = Role.Button,
+                            onClick = onPlayAll,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(
+                        modifier = Modifier.graphicsLayer {
+                            blendMode = BlendMode.DstOut
+                            compositingStrategy = CompositingStrategy.Offscreen
+                        },
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SfIcon("play.fill", null, tint = Color.White, size = 16.dp)
+                        Text(
+                            text = stringResource(R.string.pip_play),
+                            style = IosTypography.headline,
+                            color = Color.White,
+                        )
+                    }
+                }
+                FlatDetailIconButton(
+                    systemName = if (isSubscribed) "checkmark" else "plus",
+                    label = actionLabel,
+                    onClick = { onSubscribed(isSubscribed) },
+                    enabled = !isSubscriptionPending,
+                    pending = isSubscriptionPending,
+                )
+            } else {
+                GlassIconButton(
+                    onClick = onShufflePlay,
+                    enabled = count > 0,
+                    style = GlassSurfaceStyle.Navigation,
+                    detailAction = detailAction,
+                    navigationSurfaceColor = regularButtonBackground,
+                    navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction) 1f else 1.25f,
+                    sampleBackdrop = detailAction || !useGroupedListButtonBackground,
+                ) {
+                    SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
+                }
+                GlassButton(
+                    onClick = onPlayAll,
+                    style = GlassSurfaceStyle.Navigation,
+                    detailAction = detailAction,
+                    enabled = count > 0,
+                    emphasis = GlassEmphasis.Prominent,
+                ) {
+                    SfIcon("play.fill", null, size = 18.dp)
+                    Spacer(Modifier.width(8.dp))
+                    androidx.compose.material3.Text(
+                        stringResource(R.string.pip_play),
+                        style = IosTypography.headline,
                     )
-                } else {
-                    SfIcon(
-                        if (isSubscribed) "checkmark" else "plus",
-                        actionLabel,
-                        size = 24.dp,
-                        weight = FontWeight.SemiBold,
-                    )
+                }
+                GlassIconButton(
+                    onClick = { onSubscribed(isSubscribed) },
+                    enabled = !isSubscriptionPending,
+                    style = GlassSurfaceStyle.Navigation,
+                    detailAction = detailAction,
+                    navigationSurfaceColor = regularButtonBackground.takeUnless { isSubscribed },
+                    navigationSurfaceAlphaMultiplier = if (useGroupedListButtonBackground && !detailAction && !isSubscribed) 1f else 1.25f,
+                    emphasis = if (isSubscribed) GlassEmphasis.Prominent else GlassEmphasis.Regular,
+                    sampleBackdrop = detailAction || !useGroupedListButtonBackground || isSubscribed,
+                ) {
+                    if (isSubscriptionPending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).semantics { contentDescription = actionLabel },
+                            color = LocalContentColor.current,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        SfIcon(
+                            if (isSubscribed) "checkmark" else "plus",
+                            actionLabel,
+                            size = 24.dp,
+                            weight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             onDownload?.let { download ->
@@ -193,6 +250,46 @@ fun PlaylistHeader(
             }
         }
 
+    }
+}
+
+@Composable
+private fun FlatDetailIconButton(
+    systemName: String,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    pending: Boolean = false,
+) {
+    val colors = LocalGlassColors.current
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .graphicsLayer {
+                blendMode = BlendMode.Luminosity
+                compositingStrategy = CompositingStrategy.Offscreen
+                alpha = if (enabled || pending) 1f else 0.38f
+            }
+            .clip(Capsule())
+            .background(colors.content.copy(alpha = 0.12f))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (pending) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp).semantics { contentDescription = label },
+                color = colors.content,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            SfIcon(
+                systemName = systemName,
+                contentDescription = label,
+                tint = colors.content,
+                size = 23.dp,
+                weight = FontWeight.Medium,
+            )
+        }
     }
 }
 

@@ -181,15 +181,24 @@ fun LazyListScope.playlistTrackItems(
     emptyMessage: String? = null,
     selectionMode: Boolean = false,
     selectedTrackIds: Set<String> = emptySet(),
+    flatDetailStyle: Boolean = false,
+    showArtwork: Boolean = true,
+    currentTrackId: String? = null,
+    trackNumbers: Map<Long, Int> = emptyMap(),
 ) {
     val itemCount = pagingItems?.itemCount ?: staticTracks.size
+    val showsTableHeader = isTablet && showTableHeader && !flatDetailStyle
     val hasAppendFooter = pagingItems?.loadState?.append.let { state ->
         state is LoadState.Loading || state is LoadState.Error
     }
 
-    if (isTablet && showTableHeader) {
+    if (showsTableHeader) {
         item(key = "playlist-table-header") {
-            PlaylistSurface(isFirst = true, isLast = itemCount == 0 && !hasAppendFooter) {
+            PlaylistSurface(
+                isFirst = true,
+                isLast = itemCount == 0 && !hasAppendFooter,
+                flatDetailStyle = flatDetailStyle,
+            ) {
                 TrackTableHeader()
             }
         }
@@ -204,23 +213,40 @@ fun LazyListScope.playlistTrackItems(
             val track = pagingItems[index]
             if (track != null) {
                 PlaylistSurface(
-                    isFirst = index == 0 && !(isTablet && showTableHeader),
+                    isFirst = index == 0 && !showsTableHeader,
                     isLast = index == itemCount - 1 && !hasAppendFooter,
+                    flatDetailStyle = flatDetailStyle,
                 ) {
-                    Track(
-                        track = track,
-                        index = index,
-                        isTablet = isTablet,
-                        onClick = { onTrackClick(track, index) },
-                        onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
-                        selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
-                    )
-                    if (index < itemCount - 1 || hasAppendFooter) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = if (isTablet) 56.dp else 64.dp),
-                            thickness = 0.5.dp,
-                            color = LocalGlassColors.current.separator,
+                    if (flatDetailStyle) {
+                        DetailTrackRow(
+                            track = track,
+                            trackNumber = trackNumbers[track.id] ?: index + 1,
+                            showArtwork = showArtwork,
+                            isCurrentTrack = track.id.toString() == currentTrackId,
+                            onClick = { onTrackClick(track, index) },
+                            onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
+                            selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
                         )
+                    } else {
+                        Track(
+                            track = track,
+                            index = index,
+                            isTablet = isTablet,
+                            onClick = { onTrackClick(track, index) },
+                            onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
+                            selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                        )
+                    }
+                    if (index < itemCount - 1 || hasAppendFooter) {
+                        if (flatDetailStyle) {
+                            DetailTrackDivider(showArtwork = showArtwork, selectionMode = selectionMode)
+                        } else {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = if (isTablet) 56.dp else 64.dp),
+                                thickness = 0.5.dp,
+                                color = LocalGlassColors.current.separator,
+                            )
+                        }
                     }
                 }
             }
@@ -228,7 +254,7 @@ fun LazyListScope.playlistTrackItems(
 
         when (pagingItems.loadState.append) {
             is LoadState.Loading -> item(key = "playlist-append-loading") {
-                PlaylistSurface(isFirst = false, isLast = true) {
+                PlaylistSurface(isFirst = false, isLast = true, flatDetailStyle = flatDetailStyle) {
                     Box(
                         Modifier.fillMaxWidth().padding(18.dp),
                         contentAlignment = Alignment.Center,
@@ -239,7 +265,7 @@ fun LazyListScope.playlistTrackItems(
             }
 
             is LoadState.Error -> item(key = "playlist-append-error") {
-                PlaylistSurface(isFirst = false, isLast = true) {
+                PlaylistSurface(isFirst = false, isLast = true, flatDetailStyle = flatDetailStyle) {
                     Text(
                         text = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.load_failed),
                         color = LocalGlassColors.current.secondaryContent,
@@ -255,21 +281,38 @@ fun LazyListScope.playlistTrackItems(
             PlaylistSurface(
                 isFirst = index == 0,
                 isLast = index == staticTracks.lastIndex,
+                flatDetailStyle = flatDetailStyle,
             ) {
-                Track(
-                    track = track,
-                    index = index,
-                    isTablet = isTablet,
-                    onClick = { onTrackClick(track, index) },
-                    onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
+                if (flatDetailStyle) {
+                    DetailTrackRow(
+                        track = track,
+                        trackNumber = trackNumbers[track.id] ?: index + 1,
+                        showArtwork = showArtwork,
+                        isCurrentTrack = track.id.toString() == currentTrackId,
+                        onClick = { onTrackClick(track, index) },
+                        onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
                         selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
-                )
-                if (index < staticTracks.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = if (isTablet) 56.dp else 64.dp),
-                        thickness = 0.5.dp,
-                        color = LocalGlassColors.current.separator,
                     )
+                } else {
+                    Track(
+                        track = track,
+                        index = index,
+                        isTablet = isTablet,
+                        onClick = { onTrackClick(track, index) },
+                        onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
+                        selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                    )
+                }
+                if (index < staticTracks.lastIndex) {
+                    if (flatDetailStyle) {
+                        DetailTrackDivider(showArtwork = showArtwork, selectionMode = selectionMode)
+                    } else {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = if (isTablet) 56.dp else 64.dp),
+                            thickness = 0.5.dp,
+                            color = LocalGlassColors.current.separator,
+                        )
+                    }
                 }
             }
         }
@@ -282,8 +325,9 @@ fun LazyListScope.playlistTrackItems(
     ) {
         item(key = "playlist-empty") {
             PlaylistSurface(
-                isFirst = !(isTablet && showTableHeader),
+                isFirst = !showsTableHeader,
                 isLast = true,
+                flatDetailStyle = flatDetailStyle,
             ) {
                 Text(
                     text = emptyMessage,
@@ -302,8 +346,16 @@ fun LazyListScope.playlistTrackItems(
 internal fun PlaylistSurface(
     isFirst: Boolean,
     isLast: Boolean,
+    flatDetailStyle: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (flatDetailStyle) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (isFirst) DetailTrackDivider(fullWidth = true)
+            content()
+        }
+        return
+    }
     val colors = LocalGlassColors.current
     val backgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
     val shape = RoundedCornerShape(
