@@ -142,7 +142,9 @@ class SearchNavigationInstrumentedTest {
     fun categoryNavigationHidesTheToolbarAndBackRestoresIt() {
         openSearch()
         showDiscoveryCategory(R.string.search_category_rankings)
-        compose.onNodeWithText(text(R.string.search_category_rankings)).performClick()
+        // The IME can still be moving after scrolling; invoke the destination action directly.
+        compose.onNodeWithText(text(R.string.search_category_rankings))
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
 
         searchInput().assertDoesNotExist()
 
@@ -229,6 +231,9 @@ class SearchNavigationInstrumentedTest {
                 if (!enabled) {
                     openAppearance()
                     toggle().performSemanticsAction(SemanticsActions.OnClick) { it() }
+                    compose.waitUntil(timeoutMillis = 5_000) {
+                        toggle().fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == ToggleableState.Off
+                    }
                     toggle().assertIsOff()
                 }
                 startGesture()

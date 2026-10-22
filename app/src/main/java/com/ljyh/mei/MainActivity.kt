@@ -665,12 +665,12 @@ class MainActivity : ComponentActivity() {
                     }
 
 
-                    val shouldAllowNavigationBar = remember(currentRoute, active) {
+                    val currentNavigationItems = rememberUpdatedState(navigationItems)
+                    val shouldAllowNavigationBar =
                         (currentRoute == null ||
                                 navigationItems.fastAny { it.route == currentRoute } ||
                                 currentRoute == Screen.Search.route) &&
                                 !active
-                    }
                     // Route visibility must not reset the expanded/compact shape. This keeps a
                     // MiniNav compact while it fades out. The expanded preference overrides
                     // scrolling without changing which routes can display the navigation bar.
@@ -964,6 +964,8 @@ class MainActivity : ComponentActivity() {
                                                 key = route,
                                                 contentKey = meiRoute.route,
                                             ) {
+                                                // Retained entries must observe preferences loaded after recreation.
+                                                val entryNavigationItems = currentNavigationItems.value
                                                 val entryTopAppBarScrollBehavior = appBarScrollBehavior(
                                                     canScroll = {
                                                         !meiRoute.route.startsWith("search_result/") &&
@@ -987,14 +989,14 @@ class MainActivity : ComponentActivity() {
                                                     meiRoute.route,
                                                     bottomInset,
                                                     navigationBottomMargin,
-                                                    navigationItems,
+                                                    entryNavigationItems,
                                                     navigationBarExpanded,
                                                     playerDismissed,
                                                     windowsInsets,
                                                 ) {
                                                     playerAwareWindowInsetsForRoute(
                                                         route = meiRoute.route,
-                                                        navigationItems = navigationItems,
+                                                        navigationItems = entryNavigationItems,
                                                         navigationBarVisible = navigationBarExpanded,
                                                         playerDismissed = playerDismissed,
                                                         windowsInsets = windowsInsets,
@@ -1010,7 +1012,7 @@ class MainActivity : ComponentActivity() {
                                                     navigationEntry(
                                                         route = meiRoute.route,
                                                         scrollBehavior = entryTopAppBarScrollBehavior,
-                                                        isNavigationTab = navigationItems.any {
+                                                        isNavigationTab = entryNavigationItems.any {
                                                             it.route == meiRoute.route
                                                         },
                                                     )
