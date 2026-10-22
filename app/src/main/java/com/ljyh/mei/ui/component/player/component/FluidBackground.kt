@@ -165,7 +165,7 @@ fun FluidBackground(
             Modifier
                 .fillMaxSize()
                 .layerBackdrop(backdrop)
-                .trackBackdropPosition(backdrop)
+                .trackBackdropPosition(backdrop, frameVersion)
                 .drawBehind {
                     frameVersion.intValue
                     if (renderer.hasAlbum) {

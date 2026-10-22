@@ -1,10 +1,14 @@
 package com.ljyh.mei.ui.glass
 
+import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -19,8 +23,10 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
@@ -85,14 +91,17 @@ fun Modifier.glassBackdropSource(backdrop: LayerBackdrop): Modifier = layerBackd
 
 /** Window-space positions of backdrop source layers, for cross-window sampling. */
 private val backdropSourcePositions = WeakHashMap<LayerBackdrop, LayoutCoordinates>()
+private val backdropSourceFrames = WeakHashMap<LayerBackdrop, State<Int>>()
 
 /** Attach next to a [layerBackdrop] recording so dialog-window glass can locate the source. */
-fun Modifier.trackBackdropPosition(backdrop: LayerBackdrop): Modifier =
-    onGloballyPositioned { coordinates ->
+fun Modifier.trackBackdropPosition(backdrop: LayerBackdrop, frameVersion: State<Int>? = null): Modifier {
+    frameVersion?.let { backdropSourceFrames[backdrop] = it }
+    return onGloballyPositioned { coordinates ->
         if (coordinates.isAttached) {
             backdropSourcePositions[backdrop] = coordinates
         }
     }
+}
 
 /**
  * Samples a [LayerBackdrop] that was recorded in another window (e.g. app content from a
@@ -106,10 +115,12 @@ class CrossWindowBackdrop(
     private val rasterized: GraphicsLayer? = null,
     private val renderScale: Float = 1f,
     private val captureHeight: Dp? = null,
+    private val sourceFrame: State<Int>? = null,
 ) : Backdrop {
 
     private val inverseLayerScope = GraphicsLayerBlockScope()
     private var recordedSourceSize = IntSize.Zero
+    private var recordedSourceFrame: Int? = null
 
     override val isCoordinatesDependent: Boolean get() = true
 
@@ -121,6 +132,10 @@ class CrossWindowBackdrop(
         val glassCoordinates = coordinates ?: return
         if (!glassCoordinates.isAttached) return
         val sourceCoordinates = backdropSourcePositions[source]?.takeIf { it.isAttached } ?: return
+        // A window draw includes foreground changes isolated in child graphics layers.
+        val frame = if (glassCoordinates.findRootCoordinates() !== sourceCoordinates.findRootCoordinates()) {
+            (sourceFrame ?: backdropSourceFrames[source])?.value
+        } else null
         val sourceSize = source.graphicsLayer.size
         val captureTop = captureHeight?.let {
             (sourceSize.height - with(density) { it.roundToPx() }).coerceAtLeast(0)
@@ -131,7 +146,9 @@ class CrossWindowBackdrop(
                 ceil((sourceSize.height - captureTop) * renderScale).toInt(),
             )
             if (bufferSize.width <= 0 || bufferSize.height <= 0) return
-            if (cached.size != bufferSize || recordedSourceSize != sourceSize) {
+            if (cached.size != bufferSize || recordedSourceSize != sourceSize ||
+                (frame != null && recordedSourceFrame != frame)
+            ) {
                 cached.clip = true
                 cached.compositingStrategy = CompositingStrategy.Offscreen
                 cached.record(bufferSize) {
@@ -143,6 +160,7 @@ class CrossWindowBackdrop(
                     }
                 }
                 recordedSourceSize = sourceSize
+                recordedSourceFrame = frame
             }
         } ?: source.graphicsLayer
         // Popup/Dialog owners have their own Compose window origin. `positionInWindow()` is
@@ -190,8 +208,23 @@ fun rememberCrossWindowBackdrop(backdrop: Backdrop): Backdrop = remember(backdro
 @Composable
 fun rememberRasterizedPlayerBackdrop(source: LayerBackdrop): Backdrop {
     val rasterized = rememberGraphicsLayer()
-    return remember(source, rasterized) {
-        CrossWindowBackdrop(source, rasterized, renderScale = 0.25f)
+    val view = LocalView.current
+    val sourceFrame = remember(view) { mutableIntStateOf(0) }
+    DisposableEffect(view, sourceFrame) {
+        var frame = 0
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            // Only cross-window drawing observes this state; the source stays independent.
+            sourceFrame.intValue = ++frame
+            true
+        }
+        view.viewTreeObserver.addOnPreDrawListener(listener)
+        onDispose {
+            val observer = view.viewTreeObserver
+            if (observer.isAlive) observer.removeOnPreDrawListener(listener)
+        }
+    }
+    return remember(source, rasterized, sourceFrame) {
+        CrossWindowBackdrop(source, rasterized, renderScale = 0.25f, sourceFrame = sourceFrame)
     }
 }
 
