@@ -15,8 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -41,6 +43,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.network.Resource
+import com.ljyh.mei.ui.component.player.state.rememberPlayerLikeState
 import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
@@ -60,6 +65,15 @@ import com.ljyh.mei.ui.component.player.component.applemusic.queueViewportFade
 import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicLyricsControlsFadeRange
 import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueViewport
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
+import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderPosition
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueCurrentHeaderKey
+import com.ljyh.mei.ui.component.player.component.applemusic.PhoneQueueEntry
+import com.ljyh.mei.ui.component.player.component.applemusic.QueueSongRow
+import com.ljyh.mei.ui.component.player.component.applemusic.QueueRowPlacement
+import com.ljyh.mei.ui.component.player.component.applemusic.queueRowPlacement
+import androidx.media3.common.MediaItem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -72,12 +86,14 @@ import org.junit.runner.RunWith
 class AppleMusicTitleRenderingTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun favoritesKeepTheirTouchTargetAndAnimateBothDirectionsAcrossTrackChanges() {
+    @Test fun favoritesSwitchImmediatelyAndKeepCurrentTrackCallbacks() {
         compose.mainClock.autoAdvance = false
         val classic = mutableStateOf(false)
         val local = mutableStateOf(false)
+        val podcast = mutableStateOf(false)
         val trackId = mutableStateOf(1L)
-        val liked = mutableStateOf(false)
+        val liked = mutableStateOf<Resource<Boolean>>(Resource.Success(false))
+        var renderedLiked = false
         val actionsOpacity = mutableStateOf(1f)
         val actionsProgress = mutableStateOf(0f)
         val likedTracks = mutableListOf<Long>()
@@ -92,6 +108,8 @@ class AppleMusicTitleRenderingTest {
         )
         compose.setContent {
             val id = trackId.value
+            val isLiked = rememberPlayerLikeState(liked.value).value
+            SideEffect { renderedLiked = isLiked }
             MaterialTheme {
                 val modifier = Modifier.width(360.dp).background(Color.Black).testTag("metadata")
                 if (classic.value) {
@@ -99,17 +117,17 @@ class AppleMusicTitleRenderingTest {
                         modifier = modifier,
                         mediaMetadata = MediaMetadata(
                             id, "Track $id", "", listOf(MediaMetadata.Artist(1, "Artist")),
-                            1_000, MediaMetadata.Album(1, "Album"), isLocal = local.value,
+                            1_000, MediaMetadata.Album(1, "Album"), isLocal = local.value, isPodcast = podcast.value,
                         ),
-                        isLiked = liked.value,
+                        isLiked = isLiked,
                         onClick = {}, onMoreClick = { moreClicks++ },
                         onLikeClick = { likedTracks += id },
                         onTextPositioned = { textRight = it.boundsInRoot().right },
                     )
                 } else {
                     Title(
-                        title = "Track $id", subTitle = "Artist", isLiked = liked.value,
-                        showLikeButton = !local.value,
+                        title = "Track $id", subTitle = "Artist", isLiked = isLiked,
+                        showLikeButton = !local.value && !podcast.value,
                         onLikeClick = { likedTracks += id },
                         onMoreClick = { moreClicks++ }, onTitleClick = {},
                         marqueeEnabled = false,
@@ -126,86 +144,78 @@ class AppleMusicTitleRenderingTest {
             compose.runOnIdle {
                 classic.value = useClassic
                 local.value = false
+                podcast.value = false
                 trackId.value = 1
-                liked.value = false
+                liked.value = Resource.Success(false)
                 likedTracks.clear()
             }
-            compose.mainClock.advanceTimeBy(700)
+            compose.mainClock.advanceTimeByFrame()
             compose.waitForIdle()
             val openRight = textRight
             val moreX = more.fetchSemanticsNode().boundsInRoot.center.x
             favorite.performTouchInput { click(center) }
             compose.runOnIdle { assertEquals(listOf(1L), likedTracks) }
 
-            compose.runOnIdle { trackId.value = 2 }
+            compose.runOnIdle { liked.value = Resource.Success(true) }
             compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            compose.runOnIdle { assertTrue(renderedLiked) }
+            compose.runOnIdle {
+                trackId.value = 2
+                liked.value = Resource.Loading
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            compose.runOnIdle { assertTrue("Loading the next track must retain the filled star", renderedLiked) }
+            compose.runOnIdle { liked.value = Resource.Success(true) }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            compose.runOnIdle { assertTrue("Two liked tracks must not show an empty star between them", renderedLiked) }
             favorite.performTouchInput { click(center) }
             compose.runOnIdle { assertEquals(listOf(1L, 2L), likedTracks) }
 
-            compose.runOnIdle { liked.value = true }
+            compose.runOnIdle { liked.value = Resource.Success(false) }
             compose.mainClock.advanceTimeByFrame()
-            val rootBounds = compose.onNodeWithTag("metadata").fetchSemanticsNode().boundsInRoot
-            val favoriteBounds = favorite.fetchSemanticsNode().boundsInRoot.translate(-rootBounds.topLeft)
-            val previousCenter = favoriteBounds.center
-            compose.runOnIdle { local.value = true; liked.value = false }
-            compose.mainClock.advanceTimeBy(32)
             compose.waitForIdle()
-            val exitingRight = textRight
-            val pixels = image().toPixelMap()
-            var peak = 0f
-            for (y in favoriteBounds.top.roundToInt() until favoriteBounds.bottom.roundToInt()) {
-                for (x in favoriteBounds.left.roundToInt() until favoriteBounds.right.roundToInt()) {
-                    peak = maxOf(peak, pixels[x, y].red)
+            compose.runOnIdle { assertFalse("A confirmed unlike must still update the star", renderedLiked) }
+
+            for (isPodcast in listOf(false, true)) {
+                val previousCenter = favorite.fetchSemanticsNode().boundsInRoot.center -
+                    compose.onNodeWithTag("metadata").fetchSemanticsNode().boundsInRoot.topLeft
+                compose.runOnIdle {
+                    local.value = !isPodcast
+                    podcast.value = isPodcast
+                    liked.value = Resource.Success(false)
+                }
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+                favorite.assertDoesNotExist()
+                val closedRight = textRight
+                assertTrue("Hidden favorites must release text space immediately", closedRight > openRight)
+                assertEquals("More must remain anchored", moreX, more.fetchSemanticsNode().boundsInRoot.center.x, 1f)
+                compose.onNodeWithTag("metadata").performTouchInput { click(previousCenter) }
+                val expectedLikes = if (isPodcast) listOf(1L, 2L, 3L) else listOf(1L, 2L)
+                compose.runOnIdle { assertEquals(expectedLikes, likedTracks) }
+                more.performTouchInput { click(center) }
+
+                compose.runOnIdle {
+                    local.value = false
+                    podcast.value = false
+                    trackId.value = if (isPodcast) 4L else 3L
+                    liked.value = Resource.Success(true)
+                }
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+                favorite.assertExists()
+                assertEquals("Online tracks must reserve favorite space immediately", openRight, textRight, 1f)
+                assertEquals("More must remain anchored", moreX, more.fetchSemanticsNode().boundsInRoot.center.x, 1f)
+                favorite.performTouchInput { click(center) }
+                compose.runOnIdle {
+                    assertEquals(if (isPodcast) listOf(1L, 2L, 3L, 4L) else listOf(1L, 2L, 3L), likedTracks)
                 }
             }
-            val centerIntensity = pixels[previousCenter.x.roundToInt(), previousCenter.y.roundToInt()].red
-            assertTrue("The outgoing filled star must not become an outline", centerIntensity > peak * 0.6f)
-            compose.onNodeWithTag("metadata").performTouchInput { click(previousCenter) }
-            compose.runOnIdle { assertEquals("Local tracks must reject the outgoing favorite", 2, likedTracks.size) }
-            more.performTouchInput { click(center) }
-            compose.mainClock.advanceTimeBy(700)
-            compose.waitForIdle()
-            val closedRight = textRight
-            assertTrue(
-                "Disappearing favorites must resize the title gradually: " +
-                    "useClassic=$useClassic, openRight=$openRight, exitingRight=$exitingRight, closedRight=$closedRight",
-                exitingRight > openRight,
-            )
-            assertTrue(
-                "Disappearing favorites must keep resizing: " +
-                    "useClassic=$useClassic, openRight=$openRight, exitingRight=$exitingRight, closedRight=$closedRight",
-                exitingRight < closedRight,
-            )
-
-            compose.runOnIdle { local.value = false; trackId.value = 3 }
-            compose.mainClock.advanceTimeBy(32)
-            compose.waitForIdle()
-            assertTrue("Reappearing favorites must not jump to their full width", textRight > openRight)
-            assertTrue("Text and favorite must start moving together", textRight < closedRight)
-            val enteringPixels = image().toPixelMap()
-            var leadingInk = false
-            var trailingInk = false
-            for (y in favoriteBounds.top.roundToInt() until favoriteBounds.bottom.roundToInt()) {
-                for (x in favoriteBounds.left.roundToInt() until favoriteBounds.right.roundToInt()) {
-                    if (enteringPixels[x, y].red > 0.04f) {
-                        if (x < previousCenter.x) leadingInk = true else trailingInk = true
-                    }
-                }
-            }
-            assertTrue("The moving text boundary must not crop either side of the favorite", leadingInk && trailingInk)
-            assertEquals("More must remain anchored", moreX, more.fetchSemanticsNode().boundsInRoot.center.x, 1f)
-            compose.mainClock.advanceTimeBy(700)
-            favorite.performTouchInput { click(center) }
-            compose.runOnIdle { assertEquals(listOf(1L, 2L, 3L), likedTracks) }
-
-            compose.runOnIdle { local.value = true }
-            compose.mainClock.advanceTimeBy(48)
-            compose.runOnIdle { local.value = false; trackId.value = 4 }
-            compose.mainClock.advanceTimeBy(700)
-            favorite.performTouchInput { click(center) }
-            compose.runOnIdle { assertEquals(listOf(1L, 2L, 3L, 4L), likedTracks) }
         }
-        compose.runOnIdle { assertEquals(2, moreClicks) }
+        compose.runOnIdle { assertEquals(4, moreClicks) }
     }
 
     @Test fun detailPagesPreloadOnceAndRetainTheirStateAcrossSwitches() {
@@ -305,11 +315,11 @@ class AppleMusicTitleRenderingTest {
             assertEquals(0, queueClicks)
             queueSelected.value = true
         }
-        compose.mainClock.advanceTimeBy(80)
+        compose.mainClock.advanceTimeBy(48)
         val beforeIncoming = centerColor()
         assertTrue("The outgoing page must start fading immediately", beforeIncoming.red in 0f..0.99f)
-        assertEquals("The incoming page must wait 100ms before fading in", 0f, beforeIncoming.blue, 0.01f)
-        compose.mainClock.advanceTimeBy(160)
+        assertEquals("The incoming page must wait 50ms before fading in", 0f, beforeIncoming.blue, 0.01f)
+        compose.mainClock.advanceTimeBy(104)
         val outgoing = centerColor()
         assertTrue(outgoing.red > 0f && outgoing.blue > 0f)
         compose.runOnIdle { queueSelected.value = false }
@@ -329,11 +339,11 @@ class AppleMusicTitleRenderingTest {
             assertEquals(2, lyricClicks)
             queueSelected.value = true
         }
-        compose.mainClock.advanceTimeBy(450)
+        compose.mainClock.advanceTimeBy(272)
         val afterOutgoing = centerColor()
-        assertEquals("The outgoing page must finish within 400ms", 0f, afterOutgoing.red, 0.01f)
-        assertTrue("The incoming page must still be fading before 500ms", afterOutgoing.blue > 0f && afterOutgoing.blue < 1f)
-        compose.mainClock.advanceTimeBy(150)
+        assertEquals("The outgoing page must finish within 250ms", 0f, afterOutgoing.red, 0.01f)
+        assertTrue("The incoming page must still be fading before 300ms", afterOutgoing.blue > 0f && afterOutgoing.blue < 1f)
+        compose.mainClock.advanceTimeBy(128)
         assertEquals(1f, centerColor().blue, 0.01f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
@@ -343,6 +353,130 @@ class AppleMusicTitleRenderingTest {
         compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle { assertEquals(1, queueClicks) }
+    }
+
+    @Test fun queueCoverReadsTheCurrentLayoutDuringForwardAndReverseScrolling() {
+        compose.mainClock.autoAdvance = false
+        var listState: LazyListState? = null
+        var scope: CoroutineScope? = null
+        var viewport: LayoutCoordinates? = null
+        var header: LayoutCoordinates? = null
+        var drawnTop = Float.NaN
+        compose.setContent {
+            val state = rememberLazyListState()
+            listState = state
+            scope = rememberCoroutineScope()
+            val headerHeight = with(LocalDensity.current) { 68.dp.toPx() }
+            val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, 1, headerHeight)
+            Box(Modifier.width(160.dp).height(240.dp).onGloballyPositioned { viewport = it }) {
+                LazyColumn(state = state, modifier = Modifier.width(80.dp).fillMaxSize()) {
+                    item(key = "history") { Box(Modifier.fillMaxWidth().height(160.dp)) }
+                    item(key = PlayerQueueCurrentHeaderKey) {
+                        Box(Modifier.fillMaxWidth().height(68.dp).onGloballyPositioned { header = it })
+                    }
+                    item(key = "upcoming") { Box(Modifier.fillMaxWidth().height(800.dp)) }
+                }
+                Box(Modifier.width(40.dp).height(68.dp).graphicsLayer {
+                    translationX = 100.dp.toPx()
+                    translationY = position.value.top
+                    drawnTop = translationY
+                }.background(Color.White))
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        for ((index, offset) in listOf(1 to 20, 0 to 0, 1 to 0)) {
+            compose.runOnIdle { scope!!.launch { listState!!.animateScrollToItem(index, offset) } }
+            repeat(40) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {
+                    val actual = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+                    assertEquals("Cover and metadata must use the same layout frame", actual, drawnTop, 1f)
+                }
+            }
+        }
+    }
+
+    @Test fun queueHeaderKeepsItsSlotWhenTracksMoveBetweenHistoryAndUpcoming() {
+        compose.mainClock.autoAdvance = false
+        val order = mutableStateListOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
+        val current = mutableStateOf(2)
+        var listState: LazyListState? = null
+        var scope: CoroutineScope? = null
+        var viewport: LayoutCoordinates? = null
+        var header: LayoutCoordinates? = null
+        var coverTop = Float.NaN
+        compose.setContent {
+            val index = order.indexOf(current.value)
+            val state = rememberLazyListState(initialFirstVisibleItemIndex = index)
+            listState = state
+            scope = rememberCoroutineScope()
+            val height = with(LocalDensity.current) { 68.dp.toPx() }
+            val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, index, height)
+            Box(Modifier.width(160.dp).height(240.dp).onGloballyPositioned { viewport = it }) {
+                LazyColumn(state = state, modifier = Modifier.width(80.dp).fillMaxSize()) {
+                    order.take(index).forEach { track ->
+                        item(key = track) {
+                            Box(Modifier.animateItem().fillMaxWidth().height(56.dp).background(Color.Blue))
+                        }
+                    }
+                    item(key = PlayerQueueCurrentHeaderKey, contentType = "current_header") {
+                        Box(Modifier.fillMaxWidth().height(68.dp).onGloballyPositioned { header = it })
+                    }
+                    order.drop(index + 1).forEach { track ->
+                        item(key = track) {
+                            Box(Modifier.animateItem().fillMaxWidth().height(56.dp).background(Color.Green))
+                        }
+                    }
+                    item(key = "tail") { Box(Modifier.fillMaxWidth().height(240.dp)) }
+                }
+                Box(Modifier.width(40.dp).height(68.dp).graphicsLayer {
+                    translationX = 100.dp.toPx()
+                    translationY = position.value.top
+                    coverTop = translationY
+                }.background(Color.White))
+            }
+        }
+        fun checkPinnedFrames(count: Int) {
+            repeat(count) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {
+                    val top = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+                    assertEquals("Track changes must not move the current header slot", 0f, top, 1f)
+                    assertEquals("Artwork must remain attached to the header", top, coverTop, 1f)
+                    val visibleKeys = listState!!.layoutInfo.visibleItemsInfo.map { it.key }
+                    assertEquals(1, visibleKeys.count { it == PlayerQueueCurrentHeaderKey })
+                    assertFalse("The current track must not remain an ordinary row", current.value in visibleKeys)
+                }
+            }
+        }
+        checkPinnedFrames(2)
+        for (track in listOf(3, 1, 0, 8, 4, 2)) {
+            compose.runOnIdle { current.value = track }
+            checkPinnedFrames(24)
+        }
+        for (track in listOf(5, 1, 6, 2)) {
+            compose.runOnIdle { current.value = track }
+            checkPinnedFrames(1)
+        }
+        compose.runOnIdle {
+            val shuffled = listOf(7, 2, 0, 8, 3, 1, 4, 6, 5)
+            order.clear()
+            order.addAll(shuffled)
+        }
+        checkPinnedFrames(24)
+        compose.runOnIdle { order.removeAll(order.take(order.indexOf(current.value)).toSet()) }
+        checkPinnedFrames(24)
+        compose.runOnIdle {
+            current.value = 6
+        }
+        checkPinnedFrames(24)
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(0) } }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { current.value = 5 }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertEquals("Playback must not pull the user out of history", 0, listState!!.firstVisibleItemIndex)
+        }
     }
 
     @Test fun queueViewportClipsBeforeControlsUnderFullHeightParentConstraints() {
@@ -422,6 +556,64 @@ class AppleMusicTitleRenderingTest {
         val pixels = bitmap.toPixelMap()
         assertTrue("Content above the control gradient must remain opaque", pixels[bitmap.width / 2, (120 * scale).roundToInt()].red > 0.95f)
         assertEquals("The queue must use the lyrics' fade even when it cannot scroll", 0.5f, pixels[bitmap.width / 2, (145 * scale).roundToInt()].red, 0.05f)
+    }
+
+    @Test fun queueDrawingCopiesKeepHeaderGeometryAndAllowScrollingThroughThem() {
+        compose.mainClock.autoAdvance = false
+        val progress = mutableStateOf(0f)
+        var state: LazyListState? = null
+        var viewport: LayoutCoordinates? = null
+        var header: LayoutCoordinates? = null
+        var copiedRowClicks = 0
+        compose.setContent {
+            val list = rememberLazyListState()
+            state = list
+            MaterialTheme {
+                Box(Modifier.width(200.dp).height(240.dp).testTag("queue_copy_host")
+                    .onGloballyPositioned { viewport = it }) {
+                    LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
+                        item(key = PlayerQueueCurrentHeaderKey) {
+                            Box(Modifier.fillMaxWidth().height(68.dp).onGloballyPositioned { header = it })
+                        }
+                        items(12) { index ->
+                            QueueSongRow(
+                                PhoneQueueEntry(index.toString(), MediaItem.EMPTY, index), null, Modifier, Modifier,
+                                onClick = {}, onLongClick = {}, enabled = false,
+                            )
+                        }
+                    }
+                    Box(Modifier.matchParentSize()) {
+                        QueueSongRow(
+                            PhoneQueueEntry("drawing_copy", MediaItem.EMPTY, 0), null, Modifier, Modifier,
+                            onClick = { copiedRowClicks++ }, onLongClick = {}, interactive = false,
+                            modifier = Modifier.fillMaxWidth().graphicsLayer {
+                                val placement = queueRowPlacement(QueueRowPlacement(104.dp.toPx()), QueueRowPlacement(160.dp.toPx()), progress.value)
+                                translationY = placement.top
+                                alpha = placement.opacity
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        for (fraction in listOf(0f, 0.3f, 0.7f, 1f, 0f)) {
+            compose.runOnIdle { progress.value = fraction }
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertEquals("Drawing rows must not resize the lazy viewport", viewport!!.size.height, state!!.layoutInfo.viewportEndOffset)
+                assertEquals(0, state!!.layoutInfo.afterContentPadding)
+                assertEquals("The header must keep its original position", viewport!!.boundsInRoot().top, header!!.boundsInRoot().top, 0.5f)
+            }
+        }
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("queue_copy_host").performTouchInput {
+            swipe(Offset(center.x, height * 0.55f), Offset(center.x, height * 0.1f), 200)
+        }
+        compose.runOnIdle {
+            assertTrue("Drawing-only row copies must let vertical gestures reach the lazy list",
+                state!!.firstVisibleItemIndex > 0 || state!!.firstVisibleItemScrollOffset > 0)
+            assertEquals(0, copiedRowClicks)
+        }
     }
 
     @Test fun queueRemovalRevealsRowsPreviouslyMaskedAtTheBottom() {
@@ -568,13 +760,20 @@ class AppleMusicTitleRenderingTest {
     @Test fun rtlHeaderMarqueeDrawsIntoLeadingFade() =
         assertLeadingFadeVisible(AppleMusicDimensions.headerMarqueeEdgeWidth, LayoutDirection.Rtl)
 
-    private fun assertLeadingFadeVisible(edgeWidth: Dp, direction: LayoutDirection) {
+    @Test fun inlineQueueMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.headerMarqueeEdgeWidth, LayoutDirection.Ltr, queueLayer = true)
+
+    @Test fun rtlInlineQueueMarqueeDrawsIntoLeadingFade() =
+        assertLeadingFadeVisible(AppleMusicDimensions.headerMarqueeEdgeWidth, LayoutDirection.Rtl, queueLayer = true)
+
+    private fun assertLeadingFadeVisible(edgeWidth: Dp, direction: LayoutDirection, queueLayer: Boolean = false) {
         compose.mainClock.autoAdvance = false
         val opacity = mutableStateOf(1f)
         val progress = mutableStateOf(0f)
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                    val listState = rememberLazyListState()
                     val destination = Offset(0f, with(LocalDensity.current) { 48.dp.toPx() })
                     val outsets = if (direction == LayoutDirection.Rtl) {
                         LayerOutsets(right = edgeWidth)
@@ -592,7 +791,9 @@ class AppleMusicTitleRenderingTest {
                             subTitleStyle = TextStyle(fontSize = 17.sp, lineHeight = 24.sp),
                             needShadow = false,
                             marqueeEdgeWidth = edgeWidth,
-                            textModifier = Modifier.playerInfoMotion(
+                            textModifier = if (queueLayer) Modifier.queueViewportFade(
+                                null, listState, { 0 }, additive = true, layerOutsets = outsets,
+                            ) else Modifier.playerInfoMotion(
                                 opacity, progress, { Offset.Zero }, { destination }, true,
                                 layerOutsets = outsets,
                             ),
