@@ -280,7 +280,7 @@ fun IosTopToolbar(
         LocalContentColor provides LocalGlassColors.current.content,
     ) {
         when (style) {
-            IosTopBarStyle.LargeTitle -> Column(modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            IosTopBarStyle.LargeTitle -> Column(modifier.padding(horizontal = IosPageHorizontalPadding, vertical = 10.dp)) {
                 Row(Modifier.fillMaxWidth().height(54.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
                         IosToolbarActionGroup(style = navigationStyle) { navigation?.invoke() }
@@ -297,7 +297,7 @@ fun IosTopToolbar(
                 }
             }
             IosTopBarStyle.CompactLargeTitle -> Row(
-                modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp),
+                modifier.fillMaxWidth().height(54.dp).padding(horizontal = IosPageHorizontalPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -320,7 +320,7 @@ fun IosTopToolbar(
                 val trailingPad = with(density) { trailingWidth.toDp() }
                 val centeredTitleSidePadding = maxOf(leadingPad, trailingPad) +
                     if (leadingWidth > 0 || trailingWidth > 0) IosTopToolbarActionGap else 0.dp
-                Box(modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp)) {
+                Box(modifier.fillMaxWidth().height(54.dp).padding(horizontal = IosPageHorizontalPadding)) {
                     IosToolbarActionGroup(
                         Modifier.align(Alignment.CenterStart).onSizeChanged { leadingWidth = it.width },
                         style = navigationStyle,

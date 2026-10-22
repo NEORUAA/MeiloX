@@ -26,16 +26,16 @@ import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 
 @Composable
-fun PlaylistShimmer() {
+fun PlaylistShimmer(flatDetailStyle: Boolean = false) {
     val device = rememberDeviceInfo()
     ShimmerHost {
         Box(modifier = Modifier.fillMaxSize()) {
 
 
-            if (device.isTablet && device.isLandscape) {
+            if (!flatDetailStyle && device.isTablet && device.isLandscape) {
                 TabletShimmerContent()
             } else {
-                MobileShimmerContent()
+                MobileShimmerContent(flatDetailStyle = flatDetailStyle)
             }
         }
     }
@@ -45,11 +45,11 @@ fun PlaylistShimmer() {
  * 手机端骨架屏：垂直堆叠
  */
 @Composable
-private fun MobileShimmerContent() {
+private fun MobileShimmerContent(flatDetailStyle: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (flatDetailStyle) 0.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
@@ -91,7 +91,7 @@ private fun MobileShimmerContent() {
         Spacer(modifier = Modifier.height(32.dp))
         // 歌曲列表
         repeat(8) {
-            TrackItemShimmer(isTablet = false)
+            TrackItemShimmer(isTablet = false, flatDetailStyle = flatDetailStyle)
         }
     }
 }
@@ -170,11 +170,11 @@ private fun TabletShimmerContent() {
  * 单个歌曲行的骨架
  */
 @Composable
-private fun TrackItemShimmer(isTablet: Boolean) {
+private fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp, horizontal = 16.dp),
+            .padding(vertical = 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isTablet) {

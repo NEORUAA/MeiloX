@@ -40,6 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asSharedFlow
@@ -57,6 +58,7 @@ class PlaylistRepository(
     private val onUnsubscribed: suspend (String) -> Unit = {},
     private val subscriptionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onTracksChanged: suspend (Set<Long>, String) -> Unit = { _, _ -> },
 ) {
     private val _collectionChanges = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val collectionChanges = _collectionChanges.asSharedFlow()
@@ -317,17 +319,41 @@ class PlaylistRepository(
         trackIds: String,
         imme: Boolean = true
     ): Resource<ManipulateTrackResult> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiService.manipulateTracks(
+        val account = subscriptionAccount()
+        if (account.isBlank()) return Resource.Error("An authenticated session is required")
+        val expectedSession = neteaseSessionFingerprint(account)
+        return withContext(ioDispatcher) {
+            val result = safeApiCall {
+                check(subscriptionAccount() == account) { "NetEase account changed during playlist update" }
+                val response = apiService.manipulateTracks(
                     ManipulateTrack(
                         op = op,
                         pid = pid,
                         trackIds = trackIds,
                         imme = imme
-                    )
+                    ),
+                    expectedSession,
                 )
+                check(subscriptionAccount() == account) { "NetEase account changed during playlist update" }
+                response
             }
+            if (result is Resource.Success &&
+                (result.data.code == 200 || (op == "add" && result.data.code == 502))
+            ) {
+                val ids = trackIds.split(',').mapNotNull { it.trim().toLongOrNull()?.takeIf { id -> id > 0 } }.toSet()
+                if (ids.isNotEmpty()) {
+                    try {
+                        // Finish syncing an accepted write even if its screen has closed.
+                        withContext(NonCancellable) { onTracksChanged(ids, expectedSession) }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Timber.w(error, "Unable to refresh song likes after playlist update")
+                    }
+                }
+                if (subscriptionAccount() != account) return@withContext Resource.Error("NetEase account changed during playlist update")
+            }
+            result
         }
     }
 

@@ -93,7 +93,7 @@ fun PlaylistHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 16.dp),
+            .padding(horizontal = if (detailAction) 0.dp else 4.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         PlaylistCover(
@@ -109,7 +109,8 @@ fun PlaylistHeader(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 22.dp).padding(horizontal = 20.dp),
+            modifier = Modifier.padding(top = 22.dp)
+                .padding(horizontal = if (detailAction) 0.dp else 20.dp),
         )
         if (creator.isNotBlank()) {
             Text(

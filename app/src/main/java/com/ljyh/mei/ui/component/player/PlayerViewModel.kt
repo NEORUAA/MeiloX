@@ -83,6 +83,16 @@ class PlayerViewModel @Inject constructor(
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
     val lyricCandidates: StateFlow<List<LyricCandidate>> = lyricManager.lyricCandidates
     val lyricOffsetMs: StateFlow<Int> = lyricManager.lyricOffsetMs
+    val songLikes = repository.songLikes
+    val songLikeGeneration = repository.songLikeGeneration
+    val songLikeAccount = collections.accounts.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000L),
+        initialValue = null,
+    )
+
+    suspend fun ensureSongLikes(ids: Set<Long>, expectedSession: String): Resource<Unit> =
+        repository.ensureSongLikes(ids, expectedSession)
 
     private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
     val like: StateFlow<Resource<Boolean>> = _like

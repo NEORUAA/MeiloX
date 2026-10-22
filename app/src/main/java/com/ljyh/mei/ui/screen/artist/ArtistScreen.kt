@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +67,7 @@ import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.DetailPageHorizontalPadding
 import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -73,13 +75,16 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.ui.component.playlist.CoverBackground
+import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
+import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.shimmer.ListItemPlaceHolder
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.IosListRow
+import com.ljyh.mei.ui.glass.IosPageHorizontalPadding
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -128,6 +133,8 @@ fun ArtistScreen(
         artist.cover.takeIf(String::isNotBlank) ?: artist.avatar
     }.orEmpty()
     val hotSongs = (artistSongs as? Resource.Success)?.data?.hotSongs.orEmpty()
+    val hotTracks = remember(hotSongs) { hotSongs.map { it.toMediaMetadata() } }
+    val favoriteTrackIds = rememberFavoriteTrackIds(hotTracks)
 
     val scrollState = rememberLazyListState()
     LaunchedEffect(id) {
@@ -171,7 +178,10 @@ fun ArtistScreen(
                 if (isArtistUnavailable) {
                     ArtistUnavailableState(
                         onNavigateBack = navController::popBackStack,
-                        modifier = Modifier.fillMaxSize().padding(contentPadding),
+                        modifier = Modifier.fillMaxSize().padding(
+                            top = contentPadding.calculateTopPadding(),
+                            bottom = contentPadding.calculateBottomPadding(),
+                        ),
                     )
                 } else {
                     LazyColumn(
@@ -238,30 +248,51 @@ fun ArtistScreen(
                                 val songs = songsResource.data.hotSongs.orEmpty()
                                 val visibleSongs = songs.take(10)
                                 itemsIndexed(visibleSongs, key = { _, song -> song.id }) { index, song ->
-                                    Column {
-                                        Track(
-                                            track = song.toMediaMetadata(),
-                                            onClick = {
-                                                val allIds = songs.map {
-                                                    it.id.toString() to it.toMediaMetadata().toMediaItem()
-                                                }
-                                                playerConnection?.onTrackClicked(
-                                                    trackId = song.id.toString(),
-                                                    buildQueue = {
-                                                        ListQueue(
-                                                            UUID.randomUUID().toString(),
-                                                            "Hot Songs",
-                                                            allIds,
-                                                            songs.indexOf(song)
-                                                        )
+                                    val track = hotTracks[index]
+                                    Column(
+                                        modifier = Modifier.padding(
+                                            horizontal = DetailPageHorizontalPadding - IosPageHorizontalPadding,
+                                        ),
+                                    ) {
+                                        Box {
+                                            Track(
+                                                track = track,
+                                                detailInkBlend = true,
+                                                onClick = {
+                                                    val allIds = songs.map {
+                                                        it.id.toString() to it.toMediaMetadata().toMediaItem()
                                                     }
+                                                    playerConnection?.onTrackClicked(
+                                                        trackId = song.id.toString(),
+                                                        buildQueue = {
+                                                            ListQueue(
+                                                                UUID.randomUUID().toString(),
+                                                                "Hot Songs",
+                                                                allIds,
+                                                                songs.indexOf(song)
+                                                            )
+                                                        }
+                                                    )
+                                                },
+                                                onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(track, it) }
+                                            )
+                                            if (
+                                                track.id > 0 && !track.isLocal && !track.isPodcast &&
+                                                track.id.toString() in favoriteTrackIds
+                                            ) {
+                                                FavoriteTrackStar(
+                                                    modifier = Modifier.align(Alignment.CenterStart)
+                                                        .offset(x = IosPageHorizontalPadding - DetailPageHorizontalPadding / 2f - 6.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
-                                            },
-                                            onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(song.toMediaMetadata(), it) }
-                                        )
+                                            }
+                                        }
                                         if (index < visibleSongs.lastIndex) {
                                             HorizontalDivider(
-                                                modifier = Modifier.padding(start = 80.dp, end = 16.dp)
+                                                modifier = Modifier.padding(
+                                                    start = IosPageHorizontalPadding + 64.dp,
+                                                    end = IosPageHorizontalPadding,
+                                                )
                                                     .graphicsLayer {
                                                         blendMode = BlendMode.Luminosity
                                                         compositingStrategy = CompositingStrategy.Offscreen
@@ -273,7 +304,13 @@ fun ArtistScreen(
                                     }
                                 }
                             }
-                            is Resource.Loading -> items(5) { ShimmerHost { ListItemPlaceHolder() } }
+                            is Resource.Loading -> items(5) {
+                                ShimmerHost {
+                                    ListItemPlaceHolder(
+                                        modifier = Modifier.padding(horizontal = DetailPageHorizontalPadding - 12.dp),
+                                    )
+                                }
+                            }
                             is Resource.Error -> item { ErrorItem(songsResource.message) }
                         }
 
@@ -283,11 +320,13 @@ fun ArtistScreen(
                             item(key = "all-artist-songs") {
                                 IosListRow(
                                     title = stringResource(R.string.artist_all_songs_count, songCount),
-                                    modifier = Modifier.padding(horizontal = 6.dp).drawBehind {
+                                    modifier = Modifier.padding(
+                                        horizontal = DetailPageHorizontalPadding - IosPageHorizontalPadding,
+                                    ).drawBehind {
                                         drawLine(
                                             color = separatorColor,
-                                            start = Offset(16.dp.toPx(), 0f),
-                                            end = Offset(size.width - 16.dp.toPx(), 0f),
+                                            start = Offset(IosPageHorizontalPadding.toPx(), 0f),
+                                            end = Offset(size.width - IosPageHorizontalPadding.toPx(), 0f),
                                             strokeWidth = 0.5.dp.toPx(),
                                             blendMode = BlendMode.Luminosity,
                                         )
@@ -315,7 +354,7 @@ fun ArtistScreen(
                                 val albums = albumsResource.data.hotAlbums.orEmpty()
                                 item {
                                     LazyRow(
-                                        contentPadding = PaddingValues(horizontal = 20.dp),
+                                        contentPadding = PaddingValues(horizontal = DetailPageHorizontalPadding),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         items(albums, key = { it.id }) { hotAlbum ->
@@ -331,7 +370,7 @@ fun ArtistScreen(
                             }
                             is Resource.Loading -> item {
                                 LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 20.dp),
+                                    contentPadding = PaddingValues(horizontal = DetailPageHorizontalPadding),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(4) { ShimmerHost { AlbumCardShimmer() } }
@@ -346,11 +385,13 @@ fun ArtistScreen(
                             item(key = "all-artist-albums") {
                                 IosListRow(
                                     title = stringResource(R.string.artist_all_albums_count, albumCount),
-                                    modifier = Modifier.padding(horizontal = 6.dp).padding(top = 10.dp).drawBehind {
+                                    modifier = Modifier.padding(
+                                        horizontal = DetailPageHorizontalPadding - IosPageHorizontalPadding,
+                                    ).padding(top = 10.dp).drawBehind {
                                         drawLine(
                                             color = separatorColor,
-                                            start = Offset(16.dp.toPx(), 0f),
-                                            end = Offset(size.width - 16.dp.toPx(), 0f),
+                                            start = Offset(IosPageHorizontalPadding.toPx(), 0f),
+                                            end = Offset(size.width - IosPageHorizontalPadding.toPx(), 0f),
                                             strokeWidth = 0.5.dp.toPx(),
                                             blendMode = BlendMode.Luminosity,
                                         )
@@ -438,7 +479,7 @@ private fun ArtistUnavailableState(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.padding(horizontal = 24.dp),
+        modifier = modifier.padding(horizontal = DetailPageHorizontalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -532,7 +573,7 @@ private fun ArtistHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp),
+                modifier = Modifier.padding(horizontal = DetailPageHorizontalPadding).padding(top = 8.dp),
             )
             if (subtitle.isNotBlank()) {
                 Text(
@@ -542,7 +583,7 @@ private fun ArtistHeader(
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 20.dp).padding(top = 7.dp),
+                    modifier = Modifier.padding(horizontal = DetailPageHorizontalPadding).padding(top = 7.dp),
                 )
             }
 
@@ -731,7 +772,12 @@ fun SectionTitle(title: String) {
         text = title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)
+        modifier = Modifier.padding(
+            start = DetailPageHorizontalPadding,
+            end = DetailPageHorizontalPadding,
+            top = 20.dp,
+            bottom = 4.dp,
+        )
     )
 }
 
@@ -739,7 +785,7 @@ fun SectionTitle(title: String) {
 fun ErrorItem(message: String) {
     Text(
         text = message,
-        modifier = Modifier.padding(20.dp),
+        modifier = Modifier.padding(horizontal = DetailPageHorizontalPadding, vertical = 20.dp),
         color = MaterialTheme.colorScheme.error
     )
 }

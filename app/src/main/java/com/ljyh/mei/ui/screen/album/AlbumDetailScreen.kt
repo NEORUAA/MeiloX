@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen.album
 
 import com.ljyh.mei.constants.MusicQuality
+import com.ljyh.mei.constants.DetailPageHorizontalPadding
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -305,6 +306,7 @@ fun AlbumDetailScreen(
             title = stringResource(com.ljyh.mei.R.string.playlist_table_album),
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             showsLargeTitle = false,
+            horizontalContentPadding = DetailPageHorizontalPadding,
             onNavigateBack = { navController.popBackStack() },
         ) {
             item(key = "album-load-error") {

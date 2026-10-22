@@ -156,7 +156,10 @@ interface ApiService {
     ): LikeResult
 
     @POST("/api/playlist/manipulate/tracks")
-    suspend fun manipulateTracks(@Body body: ManipulateTrack): ManipulateTrackResult
+    suspend fun manipulateTracks(
+        @Body body: ManipulateTrack,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
+    ): ManipulateTrackResult
 
     @POST("/api/playlist/manipulate/tracks")
     suspend fun updatePlaylistTrackOrder(

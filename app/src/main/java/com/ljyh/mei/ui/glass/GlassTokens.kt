@@ -25,6 +25,9 @@ data class GlassAppearance(
 
 val LocalGlassAppearance = staticCompositionLocalOf { GlassAppearance() }
 
+/** Shared outer edge for top-toolbar buttons and aligned page content. */
+internal val IosPageHorizontalPadding = 16.dp
+
 @Immutable
 data class GlassColors(
     val isDark: Boolean,

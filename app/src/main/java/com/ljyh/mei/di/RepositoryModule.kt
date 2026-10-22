@@ -46,6 +46,7 @@ object RepositoryModule {
         eApiService: EApiService,
         neteaseLoginSecurity: NeteaseLoginSecurity,
         localPlaylistRepository: LocalPlaylistRepository,
+        playerRepository: PlayerRepository,
     ): PlaylistRepository {
         return PlaylistRepository(
             apiService,
@@ -56,6 +57,7 @@ object RepositoryModule {
                 runBlocking { AppContext.instance.dataStore.data.first()[CookieKey].orEmpty() }
             },
             onUnsubscribed = localPlaylistRepository::deletePlaylistById,
+            onTracksChanged = { ids, session -> playerRepository.refreshSongLikes(ids, session) },
         )
     }
 

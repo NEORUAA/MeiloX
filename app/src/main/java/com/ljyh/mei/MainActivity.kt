@@ -146,6 +146,7 @@ import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.KeepBottomBarExpandedKey
 import com.ljyh.mei.constants.BottomFloatingContentExtraSpacingKey
+import com.ljyh.mei.constants.BottomBarHorizontalPadding
 import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
@@ -1328,7 +1329,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private val homeNavigationRoutes = Screen.MainScreens.map { it.route }.toSet()
-private val bottomNavigationHorizontalMargin = 20.dp
+private val bottomNavigationHorizontalMargin = BottomBarHorizontalPadding
 
 private fun Scene<NavKey>.currentRoute(): String? =
     entries.lastOrNull()?.contentKey as? String

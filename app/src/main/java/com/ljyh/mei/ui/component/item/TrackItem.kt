@@ -13,11 +13,13 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,7 +30,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,7 +54,8 @@ fun Track(
     isPlaying: Boolean = false,
     onClick: () -> Unit,
     selected: Boolean? = null,
-    onMoreClick: ((Rect) -> Unit)?
+    onMoreClick: ((Rect) -> Unit)?,
+    detailInkBlend: Boolean = false,
 ) {
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     Row(
@@ -64,6 +70,7 @@ fun Track(
         if (selected != null) {
             com.ljyh.mei.ui.glass.SfIcon(
                 if (selected) "checkmark.circle.fill" else "circle", null,
+                modifier = Modifier.trackDetailInkBlend(detailInkBlend),
                 size = 24.dp, tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
             )
             Spacer(Modifier.width(12.dp))
@@ -72,7 +79,7 @@ fun Track(
         if (isTablet && index != null) {
             Text(
                 text = (index + 1).toString(),
-                modifier = Modifier.width(36.dp),
+                modifier = Modifier.width(36.dp).trackDetailInkBlend(detailInkBlend),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center
@@ -94,7 +101,7 @@ fun Track(
             )
 
             Column(
-                modifier = Modifier.padding(start = 16.dp).fillMaxWidth(),
+                modifier = Modifier.padding(start = 16.dp).fillMaxWidth().trackDetailInkBlend(detailInkBlend),
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
@@ -122,7 +129,7 @@ fun Track(
         if (isTablet) {
             Text(
                 text = track.album.title,
-                modifier = Modifier.weight(3f).padding(horizontal = 8.dp),
+                modifier = Modifier.weight(3f).padding(horizontal = 8.dp).trackDetailInkBlend(detailInkBlend),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -134,7 +141,7 @@ fun Track(
         if (isTablet) {
             Text(
                 text = formatDuration(track.duration),
-                modifier = Modifier.width(60.dp),
+                modifier = Modifier.width(60.dp).trackDetailInkBlend(detailInkBlend),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End
@@ -143,18 +150,32 @@ fun Track(
 
         // --- 5. 更多按钮 ---
         onMoreClick?.let {
-            IconButton(
-                onClick = { it(menuAnchor) },
-                modifier = Modifier.padding(start = 8.dp).size(44.dp)
-                    .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
+            Box(
+                modifier = Modifier.padding(start = 8.dp)
+                    .size(44.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                com.ljyh.mei.ui.glass.SfIcon(
-                    symbol = com.ljyh.mei.ui.glass.SfSymbol.Ellipsis,
-                    contentDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.more_actions_title),
-                    tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
-                    size = 18.dp,
-                )
+                IconButton(
+                    onClick = { it(menuAnchor) },
+                    modifier = Modifier.size(44.dp)
+                        .then(if (detailInkBlend) Modifier.offset(x = 13.dp) else Modifier)
+                        .onGloballyPositioned { menuAnchor = it.boundsInWindow() },
+                ) {
+                    com.ljyh.mei.ui.glass.SfIcon(
+                        symbol = com.ljyh.mei.ui.glass.SfSymbol.Ellipsis,
+                        contentDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.more_actions_title),
+                        modifier = Modifier.trackDetailInkBlend(detailInkBlend),
+                        tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
+                        size = 18.dp,
+                    )
+                }
             }
         }
     }
 }
+
+private fun Modifier.trackDetailInkBlend(enabled: Boolean): Modifier =
+    if (enabled) graphicsLayer {
+        blendMode = BlendMode.Luminosity
+        compositingStrategy = CompositingStrategy.Offscreen
+    } else this

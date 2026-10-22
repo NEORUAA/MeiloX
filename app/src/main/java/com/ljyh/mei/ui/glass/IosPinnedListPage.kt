@@ -246,7 +246,7 @@ fun rememberIosGridCollapseProgress(
 fun IosPinnedListPage(
     title: String,
     bottomPadding: Dp,
-    horizontalContentPadding: Dp = 16.dp,
+    horizontalContentPadding: Dp = IosPageHorizontalPadding,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     listState: LazyListState = rememberLazyListState(),
@@ -367,9 +367,9 @@ fun IosPinnedPage(
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val toolbarHeight = statusBarHeight + 62.dp
     val contentPadding = PaddingValues(
-        start = 16.dp,
+        start = IosPageHorizontalPadding,
         top = toolbarHeight + 10.dp,
-        end = 16.dp,
+        end = IosPageHorizontalPadding,
         bottom = bottomPadding + 24.dp,
     )
 

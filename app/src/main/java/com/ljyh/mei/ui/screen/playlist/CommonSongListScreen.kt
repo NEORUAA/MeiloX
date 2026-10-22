@@ -49,6 +49,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.compose.LazyPagingItems
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
+import com.ljyh.mei.constants.DetailPageHorizontalPadding
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
@@ -56,6 +57,7 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
+import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
 import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.IosPinnedListPage
@@ -116,7 +118,13 @@ fun CommonSongListScreen(
     hasLoadedContent: Boolean = true,
     trackNumbers: Map<Long, Int> = emptyMap(),
 ) {
-    val currentTrackId = LocalPlayerConnection.current?.mediaMetadata?.collectAsState()?.value?.id?.toString()
+    val playerConnection = LocalPlayerConnection.current
+    val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.id?.toString()
+    val isPlaying = playerConnection?.isPlaying?.collectAsState()?.value == true
+    val favoriteTrackIds = rememberFavoriteTrackIds(
+        tracks = pagingItems?.itemSnapshotList?.items ?: uiData.tracks,
+        enabled = useCoverBackground,
+    )
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuTriggerAlpha = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
     val detailMenuSeparation = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
@@ -197,6 +205,7 @@ fun CommonSongListScreen(
                 backgroundColor = coverBackground.color,
                 backgroundBrush = coverBackground.brush.takeIf { useCoverBackground },
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
+                horizontalContentPadding = if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
                 actionsSeparationProgress = searchSeparation,
@@ -319,7 +328,7 @@ fun CommonSongListScreen(
                 if (isLoading) {
                     item(key = "playlist-loading") {
                         Box(Modifier.fillMaxWidth().height(620.dp)) {
-                            PlaylistShimmer()
+                            PlaylistShimmer(flatDetailStyle = useCoverBackground)
                         }
                     }
                 } else {
@@ -364,6 +373,8 @@ fun CommonSongListScreen(
                         flatDetailStyle = useCoverBackground,
                         showArtwork = showTrackArtwork,
                         currentTrackId = currentTrackId,
+                        isPlaying = isPlaying,
+                        favoriteTrackIds = favoriteTrackIds,
                         trackNumbers = trackNumbers,
                         onMoreClick = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
                         emptyMessage = playlistSearchQuery.takeIf { it.isNotBlank() }

@@ -185,6 +185,8 @@ fun LazyListScope.playlistTrackItems(
     showArtwork: Boolean = true,
     currentTrackId: String? = null,
     trackNumbers: Map<Long, Int> = emptyMap(),
+    isPlaying: Boolean = false,
+    favoriteTrackIds: Set<String> = emptySet(),
 ) {
     val itemCount = pagingItems?.itemCount ?: staticTracks.size
     val showsTableHeader = isTablet && showTableHeader && !flatDetailStyle
@@ -223,6 +225,9 @@ fun LazyListScope.playlistTrackItems(
                             trackNumber = trackNumbers[track.id] ?: index + 1,
                             showArtwork = showArtwork,
                             isCurrentTrack = track.id.toString() == currentTrackId,
+                            isPlaying = isPlaying,
+                            isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&
+                                track.id.toString() in favoriteTrackIds,
                             onClick = { onTrackClick(track, index) },
                             onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
                             selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
@@ -289,6 +294,9 @@ fun LazyListScope.playlistTrackItems(
                         trackNumber = trackNumbers[track.id] ?: index + 1,
                         showArtwork = showArtwork,
                         isCurrentTrack = track.id.toString() == currentTrackId,
+                        isPlaying = isPlaying,
+                        isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&
+                            track.id.toString() in favoriteTrackIds,
                         onClick = { onTrackClick(track, index) },
                         onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
                         selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,

@@ -21,6 +21,8 @@ import com.ljyh.mei.data.network.safeApiCall
 import android.util.Base64
 import com.ljyh.mei.data.model.api.CheckSongLike
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,11 +44,14 @@ class PlayerRepository(
     private var likeGeneration = 0L
     private val _songLikes = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val songLikes: StateFlow<Map<String, Boolean>> = _songLikes.asStateFlow()
+    private val _songLikeGeneration = MutableStateFlow(0L)
+    val songLikeGeneration: StateFlow<Long> = _songLikeGeneration.asStateFlow()
 
     fun resetLikeState() {
         synchronized(likeStateLock) {
             likeGeneration++
             _songLikes.value = emptyMap()
+            _songLikeGeneration.value++
         }
     }
 
@@ -265,6 +270,54 @@ class PlayerRepository(
         }
     }
 
+    suspend fun ensureSongLikes(ids: Set<Long>, expectedSession: String): Resource<Unit> =
+        loadSongLikes(ids, expectedSession, refresh = false)
+
+    suspend fun refreshSongLikes(ids: Set<Long>, expectedSession: String): Resource<Unit> =
+        loadSongLikes(ids, expectedSession, refresh = true)
+
+    private suspend fun loadSongLikes(
+        ids: Set<Long>,
+        expectedSession: String,
+        refresh: Boolean,
+    ): Resource<Unit> {
+        if (expectedSession.isBlank()) return Resource.Error("An authenticated session is required")
+        val generation = synchronized(likeStateLock) { likeGeneration }
+        return withContext(Dispatchers.IO) {
+            likeMutex.withLock {
+                currentCoroutineContext().ensureActive()
+                if (!isLikeGenerationCurrent(generation)) return@withLock accountChangedLikeResult()
+                val requestedIds = ids.filter { it > 0 && (refresh || it.toString() !in _songLikes.value) }.sorted()
+                for (chunk in requestedIds.chunked(100)) {
+                    currentCoroutineContext().ensureActive()
+                    if (!isLikeGenerationCurrent(generation)) return@withLock accountChangedLikeResult()
+                    val result = safeApiCall {
+                        val response = apiService.checkSongLike(
+                            CheckSongLike(chunk.joinToString(prefix = "[", postfix = "]")),
+                            expectedSession,
+                        )
+                        check(response.code == 200) { "Unable to load song likes (${response.code})" }
+                        val likedIds = response.ids.toSet()
+                        chunk.associate { it.toString() to (it in likedIds) }
+                    }
+                    when (result) {
+                        is Resource.Success -> {
+                            currentCoroutineContext().ensureActive()
+                            if (!publishSongLikes(result.data, generation)) return@withLock accountChangedLikeResult()
+                        }
+                        is Resource.Error -> {
+                            currentCoroutineContext().ensureActive()
+                            if (refresh) invalidateSongLikes(requestedIds, generation)
+                            return@withLock result
+                        }
+                        Resource.Loading -> return@withLock Resource.Loading
+                    }
+                }
+                Resource.Success(Unit)
+            }
+        }
+    }
+
     private suspend fun fetchSongLike(id: Long, expectedSession: String?): Resource<Boolean> = safeApiCall {
         val result = apiService.checkSongLike(CheckSongLike("[$id]"), expectedSession)
         check(result.code == 200) { "Unable to load song like (${result.code})" }
@@ -280,6 +333,22 @@ class PlayerRepository(
             _songLikes.value = _songLikes.value + (id to liked)
             true
         }
+
+    private fun publishSongLikes(likes: Map<String, Boolean>, generation: Long): Boolean =
+        synchronized(likeStateLock) {
+            if (likeGeneration != generation) return@synchronized false
+            _songLikes.value = _songLikes.value + likes
+            true
+        }
+
+    private fun invalidateSongLikes(ids: List<Long>, generation: Long) {
+        synchronized(likeStateLock) {
+            if (likeGeneration != generation) return
+            _songLikes.value = _songLikes.value - ids.map(Long::toString).toSet()
+            // Wake list observers even when the affected IDs were already unknown.
+            _songLikeGeneration.value++
+        }
+    }
 
     private fun accountChangedLikeResult() = Resource.Error("Account changed")
 
