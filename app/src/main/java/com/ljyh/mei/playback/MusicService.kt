@@ -877,7 +877,8 @@ class MusicService : MediaLibraryService(),
 
 
     private suspend fun recordHistory(mediaItem: MediaItem, playedAt: Long) {
-        if (mediaItem.localConfiguration?.tag.let { it as? MediaMetadata }?.isPodcast == true) return
+        val trackMetadata = mediaItem.metadata
+        if (trackMetadata?.isPodcast == true) return
         val metadata = mediaItem.mediaMetadata
         val artistList = metadata.extras?.getStringArrayList("artist_list")
             ?.filter { it.isNotBlank() }
@@ -888,7 +889,8 @@ class MusicService : MediaLibraryService(),
                 ?.filter(String::isNotBlank)
                 ?.takeIf(List<String>::isNotEmpty)
             ?: listOf("未知歌手")
-        val storedSong = songRepository.getSong(mediaItem.mediaId).firstOrNull()
+        val storageId = playbackHistoryStorageId(mediaItem.mediaId, trackMetadata?.isLocal == true)
+        val storedSong = songRepository.getSong(storageId).firstOrNull()
         val title = metadata.title?.toString().orEmpty().ifBlank {
             storedSong?.title ?: "未知标题"
         }
@@ -906,12 +908,14 @@ class MusicService : MediaLibraryService(),
             duration = metadata.durationMs?.takeIf { it > 0 } ?: storedSong.duration,
             updatedAt = System.currentTimeMillis(),
         ) ?: Song(
-            id = mediaItem.mediaId,
+            id = storageId,
             title = title,
             artist = artistList,
             album = album,
             cover = cover,
             duration = metadata.durationMs ?: 0,
+            sourceType = if (trackMetadata?.isLocal == true) com.ljyh.mei.data.model.room.SourceType.LOCAL
+                else com.ljyh.mei.data.model.room.SourceType.STREAM,
         )
         historyRepository.addToHistory(song, playedAt)
     }

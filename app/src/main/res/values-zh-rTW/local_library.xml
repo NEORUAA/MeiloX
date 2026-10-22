@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_library_filter_all">全部</string>
+    <string name="local_library_filter_downloaded">已下載</string>
+    <string name="local_library_filter_local">本機歌曲</string>
+    <string name="local_library_filter_active">下載任務</string>
+    <string name="local_library_scan">掃描本機音樂</string>
+    <string name="local_library_scan_hint">尋找裝置中的音訊檔案</string>
+    <string name="local_library_permission">允許存取音訊後即可掃描本機歌曲</string>
+    <string name="local_library_scan_progress">正在掃描 %1$d / %2$d</string>
+    <string name="local_library_match">比對歌曲資訊</string>
+    <string name="local_library_match_hint">選擇比對結果更新曲庫資訊，音訊檔案保持原樣。</string>
+    <string name="local_library_match_confirm">使用這份歌曲資訊？</string>
+    <string name="local_library_apply">套用</string>
+    <string name="local_library_info">檔案資訊</string>
+    <string name="local_library_path">檔案位置</string>
+    <string name="local_library_format">格式</string>
+    <string name="local_library_size">檔案大小</string>
+    <string name="local_library_duration">長度</string>
+    <string name="local_library_audio">音訊參數</string>
+    <string name="local_library_empty">還沒有本機歌曲</string>
+    <string name="local_library_empty_hint">掃描裝置音樂，或下載歌曲後離線聆聽。</string>
+    <string name="local_library_sort">排序</string>
+    <string name="local_library_sort_recent">最近加入</string>
+    <string name="local_library_sort_title">歌曲名稱</string>
+    <string name="local_library_sort_artist">歌手名稱</string>
+    <string name="local_library_count">共 %1$d 首</string>
+    <string name="local_library_delete_confirm">從裝置中刪除「%1$s」？</string>
+    <string name="local_library_delete_hint">音訊檔案將從裝置中刪除。</string>
+    <string name="local_library_remove_record">移除這條下載任務？</string>
+    <string name="local_library_delete_failed">檔案刪除失敗</string>
+    <string name="local_library_scan_cancel">停止掃描</string>
+    <string name="local_library_scan_again">重新掃描</string>
+    <string name="local_library_no_matches">找不到相符歌曲，試試其他歌名或歌手。</string>
+    <string name="local_library_pending">等待下載</string>
+    <string name="local_library_downloaded">已下載</string>
+</resources>

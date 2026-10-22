@@ -1,6 +1,9 @@
 package com.ljyh.mei.utils
 
 import android.content.Context
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.room.withTransaction
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -12,6 +15,7 @@ import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.SongDownloadInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -22,6 +26,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import java.io.File
+
+/** Serializes MediaStore publication with scanner database reconciliation. */
+internal val localAudioPublicationMutex = Mutex()
 
 object DownloadManager {
     private const val SONG_WORK_NAME_PREFIX = "download_song_"
@@ -138,24 +145,55 @@ object DownloadManager {
         )
     } }
 
-    fun deleteTask(context: Context, songId: String) {
-        managementScope.launch { operations.withLock {
-            val db = AppDatabase.getDatabase(context)
-            val task = db.downloadDao().getBySongId(songId) ?: return@withLock
-            db.downloadDao().delete(songId)
-            cancelRequest(context, task)
-            val song = db.songDao().getSong(songId).first()
-            song?.path?.let { path ->
-                runCatching {
-                    if (path.startsWith("content://")) {
-                        context.contentResolver.delete(android.net.Uri.parse(path), null, null)
-                    } else {
-                        File(path).takeIf(File::exists)?.delete()
+    fun deleteTask(context: Context, songId: String, onComplete: ((Boolean) -> Unit)? = null) {
+        managementScope.launch {
+            val removed = try {
+                operations.withLock {
+                    val db = AppDatabase.getDatabase(context)
+                    val snapshot = db.withTransaction {
+                        val task = db.downloadDao().getBySongId(songId) ?: return@withTransaction null
+                        // Retire the worker before touching its published file. Its commit path
+                        // checks both request ownership and the active status in a transaction.
+                        if (task.status == DownloadStatus.PENDING || task.status == DownloadStatus.DOWNLOADING) {
+                            db.downloadDao().updateStatus(songId, DownloadStatus.PAUSED)
+                        }
+                        task to db.songDao().getSong(songId).first()?.path
+                    } ?: return@withLock true
+                    val (task, path) = snapshot
+                    cancelRequest(context, task)
+                    db.withTransaction {
+                        val current = db.downloadDao().getBySongId(songId) ?: return@withTransaction true
+                        val currentPath = db.songDao().getSong(songId).first()?.path
+                        if (current.requestId != task.requestId || currentPath != path) return@withTransaction false
+                        if (!removeDownloadedPath(context, path)) return@withTransaction false
+                        db.downloadDao().delete(songId)
+                        db.songDao().updatePath(songId, null)
+                        true
                     }
-                }.onFailure { Timber.w(it, "Unable to remove downloaded file for %s", songId) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.w(error, "Unable to remove downloaded file for %s", songId)
+                false
             }
-            db.songDao().updatePath(songId, null)
-        } }
+            withContext(Dispatchers.Main.immediate) { onComplete?.invoke(removed) }
+        }
+    }
+
+    private fun removeDownloadedPath(context: Context, path: String?): Boolean {
+        if (path.isNullOrBlank()) return true
+        val uri = Uri.parse(path)
+        if (uri.scheme == "content") {
+            if (context.contentResolver.delete(uri, null, null) > 0) return true
+            // A missing MediaStore row is already removed; zero affected rows alone does
+            // not prove removal because a provider may refuse to delete an existing row.
+            return context.contentResolver.query(
+                uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null,
+            )?.use { !it.moveToFirst() } == true
+        }
+        val file = File(if (uri.scheme == "file") uri.path ?: return false else path)
+        return !file.exists() || file.delete()
     }
 
     fun deleteAll(context: Context) {

@@ -10,6 +10,7 @@ data class Song(
     val artist: List<String>,
     val album: String,
     val cover: String,
+    /** Audio duration in milliseconds, matching Media3 and MediaStore. */
     val duration: Long,
     val path: String? = null,
     val sourceType: SourceType = SourceType.STREAM,

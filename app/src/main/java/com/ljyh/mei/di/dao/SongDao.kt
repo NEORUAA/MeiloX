@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
@@ -19,6 +20,22 @@ interface SongDao {
 
     @Query("SELECT * FROM song WHERE path IS NOT NULL AND path != ''")
     fun getLocalSongs(): Flow<List<Song>>
+
+    @Query("SELECT * FROM song WHERE path = :path LIMIT 1")
+    suspend fun getByPath(path: String): Song?
+
+    @Query("SELECT * FROM song WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): Song?
+
+    @Query("UPDATE song SET title = :title, artist = :artist, album = :album, cover = :cover, updatedAt = :time WHERE id = :id AND path IS NOT NULL AND path != ''")
+    suspend fun updateLocalDisplayMetadata(
+        id: String,
+        title: String,
+        artist: List<String>,
+        album: String,
+        cover: String,
+        time: Long = System.currentTimeMillis(),
+    )
 
     @Query("SELECT * FROM song WHERE sourceType = :sourceType")
     fun getSongsBySource(sourceType: SourceType): Flow<List<Song>>
@@ -81,6 +98,9 @@ interface SongDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: Song)
+
+    @Update
+    suspend fun updateSong(song: Song)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSongs(songs: List<Song>)

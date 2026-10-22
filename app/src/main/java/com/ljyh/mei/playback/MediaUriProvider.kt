@@ -357,7 +357,9 @@ class MediaUriProvider @Inject constructor(
     private suspend fun localSong(mediaId: String): Song? {
         val exact = songRepository.getSong(mediaId).firstOrNull()
         if (!exact?.path.isNullOrBlank()) return exact
-        val prefixed = songRepository.getSong("local_$mediaId").firstOrNull()
+        val localId = mediaId.toLongOrNull()?.takeIf { it < 0 && it != Long.MIN_VALUE }?.let { -it }
+            ?: return exact
+        val prefixed = songRepository.getSong("local_$localId").firstOrNull()
         return prefixed?.takeIf { !it.path.isNullOrBlank() } ?: exact ?: prefixed
     }
 

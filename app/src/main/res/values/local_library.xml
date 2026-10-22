@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_library_filter_all">All</string>
+    <string name="local_library_filter_downloaded">Downloaded</string>
+    <string name="local_library_filter_local">Local</string>
+    <string name="local_library_filter_active">Transfers</string>
+    <string name="local_library_scan">Scan local music</string>
+    <string name="local_library_scan_hint">Find audio stored on this device</string>
+    <string name="local_library_permission">Allow audio access to scan local music</string>
+    <string name="local_library_scan_progress">Scanning %1$d / %2$d</string>
+    <string name="local_library_match">Match song information</string>
+    <string name="local_library_match_hint">Choose a result to update library information. Audio files stay unchanged.</string>
+    <string name="local_library_match_confirm">Use this information?</string>
+    <string name="local_library_apply">Apply</string>
+    <string name="local_library_info">File information</string>
+    <string name="local_library_path">Location</string>
+    <string name="local_library_format">Format</string>
+    <string name="local_library_size">Size</string>
+    <string name="local_library_duration">Duration</string>
+    <string name="local_library_audio">Audio</string>
+    <string name="local_library_empty">No local music yet</string>
+    <string name="local_library_empty_hint">Scan this device or download a song to listen offline.</string>
+    <string name="local_library_sort">Sort</string>
+    <string name="local_library_sort_recent">Recently added</string>
+    <string name="local_library_sort_title">Song title</string>
+    <string name="local_library_sort_artist">Artist</string>
+    <string name="local_library_count">%1$d songs</string>
+    <string name="local_library_delete_confirm">Delete “%1$s” from this device?</string>
+    <string name="local_library_delete_hint">The audio file will be permanently removed.</string>
+    <string name="local_library_remove_record">Remove this download task?</string>
+    <string name="local_library_delete_failed">Unable to delete this file</string>
+    <string name="local_library_scan_cancel">Stop scan</string>
+    <string name="local_library_scan_again">Scan again</string>
+    <string name="local_library_no_matches">No matches found. Try another title or artist.</string>
+    <string name="local_library_pending">Waiting</string>
+    <string name="local_library_downloaded">Downloaded</string>
+</resources>

@@ -112,7 +112,7 @@ fun LibraryScreen(
         else emptyList<com.ljyh.mei.data.model.room.Playlist>() to emptyList()
     }
 
-    if (userId.isNotBlank() && cookie.isNotBlank()) {
+    if (displayedPage == LibraryPage.Downloads || (userId.isNotBlank() && cookie.isNotBlank())) {
         LibraryMobileLayout(
             userPhoto = "",
             isNavigationTab = isNavigationTab,
@@ -156,6 +156,20 @@ fun EmptyLoginState(
             if (isNavigationTab) GlobalProfileAvatarButton()
         },
     ) {
+        if (category == null) {
+            item(key = "signed-out-downloads") {
+                com.ljyh.mei.ui.glass.IosGroupedList {
+                    IosListRow(
+                        title = stringResource(R.string.app_tab_library_downloads),
+                        leading = { SfIcon(LibraryPage.Downloads.symbol, null, tint = LocalGlassColors.current.accent) },
+                        showTopSeparator = false,
+                        onClick = {
+                            Screen.LibraryCategory.navigate(navController) { addPath(LibraryPage.Downloads.name) }
+                        },
+                    )
+                }
+            }
+        }
         item {
             Box(
                 modifier = Modifier.fillParentMaxSize(),

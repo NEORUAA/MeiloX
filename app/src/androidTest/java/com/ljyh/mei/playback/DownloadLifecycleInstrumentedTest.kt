@@ -4,8 +4,11 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.content.Context
+import android.os.Looper
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
+import com.ljyh.mei.data.model.room.Song
+import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.DownloadManager
 import java.io.File
@@ -14,6 +17,8 @@ import java.net.Socket
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -88,6 +93,73 @@ class DownloadLifecycleInstrumentedTest {
                     androidx.work.WorkManager.getInstance(context).cancelWorkById(UUID.fromString(it)).result.get()
                 }
                 db.downloadDao().delete(songId)
+            }
+        }
+    }
+
+    @Test fun failedFileDeletionKeepsItsTaskAndPathUntilASuccessfulRetry() = runBlocking {
+        val songId = "delete-fixture-${UUID.randomUUID()}"
+        val db = AppDatabase.getDatabase(context)
+        val directory = File(context.cacheDir, songId).apply { mkdirs() }
+        val child = File(directory, "retained.wav").apply { writeBytes(ByteArray(32)) }
+        val task = DownloadTask(songId, status = DownloadStatus.COMPLETED, requestId = UUID.randomUUID().toString())
+        try {
+            db.downloadDao().insert(task)
+            db.songDao().insertSong(Song(
+                songId, "Deletion fixture", listOf("Fixture"), "Fixture", "", 1_000,
+                path = directory.absolutePath, sourceType = SourceType.DOWNLOAD,
+            ))
+            val failure = CompletableDeferred<Boolean>()
+            val callbackOnMain = AtomicBoolean()
+            DownloadManager.deleteTask(context, songId) {
+                callbackOnMain.set(Looper.myLooper() == Looper.getMainLooper())
+                failure.complete(it)
+            }
+            assertFalse(withTimeout(5_000) { failure.await() })
+            assertTrue(callbackOnMain.get())
+            assertTrue(child.exists())
+            assertEquals(task, db.downloadDao().getBySongId(songId))
+            assertEquals(directory.absolutePath, db.songDao().getSong(songId).first()?.path)
+
+            assertTrue(child.delete())
+            val success = CompletableDeferred<Boolean>()
+            DownloadManager.deleteTask(context, songId) { success.complete(it) }
+            assertTrue(withTimeout(5_000) { success.await() })
+            assertFalse(directory.exists())
+            assertNull(db.downloadDao().getBySongId(songId))
+            assertNull(db.songDao().getSong(songId).first()?.path)
+        } finally {
+            db.downloadDao().delete(songId)
+            db.songDao().deleteById(songId)
+            child.delete()
+            directory.delete()
+        }
+    }
+
+    @Test fun deletingARealWorkerCancelsItsReadAndCannotPublishAfterRemoval() = runBlocking {
+        val songId = "delete-worker-fixture-${UUID.randomUUID()}"
+        val db = AppDatabase.getDatabase(context)
+        var requestId: String? = null
+        StalledAudio().use { server ->
+            try {
+                DownloadManager.enqueue(context, listOf(SongDownloadInfo(songId, server.url,
+                    "Download deletion fixture", listOf("Fixture"), "Fixture", "", 0, "wav")),
+                    "Lifecycle fixture", downloadPath = "Music/MeiloX-test-fixtures")
+                requestId = db.downloadDao().getBySongId(songId)?.requestId
+                assertTrue(server.entered.await(15, TimeUnit.SECONDS))
+                val removed = CompletableDeferred<Boolean>()
+                DownloadManager.deleteTask(context, songId) { removed.complete(it) }
+                assertTrue(withTimeout(5_000) { removed.await() })
+                assertTrue(server.closed.await(5, TimeUnit.SECONDS))
+                delay(200)
+                assertNull(db.downloadDao().getBySongId(songId))
+                assertNull(db.songDao().getSong(songId).first()?.path)
+            } finally {
+                requestId?.let {
+                    androidx.work.WorkManager.getInstance(context).cancelWorkById(UUID.fromString(it)).result.get()
+                }
+                db.downloadDao().delete(songId)
+                db.songDao().deleteById(songId)
             }
         }
     }

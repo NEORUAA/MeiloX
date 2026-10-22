@@ -81,7 +81,6 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistTrackList
 import com.ljyh.mei.utils.setClipboard
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,8 +174,8 @@ fun LocalSongListScreen(
                             staticTracks = tracks,
                             isTablet = true,
                             onTrackClick = { track, index ->
-                                val isLost = songs.find { it.id == track.id.toString() }?.let {
-                                    it.path == null || !File(it.path).exists()
+                                val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
+                                    !localAudioPathExists(it.path)
                                 } ?: false
                                 if (!isLost) {
                                     playerConnection.onTrackClicked(
@@ -202,8 +201,8 @@ fun LocalSongListScreen(
                             )
                         },
                         onTrackClick = { track, index ->
-                            val isLost = songs.find { it.id == track.id.toString() }?.let {
-                                it.path == null || !File(it.path).exists()
+                            val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
+                                !localAudioPathExists(it.path)
                             } ?: false
                             if (!isLost) {
                                 playerConnection.onTrackClicked(
@@ -253,7 +252,7 @@ private fun LocalSongListHeader(
         songs.filter { it.cover.isNotEmpty() }.map { it.cover }.take(9)
     }
     val totalDuration = remember(songs) { songs.sumOf { it.duration } }
-    val durationText = remember(totalDuration) { formatDuration(totalDuration) }
+    val durationText = remember(totalDuration) { formatDuration(totalDuration / 1_000L) }
 
     val placeholderIcon: ImageVector = when (filterType) {
         "artist" -> Icons.Rounded.Person

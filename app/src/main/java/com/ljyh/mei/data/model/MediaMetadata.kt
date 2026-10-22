@@ -237,9 +237,11 @@ val MediaItem.metadata: MediaMetadata?
 
 
 fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {
-    val songId = id.removePrefix("local_").removePrefix("-").let { sid ->
-        sid.toLongOrNull() ?: sid.hashCode().toLong().let { if (it < 0) -it else it }
-    }
+    val songId = if (id.startsWith("local_")) {
+        // Keep device-library IDs outside the online catalog's positive ID space.
+        -(id.removePrefix("local_").toLongOrNull()?.coerceAtLeast(1L)
+            ?: id.hashCode().toLong().let { kotlin.math.abs(it).coerceAtLeast(1L) })
+    } else id.toLongOrNull() ?: id.hashCode().toLong()
     return MediaMetadata(
         id = songId,
         title = title,
@@ -247,7 +249,7 @@ fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {
         artists = artist.map { name ->
             MediaMetadata.Artist(id = name.hashCode().toLong().let { if (it < 0) -it else it }, name = name)
         },
-        duration = duration * 1000,
+        duration = duration,
         album = MediaMetadata.Album(id = album.hashCode().toLong().let { if (it < 0) -it else it }, title = album),
         isLocal = sourceType == com.ljyh.mei.data.model.room.SourceType.LOCAL,
     )

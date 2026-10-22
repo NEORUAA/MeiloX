@@ -503,13 +503,14 @@ class MediaUriProviderQualityTest {
                 onlineCalls.incrementAndGet()
                 error("Imported audio must never request an online source")
             }
-            provider.preferOnlineSource("1")
-            val local = provider.resolveMediaSource("1", "jymaster")
+            provider.preferOnlineSource("-1")
+            val local = provider.resolveMediaSource("-1", "jymaster")
             assertEquals(uri, local.uri)
             assertNotNull(local.localPlaybackInfo)
-            assertTrue(provider.getAvailableMusicQualities("1", true).isEmpty())
+            assertTrue(provider.getAvailableMusicQualities("-1", true).isEmpty())
             assertEquals(null, local.cacheKey)
             assertEquals(0, onlineCalls.get())
+            assertEquals("A catalog ID must never resolve its unrelated device-library row", null, provider.resolveLocalSource("1"))
         }
     }
 

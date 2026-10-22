@@ -23,6 +23,7 @@ import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.ImageUtils
+import com.ljyh.mei.utils.localAudioPublicationMutex
 import com.ljyh.mei.utils.LyricFetcher
 import com.ljyh.mei.utils.SongMate
 import com.ljyh.mei.utils.StringUtils.specialReplace
@@ -42,6 +43,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -229,7 +231,6 @@ class DownloadWorker(
             failedCount.incrementAndGet()
             return@coroutineScope
         }
-        var published: Uri? = null
         try {
             downloadAudioFile(okHttpClient, task.url, tempFile) { progress ->
                 launch { updateTask(db, songId, DownloadStatus.DOWNLOADING, progress) }
@@ -248,11 +249,24 @@ class DownloadWorker(
             currentCoroutineContext().ensureActive()
             val duration = runCatching { AudioFileIO.read(tempFile).audioHeader.trackLength.toLong() * 1_000L }
                 .getOrDefault(0L)
-            published = publishDownloadedAudio(applicationContext, tempFile, fileName, suffix, relativePath)
-            val uri = checkNotNull(published) { "Could not publish downloaded audio" }
-            if (saveDownloadedSong(db, songId, task, uri, duration, relativePath)) {
-                published = null
-                completedCount.incrementAndGet()
+            localAudioPublicationMutex.withLock {
+                var published: Uri? = null
+                try {
+                    published = publishDownloadedAudio(applicationContext, tempFile, fileName, suffix, relativePath)
+                    val uri = checkNotNull(published) { "Could not publish downloaded audio" }
+                    if (saveDownloadedSong(db, songId, task, uri, duration, relativePath)) {
+                        published = null
+                        completedCount.incrementAndGet()
+                    }
+                } finally {
+                    published?.let { uri -> withContext(NonCancellable) {
+                        // Keep publication cleanup inside the scanner's reconciliation lock.
+                        // Cancellation may arrive after Room commits but before it returns.
+                        if (db.songDao().getSong(songId).first()?.path != uri.toString()) {
+                            applicationContext.contentResolver.delete(uri, null, null)
+                        }
+                    } }
+                }
             }
         } catch (error: CancellationException) {
             throw error
@@ -261,12 +275,6 @@ class DownloadWorker(
             failedCount.incrementAndGet()
             updateTask(db, songId, DownloadStatus.FAILED, 0)
         } finally {
-            published?.let { uri -> withContext(NonCancellable) {
-                // A cancellation may arrive after Room commits but before it returns.
-                if (db.songDao().getSong(songId).first()?.path != uri.toString()) {
-                    applicationContext.contentResolver.delete(uri, null, null)
-                }
-            } }
             tempFile.delete()
         }
     }
@@ -282,23 +290,25 @@ class DownloadWorker(
         currentCoroutineContext().ensureActive()
         val current = db.downloadDao().getBySongId(songId)
         if (current?.requestId != id.toString() || current.status !in activeDownloadStates) return@withTransaction false
-        db.songDao().insertSong(
-            Song(
-                id = songId,
-                title = task.songTitle,
-                artist = task.songArtist
-                    .split(Regex("[/、,;]"))
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .ifEmpty { listOf(task.songArtist.trim()) },
-                album = task.songAlbum,
-                cover = task.songCover,
-                duration = durationMs,
-                path = uri.toString(),
-                sourceType = SourceType.DOWNLOAD,
-                folderPath = relativePath
-            )
+        val existing = db.songDao().getById(songId)
+        val downloaded = Song(
+            id = songId,
+            title = task.songTitle,
+            artist = task.songArtist
+                .split(Regex("[/、,;]"))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .ifEmpty { listOf(task.songArtist.trim()) },
+            album = task.songAlbum,
+            cover = task.songCover,
+            duration = durationMs,
+            path = uri.toString(),
+            sourceType = SourceType.DOWNLOAD,
+            folderPath = relativePath,
+            addedAt = existing?.addedAt ?: System.currentTimeMillis(),
         )
+        if (existing == null) db.songDao().insertSong(downloaded)
+        else db.songDao().updateSong(downloaded)
         check(db.downloadDao().updateOwnedProgress(songId, id.toString(), DownloadStatus.COMPLETED,
             100, System.currentTimeMillis()) == 1)
         true
