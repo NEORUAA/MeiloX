@@ -3,6 +3,8 @@ package com.ljyh.mei.ui.screen.artist
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.api.ArtistAlbum
+import com.ljyh.mei.data.model.api.ArtistDetail
+import com.ljyh.mei.data.model.api.GetArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
@@ -26,6 +28,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -34,6 +38,7 @@ class ArtistFollowRefreshTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var songsRequests: Channel<PendingRead<ArtistSong>>
     private lateinit var albumsRequests: Channel<PendingRead<ArtistAlbum>>
+    private lateinit var detailRequests: Channel<PendingRead<ArtistDetail>>
     private lateinit var mutations: Channel<PendingMutation>
     private lateinit var viewModel: ArtistViewModel
     private var mutationCallCount = 0
@@ -43,6 +48,7 @@ class ArtistFollowRefreshTest {
         Dispatchers.setMain(dispatcher)
         songsRequests = Channel(Channel.UNLIMITED)
         albumsRequests = Channel(Channel.UNLIMITED)
+        detailRequests = Channel(Channel.UNLIMITED)
         mutations = Channel(Channel.UNLIMITED)
         mutationCallCount = 0
 
@@ -50,14 +56,21 @@ class ArtistFollowRefreshTest {
             ApiService::class.java.classLoader,
             arrayOf(ApiService::class.java),
         ) { _, method, arguments ->
-            assertEquals("42", arguments!![1])
             when (method.name) {
+                "getArtistDetail" -> {
+                    assertEquals("42", (arguments!![0] as GetArtistDetail).id)
+                    val read = PendingRead<ArtistDetail>()
+                    check(detailRequests.trySend(read).isSuccess)
+                    awaitResponse(read, arguments.last())
+                }
                 "getArtistSongs" -> {
+                    assertEquals("42", arguments!![1])
                     val read = PendingRead<ArtistSong>()
                     check(songsRequests.trySend(read).isSuccess)
                     awaitResponse(read, arguments.last())
                 }
                 "getArtistAlbums" -> {
+                    assertEquals("42", arguments!![1])
                     val read = PendingRead<ArtistAlbum>()
                     check(albumsRequests.trySend(read).isSuccess)
                     awaitResponse(read, arguments.last())
@@ -82,6 +95,54 @@ class ArtistFollowRefreshTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test(timeout = 10_000)
+    fun returningToArtistRetainsResultsAndDoesNotDuplicatePendingRequests() = runTest(dispatcher) {
+        viewModel.loadArtistIfNeeded("42")
+        val detail = detailRequests.receive()
+        val albums = albumsRequests.receive()
+        val songs = songsRequests.receive()
+
+        viewModel.loadArtistIfNeeded("42")
+        assertEquals(3, viewModel.viewModelScope.coroutineContext[Job]!!.children.count { it.isActive })
+
+        detail.response.complete(artistDetail())
+        albums.response.complete(albums(followed = true))
+        songs.response.complete(songs(followed = true))
+        val retainedDetail = viewModel.artistDetail.first { it is Resource.Success }
+        val retainedAlbums = viewModel.artistAlbums.first { it is Resource.Success }
+        val retainedSongs = viewModel.artistSongs.first { it is Resource.Success }
+        runCurrent()
+
+        viewModel.loadArtistIfNeeded("42")
+        assertSame(retainedDetail, viewModel.artistDetail.value)
+        assertSame(retainedAlbums, viewModel.artistAlbums.value)
+        assertSame(retainedSongs, viewModel.artistSongs.value)
+        assertEquals(true, viewModel.confirmedFollowed.value)
+        assertTrue(detailRequests.tryReceive().isFailure)
+        assertTrue(albumsRequests.tryReceive().isFailure)
+        assertTrue(songsRequests.tryReceive().isFailure)
+    }
+
+    @Test(timeout = 10_000)
+    fun returningToArtistRetriesOnlyFailedContent() = runTest(dispatcher) {
+        viewModel.loadArtistIfNeeded("42")
+        detailRequests.receive().response.complete(artistDetail())
+        albumsRequests.receive().response.complete(albums(followed = true))
+        songsRequests.receive().response.completeExceptionally(IllegalStateException("Songs unavailable"))
+        val retainedDetail = viewModel.artistDetail.first { it is Resource.Success }
+        val retainedAlbums = viewModel.artistAlbums.first { it is Resource.Success }
+        viewModel.artistSongs.first { it is Resource.Error }
+        runCurrent()
+
+        viewModel.loadArtistIfNeeded("42")
+        songsRequests.receive().response.complete(songs(followed = true))
+        viewModel.artistSongs.first { it is Resource.Success }
+        assertSame(retainedDetail, viewModel.artistDetail.value)
+        assertSame(retainedAlbums, viewModel.artistAlbums.value)
+        assertTrue(detailRequests.tryReceive().isFailure)
+        assertTrue(albumsRequests.tryReceive().isFailure)
     }
 
     @Test(timeout = 10_000)
@@ -175,6 +236,11 @@ class ArtistFollowRefreshTest {
         await.startCoroutine(continuation as Continuation<T>)
         return COROUTINE_SUSPENDED
     }
+
+    private fun artistDetail(): ArtistDetail = Gson().fromJson(
+        """{"code":200,"data":{"artist":{"id":42,"name":"Artist"}}}""",
+        ArtistDetail::class.java,
+    )
 
     private fun songs(followed: Boolean, name: String = "Artist"): ArtistSong = Gson().fromJson(
         """{"artist":{"id":42,"name":"$name","followed":$followed},

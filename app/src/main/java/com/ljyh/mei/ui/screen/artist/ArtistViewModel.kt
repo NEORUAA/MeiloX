@@ -44,12 +44,17 @@ class ArtistViewModel internal constructor(
     private val _artistDetail = MutableStateFlow<Resource<ArtistDetail>>(Resource.Loading)
     val artistDetail: StateFlow<Resource<ArtistDetail>> = _artistDetail
     private var artistDetailJob: Job? = null
+    private var artistDetailId: String? = null
 
     private val _artistAlbums = MutableStateFlow<Resource<ArtistAlbum>>(Resource.Loading)
     val artistAlbums: StateFlow<Resource<ArtistAlbum>> = _artistAlbums
+    private var artistAlbumsJob: Job? = null
+    private var artistAlbumsId: String? = null
 
     private val _artistSongs = MutableStateFlow<Resource<ArtistSong>>(Resource.Loading)
     val artistSongs: StateFlow<Resource<ArtistSong>> = _artistSongs
+    private var artistSongsJob: Job? = null
+    private var artistSongsId: String? = null
 
     private val _followMutation = MutableStateFlow<Resource<Boolean>?>(null)
     val followMutation: StateFlow<Resource<Boolean>?> = _followMutation
@@ -60,8 +65,23 @@ class ArtistViewModel internal constructor(
     private var songsRequestGeneration = 0L
     private var songsFollowRevision: Long? = null
 
+    /** Returning to a retained navigation entry must not reset successful or pending content. */
+    fun loadArtistIfNeeded(id: String) {
+        if (artistDetailId != id ||
+            (_artistDetail.value !is Resource.Success && artistDetailJob?.isActive != true)
+        ) getArtistDetail(id)
+        if (artistAlbumsId != id ||
+            (_artistAlbums.value !is Resource.Success && artistAlbumsJob?.isActive != true)
+        ) getArtistAlbums(id)
+        if (artistSongsId != id ||
+            (_artistSongs.value !is Resource.Success && artistSongsJob?.isActive != true)
+        ) getArtistSongs(id)
+    }
+
     fun getArtistDetail(id: String) {
-        if (artistDetailJob?.isActive == true) return
+        if (artistDetailId == id && artistDetailJob?.isActive == true) return
+        artistDetailJob?.cancel()
+        artistDetailId = id
         _artistDetail.value = Resource.Loading
         artistDetailJob = viewModelScope.launch {
             _artistDetail.value = repository.getArtistDetail(id)
@@ -69,11 +89,12 @@ class ArtistViewModel internal constructor(
     }
 
     fun getArtistAlbums(id: String) {
+        artistAlbumsId = id
         val generation = ++albumsRequestGeneration
         val revision = followRevision
         val canRefreshFollowed = _followMutation.value !is Resource.Loading
         _artistAlbums.value = Resource.Loading
-        viewModelScope.launch {
+        artistAlbumsJob = viewModelScope.launch {
             val result = repository.getArtistAlbums(id)
             if (generation != albumsRequestGeneration) return@launch
             _artistAlbums.value = result
@@ -88,12 +109,13 @@ class ArtistViewModel internal constructor(
     }
 
     fun getArtistSongs(id: String) {
+        artistSongsId = id
         val generation = ++songsRequestGeneration
         val revision = followRevision
         val canRefreshFollowed = _followMutation.value !is Resource.Loading
         songsFollowRevision = null
         _artistSongs.value = Resource.Loading
-        viewModelScope.launch {
+        artistSongsJob = viewModelScope.launch {
             val result = repository.getArtistSongs(id)
             if (generation != songsRequestGeneration) return@launch
             _artistSongs.value = result

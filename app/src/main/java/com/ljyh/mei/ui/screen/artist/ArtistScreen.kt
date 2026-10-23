@@ -119,7 +119,8 @@ fun ArtistScreen(
 
     val artistDetail by viewModel.artistDetail.collectAsState()
     val artistAlbums by viewModel.artistAlbums.collectAsState()
-    val artistSongs by viewModel.artistSongs.collectAsState()
+    // Lazy content and its derived tracks must capture the same response snapshot.
+    val artistSongs = viewModel.artistSongs.collectAsState().value
     val followMutation by viewModel.followMutation.collectAsState()
     val confirmedFollowed by viewModel.confirmedFollowed.collectAsState()
     val isFollowed = resolveArtistFollowed(id, artistSongs, artistAlbums, confirmedFollowed)
@@ -138,9 +139,7 @@ fun ArtistScreen(
 
     val scrollState = rememberLazyListState()
     LaunchedEffect(id) {
-        viewModel.getArtistDetail(id)
-        viewModel.getArtistAlbums(id)
-        viewModel.getArtistSongs(id)
+        viewModel.loadArtistIfNeeded(id)
     }
 
     ArtistCoverTheme(
@@ -614,6 +613,7 @@ private fun ArtistHeader(
                     SfIcon(
                         "play.fill", null,
                         modifier = Modifier.graphicsLayer {
+                            translationX = 2.dp.toPx()
                             blendMode = BlendMode.DstOut
                             compositingStrategy = CompositingStrategy.Offscreen
                         },
