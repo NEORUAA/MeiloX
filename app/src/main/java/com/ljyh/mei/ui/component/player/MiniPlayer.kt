@@ -29,6 +29,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -47,6 +49,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,6 +69,8 @@ import com.ljyh.mei.constants.NavigationBarBottomMargin
 import com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.extensions.togglePlayPause
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseMotionContent
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicSkipIcon
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.GlassSurfaceStyle
@@ -160,6 +166,9 @@ private fun MiniPlayerContent(
     val error by playerConnection.error.collectAsState()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
     val canSkipNext by playerConnection.canSkipNext.collectAsState()
+    var nextClickCount by remember { mutableIntStateOf(0) }
+    val playPauseDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play)
+    val nextDescription = stringResource(R.string.player_next)
     val showNextButton by remember(compactProgress) {
         derivedStateOf { 1f - compactProgress.value.coerceIn(0f, 1f) > 0.001f }
     }
@@ -222,7 +231,7 @@ private fun MiniPlayerContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(40.dp).semantics { contentDescription = playPauseDescription },
                         onClick = {
                             if (playbackState == Player.STATE_ENDED) {
                                 playerConnection.player.seekTo(0, 0)
@@ -232,26 +241,27 @@ private fun MiniPlayerContent(
                             }
                         },
                     ) {
-                        SfIcon(
-                            symbol = when {
-                                playbackState == Player.STATE_ENDED -> SfSymbol.ArrowClockwise
-                                isPlaying -> SfSymbol.PauseFilled
-                                else -> SfSymbol.PlayFilled
+                        AppleMusicPlayPauseMotionContent(
+                            systemName = when {
+                                playbackState == Player.STATE_ENDED -> "arrow.clockwise"
+                                isPlaying -> "pause.fill"
+                                else -> "play.fill"
                             },
-                            contentDescription = stringResource(
-                                if (isPlaying) R.string.player_pause else R.string.player_play,
-                            ),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            size = when {
-                                isPlaying -> 18.dp
-                                playbackState == Player.STATE_ENDED -> 22.dp
-                                else -> 16.dp
-                            },
-                            modifier = if (!isPlaying && playbackState != Player.STATE_ENDED) {
-                                Modifier.offset(x = 1.dp)
-                            } else Modifier,
-                            weight = FontWeight.SemiBold,
-                        )
+                            modifier = Modifier.size(22.dp),
+                        ) { icon ->
+                            SfIcon(
+                                systemName = icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                size = when (icon) {
+                                    "pause.fill" -> 18.dp
+                                    "play.fill" -> 16.dp
+                                    else -> 22.dp
+                                },
+                                modifier = if (icon == "play.fill") Modifier.offset(x = 1.dp) else Modifier,
+                                weight = FontWeight.SemiBold,
+                            )
+                        }
                     }
 
                     if (showNextButton) {
@@ -269,13 +279,16 @@ private fun MiniPlayerContent(
                             contentAlignment = Alignment.Center,
                         ) {
                             IconButton(
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier.size(40.dp).semantics { contentDescription = nextDescription },
                                 enabled = canSkipNext,
-                                onClick = playerConnection::seekToNext,
+                                onClick = {
+                                    nextClickCount++
+                                    playerConnection.seekToNext()
+                                },
                             ) {
-                                SfIcon(
-                                    symbol = SfSymbol.ForwardFilled,
-                                    contentDescription = stringResource(R.string.player_next),
+                                AppleMusicSkipIcon(
+                                    forward = true,
+                                    clickCount = nextClickCount,
                                     tint = MaterialTheme.colorScheme.onSurface,
                                     size = 26.dp,
                                     weight = FontWeight.SemiBold,

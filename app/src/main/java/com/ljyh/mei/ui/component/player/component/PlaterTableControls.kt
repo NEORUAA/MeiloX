@@ -26,6 +26,7 @@ import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.playback.PlayMode
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseIcon
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicSkipIcon
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -43,8 +44,8 @@ fun PlayerTableControls(
 ){
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
-    val skipTargetSize = if (appleMusicStyle) 61.dp else 48.dp
-    val playTargetSize = if (appleMusicStyle) 60.5.dp else 84.dp
+    val skipTargetSize = if (appleMusicStyle) 64.dp else 48.dp
+    val playTargetSize = if (appleMusicStyle) 64.dp else 84.dp
     val skipIconSize = if (appleMusicStyle) 44.dp else 30.dp
     val playIconSize = if (appleMusicStyle) 44.dp else 48.dp
     val playModeValue by playerConnection.repeatMode.collectAsState()
@@ -89,11 +90,14 @@ fun PlayerTableControls(
                     appleMusicStyle = appleMusicStyle,
                     enabled = canSkipPrevious,
                     onClick = playerConnection::seekToPrevious,
+                    pressOffsetX = 2.dp,
                     modifier = Modifier
                         .size(skipTargetSize)
                         .align(Alignment.Center)
-                ) {
-                    SfIcon(
+                ) { clickCount ->
+                    if (appleMusicStyle) {
+                        AppleMusicSkipIcon(forward = false, clickCount = clickCount)
+                    } else SfIcon(
                         systemName = "backward.fill",
                         contentDescription = null,
                         tint = Color.White,
@@ -136,11 +140,14 @@ fun PlayerTableControls(
                     appleMusicStyle = appleMusicStyle,
                     enabled = canSkipNext,
                     onClick = playerConnection::seekToNext,
+                    pressOffsetX = (-2).dp,
                     modifier = Modifier
                         .size(skipTargetSize)
                         .align(Alignment.Center)
-                ) {
-                    SfIcon(
+                ) { clickCount ->
+                    if (appleMusicStyle) {
+                        AppleMusicSkipIcon(forward = true, clickCount = clickCount)
+                    } else SfIcon(
                         systemName = "forward.fill",
                         contentDescription = null,
                         tint = Color.White,
