@@ -1487,7 +1487,7 @@ private fun playerAwareWindowInsetsForRoute(
     val allowsNavigationBar =
         navigationItems.fastAny { it.route == route } || route == Screen.Search.route
     var bottom = if (allowsNavigationBar || !playerDismissed) navigationBottomMargin else bottomInset
-    if (allowsNavigationBar && navigationBarVisible && route != Screen.Setting.route) {
+    if (allowsNavigationBar && (navigationBarVisible || route == Screen.Setting.route)) {
         bottom += NavigationBarHeight - NavigationBarBottomMargin
     }
     if (!playerDismissed || route == Screen.Setting.route) {
