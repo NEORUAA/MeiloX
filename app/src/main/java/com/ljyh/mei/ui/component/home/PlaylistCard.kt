@@ -113,14 +113,13 @@ fun PlaylistCard(
             text = title,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = if (extInfo != null && secondaryTitle == null) 2 else titleMaxLines,
-            minLines = if (extInfo != null && secondaryTitle == null) 2 else 1,
+            maxLines = titleMaxLines,
             fontSize = 13.sp, // 调整字体大小，更精致
             lineHeight = 18.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.fillMaxWidth()
         )
-        if (secondaryTitle != null) {
+        if (!secondaryTitle.isNullOrBlank()) {
             Text(
                 text = secondaryTitle,
                 overflow = TextOverflow.Ellipsis,
