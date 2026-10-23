@@ -34,6 +34,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import coil3.imageLoader
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.DefaultImageCacheLimitMb
+import com.ljyh.mei.constants.DefaultMusicCacheLimitMb
+import com.ljyh.mei.constants.ImageCacheLimitMbKey
+import com.ljyh.mei.constants.MusicCacheLimitMbKey
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
@@ -44,11 +48,13 @@ import com.ljyh.mei.ui.glass.IosAlertButtonRole
 import com.ljyh.mei.ui.glass.IosAlertButtonSpec
 import com.ljyh.mei.ui.glass.IosAlertDialog
 import com.ljyh.mei.ui.glass.IosPinnedListPage
+import com.ljyh.mei.ui.glass.IosPopupButton
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import com.ljyh.mei.utils.rememberPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -231,6 +237,8 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
     val context = LocalContext.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     var confirmation by remember { mutableStateOf<StorageAction?>(null) }
+    val (imageLimitMb, setImageLimitMb) = rememberPreference(ImageCacheLimitMbKey, DefaultImageCacheLimitMb)
+    val (musicLimitMb, setMusicLimitMb) = rememberPreference(MusicCacheLimitMbKey, DefaultMusicCacheLimitMb)
 
     IosPinnedListPage(
         title = stringResource(R.string.storage_management),
@@ -279,6 +287,26 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
             }
         }
         item {
+            SettingsGroup(stringResource(R.string.storage_cache_limits)) {
+                StorageCacheLimitRow(
+                    systemName = "photo.stack",
+                    titleRes = R.string.storage_image_cache_limit,
+                    selected = imageLimitMb,
+                    values = listOf(50, 100, 250, 500, 1024, 2048),
+                    enabled = !state.isBusy,
+                    onSelected = setImageLimitMb,
+                )
+                StorageCacheLimitRow(
+                    systemName = "music.note",
+                    titleRes = R.string.storage_music_cache_limit,
+                    selected = musicLimitMb,
+                    values = listOf(256, 512, 1024, 2048, 5120, 10240, 20480),
+                    enabled = !state.isBusy,
+                    onSelected = setMusicLimitMb,
+                )
+            }
+        }
+        item {
             SettingsGroup(stringResource(R.string.storage_cache_cleanup)) {
                 StorageActionRow("eraser", R.string.storage_clear_all_caches, state.isBusy) { confirmation = StorageAction.AllCaches }
                 StorageActionRow("photo.on.rectangle.angled", R.string.storage_clear_network_cache, state.isBusy) { confirmation = StorageAction.NetworkCache }
@@ -319,6 +347,33 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
                 ),
             ),
         )
+    }
+}
+
+@Composable
+private fun StorageCacheLimitRow(
+    systemName: String,
+    titleRes: Int,
+    selected: Int,
+    values: List<Int>,
+    enabled: Boolean,
+    onSelected: (Int) -> Unit,
+) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            SfIcon(systemName, null)
+            Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
+            IosPopupButton(
+                selected = selected,
+                items = values,
+                onSelected = onSelected,
+                enabled = enabled,
+                label = { limit ->
+                    if (limit >= 1024) stringResource(R.string.storage_cache_limit_gb, limit / 1024)
+                    else stringResource(R.string.storage_cache_limit_mb, limit)
+                },
+            )
+        }
     }
 }
 

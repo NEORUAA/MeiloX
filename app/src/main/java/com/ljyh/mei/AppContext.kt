@@ -7,10 +7,17 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
+import coil3.gif.AnimatedImageDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
+import com.ljyh.mei.constants.DefaultImageCacheLimitMb
+import com.ljyh.mei.constants.ImageCacheLimitMbKey
+import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 @HiltAndroidApp
 class AppContext : Application(), SingletonImageLoader.Factory {
@@ -37,6 +44,7 @@ class AppContext : Application(), SingletonImageLoader.Factory {
             .build()
 
         return ImageLoader.Builder(this)
+            .crossfade(true)
             .memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(this, 0.1)
@@ -47,13 +55,17 @@ class AppContext : Application(), SingletonImageLoader.Factory {
             }
             .components {
                 add(OkHttpNetworkFetcherFactory(okHttpClient))
+                add(AnimatedImageDecoder.Factory())
             }
             .build()
     }
     private fun newDiskCache(): DiskCache {
+        val limitMb = runBlocking {
+            dataStore.data.first()[ImageCacheLimitMbKey] ?: DefaultImageCacheLimitMb
+        }
         return DiskCache.Builder()
             .directory(cacheDir.resolve("image_cache"))
-            .maxSizePercent(0.1)
+            .maxSizeBytes(limitMb.coerceIn(50, 2048) * 1024L * 1024L)
             .build()
     }
 }

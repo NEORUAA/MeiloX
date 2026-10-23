@@ -575,6 +575,11 @@
     <string name="download_settings">下載設定</string>
     <string name="download_storage">儲存空間</string>
     <string name="storage_management">儲存空間管理</string>
+    <string name="storage_cache_limits">快取上限</string>
+    <string name="storage_image_cache_limit">圖片快取</string>
+    <string name="storage_music_cache_limit">音樂快取</string>
+    <string name="storage_cache_limit_mb">%1$d MB</string>
+    <string name="storage_cache_limit_gb">%1$d GB</string>
     <string name="storage_managed_content">Mei 管理的內容</string>
     <string name="storage_device_summary">裝置已使用 %1$s · 可用 %2$s</string>
     <string name="storage_reclaimable">可重新產生的快取：%1$s</string>

@@ -576,6 +576,11 @@
     <string name="download_settings">Download Settings</string>
     <string name="download_storage">Storage</string>
     <string name="storage_management">Storage Management</string>
+    <string name="storage_cache_limits">Cache Limits</string>
+    <string name="storage_image_cache_limit">Image cache</string>
+    <string name="storage_music_cache_limit">Music cache</string>
+    <string name="storage_cache_limit_mb">%1$d MB</string>
+    <string name="storage_cache_limit_gb">%1$d GB</string>
     <string name="storage_managed_content">Mei-managed content</string>
     <string name="storage_device_summary">Device used %1$s · available %2$s</string>
     <string name="storage_reclaimable">Reclaimable caches: %1$s</string>

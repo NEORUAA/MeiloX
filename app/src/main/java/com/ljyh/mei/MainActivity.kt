@@ -119,13 +119,6 @@ import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
 import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
 import androidx.navigation3.ui.defaultTransitionSpec
-import coil3.ImageLoader
-import coil3.compose.setSingletonImageLoaderFactory
-import coil3.disk.DiskCache
-import coil3.disk.directory
-import coil3.gif.AnimatedImageDecoder
-import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.crossfade
 import com.ljyh.mei.constants.AppBarHeight
 import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
@@ -160,7 +153,6 @@ import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
 import com.ljyh.mei.constants.NavigationBarSurfaceHeight
 import com.ljyh.mei.constants.NavigationBarBottomMargin
-import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.UserData
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.melox.NeteaseMusicLink
@@ -242,10 +234,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
 import timber.log.Timber
-import java.io.File
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -282,16 +271,6 @@ class MainActivity : ComponentActivity() {
             // Release 模式：主要是植入文件记录器
             Timber.plant(FileLoggingTree(this))
         }
-        val headerInterceptor = Interceptor { chain ->
-            val newRequest = chain.request().newBuilder()
-                .addHeader("User-Agent", UserAgent)
-                .build()
-            chain.proceed(newRequest)
-        }
-        val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(headerInterceptor)
-            .build()
-
         setContent {
             val context = this@MainActivity
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -409,21 +388,6 @@ class MainActivity : ComponentActivity() {
                     context.unbindService(connection)
                     playerConnection = null
                 }
-            }
-            setSingletonImageLoaderFactory {
-                ImageLoader.Builder(this)
-                    .components {
-                        add(OkHttpNetworkFetcherFactory(okHttpClient))
-                        add(AnimatedImageDecoder.Factory())
-                    }
-                    .crossfade(true)
-                    .diskCache {
-                        DiskCache.Builder()
-                            .directory(File(this@MainActivity.cacheDir, "image_cache"))
-                            .maxSizePercent(0.1)
-                            .build()
-                    }
-                    .build()
             }
             var targetThemeColor by remember { mutableStateOf<Color?>(null) }
             var nextCoverUrl by remember(playerConnection) { mutableStateOf<String?>(null) }
