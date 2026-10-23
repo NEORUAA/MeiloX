@@ -38,7 +38,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.collect
@@ -55,6 +55,12 @@ internal fun MediaMetadata.matchesPlaylistSearch(query: String): Boolean {
             artist.name.contains(keyword, ignoreCase = true) ||
                 artist.alias.orEmpty().any { it.contains(keyword, ignoreCase = true) }
         }
+}
+
+internal fun Flow<PagingData<MediaMetadata>>.excludeRemovedPlaylistTracks(
+    removedTrackIds: StateFlow<Set<Long>>,
+): Flow<PagingData<MediaMetadata>> = combine(removedTrackIds) { pagingData, removedIds ->
+    pagingData.filter { it.id !in removedIds }
 }
 
 @HiltViewModel
@@ -283,8 +289,8 @@ class PlaylistViewModel @Inject constructor(
     // 分页加载，不是根据歌单id加载，而是根据歌曲id加载
     fun getPlaylistTracks(
         playlistDetailResource: Resource<PlaylistDetail>,
-        removedTrackIds: Set<Long> = emptySet()
     ): Flow<PagingData<MediaMetadata>> {
+        // Cache pages before filtering so removals reuse the loaded generation and viewport.
         return when (playlistDetailResource) {
             is Resource.Success -> {
                 val playlist = playlistDetailResource.data.playlist
@@ -299,12 +305,10 @@ class PlaylistViewModel @Inject constructor(
                             ids = playlist.trackIds.map { it.id.toString() }
                         )
                     }
-                ).flow.map { pagingData ->
-                    pagingData.filter { track -> track.id !in removedTrackIds }
-                }
+                ).flow
             }
             else -> flowOf(PagingData.empty())
-        }.cachedIn(viewModelScope)
+        }.cachedIn(viewModelScope).excludeRemovedPlaylistTracks(_removedTrackIds)
     }
 
 
@@ -479,10 +483,9 @@ class PlaylistViewModel @Inject constructor(
     fun searchPlaylistTracks(
         playlistDetailResource: Resource<PlaylistDetail>,
         query: String,
-        removedTrackIds: Set<Long> = emptySet()
     ): Flow<PagingData<MediaMetadata>> {
         if (playlistDetailResource !is Resource.Success || query.isBlank()) {
-            return getPlaylistTracks(playlistDetailResource, removedTrackIds)
+            return getPlaylistTracks(playlistDetailResource)
         }
 
         val playlist = playlistDetailResource.data.playlist
@@ -501,10 +504,9 @@ class PlaylistViewModel @Inject constructor(
             val matchingTracks = playlist.trackIds
                 .mapNotNull { tracksById[it.id] }
                 .map { it.toMediaMetadata() }
-                .filterNot { it.id in removedTrackIds }
                 .filter { it.matchesPlaylistSearch(query) }
             emit(PagingData.from(matchingTracks))
-        }.cachedIn(viewModelScope)
+        }.cachedIn(viewModelScope).excludeRemovedPlaylistTracks(_removedTrackIds)
     }
 }
 

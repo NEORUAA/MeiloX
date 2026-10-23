@@ -1,6 +1,12 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.PagingDataEvent
+import androidx.paging.PagingDataPresenter
 import androidx.paging.PagingSource
+import androidx.paging.cachedIn
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
@@ -9,11 +15,89 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.validatePlaylistTrackOrder
 import com.ljyh.mei.data.model.api.UpdatePlaylistTrackOrder
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistContentTest {
+    @Test
+    fun removingTracksRetainsLoadedPagesAndFiltersLaterAppendsWithoutRestartingThePager() = runTest {
+        var sourceCount = 0
+        val requests = mutableListOf<List<String>>()
+        val removedIds = MutableStateFlow(emptySet<Long>())
+        val snapshots = mutableListOf<List<Long>>()
+        val presenter = object : PagingDataPresenter<MediaMetadata>(StandardTestDispatcher(testScheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<MediaMetadata>) {
+                snapshots += snapshot().items.map { it.id }
+            }
+        }
+        val tracks = Pager(PagingConfig(pageSize = 20, initialLoadSize = 20, enablePlaceholders = false)) {
+            sourceCount++
+            PlaylistTrackSource(
+                loadTracks = { ids -> requests += ids; ids.map { track(it.toLong()) } },
+                firstData = emptyList(),
+                ids = (1..120).map(Int::toString),
+            )
+        }.flow.cachedIn(backgroundScope).excludeRemovedPlaylistTracks(removedIds)
+        backgroundScope.launch { tracks.collectLatest(presenter::collectFrom) }
+        runCurrent()
+        repeat(3) {
+            presenter[presenter.size - 1]
+            runCurrent()
+        }
+        val loadedIds = presenter.snapshot().items.map { it.id }
+        assertEquals((1L..80L).toList(), loadedIds)
+        val requestsBeforeRemoval = requests.toList()
+
+        removedIds.value = setOf(60L, 90L)
+        runCurrent()
+        removedIds.value += 5L
+        runCurrent()
+
+        assertEquals(loadedIds.filterNot { it in removedIds.value }, presenter.snapshot().items.map { it.id })
+        assertEquals(requestsBeforeRemoval, requests)
+        assertEquals(1, sourceCount)
+        assertTrue(snapshots.all { it.isNotEmpty() })
+
+        presenter[presenter.size - 1]
+        runCurrent()
+        assertEquals((1L..100L).filterNot { it in removedIds.value }, presenter.snapshot().items.map { it.id })
+        assertEquals(1, sourceCount)
+    }
+
+    @Test
+    fun removingSearchResultsReusesTheCompletedSearchIncludingWhenTheLastResultIsDeleted() = runTest {
+        var searches = 0
+        val removedIds = MutableStateFlow(setOf(1L))
+        val presenter = object : PagingDataPresenter<MediaMetadata>(StandardTestDispatcher(testScheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<MediaMetadata>) = Unit
+        }
+        val tracks = flow {
+            searches++
+            emit(PagingData.from((1L..3L).map { track(it).toMediaMetadata() }))
+        }.cachedIn(backgroundScope).excludeRemovedPlaylistTracks(removedIds)
+        backgroundScope.launch { tracks.collectLatest(presenter::collectFrom) }
+        runCurrent()
+        assertEquals(listOf(2L, 3L), presenter.snapshot().items.map { it.id })
+
+        removedIds.value += 2L
+        runCurrent()
+        assertEquals(listOf(3L), presenter.snapshot().items.map { it.id })
+        removedIds.value += 3L
+        runCurrent()
+        assertTrue(presenter.snapshot().items.isEmpty())
+        assertEquals(1, searches)
+    }
+
     @Test
     fun orderEditorPreservesUnavailableTracksAndCanonicalPositions() {
         val items = playlistOrderItems(listOf(3, 1, 2), listOf(track(2).toMediaMetadata(), track(3).toMediaMetadata()))

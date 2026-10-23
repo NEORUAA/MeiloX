@@ -82,8 +82,8 @@ fun PlaylistScreen(
     // 3. Paging 数据
     var isPlaylistSearchActive by remember { mutableStateOf(false) }
     var playlistSearchQuery by remember { mutableStateOf("") }
-    val pagingFlow = remember(id, playlistDetail, playlistSearchQuery, removedTrackIds) {
-        viewModel.searchPlaylistTracks(playlistDetail, playlistSearchQuery, removedTrackIds)
+    val pagingFlow = remember(id, playlistDetail, playlistSearchQuery) {
+        viewModel.searchPlaylistTracks(playlistDetail, playlistSearchQuery)
     }
     val lazyPagingItems = pagingFlow.collectAsLazyPagingItems()
 
