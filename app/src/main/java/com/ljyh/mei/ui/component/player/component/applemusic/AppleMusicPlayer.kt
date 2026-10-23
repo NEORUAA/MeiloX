@@ -778,15 +778,7 @@ fun AppleMusicPlayer(
                     },
                     label = "CoverTransition",
                     modifier = Modifier
-                        .graphicsLayer {
-                            val frame = artworkFrame.value
-                            alpha = artworkOpacity.value
-                            transformOrigin = TransformOrigin(0f, 0f)
-                            translationX = frame.bounds.left
-                            translationY = frame.bounds.top
-                            scaleX = frame.bounds.width / size.width.coerceAtLeast(1f)
-                            scaleY = frame.bounds.height / size.height.coerceAtLeast(1f)
-                        }
+                        .playerArtworkMotion(artworkFrame, artworkOpacity)
                         .size(with(density) { artworkLayoutSize.toDp() })
                         .playerArtwork(
                             geometry = {
@@ -935,6 +927,27 @@ internal fun Modifier.playerQueueViewport(height: Dp): Modifier =
     wrapContentHeight(align = Alignment.Top, unbounded = true)
         .height(height)
         .clipToBounds()
+
+internal fun Modifier.playerArtworkMotion(
+    frame: State<AppleMusicArtworkFrame>,
+    opacity: State<Float>,
+): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) {
+        // Observe geometry in placement. Replacing the queue header's derived state
+        // during a cover transition can otherwise leave layer parameters unobserved.
+        val current = frame.value
+        val currentOpacity = opacity.value
+        placeable.placeWithLayer(0, 0) {
+            alpha = currentOpacity
+            transformOrigin = TransformOrigin(0f, 0f)
+            translationX = current.bounds.left
+            translationY = current.bounds.top
+            scaleX = current.bounds.width / size.width.coerceAtLeast(1f)
+            scaleY = current.bounds.height / size.height.coerceAtLeast(1f)
+        }
+    }
+}
 
 internal fun Modifier.playerContentFade(alpha: State<Float>): Modifier = graphicsLayer {
     this.alpha = alpha.value

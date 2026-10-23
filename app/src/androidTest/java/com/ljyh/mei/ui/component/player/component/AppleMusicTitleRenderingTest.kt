@@ -1,5 +1,13 @@
 package com.ljyh.mei.ui.component.player.component
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -7,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -14,13 +23,16 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.LayerOutsets
@@ -49,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -67,10 +80,22 @@ import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueViewport
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
 import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderPosition
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueCurrentHeaderKey
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderPosition
 import com.ljyh.mei.ui.component.player.component.applemusic.PhoneQueueEntry
 import com.ljyh.mei.ui.component.player.component.applemusic.QueueSongRow
 import com.ljyh.mei.ui.component.player.component.applemusic.QueueRowPlacement
 import com.ljyh.mei.ui.component.player.component.applemusic.queueRowPlacement
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicArtworkFrame
+import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicArtworkFrame
+import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicQueueArtworkTarget
+import com.ljyh.mei.ui.component.player.component.applemusic.playerArtworkMotion
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
+import com.ljyh.mei.ui.component.sheet.expandedAnchor
+import com.ljyh.mei.ui.component.sheet.playerArtwork
+import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
+import com.kyant.capsule.ContinuousRoundedRectangle
 import androidx.media3.common.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -389,10 +414,127 @@ class AppleMusicTitleRenderingTest {
             repeat(40) {
                 compose.mainClock.advanceTimeByFrame()
                 compose.runOnIdle {
-                    val actual = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+                    // Compare origins before viewport clipping when the header crosses the top edge.
+                    val actual = header!!.localToRoot(Offset.Zero).y - viewport!!.localToRoot(Offset.Zero).y
                     assertEquals("Cover and metadata must use the same layout frame", actual, drawnTop, 1f)
                 }
             }
+        }
+    }
+
+    @Test fun queueCoverLayerKeepsObservingAcrossTrackReplacementAndInterruptedScroll() {
+        compose.mainClock.autoAdvance = false
+        val coverId = mutableStateOf(0)
+        val currentIndex = mutableStateOf(2)
+        val queueProgress = Animatable(1f)
+        val detailProgress = Animatable(1f)
+        lateinit var listState: LazyListState
+        lateinit var scope: CoroutineScope
+        lateinit var expectedFrame: State<AppleMusicArtworkFrame>
+        var host: LayoutCoordinates? = null
+        var cover: LayoutCoordinates? = null
+        compose.setContent {
+            val density = LocalDensity.current
+            val state = rememberLazyListState()
+            listState = state
+            scope = rememberCoroutineScope()
+            val sheet = rememberBottomSheetState(0.dp, 400.dp, 48.dp, expandedAnchor)
+            val layers = rememberPlayerSheetLayers(sheet)
+            val layoutSize = with(density) { 140.dp.roundToPx() }
+            val normalBounds = with(density) { Rect(60.dp.toPx(), 80.dp.toPx(), 200.dp.toPx(), 220.dp.toPx()) }
+            val lyricBounds = with(density) { Rect(100.dp.toPx(), 20.dp.toPx(), 168.dp.toPx(), 88.dp.toPx()) }
+            val current = currentIndex.value
+            val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, current, lyricBounds.height)
+            val publishedPosition = remember { mutableStateOf<State<PlayerQueueHeaderPosition>?>(null) }
+            SideEffect { publishedPosition.value = position }
+            val queueTarget = remember(lyricBounds) {
+                derivedStateOf {
+                    val currentPosition = publishedPosition.value?.value ?: PlayerQueueHeaderPosition(0f, 0f)
+                    appleMusicQueueArtworkTarget(
+                        lyricBounds.translate(Offset(0f, currentPosition.top)),
+                        lyricBounds.top, lyricBounds.top + currentPosition.viewportHeight,
+                    )
+                }
+            }
+            val headerBounds = remember(queueTarget) {
+                derivedStateOf { androidx.compose.ui.geometry.lerp(lyricBounds, queueTarget.value.bounds, queueProgress.value) }
+            }
+            val frame = remember(headerBounds, normalBounds) {
+                derivedStateOf {
+                    appleMusicArtworkFrame(normalBounds, headerBounds.value, 12f, 8f, 16f, 1f, detailProgress.value)
+                }
+            }
+            val headerOpacity = remember(queueTarget) {
+                derivedStateOf { 1f - (1f - queueTarget.value.opacity) * queueProgress.value }
+            }
+            val opacity = remember(headerOpacity) {
+                derivedStateOf { 1f - (1f - headerOpacity.value) * detailProgress.value }
+            }
+            expectedFrame = frame
+            CompositionLocalProvider(LocalPlayerSheet provides layers) {
+                Box(Modifier.width(240.dp).height(400.dp).onGloballyPositioned {
+                    host = it
+                    layers.updateHost(it.boundsInRoot())
+                }) {
+                    LazyColumn(state = state, modifier = Modifier.width(80.dp).height(240.dp)) {
+                        items(count = current, key = { it }) { Box(Modifier.fillMaxWidth().height(56.dp)) }
+                        item(key = PlayerQueueCurrentHeaderKey) { Box(Modifier.fillMaxWidth().height(68.dp)) }
+                        items(count = 8 - current, key = { current + 1 + it }) { Box(Modifier.fillMaxWidth().height(56.dp)) }
+                        item(key = "tail") { Box(Modifier.fillMaxWidth().height(240.dp)) }
+                    }
+                    AnimatedContent(
+                        targetState = coverId.value,
+                        transitionSpec = {
+                            (fadeIn(tween(400)) + scaleIn(tween(400), initialScale = 0.92f))
+                                .togetherWith(fadeOut(tween(400)))
+                        },
+                        label = "QueueCoverRegression",
+                        modifier = Modifier.playerArtworkMotion(frame, opacity).size(140.dp).playerArtwork(
+                            geometry = { PlayerArtworkGeometry(frame.value.bounds, IntSize(layoutSize, layoutSize), opacity.value) },
+                        ).graphicsLayer {
+                            val current = frame.value
+                            val scale = current.bounds.width / size.width.coerceAtLeast(1f)
+                            shadowElevation = current.shadowElevation / scale.coerceAtLeast(0.001f)
+                            shape = ContinuousRoundedRectangle(current.cornerRadius / scale.coerceAtLeast(0.001f))
+                            clip = true
+                        }.onGloballyPositioned { cover = it },
+                    ) { id ->
+                        Box(Modifier.fillMaxSize().background(if (id == 0) Color.Red else Color.Blue))
+                    }
+                }
+            }
+        }
+        fun checkFrames(count: Int) = repeat(count) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                val actual = cover!!.localToRoot(Offset.Zero).y - host!!.localToRoot(Offset.Zero).y
+                assertEquals("The rendered layer must follow the current frame", expectedFrame.value.bounds.top, actual, 1f)
+            }
+        }
+        try {
+            checkFrames(1)
+            compose.runOnIdle { scope.launch { listState.animateScrollToItem(currentIndex.value) } }
+            checkFrames(2)
+            compose.runOnIdle {
+                currentIndex.value = 5
+                coverId.value = 1
+            }
+            checkFrames(1)
+            compose.runOnIdle {
+                scope.launch { listState.scroll(MutatePriority.UserInput) { scrollBy(-80f) } }
+            }
+            checkFrames(32)
+            // No cover recomposition should be needed to restore later position updates.
+            compose.runOnIdle { scope.launch { listState.scrollToItem(currentIndex.value, 20) } }
+            checkFrames(2)
+            compose.runOnIdle { scope.launch { queueProgress.animateTo(0f, tween(160)) } }
+            checkFrames(12)
+            compose.runOnIdle { assertEquals("Lyrics reaches its endpoint", 0f, queueProgress.value, 0f) }
+            compose.runOnIdle { scope.launch { detailProgress.animateTo(0f, tween(160)) } }
+            checkFrames(12)
+            compose.runOnIdle { assertEquals("Album reaches its endpoint", 0f, detailProgress.value, 0f) }
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
     }
 
