@@ -388,6 +388,44 @@ class PlayerSheetMotionTest {
         }
     }
 
+    @Test fun changingNavigationAnchorDuringCollapseKeepsTheFullPlayerTransition() = runBlocking {
+        for (framesBeforeNavigation in listOf(0, 8)) {
+            val clock = BroadcastFrameClock()
+            val scope = CoroutineScope(coroutineContext + clock)
+            val previous = BottomSheetState(scope, 1f, {}, 0.dp, 150.dp,
+                800.dp, 800.dp, expandedAnchor)
+            var replacement: BottomSheetState? = null
+            var frame = 0L
+            suspend fun frames(count: Int) {
+                repeat(count) { yield(); frame += 16_666_667L; clock.sendFrame(frame); yield() }
+            }
+            try {
+                previous.collapseSoft()
+                frames(framesBeforeNavigation)
+                val current = BottomSheetState(scope, 1f, {}, 0.dp, 100.dp,
+                    800.dp, previous.value, previous.targetAnchor,
+                    previouslyShown = previous.hasBeenShown,
+                    previouslyCollapsed = previous.isCollapsed)
+                replacement = current
+                previous.dispose()
+                assertFalse(current.isCollapsed)
+                assertTrue(current.isTransitioning)
+                assertTrue(current.isContentVisible)
+                assertTrue(current.progress > 0f)
+                assertEquals(previous.value, current.value)
+                current.relocate()
+                assertTrue(current.isTransitioning)
+                frames(180)
+                assertEquals(100.dp, current.value)
+                assertTrue(current.isCollapsed)
+                assertFalse(current.isTransitioning)
+            } finally {
+                previous.dispose()
+                replacement?.dispose()
+            }
+        }
+    }
+
     @Test fun movingCollapsedNavigationAnchorDoesNotOpenThePlayer() = runBlocking {
         val clock = BroadcastFrameClock()
         val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 150.dp,

@@ -37,12 +37,15 @@ class BottomSheetState internal constructor(
     initialValue: Dp,
     initialAnchor: Int,
     previouslyShown: Boolean = false,
+    previouslyCollapsed: Boolean = initialAnchor == collapsedAnchor,
 ) {
     private val animation = Animatable(initialValue, Dp.VectorConverter)
     private var motionJob: Job? = null
     private var lastDragDelta = 0f
     private var dragOriginOpen = initialAnchor == expandedAnchor
-    private var relocating by mutableStateOf(initialAnchor == collapsedAnchor && initialValue != collapsedBound)
+    private var relocating by mutableStateOf(
+        previouslyCollapsed && initialAnchor == collapsedAnchor && initialValue != collapsedBound,
+    )
 
     var hasBeenShown by mutableStateOf(previouslyShown || initialAnchor == expandedAnchor)
         private set
@@ -218,6 +221,8 @@ fun rememberBottomSheetState(
             collapsedBound.coerceAtMost(expandedBound), expandedBound,
             initialValue.coerceIn(dismissedBound, expandedBound), previousAnchor,
             previouslyShown = previousState[0]?.hasBeenShown == true,
+            // A collapse target can still be a full-player transition, not a mini-player relocation.
+            previouslyCollapsed = previousState[0]?.isCollapsed ?: (previousAnchor == collapsedAnchor),
         ).also { previousState[0] = it }
     }
     DisposableEffect(state) { onDispose { state.dispose() } }
