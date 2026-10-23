@@ -3,6 +3,7 @@ package com.ljyh.mei.ui.screen.main.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -19,13 +20,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.ljyh.mei.constants.PlaylistCardSize
-import com.ljyh.mei.constants.PlaylistCardSizeTablet
+import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.constants.HomeSectionSpacing
+import com.ljyh.mei.constants.HomeSectionTitlePadding
+import com.ljyh.mei.constants.HomeCardSpacing
+import com.ljyh.mei.constants.HomeRowHorizontalPadding
+import com.ljyh.mei.constants.homePlaylistCardSize
+import com.ljyh.mei.constants.RecommendCardCornerRadius
 import com.ljyh.mei.constants.RecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardHeightTablet
 import com.ljyh.mei.constants.RecommendCardWidth
 import com.ljyh.mei.constants.RecommendCardWidthTablet
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
+import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 
 private val shimmerColor @Composable get() = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
@@ -36,11 +43,10 @@ fun HomeShimmer(contentPadding: PaddingValues) {
     val device = rememberDeviceInfo()
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
     val recommendCardHeight = if (device.isTablet) RecommendCardHeightTablet else RecommendCardHeight
-    val playlistCardSize = if (device.isTablet) PlaylistCardSizeTablet else PlaylistCardSize
 
     ShimmerHost {
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing),
             contentPadding = contentPadding
         ) {
             item {
@@ -53,7 +59,6 @@ fun HomeShimmer(contentPadding: PaddingValues) {
             repeat(3) {
                 item {
                     PlaylistBlockShimmer(
-                        cardSize = playlistCardSize,
                         count = 4
                     )
                 }
@@ -71,8 +76,8 @@ private fun RecommendRowShimmer(
     Column {
         TitleShimmer()
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp)
+            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
         ) {
             items(count) {
                 RecommendCardShimmer(cardWidth, cardHeight)
@@ -89,24 +94,26 @@ private fun RecommendCardShimmer(
     Box(
         modifier = Modifier
             .size(cardWidth, cardHeight)
-            .clip(cardShape)
+            .clip(ContinuousRoundedRectangle(RecommendCardCornerRadius))
             .background(shimmerColor)
     )
 }
 
 @Composable
 private fun PlaylistBlockShimmer(
-    cardSize: androidx.compose.ui.unit.Dp,
     count: Int = 4
 ) {
-    Column {
-        TitleShimmer()
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp)
-        ) {
-            items(count) {
-                PlaylistCardShimmer(cardSize)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cardSize = homePlaylistCardSize(maxWidth)
+        Column {
+            TitleShimmer()
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+                contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
+            ) {
+                items(count) {
+                    PlaylistCardShimmer(cardSize)
+                }
             }
         }
     }
@@ -125,6 +132,7 @@ private fun PlaylistCardShimmer(
             modifier = Modifier
                 .size(cardSize)
                 .background(shimmerColor)
+                .homeArtworkBorder(cardShape)
         )
         Spacer(Modifier.height(8.dp))
         Column(modifier = Modifier.padding(horizontal = 2.dp)) {
@@ -149,7 +157,7 @@ private fun PlaylistCardShimmer(
 private fun TitleShimmer() {
     Box(
         modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = HomeSectionTitlePadding)
             .width(80.dp)
             .height(20.dp)
             .background(shimmerColor)

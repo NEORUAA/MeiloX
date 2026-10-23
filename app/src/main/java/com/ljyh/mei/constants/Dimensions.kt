@@ -6,16 +6,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.data.model.room.Playlist
 
-val RecommendCardWidth = 160.dp
-val RecommendCardHeight = 160.dp
-val RecommendCardWidthTablet = 220.dp
-val RecommendCardHeightTablet = 220.dp
+val RecommendCardWidth = 240.dp
+val RecommendCardHeight = 300.dp
+val RecommendCardReflectionHeight = 60.dp
+val RecommendCardWidthTablet = RecommendCardWidth
+val RecommendCardHeightTablet = RecommendCardHeight
+val RecommendCardCornerRadius = 12.dp
+
+val HomeSectionSpacing = 24.dp
+val HomeSectionTitlePadding = 12.dp
+val HomeSongCoverSize = 48.dp
+val HomeSongCoverCornerRadius = 6.dp
+val HomeSongActionSize = 40.dp
+val HomeSongRowSpacing = 8.dp
+val HomeSongNextPagePeek = 36.dp
+val HomeRowHorizontalPadding = 16.dp
+val HomeCardSpacing = 12.dp
 
 val RecommendCardSpacing = 24.dp
 val PlaylistCardSpacing = 20.dp
 
-val PlaylistCardSize = 120.dp
-val PlaylistCardSizeTablet = 170.dp
+val PlaylistCardSize = 150.dp
+
+fun homePlaylistCardSize(viewportWidth: Dp): Dp = (
+    (viewportWidth - HomeRowHorizontalPadding - HomeSongNextPagePeek) / 2 - HomeCardSpacing
+).coerceAtLeast(1.dp)
 
 val NavigationBarHeight = 76.dp
 val NavigationBarSurfaceHeight = 60.dp

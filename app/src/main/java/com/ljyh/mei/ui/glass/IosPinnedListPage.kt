@@ -180,10 +180,14 @@ private fun progressiveBlurPassShader(
     """.trimIndent()
 }
 
-private fun BackdropEffectScope.topBarProgressiveBlur(
+internal fun BackdropEffectScope.progressiveBackdropBlur(
     maxRadius: Float,
-    tint: Color,
-    tintIntensity: Float,
+    tint: Color = Color.Transparent,
+    tintIntensity: Float = 0f,
+    startYFraction: Float = 0.42f,
+    endYFraction: Float = 1f,
+    startIntensity: Float = 1f,
+    endIntensity: Float = 0f,
 ) {
     if (maxRadius <= 0f) return
     if (!isRuntimeShaderSupported()) {
@@ -192,17 +196,16 @@ private fun BackdropEffectScope.topBarProgressiveBlur(
     }
 
     val resolvedRadius = maxRadius.coerceAtMost(150f)
-    val gradientStartY = size.height * 0.42f
 
     fun applyPass(key: String, shader: String, appliesTint: Boolean = false) {
         runtimeShaderEffect(key, shader, "content") {
             setFloatUniform("blurRadius", resolvedRadius)
             setFloatUniform("crop", 0f, 0f, size.width, size.height)
             setFloatUniform("unbounded", 0f)
-            setFloatUniform("startIntensity", 1f)
-            setFloatUniform("endIntensity", 0f)
-            setFloatUniform("startPoint", 0f, gradientStartY)
-            setFloatUniform("endPoint", 0f, size.height)
+            setFloatUniform("startIntensity", startIntensity)
+            setFloatUniform("endIntensity", endIntensity)
+            setFloatUniform("startPoint", 0f, size.height * startYFraction)
+            setFloatUniform("endPoint", 0f, size.height * endYFraction)
             if (appliesTint) {
                 setColorUniform("tint", tint)
                 setFloatUniform("tintIntensity", tintIntensity)
@@ -402,7 +405,7 @@ fun IosPinnedPage(
                                 backdrop = pageBackdrop,
                                 shape = { RectangleShape },
                                 effects = {
-                                    topBarProgressiveBlur(
+                                    progressiveBackdropBlur(
                                         maxRadius = 10.dp.toPx(),
                                         tint = pageBackground,
                                         tintIntensity = 0.78f,

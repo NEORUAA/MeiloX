@@ -1,9 +1,10 @@
 package com.ljyh.mei.ui.component.home
 
 import android.graphics.Bitmap
-import android.graphics.Color as AndroidColor
-
-import androidx.compose.animation.animateColorAsState
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,44 +17,49 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.ColorUtils
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.constants.RecommendCardCornerRadius
 import com.ljyh.mei.constants.RecommendCardHeight
+import com.ljyh.mei.constants.RecommendCardReflectionHeight
 import com.ljyh.mei.constants.RecommendCardWidth
-import com.ljyh.mei.ui.screen.main.home.HomeViewModel
-import kotlinx.coroutines.CancellationException
+import com.ljyh.mei.ui.glass.progressiveBackdropBlur
 import com.ljyh.mei.utils.largeImage
+import kotlin.math.max
 
 @Composable
 fun RecommendCard(
@@ -64,8 +70,7 @@ fun RecommendCard(
     isLoading: Boolean = false,
     cardWidth: Dp = RecommendCardWidth,
     cardHeight: Dp = RecommendCardHeight,
-    viewModel: HomeViewModel,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coverModel = cover.takeIf { it.isNotBlank() }?.largeImage()
@@ -77,245 +82,190 @@ fun RecommendCard(
                 .build()
         }
     }
-    val iconModel = extInfo.icon?.takeIf { it.isNotBlank() }
     val currentCoverModel = rememberUpdatedState(coverModel)
-    val currentIconModel = rememberUpdatedState(iconModel)
-    val iconTerminal = remember(iconModel) { mutableStateOf(iconModel == null) }
-    val iconSucceeded = remember(iconModel) { mutableStateOf(false) }
-    val upperHalfColor = remember(coverModel) {
-        mutableStateOf(if (coverModel == null) Color.DarkGray else null)
-    }
-    var extractedColor by remember(cover) {
-        mutableStateOf(viewModel.getCachedColor(cover) ?: Color.DarkGray)
-    }
     var loadedBitmap by remember(coverModel) { mutableStateOf<Bitmap?>(null) }
+    val clearArtworkHeight = cardHeight - RecommendCardReflectionHeight
 
-    LaunchedEffect(cover, loadedBitmap) {
-        if (cover.isBlank()) return@LaunchedEffect
-        val bitmap = loadedBitmap
-        try {
-            val cached = viewModel.loadCachedColor(cover)
-            if (cached != null) {
-                extractedColor = cached
-            } else if (bitmap != null) {
-                extractedColor = viewModel.getOrExtractColor(cover, bitmap)
-            }
-        } catch (cause: CancellationException) {
-            throw cause
-        } catch (_: Exception) {
-            // Keep the cached or fallback color when extraction fails.
-        }
-    }
-
-    val baseColor by animateColorAsState(extractedColor, label = "recommendCardColor")
-    val imageForegroundColor = remember(upperHalfColor.value) {
-        imageForeground(upperHalfColor.value ?: Color.DarkGray)
-    }
-    val footerForegroundColor = remember(baseColor) {
-        footerForeground(baseColor)
-    }
     Box(
         modifier = Modifier
-            .width(cardWidth)
-            .clip(ContinuousRoundedRectangle(8.dp))
-            .clickable(enabled = !isLoading) { onClick() }
+            .size(cardWidth, cardHeight)
+            .clip(ContinuousRoundedRectangle(RecommendCardCornerRadius))
+            .background(Color.DarkGray)
+            .clickable(enabled = !isLoading, onClick = onClick),
     ) {
-        Column {
-            // Cover image and the top metadata row.
-            Box(
-                modifier = Modifier
-                    .size(cardWidth, cardHeight)
-            ) {
-                HomeCoverImage(
-                    model = coverRequest,
-                    modifier = Modifier.matchParentSize(),
-                    onLoading = {
-                        if (currentCoverModel.value == coverModel) {
-                            upperHalfColor.value = null
-                            loadedBitmap = null
-                        }
-                    },
-                    onSuccess = { state ->
-                        if (currentCoverModel.value == coverModel) {
-                            upperHalfColor.value = runCatching {
-                                val bitmap = state.result.image.toBitmap()
-                                loadedBitmap = bitmap
-                                sampleUpperHalfColor(bitmap)
-                            }.getOrElse { extractedColor }
-                        }
-                    },
-                    onError = {
-                        if (currentCoverModel.value == coverModel) {
-                            upperHalfColor.value = Color.DarkGray
-                            loadedBitmap = null
-                        }
-                    },
-                )
-
-                // Top gradient overlay for text readability.
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    baseColor.copy(alpha = 0.6f),
-                                    baseColor.copy(alpha = 0.1f),
-                                    Color.Transparent
-                                ),
-                                startY = 0f,
-                                endY = 200f
-                            )
-                        )
-                )
-
-                CompositionLocalProvider(LocalContentColor provides imageForegroundColor) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (iconModel != null && (!iconTerminal.value || iconSucceeded.value)) {
-                            AsyncImage(
-                                model = iconModel,
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(ContinuousRoundedRectangle(4.dp)),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                colorFilter = ColorFilter.tint(imageForegroundColor),
-                                onLoading = {
-                                    if (currentIconModel.value == iconModel) {
-                                        iconTerminal.value = false
-                                        iconSucceeded.value = false
-                                    }
-                                },
-                                onSuccess = {
-                                    if (currentIconModel.value == iconModel) {
-                                        iconTerminal.value = true
-                                        iconSucceeded.value = true
-                                    }
-                                },
-                                onError = {
-                                    if (currentIconModel.value == iconModel) {
-                                        iconTerminal.value = true
-                                        iconSucceeded.value = false
-                                    }
-                                },
-                            )
-                            if (iconSucceeded.value) {
-                                Spacer(Modifier.width(4.dp))
-                            }
-                        }
-                        Text(
-                            text = extInfo.text,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .size(28.dp),
-                            color = LocalContentColor.current,
-                            strokeWidth = 2.dp,
-                        )
-                    } else if (showPlay) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                            contentDescription = "Play",
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .size(28.dp)
-                        )
-                    }
+        HomeCoverImage(
+            model = coverRequest,
+            modifier = Modifier.size(cardWidth, clearArtworkHeight),
+            onLoading = {
+                if (currentCoverModel.value == coverModel) loadedBitmap = null
+            },
+            onSuccess = { state ->
+                if (currentCoverModel.value == coverModel) {
+                    loadedBitmap = state.result.image.toBitmap()
                 }
-            }
-
-            // Bottom title area.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                baseColor.copy(alpha = 0.9f),
-                                baseColor
-                            )
-                        )
-                    )
-                    .padding(horizontal = 8.dp, vertical = 10.dp)
-            ) {
-                CompositionLocalProvider(LocalContentColor provides footerForegroundColor) {
-                    Text(
-                        text = title ?: "",
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+            },
+            onError = {
+                if (currentCoverModel.value == coverModel) loadedBitmap = null
+            },
+        )
+        loadedBitmap?.let { bitmap ->
+            RecommendationReflection(bitmap, clearArtworkHeight, Modifier.matchParentSize())
         }
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawWithCache {
+                    val scrim = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f)),
+                        startY = (clearArtworkHeight - RecommendCardReflectionHeight).toPx(),
+                        endY = size.height,
+                    )
+                    onDrawBehind { drawRect(scrim) }
+                },
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(
+                    start = 16.dp,
+                    end = if (isLoading || showPlay) 56.dp else 16.dp,
+                    bottom = 14.dp,
+                ),
+        ) {
+            RecommendationDescription(extInfo)
+            Text(
+                text = title.orEmpty(),
+                color = Color.White,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(28.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
+        } else if (showPlay) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                contentDescription = "Play",
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(28.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecommendationReflection(
+    bitmap: Bitmap,
+    clearArtworkHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val paint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.5f) })
+        }
+    }
+    val backdrop = rememberCanvasBackdrop {
+        val clearHeight = clearArtworkHeight.toPx()
+        val reflectionTop = clearHeight / 2f
+        val reflectionHeight = size.height - reflectionTop
+        val scale = max(size.width / bitmap.width, reflectionHeight / bitmap.height)
+        val width = bitmap.width * scale
+        val height = bitmap.height * scale
+        val left = (size.width - width) / 2f
+        val top = (reflectionHeight - height) / 2f + reflectionTop / 2f
+        drawIntoCanvas { canvas ->
+            val nativeCanvas = canvas.nativeCanvas
+            val save = nativeCanvas.save()
+            nativeCanvas.scale(1f, -1f, size.width / 2f, (size.height + reflectionTop) / 2f)
+            nativeCanvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
+            nativeCanvas.restoreToCount(save)
+        }
+        drawRect(Color.Black.copy(alpha = 0.3f))
+    }
+    Box(
+        modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithCache {
+                val mask = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startY = (clearArtworkHeight - RecommendCardReflectionHeight).toPx(),
+                    endY = clearArtworkHeight.toPx(),
+                )
+                onDrawWithContent {
+                    drawContent()
+                    drawRect(mask, blendMode = BlendMode.DstIn)
+                }
+            }
+            .drawPlainBackdrop(
+                backdrop = backdrop,
+                shape = { RectangleShape },
+                effects = {
+                    progressiveBackdropBlur(
+                        maxRadius = 24.dp.toPx(),
+                        startYFraction = (clearArtworkHeight - RecommendCardReflectionHeight).toPx() / size.height,
+                        endYFraction = clearArtworkHeight.toPx() / size.height,
+                        startIntensity = 0f,
+                        endIntensity = 1f,
+                    )
+                },
+            ),
+    )
+}
+
+@Composable
+private fun RecommendationDescription(extInfo: CardExtInfo) {
+    val iconModel = extInfo.icon?.takeIf { it.isNotBlank() }
+    val currentIconModel = rememberUpdatedState(iconModel)
+    var iconTerminal by remember(iconModel) { mutableStateOf(iconModel == null) }
+    var iconSucceeded by remember(iconModel) { mutableStateOf(false) }
+    val color = Color.White.copy(alpha = 0.8f)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (iconModel != null && (!iconTerminal || iconSucceeded)) {
+            AsyncImage(
+                model = iconModel,
+                modifier = Modifier.size(16.dp).clip(ContinuousRoundedRectangle(4.dp)),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                colorFilter = ColorFilter.tint(color),
+                onLoading = {
+                    if (currentIconModel.value == iconModel) {
+                        iconTerminal = false
+                        iconSucceeded = false
+                    }
+                },
+                onSuccess = {
+                    if (currentIconModel.value == iconModel) {
+                        iconTerminal = true
+                        iconSucceeded = true
+                    }
+                },
+                onError = {
+                    if (currentIconModel.value == iconModel) {
+                        iconTerminal = true
+                        iconSucceeded = false
+                    }
+                },
+            )
+            if (iconSucceeded) Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = extInfo.text,
+            color = color,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 data class CardExtInfo(val icon: String? = null, val text: String)
-
-private fun imageForeground(baseColor: Color): Color {
-    val opaqueBaseColor = baseColor.copy(alpha = 1f).toArgb()
-    val luminance = ColorUtils.calculateLuminance(opaqueBaseColor)
-    return if (luminance < 0.5) Color.White else Color.Black
-}
-
-private fun footerForeground(baseColor: Color): Color {
-    val opaqueBaseColor = baseColor.copy(alpha = 1f).toArgb()
-    val luminance = ColorUtils.calculateLuminance(opaqueBaseColor)
-    return if (luminance < 0.5) Color.White else Color.Black
-}
-
-private fun sampleUpperHalfColor(bitmap: Bitmap): Color {
-    if (bitmap.width == 0 || bitmap.height == 0) return Color.DarkGray
-
-    val sampleColumns = 16
-    val sampleRows = 8
-    val upperHalfHeight = (bitmap.height / 2).coerceAtLeast(1)
-    var red = 0f
-    var green = 0f
-    var blue = 0f
-    var weight = 0f
-
-    for (row in 0 until sampleRows) {
-        val y = ((row + 0.5f) * upperHalfHeight / sampleRows)
-            .toInt()
-            .coerceIn(0, bitmap.height - 1)
-        for (column in 0 until sampleColumns) {
-            val x = ((column + 0.5f) * bitmap.width / sampleColumns)
-                .toInt()
-                .coerceIn(0, bitmap.width - 1)
-            val pixel = bitmap.getPixel(x, y)
-            val alpha = AndroidColor.alpha(pixel) / 255f
-            red += AndroidColor.red(pixel) * alpha
-            green += AndroidColor.green(pixel) * alpha
-            blue += AndroidColor.blue(pixel) * alpha
-            weight += alpha
-        }
-    }
-
-    if (weight <= 0f) return Color.DarkGray
-    return Color(
-        AndroidColor.rgb(
-            (red / weight).toInt().coerceIn(0, 255),
-            (green / weight).toInt().coerceIn(0, 255),
-            (blue / weight).toInt().coerceIn(0, 255),
-        )
-    )
-}

@@ -10,6 +10,91 @@ import org.junit.Test
 
 class HomeRecommendationActionsTest {
     @Test
+    fun artistPlaylistCaptionUsesOriginalTagsWhenCoverTextIsAbsent() {
+        val card = resource(
+            """{"title":"Artist playlist","tags":["泠鸢","yousa"],"resourceExtInfo":null}""",
+        )
+        assertEquals("泠鸢yousa", homeArtistPlaylistCoverText(card))
+        assertNull(homeArtistPlaylistCoverText(resource("""{"tags":[]}""")))
+    }
+
+    @Test
+    fun artistPlaylistCoverRemovesCaptionWatermarkButKeepsOtherImageOperations() {
+        val artwork = "https://p1.music.126.net/artwork.jpg?imageView=1&thumbnail=800y800&enlarge=1"
+        val caption = "imageView=1&watermark&type=1&image=Y2FwdGlvbg==&dx=0&dy=0"
+        val logo = "watermark&type=1&image=bG9nbw==&dx=0&dy=0"
+        val expected = "$artwork%7C$logo%7CimageView=1"
+        assertEquals(expected, homeArtistPlaylistCoverWithoutCaption("$artwork%7C$caption%7C$logo%7CimageView=1"))
+        assertEquals(expected, homeArtistPlaylistCoverWithoutCaption("$artwork|$caption|$logo|imageView=1"))
+        assertEquals(artwork, homeArtistPlaylistCoverWithoutCaption(artwork))
+    }
+
+    @Test
+    fun nonRenderingModulesDoNotCreateSlotsBetweenSongAndPlaylistSections() {
+        val daily = homeBlock("PAGE_RECOMMEND_DAILY_RECOMMEND", """{"blockResource":{"resources":[{}]}}""")
+        val privateSongs = homeBlock("PAGE_RECOMMEND_PRIVATE_RCMD_SONG", songSectionDsl)
+        val similarSongs = homeBlock("PAGE_RECOMMEND_RED_SIMILAR_SONG", songSectionDsl)
+        val artists = homeBlock("PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST", playlistSectionDsl)
+        val playlists = homeBlock(
+            "PAGE_RECOMMEND_MY_SHEET",
+            """{"blockResource":{"title":"Playlists","resources":[{"resourceId":"42"},{"resourceType":"add"}]}}""",
+        )
+        val feed = listOf(
+            daily, privateSongs,
+            homeBlock("NATIVE_MODULE"), homeBlock("BANNER", playlistSectionDsl), homeBlock("PROMOTION"),
+            similarSongs, artists,
+            homeBlock("VIDEO"), homeBlock("AD", playlistSectionDsl), homeBlock("NON_DSL"),
+            playlists,
+        )
+
+        assertEquals(
+            listOf(daily, privateSongs, similarSongs, artists, playlists),
+            feed.filter { homeBlockData(it) != null },
+        )
+        assertEquals(11, feed.size)
+    }
+
+    @Test
+    fun emptySectionsAndAddOnlyPlaylistSectionsDoNotReserveSpace() {
+        for (dsl in listOf("null", "[]", "false", "{}", """{"metadata":{"enabled":true}}""")) {
+            assertNull(homeBlockData(homeBlock("PAGE_RECOMMEND_DAILY_RECOMMEND", dsl)))
+        }
+        for (position in HomePlaylistBlockCodes + "PAGE_RECOMMEND_DAILY_RECOMMEND") {
+            assertNull(homeBlockData(homeBlock(position, """{"blockResource":{"resources":[]}}""")))
+        }
+        assertNull(
+            homeBlockData(homeBlock("PAGE_RECOMMEND_MY_SHEET", """{"blockResource":{"resources":[{"resourceType":"add"}]}}""")),
+        )
+        for (position in HomeSongBlockCodes) {
+            assertNull(homeBlockData(homeBlock(position, """{"blockResource":{"content":{"items":[]}}}""")))
+            assertNull(homeBlockData(homeBlock(position, """{"blockResource":{"content":{"items":[{"items":[]}]}}}""")))
+        }
+    }
+
+    @Test
+    fun visibleSectionsRetainDslContainersAndRadarResourceFallback() {
+        for (position in HomePlaylistBlockCodes - "PAGE_RECOMMEND_MY_SHEET") {
+            assertEquals("Featured", homeBlockData(homeBlock(position, playlistSectionDsl))?.get("title")?.asString)
+        }
+        assertEquals(
+            "Featured",
+            homeBlockData(homeBlock("PAGE_RECOMMEND_RADAR", """{"template":{"blockResource":{"title":"Featured","blockResource":[{}]}}}"""))
+                ?.get("title")?.asString,
+        )
+        for (position in HomeSongBlockCodes) {
+            assertEquals(
+                "Songs",
+                homeBlockData(homeBlock(position, songSectionDsl))?.getAsJsonObject("header")?.get("title")?.asString,
+            )
+        }
+        assertEquals(
+            "Featured",
+            homeBlockData(homeBlock("PAGE_RECOMMEND_RANK", """{"enabled":true,"longestTemplateName":{"title":"Featured","resources":[{}]}}"""))
+                ?.get("title")?.asString,
+        )
+    }
+
+    @Test
     fun resourceKeysFollowCardsAcrossReorderingAndDistinguishRepeatedServerEntries() {
         val first = resource("""{"resourceType":"playList","resourceId":"42","action":"orpheus://playlist/42"}""")
         val second = resource("""{"resourceType":"playList","resourceId":"7","action":"orpheus://playlist/7"}""")
@@ -144,4 +229,12 @@ class HomeRecommendationActionsTest {
         json,
         HomePageResourceShow.Data.Block.DslData.BlockResource.Resource::class.java,
     )
+
+    private fun homeBlock(position: String, dsl: String = "null") = Gson().fromJson(
+        """{"positionCode":"$position","dslData":$dsl}""",
+        HomePageResourceShow.Data.Block::class.java,
+    )
+
+    private val playlistSectionDsl = """{"blockResource":{"title":"Featured","resources":[{"resourceId":"42"}]}}"""
+    private val songSectionDsl = """{"blockResource":{"header":{"title":"Songs"},"content":{"items":[{"items":[{"resourceId":"42"}]}]}}}"""
 }

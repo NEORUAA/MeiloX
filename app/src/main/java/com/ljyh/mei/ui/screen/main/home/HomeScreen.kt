@@ -4,12 +4,14 @@ import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,17 +25,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -50,9 +52,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -62,8 +69,16 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.PlaylistCardSize
-import com.ljyh.mei.constants.PlaylistCardSizeTablet
+import com.ljyh.mei.constants.HomeSectionSpacing
+import com.ljyh.mei.constants.HomeCardSpacing
+import com.ljyh.mei.constants.HomeRowHorizontalPadding
+import com.ljyh.mei.constants.homePlaylistCardSize
+import com.ljyh.mei.constants.HomeSectionTitlePadding
+import com.ljyh.mei.constants.HomeSongCoverSize
+import com.ljyh.mei.constants.HomeSongCoverCornerRadius
+import com.ljyh.mei.constants.HomeSongActionSize
+import com.ljyh.mei.constants.HomeSongNextPagePeek
+import com.ljyh.mei.constants.HomeSongRowSpacing
 import com.ljyh.mei.constants.RecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardHeightTablet
 import com.ljyh.mei.constants.RecommendCardWidth
@@ -80,12 +95,15 @@ import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.home.CardExtInfo
 import com.ljyh.mei.ui.component.home.PlaylistCard
 import com.ljyh.mei.ui.component.home.RecommendCard
+import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
+import com.ljyh.mei.ui.glass.SfIcon
+import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -203,7 +221,7 @@ fun HomeScreen(
                 is Resource.Success -> {
                     // 排序逻辑移出 LazyColumn，减少重组时的计算
                     val sortedBlocks = remember(result.data) {
-                        result.data.sortedWith(positionComparator)
+                        result.data.filter { homeBlockData(it) != null }.sortedWith(positionComparator)
                     }
 
 
@@ -211,19 +229,18 @@ fun HomeScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            top = pinnedPadding.calculateTopPadding(),
-                            bottom = systemBarsPadding.calculateBottomPadding() + 16.dp
+                            // Preserve the title's origin without translated empty space below it.
+                            top = pinnedPadding.calculateTopPadding() - 4.dp,
+                            bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing
                         ),
-                        verticalArrangement = Arrangement.spacedBy(24.dp) // 块与块之间的间距
+                        verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing)
                     ) {
                         item(key = "ios-large-title") {
                             Text(
                                 stringResource(R.string.app_tab_home),
                                 style = IosTypography.largeTitle,
                                 color = LocalGlassColors.current.content,
-                                modifier = Modifier
-                                    .offset(y = (-10).dp)
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp),
                             )
                         }
                         items(
@@ -249,7 +266,7 @@ fun HomeScreen(
                     HomeShimmer(
                         contentPadding = PaddingValues(
                             top = pinnedPadding.calculateTopPadding(),
-                            bottom = systemBarsPadding.calculateBottomPadding() + 16.dp,
+                            bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing,
                         ),
                     )
                 }
@@ -297,14 +314,13 @@ private fun HomeBlockItem(
         }
     }
 
-    val playlistCardSize = if (device.isTablet) PlaylistCardSizeTablet else PlaylistCardSize
     val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
     val recommendCardHeight = if (device.isTablet) RecommendCardHeightTablet else RecommendCardHeight
 
     // 解析逻辑缓存，只要 block 不变，就不会重新解析 JSON
     val blockData = remember(block) {
         Timber.tag("Block").d(block.positionCode)
-        block.dslData?.takeIf { it.isJsonObject }?.asJsonObject?.let(::selectSpecialField)
+        homeBlockData(block)
     } ?: return
 
     Timber.tag("Block").d(block.positionCode)
@@ -323,7 +339,8 @@ private fun HomeBlockItem(
 
             BlockWithTitle(
                 title = getGreeting(),
-                resources = resources
+                resources = resources,
+                rowHeight = recommendCardHeight,
             ) { resource ->
                 val recommendationKey = "${resource.resourceType}:${resource.resourceId}:${resource.action}"
                 RecommendCard(
@@ -337,7 +354,6 @@ private fun HomeBlockItem(
                     cardWidth = recommendCardWidth,
                     cardHeight = recommendCardHeight,
                     isLoading = loadingRecommendationKey == recommendationKey,
-                    viewModel = viewModel
                 ) {
                     if (loadingRecommendationKey == recommendationKey) return@RecommendCard
                     val requestGeneration = ++playbackRequestGeneration
@@ -431,17 +447,7 @@ private fun HomeBlockItem(
         }
 
         // --- 各种歌单推荐 (雷达、云村、场景等) ---
-        "PAGE_RECOMMEND_RADAR",
-        "PAGE_RECOMMEND_SPECIAL_CLOUD_VILLAGE_PLAYLIST",
-        "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST",
-        "PAGE_RECOMMEND_RANK",
-        "PAGE_RECOMMEND_MY_SHEET",
-        "PAGE_RECOMMEND_COMBINATION",
-        "PAGE_RECOMMEND_FEELING_PLAYLIST_LOCATION",
-        "PAGE_RECOMMEND_SCENE_PLAYLIST_LOCATION",
-        "PAGE_RECOMMEND_MONTH_YEAR_PLAYLIST",
-
-            -> {
+        in HomePlaylistBlockCodes -> {
             // 将这些相似的逻辑合并处理，减少代码重复
             val title = if (block.positionCode == "PAGE_RECOMMEND_RADAR")
                 (blockData.get("title")?.asString ?: "雷达歌单")
@@ -464,26 +470,46 @@ private fun HomeBlockItem(
                 }
             }
 
-            BlockWithTitle(title = title, resources = resources) { resource ->
-                PlaylistCard(
-                    id = resource.resourceId,
-                    title = resource.title,
-                    coverImg = resource.coverImg,
-                    subTitle = resource.resourceExtInfo?.coverText,
-                    showPlay = true,
-                    extInfo = resource.resourceInteractInfo?.playCount,
-                    // 只有非 thumbnail 的图片才使用大图加载逻辑，优化内存
-                    imageSize = !resource.coverImg.contains("thumbnail"),
-                    cardSize = playlistCardSize,
-                ) {
-                    Screen.PlayList.navigate(navController) { addPath(resource.resourceId) }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val playlistCardSize = homePlaylistCardSize(maxWidth)
+                BlockWithTitle(
+                    title = title,
+                    resources = resources,
+                ) { resource ->
+                    val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
+                    val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
+                        title.contains("热门金曲")
+                    val separateCaptions = isRadar || isArtistPlaylist
+                    val coverText = resource.resourceExtInfo?.coverText
+                    val coverCaption = coverText?.filter(String::isNotBlank)
+                        ?.joinToString(if (isRadar) "" else " ")?.takeIf(String::isNotBlank)
+                    val artistCoverCaption = if (isArtistPlaylist) homeArtistPlaylistCoverText(resource) else null
+                    val coverImg = if (artistCoverCaption != null) {
+                        homeArtistPlaylistCoverWithoutCaption(resource.coverImg)
+                    } else resource.coverImg
+                    PlaylistCard(
+                        id = resource.resourceId,
+                        title = if (isRadar) coverCaption.orEmpty() else resource.title,
+                        coverImg = coverImg,
+                        subTitle = if (separateCaptions) null else coverText,
+                        extInfo = resource.resourceInteractInfo?.playCount,
+                        imageSize = !coverImg.contains("thumbnail"),
+                        cardSize = playlistCardSize,
+                        titleMaxLines = if (separateCaptions) 1 else 2,
+                        secondaryTitle = when {
+                            isRadar -> resource.title
+                            isArtistPlaylist -> artistCoverCaption ?: coverCaption
+                            else -> null
+                        },
+                    ) {
+                        Screen.PlayList.navigate(navController) { addPath(resource.resourceId) }
+                    }
                 }
             }
         }
 
         // --- 私人推荐歌曲 / 相似歌曲 (三行滑动) ---
-        "PAGE_RECOMMEND_PRIVATE_RCMD_SONG",
-        "PAGE_RECOMMEND_RED_SIMILAR_SONG" -> {
+        in HomeSongBlockCodes -> {
             val title = blockData.get("header").asJsonObject.get("title").asString
             val itemsArray = blockData.get("content").asJsonObject.get("items").asJsonArray
 
@@ -545,22 +571,25 @@ private fun HomePageResourceShow.Data.Block.DslData.BlockResource.Resource.toMus
         Timber.tag("HomeMusicPodcast").e(error, "Unable to parse program %s", resourceId)
     }.getOrNull()
 
-/**
- * 优化后的水平滚动行，使用 LazyRow 提升性能
- */
 @Composable
 private fun BlockWithTitle(
     title: String,
     resources: List<HomeCardResource>,
+    rowHeight: Dp? = null,
     content: @Composable (HomeCardResource) -> Unit
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
     Column {
         Title(title)
+        val listState = rememberLazyListState()
         LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp), // 左右留白
-            horizontalArrangement = Arrangement.spacedBy(12.dp) // Item 间距
+            state = listState,
+            flingBehavior = rememberSnapFlingBehavior(listState, SnapPosition.Start),
+            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier.fillMaxWidth()
+                .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
         ) {
             itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
                 content(resource)
@@ -577,8 +606,14 @@ fun Title(text: String) {
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
         maxLines = 1,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = HomeSectionTitlePadding)
     )
+}
+
+private val HomeSongPageSize = object : PageSize {
+    override fun Density.calculateMainAxisPageSize(availableSpace: Int, pageSpacing: Int): Int =
+        (availableSpace + HomeRowHorizontalPadding.roundToPx() - pageSpacing -
+            HomeSongNextPagePeek.roundToPx()).coerceAtLeast(1)
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -603,42 +638,41 @@ fun TripleLaneSlider(
 
     HorizontalPager(
         state = pagerState,
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        pageSpacing = 16.dp
+        modifier = Modifier.fillMaxWidth(),
+        pageSize = HomeSongPageSize,
+        contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+        pageSpacing = 16.dp,
+        beyondViewportPageCount = 1,
     ) { page ->
         val items = songsArray[page].items
 
-        if (columns == 1) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                items.forEachIndexed { index, song ->
-                    val globalIndex = songsArray.take(page).sumOf { it.items.size } + index
-                    SongRow(
-                        song = song,
-                        currentMetadataId = currentMetadata?.id?.toString(),
-                        showPause = isPlaying,
-                        onClick = { onClick(songsArray, globalIndex) }
-                    )
-                }
-            }
-        } else {
-            val itemsPerColumn = ceil(items.size.toFloat() / columns).toInt()
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                for (col in 0 until columns) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        val startIdx = col * itemsPerColumn
-                        val endIdx = minOf(startIdx + itemsPerColumn, items.size)
-                        for (i in startIdx until endIdx) {
-                            val song = items[i]
-                            val globalIndex = songsArray.take(page).sumOf { it.items.size } + i
-                            SongRow(
-                                song = song,
-                                currentMetadataId = currentMetadata?.id?.toString(),
-                                showPause = isPlaying,
-                                onClick = { onClick(songsArray, globalIndex) }
-                            )
+        val itemsPerColumn = ceil(items.size.toFloat() / columns).toInt()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            for (col in 0 until columns) {
+                Column(modifier = Modifier.weight(1f)) {
+                    val startIdx = col * itemsPerColumn
+                    val endIdx = minOf(startIdx + itemsPerColumn, items.size)
+                    for (i in startIdx until endIdx) {
+                        val song = items[i]
+                        val globalIndex = songsArray.take(page).sumOf { it.items.size } + i
+                        SongRow(
+                            song = song,
+                            currentMetadataId = currentMetadata?.id?.toString(),
+                            showPause = isPlaying,
+                            onClick = { onClick(songsArray, globalIndex) },
+                        )
+                        if (i < endIdx - 1) {
+                            Box(Modifier.fillMaxWidth().height(HomeSongRowSpacing)) {
+                                HorizontalDivider(
+                                    modifier = Modifier.align(Alignment.Center)
+                                        .padding(start = HomeSongCoverSize + 12.dp),
+                                    thickness = 0.5.dp,
+                                    color = LocalGlassColors.current.separator,
+                                )
+                            }
                         }
                     }
                 }
@@ -655,11 +689,16 @@ private fun SongRow(
     onClick: () -> Unit
 ) {
     val isCurrentSong = currentMetadataId == song.resourceId && showPause
+    val viewConfiguration = LocalViewConfiguration.current
+    val actionViewConfiguration = remember(viewConfiguration) {
+        object : ViewConfiguration by viewConfiguration {
+            override val minimumTouchTargetSize = DpSize(HomeSongActionSize, HomeSongActionSize)
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clip(ContinuousRoundedRectangle(8.dp)),
+            .clip(ContinuousRoundedRectangle(HomeSongCoverCornerRadius)),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -667,8 +706,9 @@ private fun SongRow(
             imageUrl = song.coverUrl,
             isPlaying = isCurrentSong,
             modifier = Modifier
-                .size(56.dp)
-                .clip(ContinuousRoundedRectangle(8.dp))
+                .size(HomeSongCoverSize)
+                .clip(ContinuousRoundedRectangle(HomeSongCoverCornerRadius))
+                .homeArtworkBorder(ContinuousRoundedRectangle(HomeSongCoverCornerRadius))
         )
 
         Column(
@@ -677,55 +717,35 @@ private fun SongRow(
             Text(
                 text = song.title,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.sp,
+                fontSize = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Normal
             )
-            Spacer(Modifier.height(2.dp))
             Text(
                 text = song.artistName,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
 
-        Box(modifier = Modifier.padding(8.dp)) {
-            IconButton(onClick = onClick) {
-                Icon(
-                    imageVector = if (isCurrentSong) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+        CompositionLocalProvider(
+            LocalMinimumInteractiveComponentSize provides HomeSongActionSize,
+            LocalViewConfiguration provides actionViewConfiguration,
+        ) {
+            IconButton(onClick = onClick, modifier = Modifier.size(HomeSongActionSize)) {
+                SfIcon(
+                    symbol = if (isCurrentSong) SfSymbol.PauseFilled else SfSymbol.PlayFilled,
+                    contentDescription = stringResource(
+                        if (isCurrentSong) R.string.player_pause else R.string.player_play,
+                    ),
+                    tint = Color(0xFF8E8E93),
+                    size = if (isCurrentSong) 18.dp else 16.dp,
+                    modifier = if (isCurrentSong) Modifier else Modifier.offset(x = 1.dp),
                 )
             }
         }
     }
-}
-
-// 辅助函数保持不变
-fun selectSpecialField(jsonObject: JsonObject): JsonObject? {
-    // 1. 优先直接查找当前层级的 blockResource
-    if (jsonObject.has("blockResource") && jsonObject.get("blockResource").isJsonObject) {
-        return jsonObject.getAsJsonObject("blockResource")
-    }
-
-    // 2. 寻找键名最长 且 值为 JsonObject 的字段
-    // 关键修复：添加 .filter { it.value.isJsonObject }
-    val longestEntry = jsonObject.entrySet()
-        .filter { it.value.isJsonObject } // <--- 过滤掉 boolean, string, array 等非对象类型
-        .maxByOrNull { it.key.length }
-
-    // 如果没有找到任何 JsonObject 类型的字段，直接返回 null
-    val candidate = longestEntry?.value?.asJsonObject ?: return null
-
-    // 3. 检查找到的候选对象里面是否包裹了 blockResource (递归查找逻辑)
-    if (candidate.has("blockResource") && candidate.get("blockResource").isJsonObject) {
-        return candidate.getAsJsonObject("blockResource")
-    }
-
-    // 4. 返回这个最长 key 对应的对象
-    return candidate
 }
