@@ -14,12 +14,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -297,30 +293,27 @@ fun AppleMusicPlayer(
         val headerStart = with(density) { AppleMusicDimensions.headerInset.toPx() }
         val headerRadius = with(density) { AppleMusicDimensions.headerCorner.toPx() }
         val lyricHeaderBounds = Rect(headerStart, headerTop, headerStart + headerSize, headerTop + headerSize)
-        val queueTarget = remember(lyricHeaderBounds, headerTop) {
-            derivedStateOf {
-                val position = queueHeaderPosition?.value ?: PlayerQueueHeaderPosition(0f, 0f)
-                appleMusicQueueArtworkTarget(
-                    lyricHeaderBounds.translate(Offset(0f, position.top)),
-                    headerTop,
-                    headerTop + position.viewportHeight,
-                )
-            }
+        // Keep layout reads in the consuming layer, including during cover crossfades.
+        val queueTarget = {
+            val position = queueHeaderPosition?.value ?: PlayerQueueHeaderPosition(0f, 0f)
+            appleMusicQueueArtworkTarget(
+                lyricHeaderBounds.translate(Offset(0f, position.top)),
+                headerTop,
+                headerTop + position.viewportHeight,
+            )
         }
-        val headerBounds = remember(lyricHeaderBounds, queueTarget) {
-            derivedStateOf {
-                androidx.compose.ui.geometry.lerp(
-                    lyricHeaderBounds, queueTarget.value.bounds, queueHeaderFraction.value,
-                )
-            }
+        val headerBounds = {
+            androidx.compose.ui.geometry.lerp(
+                lyricHeaderBounds, queueTarget().bounds, queueHeaderFraction.value,
+            )
         }
-        val headerArtworkOpacity = remember(queueTarget) {
-            derivedStateOf { 1f - (1f - queueTarget.value.opacity) * queueHeaderFraction.value }
-        }
-        val artworkOpacity = remember(headerArtworkOpacity) {
-            derivedStateOf { 1f - (1f - headerArtworkOpacity.value) * lyricAnimFraction.value }
-        }
+        val headerArtworkOpacity = { 1f - (1f - queueTarget().opacity) * queueHeaderFraction.value }
+        val artworkOpacity = { 1f - (1f - headerArtworkOpacity()) * lyricAnimFraction.value }
         val inlineHeaderVisible = showQueue && headerInteractive && queueHeaderSettled
+        // Metadata hands off to the real row, not the artwork's clamped endpoint.
+        val metadataHeaderTop = {
+            headerTop + (queueHeaderPosition?.value?.top ?: 0f) * queueHeaderFraction.value
+        }
         val infoRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
         val actionsGapPx = with(density) { 0.dp.toPx() }
         val albumInsetPx = with(density) { AppleMusicDimensions.albumInfoInset.toPx() }
@@ -328,13 +321,13 @@ fun AppleMusicPlayer(
         val headerTextOrigin = {
             Offset(
                 headerTextLeft + if (infoRtl) headerActionsSize.width + actionsGapPx else 0f,
-                headerBounds.value.top + (headerSize - headerTextSize.height) / 2f,
+                metadataHeaderTop() + (headerSize - headerTextSize.height) / 2f,
             )
         }
         val headerActionsOrigin = {
             Offset(
                 if (infoRtl) headerTextLeft else maxWidthPx - headerStart - headerActionsSize.width,
-                headerBounds.value.top + (headerSize - headerActionsSize.height) / 2f,
+                metadataHeaderTop() + (headerSize - headerActionsSize.height) / 2f,
             )
         }
         val albumTextOrigin = {
@@ -353,14 +346,12 @@ fun AppleMusicPlayer(
         val normalShadow = with(density) { 16.dp.toPx() }
         // Keep image measurement stable; only layer properties observe animation frames.
         val artworkLayoutSize = normalSize.roundToInt().coerceAtLeast(1)
-        val artworkFrame = remember(normalBounds, headerBounds, density) {
-            derivedStateOf {
-                appleMusicArtworkFrame(
-                    normalBounds, headerBounds.value, normalRadius, headerRadius, normalShadow,
-                    if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.75f,
-                    lyricAnimFraction.value,
-                )
-            }
+        val artworkFrame = {
+            appleMusicArtworkFrame(
+                normalBounds, headerBounds(), normalRadius, headerRadius, normalShadow,
+                if (currentExpanded.value) animatedPlaybackCoverScale.value else if (currentPlaying.value) 1f else 0.75f,
+                lyricAnimFraction.value,
+            )
         }
 
         val coverUrl = mediaMetadata?.coverUrl
@@ -652,11 +643,11 @@ fun AppleMusicPlayer(
                     Box(
                         modifier = Modifier
                             .align(AbsoluteAlignment.TopLeft)
-                            .absoluteOffset { IntOffset(headerTextLeft.roundToInt(), headerBounds.value.top.roundToInt()) }
+                            .absoluteOffset { IntOffset(headerTextLeft.roundToInt(), headerTop.roundToInt()) }
                             .width(screenWidth - with(density) { headerTextLeft.toDp() } - AppleMusicDimensions.headerInset)
                             .height(AppleMusicDimensions.headerSize)
                             .playerInfoVisibility(headerInfoVisible && !inlineHeaderVisible)
-                            .graphicsLayer { alpha = headerArtworkOpacity.value },
+                            .graphicsLayer { alpha = headerArtworkOpacity() },
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         Title(
@@ -690,12 +681,18 @@ fun AppleMusicPlayer(
                             onActionsSizeChanged = { headerActionsSize = it },
                             textModifier = Modifier.playerInfoMotion(
                                 headerInfoAlpha, lyricProgress, albumTextOrigin, headerTextOrigin, false,
+                                placementOrigin = {
+                                    Offset(headerTextOrigin().x, headerTop + (headerSize - headerTextSize.height) / 2f)
+                                },
                                 layerOutsets = if (infoRtl) {
                                     LayerOutsets(right = AppleMusicDimensions.headerMarqueeEdgeWidth)
                                 } else LayerOutsets(left = AppleMusicDimensions.headerMarqueeEdgeWidth),
                             ),
                             actionsModifier = Modifier.playerInfoMotion(
                                 headerInfoAlpha, lyricProgress, albumActionsOrigin, headerActionsOrigin, false,
+                                placementOrigin = {
+                                    Offset(headerActionsOrigin().x, headerTop + (headerSize - headerActionsSize.height) / 2f)
+                                },
                             ),
                             modifier = Modifier.wrapContentHeight(unbounded = true),
                         )
@@ -769,23 +766,17 @@ fun AppleMusicPlayer(
             ) {
                 AnimatedContent(
                     targetState = coverUrl,
-                    transitionSpec = {
-                        (fadeIn(animationSpec = tween(durationMillis = 400)) +
-                                scaleIn(initialScale = 0.92f, animationSpec = tween(durationMillis = 400)))
-                            .togetherWith(
-                                fadeOut(animationSpec = tween(durationMillis = 400))
-                            )
-                    },
+                    transitionSpec = { appleMusicArtworkTransition() },
                     label = "CoverTransition",
                     modifier = Modifier
-                        .playerArtworkMotion(artworkFrame, artworkOpacity)
+                        .playerArtworkMotion(artworkFrame)
                         .size(with(density) { artworkLayoutSize.toDp() })
                         .playerArtwork(
                             geometry = {
                                 PlayerArtworkGeometry(
-                                    artworkFrame.value.bounds,
+                                    artworkFrame().bounds,
                                     IntSize(artworkLayoutSize, artworkLayoutSize),
-                                    opacity = artworkOpacity.value,
+                                    opacity = artworkOpacity(),
                                     clipBounds = if (queueHeaderFraction.value > 0f) {
                                         val clipProgress = lyricAnimFraction.value * queueHeaderFraction.value
                                         Rect(
@@ -796,22 +787,16 @@ fun AppleMusicPlayer(
                                 )
                             },
                             cornerRadius = {
-                                val frame = artworkFrame.value
+                                val frame = artworkFrame()
                                 with(density) { (frame.cornerRadius * artworkLayoutSize / frame.bounds.width.coerceAtLeast(1f)).toDp() }
                             },
                             shadowElevation = {
-                                val frame = artworkFrame.value
+                                val frame = artworkFrame()
                                 with(density) { (frame.shadowElevation * artworkLayoutSize / frame.bounds.width.coerceAtLeast(1f)).toDp() }
                             },
                             trackContainerTop = { showDetail || lyricAnimFraction.value > 0f },
                         )
-                        .graphicsLayer {
-                            val frame = artworkFrame.value
-                            val scale = frame.bounds.width / size.width.coerceAtLeast(1f)
-                            shadowElevation = frame.shadowElevation / scale.coerceAtLeast(0.001f)
-                            shape = ContinuousRoundedRectangle(frame.cornerRadius / scale.coerceAtLeast(0.001f))
-                            clip = true
-                        }
+                        .playerArtworkAppearance(artworkFrame, artworkOpacity)
                         .then(
                             if (sheetExpanded && !inlineHeaderVisible) Modifier.clickable {
                                 page = if (showDetail) AppleMusicPlayerPage.Artwork else AppleMusicPlayerPage.Lyrics
@@ -830,7 +815,7 @@ fun AppleMusicPlayer(
                             contentDescription = "Cover",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
-                        )
+                        ) else Box(Modifier.fillMaxSize())
                     } else {
                         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
                     }
@@ -838,6 +823,19 @@ fun AppleMusicPlayer(
             }
         }
     }
+}
+
+/** Fade the native shadow itself, without a fading ancestor cropping it to image bounds. */
+internal fun Modifier.playerArtworkAppearance(
+    frame: () -> AppleMusicArtworkFrame,
+    opacity: () -> Float,
+): Modifier = graphicsLayer {
+    val current = frame()
+    val scale = (current.bounds.width / size.width.coerceAtLeast(1f)).coerceAtLeast(0.001f)
+    alpha = opacity()
+    shadowElevation = current.shadowElevation / scale
+    shape = ContinuousRoundedRectangle(current.cornerRadius / scale)
+    clip = true
 }
 
 /** Keep expensive page state alive; only the selected page owns input and clocks. */
@@ -929,17 +927,14 @@ internal fun Modifier.playerQueueViewport(height: Dp): Modifier =
         .clipToBounds()
 
 internal fun Modifier.playerArtworkMotion(
-    frame: State<AppleMusicArtworkFrame>,
-    opacity: State<Float>,
+    frame: () -> AppleMusicArtworkFrame,
 ): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     layout(placeable.width, placeable.height) {
         // Observe geometry in placement. Replacing the queue header's derived state
         // during a cover transition can otherwise leave layer parameters unobserved.
-        val current = frame.value
-        val currentOpacity = opacity.value
+        val current = frame()
         placeable.placeWithLayer(0, 0) {
-            alpha = currentOpacity
             transformOrigin = TransformOrigin(0f, 0f)
             translationX = current.bounds.left
             translationY = current.bounds.top
@@ -976,8 +971,14 @@ internal fun Modifier.playerInfoMotion(
     headerOrigin: () -> Offset,
     fromAlbum: Boolean,
     layerOutsets: LayerOutsets = LayerOutsets.Zero,
+    placementOrigin: (() -> Offset)? = null,
 ): Modifier = graphicsLayer {
-    val offset = appleMusicInfoOffset(albumOrigin(), headerOrigin(), progress.value, fromAlbum)
+    val album = albumOrigin()
+    val header = headerOrigin()
+    val offset = appleMusicInfoOffset(
+        album, header, progress.value, fromAlbum,
+        placementOrigin = placementOrigin?.invoke() ?: if (fromAlbum) album else header,
+    )
     translationX = offset.x
     translationY = offset.y
     alpha = opacity.value

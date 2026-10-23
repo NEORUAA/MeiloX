@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,15 +30,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -74,20 +79,25 @@ import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeTe
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import com.ljyh.mei.ui.component.player.component.applemusic.playerInfoMotion
+import com.ljyh.mei.ui.component.player.component.applemusic.playerArtworkAppearance
+import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicArtworkFrame
+import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicArtworkTransition
+import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicQueueArtworkTarget
 import com.ljyh.mei.ui.component.player.component.applemusic.queueViewportFade
 import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicLyricsControlsFadeRange
 import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueViewport
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
 import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderPosition
+import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderAnchor
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderAnchor
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueCurrentHeaderKey
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderPosition
 import com.ljyh.mei.ui.component.player.component.applemusic.PhoneQueueEntry
 import com.ljyh.mei.ui.component.player.component.applemusic.QueueSongRow
 import com.ljyh.mei.ui.component.player.component.applemusic.QueueRowPlacement
+import com.ljyh.mei.ui.component.player.component.applemusic.QueueRowsSnapshot
 import com.ljyh.mei.ui.component.player.component.applemusic.queueRowPlacement
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicArtworkFrame
-import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicArtworkFrame
-import com.ljyh.mei.ui.component.player.component.applemusic.appleMusicQueueArtworkTarget
 import com.ljyh.mei.ui.component.player.component.applemusic.playerArtworkMotion
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
@@ -96,12 +106,18 @@ import com.ljyh.mei.ui.component.sheet.playerArtwork
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.ui.component.player.component.applemusic.animatePlayerQueueRows
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueTopOverscroll
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueSnapEffect
+import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueSnapTarget
 import androidx.media3.common.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -489,10 +505,11 @@ class AppleMusicTitleRenderingTest {
                                 .togetherWith(fadeOut(tween(400)))
                         },
                         label = "QueueCoverRegression",
-                        modifier = Modifier.playerArtworkMotion(frame, opacity).size(140.dp).playerArtwork(
+                        modifier = Modifier.playerArtworkMotion { frame.value }.size(140.dp).playerArtwork(
                             geometry = { PlayerArtworkGeometry(frame.value.bounds, IntSize(layoutSize, layoutSize), opacity.value) },
                         ).graphicsLayer {
                             val current = frame.value
+                            alpha = opacity.value
                             val scale = current.bounds.width / size.width.coerceAtLeast(1f)
                             shadowElevation = current.shadowElevation / scale.coerceAtLeast(0.001f)
                             shape = ContinuousRoundedRectangle(current.cornerRadius / scale.coerceAtLeast(0.001f))
@@ -542,40 +559,118 @@ class AppleMusicTitleRenderingTest {
         compose.mainClock.autoAdvance = false
         val order = mutableStateListOf(0, 1, 2, 3, 4, 5, 6, 7, 8)
         val current = mutableStateOf(2)
+        val historyGap = mutableStateOf(0.dp)
         var listState: LazyListState? = null
         var scope: CoroutineScope? = null
         var viewport: LayoutCoordinates? = null
         var header: LayoutCoordinates? = null
         var coverTop = Float.NaN
+        var positionObserver: State<PlayerQueueHeaderPosition>? = null
+        var initialPositionObserver: State<PlayerQueueHeaderPosition>? = null
+        var selectTrack: ((Int) -> Unit)? = null
+        val snappingEnabled = mutableStateOf(false)
+        val rowsMoving = mutableStateOf(false)
+        val contentRevision = mutableStateOf(0)
+        var currentAnchor: PlayerQueueHeaderAnchor? = null
         compose.setContent {
+            val renderedRevision = contentRevision.value
             val index = order.indexOf(current.value)
             val state = rememberLazyListState(initialFirstVisibleItemIndex = index)
             listState = state
-            scope = rememberCoroutineScope()
+            val currentScope = rememberCoroutineScope()
+            scope = currentScope
             val height = with(LocalDensity.current) { 68.dp.toPx() }
-            val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, index, height)
-            Box(Modifier.width(160.dp).height(240.dp).onGloballyPositioned { viewport = it }) {
-                LazyColumn(state = state, modifier = Modifier.width(80.dp).fillMaxSize()) {
-                    order.take(index).forEach { track ->
-                        item(key = track) {
-                            Box(Modifier.animateItem().fillMaxWidth().height(56.dp).background(Color.Blue))
-                        }
+            val rowHeight = with(LocalDensity.current) { 56.dp.toPx() }
+            val gap = with(LocalDensity.current) { historyGap.value.toPx() }
+            val headerIndex = index + if (gap > 0f) 1 else 0
+            val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, headerIndex, height)
+            val anchor = rememberPlayerQueueHeaderAnchor(
+                state, current.value.toString(), true,
+                historyTailKey = order.getOrNull(index - 1)?.toString(), historyGap = gap,
+                contentRevision = renderedRevision,
+            )
+            currentAnchor = anchor
+            val scrollObserver = remember(anchor, currentScope) {
+                PlayerQueueTopOverscroll(
+                    currentScope, 24f, isAtTop = { false }, onListScroll = anchor::onScroll,
+                ) { false }
+            }
+            PlayerQueueSnapEffect(
+                state, snappingEnabled.value,
+                canSnap = { !rowsMoving.value && !anchor.isPending },
+                isReordering = { false },
+                coverTop = {
+                    state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                        ?.offset?.toFloat() ?: if (state.firstVisibleItemIndex > headerIndex) -height - 1f
+                        else state.layoutInfo.viewportEndOffset + 1f
+                },
+                snapTarget = { top, travel ->
+                    val threshold = rowHeight / 7f
+                    playerQueueSnapTarget(top, height, state.layoutInfo.viewportEndOffset.toFloat(),
+                        when { travel >= threshold -> 1; travel <= -threshold -> -1; else -> 0 },
+                        hasHistory = index > 0, canPinUpcoming = true)
+                },
+            )
+            selectTrack = { track ->
+                val next = order.indexOf(track)
+                val oldTop = QueueRowsSnapshot(
+                    order.map { PhoneQueueEntry(it.toString(), MediaItem.Builder().build(), it) },
+                    current.value.toString(),
+                    state.layoutInfo.visibleItemsInfo.associate { it.key.toString() to it.offset.toFloat() },
+                    state.layoutInfo.viewportEndOffset.toFloat(), rowHeight, gap, null, false, 0f,
+                ).headerTop(height, 0f)
+                // Match the player event: preserve old geometry before publishing the new queue.
+                anchor.update(track.toString(), true, order.getOrNull(next - 1)?.toString(), gap,
+                    headerTop = (oldTop ?: if (state.firstVisibleItemIndex > headerIndex) -height
+                        else state.layoutInfo.viewportEndOffset.toFloat())
+                        .coerceIn(-height, state.layoutInfo.viewportEndOffset.toFloat()),
+                    contentRevision = contentRevision.value + 1)
+                current.value = track
+                contentRevision.value++
+            }
+            val entries = order.map { PhoneQueueEntry(it.toString(), MediaItem.Builder().build(), it) }
+            val residentPosition = remember { mutableStateOf<State<PlayerQueueHeaderPosition>?>(null) }
+            SideEffect {
+                residentPosition.value = position
+                positionObserver = position
+                if (initialPositionObserver == null) initialPositionObserver = position
+            }
+            Box(Modifier.width(160.dp).height(240.dp).background(Color.Black)
+                .testTag("queue_artwork_attachment").nestedScroll(scrollObserver).onGloballyPositioned { viewport = it }) {
+                LazyColumn(state = state, modifier = Modifier.width(80.dp).fillMaxSize().then(anchor).onGloballyPositioned {
+                    anchor.restore(renderedRevision) { layout ->
+                        QueueRowsSnapshot(
+                            entries, current.value.toString(),
+                            layout.visibleItemsInfo.associate { it.key.toString() to it.offset.toFloat() },
+                            layout.viewportEndOffset.toFloat(), rowHeight, gap, null, false, 0f,
+                        ).headerTop(height, 0f)
+                    }
+                }) {
+                    items(count = index, key = { order[it].toString() }) {
+                        Box(Modifier.animateItem().fillMaxWidth().height(56.dp).background(Color.Blue))
+                    }
+                    if (gap > 0f) {
+                        item(key = "history_gap") { Box(Modifier.height(historyGap.value)) }
                     }
                     item(key = PlayerQueueCurrentHeaderKey, contentType = "current_header") {
                         Box(Modifier.fillMaxWidth().height(68.dp).onGloballyPositioned { header = it })
                     }
-                    order.drop(index + 1).forEach { track ->
-                        item(key = track) {
-                            Box(Modifier.animateItem().fillMaxWidth().height(56.dp).background(Color.Green))
-                        }
+                    items(count = order.size - index - 1, key = { order[index + 1 + it].toString() }) { row ->
+                        val track = order[index + 1 + row]
+                        Box(Modifier.animateItem().fillMaxWidth().height(56.dp)
+                            .testTag("upcoming_$track").clickable { selectTrack!!(track) }.background(Color.Green))
                     }
                     item(key = "tail") { Box(Modifier.fillMaxWidth().height(240.dp)) }
                 }
-                Box(Modifier.width(40.dp).height(68.dp).graphicsLayer {
+                AnimatedContent(current.value, transitionSpec = {
+                    fadeIn(tween(400)).togetherWith(fadeOut(tween(400)))
+                }, modifier = Modifier.width(40.dp).height(68.dp).graphicsLayer {
                     translationX = 100.dp.toPx()
-                    translationY = position.value.top
+                    translationY = residentPosition.value?.value?.top ?: 0f
                     coverTop = translationY
-                }.background(Color.White))
+                }) { track ->
+                    Box(Modifier.fillMaxSize().background(if (track % 2 == 0) Color.White else Color.Red))
+                }
             }
         }
         fun checkPinnedFrames(count: Int) {
@@ -585,13 +680,27 @@ class AppleMusicTitleRenderingTest {
                     val top = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
                     assertEquals("Track changes must not move the current header slot", 0f, top, 1f)
                     assertEquals("Artwork must remain attached to the header", top, coverTop, 1f)
+                    assertSame("Playback changes must retain the resident position observer",
+                        initialPositionObserver, positionObserver)
                     val visibleKeys = listState!!.layoutInfo.visibleItemsInfo.map { it.key }
                     assertEquals(1, visibleKeys.count { it == PlayerQueueCurrentHeaderKey })
-                    assertFalse("The current track must not remain an ordinary row", current.value in visibleKeys)
+                    assertFalse("The current track must not remain an ordinary row", current.value.toString() in visibleKeys)
                 }
             }
         }
         checkPinnedFrames(2)
+        for (slot in listOf(1, 3, 2, 1, 3)) {
+            compose.runOnIdle { selectTrack!!(2) }
+            checkPinnedFrames(24)
+            compose.onNodeWithTag("upcoming_${2 + slot}").performTouchInput { click(center) }
+            checkPinnedFrames(24)
+        }
+        compose.runOnIdle {
+            selectTrack!!(4)
+            selectTrack!!(1)
+            selectTrack!!(6)
+        }
+        checkPinnedFrames(24)
         for (track in listOf(3, 1, 0, 8, 4, 2)) {
             compose.runOnIdle { current.value = track }
             checkPinnedFrames(24)
@@ -619,6 +728,474 @@ class AppleMusicTitleRenderingTest {
         compose.runOnIdle {
             assertEquals("Playback must not pull the user out of history", 0, listState!!.firstVisibleItemIndex)
         }
+
+        fun checkBrowsingFrames(count: Int, expectedTop: Float? = null) {
+            repeat(count) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {
+                    val item = listState!!.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                    if (item != null) {
+                        val top = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+                        assertEquals("A changing cover must follow the browsing header", top, coverTop, 1f)
+                        if (expectedTop != null) {
+                            assertEquals("Playback must preserve the held header offset", expectedTop, top, 1f)
+                        }
+                    }
+                    assertSame(initialPositionObserver, positionObserver)
+                }
+                val bitmap = compose.onNodeWithTag("queue_artwork_attachment").captureToImage()
+                val scale = bitmap.width / 160f
+                val pixels = bitmap.toPixelMap()
+                val centerY = (coverTop + 34f * scale).roundToInt()
+                if (centerY in 2 until bitmap.height - 2) {
+                    assertTrue("The live cover must draw at the current header position",
+                        pixels[(120f * scale).roundToInt(), centerY].red > 0.5f)
+                }
+                for (y in 0 until bitmap.height step 4) {
+                    if (y < coverTop - 2f || y > coverTop + 68f * scale + 2f) {
+                        assertEquals("No artwork may remain at an earlier scroll position", 0f,
+                            pixels[(120f * scale).roundToInt(), y].red, 0.02f)
+                    }
+                }
+            }
+        }
+        compose.runOnIdle { current.value = 4 }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(order.indexOf(4) - 3, 12) } }
+        checkBrowsingFrames(2)
+        compose.onNodeWithTag("queue_artwork_attachment").performTouchInput {
+            down(Offset(width * 0.25f, height * 0.75f))
+            moveBy(Offset(0f, -height * 0.1f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        var heldTop = 0f
+        compose.runOnIdle {
+            assertTrue("The original pointer must still own the drag", listState!!.isScrollInProgress)
+            heldTop = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+        }
+        for (track in listOf(5, 3, 6, 4, 5, 4)) {
+            compose.runOnIdle { current.value = track }
+            checkBrowsingFrames(8, heldTop)
+            compose.runOnIdle { assertTrue("Track changes must not cancel the drag", listState!!.isScrollInProgress) }
+        }
+        compose.runOnIdle {
+            selectTrack!!(6)
+            val consumed = listState!!.dispatchRawDelta(8f)
+            currentAnchor!!.onScroll(-consumed)
+            heldTop -= consumed
+            currentAnchor!!.restore(contentRevision.value - 1) {
+                error("An old-content layout must never consume the pending correction")
+            }
+            assertTrue("The old layout must leave the correction pending", currentAnchor!!.isPending)
+        }
+        checkBrowsingFrames(8, heldTop)
+        compose.onNodeWithTag("queue_artwork_attachment").performTouchInput {
+            moveBy(Offset(0f, -height * 0.1f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            val movedTop = header!!.boundsInRoot().top - viewport!!.boundsInRoot().top
+            assertTrue("The same pointer must continue moving the header", movedTop < heldTop - 4f)
+        }
+        compose.onNodeWithTag("queue_artwork_attachment").performTouchInput { up() }
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(0) } }
+        checkBrowsingFrames(2)
+        for (track in listOf(2, 5, 1, 6)) {
+            compose.runOnIdle {
+                current.value = track
+                scope!!.launch { listState!!.animateScrollToItem(order.indexOf(track), 20) }
+            }
+            checkBrowsingFrames(8)
+        }
+        compose.runOnIdle { scope!!.launch { listState!!.animateScrollToItem(order.size, 80) } }
+        checkBrowsingFrames(40)
+        compose.runOnIdle {
+            current.value = 2
+            scope!!.launch { listState!!.animateScrollToItem(0) }
+        }
+        checkBrowsingFrames(40)
+
+        compose.runOnIdle {
+            historyGap.value = 16.dp
+            current.value = 5
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(order.indexOf(5) - 4) } }
+        fun checkHistoryEndpoint(count: Int) {
+            repeat(count) {
+                checkBrowsingFrames(1)
+                compose.runOnIdle {
+                    val layout = listState!!.layoutInfo
+                    val tailKey = order[order.indexOf(current.value) - 1]
+                    val tail = layout.visibleItemsInfo.first { it.key == tailKey.toString() }
+                    val gap = viewport!!.size.height / 240f * 16f
+                    assertEquals("The history endpoint must stay at the viewport bottom",
+                        layout.viewportEndOffset.toFloat(), tail.offset + tail.size + gap, 1f)
+                    assertTrue("Previous must not pull the current header into history",
+                        layout.visibleItemsInfo.none {
+                            it.key == PlayerQueueCurrentHeaderKey && it.offset < layout.viewportEndOffset
+                        })
+                }
+            }
+        }
+        checkHistoryEndpoint(2)
+        for (track in listOf(6, 4, 1, 4, 6, 5)) {
+            compose.runOnIdle { current.value = track }
+            checkHistoryEndpoint(24)
+        }
+
+        // Intermediate offsets also must not manufacture a gesture when playback finishes.
+        for (start in listOf(0f, 240f, -68f, 30f, 170f, -50f)) {
+            compose.runOnIdle {
+                rowsMoving.value = true
+                snappingEnabled.value = true
+                selectTrack!!(6)
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                val scale = viewport!!.size.height / 240f
+                scope!!.launch {
+                    listState!!.scrollToItem(order.indexOf(6) + 1, (-start * scale).roundToInt())
+                }
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertEquals(start * viewport!!.size.height / 240f, coverTop, 1f)
+                selectTrack!!(5)
+            }
+            repeat(24) { compose.mainClock.advanceTimeByFrame() }
+            compose.runOnIdle {
+                assertEquals("Playback must preserve the existing browsing position",
+                    start * viewport!!.size.height / 240f, coverTop, 1f)
+                rowsMoving.value = false
+            }
+            repeat(60) { compose.mainClock.advanceTimeByFrame() }
+            compose.runOnIdle {
+                assertEquals("Finishing playback motion must not request a snap",
+                    start * viewport!!.size.height / 240f, coverTop, 1f)
+            }
+        }
+        compose.runOnIdle {
+            rowsMoving.value = true
+            scope!!.launch { listState!!.scrollToItem(order.indexOf(current.value) + 1) }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("queue_artwork_attachment").performTouchInput {
+            down(Offset(width * 0.25f, height * 0.5f))
+            moveBy(Offset(0f, height * 0.15f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        var heldBeforeSnap = 0f
+        compose.runOnIdle {
+            heldBeforeSnap = coverTop
+            rowsMoving.value = false
+        }
+        repeat(24) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle {
+            assertTrue(listState!!.isScrollInProgress)
+            assertEquals("Completing row motion must not snap a held drag", heldBeforeSnap, coverTop, 1f)
+        }
+        compose.onNodeWithTag("queue_artwork_attachment").performTouchInput {
+            advanceEventTime(500)
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { rowsMoving.value = true }
+        repeat(12) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle {
+            rowsMoving.value = false
+        }
+        repeat(80) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle { assertEquals("Release must settle the visible header", 0f, coverTop, 1f) }
+
+        compose.runOnIdle {
+            order.addAll(9..59)
+            selectTrack!!(20)
+        }
+        checkBrowsingFrames(24, 0f)
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(order.indexOf(20) + 12) } }
+        checkBrowsingFrames(2)
+        for (track in listOf(45, 2, 40)) {
+            compose.runOnIdle { selectTrack!!(track) }
+            checkBrowsingFrames(24)
+            compose.runOnIdle {
+                assertEquals("Distant selection must retain the hidden upcoming edge",
+                    -viewport!!.size.height / 240f * 68f, coverTop, 1f)
+            }
+        }
+        compose.runOnIdle { scope!!.launch { listState!!.scrollToItem(0) } }
+        checkBrowsingFrames(2)
+        compose.runOnIdle { selectTrack!!(20) }
+        checkBrowsingFrames(24)
+        compose.runOnIdle {
+            assertEquals("Distant history selection must retain the hidden history edge",
+                viewport!!.size.height.toFloat(), coverTop, 1f)
+        }
+    }
+
+    @Test fun selectingTheOnlyHistorySongAnimatesTheHeaderBackBeforeRemovingItsSpace() {
+        checkEmptyHistoryReturn(keepPlayingKey = false)
+    }
+
+    @Test fun removingTheOnlyHistorySongReturnsWithoutChangingThePlayingKey() {
+        checkEmptyHistoryReturn(keepPlayingKey = true)
+    }
+
+    @Test fun emptyHistoryReturnWaitsForTheHeldPointerToRelease() {
+        checkEmptyHistoryReturn(keepPlayingKey = false, holdDuringReturn = true)
+    }
+
+    private fun checkEmptyHistoryReturn(keepPlayingKey: Boolean, holdDuringReturn: Boolean = false) {
+        compose.mainClock.autoAdvance = false
+        val hasHistory = mutableStateOf(true)
+        val retainSpace = mutableStateOf(false)
+        val pendingEntryAlignment = mutableStateOf(false)
+        var drawnTop = 0f
+        var viewportHeight = 0f
+        var finished = false
+        var headingTop = 0f
+        var headingHeight = 0f
+        var viewportCoordinates: LayoutCoordinates? = null
+        var sawPinnedHeading = false
+        var sawPushedHeading = false
+        var queueState: LazyListState? = null
+        var queueScope: CoroutineScope? = null
+        var currentPull: PlayerQueueTopOverscroll? = null
+        var selectOnlyHistory: (() -> Unit)? = null
+        compose.setContent {
+            val state = rememberLazyListState()
+            val dragged = state.interactionSource.collectIsDraggedAsState()
+            val progress = remember { Animatable(0f) }
+            val height = with(LocalDensity.current) { 68.dp.toPx() }
+            val fullHeight = with(LocalDensity.current) { 240.dp.toPx() }
+            val headingSize = with(LocalDensity.current) { 32.dp.toPx() }
+            val pullLimit = with(LocalDensity.current) { 24.dp.toPx() }
+            val scope = rememberCoroutineScope()
+            val pull = remember(scope, pullLimit) {
+                PlayerQueueTopOverscroll(
+                    scope, pullLimit,
+                    isAtTop = {
+                        state.layoutInfo.visibleItemsInfo.any { it.key == PlayerQueueCurrentHeaderKey && it.offset == 0 }
+                    },
+                    onUserInput = { pendingEntryAlignment.value = false },
+                ) {
+                    !hasHistory.value && !retainSpace.value
+                }
+            }
+            queueState = state
+            queueScope = scope
+            currentPull = pull
+            val index = if (hasHistory.value) 5 else if (retainSpace.value) 4 else 2
+            val position = rememberPlayerQueueHeaderPosition(
+                state, PlayerQueueCurrentHeaderKey, index, height, visualOffset = { pull.offset },
+            )
+            val anchor = rememberPlayerQueueHeaderAnchor(
+                state, if (hasHistory.value || keepPlayingKey) "1" else "0", true,
+                historyTailKey = if (hasHistory.value) "0" else null,
+                historyGap = with(LocalDensity.current) { 16.dp.toPx() },
+            )
+            selectOnlyHistory = {
+                anchor.update(if (keepPlayingKey) "1" else "0", true, null, 0f,
+                    headerTop = fullHeight, layoutChanged = keepPlayingKey)
+                retainSpace.value = true
+                hasHistory.value = false
+            }
+            PlayerQueueSnapEffect(
+                state, active = holdDuringReturn,
+                canSnap = { finished && !anchor.isPending },
+                isReordering = { false },
+                coverTop = { position.value.top },
+                snapTarget = { top, _ -> if (!hasHistory.value && top > 0f) 0f else null },
+            )
+            LaunchedEffect(hasHistory.value) {
+                if (!hasHistory.value) {
+                    snapshotFlow { state.layoutInfo to anchor.isPending }.first { (layout, pending) ->
+                        !pending && layout.visibleItemsInfo.any {
+                            it.key == "queue_history_padding" && it.size == (fullHeight - headingSize).roundToInt()
+                        }
+                    }
+                    animatePlayerQueueRows(progress, state, fullHeight) { dragged.value }
+                    if (!holdDuringReturn) {
+                        assertEquals(0, state.layoutInfo.visibleItemsInfo.first { it.key == PlayerQueueCurrentHeaderKey }.offset)
+                    }
+                    finished = true
+                }
+            }
+            LaunchedEffect(retainSpace.value) {
+                if (!retainSpace.value) return@LaunchedEffect
+                snapshotFlow {
+                    val layout = state.layoutInfo
+                    !state.isScrollInProgress &&
+                        (layout.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                            ?.let { it.offset <= 0 } ?: (state.firstVisibleItemIndex > index))
+                }.first { it }
+                retainSpace.value = false
+            }
+            Box(Modifier.width(160.dp).height(240.dp).background(Color.Black)
+                .testTag("empty_history_pull_host").nestedScroll(pull)) {
+                LazyColumn(
+                    state = state,
+                    overscrollEffect = null,
+                    modifier = Modifier.width(80.dp).fillMaxSize().graphicsLayer { translationY = pull.offset }
+                        .then(anchor).onGloballyPositioned {
+                        viewportCoordinates = it
+                        anchor.restore { layout ->
+                            layout.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                                ?.offset?.toFloat()
+                                ?: layout.visibleItemsInfo.firstOrNull { it.key == "queue_history_padding" }
+                                    ?.let { (it.offset + it.size).toFloat() }
+                        }
+                    },
+                ) {
+                    if (hasHistory.value || retainSpace.value) {
+                        stickyHeader(key = "history_heading") {
+                            Box(Modifier.fillMaxWidth().height(32.dp).testTag("retained_history_heading")
+                                .onGloballyPositioned {
+                                    headingTop = it.localToRoot(Offset.Zero).y - viewportCoordinates!!.localToRoot(Offset.Zero).y
+                                    headingHeight = it.size.height.toFloat()
+                                })
+                        }
+                        item(key = "queue_history_padding") {
+                            Box(Modifier.height(if (hasHistory.value) 136.dp else 208.dp))
+                        }
+                    }
+                    if (hasHistory.value) {
+                        item(key = "0") {
+                            Box(Modifier.fillMaxWidth().height(56.dp).testTag("only_history_song").clickable {
+                                selectOnlyHistory!!()
+                            }.background(Color.Blue))
+                        }
+                    }
+                    item(key = "history_gap") { Box(Modifier.height(if (hasHistory.value) 16.dp else 0.dp)) }
+                    stickyHeader(key = "current_boundary") { Box(Modifier.height(0.dp)) }
+                    item(key = PlayerQueueCurrentHeaderKey) {
+                        Box(Modifier.fillMaxWidth().height(68.dp).testTag("empty_history_current_header"))
+                    }
+                    item(key = "upcoming") {
+                        androidx.compose.foundation.layout.Column(Modifier.height(400.dp)) {
+                            Box(Modifier.fillMaxWidth().height(32.dp).testTag("pull_modes"))
+                            Box(Modifier.fillMaxWidth().height(48.dp).testTag("pull_continue"))
+                            Box(Modifier.fillMaxWidth().height(320.dp).testTag("pull_songs"))
+                        }
+                    }
+                    item(key = "tail") { Box(Modifier.height(240.dp)) }
+                }
+                Box(Modifier.width(40.dp).height(68.dp).graphicsLayer {
+                    viewportHeight = fullHeight
+                    drawnTop = position.value.top
+                    translationX = 100.dp.toPx()
+                    translationY = drawnTop
+                }.background(Color.White))
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        if (holdDuringReturn) {
+            compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+                down(Offset(width * 0.25f, height * 0.75f))
+                moveBy(Offset(0f, height * 0.08f))
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertTrue(queueState!!.isScrollInProgress)
+                selectOnlyHistory!!()
+            }
+            repeat(30) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {
+                    assertEquals("Playback must not return a header while the pointer is held", viewportHeight, drawnTop, 1f)
+                    assertTrue(queueState!!.isScrollInProgress)
+                }
+            }
+            compose.runOnIdle { assertTrue(finished) }
+            compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+                advanceEventTime(500)
+                up()
+            }
+            repeat(80) { compose.mainClock.advanceTimeByFrame() }
+            compose.runOnIdle { assertEquals("Release must finish the deferred header settle", 0f, drawnTop, 1f) }
+            return
+        }
+        compose.onNodeWithTag("only_history_song").performTouchInput { click(center) }
+        var previous = viewportHeight
+        repeat(30) { frame ->
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertTrue("The header must return continuously", drawnTop <= previous + 1f)
+                assertTrue("Removing the final history row must not teleport the header",
+                    previous - drawnTop < viewportHeight * 0.4f)
+                if (frame == 5) assertTrue("The header must still be moving midway through the return",
+                    drawnTop > 0f && drawnTop < viewportHeight)
+                if (!finished && drawnTop > 1f) {
+                    assertEquals("The retained heading must use the normal sticky push-off boundary",
+                        minOf(0f, drawnTop - headingHeight), headingTop, 1f)
+                    if (drawnTop > headingHeight) sawPinnedHeading = true else sawPushedHeading = true
+                }
+                previous = drawnTop
+            }
+        }
+        compose.runOnIdle {
+            assertTrue(finished)
+            assertTrue(sawPinnedHeading)
+            assertTrue(sawPushedHeading)
+            assertEquals("Removing the retained space must leave the header at the top", 0f, drawnTop, 1f)
+        }
+        compose.onNodeWithTag("retained_history_heading").assertDoesNotExist()
+        val pullTags = listOf("empty_history_current_header", "pull_modes", "pull_continue", "pull_songs")
+        val beforeFirstPull = pullTags.map {
+            compose.onNodeWithTag(it).getUnclippedBoundsInRoot().top.value
+        }
+        compose.runOnIdle { pendingEntryAlignment.value = true }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+            down(Offset(width * 0.25f, height * 0.75f))
+            moveBy(Offset(0f, height * 0.15f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertFalse("The first downward input must cancel pending entry alignment", pendingEntryAlignment.value)
+            assertTrue("The first gesture must immediately start the shared rebound", currentPull!!.offset > 0f)
+            assertEquals(0, queueState!!.layoutInfo.visibleItemsInfo.first { it.key == PlayerQueueCurrentHeaderKey }.offset)
+        }
+        pullTags.zip(beforeFirstPull).forEach { (tag, before) ->
+            val top = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot().top.value
+            compose.runOnIdle {
+                assertEquals("Header, modes, Continue Playing and songs must rebound with the cover",
+                    drawnTop, (top - before) * viewportHeight / 240f, 1f)
+            }
+        }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput { up() }
+        repeat(45) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle { assertEquals(0f, drawnTop, 1f) }
+        compose.runOnIdle { queueScope!!.launch { queueState!!.scrollToItem(3) } }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { assertTrue(queueState!!.canScrollBackward) }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+            down(Offset(width * 0.25f, height * 0.25f))
+            moveBy(Offset(0f, height * 0.1f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertTrue("Upcoming rows must first scroll back toward the real top", queueState!!.canScrollBackward)
+            assertEquals("Scrolling upcoming rows must not stretch the viewport", 0f, currentPull!!.offset, 0f)
+        }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+            moveBy(Offset(0f, height * 0.5f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertEquals("The same drag must reach the real list start", 0,
+                queueState!!.layoutInfo.visibleItemsInfo.first { it.key == PlayerQueueCurrentHeaderKey }.offset)
+            assertTrue("The empty-history top edge should resist a downward pull",
+                drawnTop > 0f && drawnTop < viewportHeight * 0.1f)
+        }
+        val titleTop = compose.onNodeWithTag("empty_history_current_header").getUnclippedBoundsInRoot().top.value
+        val hostTop = compose.onNodeWithTag("empty_history_pull_host").getUnclippedBoundsInRoot().top.value
+        compose.runOnIdle {
+            assertEquals("The resident cover and real list must share the rebound offset",
+                (titleTop - hostTop) * viewportHeight / 240f, drawnTop, 1f)
+        }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput { up() }
+        repeat(45) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle { assertEquals(0f, drawnTop, 1f) }
     }
 
     @Test fun queueViewportClipsBeforeControlsUnderFullHeightParentConstraints() {
@@ -994,6 +1571,188 @@ class AppleMusicTitleRenderingTest {
         assertTrue("The title press must not add a dark overlay", samePixels(initial, image()))
         compose.onNodeWithText("Short title").performTouchInput { up() }
         compose.runOnIdle { assertEquals(1, clicks) }
+    }
+
+    @Test fun changingToAPendingPainterDoesNotCropTheOutgoingSquareArtwork() {
+        compose.mainClock.autoAdvance = false
+        val track = mutableStateOf(0)
+        val painterReady = mutableStateOf(false)
+        compose.setContent {
+            Box(Modifier.size(96.dp).background(Color.Black).testTag("square_cover_host")) {
+                AnimatedContent(
+                    track.value, transitionSpec = { appleMusicArtworkTransition() },
+                    modifier = Modifier.padding(16.dp).size(64.dp).background(Color.White),
+                ) { item ->
+                    if (item == 0 || painterReady.value) {
+                        Box(Modifier.fillMaxSize().background(if (item == 0) Color.Green else Color.Blue))
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { track.value = 1 }
+        compose.mainClock.advanceTimeBy(100)
+        val pending = compose.onNodeWithTag("square_cover_host").captureToImage().toPixelMap()
+        for (x in listOf(24, 72)) for (y in listOf(24, 72)) {
+            val pixel = pending[(pending.width * x / 96), (pending.height * y / 96)]
+            assertTrue("A missing incoming painter must not crop the outgoing cover to a strip", pixel.red < 0.8f)
+            assertTrue(pixel.green > 0.8f)
+        }
+        compose.runOnIdle { painterReady.value = true }
+        compose.mainClock.advanceTimeBy(400)
+        val loaded = compose.onNodeWithTag("square_cover_host").captureToImage().toPixelMap()
+        for (x in listOf(24, 72)) for (y in listOf(24, 72)) {
+            assertTrue("The ready painter must fill the same square",
+                loaded[loaded.width * x / 96, loaded.height * y / 96].blue > 0.8f)
+        }
+    }
+
+    @Test fun offscreenQueueArtworkRetainsItsShadowWhileFadingBackToTheAlbum() {
+        val progress = mutableStateOf(0.6f)
+        val belowViewport = mutableStateOf(false)
+        val opaqueReference = mutableStateOf(false)
+        var drawnBounds = Rect.Zero
+        compose.setContent {
+            val density = LocalDensity.current
+            val normal = with(density) { Rect(80.dp.toPx(), 160.dp.toPx(), 240.dp.toPx(), 320.dp.toPx()) }
+            val frame = {
+                val hidden = with(density) {
+                    val top = if (belowViewport.value) 800.dp.toPx() else (-200).dp.toPx()
+                    Rect(28.dp.toPx(), top, 76.dp.toPx(), top + 48.dp.toPx())
+                }
+                val target = appleMusicQueueArtworkTarget(
+                    hidden, with(density) { 40.dp.toPx() }, with(density) { 360.dp.toPx() },
+                )
+                appleMusicArtworkFrame(
+                    normal, target.bounds,
+                    with(density) { 12.dp.toPx() }, with(density) { 8.dp.toPx() },
+                    with(density) { 16.dp.toPx() }, 1f, progress.value,
+                )
+            }
+            Box(Modifier.width(320.dp).height(480.dp).background(Color.White).testTag("artwork_shadow_host")) {
+                Box(
+                    Modifier.graphicsLayer {
+                        val current = frame()
+                        drawnBounds = current.bounds
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        translationX = current.bounds.left
+                        translationY = current.bounds.top
+                        scaleX = current.bounds.width / size.width
+                        scaleY = current.bounds.height / size.height
+                    }
+                        .size(160.dp)
+                        .playerArtworkAppearance(frame) { if (opaqueReference.value) 1f else 1f - progress.value }
+                        .background(Color.White),
+                )
+            }
+        }
+        fun shadowEnergy(): Float {
+            val pixels = compose.onNodeWithTag("artwork_shadow_host").captureToImage().toPixelMap()
+            val bounds = drawnBounds.inflate(1f)
+            var energy = 0f
+            for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
+                if (!bounds.contains(Offset(x + 0.5f, y + 0.5f))) energy += 1f - pixels[x, y].red
+            }
+            return energy
+        }
+        for (below in listOf(false, true)) {
+            compose.runOnIdle { belowViewport.value = below }
+            // Include a reversal while the artwork is still partially transparent.
+            for (fraction in listOf(0.6f, 0.1f, 0.4f, 0f)) {
+                compose.runOnIdle {
+                    progress.value = fraction
+                    opaqueReference.value = true
+                }
+                val fullShadow = shadowEnergy()
+                assertTrue("The reference frame must have a native shadow outside the image", fullShadow > 3f)
+                compose.runOnIdle { opaqueReference.value = false }
+                assertEquals("The shadow must fade during return, without waiting for full opacity",
+                    fullShadow * (1f - fraction), shadowEnergy(), maxOf(3f, fullShadow * 0.15f))
+            }
+        }
+    }
+
+    @Test fun queueMetadataTracksLiveScrollBeforeTheInlineHandoff() {
+        val progress = mutableStateOf(0.96f)
+        val opacity = mutableStateOf(1f)
+        var list: LazyListState? = null
+        val favoriteDescription = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.app_tab_library_songs)
+        val moreDescription = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.more_actions_title)
+        compose.setContent {
+            MaterialTheme {
+                val density = LocalDensity.current
+                val state = rememberLazyListState()
+                list = state
+                val rowHeight = with(density) { 68.dp.toPx() }
+                val position = rememberPlayerQueueHeaderPosition(state, PlayerQueueCurrentHeaderKey, 0, rowHeight)
+                val motion = Modifier.playerInfoMotion(
+                    opacity, progress,
+                    albumOrigin = { Offset(0f, with(density) { 180.dp.toPx() }) },
+                    headerOrigin = { Offset(0f, position.value.top) },
+                    fromAlbum = false,
+                    placementOrigin = { Offset.Zero },
+                )
+                Box(Modifier.width(360.dp).height(320.dp)) {
+                    LazyColumn(state = state, overscrollEffect = null, modifier = Modifier.fillMaxSize()) {
+                        item(key = PlayerQueueCurrentHeaderKey) {
+                            Box(Modifier.fillMaxWidth().height(68.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                if (progress.value == 1f) {
+                                    Title(
+                                        title = "Queue title", subTitle = "Artist", isLiked = false,
+                                        onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
+                                        enabled = false, marqueeEnabled = false, needShadow = false,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                        items(20) { Box(Modifier.fillMaxWidth().height(56.dp)) }
+                    }
+                    if (progress.value != 1f) {
+                        Box(Modifier.fillMaxWidth().height(68.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            Title(
+                                title = "Queue title", subTitle = "Artist", isLiked = false,
+                                onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
+                                enabled = false, marqueeEnabled = false, needShadow = false,
+                                textModifier = motion, actionsModifier = motion,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        fun tops() = listOf(
+            compose.onNodeWithText("Queue title", useUnmergedTree = true).getUnclippedBoundsInRoot().top.value,
+            compose.onNodeWithContentDescription(favoriteDescription, useUnmergedTree = true).getUnclippedBoundsInRoot().top.value,
+            compose.onNodeWithContentDescription(moreDescription, useUnmergedTree = true).getUnclippedBoundsInRoot().top.value,
+        )
+        val initial = tops()
+        var pixelsPerDp = 1f
+        compose.runOnIdle {
+            pixelsPerDp = compose.density.density
+            list!!.dispatchRawDelta(40f * pixelsPerDp)
+        }
+        tops().zip(initial).forEach { (after, before) ->
+            assertEquals("Every metadata element must follow scrolling before entry settles", -40f * 0.96f, after - before, 1f)
+        }
+        compose.runOnIdle { list!!.dispatchRawDelta(-28f * pixelsPerDp) }
+        tops().zip(initial).forEach { (after, before) ->
+            assertEquals("Reversing a held scroll must move every metadata element", -12f * 0.96f, after - before, 1f)
+        }
+        compose.runOnIdle { progress.value = 0.7f }
+        compose.runOnIdle { progress.value = 0.9999f }
+        val beforeHandoff = tops()
+        compose.runOnIdle { progress.value = 1f }
+        tops().zip(beforeHandoff).forEach { (after, before) ->
+            assertEquals("The real list row must replace metadata without a position jump", before, after, 1f)
+        }
+        compose.runOnIdle { progress.value = 0.96f }
+        tops().zip(initial).forEach { (after, before) ->
+            assertEquals("Reopening must observe the current list position", -12f * 0.96f, after - before, 1f)
+        }
     }
 
     @Test fun movingMetadataKeepsAdditiveBlendingOutsideItsOriginalRow() {

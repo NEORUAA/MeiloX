@@ -1,9 +1,22 @@
 package com.ljyh.mei.ui.component.player.component.applemusic
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.ljyh.mei.ui.component.utils.lerp
+
+internal fun AnimatedContentTransitionScope<*>.appleMusicArtworkTransition(): ContentTransform =
+    (fadeIn(tween(400)) + scaleIn(initialScale = 0.92f, animationSpec = tween(400)))
+        .togetherWith(fadeOut(tween(400)))
+        // The outer artwork frame owns size, including while a painter is pending.
+        .using(null)
 
 internal fun appleMusicLyricSpring() = spring<Float>(
     dampingRatio = 1.2f,
@@ -61,10 +74,11 @@ internal fun appleMusicInfoOffset(
     headerOrigin: Offset,
     progress: Float,
     fromAlbum: Boolean,
+    placementOrigin: Offset = if (fromAlbum) albumOrigin else headerOrigin,
 ): Offset {
     val p = progress.coerceIn(0f, 1f)
     val shared = Offset(lerp(albumOrigin.x, headerOrigin.x, p), lerp(albumOrigin.y, headerOrigin.y, p))
-    return shared - if (fromAlbum) albumOrigin else headerOrigin
+    return shared - placementOrigin
 }
 
 internal data class AppleMusicArtworkFrame(

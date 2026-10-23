@@ -5,8 +5,11 @@ import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.media3.common.MediaItem
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -20,6 +23,97 @@ class AppleMusicArtworkMotionTest {
 
     private fun frame(progress: Float, playbackScale: Float = 1f, bounds: Rect = normal) =
         appleMusicArtworkFrame(bounds, header, 12f, 8f, 16f, playbackScale, progress)
+
+    @Test fun fixedMetadataPlacementTracksLiveQueueTargetsAndHandsOffToTheRealRow() {
+        val album = Offset(28f, 460f)
+        val placedHeader = Offset(104f, 88f)
+        for (scroll in listOf(0f, 80f, 32f, -180f, 700f, 0f)) {
+            val target = placedHeader + Offset(0f, scroll)
+            for (progress in listOf(0f, 0.7f, 0.98f, 0.6f, 0.9999f, 1f)) {
+                val drawn = placedHeader + appleMusicInfoOffset(
+                    album, target, progress, fromAlbum = false, placementOrigin = placedHeader,
+                )
+                val albumCopy = album + appleMusicInfoOffset(album, target, progress, fromAlbum = true)
+                assertEquals(albumCopy.x, drawn.x, 0.001f)
+                assertEquals(albumCopy.y, drawn.y, 0.001f)
+                if (progress == 1f) assertEquals(target, drawn)
+            }
+            val before = placedHeader + appleMusicInfoOffset(
+                album, target, 0.9999f, fromAlbum = false, placementOrigin = placedHeader,
+            )
+            assertTrue("The inline handoff must not jump to a different queue position", abs(before.y - target.y) < 0.1f)
+        }
+    }
+
+    @Test fun emptyHistoryPullResistsTheTopEdgeReleasesAndCanBeInterrupted() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val scope = CoroutineScope(coroutineContext + clock)
+        var enabled = true
+        var isAtTop = false
+        var pendingEntryAlignment = true
+        var userScrolls = 0
+        var nativeScroll = 0f
+        val pull = PlayerQueueTopOverscroll(
+            scope, 24f, isAtTop = { isAtTop },
+            onUserInput = {
+                pendingEntryAlignment = false
+                userScrolls++
+            },
+            onListScroll = { nativeScroll += it },
+        ) { enabled }
+        assertEquals("Before reaching the top, native list scrolling keeps the downward delta", Offset.Zero,
+            pull.onPreScroll(Offset(0f, 80f), NestedScrollSource.UserInput))
+        pendingEntryAlignment = true
+        assertEquals("Upcoming rows must scroll before the whole viewport rebounds", Offset.Zero,
+            pull.onPostScroll(Offset.Zero, Offset(0f, 80f), NestedScrollSource.UserInput))
+        assertEquals(0f, pull.offset, 0f)
+        isAtTop = true
+        val beforeAutomaticScroll = userScrolls
+        assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, 80f), NestedScrollSource.SideEffect))
+        assertEquals(beforeAutomaticScroll, userScrolls)
+        assertTrue("Programmatic alignment must not be mistaken for a user takeover", pendingEntryAlignment)
+        assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, -40f), NestedScrollSource.UserInput))
+        assertEquals("The first downward gesture must move the shared viewport before the child scrolls",
+            Offset(0f, 80f), pull.onPreScroll(Offset(20f, 80f), NestedScrollSource.UserInput))
+        assertFalse("The first scroll must synchronously cancel entry alignment", pendingEntryAlignment)
+        assertEquals(Offset.Zero, pull.onPostScroll(Offset(0f, 80f), Offset.Zero, NestedScrollSource.UserInput))
+        val dragged = pull.offset
+        assertTrue(dragged > 0f && dragged < 24f)
+        assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, 80f), NestedScrollSource.SideEffect))
+        assertEquals(dragged, pull.offset, 0f)
+        assertEquals(Offset(0f, -40f), pull.onPreScroll(Offset(0f, -40f), NestedScrollSource.UserInput))
+        assertTrue(pull.offset > 0f && pull.offset < dragged)
+        enabled = false
+        assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, 80f), NestedScrollSource.UserInput))
+        assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, 80f), NestedScrollSource.UserInput))
+        assertEquals(Offset.Zero, pull.onPostScroll(Offset(0f, -23f), Offset.Zero, NestedScrollSource.SideEffect))
+        assertEquals("Native drag/fling consumption must reach the anchor even when rebound is disabled",
+            57f, nativeScroll, 0f)
+        var time = 0L
+        suspend fun frames(count: Int) {
+            repeat(count) {
+                yield()
+                clock.sendFrame(time)
+                time += 16_666_667L
+                yield()
+            }
+        }
+        val firstRelease = launch(clock) { pull.release() }
+        frames(8)
+        assertTrue(pull.offset > 0f && pull.offset < dragged)
+        enabled = true
+        val interrupted = pull.offset
+        pull.onPostScroll(Offset.Zero, Offset(0f, 20f), NestedScrollSource.UserInput)
+        assertTrue(pull.offset >= interrupted)
+        frames(3)
+        firstRelease.join()
+        assertTrue("An interrupted release must not reset a new pull", pull.offset > 0f)
+        val finalRelease = launch(clock) { pull.release() }
+        frames(120)
+        finalRelease.join()
+        assertEquals(0f, pull.offset, 0f)
+        assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, -40f), NestedScrollSource.UserInput))
+    }
 
     @Test fun autoplaySectionSeparatesOnlyTheDisplayedUpcomingEntries() {
         for (count in listOf(0, 1, 2, 7)) {
@@ -52,6 +146,35 @@ class AppleMusicArtworkMotionTest {
         viewportHeight = viewport, rowHeight = 56f, historyGap = 16f,
         autoplayKey = autoplayKey, autoplayEnabled = autoplayKey != null, autoplayHeight = 70f,
     )
+
+    @Test fun queueHeaderOffsetSurvivesLeavingTheMeasuredWindowInEitherDirection() {
+        val snapshot = queueSnapshot(4).copy(autoplayHeight = 44f)
+        assertEquals(200f, snapshot.copy(tops = mapOf(PlayerQueueCurrentHeaderKey to 200f))
+            .headerTop(84f, 140f)!!, 0f)
+        assertEquals(228f, snapshot.copy(tops = mapOf("2" to 100f)).headerTop(84f, 140f)!!, 0f)
+        assertEquals(276f, snapshot.copy(tops = mapOf("5" to 500f)).headerTop(84f, 140f)!!, 0f)
+        assertEquals(260f, snapshot.copy(tops = mapOf("7" to 640f), autoplayKey = "6", autoplayEnabled = true)
+            .headerTop(84f, 140f)!!, 0f)
+        assertEquals(276f, snapshot.copy(tops = mapOf("6" to 600f), autoplayKey = "1", autoplayEnabled = true)
+            .headerTop(84f, 140f)!!, 0f)
+        assertNull(snapshot.copy(tops = emptyMap()).headerTop(84f, 140f))
+        assertEquals(-84f, snapshot.copy(tops = mapOf("queue_upcoming_controls_bottom" to 140f))
+            .headerTop(84f, 140f)!!, 0f)
+        assertNull(snapshot.copy(currentKey = null).headerTop(84f, 140f))
+    }
+
+    @Test fun returningFromEmptyHistoryBuffersSongsBelowTheOriginalViewport() {
+        val snapshot = queueSnapshot(0, headerTop = 240f, controlsBottom = 400f, viewport = 240f)
+        assertFalse(snapshot.rows().containsKey("upcoming:1"))
+        val buffered = snapshot.rows(viewportExtension = 240f)
+        assertEquals(400f, buffered.getValue("upcoming:1").placement.top, 0f)
+        assertEquals(512f, buffered.getValue("upcoming:3").placement.top, 0f)
+        assertFalse(buffered.containsKey("upcoming:4"))
+        val before = queueSnapshot(1, headerTop = 240f, controlsBottom = 400f, viewport = 240f)
+            .rows(buffered.keys)
+        assertTrue("Survivors need their original offscreen positions", before.containsKey("upcoming:2"))
+        assertEquals(400f, before.getValue("upcoming:2").placement.top, 0f)
+    }
 
     @Test fun queueNextFadesInPlaceWhileSurvivorsAndBufferedNeighborsMoveTogether() {
         val before = queueSnapshot(3)
@@ -139,7 +262,30 @@ class AppleMusicArtworkMotionTest {
         assertEquals(193.6f, interrupted.getValue("upcoming:5").top, 0.0001f)
     }
 
-    @Test fun queueTailKeepsShortHeadersReachableAndLastSongsAboveTheFade() {
+    @Test fun queueRowTimingFollowsTheReferenceInsteadOfFinishingEarly() {
+        val animation = TargetBasedAnimation(PlayerQueueRowAnimationSpec, Float.VectorConverter, 0f, 1f)
+        fun progressAt(milliseconds: Long) = animation.getValueFromNanos(milliseconds * 1_000_000L)
+
+        // Bands cover the observed forward/reverse frames and recording cadence.
+        assertTrue(progressAt(50) in 0.19f..0.32f)
+        assertTrue(progressAt(100) in 0.57f..0.69f)
+        assertTrue(progressAt(200) in 0.90f..0.95f)
+        assertTrue(progressAt(300) in 0.97f..0.995f)
+        assertEquals(400_000_000L, animation.durationNanos)
+        assertEquals(0f, progressAt(0), 0f)
+        assertEquals(1f, progressAt(400), 0f)
+
+        val halfway = progressAt(200)
+        val outgoing = queueRowPlacement(QueueRowPlacement(160f), null, halfway)
+        val incoming = queueRowPlacement(null, QueueRowPlacement(160f), halfway)
+        val survivor = queueRowPlacement(QueueRowPlacement(216f), QueueRowPlacement(160f), halfway)
+        assertEquals(160f, outgoing.top, 0f)
+        assertEquals(160f, incoming.top, 0f)
+        assertEquals(1f, outgoing.opacity + incoming.opacity, 0.0001f)
+        assertEquals(incoming.opacity, (216f - survivor.top) / 56f, 0.0001f)
+    }
+
+    @Test fun queueTailFillsShortQueuesAndLimitsScrollableQueuesToOneRow() {
         val rowHeight = 56f
         for (viewport in listOf(280f, 460f, 680f)) {
             val fadeDepth = 104f
@@ -149,14 +295,17 @@ class AppleMusicArtworkMotionTest {
                     val tail = playerQueueTailHeight(viewport, contentHeight, rowHeight, fadeDepth)
                     assertTrue("The header must be able to reach the viewport top", contentHeight + tail >= viewport)
                     assertTrue("The tail must reserve at least one song row", tail >= rowHeight)
-                    assertTrue("The last song must finish above the fade", viewport - tail <= viewport - fadeDepth)
-                    if (contentHeight >= viewport) assertEquals(fadeDepth, tail, 0f)
+                    if (contentHeight + rowHeight >= viewport) assertEquals(rowHeight, tail, 0f)
                 }
             }
         }
         assertEquals(56f, playerQueueTailHeight(280f, 600f, rowHeight, 0f), 0f)
         assertEquals(130f, playerQueueTailHeight(460f, 414f, rowHeight, 104f, 84f), 0f)
         assertEquals(212f, playerQueueTailHeight(460f, 248f, rowHeight, 104f, 84f), 0f)
+        for (fadeDepth in listOf(0f, 56f, 104f, 200f)) {
+            assertEquals(56f, playerQueueTailHeight(460f, 488f, rowHeight, fadeDepth, 84f), 0f)
+            assertEquals(56f, playerQueueTailHeight(460f, 1000f, rowHeight, fadeDepth, 84f), 0f)
+        }
         for (contentHeight in listOf(248f, 356f, 357f, 414f, 600f)) {
             val tail = playerQueueTailHeight(460f, contentHeight, rowHeight, 104f, 84f)
             if (contentHeight + 104f > 460f) {
