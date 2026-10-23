@@ -946,6 +946,7 @@ fun IosPopupMenu(
     onAnchorSeparationChanged: ((Float) -> Unit)? = null,
     anchorSeparationEnabled: Boolean = true,
     onClosed: (() -> Unit)? = null,
+    overlayContent: @Composable BoxScope.(Float) -> Unit = {},
     anchor: @Composable (onClick: () -> Unit) -> Unit,
     content: @Composable ColumnScope.(LayerBackdrop, close: () -> Unit) -> Unit,
 ) {
@@ -1231,13 +1232,16 @@ fun IosPopupMenu(
                 // outside taps (dismiss) instead of letting them vanish into the window.
                 Box(
                     Modifier
-                        .then(if (fullScreen) Modifier.fillMaxSize() else Modifier)
-                        .clickable(
+                        .then(if (fullScreen) Modifier.fillMaxSize() else Modifier),
+                    contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
+                ) {
+                    // The dismiss target is a sibling so it never merges submenu pane semantics.
+                    Box(
+                        Modifier.matchParentSize().clickable(
                             interactionSource = null,
                             indication = null,
                         ) { onExpandedChange(false) },
-                    contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
-                ) {
+                    )
                     CompositionLocalProvider(LocalIosPopupMenuInteractive provides expanded) {
                         // Wide cascading menus exceed the platform Popup's measured width.
                         // Keep their window at screen size and position the existing animation
@@ -1270,6 +1274,7 @@ fun IosPopupMenu(
                             content(childBackdrop) { onExpandedChange(false) }
                         }
                     }
+                    overlayContent(menuAlpha.value.coerceIn(0f, 1f))
                 }
             }
         }

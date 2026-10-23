@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -38,6 +40,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -45,10 +49,13 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -81,6 +88,72 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun artistSubmenuKeepsOneWindowAndClosesWithItsParent() {
+        val visible = mutableStateOf(true)
+        var artistClicks = 0
+        var dismissals = 0
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    if (visible.value) IosCascadingMenu(
+                        anchorBounds = Rect(24f, 160f, 224f, 204f),
+                        title = "Player destinations",
+                        expandedDescription = "Expanded",
+                        collapsedDescription = "Collapsed",
+                        backdrop = emptyBackdrop(),
+                        onDismiss = { dismissals++; visible.value = false },
+                        items = listOf(
+                            IosCascadingMenuItem(
+                                title = "Go to artist",
+                                subtitle = "Artist A, Artist B",
+                                children = listOf(
+                                    IosCascadingMenuItem("Artist A", onClick = { artistClicks++ }),
+                                    IosCascadingMenuItem("Artist B"),
+                                ),
+                            ),
+                            IosCascadingMenuItem("Go to album"),
+                        ),
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
+        val header = hasText("Go to artist") and hasClickAction()
+        try {
+            repeat(2) {
+                val before = compose.onNode(header).getUnclippedBoundsInRoot()
+                compose.onNode(header).performClick()
+                compose.mainClock.advanceTimeByFrame()
+                val after = compose.onNode(header).getUnclippedBoundsInRoot()
+                assertEquals("Header handoff keeps its horizontal origin", before.left.value, after.left.value, 1f)
+                assertEquals("Header handoff keeps its vertical origin", before.top.value, after.top.value, 1f)
+                repeat(12) {
+                    compose.onAllNodes(isPopup()).assertCountEquals(1)
+                    compose.onNode(header).assertIsDisplayed()
+                    compose.mainClock.advanceTimeByFrame()
+                }
+                compose.mainClock.advanceTimeBy(1_000)
+                if (it == 0) {
+                    compose.onNode(header).performClick()
+                    compose.mainClock.advanceTimeBy(1_000)
+                    compose.onNodeWithText("Artist A").assertDoesNotExist()
+                }
+            }
+            compose.onNodeWithText("Artist A").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onAllNodes(isPopup()).assertCountEquals(0)
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertEquals(1, artistClicks)
+                assertEquals(1, dismissals)
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
 
     @Test
     fun musicThemeKeepsStaticSeedsAndInheritsDynamicContrastOnlyWhenEnabled() {

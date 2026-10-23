@@ -48,14 +48,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import com.kyant.backdrop.Backdrop
 import kotlin.math.roundToInt
 
@@ -70,15 +63,6 @@ data class IosCascadingMenuItem(
     val onClick: () -> Unit = {},
     val subtitle: String? = null,
 )
-
-private object ScreenMenuPosition : PopupPositionProvider {
-    override fun calculatePosition(
-        anchorBounds: IntRect,
-        windowSize: IntSize,
-        layoutDirection: LayoutDirection,
-        popupContentSize: IntSize,
-    ) = IntOffset.Zero
-}
 
 /** Uses the settings popup lifecycle, glass surface, and interactive menu rows unchanged. */
 @Composable
@@ -146,7 +130,11 @@ fun IosCascadingMenu(
 
     IosPopupMenu(
         expanded = open,
-        onExpandedChange = { if (!it) close() },
+        onExpandedChange = {
+            if (!it) {
+                if (childExpanded) childExpanded = false else close()
+            }
+        },
         itemCount = items.size + headerRows,
         heightOverride = 20.dp + 44.dp * headerRows + itemHeights.sum().dp +
             12.dp * items.count { it.separatorBefore },
@@ -167,6 +155,78 @@ fun IosCascadingMenu(
             if (started && !open) {
                 onDismiss()
                 pendingAction?.invoke()
+            }
+        },
+        // Keep the child in the existing full-screen Popup. Its origin is measured
+        // before selection so the parent row and child header hand off in one frame.
+        overlayContent = { menuAlpha ->
+            var windowOrigin by remember { mutableStateOf<Offset?>(null) }
+            BoxWithConstraints(
+                Modifier.fillMaxSize().onGloballyPositioned {
+                    windowOrigin = it.localToScreen(Offset.Zero)
+                }.semantics { paneTitle = title },
+                contentAlignment = AbsoluteAlignment.TopLeft,
+            ) {
+                val selected = selectedIndex?.let(items::getOrNull) ?: return@BoxWithConstraints
+                val bounds = selectedBounds ?: return@BoxWithConstraints
+                val origin = windowOrigin ?: return@BoxWithConstraints
+                val density = LocalDensity.current
+                val p = child.value.coerceIn(0f, 1f)
+                val topInset = with(density) {
+                    androidx.compose.foundation.layout.WindowInsets.safeDrawing.getTop(this).toDp()
+                } + 12.dp
+                val bottomInset = with(density) {
+                    androidx.compose.foundation.layout.WindowInsets.safeDrawing.getBottom(this).toDp()
+                } + 12.dp
+                val selectedRowHeight = if (selected.subtitle == null) 44.dp else 56.dp
+                val collapsedHeight = 20.dp + selectedRowHeight
+                val targetHeight = minOf(
+                    collapsedHeight + 44.dp * selected.children.size + 12.dp,
+                    maxHeight - topInset - bottomInset,
+                )
+                val rowTop = with(density) { (bounds.top - origin.y).toDp() } - 10.dp
+                val targetTop = rowTop.coerceIn(topInset, (maxHeight - bottomInset - targetHeight).coerceAtLeast(topInset))
+                val top = rowTop + (targetTop - rowTop) * p
+                val left = with(density) { (bounds.left - origin.x).toDp() } - 10.dp
+                Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null) { childExpanded = false })
+                IosContextMenu(
+                    visible = true,
+                    modifier = Modifier.absoluteOffset(left, top).graphicsLayer { alpha = menuAlpha },
+                    backdrop = backdrop,
+                    compact = true,
+                    menuWidth = menuWidth,
+                    heightOverride = collapsedHeight + (targetHeight - collapsedHeight) * p,
+                    shadowAlpha = p,
+                    highlightAlpha = p,
+                    itemCount = selected.children.size + 1,
+                ) { childBackdrop ->
+                    IosMenuItem(
+                        title = selected.title,
+                        subtitle = selected.subtitle,
+                        systemName = selected.systemName,
+                        iconTint = if (selected.destructive) colors.destructive else if (useAccentIcons) colors.accent else colors.content,
+                        destructive = selected.destructive,
+                        fontWeight = FontWeight((400 + 200 * p).roundToInt()),
+                        backdrop = childBackdrop,
+                        enabled = selected.enabled && open,
+                        trailing = { MenuChevron(90f * p, if (childExpanded) expandedDescription else collapsedDescription) },
+                        onClick = { childExpanded = !childExpanded },
+                    )
+                    Column(Modifier.weight(1f).graphicsLayer {
+                        alpha = p
+                        translationY = -12.dp.toPx() * (1f - p)
+                    }.verticalScroll(rememberScrollState())) {
+                        HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = colors.separator)
+                        selected.children.forEach { item ->
+                            IosMenuItem(
+                                title = item.title,
+                                backdrop = childBackdrop,
+                                enabled = item.enabled && open && childExpanded && p > 0.95f,
+                                onClick = { close(item.onClick) },
+                            )
+                        }
+                    }
+                }
             }
         },
         anchor = { Spacer(Modifier.size(1.dp)) },
@@ -237,82 +297,7 @@ fun IosCascadingMenu(
             )
         }
     }
-    val selected = selectedIndex?.let(items::getOrNull)
-    val bounds = selectedBounds
-    if (selected != null && bounds != null) {
-        Popup(
-            popupPositionProvider = ScreenMenuPosition,
-            onDismissRequest = { childExpanded = false },
-            properties = PopupProperties(focusable = open, clippingEnabled = false),
-        ) {
-            var windowOrigin by remember { mutableStateOf<Offset?>(null) }
-            BoxWithConstraints(
-                Modifier.fillMaxSize().onGloballyPositioned {
-                    windowOrigin = it.localToScreen(Offset.Zero)
-                }.semantics { paneTitle = title },
-                contentAlignment = AbsoluteAlignment.TopLeft,
-            ) {
-                val origin = windowOrigin ?: return@BoxWithConstraints
-                val density = LocalDensity.current
-                val p = child.value.coerceIn(0f, 1f)
-                val topInset = with(density) {
-                    androidx.compose.foundation.layout.WindowInsets.safeDrawing.getTop(this).toDp()
-                } + 12.dp
-                val bottomInset = with(density) {
-                    androidx.compose.foundation.layout.WindowInsets.safeDrawing.getBottom(this).toDp()
-                } + 12.dp
-                val selectedRowHeight = if (selected.subtitle == null) 44.dp else 56.dp
-                val collapsedHeight = 20.dp + selectedRowHeight
-                val targetHeight = minOf(
-                    collapsedHeight + 44.dp * selected.children.size + 12.dp,
-                    maxHeight - topInset - bottomInset,
-                )
-                val rowTop = with(density) { (bounds.top - origin.y).toDp() } - 10.dp
-                val targetTop = rowTop.coerceIn(topInset, (maxHeight - bottomInset - targetHeight).coerceAtLeast(topInset))
-                val top = rowTop + (targetTop - rowTop) * p
-                val left = with(density) { (bounds.left - origin.x).toDp() } - 10.dp
-                Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null) { childExpanded = false })
-                IosContextMenu(
-                    visible = true,
-                    modifier = Modifier.absoluteOffset(left, top),
-                    backdrop = backdrop,
-                    compact = true,
-                    menuWidth = menuWidth,
-                    heightOverride = collapsedHeight + (targetHeight - collapsedHeight) * p,
-                    shadowAlpha = p,
-                    highlightAlpha = p,
-                    itemCount = selected.children.size + 1,
-                ) { childBackdrop ->
-                    IosMenuItem(
-                        title = selected.title,
-                        subtitle = selected.subtitle,
-                        systemName = selected.systemName,
-                        iconTint = if (selected.destructive) colors.destructive else if (useAccentIcons) colors.accent else colors.content,
-                        destructive = selected.destructive,
-                        fontWeight = FontWeight((400 + 200 * p).roundToInt()),
-                        backdrop = childBackdrop,
-                        enabled = selected.enabled && open,
-                        trailing = { MenuChevron(90f * p, if (childExpanded) expandedDescription else collapsedDescription) },
-                        onClick = { childExpanded = !childExpanded },
-                    )
-                    Column(Modifier.weight(1f).graphicsLayer {
-                        alpha = p
-                        translationY = -12.dp.toPx() * (1f - p)
-                    }.verticalScroll(rememberScrollState())) {
-                        HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = colors.separator)
-                        selected.children.forEach { item ->
-                            IosMenuItem(
-                                title = item.title,
-                                backdrop = childBackdrop,
-                                enabled = item.enabled && open && childExpanded && p > 0.95f,
-                                onClick = { close(item.onClick) },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+
 }
 
 @Composable
