@@ -69,6 +69,8 @@ internal class NavigationInnerShadowRenderer(
     private var shadowHolePath = android.graphics.Path()
     private var padding = 0f
     private var blurDensity = Float.NaN
+    private var maskWidth = 0
+    private var maskHeight = 0
 
     fun draw(
         scope: DrawScope,
@@ -126,7 +128,9 @@ internal class NavigationInnerShadowRenderer(
                 is Outline.Generic -> addPath(outline.path)
             }
         }.asAndroidPath()
-        shadowHolePath = expandedShadowHole(40f * scope.density)
+        val combineCorners = outlinePath.isConvex ||
+            (nextKey.shape as? LiquidContactShape)?.hasConsistentWinding == true
+        shadowHolePath = expandedShadowHole(40f * scope.density, combineCorners)
         if (blurDensity != scope.density) {
             // Figma exports blur 10/30 as Gaussian sigma 5/15. Android converts its
             // public radius to sigma = radius * 0.57735 + 0.5; invert that after
@@ -169,8 +173,14 @@ internal class NavigationInnerShadowRenderer(
             }
             blurDensity = scope.density
         }
-        val width = ceil((nextKey.size.width + padding * 2f) * renderScale).toInt()
-        val height = ceil((nextKey.size.height + padding * 2f) * renderScale).toInt()
+        val requiredWidth = ceil((nextKey.size.width + padding * 2f) * renderScale).toInt()
+        val requiredHeight = ceil((nextKey.size.height + padding * 2f) * renderScale).toInt()
+        // Only the backing allocation grows. The path, sampling origin and blur remain exact;
+        // the extra white margin matches the mask's existing CLAMP boundary.
+        maskWidth = maxOf(maskWidth, (requiredWidth + 63) / 64 * 64)
+        maskHeight = maxOf(maskHeight, (requiredHeight + 63) / 64 * 64)
+        val width = maskWidth
+        val height = maskHeight
         val packed = packedMask
         if (packed != null) {
             recordMask(packed, width, height)
@@ -203,18 +213,24 @@ internal class NavigationInnerShadowRenderer(
         }
     }
 
-    private fun expandedShadowHole(spread: Float): android.graphics.Path {
+    private fun expandedShadowHole(spread: Float, combineCorners: Boolean): android.graphics.Path {
         // Figma exports spread -40 as a square-kernel dilation of the inner hole.
         // Navigation outlines have full-width/height center chords. Four translated
         // copies and two connecting strips preserve their original corner curves.
         // Increasing the shape size or using a round stroke changes those curves.
         val bounds = android.graphics.RectF()
         outlinePath.computeBounds(bounds, true)
-        val expanded = android.graphics.Path()
+        val expanded = android.graphics.Path().apply { fillType = android.graphics.Path.FillType.WINDING }
         for (x in floatArrayOf(-spread, spread)) {
             for (y in floatArrayOf(-spread, spread)) {
-                val corner = android.graphics.Path(outlinePath).apply { offset(x, y) }
-                expanded.op(corner, android.graphics.Path.Op.UNION)
+                if (combineCorners) {
+                    // Convex and explicitly verified contact contours have one winding
+                    // direction. Nonzero fill is their union before the final PathOp.
+                    expanded.addPath(outlinePath, x, y)
+                } else {
+                    val corner = android.graphics.Path(outlinePath).apply { offset(x, y) }
+                    expanded.op(corner, android.graphics.Path.Op.UNION)
+                }
             }
         }
         val strips = android.graphics.Path().apply {
@@ -250,6 +266,8 @@ internal class NavigationInnerShadowRenderer(
         packedMask?.discardDisplayList()
         burnMask?.discardDisplayList()
         key = null
+        maskWidth = 0
+        maskHeight = 0
     }
 
     private data class GeometryKey(

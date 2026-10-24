@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathIterator
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.PathSegment as ComposePathSegment
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
@@ -46,6 +49,7 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.capsule.core.Point
 import com.kyant.capsule.path.PathSegment
 import com.kyant.capsule.path.toPath
+import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
 import kotlin.math.PI
@@ -356,6 +360,332 @@ private data class ToolbarActionOutline(val bounds: Rect, val separation: Float)
 
 private val ToolbarContinuousShape = ContinuousRoundedRectangle(50)
 
+/** Original layout size and its axis-aligned visual bounds in the shared drawing space. */
+internal data class LiquidContactCapsule(val size: Size, val bounds: Rect)
+
+/** Adds adhesion only while the independently transformed surfaces are close enough. */
+internal fun liquidContactShape(
+    first: LiquidContactCapsule,
+    second: LiquidContactCapsule,
+    contactDistance: Float,
+): Shape? {
+    fun LiquidContactCapsule.isValid() = size.width > 0f && size.height > 0f &&
+        size.width.isFinite() && size.height.isFinite() && bounds.width > 0f && bounds.height > 0f &&
+        bounds.left.isFinite() && bounds.top.isFinite() && bounds.right.isFinite() && bounds.bottom.isFinite()
+    if (!first.isValid() || !second.isValid() || !contactDistance.isFinite() || contactDistance <= 0.01f) return null
+    val effectiveDistance = contactDistance - 0.01f
+    val left = if (first.bounds.center.x <= second.bounds.center.x) first else second
+    val right = if (left === first) second else first
+    if (right.bounds.left - left.bounds.right >= effectiveDistance ||
+        min(left.bounds.bottom, right.bounds.bottom) <= maxOf(left.bounds.top, right.bounds.top)
+    ) return null
+    return LiquidContactShape(left, right, effectiveDistance)
+}
+
+internal data class LiquidContactShape(
+    val first: LiquidContactCapsule,
+    val second: LiquidContactCapsule,
+    val contactDistance: Float,
+    private val lensTopStart: CornerSize = CornerSize(50),
+    private val lensTopEnd: CornerSize = CornerSize(50),
+    private val lensBottomEnd: CornerSize = CornerSize(50),
+    private val lensBottomStart: CornerSize = CornerSize(50),
+) : CornerBasedShape(lensTopStart, lensTopEnd, lensBottomEnd, lensBottomStart) {
+    private var cachedOutline: Outline? = null
+    internal var hasConsistentWinding: Boolean = false
+        private set
+
+    override fun copy(topStart: CornerSize, topEnd: CornerSize, bottomEnd: CornerSize, bottomStart: CornerSize): CornerBasedShape =
+        LiquidContactShape(first, second, contactDistance, topStart, topEnd, bottomEnd, bottomStart)
+
+    override fun createOutline(
+        size: Size, topStart: Float, topEnd: Float, bottomEnd: Float, bottomStart: Float,
+        layoutDirection: LayoutDirection,
+    ): Outline = cachedOutline ?: contactCapsulePath(first, second, contactDistance).let { geometry ->
+        hasConsistentWinding = geometry.hasConsistentWinding
+        Outline.Generic(geometry.path).also { cachedOutline = it }
+    }
+}
+
+private data class NativeContactProfile(
+    val size: Size,
+    val segments: List<PathSegment>,
+    val upper: ContinuousActionProfile,
+)
+
+private val ContactCapsule = Capsule()
+private val ContactProfileCache = ArrayDeque<NativeContactProfile>(4)
+
+private fun nativeContactProfile(size: Size): NativeContactProfile = synchronized(ContactProfileCache) {
+    ContactProfileCache.firstOrNull { it.size == size }?.let { return@synchronized it }
+    val bounds = Rect(Offset.Zero, size)
+    val segments: List<PathSegment> = if (size.width == size.height) {
+        listOf(PathSegment.Circle(Point(size.width / 2.0, size.height / 2.0), size.width / 2.0))
+    } else {
+        // Read the actual legacy Capsule cubics. Its corner profile differs from the
+        // newer toolbar capsule, so regenerating these from a radius would cause a jump.
+        val outline = ContactCapsule.createOutline(size, LayoutDirection.Ltr, Density(1f)) as Outline.Generic
+        val iterator = outline.path.iterator(PathIterator.ConicEvaluation.AsConic)
+        val points = FloatArray(8)
+        buildList<PathSegment> {
+            fun point(index: Int) = Point(points[index].toDouble(), points[index + 1].toDouble())
+            var contourStart = Point.Zero
+            var current = Point.Zero
+            while (iterator.hasNext()) {
+                when (iterator.next(points)) {
+                    ComposePathSegment.Type.Move -> { contourStart = point(0); current = contourStart }
+                    ComposePathSegment.Type.Line -> { current = point(2); add(PathSegment.Line(point(0), current)) }
+                    ComposePathSegment.Type.Cubic -> {
+                        current = point(6)
+                        add(PathSegment.Cubic(point(0), point(2), point(4), current))
+                    }
+                    ComposePathSegment.Type.Close -> {
+                        // Capsule closes across its flat top; retain that edge in the
+                        // extracted profile as well as in the original closed path.
+                        if (current != contourStart) add(PathSegment.Line(current, contourStart))
+                        current = contourStart
+                    }
+                    ComposePathSegment.Type.Done -> Unit
+                    else -> error("The native continuous capsule must contain only lines and cubics")
+                }
+            }
+        }
+    }
+    NativeContactProfile(size, segments, ContinuousActionProfile(bounds, segments)).also {
+        if (ContactProfileCache.size == 4) ContactProfileCache.removeFirst()
+        ContactProfileCache.addLast(it)
+    }
+}
+
+private class ContactProfile(
+    val capsule: LiquidContactCapsule,
+    val native: NativeContactProfile = nativeContactProfile(capsule.size),
+) {
+    private val scaleX = capsule.bounds.width.toDouble() / capsule.size.width
+    private val scaleY = capsule.bounds.height.toDouble() / capsule.size.height
+    private val origin = Point(capsule.bounds.left.toDouble(), capsule.bounds.top.toDouble())
+    val radiusX = min(capsule.size.width, capsule.size.height) / 2.0 * scaleX
+    val radiusY = min(capsule.size.width, capsule.size.height) / 2.0 * scaleY
+
+    fun jet(x: Double): CurveJet {
+        val jet = native.upper.jet((x - origin.x) / scaleX)
+        val tangent = Point(jet.tangent.x * scaleX, jet.tangent.y * scaleY)
+        val speed = sqrt(tangent.x * tangent.x + tangent.y * tangent.y)
+        return CurveJet(
+            Point(origin.x + jet.position.x * scaleX, origin.y + jet.position.y * scaleY),
+            tangent / speed, jet.curvature * scaleX * scaleY / (speed * speed * speed),
+        )
+    }
+
+    fun trim(start: Double, end: Double): List<ContactSegment> = native.upper
+        .trim((start - origin.x) / scaleX, (end - origin.x) / scaleX)
+        .map { ContactSegment(it, scaleX, scaleY, origin) }
+
+    fun mirrorY(): ContactProfile = ContactProfile(
+        capsule.copy(bounds = Rect(capsule.bounds.left, -capsule.bounds.bottom, capsule.bounds.right, -capsule.bounds.top)),
+        native,
+    )
+
+    fun fullPath(): Path = Path().apply {
+        val segments = native.segments.map { ContactSegment(it, scaleX, scaleY, origin) }
+        if (segments.isNotEmpty()) {
+            moveTo(segments.first().from.x.toFloat(), segments.first().from.y.toFloat())
+            segments.forEach { it.drawTo(this) }
+            close()
+        }
+    }
+}
+
+/** Affine arcs stay native elliptical arcs instead of being approximated with cubics. */
+private data class ContactSegment(
+    val segment: PathSegment,
+    val scaleX: Double = 1.0,
+    val scaleY: Double = 1.0,
+    val origin: Point = Point.Zero,
+) {
+    private fun Point.transform() = Point(origin.x + x * scaleX, origin.y + y * scaleY)
+    val from: Point get() = segment.from.transform()
+
+    fun drawTo(path: Path) {
+        when (val curve = segment) {
+            is PathSegment.Line -> curve.to.transform().let { path.lineTo(it.x.toFloat(), it.y.toFloat()) }
+            is PathSegment.Cubic -> {
+                val first = curve.p1.transform()
+                val second = curve.p2.transform()
+                val last = curve.p3.transform()
+                path.cubicTo(first.x.toFloat(), first.y.toFloat(), second.x.toFloat(), second.y.toFloat(), last.x.toFloat(), last.y.toFloat())
+            }
+            is PathSegment.Arc -> {
+                val center = curve.center.transform()
+                path.arcTo(Rect(
+                    (center.x - curve.radius * scaleX).toFloat(), (center.y - curve.radius * scaleY).toFloat(),
+                    (center.x + curve.radius * scaleX).toFloat(), (center.y + curve.radius * scaleY).toFloat(),
+                ), (curve.startAngle * 180.0 / PI).toFloat(), (curve.sweepAngle * 180.0 / PI).toFloat(), false)
+            }
+            is PathSegment.Circle -> {
+                val center = curve.center.transform()
+                path.addOval(Rect(
+                    (center.x - curve.radius * scaleX).toFloat(), (center.y - curve.radius * scaleY).toFloat(),
+                    (center.x + curve.radius * scaleX).toFloat(), (center.y + curve.radius * scaleY).toFloat(),
+                ))
+            }
+        }
+    }
+
+    fun mirrorAndReverse(): ContactSegment = copy(
+        segment = segment.reflectAndReverse(0.0), origin = Point(origin.x, -origin.y),
+    )
+}
+
+private data class ContactGeometry(val path: Path, val hasConsistentWinding: Boolean)
+
+private fun contactCapsulePath(first: LiquidContactCapsule, second: LiquidContactCapsule, contactDistance: Float): ContactGeometry {
+    val left = ContactProfile(first)
+    val right = ContactProfile(second)
+    fun union() = ContactGeometry(Path.combine(PathOperation.Union, left.fullPath(), right.fullPath()), false)
+    // Containment has no facing pair of sides; retain the exact visible union instead
+    // of forcing a reversed bridge through one of the bodies.
+    if (first.bounds.left >= second.bounds.left || first.bounds.right >= second.bounds.right) return union()
+    val gap = second.bounds.left.toDouble() - first.bounds.right
+    val joinDistance = contactDistance / 2.0
+    val approach = ((contactDistance - gap) / joinDistance).coerceIn(0.0, 1.0).let {
+        it * it * it * (10.0 + it * (-15.0 + 6.0 * it))
+    }
+    val joined = gap < joinDistance
+    val radiusSum = left.radiusX + right.radiusX
+    val overlap = maxOf(0.0, -gap)
+    val inset = 0.55 * approach * approach
+    val end = first.bounds.right - left.radiusX * inset - overlap * left.radiusX / radiusSum
+    val start = second.bounds.left + right.radiusX * inset + overlap * right.radiusX / radiusSum
+    if (end >= start || end <= first.bounds.left || start >= second.bounds.right) return union()
+    val centerY = (first.bounds.center.y.toDouble() + second.bounds.center.y) / 2.0
+    val radius = min(left.radiusY, right.radiusY)
+    val middleX = (first.bounds.right.toDouble() + second.bounds.left) / 2.0
+    if (middleX <= end || middleX >= start) return union()
+    val opening = ((joinDistance - gap) / joinDistance).coerceIn(0.0, 1.0).let {
+        it * it * (3.0 - 2.0 * it)
+    }
+    val neckRadius = radius * opening * 0.42
+    val tipGap = maxOf(0.0, gap) * (1.0 - approach)
+    val leftTip = Point(middleX - tipGap / 2.0, interpolate(first.bounds.center.y.toDouble(), centerY, approach))
+    val rightTip = Point(middleX + tipGap / 2.0, interpolate(second.bounds.center.y.toDouble(), centerY, approach))
+
+    fun upper(firstProfile: ContactProfile, secondProfile: ContactProfile, mirror: Boolean): Pair<List<ContactSegment>, List<ContactSegment>> {
+        val direction = if (mirror) -1.0 else 1.0
+        val leftJet = firstProfile.jet(end)
+        val rightJet = secondProfile.jet(start)
+        val seam = Point(middleX, centerY * direction - neckRadius)
+        val leftEnd: CurveJet
+        val rightStart: CurveJet
+        val leftTipSpeed: Double
+        val rightTipSpeed: Double
+        if (joined) {
+            val curvature = if (neckRadius > 0.0) -1.0 / neckRadius else 0.0
+            leftEnd = CurveJet(seam, Point(1.0, 0.0), curvature)
+            rightStart = leftEnd
+            val speed = min(min(middleX - end, start - middleX) * 0.3, neckRadius * 0.7)
+            leftTipSpeed = speed
+            rightTipSpeed = speed
+        } else {
+            // Each lobe is independently closed while there is still a gap. Its
+            // rounded tip contracts to the same point as the future neck; no path
+            // segment ever crosses the empty space between the two tips.
+            val leftTipRadius = left.radiusY * left.radiusY / left.radiusX * (1.0 - approach)
+            val rightTipRadius = right.radiusY * right.radiusY / right.radiusX * (1.0 - approach)
+            leftEnd = CurveJet(Point(leftTip.x, leftTip.y * direction), Point(0.0, 1.0),
+                if (leftTipRadius > 0.0) 1.0 / leftTipRadius else 0.0)
+            rightStart = CurveJet(Point(rightTip.x, rightTip.y * direction), Point(0.0, -1.0),
+                if (rightTipRadius > 0.0) 1.0 / rightTipRadius else 0.0)
+            val leftDelta = leftEnd.position - leftJet.position
+            val rightDelta = rightJet.position - rightStart.position
+            leftTipSpeed = min(sqrt(leftDelta.x * leftDelta.x + leftDelta.y * leftDelta.y) * 0.5, leftTipRadius * 0.7)
+            rightTipSpeed = min(sqrt(rightDelta.x * rightDelta.x + rightDelta.y * rightDelta.y) * 0.5, rightTipRadius * 0.7)
+        }
+        val firstHalf = buildList {
+            addAll(firstProfile.trim(first.bounds.left.toDouble(), end))
+            addAll(contactSpline(leftJet, leftEnd, (leftEnd.position.x - end) * 0.3, leftTipSpeed, nativeStart = true).map { ContactSegment(it) })
+        }
+        val secondHalf = buildList {
+            addAll(contactSpline(rightStart, rightJet, rightTipSpeed, (start - rightStart.position.x) * 0.3, nativeStart = false).map { ContactSegment(it) })
+            addAll(secondProfile.trim(start, second.bounds.right.toDouble()))
+        }
+        return firstHalf to secondHalf
+    }
+
+    val (topLeft, topRight) = upper(left, right, false)
+    val (bottomLeft, bottomRight) = upper(left.mirrorY(), right.mirrorY(), true)
+
+    return ContactGeometry(Path().apply {
+        fun contour(top: List<ContactSegment>, bottom: List<ContactSegment>) {
+            if (top.isEmpty()) return
+            moveTo(top.first().from.x.toFloat(), top.first().from.y.toFloat())
+            top.forEach { it.drawTo(this) }
+            bottom.asReversed().forEach { it.mirrorAndReverse().drawTo(this) }
+            close()
+        }
+        if (joined) contour(topLeft + topRight, bottomLeft + bottomRight)
+        else {
+            contour(topLeft, bottomLeft)
+            contour(topRight, bottomRight)
+        }
+    }, true)
+}
+
+/** A G2 connector whose endpoint speeds can vanish independently at pinch-off. */
+private fun contactSpline(start: CurveJet, end: CurveJet, startSpeed: Double, endSpeed: Double, nativeStart: Boolean): List<PathSegment.Cubic> {
+    if (end.position.x <= start.position.x) return emptyList()
+    val normalStart = Point(-start.tangent.y, start.tangent.x)
+    val normalEnd = Point(-end.tangent.y, end.tangent.x)
+    val delta = end.position - start.position
+    var firstSpeed = startSpeed
+    var lastSpeed = endSpeed
+    val firstCurvatureX = start.curvature * normalStart.x
+    val lastCurvatureX = end.curvature * normalEnd.x
+    // Parameter speeds can change without changing either endpoint's tangent or
+    // curvature. Keep the control polygon ordered even for vertically offset lobes.
+    if (abs(firstCurvatureX) > 1e-12) firstSpeed = min(firstSpeed, sqrt(0.9 * delta.x / abs(firstCurvatureX)))
+    if (abs(lastCurvatureX) > 1e-12) lastSpeed = min(lastSpeed, sqrt(0.9 * delta.x / abs(lastCurvatureX)))
+    if (firstCurvatureX < 0.0) firstSpeed = min(firstSpeed, 2.0 * maxOf(0.0, start.tangent.x) / -firstCurvatureX)
+    if (lastCurvatureX > 0.0) lastSpeed = min(lastSpeed, 2.0 * maxOf(0.0, end.tangent.x) / lastCurvatureX)
+    val handle = sqrt(delta.x * delta.x + delta.y * delta.y) * 0.55
+    val reference = PathSegment.Cubic(
+        start.position,
+        start.position + start.tangent * if (nativeStart) handle else min(handle, firstSpeed * 5.0 / 3.0),
+        end.position - end.tangent * if (nativeStart) min(handle, lastSpeed * 5.0 / 3.0) else handle,
+        end.position,
+    )
+    val firstControl = start.position + start.tangent * firstSpeed + normalStart * (start.curvature * firstSpeed * firstSpeed / 3.0)
+    val lastControl = end.position - end.tangent * lastSpeed + normalEnd * (end.curvature * lastSpeed * lastSpeed / 3.0)
+    val firstInterior = reference.point(0.38).let { Point(it.x.coerceIn(firstControl.x, lastControl.x), it.y) }
+    val lastInterior = reference.point(0.62).let { Point(it.x.coerceIn(firstInterior.x, lastControl.x), it.y) }
+    val controls = listOf(
+        start.position,
+        start.position + start.tangent * (firstSpeed / 3.0),
+        firstControl,
+        firstInterior,
+        lastInterior,
+        lastControl,
+        end.position - end.tangent * (lastSpeed / 3.0),
+        end.position,
+    )
+    val knots = doubleArrayOf(0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0, 5.0, 5.0)
+    val derivative = controls.zipWithNext().mapIndexed { index, (first, second) ->
+        (second - first) * (3.0 / (knots[index + 4] - knots[index + 1]))
+    }
+    val derivativeKnots = knots.copyOfRange(1, knots.lastIndex)
+    var first = evaluateSpline(controls, knots, 3, 0.0)
+    var firstDerivative = evaluateSpline(derivative, derivativeKnots, 2, 0.0)
+    return (0..4).map { index ->
+        val parameter = index.toDouble() + 1.0
+        val last = evaluateSpline(controls, knots, 3, parameter)
+        val lastDerivative = evaluateSpline(derivative, derivativeKnots, 2, parameter)
+        PathSegment.Cubic(first, first + firstDerivative / 3.0, last - lastDerivative / 3.0, last).also {
+            first = last
+            firstDerivative = lastDerivative
+        }
+    }
+}
+
 /** Library G2 capsule segments connected by a curvature-matched cubic B-spline. */
 private data class ToolbarActionShape(
     val runs: List<List<ToolbarActionOutline?>>,
@@ -501,8 +831,8 @@ private fun appendContinuousActions(path: Path, actions: List<ToolbarActionOutli
 private data class CurveJet(val position: Point, val tangent: Point, val curvature: Double)
 
 /** Retains the library's actual arcs and cubics, including their G2 corner transitions. */
-private class ContinuousActionProfile(bounds: Rect) {
-    private val upper = continuousActionSegments(bounds).flatMap { segment ->
+private class ContinuousActionProfile(bounds: Rect, segments: List<PathSegment> = continuousActionSegments(bounds)) {
+    private val upper = segments.flatMap { segment ->
         when (segment) {
             is PathSegment.Circle -> listOf(PathSegment.Arc(segment.center, segment.radius, PI, PI))
             is PathSegment.Arc -> (-2..2).mapNotNull { turn ->

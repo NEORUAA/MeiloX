@@ -187,6 +187,8 @@ import com.ljyh.mei.ui.local.LocalPageAppearance
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.local.LocalUserData
 import com.ljyh.mei.ui.glass.GlassBottomBar
+import com.ljyh.mei.ui.glass.BottomNavigationContact
+import com.ljyh.mei.ui.glass.LocalBottomControlContact
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.GlassTabItem
 import com.ljyh.mei.ui.glass.GlassSurfaceStyle
@@ -1380,7 +1382,8 @@ private fun AnimatedBottomNavigationRow(
     playerBottomSheetState: BottomSheetState,
     bottomMargin: Dp,
 ) {
-    Row(
+    BottomNavigationContact(
+        backdrop = backdrop,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = bottomNavigationHorizontalMargin)
@@ -1392,7 +1395,6 @@ private fun AnimatedBottomNavigationRow(
                 val compactInset = (NavigationBarSurfaceHeight - MiniPlayerHeight) / 2 * compactProgress.value
                 IntOffset(x = 0, y = (slideOffset + compactInset).roundToPx())
             },
-        verticalAlignment = Alignment.CenterVertically,
     ) {
         GlassBottomBar(
             items = items,
@@ -1402,11 +1404,14 @@ private fun AnimatedBottomNavigationRow(
             backdrop = backdrop,
             compactProgress = compactProgress,
             compactSize = MiniPlayerHeight,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).zIndex(1f),
         )
         Spacer(Modifier.size(width = 8.dp, height = 1.dp))
+        val contact = LocalBottomControlContact.current
         Box(
-            modifier = Modifier.size(NavigationBarSurfaceHeight),
+            modifier = Modifier.size(NavigationBarSurfaceHeight)
+                .then(contact?.takeIf { it.capturesLensSource.value }
+                    ?.neighborRecordingModifier ?: Modifier),
             contentAlignment = Alignment.CenterEnd,
         ) {
             AnimatedHomeSearchButton(compactProgress, backdrop, onSearchClick)

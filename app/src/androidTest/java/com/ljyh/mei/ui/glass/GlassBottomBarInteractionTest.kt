@@ -1,18 +1,23 @@
 package com.ljyh.mei.ui.glass
 
 import android.graphics.RenderNode
+import android.graphics.Region
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
@@ -54,12 +60,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.lerp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
@@ -75,6 +85,8 @@ import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -94,6 +106,168 @@ class GlassBottomBarInteractionTest {
     private val barLayoutDirection = mutableStateOf(LayoutDirection.Ltr)
     private val selections = mutableListOf<String>()
     private var expansions = 0
+
+    @Test
+    fun searchInsetsUpdateScrollPaddingWithoutRebuildingListContent() {
+        val bottomInset = mutableFloatStateOf(20f)
+        val insets = object : PaddingValues {
+            override fun calculateLeftPadding(layoutDirection: LayoutDirection) = 0.dp
+            override fun calculateTopPadding() = 0.dp
+            override fun calculateRightPadding(layoutDirection: LayoutDirection) = 0.dp
+            override fun calculateBottomPadding() = bottomInset.floatValue.dp
+        }
+        lateinit var listState: LazyListState
+        var contentBuilds = 0
+        var density = 1f
+        compose.setContent {
+            listState = rememberLazyListState()
+            density = LocalDensity.current.density
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                    LocalGlassColors provides defaultGlassColors(isDark = false),
+                ) {
+                    IosPinnedListPage(
+                        title = "Search",
+                        bottomPadding = 0.dp,
+                        bottomPaddingValues = insets,
+                        modifier = Modifier.size(300.dp, 400.dp),
+                        listState = listState,
+                        showsLargeTitle = false,
+                    ) {
+                        contentBuilds++
+                        items(20) { Box(Modifier.size(100.dp, 40.dp)) }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        var initialBuilds = 0
+        var initialPadding = 0
+        compose.runOnIdle {
+            initialBuilds = contentBuilds
+            initialPadding = listState.layoutInfo.afterContentPadding
+            bottomInset.floatValue = 160f
+        }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals("IME padding must remain a measurement read", initialBuilds, contentBuilds)
+            assertEquals("The original scrollable bottom reservation is preserved",
+                initialPadding + (140f * density).roundToInt(), listState.layoutInfo.afterContentPadding)
+        }
+    }
+
+    @Test
+    fun contactLensSamplesTheNeighborWhilePreservingItsCenter() {
+        val contactDirection = mutableFloatStateOf(0f)
+        val backing = Color(0xFF203040)
+        compose.setContent {
+            val backdrop = rememberLayerBackdrop()
+            Box(Modifier.size(300.dp, 140.dp)) {
+                Canvas(Modifier.matchParentSize().layerBackdrop(backdrop)) {
+                    drawRect(backing)
+                    drawRect(Color.Red, Offset(60.dp.toPx(), 20.dp.toPx()), Size(35.dp.toPx(), 100.dp.toPx()))
+                    drawRect(Color.Red, Offset(205.dp.toPx(), 20.dp.toPx()), Size(35.dp.toPx(), 100.dp.toPx()))
+                    drawRect(Color.White, Offset(149.dp.toPx(), 60.dp.toPx()), Size(2.dp.toPx(), 20.dp.toPx()))
+                    drawRect(Color.White, Offset(145.dp.toPx(), 69.dp.toPx()), Size(10.dp.toPx(), 2.dp.toPx()))
+                }
+                Box(
+                    Modifier.offset(100.dp, 20.dp).size(100.dp)
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { Capsule() },
+                            effects = { navigationContactLens(10.dp.toPx(), 14.dp.toPx(), contactDirection.floatValue) },
+                            highlight = null,
+                            shadow = null,
+                        ).testTag("contactSamplingLens"),
+                )
+            }
+        }
+        compose.waitForIdle()
+        val baseline = compose.onNodeWithTag("contactSamplingLens").captureToImage().toPixelMap()
+        fun redSamples(pixels: androidx.compose.ui.graphics.PixelMap, right: Boolean): Int {
+            val edge = (pixels.width * 0.1f).roundToInt()
+            val start = if (right) pixels.width - edge else 0
+            var count = 0
+            for (x in start until start + edge) {
+                for (y in pixels.height * 2 / 5 until pixels.height * 3 / 5) {
+                    val color = pixels[x, y]
+                    if (color.red > 0.65f && color.red > color.green * 1.7f) count++
+                }
+            }
+            return count
+        }
+        assertEquals("The inward lens cannot reach either neighboring marker", 0,
+            redSamples(baseline, false) + redSamples(baseline, true))
+        for (direction in listOf(1f, -1f)) {
+            compose.runOnIdle { contactDirection.floatValue = direction }
+            compose.waitForIdle()
+            val actual = compose.onNodeWithTag("contactSamplingLens").captureToImage().toPixelMap()
+            assertTrue("Contact refraction reaches the neighboring surface",
+                redSamples(actual, direction > 0f) > actual.height / 3)
+            assertEquals("The opposite edge retains its original inward refraction", 0,
+                redSamples(actual, direction < 0f))
+            for (x in actual.width * 2 / 5 until actual.width * 3 / 5) {
+                for (y in actual.height * 2 / 5 until actual.height * 3 / 5) {
+                    assertEquals("The central marker keeps its position and scale", baseline[x, y], actual[x, y])
+                }
+            }
+        }
+    }
+
+    @Test
+    fun bottomControlContactPreservesIndependentBodiesAcrossProximityAndUnequalScales() {
+        val nav = LiquidContactCapsule(Size(280f, 60f), Rect(20f, 20f, 328f, 92f))
+        fun search(gap: Float, verticalOffset: Float = 0f) = LiquidContactCapsule(
+            Size(60f, 60f),
+            Rect(328f + gap, 24f + verticalOffset, 392f + gap, 88f + verticalOffset),
+        )
+        fun outline(first: LiquidContactCapsule, second: LiquidContactCapsule): Outline.Generic {
+            val shape = liquidContactShape(first, second, 8f)
+            assertNotNull(shape)
+            return shape!!.createOutline(Size(500f, 160f), LayoutDirection.Ltr, Density(1f)) as Outline.Generic
+        }
+        fun region(outline: Outline.Generic) = Region().apply {
+            setPath(outline.path.asAndroidPath(), Region(0, 0, 500, 160))
+        }
+
+        assertNull("The resting gap must keep both controls separate", liquidContactShape(nav, search(8f), 8f))
+        assertNull("Layout rounding must not activate contact", liquidContactShape(nav, search(7.999f), 8f))
+        assertNull("Distant controls have no connection", liquidContactShape(nav, search(40f), 8f))
+        assertNull("Vertical separation has no connection", liquidContactShape(nav, search(0f, 90f), 8f))
+
+        for (gap in listOf(7f, 3f, 0f, -4f)) {
+            for (verticalOffset in listOf(-6f, 0f, 6f)) {
+                val other = search(gap, verticalOffset)
+                val connected = outline(nav, other)
+                val fill = region(connected)
+                val bounds = connected.path.getBounds()
+                assertEquals(nav.bounds.left, bounds.left, 0.01f)
+                assertEquals(other.bounds.right, bounds.right, 0.01f)
+                assertTrue("Navigation body remains filled", fill.contains(174, 56))
+                assertTrue("The native flat top remains intact", fill.contains(174, 21))
+                assertTrue("Search body remains filled", fill.contains(other.bounds.center.x.toInt(), other.bounds.center.y.toInt()))
+                assertTrue("Native outer corners remain rounded", !fill.contains(21, 21))
+                val neckX = ((nav.bounds.right + other.bounds.left) / 2f).toInt()
+                assertTrue("Contact must not flatten into a merged capsule", !fill.contains(neckX, 25))
+                if (gap == 7f) {
+                    val contours = android.graphics.PathMeasure(connected.path.asAndroidPath(), false)
+                    var count = 1
+                    while (contours.nextContour()) count++
+                    assertEquals("Approaching bodies stay closed without a zero-width connector", 2, count)
+                }
+                if (gap <= 3f) {
+                    val neckY = ((nav.bounds.center.y + other.bounds.center.y) / 2f).toInt()
+                    assertTrue("Nearby edges form a continuous neck", fill.contains(neckX, neckY))
+                }
+                val reversed = region(outline(other, nav))
+                reversed.op(fill, Region.Op.XOR)
+                assertTrue("Physical input order must not change RTL geometry", reversed.isEmpty)
+            }
+        }
+        val contained = LiquidContactCapsule(Size(60f, 60f), Rect(220f, 26f, 280f, 86f))
+        assertTrue("Containment keeps a valid silhouette", region(outline(nav, contained)).contains(250, 56))
+    }
 
     @Test
     fun outerTabPressAnchorsOnlyTheRefractedSelectionAndOtherwiseScalesTheWholePanel() {

@@ -132,7 +132,7 @@ private val searchCategories = listOf(
 fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
-    val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
+    val bottomPaddingValues = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val podcastsEnabled by rememberPreference(PodcastsEnabledKey, true)
     val categories = searchCategories.filterNot { it.opensPodcasts && !podcastsEnabled }
     val colors = LocalGlassColors.current
@@ -144,7 +144,8 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
 
     IosPinnedListPage(
         title = stringResource(R.string.app_tab_search),
-        bottomPadding = bottom,
+        bottomPadding = 0.dp,
+        bottomPaddingValues = bottomPaddingValues,
         horizontalContentPadding = 0.dp,
         largeTitleHorizontalPadding = 16.dp,
         verticalArrangement = Arrangement.spacedBy(16.dp),

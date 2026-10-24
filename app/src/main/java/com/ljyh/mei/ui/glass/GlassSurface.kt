@@ -21,6 +21,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -49,6 +50,7 @@ import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
@@ -182,6 +184,7 @@ private class NavigationGlassBoxShadowNode(
     private var recordedDensity = Float.NaN
     private var recordedFontScale = Float.NaN
     private var recordedLayoutDirection: LayoutDirection? = null
+    private var allocationSize = IntSize.Zero
 
     private val sidePaint = Paint().apply {
         style = PaintingStyle.Fill
@@ -210,6 +213,12 @@ private class NavigationGlassBoxShadowNode(
             ceil(size.width).toInt() + padding * 2,
             ceil(size.height).toInt() + padding * 2,
         )
+        // Keep backing textures through a morph instead of allocating a new width on
+        // each frame. Geometry and transform pivots continue to use the exact size.
+        allocationSize = IntSize(
+            maxOf(allocationSize.width, (layerSize.width + 31) / 32 * 32),
+            maxOf(allocationSize.height, (layerSize.height + 31) / 32 * 32),
+        )
         val currentShape = shape()
         if (recordedSize != size || recordedShape != currentShape || recordedAlpha != shadowAlpha ||
             recordedDensity != density || recordedFontScale != fontScale ||
@@ -224,22 +233,23 @@ private class NavigationGlassBoxShadowNode(
             // The side shadow is a horizontally expanded copy of the shape. Its height stays
             // exactly the element height, so it cannot create a shadow line on the top or bottom.
             // Clearing the original shape leaves only the two exposed side capsules.
-            sideLayer.record(layerSize) {
+            val drawingWidth = layerSize.width.toFloat()
+            sideLayer.record(allocationSize) {
                 translate(padding.toFloat(), padding.toFloat()) {
                     drawContext.canvas.save()
-                    drawContext.canvas.translate(size.width / 2f, 0f)
+                    drawContext.canvas.translate(drawingWidth / 2f, 0f)
                     drawContext.canvas.scale(
-                        (size.width + sideOffset * 2f) / size.width,
+                        (drawingWidth + sideOffset * 2f) / drawingWidth,
                         1f,
                     )
-                    drawContext.canvas.translate(-size.width / 2f, 0f)
+                    drawContext.canvas.translate(-drawingWidth / 2f, 0f)
                     drawContext.canvas.drawOutline(outline, sidePaint)
                     drawContext.canvas.restore()
                     drawContext.canvas.drawOutline(outline, clearPaint)
                 }
             }
 
-            outlineLayer.record(layerSize) {
+            outlineLayer.record(allocationSize) {
                 translate(padding.toFloat(), padding.toFloat()) {
                     drawContext.canvas.drawOutline(outline, outlinePaint)
 
@@ -303,6 +313,7 @@ private class NavigationGlassBoxShadowNode(
 
     override fun onAttach() {
         recordedShape = null
+        allocationSize = IntSize.Zero
         sideLayer = requireGraphicsContext().createGraphicsLayer().apply {
             compositingStrategy = CompositingStrategy.Offscreen
         }
@@ -586,6 +597,33 @@ fun GlassSurface(
         highlight = interactiveHighlight,
     )
     val sharesToolbarSurface = toolbarMember?.sharesSurface == true
+    val contactMember = if (LocalBottomControlContact.current != null && toolbarMember == null &&
+        style == GlassSurfaceStyle.Navigation && emphasis == GlassEmphasis.Regular && !detailAction
+    ) {
+        val density = LocalDensity.current
+        val contactTransformScope = remember(density) { GraphicsLayerBlockScope() }
+        rememberBottomControlContactMember(
+            materialPressProgress = { interactiveHighlight.pressProgress },
+            visualBounds = { size ->
+                contactTransformScope.reset(density, size)
+                with(contactTransformScope) {
+                    applyGlassDragScale(interactiveHighlight.pressProgress, interactiveHighlight.offset)
+                    Rect(
+                        size.width * (1f - scaleX) / 2f + translationX,
+                        size.height * (1f - scaleY) / 2f + translationY,
+                        size.width * (1f + scaleX) / 2f + translationX,
+                        size.height * (1f + scaleY) / 2f + translationY,
+                    )
+                }
+            },
+            highlight = { size ->
+                val position = interactiveHighlight.highlightPosition(size)
+                GlassPressHighlight(interactiveHighlight.pressProgress,
+                    Offset(position.x / size.width.coerceAtLeast(1f), position.y / size.height.coerceAtLeast(1f)))
+            },
+        )
+    } else null
+    val sharesContactSurface = contactMember?.connected == true
     LaunchedEffect(interactiveHighlight, cancelPressFeedback) {
         if (cancelPressFeedback) interactiveHighlight.cancelPress()
     }
@@ -632,7 +670,7 @@ fun GlassSurface(
     ) {
         rememberMorphingNavigationGlass(
             backdrop = surfaceBackdrop,
-            active = morphing,
+            active = morphing && !sharesContactSurface,
             shape = shape,
             tint = navigationSurfaceColor ?: surfaceColor,
             navigationMaterial = navigationMaterial,
@@ -647,6 +685,8 @@ fun GlassSurface(
     } else null
     val glassModifier = if (sharesToolbarSurface) {
         Modifier.graphicsLayer { toolbarMember?.applyPressTransform(this) }
+    } else if (sharesContactSurface) {
+        Modifier.graphicsLayer(dragScaleLayerBlock).clip(shape)
     } else if (morphing && morphGlassModifier != null) {
         morphGlassModifier
     } else if (style == GlassSurfaceStyle.Navigation) {
@@ -773,7 +813,7 @@ fun GlassSurface(
         Box(
             modifier = surfaceModifier
                 .then(
-                    if (sharesToolbarSurface) Modifier
+                    if (sharesToolbarSurface || sharesContactSurface) Modifier
                     else if (pressHighlight != null) interactiveHighlight.highlightModifier(
                         progressProvider = { pressHighlight()?.progress ?: interactiveHighlight.pressProgress },
                         positionProvider = { size ->
@@ -811,6 +851,7 @@ fun GlassSurface(
                     LocalGlassContentColor provides contentColor,
                     LocalIosToolbarActionGroup provides null,
                     LocalToolbarActionSeparation provides null,
+                    LocalBottomControlContact provides null,
                 ) {
                     if (accentDetailAction) {
                         Box(
@@ -828,13 +869,17 @@ fun GlassSurface(
             },
         )
     }
-    if (toolbarMember == null) {
+    if (toolbarMember == null && contactMember == null) {
         drawSurface(modifier.then(glassModifier))
     } else {
         // Register an untransformed layout wrapper. The inner surface owns press scaling,
         // so a press cannot change adjacency or apply the same deformation twice.
         Box(
-            modifier = modifier.onGloballyPositioned(toolbarMember::updateCoordinates),
+            modifier = modifier
+                .onGloballyPositioned {
+                toolbarMember?.updateCoordinates(it)
+                contactMember?.updateCoordinates(it)
+            },
             propagateMinConstraints = true,
         ) {
             drawSurface(glassModifier)

@@ -39,6 +39,11 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
     private var blurDensity = Float.NaN
     private var padding = 0f
     private var verticalOffset = 0f
+    private var maskWidth = 0
+    private var maskHeight = 0
+    private val maskClipBounds = android.graphics.Rect()
+    private var transformWidth = 0
+    private var transformHeight = 0
 
     fun draw(
         scope: DrawScope,
@@ -79,8 +84,12 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
             it.setClipToBounds(false)
             transformNode = it
         }
-        val width = ceil(scope.size.width + padding * 2f).toInt()
-        val height = ceil(scope.size.height + padding * 2f + verticalOffset).toInt()
+        val requiredWidth = ceil(scope.size.width + padding * 2f).toInt()
+        val requiredHeight = ceil(scope.size.height + padding * 2f + verticalOffset).toInt()
+        transformWidth = maxOf(transformWidth, (requiredWidth + 63) / 64 * 64)
+        transformHeight = maxOf(transformHeight, (requiredHeight + 63) / 64 * 64)
+        val width = transformWidth
+        val height = transformHeight
         node.setPosition(0, 0, width, height)
         // Keep the filtered mask cached, but always refresh this small display list:
         // HWUI can evict a child's native list while a retained surface is hidden.
@@ -132,8 +141,15 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
             verticalOffset = 8f * scope.density
             blurDensity = scope.density
         }
-        val width = ceil((size.width + padding * 2f) * renderScale).toInt()
-        val height = ceil((size.height + padding * 2f) * renderScale).toInt()
+        val requiredWidth = ceil((size.width + padding * 2f) * renderScale).toInt()
+        val requiredHeight = ceil((size.height + padding * 2f) * renderScale).toInt()
+        maskClipBounds.set(0, 0, requiredWidth, requiredHeight)
+        // Retain allocation buckets through a morph without scaling the outline or its blur.
+        // Transparent slack extends the same transparent CLAMP boundary as the original mask.
+        maskWidth = maxOf(maskWidth, (requiredWidth + 63) / 64 * 64)
+        maskHeight = maxOf(maskHeight, (requiredHeight + 63) / 64 * 64)
+        val width = maskWidth
+        val height = maskHeight
         mask.setPosition(0, 0, width, height)
         val recording = mask.beginRecording(width, height)
         try {
@@ -155,6 +171,9 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
             canvas.clipOutPath(outlinePath)
             canvas.translate(-padding, verticalOffset - padding)
             canvas.scale(1f / renderScale, 1f / renderScale)
+            // Preserve the original RenderNode's exact output bounds even when its
+            // retained allocation is larger than this frame's mask.
+            canvas.clipRect(maskClipBounds)
             canvas.drawRenderNode(mask)
         } finally {
             canvas.restoreToCount(save)
@@ -165,6 +184,11 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
         mask.discardDisplayList()
         transformNode?.discardDisplayList()
         key = null
+        maskWidth = 0
+        maskHeight = 0
+        maskClipBounds.setEmpty()
+        transformWidth = 0
+        transformHeight = 0
     }
 
     private data class GeometryKey(

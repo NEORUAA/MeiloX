@@ -348,6 +348,7 @@ internal fun rememberMorphingNavigationGlass(
     captureWidth: Dp? = null,
     verticalTravel: Dp = 0.dp,
     morphProgress: () -> Float = { 0f },
+    backdropPosition: (() -> Offset)? = null,
 ): Modifier {
     val renderer = rememberGlassMorphRenderer(backdrop, active, if (lensSource) 8.dp else 2.dp)
     val view = LocalView.current
@@ -358,6 +359,13 @@ internal fun rememberMorphingNavigationGlass(
         .drawWithContent {
             val coordinates = recording.coordinates
             if (coordinates != null && coordinates.isAttached) {
+                // Local backdrop layers can move inside a fixed capture band. Refresh
+                // their recorded translation without replacing the buffers or shaders.
+                val sourcePosition = backdropPosition?.invoke()
+                if (recording.sourcePosition != sourcePosition) {
+                    renderer.invalidateRecording()
+                    recording.sourcePosition = sourcePosition
+                }
                 val origin = coordinates.positionInRoot()
                 val initialTop = origin.y - verticalTravel.toPx() * morphProgress().coerceIn(0f, 1f)
                 val captureRight = if (captureWidth != null) origin.x + size.width + 16.dp.toPx()
@@ -412,6 +420,7 @@ internal fun rememberMorphingNavigationGlass(
 private class MorphCaptureBand {
     var coordinates: LayoutCoordinates? = null
     var viewport: Rect? = null
+    var sourcePosition: Offset? = null
 }
 
 // Same edge depth and seven-sample dispersion as Navigation glass, in a fixed viewport.

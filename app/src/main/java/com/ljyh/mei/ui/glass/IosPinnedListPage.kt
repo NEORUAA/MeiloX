@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -262,6 +263,7 @@ fun IosPinnedListPage(
     actionsSeparationProgress: Float? = null,
     backgroundColor: Color? = null,
     backgroundBrush: Brush? = null,
+    bottomPaddingValues: PaddingValues? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val collapseDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
@@ -289,17 +291,24 @@ fun IosPinnedListPage(
         backgroundColor = backgroundColor,
         backgroundBrush = backgroundBrush,
     ) { contentPadding ->
+        val listContentPadding = remember(contentPadding, horizontalContentPadding, bottomPaddingValues) {
+            // Keep animated bottom insets in LazyColumn measurement, not page composition.
+            object : PaddingValues by contentPadding {
+                override fun calculateLeftPadding(layoutDirection: LayoutDirection): Dp = horizontalContentPadding
+
+                override fun calculateRightPadding(layoutDirection: LayoutDirection): Dp = horizontalContentPadding
+
+                override fun calculateBottomPadding(): Dp =
+                    contentPadding.calculateBottomPadding() +
+                        (bottomPaddingValues?.calculateBottomPadding() ?: 0.dp)
+            }
+        }
         // A different scroll state owns a different measurement node and item provider.
         key(listState) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = horizontalContentPadding,
-                    top = contentPadding.calculateTopPadding(),
-                    end = horizontalContentPadding,
-                    bottom = contentPadding.calculateBottomPadding(),
-                ),
+                contentPadding = listContentPadding,
                 verticalArrangement = verticalArrangement,
             ) {
                 if (showsLargeTitle) {

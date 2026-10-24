@@ -33,7 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -43,6 +45,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -215,7 +218,15 @@ fun <T> GlassBottomBar(
     val hiddenInnerShadows = rememberNavigationInnerShadows(appearance.usesRefraction)
     val containerColor = colors.container
     val tabsBackdrop = rememberLayerBackdrop()
-    val indicatorBackdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop)
+    val bottomContact = LocalBottomControlContact.current
+    val sourceBackdrop = if (bottomContact == null) backdrop else rememberCombinedBackdrop(
+        backdrop,
+        bottomContact.materialBackdrop,
+        bottomContact.neighborBackdrop,
+    )
+    // Only the separate material/search recordings feed this source. Recording the whole
+    // navigation would feed the selection lens back into itself on the next draw.
+    val indicatorBackdrop = rememberCombinedBackdrop(sourceBackdrop, tabsBackdrop)
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val viewConfiguration = LocalViewConfiguration.current
     val navigationViewConfiguration = remember(viewConfiguration) {
@@ -476,6 +487,30 @@ fun <T> GlassBottomBar(
                 scaleY = panelPressScale.value
             }
         }
+        val contactMember = rememberBottomControlContactMember(
+            materialPressProgress = { pressProgressState.value },
+            lensSourceActive = { !indicatorSettled && appearance.usesRefraction },
+            visualBounds = { size ->
+                val scale = panelPressScale.value
+                val verticalScale = scale * (1f + 0.045f * sin(PI.toFloat() * compactState.value))
+                val fraction = (offsetAnimation.value / fullWidthPx).fastCoerceIn(-1f, 1f)
+                val offset = paddingPx * fraction.sign * EaseOut.transform(abs(fraction))
+                Rect(
+                    size.width * (1f - scale) / 2f + offset,
+                    size.height * (1f - verticalScale) / 2f,
+                    size.width * (1f + scale) / 2f + offset,
+                    size.height * (1f + verticalScale) / 2f,
+                )
+            },
+            highlight = { size ->
+                val position = interactiveHighlight.highlightPosition(size)
+                GlassPressHighlight(
+                    interactiveHighlight.pressProgress,
+                    Offset(position.x / size.width.coerceAtLeast(1f), position.y / size.height.coerceAtLeast(1f)),
+                )
+            },
+        )
+        val sharesContactSurface = contactMember?.connected == true
         val lensAnchoring = if (appearance.usesRefraction) 1f else 0f
         val tabPanelScale: (Int) -> Float = remember(dragAnimation, panelPressScale, lensAnchoring) {
             { index ->
@@ -513,7 +548,7 @@ fun <T> GlassBottomBar(
         }
         val morphingNavigationGlass = rememberMorphingNavigationGlass(
             backdrop = backdrop,
-            active = morphing,
+            active = morphing && !sharesContactSurface,
             shape = Capsule(),
             tint = containerColor,
             navigationMaterial = appearance.usesBackdrop,
@@ -521,7 +556,8 @@ fun <T> GlassBottomBar(
             pressProgress = { pressProgressState.value },
             layerBlock = pressLayerBlock,
         )
-        val navigationGlassModifier = if (morphing) morphingNavigationGlass else remember(
+        val navigationGlassModifier = if (sharesContactSurface) Modifier.graphicsLayer(pressLayerBlock)
+        else if (morphing) morphingNavigationGlass else remember(
             backdrop,
             containerColor,
             isLight,
@@ -543,7 +579,11 @@ fun <T> GlassBottomBar(
             )
         }
         val hiddenLayerBackdropModifier = remember(tabsBackdrop) {
-            Modifier.layerBackdrop(tabsBackdrop)
+            Modifier.layerBackdrop(tabsBackdrop).drawWithContent {
+                // LayerBackdrop draws once normally and once into its recording. This
+                // hidden source only needs the latter, with the same content and optics.
+                if (drawContext.graphicsLayer === tabsBackdrop.graphicsLayer) drawContent()
+            }
         }
         val hiddenSourceSizeModifier = remember(compactState, fullWidthPx, compactWidthPx, compactSize, density) {
             Modifier.layout { measurable, constraints ->
@@ -562,8 +602,11 @@ fun <T> GlassBottomBar(
             }
         }
         val morphingHiddenGlass = rememberMorphingNavigationGlass(
-            backdrop = backdrop,
-            active = morphing && appearance.usesRefraction,
+            backdrop = sourceBackdrop,
+            backdropPosition = bottomContact?.let { contact ->
+                { contact.coordinates?.takeIf { it.isAttached }?.positionInRoot() ?: Offset.Zero }
+            },
+            active = morphing && appearance.usesRefraction && !sharesContactSurface,
             shape = Capsule(),
             tint = containerColor,
             navigationMaterial = appearance.usesBackdrop,
@@ -573,8 +616,9 @@ fun <T> GlassBottomBar(
             tintMultiplier = 1f,
             lensSource = true,
         )
-        val hiddenBackdropModifier = if (morphing) morphingHiddenGlass else remember(
-            backdrop,
+        val hiddenBackdropModifier = if (sharesContactSurface) Modifier
+        else if (morphing) morphingHiddenGlass else remember(
+            sourceBackdrop,
             containerColor,
             isLight,
             hiddenInnerShadows,
@@ -583,7 +627,7 @@ fun <T> GlassBottomBar(
         ) {
             Modifier
                 .drawBackdrop(
-                    backdrop = backdrop,
+                    backdrop = sourceBackdrop,
                     shape = { Capsule() },
                     effects = {
                         val press = selectionPressProgressState.value
@@ -695,6 +739,8 @@ fun <T> GlassBottomBar(
                 indicatorBackdropLayerBlock,
                 selectionPressProgressState,
                 appearance,
+                isLtr,
+                tabItems.size,
             ) {
                 Modifier
                     .drawBackdrop(
@@ -704,10 +750,15 @@ fun <T> GlassBottomBar(
                             val press = selectionPressProgressState.value
                             val opticalIntensity = press * expandedIndicatorVisibilityState.value
                             if (appearance.usesRefraction) {
-                                lens(
-                                    NavigationIndicatorRefractionHeight.toPx() * opticalIntensity,
-                                    NavigationIndicatorRefractionAmount.toPx() * opticalIntensity,
-                                    chromaticAberration = true,
+                                navigationContactLens(
+                                    refractionHeight = NavigationIndicatorRefractionHeight.toPx() * opticalIntensity,
+                                    refractionAmount = NavigationIndicatorRefractionAmount.toPx() * opticalIntensity,
+                                    contactDirection = contactMember?.let {
+                                        val direction = it.contact.lensContactDirection(it)
+                                        val endIndex = if ((direction > 0f) == isLtr) tabItems.lastIndex else 0
+                                        val proximity = (1f - abs(dragAnimation.value - endIndex) * 2f).coerceIn(0f, 1f)
+                                        direction * proximity * proximity * (3f - 2f * proximity)
+                                    } ?: 0f,
                                 )
                             }
                         },
@@ -770,10 +821,15 @@ fun <T> GlassBottomBar(
             Box(
                 modifier = Modifier
                     .then(surfaceSizeModifier)
+                    .onGloballyPositioned { contactMember?.updateCoordinates(it) },
+            ) {
+                // Keep registration outside both transforms so contact geometry cannot feed
+                // its own press magnification back into layout bounds.
+                Box(Modifier.matchParentSize()
                     .then(commonTransform)
                     .then(navigationGlassModifier)
-                    .then(interactiveHighlight.modifier),
-            )
+                    .then(if (sharesContactSurface) Modifier else interactiveHighlight.modifier))
+            }
             Row(
                 modifier = Modifier
                     .then(surfaceSizeModifier)
@@ -835,7 +891,7 @@ fun <T> GlassBottomBar(
                         .then(hiddenSourceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
-                        .then(selectionHighlightModifier)
+                        .then(if (sharesContactSurface) Modifier else selectionHighlightModifier)
                         .padding(horizontal = 4.dp)
                         .clip(Capsule()),
                     verticalAlignment = Alignment.CenterVertically,
