@@ -747,6 +747,8 @@
     <string name="detail_podcast_download_all">下载全部（%1$d 期）</string>
     <string name="detail_download_queued">已添加 %1$d 项到下载队列</string>
     <string name="system_lyrics_settings">歌词共享</string>
+    <string name="external_devices_settings">外部设备</string>
+    <string name="bluetooth_lyrics_enabled">外部设备蓝牙歌词</string>
     <string name="system_lyrics_enabled">启用歌词共享</string>
     <string name="system_lyrics_description">通过 Lyricon Provider、SuperLyricApi 和 ColorOS Live Lyrics Bridge 共享歌词及播放状态。</string>
     <string name="system_lyrics_usage">支持 Lyricon Provider、SuperLyricApi 和 ColorOS Live Lyrics Bridge 接口。</string>

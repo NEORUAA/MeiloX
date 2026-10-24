@@ -62,7 +62,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionToken
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import com.google.common.util.concurrent.MoreExecutors
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -284,7 +284,7 @@ class MusicService : MediaLibraryService(),
 
 
         setMediaNotificationProvider(
-            PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID)
+            PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID) { player.mediaMetadata.title }
         )
 
         val playbackAudioAttributes = AudioAttributes.Builder()
@@ -450,8 +450,8 @@ class MusicService : MediaLibraryService(),
             autoMixController.isTransitioning
         }
         listenTogetherStore.attachPlayer(player)
-        val singletonImageLoader = ImageLoader(this)
-        mediaSession = MediaLibrarySession.Builder(this, player, LibrarySessionCallback())
+        val singletonImageLoader = SingletonImageLoader.get(this)
+        mediaSession = MediaLibrarySession.Builder(this, ExternalMediaPlayer(player), LibrarySessionCallback())
             .setSessionExtras(Bundle().apply {
                 putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, true)
                 putBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, true)
@@ -466,6 +466,11 @@ class MusicService : MediaLibraryService(),
             )
             .setBitmapLoader(CoilBitmapLoader(this, singletonImageLoader))
             .build()
+        player.isExternalMediaRequest = {
+            mediaSession.controllerForCurrentRequest?.let {
+                it.packageName != packageName || it.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+            } == true
+        }
 
 
         scope.launch {
@@ -1144,7 +1149,9 @@ class MusicService : MediaLibraryService(),
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
-            val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+            val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).apply {
+                setAvailablePlayerCommands(externalTransportCommands(build().availablePlayerCommands))
+            }
             if (!controller.isTrusted && controller.packageName != packageName) {
                 return Futures.immediateFuture(result.build())
             }
@@ -1153,6 +1160,26 @@ class MusicService : MediaLibraryService(),
                 .add(SessionCommand(NOTIFICATION_RIGHT_COMMAND, Bundle.EMPTY))
                 .build()
             return Futures.immediateFuture(result.setAvailableSessionCommands(commands).build())
+        }
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            if (controller.packageName != packageName ||
+                controller.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+            ) {
+                externalQueueSelection(player, mediaItems, startPositionMs)?.let {
+                    return Futures.immediateFuture(it)
+                }
+            }
+            if (!controller.isTrusted && controller.packageName != packageName) {
+                return Futures.immediateFailedFuture(UnsupportedOperationException("Only existing queue items may be selected"))
+            }
+            return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
         }
 
         override fun onCustomCommand(
@@ -1553,4 +1580,33 @@ class MusicService : MediaLibraryService(),
         const val ACTION_PREVIOUS = "com.ljyh.mei.action.PREVIOUS"
         const val ACTION_NEXT = "com.ljyh.mei.action.NEXT"
     }
+}
+
+/** Companion devices may control transport without gaining queue-edit or account commands. */
+internal fun externalTransportCommands(defaults: Player.Commands): Player.Commands = defaults.buildUpon()
+    .addAll(
+        Player.COMMAND_PLAY_PAUSE,
+        Player.COMMAND_PREPARE,
+        Player.COMMAND_STOP,
+        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_PREVIOUS,
+        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_NEXT,
+        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+        Player.COMMAND_SET_MEDIA_ITEM,
+    ).build()
+
+internal fun externalQueueSelection(
+    player: Player,
+    requested: List<MediaItem>,
+    startPositionMs: Long,
+): MediaSession.MediaItemsWithStartPosition? {
+    if (requested.size != 1) return null
+    val index = (0 until player.mediaItemCount).firstOrNull {
+        player.getMediaItemAt(it).mediaId == requested.single().mediaId
+    } ?: return null
+    return MediaSession.MediaItemsWithStartPosition(
+        List(player.mediaItemCount, player::getMediaItemAt), index, startPositionMs,
+    )
 }

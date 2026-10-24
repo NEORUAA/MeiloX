@@ -748,6 +748,8 @@
     <string name="detail_podcast_download_all">Download all (%1$d episodes)</string>
     <string name="detail_download_queued">Added %1$d items to downloads</string>
     <string name="system_lyrics_settings">Lyric sharing</string>
+    <string name="external_devices_settings">External devices</string>
+    <string name="bluetooth_lyrics_enabled">Bluetooth lyrics for external devices</string>
     <string name="system_lyrics_enabled">Enable lyric sharing</string>
     <string name="system_lyrics_description">Shares lyrics and playback state through Lyricon Provider, SuperLyricApi, and ColorOS Live Lyrics Bridge.</string>
     <string name="system_lyrics_usage">Supports the Lyricon Provider, SuperLyricApi, and ColorOS Live Lyrics Bridge interfaces.</string>

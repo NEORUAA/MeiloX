@@ -45,6 +45,7 @@ class CoilBitmapLoader(
 
         val request = ImageRequest.Builder(context)
             .data(data)
+            .size(512)
             // 禁用硬件位图。Media3 的某些组件（如视频处理的 Overlay）需要软件位图，
             // 设置为 false 可以提高兼容性，避免潜在的运行时异常。
             .allowHardware(false)

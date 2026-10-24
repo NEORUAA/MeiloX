@@ -22,7 +22,7 @@ private const val TRANSLATION_ACTION_OWNER = "com.ljyh.mei.playback.ColorOsLyric
 private const val LYRIC_INFO = "lyricInfo"
 private const val MAX_METADATA_BYTES = 512 * 1024
 
-/** Overlays lyrics on the host session; only OPlus controls receive the Bridge display action. */
+/** Overlays platform metadata without replacing the host session or its transport controls. */
 internal class ColorOsLyricsPublisher(
     context: Context,
     session: MediaSession,
@@ -30,6 +30,7 @@ internal class ColorOsLyricsPublisher(
         listOf("OPPO", "OnePlus", "realme", "OPlus").any { manufacturer.equals(it, ignoreCase = true) }
     },
 ) {
+    private val externalPlayer = session.player as? ExternalMediaPlayer
     private val platformSession = PlatformLyricsSessionAccess.get(session)
     private val controller = platformSession.controller
     private val translationAction = PlaybackState.CustomAction.Builder(
@@ -41,6 +42,11 @@ internal class ColorOsLyricsPublisher(
     private var payload: String? = null
     private var hasTranslation = false
     private var lastPublished: String? = null
+    private var externalMediaId: String? = null
+    private var externalLyric: String? = null
+    private var lastExternalMediaId: String? = null
+    private var lastExternalTitle: String? = null
+    private var originalTitle: String? = null
     private var released = false
     private val callback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
@@ -64,6 +70,17 @@ internal class ColorOsLyricsPublisher(
         publishPlaybackState()
     }
 
+    fun setExternalLyrics(mediaId: String?, lyric: String?) {
+        if (released) return
+        if (externalPlayer != null) {
+            externalPlayer.setExternalLyrics(mediaId, lyric)
+            return
+        }
+        externalMediaId = mediaId
+        externalLyric = lyric?.takeIf { it.isNotBlank() }
+        publishMetadata()
+    }
+
     private fun currentPayload(metadata: MediaMetadata): String? = payload.takeIf {
         mediaId != null && metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == mediaId
     }
@@ -74,12 +91,28 @@ internal class ColorOsLyricsPublisher(
             val original = controller.metadata ?: return
             val current = original.getString(LYRIC_INFO)
             val desired = currentPayload(original)
-            if (current == desired) return
             // Remove only data written by this publisher, never another metadata owner's field.
-            if (desired == null && (lastPublished == null || current != lastPublished)) return
-            val candidate = copyMetadata(original).apply {
-                if (desired != null) putString(LYRIC_INFO, desired)
+            var updateLyrics = current != desired &&
+                (desired != null || (lastPublished != null && current == lastPublished))
+            val currentId = original.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+            val currentTitle = original.getString(MediaMetadata.METADATA_KEY_TITLE)
+            val ownsTitle = currentId != null && currentId == lastExternalMediaId && currentTitle == lastExternalTitle
+            val lyric = externalLyric.takeIf { currentId != null && currentId == externalMediaId }
+            if (lyric != null && !ownsTitle) originalTitle = currentTitle
+            val title = lyric ?: if (ownsTitle) originalTitle else currentTitle
+            val artwork = original.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: original.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            if (artwork != null) externalPlayer?.setArtwork(currentId, artwork)
+            val addArtwork = artwork != null && original.getBitmap(MediaMetadata.METADATA_KEY_ART) == null
+            val updateTitle = currentTitle != title
+            if (!updateLyrics && !updateTitle && !addArtwork) return
+            fun buildCandidate(writeLyrics: Boolean) = copyMetadata(original, writeLyrics).apply {
+                if (writeLyrics && desired != null) putString(LYRIC_INFO, desired)
+                if (updateTitle) putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                // Match the official client's three bitmap fields for legacy external controllers.
+                if (addArtwork) putBitmap(MediaMetadata.METADATA_KEY_ART, artwork)
             }.build()
+            var candidate = buildCandidate(updateLyrics)
             val parcel = Parcel.obtain()
             val fits = try {
                 candidate.writeToParcel(parcel, 0)
@@ -87,9 +120,16 @@ internal class ColorOsLyricsPublisher(
             } finally {
                 parcel.recycle()
             }
-            if (desired != null && !fits) return
+            if (updateLyrics && desired != null && !fits) {
+                // An oversized sharing payload must not suppress external titles or artwork.
+                if (!updateTitle && !addArtwork) return
+                updateLyrics = false
+                candidate = buildCandidate(false)
+            }
             platformSession.setMetadata(candidate)
-            lastPublished = desired
+            if (updateLyrics) lastPublished = desired
+            lastExternalMediaId = currentId.takeIf { lyric != null }
+            lastExternalTitle = lyric
         } catch (error: Exception) {
             Timber.w(error, "ColorOS lyric metadata publication failed")
         }
@@ -126,12 +166,13 @@ internal class ColorOsLyricsPublisher(
     fun release() {
         if (released) return
         controller.unregisterCallback(callback)
+        setExternalLyrics(null, null)
         setLyrics(null, null)
         released = true
     }
 
     @Suppress("DEPRECATION")
-    private fun copyMetadata(original: MediaMetadata): MediaMetadata.Builder {
+    private fun copyMetadata(original: MediaMetadata, stripLyrics: Boolean): MediaMetadata.Builder {
         val parcel = Parcel.obtain()
         val values = try {
             original.writeToParcel(parcel, 0)
@@ -144,7 +185,7 @@ internal class ColorOsLyricsPublisher(
         // Unknown keys still retain their original public MediaMetadata value types.
         return MediaMetadata.Builder().apply {
             values.keySet().forEach { key ->
-                if (key == LYRIC_INFO) return@forEach
+                if (stripLyrics && key == LYRIC_INFO) return@forEach
                 when (val value = values.get(key)) {
                     is Bitmap -> putBitmap(key, value)
                     is Rating -> putRating(key, value)

@@ -8,6 +8,7 @@ import androidx.media3.session.MediaSession
 import com.ljyh.mei.constants.LyricRomanizationEnabledKey
 import com.ljyh.mei.constants.LyricTranslationEnabledKey
 import com.ljyh.mei.constants.SystemLyricsEnabledKey
+import com.ljyh.mei.constants.BluetoothLyricsEnabledKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.ui.model.LyricData
@@ -19,10 +20,13 @@ import io.github.proify.lyricon.provider.service.addConnectionListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import timber.log.Timber
 
 /** Publishes the same lyric timeline from the playback service, including while the UI is absent. */
@@ -37,6 +41,8 @@ internal class SystemLyricsBridge(
     private val superLyricPublisher = SuperLyricPublisher(player, scope)
     private var provider: LyriconProvider? = null
     private var enabled = false
+    private var bluetoothLyricsEnabled = false
+    private var bluetoothLyricsJob: Job? = null
     private var displayTranslation = true
     private var displayRoma = true
     private var metadata: MediaMetadata? = null
@@ -64,22 +70,37 @@ internal class SystemLyricsBridge(
                         superLyricPublisher.stop()
                         stopProvider()
                         colorOsPublisher.setLyrics(null, null)
-                        metadata = null
-                        publishedLyrics = null
+                        if (!bluetoothLyricsEnabled) {
+                            metadata = null
+                            publishedLyrics = null
+                        }
                     }
                 }
                 if (enabled) publishLyrics(force = true)
             }
         }
         scope.launch {
+            context.dataStore.data.map { it[BluetoothLyricsEnabledKey] ?: false }
+                .distinctUntilChanged().collect { newEnabled ->
+                    bluetoothLyricsEnabled = newEnabled
+                    if (newEnabled) syncTrack()
+                    syncBluetoothLyrics()
+                    if (!enabled && !newEnabled) {
+                        metadata = null
+                        publishedLyrics = null
+                    }
+                }
+        }
+        scope.launch {
             lyricManager.lyricData.collect {
                 if (enabled) publishLyrics()
+                if (bluetoothLyricsEnabled) syncBluetoothLyrics()
             }
         }
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
-        if (!enabled) return
+        if (!enabled && !bluetoothLyricsEnabled) return
         if (events.containsAny(
                 Player.EVENT_MEDIA_ITEM_TRANSITION,
                 Player.EVENT_TIMELINE_CHANGED,
@@ -98,7 +119,8 @@ internal class SystemLyricsBridge(
                 Player.EVENT_PLAYBACK_SUPPRESSION_REASON_CHANGED,
             )
         ) {
-            syncPlayback(events.contains(Player.EVENT_POSITION_DISCONTINUITY))
+            if (enabled) syncPlayback(events.contains(Player.EVENT_POSITION_DISCONTINUITY))
+            if (bluetoothLyricsEnabled) syncBluetoothLyrics()
         }
     }
 
@@ -122,14 +144,17 @@ internal class SystemLyricsBridge(
         metadata = current
         publishedLyrics = null
         colorOsPublisher.setLyrics(null, null)
+        colorOsPublisher.setExternalLyrics(null, null)
         // Clear the old timeline before any asynchronous lyric request can finish.
         superLyricPublisher.setSong(null, null, displayTranslation, displayRoma)
         withProvider { provider?.player?.setSong(current?.toSystemLyricSong(null)) }
         if (current != null) lyricManager.loadLyrics(current)
         publishLyrics(force = true)
+        syncBluetoothLyrics()
     }
 
     private fun publishLyrics(force: Boolean = false) {
+        if (!enabled) return
         val current = metadata ?: run {
             superLyricPublisher.setSong(null, null, displayTranslation, displayRoma)
             withProvider { provider?.player?.setSong(null) }
@@ -156,6 +181,32 @@ internal class SystemLyricsBridge(
             }
         }
         syncPlayback()
+    }
+
+    private fun syncBluetoothLyrics() {
+        bluetoothLyricsJob?.cancel()
+        bluetoothLyricsJob = null
+        val current = metadata
+        if (!bluetoothLyricsEnabled || current == null) {
+            colorOsPublisher.setExternalLyrics(null, null)
+            return
+        }
+        val data = lyricManager.lyricData.value.takeIf { lyricManager.songId == current.id.toString() }
+        val song = current.toSystemLyricSong(data)
+        bluetoothLyricsJob = scope.launch {
+            while (isActive && player.currentMediaItem?.mediaId == song.id) {
+                val position = player.currentPosition.coerceAtLeast(0L)
+                val lines = song.lyrics.orEmpty()
+                // Hold the latest started line through instrumental gaps and the outro.
+                val line = lines.lastOrNull { position >= it.begin }
+                // Only platform metadata changes; the app and sharing providers retain the song title.
+                colorOsPublisher.setExternalLyrics(song.id, line?.text)
+                if (!player.isPlaying) break
+                val nextBoundary = lines.firstOrNull { it.begin > position }?.begin ?: break
+                val waitMs = ((nextBoundary - position) / player.playbackParameters.speed.toDouble()).toLong()
+                delay(waitMs.coerceAtLeast(20L))
+            }
+        }
     }
 
     private fun syncPlayback(seek: Boolean = false) {
@@ -203,6 +254,7 @@ internal class SystemLyricsBridge(
 
     fun release() {
         enabled = false
+        bluetoothLyricsEnabled = false
         player.removeListener(this)
         scope.cancel()
         superLyricPublisher.stop()
