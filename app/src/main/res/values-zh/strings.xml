@@ -223,8 +223,10 @@
     <string name="appearance_bottom_floating_extra_spacing">底部悬浮内容额外抬高</string>
     <string name="appearance_bottom_floating_extra_spacing_value">%1$d dp</string>
     <string name="appearance_bottom_floating_extra_spacing_description">将底部导航、搜索栏和迷你播放器向上移动。</string>
-    <string name="appearance_dynamic_theme">歌曲动态主题</string>
-    <string name="appearance_dynamic_theme_description">根据当前歌曲封面为界面着色。</string>
+    <string name="appearance_dynamic_theme">歌曲动态主题色</string>
+    <string name="appearance_dynamic_theme_description">根据当前歌曲封面动态更换强调色</string>
+    <string name="appearance_colorful_detail_backgrounds">多彩页面背景</string>
+    <string name="appearance_colorful_detail_backgrounds_description">适用于歌单、专辑、播客和歌手页面。</string>
     <string name="appearance_accent_color">强调色</string>
     <string name="appearance_accent_dynamic">封面</string>
     <string name="appearance_accent_default">默认</string>

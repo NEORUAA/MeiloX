@@ -51,7 +51,8 @@ val CoverStyleKey = stringPreferencesKey("coverStyle")
 val DynamicThemeKey = booleanPreferencesKey("dynamicTheme")
 const val DefaultAccentColorArgb = 0xFFFF3B30L
 val AccentColorKey = longPreferencesKey("accentColor")
-const val DefaultInterfaceLetterSpacing = 1f
+const val DefaultInterfaceLetterSpacing = 0.7f
+const val MaxInterfaceLetterSpacing = 1.4f
 val InterfaceLetterSpacingKey = floatPreferencesKey("interfaceLetterSpacing")
 val PlayerActionKey = stringPreferencesKey("playerBottomAction")
 
@@ -117,6 +118,7 @@ const val DefaultBottomFloatingContentExtraSpacing = 8
 const val MaxBottomFloatingContentExtraSpacing = 64
 val LiquidGlassEnabledKey = booleanPreferencesKey("appearance.liquidGlassEnabled")
 val ReduceTransparencyKey = booleanPreferencesKey("appearance.reduceTransparency")
+val ColorfulDetailBackgroundsKey = booleanPreferencesKey("appearance.colorfulDetailBackgrounds")
 val PredictiveBackAnimationEnabledKey = booleanPreferencesKey("appearance.predictiveBackAnimationEnabled")
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")

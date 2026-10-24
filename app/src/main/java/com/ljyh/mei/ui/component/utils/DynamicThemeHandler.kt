@@ -31,7 +31,7 @@ fun DynamicThemeHandler(
     val dominantColorState = rememberDominantColorState(loader)
     val isColorLoaded = remember { mutableStateOf(false) } // 记录颜色是否已从数据库加载
     var coverUrl by remember { mutableStateOf("") }
-    val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
+    val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = false)
     // 这两个 LaunchedEffect 专门处理颜色逻辑
     LaunchedEffect(playerConnection, dynamicTheme) {
         if (!dynamicTheme) return@LaunchedEffect

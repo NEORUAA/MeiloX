@@ -184,6 +184,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.local.LocalPageAppearance
+import com.ljyh.mei.ui.local.LocalColorfulPageBackgrounds
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.local.LocalUserData
 import com.ljyh.mei.ui.glass.GlassBottomBar
@@ -295,13 +296,16 @@ class MainActivity : ComponentActivity() {
             // Search chrome belongs to the search destination, including back navigation.
             val active = navController.currentRoute == Screen.Search.route
             var focusSearchOnEntry by remember { mutableStateOf(false) }
-            val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
+            val dynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = false)
             val accentColorArgb by rememberPreference(AccentColorKey, DefaultAccentColorArgb)
             val appAppearance by rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
             val (lastSelectedTab, setLastSelectedTab) = rememberPreference(LastSelectedTabKey, Index.Home.name)
             val recognizeClipboardLinks by rememberPreference(RecognizeClipboardLinksKey, false)
             val navigationPreferences by context.dataStore.data
                 .collectAsState<Preferences, Preferences?>(initial = null)
+            val colorfulPageBackgrounds = navigationPreferences?.let {
+                it[com.ljyh.mei.constants.ColorfulDetailBackgroundsKey] ?: true
+            } ?: false
             val keepBottomBarExpanded = navigationPreferences?.get(KeepBottomBarExpandedKey) ?: false
             val bottomFloatingContentExtraSpacing =
                 (navigationPreferences?.get(BottomFloatingContentExtraSpacingKey)
@@ -555,6 +559,7 @@ class MainActivity : ComponentActivity() {
                     LocalBlurBackdrop provides bottomControlsBackdrop,
                     LocalAccentSeedColor provides accentSeedColor,
                     LocalPageAppearance provides registerPageAppearance,
+                    LocalColorfulPageBackgrounds provides colorfulPageBackgrounds,
                 ) {
                     BoxWithConstraints(
                         modifier = Modifier

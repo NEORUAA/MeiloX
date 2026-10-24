@@ -97,6 +97,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.local.LocalPageAppearance
+import com.ljyh.mei.ui.local.LocalColorfulPageBackgrounds
 import com.ljyh.mei.ui.model.Album
 import com.ljyh.mei.ui.model.toAlbum
 import com.ljyh.mei.ui.screen.Screen
@@ -428,11 +429,12 @@ private fun ArtistCoverTheme(
     viewModel: ArtistViewModel,
     content: @Composable (CoverBackground) -> Unit,
 ) {
+    val colorfulBackgrounds = LocalColorfulPageBackgrounds.current
     var coverIsDark by remember(viewModel, coverUrl) {
         mutableStateOf(viewModel.getCachedCoverIsDark(coverUrl) ?: false)
     }
-    LaunchedEffect(viewModel, coverUrl) {
-        if (coverUrl.isBlank()) return@LaunchedEffect
+    LaunchedEffect(viewModel, coverUrl, colorfulBackgrounds) {
+        if (!colorfulBackgrounds || coverUrl.isBlank()) return@LaunchedEffect
         try {
             viewModel.getCoverIsDarkOrExtract(coverUrl)?.let { coverIsDark = it }
         } catch (error: CancellationException) {
@@ -442,16 +444,17 @@ private fun ArtistCoverTheme(
         }
     }
 
+    val isDark = if (colorfulBackgrounds) coverIsDark else LocalGlassColors.current.isDark
     val setPageAppearance = LocalPageAppearance.current
     val appearanceOwner = remember(viewModel, route) { Any() }
-    DisposableEffect(route, appearanceOwner, coverIsDark, setPageAppearance) {
-        setPageAppearance(route, appearanceOwner, coverIsDark)
+    DisposableEffect(route, appearanceOwner, isDark, setPageAppearance) {
+        setPageAppearance(route, appearanceOwner, isDark)
         onDispose { setPageAppearance(route, appearanceOwner, null) }
     }
 
-    val accentSeed = LocalAccentSeedColor.current ?: defaultGlassColors(coverIsDark).accent
-    MusicTheme(seedColor = accentSeed, isDark = coverIsDark) {
-        val colors = defaultGlassColors(coverIsDark, MaterialTheme.colorScheme.primary)
+    val accentSeed = LocalAccentSeedColor.current ?: defaultGlassColors(isDark).accent
+    MusicTheme(seedColor = accentSeed, isDark = isDark) {
+        val colors = defaultGlassColors(isDark, MaterialTheme.colorScheme.primary)
         CompositionLocalProvider(LocalGlassColors provides colors) {
             val background = rememberCoverBackground(
                 coverUrl = coverUrl,

@@ -224,8 +224,10 @@
     <string name="appearance_bottom_floating_extra_spacing">Raise bottom floating controls</string>
     <string name="appearance_bottom_floating_extra_spacing_value">%1$d dp</string>
     <string name="appearance_bottom_floating_extra_spacing_description">Move bottom navigation, search, and the mini player farther from the screen edge.</string>
-    <string name="appearance_dynamic_theme">Dynamic song theme</string>
-    <string name="appearance_dynamic_theme_description">Tint the interface from the current artwork.</string>
+    <string name="appearance_dynamic_theme">Dynamic song theme color</string>
+    <string name="appearance_dynamic_theme_description">Dynamically change the accent color from the current song artwork</string>
+    <string name="appearance_colorful_detail_backgrounds">Colorful page backgrounds</string>
+    <string name="appearance_colorful_detail_backgrounds_description">Applies to playlist, album, podcast, and artist pages.</string>
     <string name="appearance_accent_color">Accent color</string>
     <string name="appearance_accent_dynamic">Artwork</string>
     <string name="appearance_accent_default">Default</string>

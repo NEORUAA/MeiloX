@@ -31,9 +31,11 @@ import com.ljyh.mei.constants.AccentColorKey
 import com.ljyh.mei.constants.AccompanimentLyricTextSizeKey
 import com.ljyh.mei.constants.CoverStyle
 import com.ljyh.mei.constants.CoverStyleKey
+import com.ljyh.mei.constants.ColorfulDetailBackgroundsKey
 import com.ljyh.mei.constants.DebugKey
 import com.ljyh.mei.constants.DefaultAccentColorArgb
 import com.ljyh.mei.constants.DefaultInterfaceLetterSpacing
+import com.ljyh.mei.constants.MaxInterfaceLetterSpacing
 import com.ljyh.mei.constants.DynamicThemeKey
 import com.ljyh.mei.constants.InterfaceLetterSpacingKey
 import com.ljyh.mei.constants.LyricTextSize
@@ -95,7 +97,9 @@ fun AppearanceSettings(
 ) {
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    val (dynamicTheme, setDynamicTheme) = rememberPreference(DynamicThemeKey, true)
+    val (dynamicTheme, setDynamicTheme) = rememberPreference(DynamicThemeKey, false)
+    val (colorfulDetailBackgrounds, setColorfulDetailBackgrounds) =
+        rememberPreference(ColorfulDetailBackgroundsKey, true)
     val (accentColorArgb, setAccentColorArgb) = rememberPreference(AccentColorKey, DefaultAccentColorArgb)
     val (letterSpacing, setLetterSpacing) = rememberPreference(InterfaceLetterSpacingKey, DefaultInterfaceLetterSpacing)
     val customAccent = accentColorArgb != DefaultAccentColorArgb
@@ -171,6 +175,13 @@ fun AppearanceSettings(
                         else setAccentColorArgb(DefaultAccentColorArgb)
                     },
                     enabled = !dynamicTheme,
+                )
+                AppearanceToggle(
+                    R.string.appearance_colorful_detail_backgrounds,
+                    R.string.appearance_colorful_detail_backgrounds_description,
+                    "photo.stack",
+                    colorfulDetailBackgrounds,
+                    setColorfulDetailBackgrounds,
                 )
                 AppearanceLetterSpacing(letterSpacing, setLetterSpacing)
             }
@@ -317,7 +328,8 @@ fun AppearanceSettings(
 
 @Composable
 private fun AppearanceLetterSpacing(savedSpacing: Float, setSpacing: (Float) -> Unit) {
-    val spacing = (savedSpacing.takeIf { it.isFinite() } ?: DefaultInterfaceLetterSpacing).coerceIn(0f, 3f)
+    val spacing = (savedSpacing.takeIf { it.isFinite() } ?: DefaultInterfaceLetterSpacing)
+        .coerceIn(0f, MaxInterfaceLetterSpacing)
     // Keep the latest local edit visible while consecutive preference writes settle.
     var draftSpacing by remember { mutableStateOf<Float?>(null) }
     val displayedSpacing = draftSpacing ?: spacing
@@ -339,7 +351,7 @@ private fun AppearanceLetterSpacing(savedSpacing: Float, setSpacing: (Float) -> 
                     draftSpacing = rounded
                     setSpacing(rounded)
                 },
-                valueRange = 0f..3f,
+                valueRange = 0f..MaxInterfaceLetterSpacing,
                 modifier = Modifier.padding(horizontal = 10.dp).semantics {
                     contentDescription = title
                     stateDescription = valueLabel

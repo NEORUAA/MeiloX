@@ -406,7 +406,7 @@ fun IosPinnedPage(
                     .height(toolbarHeight + if (appearance.usesBackdrop) 34.dp else 0.dp)
                     .align(Alignment.TopCenter)
                     .graphicsLayer {
-                        alpha = if (appearance.usesBackdrop) topBarBlurProgress.coerceIn(0f, 1f) else 1f
+                        alpha = topBarBlurProgress.coerceIn(0f, 1f)
                     }
                     .then(
                         if (appearance.usesBackdrop) {

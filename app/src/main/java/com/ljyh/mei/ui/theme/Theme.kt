@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.DefaultInterfaceLetterSpacing
 import com.ljyh.mei.constants.InterfaceLetterSpacingKey
+import com.ljyh.mei.constants.MaxInterfaceLetterSpacing
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import com.ljyh.mei.utils.rememberPreference
 
@@ -48,7 +49,7 @@ fun MusicTheme(
 ) {
     val savedLetterSpacing by rememberPreference(InterfaceLetterSpacingKey, LocalInterfaceLetterSpacing.current.value)
     val letterSpacing = (savedLetterSpacing.takeIf { it.isFinite() }
-        ?: DefaultInterfaceLetterSpacing).coerceIn(0f, 3f).sp
+        ?: DefaultInterfaceLetterSpacing).coerceIn(0f, MaxInterfaceLetterSpacing).sp
     val typography = remember(letterSpacing) { appTypography(letterSpacing) }
     // A source change must not expose an uncorrected frame of the previous cover color.
     val animatedSeed by key(dynamicAccent) {
