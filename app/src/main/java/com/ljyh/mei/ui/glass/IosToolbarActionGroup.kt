@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.PathIterator
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.PathSegment as ComposePathSegment
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -368,6 +369,7 @@ internal fun liquidContactShape(
     first: LiquidContactCapsule,
     second: LiquidContactCapsule,
     contactDistance: Float,
+    includeDisconnected: Boolean = false,
 ): Shape? {
     fun LiquidContactCapsule.isValid() = size.width > 0f && size.height > 0f &&
         size.width.isFinite() && size.height.isFinite() && bounds.width > 0f && bounds.height > 0f &&
@@ -376,10 +378,7 @@ internal fun liquidContactShape(
     val effectiveDistance = contactDistance - 0.01f
     val left = if (first.bounds.center.x <= second.bounds.center.x) first else second
     val right = if (left === first) second else first
-    if (right.bounds.left - left.bounds.right >= effectiveDistance ||
-        min(left.bounds.bottom, right.bounds.bottom) <= maxOf(left.bounds.top, right.bounds.top)
-    ) return null
-    return LiquidContactShape(left, right, effectiveDistance)
+    return LiquidContactShape(left, right, effectiveDistance).takeIf { includeDisconnected || it.isConnected }
 }
 
 internal data class LiquidContactShape(
@@ -390,20 +389,46 @@ internal data class LiquidContactShape(
     private val lensTopEnd: CornerSize = CornerSize(50),
     private val lensBottomEnd: CornerSize = CornerSize(50),
     private val lensBottomStart: CornerSize = CornerSize(50),
+    val outlineScale: Offset = Offset(1f, 1f),
+    val outlineTranslation: Offset = Offset.Zero,
 ) : CornerBasedShape(lensTopStart, lensTopEnd, lensBottomEnd, lensBottomStart) {
+    private var baseGeometry = lazy(LazyThreadSafetyMode.NONE) {
+        contactCapsulePath(first, second, contactDistance)
+    }
     private var cachedOutline: Outline? = null
+    internal val isConnected: Boolean get() = !(second.bounds.left - first.bounds.right >= contactDistance ||
+        min(first.bounds.bottom, second.bounds.bottom) <= maxOf(first.bounds.top, second.bounds.top))
     internal var hasConsistentWinding: Boolean = false
         private set
 
     override fun copy(topStart: CornerSize, topEnd: CornerSize, bottomEnd: CornerSize, bottomStart: CornerSize): CornerBasedShape =
-        LiquidContactShape(first, second, contactDistance, topStart, topEnd, bottomEnd, bottomStart)
+        LiquidContactShape(first, second, contactDistance, topStart, topEnd, bottomEnd, bottomStart,
+            outlineScale, outlineTranslation).also { it.baseGeometry = baseGeometry }
+
+    fun withOutlineTransform(scale: Offset, translation: Offset): LiquidContactShape =
+        copy(outlineScale = scale, outlineTranslation = translation).also { it.baseGeometry = baseGeometry }
 
     override fun createOutline(
         size: Size, topStart: Float, topEnd: Float, bottomEnd: Float, bottomStart: Float,
         layoutDirection: LayoutDirection,
-    ): Outline = cachedOutline ?: contactCapsulePath(first, second, contactDistance).let { geometry ->
+    ): Outline = cachedOutline ?: baseGeometry.value.let { geometry ->
         hasConsistentWinding = geometry.hasConsistentWinding
-        Outline.Generic(geometry.path).also { cachedOutline = it }
+        val path = if (outlineScale != Offset(1f, 1f) || outlineTranslation != Offset.Zero) {
+            // Keep the shared native contour immutable across visible and sampled outlines.
+            Path().apply {
+                fillType = geometry.path.fillType
+                addPath(geometry.path)
+            }.also { transformed ->
+                transformed.asAndroidPath().transform(android.graphics.Matrix().apply {
+                    setValues(floatArrayOf(
+                        outlineScale.x, 0f, outlineTranslation.x,
+                        0f, outlineScale.y, outlineTranslation.y,
+                        0f, 0f, 1f,
+                    ))
+                })
+            }
+        } else geometry.path
+        Outline.Generic(path).also { cachedOutline = it }
     }
 }
 
@@ -543,6 +568,11 @@ private fun contactCapsulePath(first: LiquidContactCapsule, second: LiquidContac
     val left = ContactProfile(first)
     val right = ContactProfile(second)
     fun union() = ContactGeometry(Path.combine(PathOperation.Union, left.fullPath(), right.fullPath()), false)
+    // A hidden source remains valid before contact and after separation. Preserve the
+    // two native closed contours without extending a connector across empty space.
+    if (second.bounds.left - first.bounds.right >= contactDistance ||
+        min(first.bounds.bottom, second.bounds.bottom) <= maxOf(first.bounds.top, second.bounds.top)
+    ) return union()
     // Containment has no facing pair of sides; retain the exact visible union instead
     // of forcing a reversed bridge through one of the bodies.
     if (first.bounds.left >= second.bounds.left || first.bounds.right >= second.bounds.right) return union()

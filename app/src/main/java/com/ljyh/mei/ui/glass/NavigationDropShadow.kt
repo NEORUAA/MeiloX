@@ -10,11 +10,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
+import androidx.compose.ui.graphics.Canvas as ComposeCanvas
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Paint as ComposePaint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
@@ -245,6 +250,130 @@ private class NavigationGlassDropShadowNode(
             block(layerScope)
             renderer.drawTransformed(this, shape(), layerScope)
         }
+        drawContent()
+    }
+
+    override fun onDetach() {
+        renderer.release()
+    }
+}
+
+/** Kyant's default 24dp shadow, filtered on the GPU before clearing the original body. */
+private class NavigationLensSourceDropShadowRenderer {
+    private val mask = RenderNode("Navigation lens source shadow mask")
+    private val cut = RenderNode("Navigation lens source shadow cut").apply {
+        setUseCompositingLayer(true, null)
+    }
+    private val fill = ComposePaint().apply { color = ComposeColor.Black }
+    private val clear = ComposePaint().apply { blendMode = ComposeBlendMode.Clear }
+    private val shadowAlpha = ComposeColor.Black.copy(alpha = 0.1f).alpha
+    private var key: GeometryKey? = null
+    private var blurDensity = Float.NaN
+    private var radius = 0f
+    private var padding = 0f
+    private var offsetY = 0f
+    private var maskWidth = 0
+    private var maskHeight = 0
+
+    fun draw(scope: DrawScope, shape: Shape) {
+        val canvas = scope.drawContext.canvas.nativeCanvas
+        if (!canvas.isHardwareAccelerated || scope.size.minDimension <= 0f) return
+        prepare(scope, shape)
+        val save = canvas.save()
+        try {
+            canvas.translate(-padding, -padding)
+            canvas.drawRenderNode(cut)
+        } finally {
+            canvas.restoreToCount(save)
+        }
+    }
+
+    private fun prepare(scope: DrawScope, shape: Shape) {
+        val nextKey = GeometryKey(shape, scope.size, scope.layoutDirection, scope.density, scope.fontScale)
+        if (nextKey == key && mask.hasDisplayList() && cut.hasDisplayList()) return
+        val outline = shape.createOutline(scope.size, scope.layoutDirection, scope)
+        if (blurDensity != scope.density) {
+            radius = 24f * scope.density
+            padding = radius * 2f
+            offsetY = 4f * scope.density
+            // Both Android APIs map this public radius to sigma = radius * 0.57735 + 0.5.
+            // Blur opaque coverage first, then apply the reference paint's alpha before CLEAR.
+            mask.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.DECAL))
+            mask.alpha = shadowAlpha
+            blurDensity = scope.density
+        }
+        val logicalWidth = ceil(scope.size.width + radius * 4f).toInt()
+        val logicalHeight = ceil(scope.size.height + radius * 4f + offsetY).toInt()
+        maskWidth = maxOf(maskWidth, (logicalWidth + 63) / 64 * 64)
+        maskHeight = maxOf(maskHeight, (logicalHeight + 63) / 64 * 64)
+        val width = maskWidth
+        val height = maskHeight
+        mask.setPosition(0, 0, width, height)
+        val maskCanvas = mask.beginRecording(width, height)
+        try {
+            maskCanvas.translate(padding, padding + offsetY)
+            ComposeCanvas(maskCanvas).drawOutline(outline, fill)
+        } finally {
+            mask.endRecording()
+        }
+        cut.setPosition(0, 0, width, height)
+        val cutCanvas = cut.beginRecording(width, height)
+        try {
+            // Keep the reference recording's crop even when the backing allocation grows.
+            cutCanvas.clipRect(0, 0, logicalWidth, logicalHeight)
+            cutCanvas.drawRenderNode(mask)
+            cutCanvas.translate(padding, padding)
+            ComposeCanvas(cutCanvas).drawOutline(outline, clear)
+        } finally {
+            cut.endRecording()
+        }
+        key = nextKey
+    }
+
+    fun release() {
+        mask.discardDisplayList()
+        cut.discardDisplayList()
+        key = null
+        maskWidth = 0
+        maskHeight = 0
+    }
+
+    private data class GeometryKey(
+        val shape: Shape,
+        val size: Size,
+        val layoutDirection: LayoutDirection,
+        val density: Float,
+        val fontScale: Float,
+    )
+}
+
+/** Draws the hidden lens source's default shadow with GPU filtering and the original body cut. */
+internal fun Modifier.navigationLensSourceDropShadow(shape: () -> Shape): Modifier =
+    then(NavigationLensSourceDropShadowElement(shape))
+
+private data class NavigationLensSourceDropShadowElement(
+    val shape: () -> Shape,
+) : ModifierNodeElement<NavigationLensSourceDropShadowNode>() {
+    override fun create() = NavigationLensSourceDropShadowNode(shape)
+
+    override fun update(node: NavigationLensSourceDropShadowNode) {
+        node.shape = shape
+        node.invalidateDraw()
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "navigationLensSourceDropShadow"
+        properties["shape"] = shape
+    }
+}
+
+private class NavigationLensSourceDropShadowNode(
+    var shape: () -> Shape,
+) : DrawModifierNode, Modifier.Node() {
+    private val renderer = NavigationLensSourceDropShadowRenderer()
+
+    override fun ContentDrawScope.draw() {
+        renderer.draw(this, shape())
         drawContent()
     }
 

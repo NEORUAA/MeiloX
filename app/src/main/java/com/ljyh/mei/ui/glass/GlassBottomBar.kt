@@ -45,7 +45,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -73,9 +72,6 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
@@ -214,8 +210,8 @@ fun <T> GlassBottomBar(
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
     val isLight = !colors.isDark
-    val navigationInnerShadows = rememberNavigationInnerShadows(appearance.usesBackdrop)
-    val hiddenInnerShadows = rememberNavigationInnerShadows(appearance.usesRefraction)
+    val navigationInnerShadows = rememberNavigationInnerShadows(appearance.usesBackdrop, renderScale = 0.5f)
+    val hiddenInnerShadows = rememberNavigationInnerShadows(appearance.usesRefraction, renderScale = 0.5f)
     val containerColor = colors.container
     val tabsBackdrop = rememberLayerBackdrop()
     val bottomContact = LocalBottomControlContact.current
@@ -490,6 +486,14 @@ fun <T> GlassBottomBar(
         val contactMember = rememberBottomControlContactMember(
             materialPressProgress = { pressProgressState.value },
             lensSourceActive = { !indicatorSettled && appearance.usesRefraction },
+            lensSourceScale = { size ->
+                val scale = panelPressScale.value
+                Offset(
+                    1f / scale,
+                    navigationLensSourceHeight(size.height, paddingPx) / size.height.coerceAtLeast(1f) / scale,
+                )
+            },
+            lensSourcePressProgress = { selectionPressProgressState.value },
             visualBounds = { size ->
                 val scale = panelPressScale.value
                 val verticalScale = scale * (1f + 0.045f * sin(PI.toFloat() * compactState.value))
@@ -603,10 +607,7 @@ fun <T> GlassBottomBar(
         }
         val morphingHiddenGlass = rememberMorphingNavigationGlass(
             backdrop = sourceBackdrop,
-            backdropPosition = bottomContact?.let { contact ->
-                { contact.coordinates?.takeIf { it.isAttached }?.positionInRoot() ?: Offset.Zero }
-            },
-            active = morphing && appearance.usesRefraction && !sharesContactSurface,
+            active = morphing && appearance.usesRefraction && bottomContact == null,
             shape = Capsule(),
             tint = containerColor,
             navigationMaterial = appearance.usesBackdrop,
@@ -616,7 +617,7 @@ fun <T> GlassBottomBar(
             tintMultiplier = 1f,
             lensSource = true,
         )
-        val hiddenBackdropModifier = if (sharesContactSurface) Modifier
+        val hiddenBackdropModifier = if (bottomContact != null) Modifier
         else if (morphing) morphingHiddenGlass else remember(
             sourceBackdrop,
             containerColor,
@@ -625,34 +626,15 @@ fun <T> GlassBottomBar(
             appearance,
             selectionPressProgressState,
         ) {
-            Modifier
-                .drawBackdrop(
-                    backdrop = sourceBackdrop,
-                    shape = { Capsule() },
-                    effects = {
-                        val press = selectionPressProgressState.value
-                        vibrancy()
-                        blur(8.dp.toPx())
-                        lens(
-                            24.dp.toPx() * press,
-                            28.dp.toPx() * press,
-                            depthEffect = press > 0.01f,
-                            chromaticAberration = true,
-                        )
-                        if (isLight && appearance.usesBackdrop) liftNavigationShadows()
-                    },
-                    highlight = {
-                        Highlight.Default.copy(alpha = 0.94f * selectionPressProgressState.value)
-                    },
-                    onDrawSurface = {
-                        if (appearance.usesBackdrop) {
-                            drawNavigationGlassMaterial(containerColor, colors.isDark, 1f)
-                            hiddenInnerShadows?.draw(this, Capsule(), isDark = colors.isDark)
-                        } else {
-                            drawRect(containerColor)
-                        }
-                    },
-                )
+            Modifier.navigationLensSourceBackground(
+                backdrop = sourceBackdrop,
+                shape = { Capsule() },
+                containerColor = containerColor,
+                isDark = colors.isDark,
+                appearance = appearance,
+                pressProgressState = selectionPressProgressState,
+                innerShadows = hiddenInnerShadows,
+            )
         }
         val expandedIndicatorVisibilityState = remember(compactState) {
             derivedStateOf { (1f - compactState.value * 1.5f).coerceIn(0f, 1f) }
@@ -891,7 +873,7 @@ fun <T> GlassBottomBar(
                         .then(hiddenSourceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
-                        .then(if (sharesContactSurface) Modifier else selectionHighlightModifier)
+                        .then(selectionHighlightModifier)
                         .padding(horizontal = 4.dp)
                         .clip(Capsule()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1011,7 +993,10 @@ private fun <T> FullTabContent(
                             NavigationTabContent(
                                 item = item,
                                 selected = selected,
-                                selectedColorFilter = selectedColorFilter,
+                                // The selected placeholder stays transparent while the separate
+                                // morphing item owns its pixels. Keep its layout and semantics
+                                // without two unused tint layers observing every press frame.
+                                selectedColorFilter = if (selected && hideSelectedItem) null else selectedColorFilter,
                             )
                         }
                     },

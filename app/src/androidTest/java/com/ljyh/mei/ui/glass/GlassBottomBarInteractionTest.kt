@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.glass
 
 import android.graphics.RenderNode
 import android.graphics.Region
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -84,6 +85,7 @@ import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -239,7 +241,10 @@ class GlassBottomBarInteractionTest {
         for (gap in listOf(7f, 3f, 0f, -4f)) {
             for (verticalOffset in listOf(-6f, 0f, 6f)) {
                 val other = search(gap, verticalOffset)
-                val connected = outline(nav, other)
+                val visibleShape = liquidContactShape(nav, other, 8f) as LiquidContactShape
+                val connected = visibleShape.createOutline(
+                    Size(500f, 160f), LayoutDirection.Ltr, Density(1f),
+                ) as Outline.Generic
                 val fill = region(connected)
                 val bounds = connected.path.getBounds()
                 assertEquals(nav.bounds.left, bounds.left, 0.01f)
@@ -263,6 +268,52 @@ class GlassBottomBarInteractionTest {
                 val reversed = region(outline(other, nav))
                 reversed.op(fill, Region.Op.XOR)
                 assertTrue("Physical input order must not change RTL geometry", reversed.isEmpty)
+
+                val originalPath = android.graphics.Path(connected.path.asAndroidPath())
+                val originalPoints = originalPath.approximate(0.001f)
+                val scale = Offset(0.91f, 0.84f)
+                val translation = Offset(7.5f, 3.25f)
+                val expectedPath = android.graphics.Path(originalPath).apply {
+                    transform(android.graphics.Matrix().apply {
+                        setScale(scale.x, scale.y)
+                        postTranslate(translation.x, translation.y)
+                    })
+                }
+                val expectedFill = Region().apply {
+                    setPath(expectedPath, Region(0, 0, 500, 160))
+                }
+                val hidden = visibleShape.withOutlineTransform(scale, translation).createOutline(
+                    Size(500f, 160f), LayoutDirection.Ltr, Density(1f),
+                ) as Outline.Generic
+                assertArrayEquals(
+                    "The hidden source applies the affine transform to the native contour",
+                    expectedPath.approximate(0.001f), hidden.path.asAndroidPath().approximate(0.001f), 0f,
+                )
+                val hiddenDifference = region(hidden).apply { op(expectedFill, Region.Op.XOR) }
+                assertTrue("The hidden source preserves the transformed filled contour", hiddenDifference.isEmpty)
+                assertArrayEquals(
+                    "Transforming the shared source must not mutate the visible native path",
+                    originalPoints, connected.path.asAndroidPath().approximate(0.001f), 0f,
+                )
+                assertEquals("The visible outline bounds remain unchanged", bounds, connected.path.getBounds())
+                val visibleDifference = region(connected).apply { op(fill, Region.Op.XOR) }
+                assertTrue("The visible filled contour remains unchanged", visibleDifference.isEmpty)
+
+                val rtlShape = liquidContactShape(other, nav, 8f) as LiquidContactShape
+                val rtlVisible = rtlShape.createOutline(
+                    Size(500f, 160f), LayoutDirection.Rtl, Density(1f),
+                ) as Outline.Generic
+                val rtlHidden = rtlShape.withOutlineTransform(scale, translation).createOutline(
+                    Size(500f, 160f), LayoutDirection.Rtl, Density(1f),
+                ) as Outline.Generic
+                assertArrayEquals(
+                    "Reversed RTL inputs retain the same transformed native contour",
+                    expectedPath.approximate(0.001f), rtlHidden.path.asAndroidPath().approximate(0.001f), 0f,
+                )
+                assertArrayEquals(
+                    "The RTL visible path also remains independent of its hidden transform",
+                    originalPoints, rtlVisible.path.asAndroidPath().approximate(0.001f), 0f,
+                )
             }
         }
         val contained = LiquidContactCapsule(Size(60f, 60f), Rect(220f, 26f, 280f, 86f))
@@ -1019,6 +1070,230 @@ class GlassBottomBarInteractionTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun halfResolutionNavigationInnerShadowsMatchNativeMasks() {
+        val backings = listOf(Color.White, Color(0xFFF0F0F0), Color(0xFF202020), Color(0xFF404040))
+        val scenarios = listOf("circle", "capsule", "contact").flatMap { shape ->
+            backings.indices.map { backing -> shape to backing }
+        }
+        val scenarioIndex = mutableStateOf(0)
+        fun boundsFor(shape: String) = when (shape) {
+            "circle" -> Rect(12f, 24f, 72f, 84f)
+            "capsule" -> Rect(12f, 26f, 326f, 86f)
+            else -> Rect(12f, 24f, 326f, 88f)
+        }
+        compose.setContent {
+            val (shapeName, backingIndex) = scenarios[scenarioIndex.value]
+            val renderers = remember {
+                listOf(NavigationInnerShadowRenderer(1f), NavigationInnerShadowRenderer(0.5f))
+            }
+            DisposableEffect(renderers) { onDispose { renderers.forEach { it.release() } } }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                renderers.forEachIndexed { index, renderer ->
+                    Canvas(
+                        Modifier.size(338.dp, 112.dp)
+                            .testTag(if (index == 0) "nativeShadowMask" else "candidateShadowMask"),
+                    ) {
+                        assertTrue("Shadow mask comparisons require GPU rendering",
+                            drawContext.canvas.nativeCanvas.isHardwareAccelerated)
+                        drawRect(backings[backingIndex])
+                        val boundsDp = boundsFor(shapeName)
+                        val bounds = Rect(
+                            boundsDp.left.dp.toPx(), boundsDp.top.dp.toPx(),
+                            boundsDp.right.dp.toPx(), boundsDp.bottom.dp.toPx(),
+                        )
+                        val shape = when (shapeName) {
+                            "circle" -> CircleShape
+                            "capsule" -> Capsule()
+                            else -> checkNotNull(liquidContactShape(
+                                LiquidContactCapsule(
+                                    Size(236.dp.toPx(), 60.dp.toPx()),
+                                    Rect(0f, 2.dp.toPx(), 248.dp.toPx(), 64.dp.toPx()),
+                                ),
+                                LiquidContactCapsule(
+                                    Size(60.dp.toPx(), 60.dp.toPx()),
+                                    Rect(250.dp.toPx(), 0f, 314.dp.toPx(), 64.dp.toPx()),
+                                ),
+                                8.dp.toPx(),
+                            ))
+                        }
+                        renderer.draw(this, shape, bounds, isDark = backingIndex >= 2)
+                    }
+                }
+            }
+        }
+        val failures = mutableListOf<String>()
+        scenarios.forEachIndexed { index, (shapeName, backingIndex) ->
+            compose.runOnIdle { scenarioIndex.value = index }
+            compose.waitForIdle()
+            val reference = compose.onNodeWithTag("nativeShadowMask").captureToImage().toPixelMap()
+            val actual = compose.onNodeWithTag("candidateShadowMask").captureToImage().toPixelMap()
+            assertEquals(reference.width, actual.width)
+            assertEquals(reference.height, actual.height)
+            val bounds = boundsFor(shapeName)
+            val scale = reference.width / 338f
+            var maximum = 0
+            var total = 0L
+            var count = 0
+            var shadowPixels = 0
+            fun error(a: Color, b: Color): Int = maxOf(
+                abs((a.red * 255f).roundToInt() - (b.red * 255f).roundToInt()),
+                abs((a.green * 255f).roundToInt() - (b.green * 255f).roundToInt()),
+                abs((a.blue * 255f).roundToInt() - (b.blue * 255f).roundToInt()),
+                abs((a.alpha * 255f).roundToInt() - (b.alpha * 255f).roundToInt()),
+            )
+            repeat(reference.height) { y ->
+                repeat(reference.width) { x ->
+                    val difference = error(reference[x, y], actual[x, y])
+                    maximum = maxOf(maximum, difference)
+                    // Average only the shape's bounds; empty canvas must not dilute a mismatch.
+                    if (x >= bounds.left * scale && x < bounds.right * scale &&
+                        y >= bounds.top * scale && y < bounds.bottom * scale
+                    ) {
+                        total += difference
+                        count++
+                        if (error(reference[x, y], backings[backingIndex]) > 2) shadowPixels++
+                    }
+                }
+            }
+            val mean = total.toDouble() / count
+            val label = "halfResolution, $shapeName, dark=${backingIndex >= 2}, backing=$backingIndex: " +
+                "meanMaxRGBA=$mean/255, maximum=$maximum/255, shadowPixels=$shadowPixels"
+            android.util.Log.i("GlassShadowScaleTest", label)
+            if (mean > 1.0 || maximum > 3 || shadowPixels <= count / 20) failures += label
+        }
+        assertTrue("Half-resolution shadow masks must preserve the native result:\n${failures.joinToString("\n")}",
+            failures.isEmpty())
+    }
+
+    @Test
+    fun lensSourceGpuDropShadowMatchesDefaultAcrossGeometryChanges() {
+        val backings = listOf(Color.White, Color(0xFFF0F0F0), Color(0xFF202020), Color(0xFF404040))
+        val scenarios = listOf("circle", "capsule", "contact").flatMap { shape ->
+            backings.indices.map { backing -> shape to backing }
+        }
+        val scenarioIndex = mutableStateOf(0)
+        val motionTarget = mutableFloatStateOf(0f)
+        compose.setContent {
+            val (shapeName, backingIndex) = scenarios[scenarioIndex.value]
+            val motion = animateFloatAsState(motionTarget.floatValue, tween(96), label = "shadowGeometry").value
+            val scale = 1f + 0.12f * motion
+            val childWidth = when (shapeName) {
+                "circle" -> 56f
+                "capsule" -> 184f
+                else -> 198f
+            }
+            val density = LocalDensity.current
+            val shape = remember(shapeName, scale, density) {
+                when (shapeName) {
+                    "circle" -> CircleShape
+                    "capsule" -> Capsule()
+                    else -> with(density) {
+                        fun px(value: Float) = (value * scale).dp.toPx()
+                        checkNotNull(liquidContactShape(
+                            LiquidContactCapsule(
+                                Size(px(136f), px(52f)), Rect(0f, px(2f), px(140f), px(56f)),
+                            ),
+                            LiquidContactCapsule(
+                                Size(px(56f), px(56f)), Rect(px(142f), 0f, px(198f), px(56f)),
+                            ),
+                            px(8f),
+                        ))
+                    }
+                }
+            }
+            val shapeProvider = remember(shape) { { shape } }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(false, true).forEach { candidate ->
+                    // Shadow.Default extends 48dp past the child, plus its 4dp vertical offset.
+                    // Capture the host without clipping that exterior or filling the child.
+                    Box(
+                        Modifier.size(338.dp, 192.dp)
+                            .testTag(if (candidate) "gpuLensShadowHost" else "defaultLensShadowHost"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Canvas(Modifier.matchParentSize()) {
+                            assertTrue("Drop shadow comparisons require GPU rendering",
+                                drawContext.canvas.nativeCanvas.isHardwareAccelerated)
+                            drawRect(backings[backingIndex])
+                        }
+                        val shadowModifier = if (candidate) {
+                            Modifier.navigationLensSourceDropShadow(shapeProvider).drawBackdrop(
+                                backdrop = emptyBackdrop(), shape = shapeProvider, effects = {},
+                                highlight = null, shadow = null,
+                            )
+                        } else {
+                            Modifier.drawBackdrop(
+                                backdrop = emptyBackdrop(), shape = shapeProvider, effects = {},
+                                highlight = null,
+                            )
+                        }
+                        Box(
+                            Modifier.offset((4.25f * motion).dp, (2.5f * motion).dp)
+                                .size((childWidth * scale).dp, (56f * scale).dp)
+                                .then(shadowModifier),
+                        )
+                    }
+                }
+            }
+        }
+        fun error(a: Int, b: Int) = maxOf(
+            abs((a ushr 24) - (b ushr 24)),
+            abs((a ushr 16 and 255) - (b ushr 16 and 255)),
+            abs((a ushr 8 and 255) - (b ushr 8 and 255)),
+            abs((a and 255) - (b and 255)),
+        )
+        val failures = mutableListOf<String>()
+        scenarios.forEachIndexed { scenario, (shapeName, backingIndex) ->
+            compose.runOnIdle { scenarioIndex.value = scenario }
+            listOf(0f, 1f, -1f, 0f).forEachIndexed { stage, target ->
+                compose.runOnIdle { motionTarget.floatValue = target }
+                compose.waitForIdle()
+                val reference = compose.onNodeWithTag("defaultLensShadowHost").captureToImage()
+                val actual = compose.onNodeWithTag("gpuLensShadowHost").captureToImage()
+                assertEquals(reference.width, actual.width)
+                assertEquals(reference.height, actual.height)
+                val referencePixels = IntArray(reference.width * reference.height)
+                val actualPixels = IntArray(referencePixels.size)
+                reference.readPixels(referencePixels)
+                actual.readPixels(actualPixels)
+                val backing = backings[backingIndex].toArgb()
+                var maximum = 0
+                var maximumIndex = 0
+                var total = 0L
+                var count = 0
+                var referenceShadowPixels = 0
+                var aboveTolerance = 0
+                referencePixels.indices.forEach { pixel ->
+                    val expected = referencePixels[pixel]
+                    val observed = actualPixels[pixel]
+                    val difference = error(expected, observed)
+                    if (difference > maximum) {
+                        maximum = difference
+                        maximumIndex = pixel
+                    }
+                    if (difference > 1) aboveTolerance++
+                    val referenceShadow = error(expected, backing) > 0
+                    if (referenceShadow) referenceShadowPixels++
+                    if (referenceShadow || error(observed, backing) > 0) {
+                        // The transparent interior and empty host must not dilute shadow error.
+                        total += difference
+                        count++
+                    }
+                }
+                val mean = if (count > 0) total.toDouble() / count else Double.POSITIVE_INFINITY
+                val label = "$shapeName, backing=$backingIndex, stage=$stage, motion=$target: " +
+                    "meanMaxRGBA=$mean/255, maximum=$maximum/255, above1=$aboveTolerance, " +
+                    "worst=(${maximumIndex % reference.width},${maximumIndex / reference.width}), " +
+                    "shadowPixels=$referenceShadowPixels"
+                android.util.Log.i("GlassLensShadowGpuTest", label)
+                if (mean > 0.25 || maximum > 1 || referenceShadowPixels == 0) failures += label
+            }
+        }
+        assertTrue("The GPU lens-source shadow must preserve Shadow.Default:\n${failures.joinToString("\n")}",
+            failures.isEmpty())
     }
 
     @Test

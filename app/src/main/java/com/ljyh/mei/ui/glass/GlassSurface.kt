@@ -463,13 +463,57 @@ private fun DrawScope.drawDetailActionHighlights(shape: Shape) {
 }
 
 @Composable
-internal fun rememberNavigationInnerShadows(enabled: Boolean): NavigationInnerShadowRenderer? {
-    val renderer = remember(enabled) { if (enabled) NavigationInnerShadowRenderer() else null }
+internal fun rememberNavigationInnerShadows(
+    enabled: Boolean,
+    renderScale: Float = 1f,
+): NavigationInnerShadowRenderer? {
+    val renderer = remember(enabled, renderScale) {
+        if (enabled) NavigationInnerShadowRenderer(renderScale = renderScale) else null
+    }
     DisposableEffect(renderer) {
         onDispose { renderer?.release() }
     }
     return renderer
 }
+
+/** The lens source keeps one material path while press changes its optical depth. */
+internal fun Modifier.navigationLensSourceBackground(
+    backdrop: Backdrop,
+    shape: () -> Shape,
+    containerColor: Color,
+    isDark: Boolean,
+    appearance: GlassAppearance,
+    pressProgressState: androidx.compose.runtime.State<Float>,
+    innerShadows: NavigationInnerShadowRenderer?,
+): Modifier = navigationLensSourceDropShadow(shape).drawBackdrop(
+    backdrop = backdrop,
+    shape = shape,
+    effects = {
+        val press = pressProgressState.value.coerceIn(0f, 1f)
+        val blurProgress = press * press * (3f - 2f * press)
+        vibrancy()
+        blur(lerp(8f, 2f, blurProgress).dp.toPx())
+        lens(
+            24.dp.toPx() * press,
+            28.dp.toPx() * press,
+            depthEffect = press > 0.01f,
+            chromaticAberration = true,
+        )
+        if (!isDark && appearance.usesBackdrop) liftNavigationShadows()
+    },
+    highlight = {
+        Highlight.Default.copy(alpha = 0.94f * pressProgressState.value.coerceIn(0f, 1f))
+    },
+    shadow = null,
+    onDrawSurface = {
+        if (appearance.usesBackdrop) {
+            drawNavigationGlassMaterial(containerColor, isDark, 1f)
+            innerShadows?.draw(this, shape(), isDark = isDark)
+        } else {
+            drawRect(containerColor)
+        }
+    },
+)
 
 /** Shared outer navigation-glass material used by the expanded nav and floating controls. */
 internal fun Modifier.navigationGlassBackground(
