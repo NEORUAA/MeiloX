@@ -206,6 +206,11 @@ private class NavigationGlassBoxShadowNode(
         val shadowAlpha = alpha.coerceIn(0f, 1f)
         if (shadowAlpha <= 0f || size.minDimension <= 0f) return drawContent()
 
+        // Observe the live transform before skipping invisible geometry so the next press redraws.
+        layerScope.reset(this, size)
+        layerBlock?.invoke(layerScope)
+        if (layerScope.alpha <= 0f) return drawContent()
+
         val sideOffset = 0.7.dp.toPx()
         val outlineWidth = 0.65.dp.toPx()
         val padding = ceil(sideOffset + outlineWidth / 2f + 1f).toInt()
@@ -273,8 +278,6 @@ private class NavigationGlassBoxShadowNode(
         // The outer layers are separate from drawBackdrop's own graphics layer, so apply the
         // exact same DragScale block to both. The glass layer remains untouched; this only keeps
         // the external shadow in lockstep with it.
-        layerScope.reset(this, size)
-        layerBlock?.invoke(layerScope)
         val pivotOffset = Offset(
             layerScope.transformOrigin.pivotFractionX * layerSize.width,
             layerScope.transformOrigin.pivotFractionY * layerSize.height,
@@ -485,6 +488,7 @@ internal fun Modifier.navigationLensSourceBackground(
     appearance: GlassAppearance,
     pressProgressState: androidx.compose.runtime.State<Float>,
     innerShadows: NavigationInnerShadowRenderer?,
+    pressOverlay: (DrawScope.() -> Unit)? = null,
 ): Modifier = navigationLensSourceDropShadow(shape).drawBackdrop(
     backdrop = backdrop,
     shape = shape,
@@ -502,7 +506,11 @@ internal fun Modifier.navigationLensSourceBackground(
         if (!isDark && appearance.usesBackdrop) liftNavigationShadows()
     },
     highlight = {
-        Highlight.Default.copy(alpha = 0.94f * pressProgressState.value.coerceIn(0f, 1f))
+        val press = pressProgressState.value.coerceIn(0f, 1f)
+        Highlight.Default.copy(
+            alpha = (0.54f + 0.38f * press) * press,
+            style = HighlightStyle.Default(angle = 90f),
+        )
     },
     shadow = null,
     onDrawSurface = {
@@ -513,6 +521,7 @@ internal fun Modifier.navigationLensSourceBackground(
             drawRect(containerColor)
         }
     },
+    onDrawFront = pressOverlay,
 )
 
 /** Shared outer navigation-glass material used by the expanded nav and floating controls. */

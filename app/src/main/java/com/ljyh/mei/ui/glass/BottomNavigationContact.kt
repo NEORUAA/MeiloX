@@ -62,7 +62,7 @@ internal fun BottomNavigationContact(
     val renderedLensTransform = remember { mutableStateOf<BottomContactLensTransform?>(null) }
     val renderedLensPress = remember { mutableStateOf(0f) }
     val contact = remember(density) {
-        BottomControlContact(with(density) { 8.dp.roundToPx().toFloat() })
+        BottomControlContact(with(density) { 4.dp.roundToPx().toFloat() })
     }
     val materialBackdrop = rememberLayerBackdrop()
     val materialRecordingModifier = remember(materialBackdrop) {
@@ -134,7 +134,10 @@ internal fun BottomNavigationContact(
         }
         if (capturesLensSource) {
             val shape = remember(renderedLensSurface) { { renderedLensSurface.value?.shape ?: Capsule() } }
-            val background = remember(backdrop, shape, renderedLensPress, colors, appearance, lensInnerShadows) {
+            val background = remember(
+                contact, backdrop, shape, renderedSurface, renderedLensSurface, renderedLensTransform,
+                renderedLensPress, colors, appearance, lensInnerShadows,
+            ) {
                 Modifier.navigationLensSourceBackground(
                     backdrop = backdrop,
                     shape = shape,
@@ -143,6 +146,21 @@ internal fun BottomNavigationContact(
                     appearance = appearance,
                     pressProgressState = renderedLensPress,
                     innerShadows = lensInnerShadows,
+                    pressOverlay = {
+                        if (contact.connected.value) {
+                            val source = renderedSurface.value
+                            val sampled = renderedLensSurface.value
+                            val transform = renderedLensTransform.value
+                            if (source != null && sampled != null && transform != null) {
+                                contact.drawPressHighlight(
+                                    this,
+                                    origin = sampled.bounds.topLeft,
+                                    sourceBounds = source.bounds,
+                                    transform = transform,
+                                )
+                            }
+                        }
+                    },
                 )
             }
             // Re-render the complete source outline after its common affine transform.
@@ -289,6 +307,7 @@ internal class BottomControlContact(
     var neighborOrigin: Offset by mutableStateOf(Offset.Zero)
         private set
     private val pressRenderer = PressHighlightRenderer()
+    private val lensPressRenderer = PressHighlightRenderer()
     val capturesLensSource = derivedStateOf(structuralEqualityPolicy()) { members.any { it.needsLensSource() } }
 
     private val baseSurface = derivedStateOf { createSurface() }
@@ -363,12 +382,23 @@ internal class BottomControlContact(
         return direction * proximity * proximity * (3f - 2f * proximity)
     }
 
-    fun drawPressHighlight(scope: DrawScope, origin: Offset) {
+    fun drawPressHighlight(
+        scope: DrawScope,
+        origin: Offset,
+        sourceBounds: Rect = Rect(origin, scope.size),
+        transform: BottomContactLensTransform? = null,
+    ) {
         val active = members.maxByOrNull { it.pressHighlight().progress } ?: return
         val press = active.pressHighlight()
         val bounds = active.capsule()?.bounds ?: return
-        val position = bounds.topLeft - origin +
+        val sourcePosition = bounds.topLeft +
             Offset(bounds.width * press.position.x, bounds.height * press.position.y)
-        pressRenderer.draw(scope, press.progress, position)
+        val position = (transform?.point(sourcePosition) ?: sourcePosition) - origin
+        val localBounds = (transform?.bounds(sourceBounds) ?: sourceBounds).translate(-origin)
+        val horizontalRadius = transform?.let { sourceBounds.size.minDimension * 1.5f * it.scale.x }
+        // Keep the press wash and radial light on the full sampled outline. Its vertical
+        // radius follows the transformed source bounds; the horizontal radius follows scaleX.
+        val renderer = if (transform == null) pressRenderer else lensPressRenderer
+        renderer.draw(scope, press.progress, position, sourceBounds = localBounds, horizontalRadius = horizontalRadius)
     }
 }

@@ -31,12 +31,17 @@ import androidx.compose.ui.unit.LayoutDirection
 import kotlin.math.ceil
 
 /** Figma's exterior-only 0/8/15/0 black 2% navigation shadow. */
-internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f) {
+internal class NavigationDropShadowRenderer(
+    private val renderScale: Float = 1f,
+    private val cacheBlurResult: Boolean = false,
+) {
     init {
         require(renderScale.isFinite() && renderScale > 0f)
     }
 
     private val mask = RenderNode("Navigation exterior drop shadow")
+    private var blurResult: RenderNode? = null
+    private var blurResultDirty = true
     private var transformNode: RenderNode? = null
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private var outlinePath = android.graphics.Path()
@@ -59,11 +64,12 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
         val canvas = scope.drawContext.canvas.nativeCanvas
         if (!canvas.isHardwareAccelerated || bounds.isEmpty || alpha <= 0f) return
         prepare(scope, shape, bounds.size)
-        mask.alpha = ShadowAlpha * alpha.coerceIn(0f, 1f)
+        val shadow = prepareShadowNode()
+        shadow.alpha = ShadowAlpha * alpha.coerceIn(0f, 1f)
         val save = canvas.save()
         try {
             canvas.translate(bounds.left, bounds.top)
-            drawMask(canvas)
+            drawMask(canvas, shadow)
         } finally {
             canvas.restoreToCount(save)
         }
@@ -84,7 +90,8 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
         val canvas = scope.drawContext.canvas.nativeCanvas
         if (!canvas.isHardwareAccelerated || scope.size.minDimension <= 0f || transform.alpha <= 0f) return
         prepare(scope, shape, scope.size)
-        mask.alpha = ShadowAlpha
+        val shadow = prepareShadowNode()
+        shadow.alpha = ShadowAlpha
         val node = transformNode ?: RenderNode("Navigation drop shadow transform").also {
             it.setClipToBounds(false)
             transformNode = it
@@ -101,7 +108,7 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
         val recording = node.beginRecording(width, height)
         try {
             recording.translate(padding, padding)
-            drawMask(recording)
+            drawMask(recording, shadow)
         } finally {
             node.endRecording()
         }
@@ -165,9 +172,32 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
             mask.endRecording()
         }
         key = nextKey
+        blurResultDirty = true
     }
 
-    private fun drawMask(canvas: Canvas) {
+    private fun prepareShadowNode(): RenderNode {
+        if (!cacheBlurResult) return mask
+        // Cache opaque filtered coverage so live opacity keeps the original post-blur
+        // quantization. The native-resolution body cut stays in the outer draw pass.
+        mask.alpha = 1f
+        val node = blurResult ?: RenderNode("Navigation exterior blurred coverage").also {
+            it.setUseCompositingLayer(true, null)
+            blurResult = it
+        }
+        if (blurResultDirty || !node.hasDisplayList()) {
+            node.setPosition(0, 0, maskWidth, maskHeight)
+            val recording = node.beginRecording(maskWidth, maskHeight)
+            try {
+                recording.drawRenderNode(mask)
+            } finally {
+                node.endRecording()
+            }
+            blurResultDirty = false
+        }
+        return node
+    }
+
+    private fun drawMask(canvas: Canvas, shadow: RenderNode) {
         val save = canvas.save()
         try {
             // Cut at native resolution after the offset and Gaussian blur. Removing
@@ -179,7 +209,7 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
             // Preserve the original RenderNode's exact output bounds even when its
             // retained allocation is larger than this frame's mask.
             canvas.clipRect(maskClipBounds)
-            canvas.drawRenderNode(mask)
+            canvas.drawRenderNode(shadow)
         } finally {
             canvas.restoreToCount(save)
         }
@@ -187,8 +217,10 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
 
     fun release() {
         mask.discardDisplayList()
+        blurResult?.discardDisplayList()
         transformNode?.discardDisplayList()
         key = null
+        blurResultDirty = true
         maskWidth = 0
         maskHeight = 0
         maskClipBounds.setEmpty()
@@ -213,17 +245,20 @@ internal class NavigationDropShadowRenderer(private val renderScale: Float = 1f)
 internal fun Modifier.navigationGlassDropShadow(
     shape: () -> Shape,
     layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
-): Modifier = then(NavigationGlassDropShadowElement(shape, layerBlock))
+    cacheBlurResult: Boolean = false,
+): Modifier = then(NavigationGlassDropShadowElement(shape, layerBlock, cacheBlurResult))
 
 private data class NavigationGlassDropShadowElement(
     val shape: () -> Shape,
     val layerBlock: (GraphicsLayerScope.() -> Unit)?,
+    val cacheBlurResult: Boolean,
 ) : ModifierNodeElement<NavigationGlassDropShadowNode>() {
-    override fun create() = NavigationGlassDropShadowNode(shape, layerBlock)
+    override fun create() = NavigationGlassDropShadowNode(shape, layerBlock, cacheBlurResult)
 
     override fun update(node: NavigationGlassDropShadowNode) {
         node.shape = shape
         node.layerBlock = layerBlock
+        node.updateBlurResultCache(cacheBlurResult)
         node.invalidateDraw()
     }
 
@@ -231,15 +266,24 @@ private data class NavigationGlassDropShadowElement(
         name = "navigationGlassDropShadow"
         properties["shape"] = shape
         properties["layerBlock"] = layerBlock
+        properties["cacheBlurResult"] = cacheBlurResult
     }
 }
 
 private class NavigationGlassDropShadowNode(
     var shape: () -> Shape,
     var layerBlock: (GraphicsLayerScope.() -> Unit)?,
+    private var cacheBlurResult: Boolean,
 ) : DrawModifierNode, Modifier.Node() {
-    private val renderer = NavigationDropShadowRenderer()
+    private var renderer = NavigationDropShadowRenderer(cacheBlurResult = cacheBlurResult)
     private val layerScope = GraphicsLayerBlockScope()
+
+    fun updateBlurResultCache(enabled: Boolean) {
+        if (cacheBlurResult == enabled) return
+        renderer.release()
+        cacheBlurResult = enabled
+        renderer = NavigationDropShadowRenderer(cacheBlurResult = enabled)
+    }
 
     override fun ContentDrawScope.draw() {
         val block = layerBlock

@@ -73,8 +73,8 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.InnerShadow
-import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.NavigationBarSurfaceHeight
 import com.ljyh.mei.ui.liquidglass.DampedDragAnimation
@@ -710,6 +710,18 @@ fun <T> GlassBottomBar(
                 alpha = innerGlassVisibilityState.value
             }
         }
+        val indicatorEdgeLayerBlock: GraphicsLayerScope.() -> Unit = remember(
+            indicatorBackdropLayerBlock,
+            selectionPressProgressState,
+            expandedIndicatorVisibilityState,
+        ) {
+            {
+                indicatorBackdropLayerBlock(this)
+                // Exterior decorations follow the lens transform without tinting the resting selection.
+                alpha *= selectionPressProgressState.value.coerceIn(0f, 1f) *
+                    expandedIndicatorVisibilityState.value
+            }
+        }
         val indicatorBackdropModifier = if (!indicatorSettled) {
             remember(
                 indicatorBackdrop,
@@ -719,12 +731,15 @@ fun <T> GlassBottomBar(
                 containerColor,
                 isLight,
                 indicatorBackdropLayerBlock,
+                indicatorEdgeLayerBlock,
                 selectionPressProgressState,
                 appearance,
                 isLtr,
                 tabItems.size,
             ) {
                 Modifier
+                    .navigationGlassDropShadow({ Capsule() }, indicatorEdgeLayerBlock, cacheBlurResult = true)
+                    .navigationGlassBoxShadow({ Capsule() }, GlassBoxShadowAlpha, indicatorEdgeLayerBlock)
                     .drawBackdrop(
                         backdrop = if (appearance.usesRefraction) indicatorBackdrop else emptyBackdrop(),
                         shape = { Capsule() },
@@ -745,17 +760,14 @@ fun <T> GlassBottomBar(
                             }
                         },
                         highlight = {
+                            val press = selectionPressProgressState.value.coerceIn(0f, 1f)
                             Highlight.Default.copy(
-                                alpha = 0.90f * selectionPressProgressState.value *
+                                alpha = (0.54f + 0.38f * press) * press *
                                     expandedIndicatorVisibilityState.value,
+                                style = HighlightStyle.Default(angle = 90f),
                             )
                         },
-                        shadow = {
-                            Shadow(
-                                alpha = 0.84f * selectionPressProgressState.value *
-                                    expandedIndicatorVisibilityState.value,
-                            )
-                        },
+                        shadow = null,
                         innerShadow = {
                             val strength = selectionPressProgressState.value * expandedIndicatorVisibilityState.value
                             InnerShadow(
@@ -873,7 +885,7 @@ fun <T> GlassBottomBar(
                         .then(hiddenSourceSizeModifier)
                         .then(commonTransform)
                         .then(hiddenBackdropModifier)
-                        .then(selectionHighlightModifier)
+                        .then(if (sharesContactSurface) Modifier else selectionHighlightModifier)
                         .padding(horizontal = 4.dp)
                         .clip(Capsule()),
                     verticalAlignment = Alignment.CenterVertically,

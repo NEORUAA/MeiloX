@@ -492,14 +492,66 @@ private class ContactProfile(
     val radiusX = min(capsule.size.width, capsule.size.height) / 2.0 * scaleX
     val radiusY = min(capsule.size.width, capsule.size.height) / 2.0 * scaleY
 
-    fun jet(x: Double): CurveJet {
-        val jet = native.upper.jet((x - origin.x) / scaleX)
+    fun jet(x: Double): CurveJet = transform(native.upper.jet((x - origin.x) / scaleX))
+
+    private fun transform(jet: CurveJet): CurveJet {
         val tangent = Point(jet.tangent.x * scaleX, jet.tangent.y * scaleY)
         val speed = sqrt(tangent.x * tangent.x + tangent.y * tangent.y)
         return CurveJet(
             Point(origin.x + jet.position.x * scaleX, origin.y + jet.position.y * scaleY),
             tangent / speed, jet.curvature * scaleX * scaleY / (speed * speed * speed),
         )
+    }
+
+    fun attachment(target: Point, fromLeft: Boolean): CurveJet {
+        fun at(fraction: Double) = transform(native.upper.jetAt(if (fromLeft) fraction else 1.0 - fraction))
+        fun distance(fraction: Double): Double {
+            val delta = target - at(fraction).position
+            return delta.x * delta.x + delta.y * delta.y
+        }
+        // An elongated ellipse can have more than one stationary distance. Locate
+        // the nearest interval before refining, rather than taking the first root.
+        var nearest = 0
+        var nearestDistance = distance(0.0)
+        for (step in 1..16) {
+            val candidate = distance(step / 16.0)
+            if (candidate < nearestDistance) { nearest = step; nearestDistance = candidate }
+        }
+        var nearLow = maxOf(0, nearest - 1) / 16.0
+        var nearHigh = min(16, nearest + 1) / 16.0
+        val ratio = 0.6180339887498949
+        var first = nearHigh - (nearHigh - nearLow) * ratio
+        var last = nearLow + (nearHigh - nearLow) * ratio
+        var firstDistance = distance(first)
+        var lastDistance = distance(last)
+        repeat(18) {
+            if (firstDistance < lastDistance) {
+                nearHigh = last
+                last = first
+                lastDistance = firstDistance
+                first = nearHigh - (nearHigh - nearLow) * ratio
+                firstDistance = distance(first)
+            } else {
+                nearLow = first
+                first = last
+                firstDistance = lastDistance
+                last = nearLow + (nearHigh - nearLow) * ratio
+                lastDistance = distance(last)
+            }
+        }
+        val closest = (nearLow + nearHigh) / 2.0
+        // Attach between the native support tangent and its nearest point to the
+        // neck. A fixed inset can put the neck inside that tangent and cut the body.
+        var low = 0.0
+        var high = closest
+        repeat(16) {
+            val middle = (low + high) / 2.0
+            val jet = at(middle)
+            val delta = target - jet.position
+            if (jet.tangent.x * delta.y - jet.tangent.y * delta.x > 0.0) low = middle else high = middle
+        }
+        val support = (low + high) / 2.0
+        return at((support + closest) / 2.0)
     }
 
     fun trim(start: Double, end: Double): List<ContactSegment> = native.upper
@@ -582,29 +634,36 @@ private fun contactCapsulePath(first: LiquidContactCapsule, second: LiquidContac
         it * it * it * (10.0 + it * (-15.0 + 6.0 * it))
     }
     val joined = gap < joinDistance
-    val radiusSum = left.radiusX + right.radiusX
-    val overlap = maxOf(0.0, -gap)
-    val inset = 0.55 * approach * approach
-    val end = first.bounds.right - left.radiusX * inset - overlap * left.radiusX / radiusSum
-    val start = second.bounds.left + right.radiusX * inset + overlap * right.radiusX / radiusSum
-    if (end >= start || end <= first.bounds.left || start >= second.bounds.right) return union()
     val centerY = (first.bounds.center.y.toDouble() + second.bounds.center.y) / 2.0
     val radius = min(left.radiusY, right.radiusY)
     val middleX = (first.bounds.right.toDouble() + second.bounds.left) / 2.0
-    if (middleX <= end || middleX >= start) return union()
-    val opening = ((joinDistance - gap) / joinDistance).coerceIn(0.0, 1.0).let {
+    val openingArea = ((joinDistance - gap) / joinDistance).coerceIn(0.0, 1.0).let {
         it * it * (3.0 - 2.0 * it)
     }
-    val neckRadius = radius * opening * 0.42
+    // Ease the cross-sectional area so the neck opens into a rounded waist.
+    val neckRadius = radius * sqrt(openingArea) * 0.6
     val tipGap = maxOf(0.0, gap) * (1.0 - approach)
     val leftTip = Point(middleX - tipGap / 2.0, interpolate(first.bounds.center.y.toDouble(), centerY, approach))
     val rightTip = Point(middleX + tipGap / 2.0, interpolate(second.bounds.center.y.toDouble(), centerY, approach))
 
     fun upper(firstProfile: ContactProfile, secondProfile: ContactProfile, mirror: Boolean): Pair<List<ContactSegment>, List<ContactSegment>> {
         val direction = if (mirror) -1.0 else 1.0
-        val leftJet = firstProfile.jet(end)
-        val rightJet = secondProfile.jet(start)
-        val seam = Point(middleX, centerY * direction - neckRadius)
+        var seamY = centerY * direction - neckRadius
+        if (joined && gap < 0.0) {
+            // The seam must stay outside both native bodies as they overlap.
+            for (profile in listOf(firstProfile, secondProfile)) {
+                if (middleX > profile.capsule.bounds.left && middleX < profile.capsule.bounds.right) {
+                    seamY = min(seamY, profile.jet(middleX).position.y - radius * 0.1)
+                }
+            }
+        }
+        val seam = Point(middleX, seamY)
+        val leftTarget = if (joined) seam else Point(leftTip.x, leftTip.y * direction)
+        val rightTarget = if (joined) seam else Point(rightTip.x, rightTip.y * direction)
+        val leftJet = firstProfile.attachment(leftTarget, fromLeft = true)
+        val rightJet = secondProfile.attachment(rightTarget, fromLeft = false)
+        val end = leftJet.position.x
+        val start = rightJet.position.x
         val leftEnd: CurveJet
         val rightStart: CurveJet
         val leftTipSpeed: Double
@@ -633,10 +692,12 @@ private fun contactCapsulePath(first: LiquidContactCapsule, second: LiquidContac
         }
         val firstHalf = buildList {
             addAll(firstProfile.trim(first.bounds.left.toDouble(), end))
-            addAll(contactSpline(leftJet, leftEnd, (leftEnd.position.x - end) * 0.3, leftTipSpeed, nativeStart = true).map { ContactSegment(it) })
+            addAll(contactSpline(leftJet, leftEnd, (leftEnd.position.x - end) * 0.3,
+                leftTipSpeed, nativeStart = true).map { ContactSegment(it) })
         }
         val secondHalf = buildList {
-            addAll(contactSpline(rightStart, rightJet, rightTipSpeed, (start - rightStart.position.x) * 0.3, nativeStart = false).map { ContactSegment(it) })
+            addAll(contactSpline(rightStart, rightJet, rightTipSpeed,
+                (start - rightStart.position.x) * 0.3, nativeStart = false).map { ContactSegment(it) })
             addAll(secondProfile.trim(start, second.bounds.right.toDouble()))
         }
         return firstHalf to secondHalf
@@ -645,6 +706,8 @@ private fun contactCapsulePath(first: LiquidContactCapsule, second: LiquidContac
     val (topLeft, topRight) = upper(left, right, false)
     val (bottomLeft, bottomRight) = upper(left.mirrorY(), right.mirrorY(), true)
 
+    // Stitch the native arcs and their tangent bridges into the actual boundary.
+    // Boolean union can replace nearly coincident tangent curves with closure chords.
     return ContactGeometry(Path().apply {
         fun contour(top: List<ContactSegment>, bottom: List<ContactSegment>) {
             if (top.isEmpty()) return
@@ -883,7 +946,16 @@ private class ContinuousActionProfile(bounds: Rect, segments: List<PathSegment> 
 
     fun jet(x: Double): CurveJet {
         val segment = upper.firstOrNull { x >= it.from.x - 1e-6 && x <= it.to.x + 1e-6 } ?: upper.last()
-        val parameter = segment.parameterAt(x)
+        return jet(segment, segment.parameterAt(x))
+    }
+
+    fun jetAt(fraction: Double): CurveJet {
+        val progress = fraction.coerceIn(0.0, 1.0) * upper.size
+        val index = progress.toInt().coerceAtMost(upper.lastIndex)
+        return jet(upper[index], progress - index)
+    }
+
+    private fun jet(segment: PathSegment, parameter: Double): CurveJet {
         val first = segment.derivative(parameter)
         val second = segment.secondDerivative(parameter)
         val speed = sqrt(first.x * first.x + first.y * first.y)

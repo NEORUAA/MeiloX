@@ -41,8 +41,11 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
@@ -224,13 +227,36 @@ class GlassBottomBarInteractionTest {
             Size(60f, 60f),
             Rect(328f + gap, 24f + verticalOffset, 392f + gap, 88f + verticalOffset),
         )
-        fun outline(first: LiquidContactCapsule, second: LiquidContactCapsule): Outline.Generic {
-            val shape = liquidContactShape(first, second, 8f)
+        fun outline(first: LiquidContactCapsule, second: LiquidContactCapsule, distance: Float = 8f): Outline.Generic {
+            val shape = liquidContactShape(first, second, distance)
             assertNotNull(shape)
             return shape!!.createOutline(Size(500f, 160f), LayoutDirection.Ltr, Density(1f)) as Outline.Generic
         }
         fun region(outline: Outline.Generic) = Region().apply {
             setPath(outline.path.asAndroidPath(), Region(0, 0, 500, 160))
+        }
+        fun bodyInterior(capsule: LiquidContactCapsule): Region {
+            val native = Capsule().createOutline(capsule.size, LayoutDirection.Ltr, Density(1f))
+            val nativePath = Path().apply {
+                when (native) {
+                    is Outline.Generic -> addPath(native.path)
+                    is Outline.Rounded -> addRoundRect(native.roundRect)
+                    is Outline.Rectangle -> addRect(native.rect)
+                }
+            }
+            val path = android.graphics.Path(nativePath.asAndroidPath()).apply {
+                transform(android.graphics.Matrix().apply {
+                    setScale(capsule.bounds.width / capsule.size.width, capsule.bounds.height / capsule.size.height)
+                    postTranslate(capsule.bounds.left, capsule.bounds.top)
+                })
+            }
+            val body = Region().apply { setPath(path, Region(0, 0, 500, 160)) }
+            // Leave a one-pixel raster margin; the original circular body must not be carved away.
+            return Region(body).apply {
+                for (dx in -1..1) for (dy in -1..1) {
+                    op(Region(body).apply { translate(dx, dy) }, Region.Op.INTERSECT)
+                }
+            }
         }
 
         assertNull("The resting gap must keep both controls separate", liquidContactShape(nav, search(8f), 8f))
@@ -238,10 +264,10 @@ class GlassBottomBarInteractionTest {
         assertNull("Distant controls have no connection", liquidContactShape(nav, search(40f), 8f))
         assertNull("Vertical separation has no connection", liquidContactShape(nav, search(0f, 90f), 8f))
 
-        for (gap in listOf(7f, 3f, 0f, -4f)) {
+        for (distance in listOf(4f, 8f)) for (gap in listOf(distance * 0.875f, distance * 0.375f, 0f, -distance * 0.5f)) {
             for (verticalOffset in listOf(-6f, 0f, 6f)) {
                 val other = search(gap, verticalOffset)
-                val visibleShape = liquidContactShape(nav, other, 8f) as LiquidContactShape
+                val visibleShape = liquidContactShape(nav, other, distance) as LiquidContactShape
                 val connected = visibleShape.createOutline(
                     Size(500f, 160f), LayoutDirection.Ltr, Density(1f),
                 ) as Outline.Generic
@@ -252,20 +278,29 @@ class GlassBottomBarInteractionTest {
                 assertTrue("Navigation body remains filled", fill.contains(174, 56))
                 assertTrue("The native flat top remains intact", fill.contains(174, 21))
                 assertTrue("Search body remains filled", fill.contains(other.bounds.center.x.toInt(), other.bounds.center.y.toInt()))
+                for (body in listOf(nav, other)) {
+                    val missing = bodyInterior(body).apply { op(fill, Region.Op.DIFFERENCE) }
+                    assertTrue("Contact must preserve the native body at gap=$gap, offset=$verticalOffset", missing.isEmpty)
+                }
                 assertTrue("Native outer corners remain rounded", !fill.contains(21, 21))
                 val neckX = ((nav.bounds.right + other.bounds.left) / 2f).toInt()
                 assertTrue("Contact must not flatten into a merged capsule", !fill.contains(neckX, 25))
-                if (gap == 7f) {
+                if (gap > distance / 2f) {
                     val contours = android.graphics.PathMeasure(connected.path.asAndroidPath(), false)
                     var count = 1
                     while (contours.nextContour()) count++
                     assertEquals("Approaching bodies stay closed without a zero-width connector", 2, count)
                 }
-                if (gap <= 3f) {
+                if (gap < distance / 2f) {
                     val neckY = ((nav.bounds.center.y + other.bounds.center.y) / 2f).toInt()
                     assertTrue("Nearby edges form a continuous neck", fill.contains(neckX, neckY))
+                    if (verticalOffset == 0f) {
+                        val column = (0 until 160).filter { fill.contains(neckX, it) }
+                        assertEquals("A centered contact must keep mirrored upper and lower necks",
+                            nav.bounds.center.y * 2f, (column.first() + column.last() + 1).toFloat(), 1f)
+                    }
                 }
-                val reversed = region(outline(other, nav))
+                val reversed = region(outline(other, nav, distance))
                 reversed.op(fill, Region.Op.XOR)
                 assertTrue("Physical input order must not change RTL geometry", reversed.isEmpty)
 
@@ -299,7 +334,7 @@ class GlassBottomBarInteractionTest {
                 val visibleDifference = region(connected).apply { op(fill, Region.Op.XOR) }
                 assertTrue("The visible filled contour remains unchanged", visibleDifference.isEmpty)
 
-                val rtlShape = liquidContactShape(other, nav, 8f) as LiquidContactShape
+                val rtlShape = liquidContactShape(other, nav, distance) as LiquidContactShape
                 val rtlVisible = rtlShape.createOutline(
                     Size(500f, 160f), LayoutDirection.Rtl, Density(1f),
                 ) as Outline.Generic
@@ -318,6 +353,103 @@ class GlassBottomBarInteractionTest {
         }
         val contained = LiquidContactCapsule(Size(60f, 60f), Rect(220f, 26f, 280f, 86f))
         assertTrue("Containment keeps a valid silhouette", region(outline(nav, contained)).contains(250, 56))
+    }
+
+    @Test
+    fun connectedLensSourceCarriesPressLightAcrossTheNeighbor() {
+        val light = mutableFloatStateOf(0f)
+        val direction = mutableStateOf(LayoutDirection.Ltr)
+        var contact: BottomControlContact? = null
+        var density = 1f
+        val backing = Color(0xFF303030)
+        compose.setContent {
+            density = LocalDensity.current.density
+            val backdrop = rememberCanvasBackdrop { drawRect(backing) }
+            CompositionLocalProvider(
+                LocalLayoutDirection provides direction.value,
+                LocalGlassAppearance provides GlassAppearance(),
+                LocalGlassColors provides defaultGlassColors(isDark = true),
+            ) {
+                Column(Modifier.background(backing).testTag("contactPressLightPreview"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BottomNavigationContact(backdrop, Modifier.size(330.dp, 60.dp).testTag("visibleContactLight")) {
+                        contact = LocalBottomControlContact.current
+                        val nav = rememberBottomControlContactMember(
+                            visualBounds = { Rect(Offset.Zero, it) },
+                            materialPressProgress = { 1f },
+                            highlight = {
+                                GlassPressHighlight(light.floatValue,
+                                    Offset(if (direction.value == LayoutDirection.Ltr) 0.92f else 0.08f, 0.5f))
+                            },
+                            lensSourceActive = { true },
+                            lensSourceScale = { Offset(0.93f, 0.82f) },
+                            lensSourcePressProgress = { 1f },
+                        )
+                        Box(Modifier.size(260.dp, 60.dp).onGloballyPositioned { nav?.updateCoordinates(it) })
+                        Spacer(Modifier.width(1.dp))
+                        val search = rememberBottomControlContactMember(
+                            visualBounds = { Rect(Offset.Zero, it) },
+                            materialPressProgress = { 0f },
+                            highlight = { GlassPressHighlight() },
+                        )
+                        Box(Modifier.size(60.dp).onGloballyPositioned { search?.updateCoordinates(it) })
+                    }
+                    Canvas(Modifier.size(330.dp, 60.dp).testTag("sampledContactLight")) {
+                        drawRect(backing)
+                        contact?.let { drawLayer(it.materialBackdrop.graphicsLayer) }
+                    }
+                }
+            }
+        }
+        for (layoutDirection in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+            compose.runOnIdle {
+                direction.value = layoutDirection
+                light.floatValue = 0f
+            }
+            compose.waitForIdle()
+            val visibleBefore = compose.onNodeWithTag("visibleContactLight").captureToImage().toPixelMap()
+            val sampledBefore = compose.onNodeWithTag("sampledContactLight").captureToImage().toPixelMap()
+            lateinit var transform: BottomContactLensTransform
+            lateinit var points: List<Offset>
+            compose.runOnIdle {
+                val current = checkNotNull(contact)
+                assertTrue("The test must exercise an actual shared contact surface", current.connected.value)
+                transform = checkNotNull(current.lensTransform.value)
+                val nav = checkNotNull(current.members[0].capsule()).bounds
+                val search = checkNotNull(current.members[1].capsule()).bounds
+                val toRight = search.center.x > nav.center.x
+                val inset = 6f * density
+                points = listOf(
+                    Offset(if (toRight) nav.right - inset else nav.left + inset, nav.center.y),
+                    Offset(if (toRight) search.left + inset else search.right - inset, search.center.y),
+                    search.center,
+                )
+                light.floatValue = 1f
+            }
+            compose.waitForIdle()
+            val visibleAfter = compose.onNodeWithTag("visibleContactLight").captureToImage().toPixelMap()
+            val sampledAfter = compose.onNodeWithTag("sampledContactLight").captureToImage().toPixelMap()
+            if (layoutDirection == LayoutDirection.Ltr) {
+                val preview = compose.onNodeWithTag("contactPressLightPreview").captureToImage()
+                val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+                java.io.File(context.cacheDir, "nav-contact-highlight-preview.png").outputStream().use {
+                    preview.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+            }
+            fun delta(before: androidx.compose.ui.graphics.PixelMap, after: androidx.compose.ui.graphics.PixelMap, point: Offset): Float {
+                val x = point.x.toInt().coerceIn(0, before.width - 1)
+                val y = point.y.toInt().coerceIn(0, before.height - 1)
+                return (after[x, y].red - before[x, y].red) * 255f
+            }
+            points.forEachIndexed { index, point ->
+                val visible = delta(visibleBefore, visibleAfter, point)
+                val sampled = delta(sampledBefore, sampledAfter, transform.point(point))
+                val label = "$layoutDirection point=$index, visible=$visible, sampled=$sampled"
+                android.util.Log.i("ContactLightTest", "$label at=$point, before=${visibleBefore[point.x.toInt(), point.y.toInt()]}, after=${visibleAfter[point.x.toInt(), point.y.toInt()]}")
+                assertTrue("The visible press wash reaches the neighboring body: $label", visible >= 9f)
+                assertTrue("The sampled press wash must continue beyond Nav: $label", sampled >= 9f)
+                assertEquals("The sampled press light follows the shared affine transform: $label", visible, sampled, 2f)
+            }
+        }
     }
 
     @Test
@@ -1293,6 +1425,139 @@ class GlassBottomBarInteractionTest {
             }
         }
         assertTrue("The GPU lens-source shadow must preserve Shadow.Default:\n${failures.joinToString("\n")}",
+            failures.isEmpty())
+    }
+
+    @Test
+    fun navigationDropShadowBlurCachePreservesLiveUpdates() {
+        data class Stage(
+            val name: String,
+            val alpha: Float = 0.8f,
+            val scale: Offset = Offset(1.08f, 1.06f),
+            val translation: Offset = Offset(3.5f, -2.25f),
+            val enlarged: Boolean = false,
+            val direct: Boolean = false,
+            val release: Boolean = false,
+        )
+        val stages = listOf(
+            Stage("initial"),
+            Stage("cachedAlpha", alpha = 0.4f),
+            Stage("cachedNearOpaque", alpha = 0.99f),
+            Stage("cachedTransform", alpha = 1f, scale = Offset(0.92f, 1.12f), translation = Offset(-5.25f, 3.5f)),
+            Stage("directResize", alpha = 1f, enlarged = true, direct = true),
+            Stage("cachedAfterDirect", enlarged = true),
+            Stage("originalSize"),
+            Stage("zeroAlpha", alpha = 0f),
+            Stage("cachedAfterZero"),
+            Stage("released", release = true),
+        )
+        val circle = mutableStateOf(false)
+        val stageIndex = mutableStateOf(0)
+        val backing = Color(0xFFF0F0F0)
+        lateinit var renderers: List<NavigationDropShadowRenderer>
+        compose.setContent {
+            renderers = remember { List(2) { NavigationDropShadowRenderer(cacheBlurResult = it == 1) } }
+            val transforms = remember { List(2) { GraphicsLayerBlockScope() } }
+            DisposableEffect(renderers) { onDispose { renderers.forEach { it.release() } } }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                renderers.forEachIndexed { index, renderer ->
+                    Canvas(Modifier.size(338.dp, 176.dp)
+                        .testTag(if (index == 0) "legacyBlurShadow" else "cachedBlurShadow")) {
+                        assertTrue("Blur cache comparisons require GPU rendering",
+                            drawContext.canvas.nativeCanvas.isHardwareAccelerated)
+                        drawRect(backing)
+                        // Read the stage inside drawing, including release/reuse with identical values.
+                        val stage = stages[stageIndex.value]
+                        val height = (if (stage.enlarged) 64.dp else 56.dp).toPx()
+                        val width = if (circle.value) height else {
+                            (if (stage.enlarged) 212.dp else 184.dp).toPx()
+                        }
+                        val shape = if (circle.value) CircleShape else Capsule()
+                        val horizontalInset = (size.width - width) / 2f
+                        val verticalInset = (size.height - height) / 2f
+                        // Inset changes the renderer's logical size without clipping its exterior.
+                        inset(horizontalInset, verticalInset, horizontalInset, verticalInset) {
+                            if (stage.direct) {
+                                // Drawing new geometry directly must refresh the blur reused by transformed draws.
+                                renderer.draw(this, shape)
+                            } else {
+                                val transform = transforms[index]
+                                transform.reset(this, size)
+                                transform.alpha = stage.alpha
+                                transform.scaleX = stage.scale.x
+                                transform.scaleY = stage.scale.y
+                                transform.translationX = stage.translation.x.dp.toPx()
+                                transform.translationY = stage.translation.y.dp.toPx()
+                                renderer.drawTransformed(this, shape, transform)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fun error(a: Int, b: Int) = maxOf(
+            abs((a ushr 24) - (b ushr 24)),
+            abs((a ushr 16 and 255) - (b ushr 16 and 255)),
+            abs((a ushr 8 and 255) - (b ushr 8 and 255)),
+            abs((a and 255) - (b and 255)),
+        )
+        val failures = mutableListOf<String>()
+        listOf(false, true).forEach { isCircle ->
+            var previousReference: IntArray? = null
+            var previousActual: IntArray? = null
+            stages.forEachIndexed { index, stage ->
+                compose.runOnIdle {
+                    if (stage.release) renderers.forEach { it.release() }
+                    circle.value = isCircle
+                    stageIndex.value = index
+                }
+                compose.waitForIdle()
+                val reference = compose.onNodeWithTag("legacyBlurShadow").captureToImage()
+                val actual = compose.onNodeWithTag("cachedBlurShadow").captureToImage()
+                assertEquals(reference.width, actual.width)
+                assertEquals(reference.height, actual.height)
+                val referencePixels = IntArray(reference.width * reference.height)
+                val actualPixels = IntArray(referencePixels.size)
+                reference.readPixels(referencePixels)
+                actual.readPixels(actualPixels)
+                if (stage.name == "cachedAlpha" || stage.name == "cachedNearOpaque" || stage.name == "cachedTransform") {
+                    assertTrue("Cached alpha/transform updates must change the reference pixels",
+                        !checkNotNull(previousReference).contentEquals(referencePixels))
+                    assertTrue("Cached alpha/transform updates must change the candidate pixels",
+                        !checkNotNull(previousActual).contentEquals(actualPixels))
+                }
+                previousReference = referencePixels
+                previousActual = actualPixels
+                var maximum = 0
+                var total = 0L
+                var count = 0
+                var referenceShadowPixels = 0
+                var actualShadowPixels = 0
+                val backingPixel = backing.toArgb()
+                referencePixels.indices.forEach { pixel ->
+                    val difference = error(referencePixels[pixel], actualPixels[pixel])
+                    maximum = maxOf(maximum, difference)
+                    val referenceShadow = error(referencePixels[pixel], backingPixel) > 0
+                    val actualShadow = error(actualPixels[pixel], backingPixel) > 0
+                    if (referenceShadow) referenceShadowPixels++
+                    if (actualShadow) actualShadowPixels++
+                    if (referenceShadow || actualShadow) {
+                        total += difference
+                        count++
+                    }
+                }
+                val mean = if (count > 0) total.toDouble() / count else 0.0
+                val label = "circle=$isCircle, stage=${stage.name}: meanMaxRGBA=$mean/255, " +
+                    "maximum=$maximum/255, referencePixels=$referenceShadowPixels, cachedPixels=$actualShadowPixels"
+                android.util.Log.i("GlassShadowCacheTest", label)
+                val visible = stage.direct || stage.alpha > 0f
+                if (mean > 0.25 || maximum > 1 ||
+                    (visible && (referenceShadowPixels == 0 || actualShadowPixels == 0)) ||
+                    (!visible && (referenceShadowPixels != 0 || actualShadowPixels != 0))
+                ) failures += label
+            }
+        }
+        assertTrue("Cached shadow blur must preserve live updates and resource recovery:\n${failures.joinToString("\n")}",
             failures.isEmpty())
     }
 
