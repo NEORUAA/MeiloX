@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
@@ -30,11 +31,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -61,11 +67,20 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
@@ -88,6 +103,100 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun popupSamplingStaysFixedWhileItsLayerExpandsAndCollapses() {
+        val visible = mutableStateOf(false)
+        val scale = mutableFloatStateOf(1f)
+        compose.setContent {
+            val page = rememberLayerBackdrop()
+            val base = rememberCanvasBackdrop { drawRect(Color.Black) }
+            val backdrop = rememberSharedGlassBackdrop(base, page)
+            val host = remember { mutableStateOf<LayoutCoordinates?>(null) }
+            val hostCoordinates = remember { { host.value } }
+            val stationary = rememberStationaryBackdrop(backdrop, hostCoordinates)
+            val popupPosition = remember {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize,
+                    ): IntOffset = anchorBounds.topLeft
+                }
+            }
+            val animatedLayer: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit = remember {
+                {
+                    val progress = scale.floatValue
+                    transformOrigin = TransformOrigin(0.85f, 0.15f)
+                    scaleX = progress
+                    scaleY = progress
+                    translationX = 16.dp.toPx() * (1f - progress)
+                    translationY = -10.dp.toPx() * (1f - progress)
+                }
+            }
+            Box(Modifier.size(320.dp, 240.dp).testTag("stationaryPopupScene")) {
+                Canvas(Modifier.fillMaxSize().layerBackdrop(page).trackBackdropPosition(page)) {
+                    drawRect(
+                        Brush.linearGradient(
+                            listOf(Color.Red, Color.Green, Color.Blue),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height),
+                        ),
+                    )
+                }
+                if (visible.value) Popup(
+                    popupPositionProvider = popupPosition,
+                    properties = PopupProperties(clippingEnabled = false),
+                ) {
+                    Box(Modifier.size(320.dp, 240.dp).background(Color.Magenta)) {
+                        Box(
+                            Modifier.align(Alignment.Center).size(220.dp, 160.dp)
+                                .onGloballyPositioned { host.value = it },
+                        ) {
+                            Box(
+                                Modifier.fillMaxSize().drawBackdrop(
+                                    backdrop = stationary,
+                                    shape = { RectangleShape },
+                                    effects = {},
+                                    highlight = null,
+                                    shadow = null,
+                                    layerBlock = animatedLayer,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val scene = compose.onNodeWithTag("stationaryPopupScene")
+        val reference = scene.captureToImage().toPixelMap()
+        compose.runOnIdle { visible.value = true }
+        compose.waitForIdle()
+        val popup = compose.onNode(isPopup())
+        // State is read only from the layer block. A graphics-layer update must also
+        // refresh the backdrop recording, without relying on a layout or recomposition.
+        listOf(1f, 0.76f, 0.43f, 0.24f, 0.6f, 1.10f, 1f).forEach { progress ->
+            compose.runOnIdle { scale.floatValue = progress }
+            compose.waitForIdle()
+            val actual = popup.captureToImage().toPixelMap()
+            val density = reference.width / 320f
+            listOf(214f, 230f, 246f).forEach { xDp ->
+                listOf(65f, 75f, 85f).forEach { yDp ->
+                    val x = (xDp * density).toInt()
+                    val y = (yDp * density).toInt()
+                    val expected = reference[x, y]
+                    val sampled = actual[x, y]
+                    val label = "scale=$progress at ($xDp, $yDp)"
+                    val tolerance = 4f / 255f
+                    assertEquals("$label red", expected.red, sampled.red, tolerance)
+                    assertEquals("$label green", expected.green, sampled.green, tolerance)
+                    assertEquals("$label blue", expected.blue, sampled.blue, tolerance)
+                }
+            }
+        }
+    }
 
     @Test
     fun artistSubmenuKeepsOneWindowAndClosesWithItsParent() {

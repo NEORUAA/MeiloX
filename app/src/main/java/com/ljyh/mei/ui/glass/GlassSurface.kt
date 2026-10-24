@@ -542,16 +542,29 @@ internal fun Modifier.navigationGlassBackground(
     sampleBackdrop: Boolean = true,
     layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
     appearance: GlassAppearance = GlassAppearance(),
+    blurRadius: Dp = 2.dp,
+    exportedBackdrop: LayerBackdrop? = null,
+    highlightAlphaMultiplier: Float = 1f,
+    shadowAlpha: Float = 1f,
 ): Modifier = this
-    .navigationGlassDropShadow(shape, layerBlock)
-    .navigationGlassBoxShadow(shape, GlassBoxShadowAlpha, layerBlock)
+    .navigationGlassDropShadow(
+        shape,
+        if (shadowAlpha == 1f) layerBlock else {
+            {
+                layerBlock?.invoke(this)
+                alpha *= shadowAlpha.coerceIn(0f, 1f)
+            }
+        },
+    )
+    .navigationGlassBoxShadow(shape, GlassBoxShadowAlpha * shadowAlpha.coerceIn(0f, 1f), layerBlock)
     .drawBackdrop(
         backdrop = if (sampleBackdrop && appearance.usesBackdrop) backdrop else emptyBackdrop(),
+        exportedBackdrop = exportedBackdrop,
         shape = shape,
         effects = {
             if (sampleBackdrop && appearance.usesBackdrop) {
                 vibrancy()
-                blur(2.dp.toPx())
+                blur(blurRadius.toPx())
                 if (appearance.usesRefraction) {
                     lens(
                         refractionHeight = 10.dp.toPx(),
@@ -567,7 +580,7 @@ internal fun Modifier.navigationGlassBackground(
             if (accentHighlights) null else {
                 val progress = pressProgressState?.value ?: pressProgress
                 Highlight.Default.copy(
-                    alpha = 0.54f + 0.38f * progress,
+                    alpha = (0.54f + 0.38f * progress) * highlightAlphaMultiplier.coerceIn(0f, 1f),
                     style = HighlightStyle.Default(angle = highlightAngle),
                 )
             }

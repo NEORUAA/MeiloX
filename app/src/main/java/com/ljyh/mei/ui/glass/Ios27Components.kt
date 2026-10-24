@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,7 +67,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Paint
@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -109,10 +110,6 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.sin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
@@ -732,7 +729,6 @@ fun IosContextMenu(
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalBlurBackdrop.current,
     animationProgress: Float = 1f,
-    animationVelocity: Float = 0f,
     transformOriginProgress: Float = animationProgress,
     menuAlpha: Float = animationProgress,
     contentAlpha: Float = animationProgress,
@@ -754,11 +750,6 @@ fun IosContextMenu(
         InteractiveHighlight(animationScope = animationScope)
     }
     val progress = animationProgress.coerceIn(0f, 1f)
-    val normalizedVelocity = (animationVelocity / 18f).coerceIn(-1f, 1f)
-    val pulse = max(
-        sin(PI.toFloat() * progress),
-        abs(normalizedVelocity) * 0.65f,
-    ).coerceIn(0f, 1f)
     val menuHeight = heightOverride ?: (20.dp + 44.dp * itemCount)
     val radius = 34.dp
     val menuShape = remember(radius) { RoundedRectangle(radius) }
@@ -773,17 +764,21 @@ fun IosContextMenu(
     )
     val appearance = LocalGlassAppearance.current
     val innerShadows = rememberNavigationInnerShadows(true)
+    val pressProgress = remember(interactiveHighlight) {
+        derivedStateOf { interactiveHighlight.pressProgress }
+    }
     val childBackdrop = rememberLayerBackdrop()
-    // Context menus render in a separate Popup window. Map their sampling coordinates back
-    // to the source window so the menu refracts the content physically behind its position.
+    var samplingCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val samplingCoordinatesProvider = remember { { samplingCoordinates } }
+    // Sample from the stable host, then compensate the live menu transform explicitly.
+    // The animated graphics layer's coordinates can lag behind its current draw transform.
     val samplingBackdrop = if (appearance.usesBackdrop) {
-        rememberCrossWindowBackdrop(backdrop)
+        rememberStationaryBackdrop(backdrop, samplingCoordinatesProvider)
     } else {
         emptyBackdrop()
     }
     val colors = LocalGlassColors.current
     val isLight = !colors.isDark
-    val elevatedBackground = colors.elevatedBackground
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
         transformOrigin = startOrigin
         applyGlassDragScale(
@@ -799,9 +794,7 @@ fun IosContextMenu(
         val transitionPivotX = transitionOrigin.pivotFractionX * size.width
         val transitionPivotY = transitionOrigin.pivotFractionY * size.height
 
-        // Fold the nested transition and drag transforms into the layer passed to drawBackdrop.
-        // LayerBackdrop applies the inverse of this complete transform while sampling, so the
-        // page-sized source remains stationary as the visible menu grows, collapses, or deforms.
+        // Share the complete transition and drag transform with the stationary sampler.
         transformOrigin = transitionOrigin
         scaleX = transitionScale * dragScaleX * menuScale
         scaleY = transitionScale * dragScaleY * menuScale
@@ -849,6 +842,7 @@ fun IosContextMenu(
                     .align(if (opensAbove) Alignment.BottomEnd else Alignment.TopEnd)
                     .size(width = menuWidth, height = menuHeight)
                     .onGloballyPositioned { coordinates ->
+                        samplingCoordinates = coordinates
                         // Measure outside the animated glass layer. Capturing a pressed row
                         // includes transient drag scale and gives the child a stale endpoint.
                         val origin = coordinates.localToScreen(androidx.compose.ui.geometry.Offset.Zero)
@@ -858,50 +852,25 @@ fun IosContextMenu(
                                 Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat()),
                             ),
                         )
-                    }
-                    .navigationGlassBoxShadow(
-                        shape = { menuShape },
-                        alpha = GlassBoxShadowAlpha * shadowAlpha.coerceIn(0f, 1f),
-                        layerBlock = menuLayerBlock,
-                    ),
+                    },
             ) {
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .drawBackdrop(
+                        .navigationGlassBackground(
                             backdrop = samplingBackdrop,
                             exportedBackdrop = childBackdrop.takeIf { appearance.usesBackdrop },
                             shape = { menuShape },
-                            effects = {
-                                if (appearance.usesBackdrop) {
-                                    blur(if (isLight) 16.dp.toPx() else 12.dp.toPx())
-                                }
-                            },
-                            highlight = {
-                                Highlight.Default.copy(
-                                    alpha = highlightAlpha?.coerceIn(0f, 1f)
-                                        ?: progress * (0.46f + 0.18f * pulse),
-                                )
-                            },
-                            shadow = {
-                                Shadow(
-                                    radius = 32.dp,
-                                    offset = androidx.compose.ui.unit.DpOffset(0.dp, 10.dp),
-                                    color = Color.Black,
-                                    alpha = 0.4f * GlassBoxShadowAlpha *
-                                        shadowAlpha.coerceIn(0f, 1f),
-                                )
-                            },
-                            innerShadow = null,
+                            containerColor = colors.container,
+                            navigationMaterial = true,
+                            innerShadows = innerShadows,
+                            isDark = colors.isDark,
+                            blurRadius = if (isLight) 16.dp else 12.dp,
+                            appearance = appearance.copy(liquidGlassEnabled = false),
+                            pressProgressState = pressProgress,
+                            highlightAlphaMultiplier = highlightAlpha ?: progress,
+                            shadowAlpha = shadowAlpha,
                             layerBlock = menuLayerBlock,
-                            onDrawSurface = {
-                                drawRect(
-                                    elevatedBackground.copy(
-                                        alpha = if (appearance.usesBackdrop) 0.70f * progress else 1f,
-                                    ),
-                                )
-                                innerShadows?.draw(this, menuShape, isDark = colors.isDark)
-                            },
                         )
                         .then(interactiveHighlight.modifier)
                         .then(interactiveHighlight.gestureModifier)
@@ -917,7 +886,7 @@ fun IosContextMenu(
 }
 
 /**
- * Anchored iOS popup whose refractive surface grows out of the trigger itself.
+ * Anchored iOS popup whose glass surface grows out of the trigger itself.
  * One Popup window covers the whole expand/open/collapse lifecycle and `progress` is the
  * single source of truth: the spring always continues from the current value and velocity,
  * so toggling at any moment reverses the motion in place instead of swapping to a separate
@@ -1256,7 +1225,6 @@ fun IosPopupMenu(
                             },
                             backdrop = backdrop,
                             animationProgress = progress.value,
-                            animationVelocity = progress.velocity,
                             transformOriginProgress = transformOriginProgress.value,
                             menuAlpha = menuAlpha.value,
                             contentAlpha = contentAlpha,
@@ -1548,7 +1516,9 @@ fun IosAlertSurface(
         emptyBackdrop()
     }
     val alertShape = ContinuousRoundedRectangle(34.dp)
-    val alertBackgroundAlpha = if (light) 0.72f else 0.64f
+    val pressProgress = remember(interactiveHighlight) {
+        derivedStateOf { interactiveHighlight.pressProgress }
+    }
     val alertLayerBlock: GraphicsLayerScope.() -> Unit = {
         applyGlassDragScale(
             pressProgress = interactiveHighlight.pressProgress,
@@ -1560,50 +1530,17 @@ fun IosAlertSurface(
         Column(
             Modifier
                 .width(alertWidth)
-                .navigationGlassBoxShadow(
-                    shape = { alertShape },
-                    alpha = GlassBoxShadowAlpha,
-                    layerBlock = alertLayerBlock,
-                )
-                .drawBackdrop(
+                .navigationGlassBackground(
                     backdrop = samplingBackdrop,
                     shape = { alertShape },
-                    effects = {
-                        if (appearance.usesBackdrop) {
-                            blur(if (light) 16.dp.toPx() else 8.dp.toPx())
-                        }
-                    },
-                    highlight = { Highlight.Plain },
-                    innerShadow = null,
+                    containerColor = colors.container,
+                    navigationMaterial = true,
+                    innerShadows = innerShadows,
+                    isDark = colors.isDark,
+                    blurRadius = if (light) 16.dp else 8.dp,
+                    appearance = appearance.copy(liquidGlassEnabled = false),
+                    pressProgressState = pressProgress,
                     layerBlock = alertLayerBlock,
-                    onDrawSurface = {
-                        if (!appearance.usesBackdrop) {
-                            drawRect(colors.container.copy(alpha = 1f))
-                        } else if (light) {
-                            drawRect(
-                                Color.White.copy(alpha = 0.70f * alertBackgroundAlpha),
-                                blendMode = BlendMode.Lighten,
-                            )
-                            drawRect(
-                                Color(0x1ABFBFBF).copy(alpha = 0.10f * alertBackgroundAlpha),
-                                blendMode = BlendMode.Darken,
-                            )
-                        } else {
-                            drawRect(
-                                Color(0xB31A1A1A).copy(alpha = 0.70f * alertBackgroundAlpha),
-                                blendMode = BlendMode.Luminosity,
-                            )
-                            drawRect(
-                                Color(0xE61A1A1A).copy(alpha = 0.90f * alertBackgroundAlpha),
-                                blendMode = BlendMode.Luminosity,
-                            )
-                            drawRect(
-                                Color(0xFF1A1A1A).copy(alpha = alertBackgroundAlpha),
-                                blendMode = BlendMode.Lighten,
-                            )
-                        }
-                        innerShadows?.draw(this, alertShape, isDark = colors.isDark)
-                    },
                 )
                 .then(interactiveHighlight.modifier)
                 .then(interactiveHighlight.gestureModifier)

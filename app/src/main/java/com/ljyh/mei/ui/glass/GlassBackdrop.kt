@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -189,6 +190,59 @@ class CrossWindowBackdrop(
 @Composable
 fun rememberCrossWindowBackdrop(backdrop: Backdrop): Backdrop = remember(backdrop) {
     if (backdrop is LayerBackdrop) CrossWindowBackdrop(backdrop) else backdrop
+}
+
+/** Samples from a stable host while only the glass outline follows its animated layer. */
+@Composable
+fun rememberStationaryBackdrop(
+    backdrop: Backdrop,
+    samplingCoordinates: () -> LayoutCoordinates?,
+): Backdrop {
+    val source = rememberCrossWindowBackdrop(backdrop)
+    return remember(source, samplingCoordinates) { StationaryBackdrop(source, samplingCoordinates) }
+}
+
+private class StationaryBackdrop(
+    private val source: Backdrop,
+    private val samplingCoordinates: () -> LayoutCoordinates?,
+) : Backdrop {
+    private val layerScope = GraphicsLayerBlockScope()
+    private val inverseLayer = Matrix()
+
+    override val isCoordinatesDependent: Boolean get() = true
+
+    override fun DrawScope.drawBackdrop(
+        density: Density,
+        coordinates: LayoutCoordinates?,
+        layerBlock: (GraphicsLayerScope.() -> Unit)?,
+    ) {
+        val host = samplingCoordinates()?.takeIf { it.isAttached } ?: return
+        inverseLayer.reset()
+        if (layerBlock != null) {
+            // Evaluate the live block during recording as well as graphicsLayer updates.
+            // This observes animation state and avoids reading an OwnedLayer matrix that
+            // may still contain the previous frame's scale or moving pivot.
+            layerScope.reset(density, Size(host.size.width.toFloat(), host.size.height.toFloat()))
+            layerBlock(layerScope)
+            inverseLayer.resetToPivotedTransform(
+                pivotX = layerScope.size.width * layerScope.transformOrigin.pivotFractionX,
+                pivotY = layerScope.size.height * layerScope.transformOrigin.pivotFractionY,
+                translationX = layerScope.translationX,
+                translationY = layerScope.translationY,
+                rotationX = layerScope.rotationX,
+                rotationY = layerScope.rotationY,
+                rotationZ = layerScope.rotationZ,
+                scaleX = layerScope.scaleX,
+                scaleY = layerScope.scaleY,
+            )
+            inverseLayer.invert()
+        }
+        withTransform({ transform(inverseLayer) }) {
+            // The host sits outside the animated layer. Passing null prevents source
+            // backdrops from applying the same inverse transform a second time.
+            with(source) { drawBackdrop(density, host, null) }
+        }
+    }
 }
 
 /** Share a live, flattened player source between modal glass and its small glass controls. */
