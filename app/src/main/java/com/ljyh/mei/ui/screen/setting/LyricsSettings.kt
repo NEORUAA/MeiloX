@@ -16,14 +16,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.LyricAutoFollowEnabledKey
 import com.ljyh.mei.constants.SystemLyricsEnabledKey
 import com.ljyh.mei.constants.BluetoothLyricsEnabledKey
+import com.ljyh.mei.constants.FlymeStatusBarLyricsEnabledKey
 import com.ljyh.mei.constants.LyricGlowEnabledKey
 import com.ljyh.mei.constants.LyricLiftEnabledKey
 import com.ljyh.mei.constants.LyricLongToneEnabledKey
@@ -43,9 +50,11 @@ import com.ljyh.mei.ui.glass.IosPopupButton
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.component.ConfirmationDialog
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.utils.FlymeSystem
 
 @Composable
 fun LyricsSettings() {
@@ -60,6 +69,7 @@ fun LyricsSettings() {
     val (autoFollow, onAutoFollow) = rememberPreference(LyricAutoFollowEnabledKey, true)
     val (systemLyrics, onSystemLyrics) = rememberPreference(SystemLyricsEnabledKey, true)
     val (bluetoothLyrics, onBluetoothLyrics) = rememberPreference(BluetoothLyricsEnabledKey, false)
+    val (flymeLyrics, onFlymeLyrics) = rememberPreference(FlymeStatusBarLyricsEnabledKey, false)
     val (floatingTranslation, onFloatingTranslation) = rememberPreference(FloatingLyricsTranslationKey, true)
     val (floatingNext, onFloatingNext) = rememberPreference(FloatingLyricsNextLineKey, true)
     val (storedFloatingScale, onFloatingScale) = rememberPreference(FloatingLyricsFontScaleKey, 1f)
@@ -114,6 +124,7 @@ fun LyricsSettings() {
         item {
             SettingsGroup(stringResource(R.string.system_lyrics_settings)) {
                 LyricsToggleRow(stringResource(R.string.system_lyrics_enabled), systemLyrics, onSystemLyrics)
+                FlymeStatusBarLyricsSetting(flymeLyrics, onFlymeLyrics)
                 Text(
                     stringResource(R.string.system_lyrics_usage),
                     style = MaterialTheme.typography.bodySmall,
@@ -154,6 +165,38 @@ fun LyricsSettings() {
 }
 
 @Composable
+internal fun FlymeStatusBarLyricsSetting(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    isFlyme: Boolean = FlymeSystem.isFlyme,
+) {
+    val showWarning = rememberSaveable { mutableStateOf(false) }
+    val onToggle: (Boolean) -> Unit = { requested ->
+        if (requested && !isFlyme) showWarning.value = true
+        else onCheckedChange(requested)
+    }
+    // Reset the glass toggle's optimistic gesture state while confirmation is pending.
+    key(checked, showWarning.value) {
+        LyricsToggleRow(
+            stringResource(R.string.flyme_status_bar_lyrics),
+            checked,
+            onToggle,
+            Modifier.semantics {
+                toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                onClick { onToggle(!checked); true }
+            },
+        )
+    }
+    ConfirmationDialog(
+        title = stringResource(R.string.flyme_status_bar_lyrics),
+        text = stringResource(R.string.flyme_status_bar_lyrics_warning),
+        onConfirm = { onCheckedChange(true) },
+        onDismiss = {},
+        openDialog = showWarning,
+    )
+}
+
+@Composable
 private fun lyricStyleLabel(style: LyricVisualStyle): String = stringResource(
     when (style) {
         LyricVisualStyle.AppleMusic -> R.string.lyrics_style_apple
@@ -164,14 +207,19 @@ private fun lyricStyleLabel(style: LyricVisualStyle): String = stringResource(
 )
 
 @Composable
-private fun LyricsToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun LyricsToggleRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    toggleModifier: Modifier = Modifier,
+) {
     GlassCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, modifier = Modifier.weight(1f))
-            GlassToggle(checked, onCheckedChange)
+            GlassToggle(checked, onCheckedChange, modifier = toggleModifier)
         }
     }
 }

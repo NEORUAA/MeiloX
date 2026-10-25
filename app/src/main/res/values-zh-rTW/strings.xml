@@ -813,4 +813,7 @@
     <string name="listening_stats_liked">紅心收聽</string>
     <string name="listening_stats_recommended">推薦收聽</string>
     <string name="listening_stats_hours">%1$s小時</string>
+
+<string name="flyme_status_bar_lyrics">魅族狀態列歌詞</string>
+<string name="flyme_status_bar_lyrics_warning">检测到当前系统非Flyme，可能无法正确显示状态栏歌词。</string>
 </resources>

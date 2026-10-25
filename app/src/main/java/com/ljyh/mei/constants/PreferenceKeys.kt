@@ -248,3 +248,5 @@ enum class TabletAnimationStyle(val label: String) {
     ZOOM("缩放"),
     FLIP_3D("3D翻转")
 }
+
+val FlymeStatusBarLyricsEnabledKey = booleanPreferencesKey("lyrics.flymeStatusBarEnabled")
