@@ -181,6 +181,7 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.miuix.navigation3.ui.android)
+    implementation(libs.miuix.ui.android)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.media3)
     implementation(libs.media3.session)

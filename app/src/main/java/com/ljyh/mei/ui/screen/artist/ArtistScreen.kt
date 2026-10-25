@@ -431,7 +431,7 @@ private fun ArtistCoverTheme(
 ) {
     val colorfulBackgrounds = LocalColorfulPageBackgrounds.current
     var coverIsDark by remember(viewModel, coverUrl) {
-        mutableStateOf(viewModel.getCachedCoverIsDark(coverUrl) ?: false)
+        mutableStateOf(viewModel.getCachedCoverIsDark(coverUrl))
     }
     LaunchedEffect(viewModel, coverUrl, colorfulBackgrounds) {
         if (!colorfulBackgrounds || coverUrl.isBlank()) return@LaunchedEffect
@@ -440,11 +440,11 @@ private fun ArtistCoverTheme(
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            // Unavailable artwork uses a stable light appearance, independent of app mode.
+            // Keep the app appearance while artwork brightness is unavailable.
         }
     }
 
-    val isDark = if (colorfulBackgrounds) coverIsDark else LocalGlassColors.current.isDark
+    val isDark = (if (colorfulBackgrounds) coverIsDark else null) ?: LocalGlassColors.current.isDark
     val setPageAppearance = LocalPageAppearance.current
     val appearanceOwner = remember(viewModel, route) { Any() }
     DisposableEffect(route, appearanceOwner, isDark, setPageAppearance) {

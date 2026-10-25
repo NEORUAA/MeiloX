@@ -77,6 +77,7 @@ import com.ljyh.mei.constants.AccompanimentLyricTextBoldKey
 import com.ljyh.mei.constants.AccompanimentLyricTextSizeKey
 import com.ljyh.mei.constants.LyricTextSize
 import com.ljyh.mei.constants.LyricRomanizationEnabledKey
+import com.ljyh.mei.constants.LyricTranslationEnabledKey
 import com.ljyh.mei.constants.NormalLyricTextBoldKey
 import com.ljyh.mei.constants.NormalLyricTextSizeKey
 import com.ljyh.mei.playback.PlayerConnection
@@ -142,6 +143,7 @@ fun LyricScreen(
         LyricTextSize.Size18
     )
     val (translationLyricTextBold, _) = rememberPreference(AccompanimentLyricTextBoldKey, true)
+    val (translationEnabled, _) = rememberPreference(LyricTranslationEnabledKey, true)
     val (romanizationEnabled, _) = rememberPreference(LyricRomanizationEnabledKey, true)
     val manualScroll = remember(lyricData.lyricLine, playerConnection.player) {
         LyricManualScrollState()
@@ -362,6 +364,7 @@ fun LyricScreen(
                     key(keepAliveZonePx) {
                         Box(Modifier.fillMaxSize().padding(contentPadding)) {
                             PlayerLyricsView(
+                                showTranslation = translationEnabled,
                                 showPhonetic = romanizationEnabled,
                                 isVerbatim = lyricData.isVerbatim,
                                 listState = listState,
@@ -377,10 +380,12 @@ fun LyricScreen(
                                 onLinePressed = { line ->
                                     val result = when (line) {
                                         is KaraokeLine -> {
-                                            "${line.syllables.joinToString("") { it.content }}\n${line.translation}"
+                                            line.syllables.joinToString("") { it.content } +
+                                                line.translation?.takeIf(String::isNotBlank)?.let { "\n$it" }.orEmpty()
                                         }
                                         is SyncedLine -> {
-                                            "${line.content}\n${line.translation}"
+                                            line.content +
+                                                line.translation?.takeIf(String::isNotBlank)?.let { "\n$it" }.orEmpty()
                                         }
                                         else -> {
                                             Toast.makeText(context, "未知的歌词类型", Toast.LENGTH_SHORT).show()
