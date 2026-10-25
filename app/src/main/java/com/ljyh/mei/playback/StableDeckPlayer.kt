@@ -20,6 +20,7 @@ class StableDeckPlayer(
     firstDeck: ExoPlayer,
     secondDeck: ExoPlayer,
     private val audioAttributes: AudioAttributes,
+    private var handlesAudioFocus: Boolean = true,
 ) : ForwardingSimpleBasePlayer(firstDeck) {
     private val decks = arrayOf(firstDeck, secondDeck)
     private var activeDeckIndex = 0
@@ -117,6 +118,8 @@ class StableDeckPlayer(
         require(firstDeck.applicationLooper === secondDeck.applicationLooper) {
             "Deck players must use the same application looper"
         }
+        firstDeck.setAudioAttributes(audioAttributes, handlesAudioFocus)
+        secondDeck.setAudioAttributes(audioAttributes, false)
     }
 
     val activeDeck: ExoPlayer
@@ -128,6 +131,13 @@ class StableDeckPlayer(
     internal val deckPlayers: List<ExoPlayer>
         get() = decks.asList()
 
+    internal fun setHandleAudioFocus(enabled: Boolean) {
+        checkOnApplicationLooper()
+        if (released || handlesAudioFocus == enabled) return
+        handlesAudioFocus = enabled
+        activeDeck.setAudioAttributes(audioAttributes, enabled)
+    }
+
     /** Promotes the already-playing standby deck without pausing or seeking it. */
     fun promoteStandby(): ExoPlayer {
         checkOnApplicationLooper()
@@ -136,7 +146,7 @@ class StableDeckPlayer(
 
         outgoingDeck.setHandleAudioBecomingNoisy(false)
         outgoingDeck.setAudioAttributes(audioAttributes, false)
-        incomingDeck.setAudioAttributes(audioAttributes, true)
+        incomingDeck.setAudioAttributes(audioAttributes, handlesAudioFocus)
         incomingDeck.setHandleAudioBecomingNoisy(true)
 
         activeDeckIndex = 1 - activeDeckIndex

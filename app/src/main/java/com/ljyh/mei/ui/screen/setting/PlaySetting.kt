@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.AllowConcurrentPlaybackKey
 import com.ljyh.mei.constants.AutoMixDurationKey
 import com.ljyh.mei.constants.AutoMixEnabledKey
 import com.ljyh.mei.constants.AutoMixFadeCurve
@@ -81,6 +82,7 @@ fun PlaySetting(
     val playerConnection = LocalPlayerConnection.current
     val (musicQuality, onMusicQualityChange) = rememberEnumPreference(MusicQualityKey, MusicQuality.EXHIGH)
     val (loopPlayback, onLoopPlaybackChange) = rememberPreference(LoopPlaybackKey, true)
+    val (allowConcurrentPlayback, onAllowConcurrentPlaybackChange) = rememberPreference(AllowConcurrentPlaybackKey, false)
     val (cloudShuffle, onCloudShuffleChange) = rememberPreference(CloudShuffleEnabledKey, true)
     val (previousPlayback, onPreviousPlaybackChange) = rememberPreference(PreviousPlaybackKey, true)
     val (restorePlaybackPosition, onRestorePlaybackPositionChange) = rememberPreference(RestorePlaybackPositionKey, true)
@@ -135,6 +137,10 @@ fun PlaySetting(
                     }
                 }
                 ToggleRow(stringResource(R.string.loop_playback), "arrow.trianglehead.2.clockwise.rotate.90", loopPlayback, onLoopPlaybackChange)
+                ToggleRow(
+                    stringResource(R.string.allow_concurrent_playback), "waveform",
+                    allowConcurrentPlayback, onAllowConcurrentPlaybackChange,
+                )
                 ToggleRow(
                     stringResource(R.string.cloud_shuffle), "shuffle", cloudShuffle, onCloudShuffleChange,
                     description = stringResource(R.string.cloud_shuffle_description),

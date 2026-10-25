@@ -72,6 +72,7 @@ import com.ljyh.mei.ui.component.player.floatingLyricsPipParams
 import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import androidx.lifecycle.Lifecycle
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.AllowConcurrentPlaybackKey
 import com.ljyh.mei.constants.IsShuffleModeKey
 import com.ljyh.mei.constants.LoopPlaybackKey
 import com.ljyh.mei.constants.NotificationAction
@@ -291,6 +292,7 @@ class MusicService : MediaLibraryService(),
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
+        val handleAudioFocus = !context.dataStore.get(AllowConcurrentPlaybackKey, false)
         // Media3 1.11 dynamic scheduling batches position updates. Both decks need
         // continuous timestamps for karaoke highlighting and beat synchronization.
         val firstDeck = ExoPlayer.Builder(this)
@@ -306,7 +308,7 @@ class MusicService : MediaLibraryService(),
             //它并不会阻止屏幕变暗或关闭；它主要是为了防止CPU进入睡眠状态以及确保网络连接的活跃，从而避免播放中断。
             .setWakeMode(C.WAKE_MODE_NETWORK)
             //音频属性
-            .setAudioAttributes(playbackAudioAttributes, true)
+            .setAudioAttributes(playbackAudioAttributes, handleAudioFocus)
             //快进快退时间
             .setSeekBackIncrementMs(5000)
             .setSeekForwardIncrementMs(5000)
@@ -331,7 +333,7 @@ class MusicService : MediaLibraryService(),
             .setSeekBackIncrementMs(5000)
             .setSeekForwardIncrementMs(5000)
             .build()
-        player = StableDeckPlayer(firstDeck, secondDeck, playbackAudioAttributes)
+        player = StableDeckPlayer(firstDeck, secondDeck, playbackAudioAttributes, handleAudioFocus)
         listOf(firstDeck, secondDeck).forEachIndexed { index, deck ->
             deck.addAnalyticsListener(object : AnalyticsListener {
                 override fun onAudioDecoderInitialized(
@@ -468,6 +470,13 @@ class MusicService : MediaLibraryService(),
             .build()
 
 
+        scope.launch {
+            context.dataStore.data.map { it[AllowConcurrentPlaybackKey] ?: false }
+                .distinctUntilChanged()
+                .collect { allowConcurrentPlayback ->
+                    player.setHandleAudioFocus(!allowConcurrentPlayback)
+                }
+        }
         scope.launch {
             context.dataStore.data.map { preferences ->
                 Triple(

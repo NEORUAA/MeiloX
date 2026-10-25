@@ -5,10 +5,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,6 +25,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.AllowConcurrentPlaybackKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
 import com.ljyh.mei.constants.CloudMusicTabEnabledKey
 import com.ljyh.mei.constants.CookieKey
@@ -65,6 +69,32 @@ class MainNavigationInstrumentedTest {
         PodcastsEnabledKey, DownloadsEnabledKey, CloudMusicEnabledKey, ListeningHistoryEnabledKey,
     )
     private var avatarDescription = ""
+
+    @Test
+    fun concurrentPlaybackSettingPersistsAcrossRecreation() = withNavigationPreferences {
+        setPreference(AllowConcurrentPlaybackKey, false)
+        openTab(Index.Settings)
+        compose.onNodeWithText(text(R.string.settings_playback)).performClick()
+        compose.onNodeWithText(text(R.string.allow_concurrent_playback)).performClick()
+        compose.waitUntil(5_000) {
+            runBlocking(Dispatchers.IO) {
+                compose.activity.dataStore.data.first()[AllowConcurrentPlaybackKey] == true
+            }
+        }
+        compose.activityRule.scenario.recreate()
+        val enabledToggle = isToggleable() and
+            hasAnyAncestor(hasText(text(R.string.allow_concurrent_playback))) and
+            SemanticsMatcher.expectValue(SemanticsProperties.ToggleableState, ToggleableState.On)
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(enabledToggle).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        compose.onNodeWithText(text(R.string.allow_concurrent_playback)).assertIsDisplayed().performClick()
+        compose.waitUntil(5_000) {
+            runBlocking(Dispatchers.IO) {
+                compose.activity.dataStore.data.first()[AllowConcurrentPlaybackKey] == false
+            }
+        }
+    }
 
     @Test
     fun primaryDestinationsRemainTopLevelAfterRecreation() = withNavigationPreferences {
@@ -120,7 +150,7 @@ class MainNavigationInstrumentedTest {
     private fun withNavigationPreferences(block: () -> Unit) {
         val dataStore = compose.activity.dataStore
         val original = runBlocking(Dispatchers.IO) { dataStore.data.first() }
-        val booleanKeys = optionalTabs.values + contentKeys + KeepBottomBarExpandedKey
+        val booleanKeys = optionalTabs.values + contentKeys + KeepBottomBarExpandedKey + AllowConcurrentPlaybackKey
         avatarDescription = if (original[CookieKey].isNullOrBlank() || original[UserAvatarUrlKey].isNullOrBlank()) {
             text(R.string.account_home)
         } else {

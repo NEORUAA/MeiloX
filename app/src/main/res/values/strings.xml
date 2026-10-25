@@ -366,6 +366,7 @@
     <string name="cloud_shuffle">Cloud Shuffle</string>
     <string name="cloud_shuffle_description">Prefer cloud shuffle and fall back to local shuffle if unavailable. Turn off to use local shuffle only.</string>
     <string name="loop_playback">Loop Playback</string>
+    <string name="allow_concurrent_playback">Allow Playback with Other Apps</string>
     <string name="skip_unavailable">Skip Unavailable Tracks</string>
     <string name="previous_behavior">Previous Button Restarts After 3 Seconds</string>
     <string name="restore_playback_position">Restore Last Playback Position</string>
