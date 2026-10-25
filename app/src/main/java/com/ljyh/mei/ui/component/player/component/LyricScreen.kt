@@ -380,10 +380,12 @@ fun LyricScreen(
                                 onLinePressed = { line ->
                                     val result = when (line) {
                                         is KaraokeLine -> {
-                                            "${line.syllables.joinToString("") { it.content }}\n${line.translation}"
+                                            line.syllables.joinToString("") { it.content } +
+                                                line.translation?.takeIf(String::isNotBlank)?.let { "\n$it" }.orEmpty()
                                         }
                                         is SyncedLine -> {
-                                            "${line.content}\n${line.translation}"
+                                            line.content +
+                                                line.translation?.takeIf(String::isNotBlank)?.let { "\n$it" }.orEmpty()
                                         }
                                         else -> {
                                             Toast.makeText(context, "未知的歌词类型", Toast.LENGTH_SHORT).show()
