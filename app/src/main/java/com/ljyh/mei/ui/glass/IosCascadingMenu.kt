@@ -11,6 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,24 +91,32 @@ fun IosCascadingMenu(
     var childExpanded by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val child = remember { Animatable(0f) }
+    val menuScale = remember(child) {
+        { 1f - 0.04f * child.value.coerceIn(0f, 1f) }
+    }
     var menuBounds by remember { mutableStateOf<Rect?>(null) }
     val density = LocalDensity.current
     var selectedBounds by remember { mutableStateOf<Rect?>(null) }
     val colors = LocalGlassColors.current
+    val separatorColor = colors.content.copy(alpha = 0.16f)
+    val separatorModifier = Modifier.graphicsLayer {
+        blendMode = BlendMode.Luminosity
+        compositingStrategy = CompositingStrategy.Offscreen
+    }
     val headerRows = if (headerActions.isEmpty()) 0 else 2
-    val itemHeights = items.map { if (it.subtitle == null) 44 else 56 }
+    val itemHeights = remember(items) { items.map { if (it.subtitle == null) 44 else 56 } }
     val textMeasurer = rememberTextMeasurer()
-    val longestActionWidth = headerActions.maxOfOrNull {
-        textMeasurer.measure(it.title, style = IosTypography.subheadline, maxLines = 1).size.width
-    } ?: 0
     val windowWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val longestRowWidth = items.maxOfOrNull {
-        textMeasurer.measure(it.title, style = IosTypography.body, maxLines = 1).size.width
-    } ?: 0
     val menuWidth = if (headerActions.isEmpty()) {
+        val longestRowWidth = items.maxOfOrNull {
+            textMeasurer.measure(it.title, style = IosTypography.body, maxLines = 1).size.width
+        } ?: 0
         maxOf(238.dp, with(density) { longestRowWidth.toDp() } + 104.dp)
             .coerceAtMost((windowWidth - 24.dp).coerceAtLeast(1.dp))
     } else {
+        val longestActionWidth = headerActions.maxOfOrNull {
+            textMeasurer.measure(it.title, style = IosTypography.subheadline, maxLines = 1).size.width
+        } ?: 0
         // Include both cells' inner padding and the shared menu's outer content padding.
         val requiredWidth = (with(density) { longestActionWidth.toDp() } + 32.dp) * headerActions.size + 20.dp
         maxOf(280.dp, requiredWidth + 4.dp).coerceAtMost((windowWidth - 24.dp).coerceAtLeast(1.dp))
@@ -140,13 +150,14 @@ fun IosCascadingMenu(
             12.dp * items.count { it.separatorBefore },
         menuWidth = menuWidth,
         backdrop = backdrop,
+        exportChildBackdrop = false,
         externalAnchorBounds = anchorBounds,
         keepAnchorVisible = true,
         fullScreen = true,
         centerHorizontally = centerHorizontally,
         expandFromAnchor = expandFromAnchor,
         forceBelowAnchor = forceBelowAnchor,
-        menuScale = 1f - 0.04f * child.value.coerceIn(0f, 1f),
+        menuScale = menuScale,
         onMenuBoundsChanged = { menuBounds = it },
         onMenuAlphaChanged = { onTriggerAlphaChanged?.invoke(1f - it) },
         onAnchorSeparationChanged = onTriggerSeparationChanged,
@@ -193,6 +204,7 @@ fun IosCascadingMenu(
                     visible = true,
                     modifier = Modifier.absoluteOffset(left, top).graphicsLayer { alpha = menuAlpha },
                     backdrop = backdrop,
+                    exportChildBackdrop = false,
                     compact = true,
                     menuWidth = menuWidth,
                     heightOverride = collapsedHeight + (targetHeight - collapsedHeight) * p,
@@ -216,7 +228,11 @@ fun IosCascadingMenu(
                         alpha = p
                         translationY = -12.dp.toPx() * (1f - p)
                     }.verticalScroll(rememberScrollState())) {
-                        HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = colors.separator)
+                        HorizontalDivider(
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp).then(separatorModifier),
+                            thickness = 0.5.dp,
+                            color = separatorColor,
+                        )
                         selected.children.forEach { item ->
                             IosMenuItem(
                                 title = item.title,
@@ -247,7 +263,11 @@ fun IosCascadingMenu(
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(12.dp), contentAlignment = Alignment.Center) {
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = colors.separator)
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp).then(separatorModifier),
+                        thickness = 0.5.dp,
+                        color = separatorColor,
+                    )
                 }
             }
         }
@@ -256,7 +276,11 @@ fun IosCascadingMenu(
                 Box(Modifier.fillMaxWidth().height(12.dp).graphicsLayer {
                     alpha = 1f - 0.58f * child.value.coerceIn(0f, 1f)
                 }, contentAlignment = Alignment.Center) {
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = colors.separator)
+                    HorizontalDivider(
+                        Modifier.padding(horizontal = 16.dp).then(separatorModifier),
+                        thickness = 0.5.dp,
+                        color = separatorColor,
+                    )
                 }
             }
             IosMenuItem(

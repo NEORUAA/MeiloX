@@ -49,7 +49,10 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.nativePaint
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -89,7 +92,6 @@ import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.LocalBlurBackdrop
 import com.ljyh.mei.ui.glass.defaultGlassColors
 import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.ui.glass.SfSymbol
@@ -462,12 +464,16 @@ private fun ArtistCoverTheme(
                 getOrExtractColor = viewModel::getOrExtractColor,
                 ownerKey = viewModel,
             )
-            // Body controls and their popups sample the cover-local surface, not the app theme.
+            // Body controls use the cover-local surface. Menus inherit the rendered page backdrop.
             val backdropBrush = rememberUpdatedState(background.brush)
-            val backdrop = rememberCanvasBackdrop { drawRect(brush = backdropBrush.value) }
+            val backdropPaint = remember { Paint() }
+            val backdrop = rememberCanvasBackdrop {
+                backdropBrush.value.applyTo(size, backdropPaint, 1f)
+                // Fill the blur outsets too, including negative coordinates at the top and left.
+                drawContext.canvas.nativeCanvas.drawPaint(backdropPaint.nativePaint)
+            }
             CompositionLocalProvider(
                 LocalGlassBackdrop provides backdrop,
-                LocalBlurBackdrop provides backdrop,
             ) {
                 content(background)
             }

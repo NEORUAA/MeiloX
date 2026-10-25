@@ -739,7 +739,8 @@ fun IosContextMenu(
     compact: Boolean = false,
     heightOverride: androidx.compose.ui.unit.Dp? = null,
     menuWidth: androidx.compose.ui.unit.Dp = PopupMenuWidth,
-    menuScale: Float = 1f,
+    menuScale: () -> Float = { 1f },
+    exportChildBackdrop: Boolean = true,
     initialTransformOrigin: TransformOrigin? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     content: @Composable ColumnScope.(LayerBackdrop) -> Unit,
@@ -780,6 +781,7 @@ fun IosContextMenu(
     val colors = LocalGlassColors.current
     val isLight = !colors.isDark
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
+        val resolvedMenuScale = menuScale()
         transformOrigin = startOrigin
         applyGlassDragScale(
             pressProgress = interactiveHighlight.pressProgress,
@@ -796,16 +798,16 @@ fun IosContextMenu(
 
         // Share the complete transition and drag transform with the stationary sampler.
         transformOrigin = transitionOrigin
-        scaleX = transitionScale * dragScaleX * menuScale
-        scaleY = transitionScale * dragScaleY * menuScale
+        scaleX = transitionScale * dragScaleX * resolvedMenuScale
+        scaleY = transitionScale * dragScaleY * resolvedMenuScale
         // Apply the rear-menu scale around the opening corner while preserving the
         // existing entrance animation's moving pivot when menuScale is 1.
-        translationX = menuScale * transitionScale * (
+        translationX = resolvedMenuScale * transitionScale * (
             dragTranslationX + (1f - dragScaleX) * (startPivotX - transitionPivotX)
-        ) + (1f - menuScale) * (startPivotX - transitionPivotX)
-        translationY = menuScale * transitionScale * (
+        ) + (1f - resolvedMenuScale) * (startPivotX - transitionPivotX)
+        translationY = resolvedMenuScale * transitionScale * (
             dragTranslationY + (1f - dragScaleY) * (startPivotY - transitionPivotY)
-        ) + (1f - menuScale) * (startPivotY - transitionPivotY)
+        ) + (1f - resolvedMenuScale) * (startPivotY - transitionPivotY)
     }
     // Stable full-size host: keep overshoot margins on both the growth and anchor sides in the
     // measured Popup bounds. The original visual host is nested inside it, so this only enlarges
@@ -818,10 +820,9 @@ fun IosContextMenu(
             // Start alignment prevents implicit centering from changing the visible offset.
             .wrapContentWidth(androidx.compose.ui.AbsoluteAlignment.Left, unbounded = true)
             .requiredWidth(popupHostWidth)
-            // Keep the transition RenderEffect on the stable Popup host.  A blur modifier
-            // creates a bounded graphics layer even with Unbounded edge treatment; placing it
-            // on the spring-sized menu would therefore expose that menu-sized rectangle while
-            // the menu is below its resting scale.
+            // Keep the transition RenderEffect on the stable Popup host. A blur modifier
+            // creates a bounded layer even with Unbounded edge treatment, so it must stay
+            // outside the spring-sized menu to avoid exposing a menu-sized rectangle.
             .blur(
                 (8.dp * (1f - progress)).coerceAtLeast(0.dp),
                 BlurredEdgeTreatment.Unbounded,
@@ -859,7 +860,7 @@ fun IosContextMenu(
                         .fillMaxSize()
                         .navigationGlassBackground(
                             backdrop = samplingBackdrop,
-                            exportedBackdrop = childBackdrop.takeIf { appearance.usesBackdrop },
+                            exportedBackdrop = childBackdrop.takeIf { exportChildBackdrop && appearance.usesBackdrop },
                             shape = { menuShape },
                             containerColor = colors.container,
                             navigationMaterial = true,
@@ -870,6 +871,12 @@ fun IosContextMenu(
                             pressProgressState = pressProgress,
                             highlightAlphaMultiplier = highlightAlpha ?: progress,
                             shadowAlpha = shadowAlpha,
+                            dropShadow = Shadow(
+                                radius = 32.dp,
+                                offset = androidx.compose.ui.unit.DpOffset(0.dp, 10.dp),
+                                color = Color.Black,
+                                alpha = 0.4f * GlassBoxShadowAlpha,
+                            ),
                             layerBlock = menuLayerBlock,
                         )
                         .then(interactiveHighlight.modifier)
@@ -908,7 +915,8 @@ fun IosPopupMenu(
     expandFromAnchor: Alignment.Horizontal? = null,
     externalAnchorBounds: androidx.compose.ui.geometry.Rect? = null,
     menuWidth: androidx.compose.ui.unit.Dp = PopupMenuWidth,
-    menuScale: Float = 1f,
+    menuScale: () -> Float = { 1f },
+    exportChildBackdrop: Boolean = true,
     heightOverride: androidx.compose.ui.unit.Dp? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     onMenuAlphaChanged: ((Float) -> Unit)? = null,
@@ -1233,6 +1241,7 @@ fun IosPopupMenu(
                             itemCount = itemCount,
                             heightOverride = heightOverride,
                             menuScale = menuScale,
+                            exportChildBackdrop = exportChildBackdrop,
                             initialTransformOrigin = if (expandFromAnchor != null) {
                                 TransformOrigin(anchorFractionX, if (opensAbove) 1f else 0f)
                             } else null,
@@ -1540,6 +1549,7 @@ fun IosAlertSurface(
                     blurRadius = if (light) 16.dp else 8.dp,
                     appearance = appearance.copy(liquidGlassEnabled = false),
                     pressProgressState = pressProgress,
+                    dropShadow = Shadow.Default,
                     layerBlock = alertLayerBlock,
                 )
                 .then(interactiveHighlight.modifier)

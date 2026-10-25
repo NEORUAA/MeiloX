@@ -546,15 +546,20 @@ internal fun Modifier.navigationGlassBackground(
     exportedBackdrop: LayerBackdrop? = null,
     highlightAlphaMultiplier: Float = 1f,
     shadowAlpha: Float = 1f,
+    dropShadow: Shadow? = null,
 ): Modifier = this
-    .navigationGlassDropShadow(
-        shape,
-        if (shadowAlpha == 1f) layerBlock else {
-            {
-                layerBlock?.invoke(this)
-                alpha *= shadowAlpha.coerceIn(0f, 1f)
-            }
-        },
+    .then(
+        if (dropShadow == null) {
+            Modifier.navigationGlassDropShadow(
+                shape,
+                if (shadowAlpha == 1f) layerBlock else {
+                    {
+                        layerBlock?.invoke(this)
+                        alpha *= shadowAlpha.coerceIn(0f, 1f)
+                    }
+                },
+            )
+        } else Modifier,
     )
     .navigationGlassBoxShadow(shape, GlassBoxShadowAlpha * shadowAlpha.coerceIn(0f, 1f), layerBlock)
     .drawBackdrop(
@@ -585,7 +590,9 @@ internal fun Modifier.navigationGlassBackground(
                 )
             }
         },
-        shadow = null,
+        shadow = dropShadow?.let { shadow ->
+            { shadow.copy(alpha = shadow.alpha * shadowAlpha.coerceIn(0f, 1f)) }
+        },
         innerShadow = null,
         layerBlock = layerBlock,
         onDrawSurface = {
