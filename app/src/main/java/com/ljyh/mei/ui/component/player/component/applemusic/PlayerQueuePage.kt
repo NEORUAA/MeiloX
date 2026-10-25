@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -117,6 +118,8 @@ import com.ljyh.mei.ui.glass.SfIcon
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.smallImage
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -655,6 +658,9 @@ fun PlayerQueuePage(
     val displayedEntries = remember(entriesSnapshot, currentQueueIndex, inlineCurrent) {
         if (inlineCurrent) entriesSnapshot.subList((currentQueueIndex + 1).coerceAtLeast(0), entriesSnapshot.size)
         else entriesSnapshot
+    }
+    val displayedEntryIndices = remember(displayedEntries) {
+        displayedEntries.mapIndexed { index, entry -> entry.key to index }.toMap()
     }
     val autoplaySectionIndex = if (autoplayEnabled) {
         playerQueueAutoplaySectionIndex(currentQueueIndex, autoplayQueueIndex, displayedEntries.size, inlineCurrent)
@@ -1361,6 +1367,38 @@ fun PlayerQueuePage(
                     }
                 }
             }
+            PlayerQueueScrollbar(
+                enabled = !initialScrollPending && !automaticScrollInProgress,
+                isScrolling = {
+                    active && selected && listState.isScrollInProgress
+                },
+                viewportTop = {
+                    if (inlineCurrent) {
+                        listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "queue_upcoming_controls" }
+                            ?.let { (it.offset + it.size).toFloat() + topPull.offset }
+                    } else topPull.offset
+                },
+                contentStart = {
+                    val items = listState.layoutInfo.visibleItemsInfo
+                    val row = items.firstOrNull { it.key in displayedEntryIndices }
+                    val index = row?.let { displayedEntryIndices[it.key] }
+                    val autoplayHeight = if (autoplayEnabled) autoplayHeadingHeightPx.toFloat() else 0f
+                    val start = if (row != null && index != null) {
+                        row.offset - index * rowHeightPx - if (index >= autoplaySectionIndex) autoplayHeight else 0f
+                    } else {
+                        items.firstOrNull { it.key == "autoplay_section" }
+                            ?.let { it.offset - autoplaySectionIndex * rowHeightPx }
+                            ?: items.firstOrNull { it.key == "queue_bottom_space" }
+                                ?.let { it.offset - displayedEntries.size * rowHeightPx - autoplayHeight }
+                    }
+                    start?.plus(topPull.offset)
+                },
+                contentHeight = displayedEntries.size * rowHeightPx + tailHeightPx +
+                    if (autoplayEnabled) autoplayHeadingHeightPx.toFloat() else 0f,
+                initialViewportHeight = (viewportSize.height -
+                    if (inlineCurrent) inlineHeaderHeightPx + controlsHeadingHeightPx else 0f).coerceAtLeast(0f),
+                modifier = Modifier.matchParentSize(),
+            )
         }
     }
 
@@ -1407,6 +1445,65 @@ fun PlayerQueuePage(
             },
         )
     }
+}
+
+@Composable
+private fun PlayerQueueScrollbar(
+    enabled: Boolean,
+    isScrolling: () -> Boolean,
+    viewportTop: () -> Float?,
+    contentStart: () -> Float?,
+    contentHeight: Float,
+    initialViewportHeight: Float,
+    modifier: Modifier = Modifier,
+) {
+    val opacity = remember { Animatable(0f) }
+    val scrollingNow by rememberUpdatedState(isScrolling)
+    val viewportTopNow by rememberUpdatedState(viewportTop)
+    val contentStartNow by rememberUpdatedState(contentStart)
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            opacity.snapTo(0f)
+            return@LaunchedEffect
+        }
+        var previousOffset: Float? = null
+        snapshotFlow {
+            if (!scrollingNow()) return@snapshotFlow null
+            val top = viewportTopNow()?.coerceAtLeast(0f) ?: return@snapshotFlow null
+            val start = contentStartNow() ?: return@snapshotFlow null
+            (top - start).coerceAtLeast(0f)
+        }.collectLatest { offset ->
+            // Header travel and shared top pulls leave this section offset unchanged.
+            val moved = offset != null && previousOffset?.let { abs(offset - it) > 0.5f } == true
+            previousOffset = offset
+            if (moved) opacity.snapTo(1f)
+            delay(500)
+            opacity.animateTo(0f, tween(250))
+        }
+    }
+    Box(modifier.drawWithContent {
+        drawContent()
+        if (!enabled || opacity.value <= 0f) return@drawWithContent
+        val top = viewportTop()?.coerceIn(0f, size.height) ?: return@drawWithContent
+        val start = contentStart() ?: return@drawWithContent
+        val viewport = size.height - top
+        val inset = 1.dp.toPx()
+        val width = 3.dp.toPx()
+        val trackHeight = viewport - inset * 2f
+        if (viewport <= 0f || contentHeight <= viewport || trackHeight <= 0f) return@drawWithContent
+        // Header visibility changes the track, never the resting-position thumb length.
+        val initialTrackHeight = (initialViewportHeight - inset * 2f).coerceAtLeast(0f)
+        val thumbHeight = maxOf(32.dp.toPx(), initialTrackHeight * initialViewportHeight / contentHeight)
+        val fraction = ((top - start) / (contentHeight - viewport)).coerceIn(0f, 1f)
+        clipRect(top = top + inset, bottom = size.height - inset) {
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.5f * opacity.value),
+                topLeft = Offset(size.width - inset - width, top + inset + (trackHeight - thumbHeight).coerceAtLeast(0f) * fraction),
+                size = Size(width, thumbHeight),
+                cornerRadius = CornerRadius(width / 2f),
+            )
+        }
+    })
 }
 
 @OptIn(UnstableApi::class)
