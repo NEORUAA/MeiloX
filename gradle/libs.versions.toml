@@ -121,6 +121,7 @@ material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "m
 kmpalette-core = { module = "com.kmpalette:kmpalette-core", version.ref = "kmpalette" }
 kmpalette-extensions-network = { module = "com.kmpalette:extensions-network", version.ref = "kmpalette" }
 miuix-navigation3-ui-android = { module = "top.yukonga.miuix.kmp:miuix-navigation3-ui-android", version.ref = "miuixNavigation3UiAndroid" }
+miuix-ui-android = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuixNavigation3UiAndroid" }
 provider = { module = "io.github.proify.lyricon:provider", version.ref = "provider" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 retrofit-scalars = { group = "com.squareup.retrofit2", name = "converter-scalars", version.ref = "retrofit" }

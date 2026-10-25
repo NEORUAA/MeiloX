@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.theme
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -25,6 +26,7 @@ import com.ljyh.mei.constants.InterfaceLetterSpacingKey
 import com.ljyh.mei.constants.MaxInterfaceLetterSpacing
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import com.ljyh.mei.utils.rememberPreference
+import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
 
 /** Raw custom or dynamic accent; null selects the current mode's default accent. */
 val LocalAccentSeedColor = staticCompositionLocalOf<Color?> { null }
@@ -104,6 +106,7 @@ fun MusicTheme(
         shapes = AppShapes,
     ) {
         CompositionLocalProvider(
+            LocalOverscrollFactory provides MiuixOverscrollFactory,
             LocalDynamicAccent provides dynamicAccent,
             LocalInterfaceLetterSpacing provides letterSpacing,
             LocalContentColor provides colorScheme.onBackground,

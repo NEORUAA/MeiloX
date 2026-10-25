@@ -931,10 +931,11 @@ internal fun Modifier.playerArtworkMotion(
 ): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     layout(placeable.width, placeable.height) {
-        // Observe geometry in placement. Replacing the queue header's derived state
-        // during a cover transition can otherwise leave layer parameters unobserved.
-        val current = frame()
+        // Keep placement subscribed across cover transitions, and let layer-only
+        // updates observe the live frame instead of retaining a placement snapshot.
+        frame()
         placeable.placeWithLayer(0, 0) {
+            val current = frame()
             transformOrigin = TransformOrigin(0f, 0f)
             translationX = current.bounds.left
             translationY = current.bounds.top

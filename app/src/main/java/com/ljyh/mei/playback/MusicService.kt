@@ -145,6 +145,8 @@ class MusicService : MediaLibraryService(),
     lateinit var player: StableDeckPlayer
     val beatMeter = PlaybackBeatMeter()
     private lateinit var audioPlayer: AudioPlayer
+    private lateinit var flymeLyricsPublisher: FlymeStatusBarLyricsPublisher
+    private lateinit var flymeNotificationProvider: FlymeLyricsNotificationProvider
     private lateinit var systemLyricsBridge: SystemLyricsBridge
 
     @Inject
@@ -284,9 +286,11 @@ class MusicService : MediaLibraryService(),
         }
 
 
-        setMediaNotificationProvider(
-            PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID) { player.mediaMetadata.title }
+        flymeNotificationProvider = FlymeLyricsNotificationProvider(
+            PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID) { player.mediaMetadata.title },
+            ::triggerNotificationUpdate,
         )
+        setMediaNotificationProvider(flymeNotificationProvider)
 
         val playbackAudioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -506,6 +510,7 @@ class MusicService : MediaLibraryService(),
             playerRepository.songLikes.collect { updateNotificationButtons() }
         }
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
+        flymeLyricsPublisher = FlymeStatusBarLyricsPublisher(this, player, lyricManager, flymeNotificationProvider)
         scope.launch {
             context.dataStore.data.map { it[CookieKey] }.distinctUntilChanged().drop(1).collect {
                 val mediaId = player.currentMediaItem?.mediaId
@@ -937,7 +942,7 @@ class MusicService : MediaLibraryService(),
             ?.filter { it.isNotBlank() }
             ?.takeIf { it.isNotEmpty() }
             ?: metadata.artist?.toString()
-                ?.split(Regex("\\s*[/,&、]\\s*"))
+                ?.split(Regex("""\s*[/,&、]\s*"""))
                 ?.map(String::trim)
                 ?.filter(String::isNotBlank)
                 ?.takeIf(List<String>::isNotEmpty)
@@ -1260,6 +1265,7 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onDestroy() {
+        if (::flymeLyricsPublisher.isInitialized) flymeLyricsPublisher.release()
         NotificationManagerCompat.from(this).cancel(FLOATING_LYRICS_NOTIFICATION_ID)
         if (::systemLyricsBridge.isInitialized) systemLyricsBridge.release()
         mediaUriProvider.onSourceResolved = null

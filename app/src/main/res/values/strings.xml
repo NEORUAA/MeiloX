@@ -814,4 +814,7 @@
     <string name="listening_stats_liked">From liked songs</string>
     <string name="listening_stats_recommended">From recommendations</string>
     <string name="listening_stats_hours">%1$s hr</string>
+
+<string name="flyme_status_bar_lyrics">Flyme status bar lyrics</string>
+<string name="flyme_status_bar_lyrics_warning">检测到当前系统非Flyme，可能无法正确显示状态栏歌词。</string>
 </resources>

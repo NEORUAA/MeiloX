@@ -317,8 +317,13 @@ class AppleMusicArtworkMotionTest {
     }
 
     @Test fun queueSnapsBetweenThreeStatesWithoutResettingSectionScrolling() {
-        fun target(top: Float, direction: Int, hasHistory: Boolean = true, canPinUpcoming: Boolean = true) =
-            playerQueueSnapTarget(top, 84f, 600f, direction, hasHistory, canPinUpcoming)
+        fun target(
+            top: Float,
+            direction: Int,
+            hasHistory: Boolean = true,
+            canPinUpcoming: Boolean = true,
+            historyHeight: Float = 600f,
+        ) = playerQueueSnapTarget(top, 84f, 600f, direction, hasHistory, canPinUpcoming, historyHeight)
 
         assertEquals(0f, target(48f, -1)!!, 0f)
         assertEquals(0f, target(149f, -1)!!, 0f)
@@ -333,6 +338,14 @@ class AppleMusicArtworkMotionTest {
         assertEquals(600f, target(400f, 0)!!, 0f)
         assertNull(target(650f, 1))
         assertNull(target(-150f, -1))
+        for (historyHeight in listOf(124f, 180f, 292f)) {
+            assertEquals(0f, target(historyHeight * 0.2f, -1, historyHeight = historyHeight)!!, 0f)
+            assertEquals(historyHeight, target(historyHeight * 0.5f, -1, historyHeight = historyHeight)!!, 0f)
+            assertEquals(0f, target(historyHeight * 0.75f, 1, historyHeight = historyHeight)!!, 0f)
+            assertEquals(historyHeight, target(historyHeight, -1, historyHeight = historyHeight)!!, 0f)
+            assertEquals(-84f, target(-16f, 1, historyHeight = historyHeight)!!, 0f)
+        }
+        assertEquals(600f, target(240f, -1, historyHeight = 900f)!!, 0f)
     }
 
     @Test fun shortHistoryFillsOnlyTheSpaceBetweenItsHeadingAndSongs() {
