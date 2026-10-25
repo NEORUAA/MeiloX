@@ -307,15 +307,17 @@ internal fun playerQueueSnapTarget(
     scrollDirection: Int,
     hasHistory: Boolean,
     canPinUpcoming: Boolean,
+    historyHeight: Float = viewportHeight,
 ): Float? {
     if (viewportHeight <= 0f || coverTop !in -coverHeight..viewportHeight) return null
+    val historyLimit = historyHeight.coerceIn(0f, viewportHeight)
     if (coverTop == 0f) return 0f
-    if (coverTop == viewportHeight && hasHistory) return viewportHeight
+    if (coverTop == historyLimit && hasHistory) return historyLimit
     if (coverTop == -coverHeight && canPinUpcoming) return -coverHeight
     if (coverTop > 0f) {
-        val historyRevealThreshold = viewportHeight * 0.25f
+        val historyRevealThreshold = historyLimit * 0.25f
         return if (hasHistory && ((scrollDirection < 0 && coverTop >= historyRevealThreshold) ||
-                (scrollDirection == 0 && coverTop >= viewportHeight / 2f))) viewportHeight else 0f
+                (scrollDirection == 0 && coverTop >= historyLimit / 2f))) historyLimit else 0f
     }
     return if (canPinUpcoming && (scrollDirection > 0 ||
             (scrollDirection == 0 && coverTop <= -coverHeight / 2f))) -coverHeight else 0f
@@ -649,15 +651,10 @@ fun PlayerQueuePage(
     val autoplaySectionIndex = if (autoplayEnabled) {
         playerQueueAutoplaySectionIndex(currentQueueIndex, autoplayQueueIndex, displayedEntries.size, inlineCurrent)
     } else displayedEntries.size
-    // Heading and filler precede history rows; the gap and zero-height sticky boundary precede the cover.
+    // Keep the spacer slot stable while history appears or disappears.
     val showHistorySection = historyEntries.isNotEmpty() || emptyHistoryPaddingPx > 0f
     val currentHeaderIndex = historyEntries.size + if (showHistorySection) 4 else 2
-    val historyPaddingPx = ceil(playerQueueHistoryPadding(
-        viewportHeight = viewportSize.height.toFloat(),
-        headingHeight = historyHeadingHeightPx.toFloat(),
-        rowsHeight = historyEntries.size * rowHeightPx,
-        gapHeight = historyGapPx,
-    ).toDouble()).toInt()
+    val historyHeightPx = historyHeadingHeightPx + historyEntries.size * rowHeightPx + historyGapPx
     val inlineHeaderHeightPx = if (currentEntry != null) {
         measuredHeaderHeightPx.takeIf { it > 0 }?.toFloat() ?: coverHeightPx
     } else 0f
@@ -1029,6 +1026,7 @@ fun PlayerQueuePage(
                 scrollDirection = direction,
                 hasHistory = historyEntries.isNotEmpty(),
                 canPinUpcoming = inlineContentHeightPx + tailHeightPx >= height + inlineHeaderHeightPx - 0.5f,
+                historyHeight = historyHeightPx,
             )
         },
     )
@@ -1184,7 +1182,7 @@ fun PlayerQueuePage(
                     item(key = "queue_history_padding") {
                         val padding = if (historyEntries.isEmpty()) {
                             (emptyHistoryPaddingPx - historyHeadingHeightPx).coerceAtLeast(0f)
-                        } else historyPaddingPx.toFloat()
+                        } else 0f
                         Spacer(Modifier.height(with(density) { padding.toDp() }))
                     }
                     items(count = historyEntries.size, key = { historyEntries[it].key }) { index ->
