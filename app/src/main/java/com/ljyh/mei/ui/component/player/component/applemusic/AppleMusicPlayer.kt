@@ -905,7 +905,14 @@ private fun Modifier.playerDetailPage(opacity: State<Float>, active: Boolean): M
             if (visible.value) placeable.place(0, 0)
         }
     }
-        .playerContentFade(opacity)
+        .graphicsLayer {
+            alpha = opacity.value
+            // One progress keeps fade and scale continuous when the switch reverses.
+            val scale = 0.92f + 0.08f * alpha
+            scaleX = scale
+            scaleY = scale
+            compositingStrategy = CompositingStrategy.ModulateAlpha
+        }
         .then(if (active) Modifier else Modifier.clearAndSetSemantics { })
         .pointerInput(active) {
             // Consume inactive-page gestures, including empty space, until its

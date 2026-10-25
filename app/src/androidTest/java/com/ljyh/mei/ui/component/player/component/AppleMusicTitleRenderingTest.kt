@@ -322,12 +322,14 @@ class AppleMusicTitleRenderingTest {
         }
     }
 
-    @Test fun detailCrossfadeReversesWithoutAJumpAndBlocksInactiveInput() {
+    @Test fun detailCrossfadeScalesInBothDirectionsAndReversesWithoutAJump() {
         compose.mainClock.autoAdvance = false
         val queueSelected = mutableStateOf(false)
         val active = mutableStateOf(true)
         var lyricClicks = 0
         var queueClicks = 0
+        var lyricCoordinates: LayoutCoordinates? = null
+        var queueCoordinates: LayoutCoordinates? = null
         compose.setContent {
             Box(Modifier.width(160.dp).height(240.dp).background(Color.Black).testTag("detail_host")) {
                 AppleMusicDetailPages(
@@ -337,10 +339,12 @@ class AppleMusicTitleRenderingTest {
                     preloadQueue = true,
                     modifier = Modifier.fillMaxSize(),
                     lyrics = {
-                        Box(Modifier.fillMaxSize().background(Color.Red).clickable { lyricClicks++ })
+                        Box(Modifier.fillMaxSize().onGloballyPositioned { lyricCoordinates = it }
+                            .background(Color.Red).clickable { lyricClicks++ })
                     },
                     queue = {
-                        Box(Modifier.fillMaxSize().background(Color.Blue).clickable { queueClicks++ })
+                        Box(Modifier.fillMaxSize().onGloballyPositioned { queueCoordinates = it }
+                            .background(Color.Blue).clickable { queueClicks++ })
                     },
                 )
             }
@@ -349,7 +353,10 @@ class AppleMusicTitleRenderingTest {
             val bitmap = compose.onNodeWithTag("detail_host").captureToImage()
             return bitmap.toPixelMap()[bitmap.width / 2, bitmap.height / 2]
         }
+        fun scale(coordinates: LayoutCoordinates?): Float =
+            requireNotNull(coordinates).let { it.boundsInRoot().width / it.size.width }
         compose.mainClock.advanceTimeBy(64)
+        assertEquals(1f, scale(lyricCoordinates), 0.001f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
             assertEquals(1, lyricClicks)
@@ -358,16 +365,24 @@ class AppleMusicTitleRenderingTest {
         }
         compose.mainClock.advanceTimeBy(48)
         val beforeIncoming = centerColor()
-        assertTrue("The outgoing page must start fading immediately", beforeIncoming.red in 0f..0.99f)
+        assertTrue("The outgoing page must start fading immediately", beforeIncoming.red > 0f && beforeIncoming.red < 1f)
         assertEquals("The incoming page must wait 50ms before fading in", 0f, beforeIncoming.blue, 0.01f)
+        val shrinkingLyrics = scale(lyricCoordinates)
+        assertTrue(shrinkingLyrics > 0.92f && shrinkingLyrics < 1f)
         compose.mainClock.advanceTimeBy(104)
         val outgoing = centerColor()
         assertTrue(outgoing.red > 0f && outgoing.blue > 0f)
+        val lyricScale = scale(lyricCoordinates)
+        val queueScale = scale(queueCoordinates)
+        assertTrue(lyricScale < shrinkingLyrics)
+        assertTrue(queueScale > 0.92f && queueScale < 1f)
         compose.runOnIdle { queueSelected.value = false }
         compose.mainClock.advanceTimeByFrame()
         val reversed = centerColor()
         assertEquals(outgoing.red, reversed.red, 0.02f)
         assertEquals(outgoing.blue, reversed.blue, 0.02f)
+        assertEquals(lyricScale, scale(lyricCoordinates), 0.002f)
+        assertEquals(queueScale, scale(queueCoordinates), 0.002f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
             assertEquals(0, queueClicks)
@@ -375,6 +390,7 @@ class AppleMusicTitleRenderingTest {
         }
         compose.mainClock.advanceTimeBy(700)
         assertEquals(1f, centerColor().red, 0.01f)
+        assertEquals(1f, scale(lyricCoordinates), 0.001f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
             assertEquals(2, lyricClicks)
@@ -386,6 +402,7 @@ class AppleMusicTitleRenderingTest {
         assertTrue("The incoming page must still be fading before 300ms", afterOutgoing.blue > 0f && afterOutgoing.blue < 1f)
         compose.mainClock.advanceTimeBy(128)
         assertEquals(1f, centerColor().blue, 0.01f)
+        assertEquals(1f, scale(queueCoordinates), 0.001f)
         compose.onNodeWithTag("detail_host").performTouchInput { click(center) }
         compose.runOnIdle {
             assertEquals(1, queueClicks)
