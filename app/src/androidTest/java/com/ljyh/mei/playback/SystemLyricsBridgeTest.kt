@@ -104,6 +104,77 @@ class SystemLyricsBridgeTest {
     }
 
     @Test
+    fun externalLyricsPreserveSharingArtworkAndPlaybackAndRestoreTheLatestTitle() = withSession { fixture ->
+        val bitmap = Bitmap.createBitmap(12, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
+        val state = state(PlaybackState.STATE_PAUSED, 2_500)
+        onMain {
+            fixture.platform.setMetadata(metadata("song-1")
+                .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap)
+                .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, bitmap).build())
+            fixture.platform.setPlaybackState(state)
+            fixture.publisher.setLyrics("song-1", TRANSLATED_PAYLOAD, hasTranslation = true)
+            fixture.publisher.setExternalLyrics("song-1", "Current lyric")
+        }
+        await("External lyrics, shared lyrics and legacy artwork must coexist") {
+            fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Current lyric" &&
+                fixture.metadata.getString("lyricInfo") == TRANSLATED_PAYLOAD &&
+                fixture.metadata.getBitmap(MediaMetadata.METADATA_KEY_ART) != null && fixture.hasTranslationAction()
+        }
+        assertTrue(bitmap.sameAs(fixture.metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)))
+        assertStateFields(state, fixture.playbackState)
+        onMain { fixture.publisher.setExternalLyrics(null, null) }
+        await("Disabling external lyrics must leave lyric sharing enabled") {
+            fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Example song" &&
+                fixture.metadata.getString("lyricInfo") == TRANSLATED_PAYLOAD && fixture.hasTranslationAction()
+        }
+        onMain { fixture.publisher.setExternalLyrics("song-1", "Current lyric") }
+        onMain {
+            fixture.platform.setMetadata(metadata("song-1")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Updated song title")
+                .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap).build())
+        }
+        await("Media3 metadata refresh must retain both lyric outputs") {
+            fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Current lyric" &&
+                fixture.metadata.getString("lyricInfo") == TRANSLATED_PAYLOAD
+        }
+        onMain { fixture.publisher.setLyrics(null, null) }
+        await("Disabling sharing must leave external lyrics and artwork intact") {
+            fixture.metadata.getString("lyricInfo") == null &&
+                fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Current lyric" && !fixture.hasTranslationAction()
+        }
+        onMain { fixture.publisher.setExternalLyrics(null, null) }
+        await("Disabling external lyrics must restore the latest host title") {
+            fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Updated song title"
+        }
+        assertTrue(bitmap.sameAs(fixture.metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)))
+        assertStateFields(state, fixture.playbackState)
+        onMain {
+            fixture.publisher.setExternalLyrics("song-1", "Old song lyric")
+            fixture.platform.setMetadata(metadata("song-2").build())
+        }
+        await("A previous song's lyric must not overwrite the new song") {
+            fixture.metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "song-2" &&
+                fixture.metadata.getString(MediaMetadata.METADATA_KEY_TITLE) == "Example song"
+        }
+        assertNull(fixture.metadata.getBitmap(MediaMetadata.METADATA_KEY_ART))
+    }
+
+    @Test
+    fun legacyTransportPermissionRetainsReadAccessWithoutGrantingQueueEditing() {
+        val defaults = Player.Commands.Builder().addAllReadOnlyCommands().build()
+        val commands = externalTransportCommands(defaults)
+        for (index in 0 until defaults.size()) assertTrue(commands.contains(defaults[index]))
+        listOf(Player.COMMAND_PLAY_PAUSE, Player.COMMAND_PREPARE, Player.COMMAND_STOP,
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            Player.COMMAND_SET_MEDIA_ITEM).forEach { assertTrue(commands.contains(it)) }
+        assertFalse(commands.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
+        assertEquals(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS,
+            externalTransportCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS))
+    }
+
+    @Test
     fun preservesTypedMetadataArtworkAndPlaybackFieldsAcrossUpdates() = withSession { fixture ->
         val bitmap = Bitmap.createBitmap(12, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.MAGENTA) }
         val rating = Rating.newHeartRating(true)

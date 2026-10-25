@@ -1,15 +1,22 @@
 package com.ljyh.mei.playback
 
+import android.os.Bundle
+import android.media.session.PlaybackState
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.session.MediaSession
+import androidx.media3.session.PlatformLyricsSessionAccess
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.createPlaceholder
@@ -40,6 +47,79 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackQueueIntegrationTest {
+    @Test
+    fun legacyMediaControlsCanSkipSelectPauseAndSeekWithoutReplacingTheQueue() {
+        Fixture().use { fixture ->
+            val session = onMain {
+                MediaSession.Builder(InstrumentationRegistry.getInstrumentation().targetContext, fixture.player)
+                    .setCallback(object : MediaSession.Callback {
+                        override fun onConnectAsync(session: MediaSession, controller: MediaSession.ControllerInfo) =
+                            Futures.immediateFuture(MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                                .setAvailablePlayerCommands(externalTransportCommands(
+                                    Player.Commands.Builder().addAllReadOnlyCommands().build(),
+                                )).build())
+
+                        override fun onSetMediaItems(
+                            mediaSession: MediaSession,
+                            controller: MediaSession.ControllerInfo,
+                            mediaItems: List<MediaItem>,
+                            startIndex: Int,
+                            startPositionMs: Long,
+                        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
+                            externalQueueSelection(fixture.player, mediaItems, startPositionMs)?.let { Futures.immediateFuture(it) }
+                                ?: super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
+                    }).build().also { session ->
+                        fixture.player.isExternalMediaRequest = {
+                            session.controllerForCurrentRequest?.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+                        }
+                    }
+            }
+            fun await(matches: () -> Boolean) = runBlocking {
+                withTimeout(5_000) { while (!onMain(matches)) delay(10) }
+            }
+            try {
+                val platform = onMain { PlatformLyricsSessionAccess.get(session) }
+                val transport = platform.controller.transportControls
+                val source = PlaylistQueueSource(42L, "Playlist")
+                val before = onMain {
+                    fixture.manager.restorePlaylistSource(source)
+                    fixture.player.prepare()
+                    fixture.items() to fixture.player.playbackOrderIndices(true)
+                }
+                await { fixture.player.playbackState == Player.STATE_READY }
+                onMain {
+                    val actions = requireNotNull(platform.controller.playbackState).actions
+                    assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+                    assertTrue(actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+                    assertTrue(actions and PlaybackState.ACTION_SEEK_TO != 0L)
+                }
+                onMain { transport.skipToNext() }
+                await { fixture.player.currentMediaItemIndex == before.second[1] }
+                onMain { transport.skipToPrevious() }
+                await { fixture.player.currentMediaItemIndex == before.second[0] }
+                onMain { transport.skipToQueueItem(4) }
+                await { fixture.player.currentMediaItemIndex == 4 }
+                onMain { transport.playFromMediaId("6", Bundle.EMPTY) }
+                await { fixture.player.currentMediaItemIndex == 5 && fixture.player.isPlaying }
+                onMain { transport.pause() }
+                await { !fixture.player.playWhenReady }
+                onMain { transport.seekTo(200L) }
+                await { fixture.player.currentPosition == 200L }
+                onMain {
+                    assertEquals(before.first, fixture.items())
+                    assertEquals(before.second, fixture.player.playbackOrderIndices(true))
+                    assertEquals(source, fixture.manager.playlistSource)
+                    assertTrue(fixture.player.shuffleModeEnabled)
+                    assertEquals(Player.REPEAT_MODE_ALL, fixture.player.repeatMode)
+                    assertEquals(null, externalQueueSelection(fixture.player,
+                        listOf(MediaItem.Builder().setMediaId("missing").build()), C.TIME_UNSET))
+                }
+            } finally {
+                onMain { session.release() }
+            }
+        }
+    }
+
     @Test
     fun refreshingPlaybackSourcesRecreatesQueuedSourcesAndPreservesPausedShuffleState() {
         Fixture().use { fixture ->

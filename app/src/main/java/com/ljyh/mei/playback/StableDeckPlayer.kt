@@ -1,15 +1,69 @@
 package com.ljyh.mei.playback
 
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.ForwardingSimpleBasePlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ShuffleOrder
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import java.io.ByteArrayOutputStream
+
+/** Publishes external metadata through Media3 without changing the application's player or queue. */
+@UnstableApi
+internal class ExternalMediaPlayer(private val source: Player) : ForwardingSimpleBasePlayer(source) {
+    private var lyricMediaId: String? = null
+    private var lyric: String? = null
+    private var artworkMediaId: String? = null
+    private var artworkUri: Uri? = null
+    private var artworkData: ByteArray? = null
+
+    fun setExternalLyrics(mediaId: String?, lyric: String?) {
+        val text = lyric?.takeIf { it.isNotBlank() }
+        if (lyricMediaId == mediaId && this.lyric == text) return
+        lyricMediaId = mediaId
+        this.lyric = text
+        invalidateState()
+    }
+
+    fun setArtwork(mediaId: String?, bitmap: Bitmap) {
+        val metadata = source.mediaMetadata
+        if (mediaId == null || mediaId != source.currentMediaItem?.mediaId || metadata.artworkData != null) return
+        // Ignore the bitmap decoded from our own bytes on subsequent platform metadata updates.
+        if (artworkMediaId == mediaId && artworkUri == metadata.artworkUri && artworkData != null) return
+        val data = ByteArrayOutputStream().use { output ->
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) return
+            output.toByteArray()
+        }
+        artworkMediaId = mediaId
+        artworkUri = metadata.artworkUri
+        artworkData = data
+        invalidateState()
+    }
+
+    override fun getState(): State {
+        val state = super.getState()
+        val mediaId = source.currentMediaItem?.mediaId
+        val title = lyric.takeIf { mediaId != null && mediaId == lyricMediaId }
+        val artwork = artworkData.takeIf {
+            mediaId != null && mediaId == artworkMediaId && state.currentMetadata.artworkUri == artworkUri
+        }
+        if (title == null && artwork == null) return state
+        val metadata = state.currentMetadata.buildUpon().apply {
+            if (title != null) setTitle(title)
+            if (artwork != null && state.currentMetadata.artworkData == null) {
+                setArtworkData(artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            }
+        }.build()
+        return state.buildUpon().setPlaylist(state.timeline, state.currentTracks, metadata).build()
+    }
+}
 
 /**
  * Stable player identity for MediaSession and application consumers while two ExoPlayer decks
@@ -28,6 +82,7 @@ class StableDeckPlayer(
     private var internalQueueUpdateDepth = 0
     internal var onQueueEdited: ((replaced: Boolean) -> Unit)? = null
     internal var onSeekRequested: (() -> Unit)? = null
+    internal var isExternalMediaRequest: (() -> Boolean)? = null
 
     internal fun <T> withInternalQueueUpdate(block: () -> T): T {
         internalQueueUpdateDepth++
@@ -72,6 +127,13 @@ class StableDeckPlayer(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        // Selecting an existing queue by media ID must not rebuild it or reset its shuffle order.
+        if (isExternalMediaRequest?.invoke() == true && startIndex in mediaItems.indices &&
+            mediaItems.size == activeDeck.mediaItemCount &&
+            mediaItems.indices.all { mediaItems[it] == activeDeck.getMediaItemAt(it) }
+        ) {
+            return handleSeek(startIndex, startPositionMs, Player.COMMAND_SEEK_TO_MEDIA_ITEM)
+        }
         notifyQueueEdit(replaced = true)
         return super.handleSetMediaItems(mediaItems.map { it.withQueueEntryId() }, startIndex, startPositionMs)
     }
@@ -160,15 +222,28 @@ class StableDeckPlayer(
         seekCommand: Int,
     ): ListenableFuture<*> {
         if (internalQueueUpdateDepth == 0) onSeekRequested?.invoke()
-        if (seekCommand == Player.COMMAND_SEEK_TO_PREVIOUS) {
+        val result = if (seekCommand == Player.COMMAND_SEEK_TO_PREVIOUS) {
             if (activeDeck.hasPreviousMediaItem()) {
                 activeDeck.seekToPreviousMediaItem()
             } else {
                 activeDeck.seekTo(0L)
             }
-            return Futures.immediateVoidFuture()
+            Futures.immediateVoidFuture()
+        } else {
+            super.handleSeek(mediaItemIndex, positionMs, seekCommand)
         }
-        return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
+        // External track selections start playback; in-track seeks retain the current state.
+        if (isExternalMediaRequest?.invoke() == true && activeDeck.mediaItemCount > 0 &&
+            (seekCommand == Player.COMMAND_SEEK_TO_PREVIOUS ||
+                seekCommand == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ||
+                seekCommand == Player.COMMAND_SEEK_TO_NEXT ||
+                seekCommand == Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM ||
+                seekCommand == Player.COMMAND_SEEK_TO_MEDIA_ITEM)
+        ) {
+            if (activeDeck.playbackState == Player.STATE_IDLE) activeDeck.prepare()
+            activeDeck.play()
+        }
+        return result
     }
 
     override fun handleRelease(): ListenableFuture<*> {

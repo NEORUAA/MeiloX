@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -112,8 +113,16 @@ internal fun notificationButton(
 }
 
 /** Keeps side actions on either side of transport controls in notification-based system UIs. */
-internal class PlaybackNotificationProvider(private val context: Context, notificationId: Int, channelId: String) :
+internal class PlaybackNotificationProvider(
+    private val context: Context,
+    notificationId: Int,
+    channelId: String,
+    private val songTitle: () -> CharSequence?,
+) :
     DefaultMediaNotificationProvider(context, { notificationId }, channelId, R.string.app_name_en) {
+    override fun getNotificationContentTitle(metadata: MediaMetadata): CharSequence? =
+        songTitle() ?: super.getNotificationContentTitle(metadata)
+
     override fun addNotificationActions(
         mediaSession: MediaSession,
         mediaButtons: ImmutableList<CommandButton>,
