@@ -3,6 +3,7 @@ package com.ljyh.mei.ui.component.player.component.mesh
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import android.view.ViewGroup
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -27,8 +28,9 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -36,11 +38,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.ljyh.mei.playback.PlaybackBeatMeter
+import com.ljyh.mei.MainActivity
 import com.ljyh.mei.ui.component.player.LocalPlayerBackgroundReadyChanged
 import com.ljyh.mei.ui.component.player.component.FluidBackground
 import java.io.File
+import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
@@ -54,12 +63,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MeshStaticFrameTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Before
+    fun replaceActivityContentWithTheRenderingFixture() {
+        compose.runOnUiThread {
+            val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
+            repeat(content.childCount) { index ->
+                (content.getChildAt(index) as? AbstractComposeView)?.disposeComposition()
+            }
+            content.removeAllViews()
+        }
+    }
 
     @Test
     fun modulatedMeshPresentationPreservesCrossfadesAndUnfadedBackdropSampling() {
@@ -339,7 +360,34 @@ class MeshStaticFrameTest {
         }
         val first = cover(Color.rgb(210, 80, 40))
         val second = cover(Color.rgb(40, 80, 210))
-        val imageUrl = mutableStateOf<String?>(null)
+        val server = ServerSocket(0)
+        val requestStarted = CountDownLatch(1)
+        val releaseCover = CountDownLatch(1)
+        val responseFailure = AtomicReference<Exception?>()
+        val activeSocket = AtomicReference<Socket?>()
+        val responseThread = thread(isDaemon = true, name = "mesh-cover-response") {
+            try {
+                server.accept().use { socket ->
+                    activeSocket.set(socket)
+                    socket.soTimeout = 10_000
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { }
+                    requestStarted.countDown()
+                    check(releaseCover.await(10, TimeUnit.SECONDS))
+                    val bytes = first.readBytes()
+                    socket.getOutputStream().apply {
+                        write(("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n" +
+                            "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n").toByteArray())
+                        write(bytes)
+                        flush()
+                    }
+                }
+            } catch (error: Exception) {
+                if (!server.isClosed) responseFailure.set(error)
+            }
+        }
+        val firstUrl = "http://127.0.0.1:${server.localPort}/cover.png"
+        val imageUrl = mutableStateOf<String?>(firstUrl)
         val visible = mutableStateOf(true)
         val events = CopyOnWriteArrayList<Boolean>()
         val beatMeter = PlaybackBeatMeter()
@@ -347,6 +395,14 @@ class MeshStaticFrameTest {
             val image = compose.onNodeWithTag("fluidBackground").captureToImage()
             val pixels = IntArray(image.width * image.height).also { image.readPixels(it) }
             return pixels.sumOf { Color.red(it) - Color.blue(it) }.toDouble() / pixels.size
+        }
+        fun assertGrayPlaceholder() {
+            val image = compose.onNodeWithTag("fluidBackground").captureToImage()
+            val pixels = IntArray(image.width * image.height).also { image.readPixels(it) }
+            assertTrue("The gray album must completely cover the underlying page", pixels.all {
+                Color.alpha(it) == 255 && abs(Color.red(it) - Color.green(it)) <= 2 &&
+                    abs(Color.red(it) - Color.blue(it)) <= 2 && Color.red(it) in 24..220
+            })
         }
         compose.mainClock.autoAdvance = false
         try {
@@ -356,7 +412,7 @@ class MeshStaticFrameTest {
                     LocalPlayerBackgroundReadyChanged provides { events += it },
                 ) {
                     if (visible.value) {
-                        Box(Modifier.size(96.dp).background(ComposeColor.Black).testTag("fluidBackground")) {
+                        Box(Modifier.size(96.dp).background(ComposeColor.Green).testTag("fluidBackground")) {
                             FluidBackground(
                                 imageUrl = imageUrl.value,
                                 beatMeter = beatMeter,
@@ -367,27 +423,27 @@ class MeshStaticFrameTest {
                     }
                 }
             }
-            compose.runOnIdle {
-                assertTrue("A background without an album must report not ready", events.isNotEmpty())
-                assertTrue("An empty background must never report ready", events.none { it })
-                imageUrl.value = first.toURI().toString()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                requestStarted.count == 0L && events.any { it }
             }
+            assertGrayPlaceholder()
+            val notReadyCount = events.count { !it }
+            releaseCover.countDown()
             var enteringBalance = 0.0
             compose.waitUntil(timeoutMillis = 10_000) {
                 compose.mainClock.advanceTimeByFrame()
                 enteringBalance = redBlueBalance()
                 enteringBalance > 5
             }
-            assertTrue("The underlying page must remain visible during the first reveal", events.none { it })
             compose.waitUntil(timeoutMillis = 10_000) {
-                compose.mainClock.advanceTimeByFrame()
-                events.any { it }
+                compose.mainClock.advanceTimeBy(100)
+                redBlueBalance() > 40
             }
             val settledBalance = redBlueBalance()
-            assertTrue("The first mesh must fade in instead of appearing at full opacity",
+            assertTrue("The real cover must crossfade from the gray album",
                 settledBalance > enteringBalance + 5)
             assertTrue("The ready background must display the first cover", settledBalance > 40)
-            val notReadyCount = events.count { !it }
             compose.runOnIdle { imageUrl.value = second.toURI().toString() }
             compose.waitUntil(timeoutMillis = 10_000) {
                 compose.mainClock.advanceTimeBy(100)
@@ -396,13 +452,49 @@ class MeshStaticFrameTest {
             assertEquals("Replacing an album must retain the ready background", notReadyCount,
                 events.count { !it })
 
+            compose.runOnIdle {
+                imageUrl.value = File(context.cacheDir, "missing-mesh-cover.png").toURI().toString()
+            }
+            compose.waitUntil(timeoutMillis = 10_000) {
+                compose.mainClock.advanceTimeBy(100)
+                abs(redBlueBalance()) < 1
+            }
+            assertGrayPlaceholder()
+            compose.runOnIdle { imageUrl.value = "" }
+            compose.mainClock.advanceTimeBy(1_000)
+            assertGrayPlaceholder()
+            assertEquals("Missing and failed covers must retain the ready gray background", notReadyCount,
+                events.count { !it })
+            compose.runOnIdle { imageUrl.value = null }
+            compose.mainClock.advanceTimeByFrame()
+            assertGrayPlaceholder()
+
             compose.runOnIdle { visible.value = false }
             compose.mainClock.advanceTimeByFrame()
             compose.runOnIdle {
                 assertEquals("Disposal must publish not ready", false, events.last())
                 assertEquals(notReadyCount + 1, events.count { !it })
             }
+            events.clear()
+            compose.runOnIdle {
+                imageUrl.value = firstUrl
+                visible.value = true
+            }
+            compose.waitUntil(timeoutMillis = 10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                events.any { it }
+            }
+            compose.waitUntil(timeoutMillis = 10_000) {
+                compose.mainClock.advanceTimeBy(100)
+                redBlueBalance() > 40
+            }
+            responseThread.join(1_000)
+            responseFailure.get()?.let { throw AssertionError("Could not serve the delayed cover", it) }
         } finally {
+            releaseCover.countDown()
+            server.close()
+            activeSocket.get()?.close()
+            responseThread.join(1_000)
             first.delete()
             second.delete()
         }

@@ -1,8 +1,6 @@
 package com.ljyh.mei.ui.component.player.component
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.tween
+import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -16,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -75,15 +74,33 @@ fun FluidBackground(
     val currentSubdivision by rememberUpdatedState(subdivision)
     val renderer = remember { MeshGradientRenderer() }
     val meshLayer = rememberGraphicsLayer()
-    val initialReveal = remember { Animatable(0f) }
     val frameVersion = remember { mutableIntStateOf(0) }
     val shouldAnimate = !meshPlaying || isPlaying
     val audioReactive = backgroundActive && expanded && isPlaying && !staticMode && sensitivity > 0f
 
-    // Prepare each album and its exclusive shader off main. After publication,
-    // only the renderer updates uniforms; the previous album stays visible meanwhile.
-    val album by produceState<MeshAlbum?>(null, imageUrl) {
-        if (imageUrl.isNullOrEmpty()) return@produceState
+    // Each renderer owns its gray album's mutable shader. Prepare it once, off main,
+    // so loading and failed artwork use the same mesh pipeline as real covers.
+    val placeholderAlbum by produceState<MeshAlbum?>(null, renderer) {
+        val preparedSubdivision = currentSubdivision
+        value = withContext(Dispatchers.Default) {
+            val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(0xFF808080.toInt())
+            }
+            try {
+                MeshGradientRenderer.prepareAlbum(bitmap, preparedSubdivision)
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    // Keep the current album while the next request loads. Missing or failed
+    // artwork falls back to gray without making the player transparent.
+    val loadedAlbum by produceState<MeshAlbum?>(null, imageUrl) {
+        if (imageUrl.isNullOrBlank()) {
+            value = null
+            return@produceState
+        }
         val result = context.imageLoader.execute(
             ImageRequest.Builder(context)
                 .data(imageUrl)
@@ -91,12 +108,13 @@ fun FluidBackground(
                 .allowHardware(false)
                 .build(),
         )
-        if (result is SuccessResult) {
-            value = withContext(Dispatchers.Default) {
+        value = if (result is SuccessResult) {
+            withContext(Dispatchers.Default) {
                 MeshGradientRenderer.prepareAlbum(result.image.toBitmap(), currentSubdivision)
             }
-        }
+        } else null
     }
+    val album = loadedAlbum ?: placeholderAlbum
 
     LaunchedEffect(renderer, flowSpeed, staticMode, shouldAnimate) {
         renderer.flowSpeed = flowSpeed
@@ -108,17 +126,7 @@ fun FluidBackground(
     LaunchedEffect(renderer, album) {
         album?.let(renderer::setAlbum)
         frameVersion.intValue++
-        if (renderer.hasAlbum && initialReveal.value < 1f) {
-            if (backgroundActive) {
-                initialReveal.animateTo(
-                    1f,
-                    tween(durationMillis = 200, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
-                )
-            } else {
-                initialReveal.snapTo(1f)
-            }
-        }
-        // Keep the underlying page until the first visible mesh is fully opaque.
+        // Publish readiness after a complete mesh is available, including the placeholder.
         onBackgroundReadyChanged(renderer.hasAlbum)
     }
 
@@ -157,7 +165,7 @@ fun FluidBackground(
             .graphicsLayer {
                 // The mesh renderer already flattens album crossfades into one texture.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
-                this.alpha = alpha.coerceIn(0f, 1f) * initialReveal.value *
+                this.alpha = alpha.coerceIn(0f, 1f) *
                     (sheet?.state?.progress?.let(::playerBackgroundAlpha) ?: 1f)
             },
     ) {
@@ -170,6 +178,10 @@ fun FluidBackground(
                     frameVersion.intValue
                     if (renderer.hasAlbum) {
                         renderer.draw(this, meshLayer, renderScale)
+                    } else {
+                        // Match the neutral cover after the texture processor's 0.75 brightness
+                        // while its first shader is prepared, without exposing the page below.
+                        drawRect(Color(0xFF606060))
                     }
                 },
         )
