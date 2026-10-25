@@ -9,6 +9,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.LibraryAccount
 import com.ljyh.mei.data.repository.LibraryCollectionPage
 import com.ljyh.mei.data.repository.LibraryCollectionsRepository
+import com.ljyh.mei.data.repository.PlayerRepository
 import com.ljyh.mei.data.repository.PlaylistRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.ui.model.Album
@@ -25,6 +26,7 @@ class LibraryViewModel @Inject constructor(
     private val collections: LibraryCollectionsRepository,
     private val localPlaylistRepository: LocalPlaylistRepository,
     private val playlistRepository: PlaylistRepository,
+    private val playerRepository: PlayerRepository,
 ) : ViewModel() {
     private val _accountId = MutableStateFlow<String?>(null)
     val accountId = _accountId.asStateFlow()
@@ -72,6 +74,11 @@ class LibraryViewModel @Inject constructor(
         }
         viewModelScope.launch {
             playlistRepository.collectionChanges.collect { refreshPlaylists() }
+        }
+        viewModelScope.launch {
+            playerRepository.likeChanges.collect {
+                likedPlaylistId?.let(::loadLikedSongs)
+            }
         }
     }
 

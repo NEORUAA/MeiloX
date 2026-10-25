@@ -457,9 +457,7 @@ class GlassBottomBarInteractionTest {
         showBar()
 
         fun iconBounds(): Map<String, Rect> = items.value.associate { item ->
-            // The separate selected item is painted after its transparent row placeholder.
-            item.key to compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
-                .fetchSemanticsNodes().last().boundsInRoot
+            item.key to visibleTabIconBounds(item)
         }
 
         fun assertRestingCenters(expected: Map<String, Rect>) {
@@ -501,8 +499,8 @@ class GlassBottomBarInteractionTest {
                             }
                         }
                         val pressed = iconBounds()
-                        // The 64dp panel expands by 16dp, independently of density.
-                        val scale = 1f + barBounds.height / (4f * barBounds.width)
+                        // Press expansion is a fixed 16dp, independent of the surface height.
+                        val scale = 1f + with(compose.density) { 16.dp.toPx() } / barBounds.width
                         before.filterKeys { !appearance.usesRefraction || it != selected.key }.forEach { (key, bounds) ->
                             val expectedCenter = barBounds.center.x +
                                 (bounds.center.x - barBounds.center.x) * scale
@@ -526,10 +524,6 @@ class GlassBottomBarInteractionTest {
         glassAppearance.value = GlassAppearance()
         showBar()
 
-        fun iconBounds(item: GlassTabItem<String>): Rect =
-            compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
-                .fetchSemanticsNodes().last().boundsInRoot
-
         try {
             listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { direction ->
                 listOf(home, library).forEach { outgoing ->
@@ -542,10 +536,11 @@ class GlassBottomBarInteractionTest {
                     compose.waitForIdle()
                     val bar = compose.onNodeWithTag("bottomBar")
                     val barBounds = bar.fetchSemanticsNode().boundsInRoot
-                    val outgoingBefore = iconBounds(outgoing)
-                    val incomingBefore = iconBounds(incoming)
-                    val middleBefore = iconBounds(radio)
-                    val scale = 1f + barBounds.height / (4f * barBounds.width)
+                    val outgoingBefore = visibleTabIconBounds(outgoing)
+                    val incomingBefore = visibleTabIconBounds(incoming)
+                    val middleBefore = visibleTabIconBounds(radio)
+                    // Press expansion is a fixed 16dp, independent of the surface height.
+                    val scale = 1f + with(compose.density) { 16.dp.toPx() } / barBounds.width
                     val startX = outgoingBefore.center.x - barBounds.left
                     val toRight = incomingBefore.center.x > outgoingBefore.center.x
                     val destinationX = if (toRight) 2f * barBounds.width else -barBounds.width
@@ -556,11 +551,11 @@ class GlassBottomBarInteractionTest {
                     fun dragAwayAndAssert() {
                         bar.performTouchInput { moveTo(Offset(destinationX, center.y)) }
                         compose.mainClock.advanceTimeBy(700L)
-                        val commonShift = iconBounds(radio).center.x - middleBefore.center.x
+                        val commonShift = visibleTabIconBounds(radio).center.x - middleBefore.center.x
                         val expectedOutgoing = barBounds.center.x +
                             (outgoingBefore.center.x - barBounds.center.x) * scale + commonShift
-                        assertEquals("Departed icon follows the panel while held", expectedOutgoing, iconBounds(outgoing).center.x, 0.75f)
-                        assertEquals("Incoming icon is already centered before commit", incomingBefore.center.x + commonShift, iconBounds(incoming).center.x, 0.75f)
+                        assertEquals("Departed icon follows the panel while held", expectedOutgoing, visibleTabIconBounds(outgoing).center.x, 0.75f)
+                        assertEquals("Incoming icon is already centered before commit", incomingBefore.center.x + commonShift, visibleTabIconBounds(incoming).center.x, 0.75f)
                         compose.runOnIdle {
                             assertEquals(outgoing.key, selectedKey.value)
                             assertTrue("Dragging must not navigate", selections.isEmpty())
@@ -570,8 +565,8 @@ class GlassBottomBarInteractionTest {
                     dragAwayAndAssert()
                     bar.performTouchInput { moveTo(Offset(startX, center.y)) }
                     compose.mainClock.advanceTimeBy(700L)
-                    val commonShift = iconBounds(radio).center.x - middleBefore.center.x
-                    assertEquals("Reversing reanchors the original icon", outgoingBefore.center.x + commonShift, iconBounds(outgoing).center.x, 0.75f)
+                    val commonShift = visibleTabIconBounds(radio).center.x - middleBefore.center.x
+                    assertEquals("Reversing reanchors the original icon", outgoingBefore.center.x + commonShift, visibleTabIconBounds(outgoing).center.x, 0.75f)
                     dragAwayAndAssert()
                     bar.performTouchInput { up() }
                     compose.mainClock.autoAdvance = true
@@ -616,8 +611,7 @@ class GlassBottomBarInteractionTest {
                         val bar = compose.onNodeWithTag("bottomBar")
                         val barBounds = bar.fetchSemanticsNode().boundsInRoot
                         fun center(item: GlassTabItem<String>): Offset {
-                            val icon = compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
-                                .fetchSemanticsNodes().last().boundsInRoot
+                            val icon = visibleTabIconBounds(item)
                             return Offset(icon.center.x - barBounds.left, barBounds.height / 2f)
                         }
                         val start = center(outgoing)
@@ -2009,6 +2003,14 @@ class GlassBottomBarInteractionTest {
             assertTrue("$label reference must contain visible inner shadows", tone(rim) - tone(band) >= 3f / 255f)
         }
     }
+
+    private fun visibleTabIconBounds(item: GlassTabItem<String>): Rect =
+        compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
+            .fetchSemanticsNodes().last { node ->
+                // The unmerged tree retains the invisible lens source beneath clearing semantics.
+                // The visible selected overlay follows its transparent row placeholder.
+                generateSequence(node.parent) { it.parent }.none { it.config.isClearingSemantics }
+            }.boundsInRoot
 
     private fun showBar() {
         compose.setContent {

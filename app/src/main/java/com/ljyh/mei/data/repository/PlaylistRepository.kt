@@ -352,6 +352,7 @@ class PlaylistRepository(
                     }
                 }
                 if (subscriptionAccount() != account) return@withContext Resource.Error("NetEase account changed during playlist update")
+                _collectionChanges.emit(Unit)
             }
             result
         }
@@ -422,13 +423,18 @@ class PlaylistRepository(
     suspend fun deletePlaylist(
         id: String
     ): Resource<BaseMessageResponse> {
-        return withContext(Dispatchers.IO) {
+        val account = subscriptionAccount()
+        return withContext(ioDispatcher) {
             safeApiCall {
                 apiService.deletePlaylist(
                     DeletePlaylist(
                         ids = "[$id]"
                     )
-                )
+                ).also {
+                    if (it.code == 200 && account.isNotBlank() && subscriptionAccount() == account) {
+                        _collectionChanges.emit(Unit)
+                    }
+                }
             }
         }
     }

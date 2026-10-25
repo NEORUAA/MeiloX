@@ -23,8 +23,11 @@ import com.ljyh.mei.data.model.api.CheckSongLike
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,6 +47,8 @@ class PlayerRepository(
     private var likeGeneration = 0L
     private val _songLikes = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val songLikes: StateFlow<Map<String, Boolean>> = _songLikes.asStateFlow()
+    private val _likeChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val likeChanges = _likeChanges.asSharedFlow()
     private val _songLikeGeneration = MutableStateFlow(0L)
     val songLikeGeneration: StateFlow<Long> = _songLikeGeneration.asStateFlow()
 
@@ -180,7 +185,7 @@ class PlayerRepository(
                     check(response.code == 200) { "Unable to update song like (${response.code})" }
                     !current
                 }
-                if (result is Resource.Success && !publishSongLike(key, result.data, generation)) {
+                if (result is Resource.Success && !publishSongLike(key, result.data, generation, notifyChange = true)) {
                     return@withLock accountChangedLikeResult()
                 }
                 result
@@ -327,10 +332,11 @@ class PlayerRepository(
     private fun isLikeGenerationCurrent(generation: Long): Boolean =
         synchronized(likeStateLock) { likeGeneration == generation }
 
-    private fun publishSongLike(id: String, liked: Boolean, generation: Long): Boolean =
+    private fun publishSongLike(id: String, liked: Boolean, generation: Long, notifyChange: Boolean = false): Boolean =
         synchronized(likeStateLock) {
             if (likeGeneration != generation) return@synchronized false
             _songLikes.value = _songLikes.value + (id to liked)
+            if (notifyChange) _likeChanges.tryEmit(Unit)
             true
         }
 

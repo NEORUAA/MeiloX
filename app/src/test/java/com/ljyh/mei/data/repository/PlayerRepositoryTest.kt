@@ -14,7 +14,11 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -43,16 +47,32 @@ class PlayerRepositoryTest {
             }
         }
 
-        assertEquals(Resource.Success(false), fixture.repository.toggleLike("123", expectedSession))
-        assertEquals(mapOf("123" to false), fixture.repository.songLikes.value)
-        assertEquals(2, fixture.requests.size)
-        fixture.requests.forEach { assertEquals(expectedSession, it.header(NETEASE_EXPECTED_SESSION_HEADER)) }
-        assertFalse(fixture.body(1)["like"].asBoolean)
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            fixture.repository.likeChanges.collect { changes++ }
+        }
+        try {
+            assertEquals(Resource.Success(false), fixture.repository.toggleLike("123", expectedSession))
+            assertEquals(mapOf("123" to false), fixture.repository.songLikes.value)
+            assertEquals(2, fixture.requests.size)
+            fixture.requests.forEach { assertEquals(expectedSession, it.header(NETEASE_EXPECTED_SESSION_HEADER)) }
+            assertFalse(fixture.body(1)["like"].asBoolean)
+            yield()
+            assertEquals(1, changes)
+            assertTrue(fixture.repository.likeChanges.replayCache.isEmpty())
 
-        responseCode = 301
-        assertTrue(fixture.repository.toggleLike("123", expectedSession) is Resource.Error)
-        assertEquals(mapOf("123" to false), fixture.repository.songLikes.value)
-        assertEquals(3, fixture.requests.size)
+            responseCode = 301
+            assertTrue(fixture.repository.toggleLike("123", expectedSession) is Resource.Error)
+            assertEquals(mapOf("123" to false), fixture.repository.songLikes.value)
+            assertEquals(3, fixture.requests.size)
+            assertEquals(Resource.Success(true), fixture.repository.checkSongLike(123, expectedSession))
+            assertEquals(Resource.Success(Unit), fixture.repository.refreshSongLikes(setOf(123L), expectedSession))
+            fixture.repository.resetLikeState()
+            yield()
+            assertEquals(1, changes)
+        } finally {
+            collector.cancelAndJoin()
+        }
     }
 
     @Test
@@ -139,6 +159,10 @@ class PlayerRepositoryTest {
             }
         }
         fixture.repository.checkSongLike(123, expectedSession)
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            fixture.repository.likeChanges.collect { changes++ }
+        }
         val toggle = async { fixture.repository.toggleLike("123", expectedSession) }
         writeStarted.await()
         try {
@@ -149,8 +173,11 @@ class PlayerRepositoryTest {
 
             assertTrue(toggle.await() is Resource.Error)
             assertTrue(fixture.repository.songLikes.value.isEmpty())
+            yield()
+            assertEquals(0, changes)
         } finally {
             releaseWrite.countDown()
+            collector.cancelAndJoin()
         }
     }
 
@@ -267,6 +294,10 @@ class PlayerRepositoryTest {
         }
         val session = neteaseSessionFingerprint("test-session")
         val playlists = fixture.playlistRepository()
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            playlists.collectionChanges.collect { changes++ }
+        }
         fixture.repository.ensureSongLikes(setOf(123L), session)
         assertEquals(false, fixture.repository.songLikes.value["123"])
 
@@ -282,6 +313,9 @@ class PlayerRepositoryTest {
         assertEquals(502, (playlists.manipulateTrack("add", "42", "123") as Resource.Success).data.code)
         assertEquals(true, fixture.repository.songLikes.value["123"])
         fixture.requests.forEach { assertEquals(session, it.header(NETEASE_EXPECTED_SESSION_HEADER)) }
+        yield()
+        assertEquals(4, changes)
+        collector.cancelAndJoin()
     }
 
     @Test
@@ -291,11 +325,19 @@ class PlayerRepositoryTest {
             else """{"code":301,"count":0,"cloudCount":0,"trackIds":"123"}"""
         }
         fixture.repository.ensureSongLikes(setOf(123L), neteaseSessionFingerprint("test-session"))
+        val playlists = fixture.playlistRepository()
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            playlists.collectionChanges.collect { changes++ }
+        }
 
-        assertEquals(301, (fixture.playlistRepository().manipulateTrack("add", "42", "123") as Resource.Success).data.code)
+        assertEquals(301, (playlists.manipulateTrack("add", "42", "123") as Resource.Success).data.code)
         assertEquals(mapOf("123" to false), fixture.repository.songLikes.value)
         assertEquals(0L, fixture.repository.songLikeGeneration.value)
         assertEquals(2, fixture.requests.size)
+        yield()
+        assertEquals(0, changes)
+        collector.cancelAndJoin()
     }
 
     @Test
@@ -379,6 +421,10 @@ class PlayerRepositoryTest {
         val session = neteaseSessionFingerprint(account)
         fixture.repository.ensureSongLikes(setOf(123L), session)
         val playlists = fixture.playlistRepository { account }
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            playlists.collectionChanges.collect { changes++ }
+        }
         val write = async { playlists.manipulateTrack("add", "42", "123") }
         writeStarted.await()
         try {
@@ -390,8 +436,41 @@ class PlayerRepositoryTest {
             assertTrue(fixture.repository.songLikes.value.isEmpty())
             assertEquals(2, fixture.requests.size)
             assertEquals(session, fixture.requests.last().header(NETEASE_EXPECTED_SESSION_HEADER))
+            yield()
+            assertEquals(0, changes)
         } finally {
             releaseWrite.countDown()
+            collector.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun playlistDeletionOnlyNotifiesSuccessfulWritesForTheCurrentAccount() = runBlocking {
+        var account = "test-session"
+        var responseCode = 200
+        var replaceAccount = false
+        val fixture = Fixture {
+            if (replaceAccount) account = "replacement-session"
+            """{"code":$responseCode,"message":"result"}"""
+        }
+        val playlists = fixture.playlistRepository { account }
+        var changes = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            playlists.collectionChanges.collect { changes++ }
+        }
+        try {
+            assertEquals(200, (playlists.deletePlaylist("42") as Resource.Success).data.code)
+            yield()
+            assertEquals(1, changes)
+            responseCode = 301
+            assertEquals(301, (playlists.deletePlaylist("42") as Resource.Success).data.code)
+            responseCode = 200
+            replaceAccount = true
+            assertEquals(200, (playlists.deletePlaylist("42") as Resource.Success).data.code)
+            yield()
+            assertEquals(1, changes)
+        } finally {
+            collector.cancelAndJoin()
         }
     }
 

@@ -90,7 +90,7 @@ private fun Modifier.compactMiniPlayerHorizontalPadding(
     compactProgress: State<Float>,
 ): Modifier = layout { measurable, constraints ->
     val progress = compactProgress.value.coerceIn(0f, 1f)
-    val horizontalPadding = (BottomBarHorizontalPadding + 60.dp * progress).roundToPx()
+    val horizontalPadding = (BottomBarHorizontalPadding + 56.dp * progress).roundToPx()
     val totalPadding = horizontalPadding * 2
     val childConstraints = constraints.copy(
         minWidth = (constraints.minWidth - totalPadding).coerceAtLeast(0),

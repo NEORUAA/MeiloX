@@ -1,9 +1,12 @@
 package com.ljyh.mei.ui.screen
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.ui.res.stringResource
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -22,6 +25,7 @@ import com.ljyh.mei.ui.screen.local.LocalSongListScreen
 import com.ljyh.mei.ui.screen.main.home.HomeHubScreen
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.screen.main.library.LibraryScreen
+import com.ljyh.mei.ui.screen.main.library.LibraryViewModel
 import com.ljyh.mei.ui.screen.playlist.EveryDay
 import com.ljyh.mei.ui.screen.playlist.PlaylistScreen
 import com.ljyh.mei.ui.screen.search.SearchResultScreen
@@ -383,7 +387,12 @@ fun navigationEntry(
 ) {
     when {
         route == Screen.Home.route -> HomeHubScreen()
-        route == Screen.Library.route -> LibraryScreen(isNavigationTab = isNavigationTab)
+        route == Screen.Library.route -> LibraryScreen(
+            viewModel = hiltViewModel<LibraryViewModel>(
+                viewModelStoreOwner = LocalActivity.current as ComponentActivity,
+            ),
+            isNavigationTab = isNavigationTab,
+        )
         route.startsWith("${Screen.LibraryCategory.route}/") -> {
             LibraryPage.entries.firstOrNull {
                 it.name == route.substringAfter("${Screen.LibraryCategory.route}/")
