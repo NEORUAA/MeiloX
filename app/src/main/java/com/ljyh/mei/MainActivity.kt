@@ -179,6 +179,7 @@ import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.syncPlaybackVisibility
 import com.ljyh.mei.ui.component.utils.appBarScrollBehavior
+import com.ljyh.mei.ui.component.utils.PageOverscrollHost
 import com.ljyh.mei.ui.component.utils.resetHeightOffset
 import com.ljyh.mei.ui.local.LocalDatabase
 import com.ljyh.mei.ui.local.LocalNavController
@@ -966,7 +967,7 @@ class MainActivity : ComponentActivity() {
                                                 CompositionLocalProvider(
                                                     LocalViewModelStoreOwner provides owner,
                                                 ) {
-                                                    entry.Content()
+                                                    PageOverscrollHost { entry.Content() }
                                                 }
                                             },
                                         )
