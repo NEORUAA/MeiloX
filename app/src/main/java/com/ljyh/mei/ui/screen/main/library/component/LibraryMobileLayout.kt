@@ -105,6 +105,7 @@ import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
 import com.ljyh.mei.ui.screen.podcast.PodcastTab
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.component.utils.pullToRefreshRebound
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
@@ -609,7 +610,7 @@ internal fun LibraryCollectionRefresh(
             state = state,
         ),
     ) {
-        content()
+        Box(Modifier.fillMaxSize().pullToRefreshRebound(state, isRefreshing, enabled)) { content() }
         if (enabled) {
             PullToRefreshDefaults.Indicator(
                 isRefreshing = isRefreshing,

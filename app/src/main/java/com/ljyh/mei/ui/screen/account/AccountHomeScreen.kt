@@ -88,6 +88,7 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.ui.component.utils.pullToRefreshRebound
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
@@ -526,7 +527,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
         ) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().pullToRefreshRebound(refreshState, state.refreshing),
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {

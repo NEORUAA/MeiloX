@@ -26,6 +26,7 @@ import com.ljyh.mei.constants.InterfaceLetterSpacingKey
 import com.ljyh.mei.constants.MaxInterfaceLetterSpacing
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.component.utils.LocalPageOverscrollFactory
 import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
 
 /** Raw custom or dynamic accent; null selects the current mode's default accent. */
@@ -106,7 +107,7 @@ fun MusicTheme(
         shapes = AppShapes,
     ) {
         CompositionLocalProvider(
-            LocalOverscrollFactory provides MiuixOverscrollFactory,
+            LocalOverscrollFactory provides (LocalPageOverscrollFactory.current ?: MiuixOverscrollFactory),
             LocalDynamicAccent provides dynamicAccent,
             LocalInterfaceLetterSpacing provides letterSpacing,
             LocalContentColor provides colorScheme.onBackground,

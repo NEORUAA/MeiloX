@@ -34,6 +34,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -99,6 +100,7 @@ import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import com.ljyh.mei.ui.component.utils.pullToRefreshRebound
 import com.ljyh.mei.ui.glass.IosPinnedPage
 import com.ljyh.mei.ui.glass.IosTypography
 import com.ljyh.mei.ui.glass.LocalGlassColors
@@ -198,6 +200,7 @@ fun HomeScreen(
     }
 
     val systemBarsPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    val refreshState = rememberPullToRefreshState()
     val collapseDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
     val collapseProgress by remember(listState) {
         derivedStateOf {
@@ -216,59 +219,62 @@ fun HomeScreen(
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = { viewModel.homePageResourceShow(true) },
+            state = refreshState,
         ) {
-            when (val result = homePageResourceShowPage1) {
-                is Resource.Success -> {
-                    // 排序逻辑移出 LazyColumn，减少重组时的计算
-                    val sortedBlocks = remember(result.data) {
-                        result.data.filter { homeBlockData(it) != null }.sortedWith(positionComparator)
+            Box(Modifier.fillMaxSize().pullToRefreshRebound(refreshState, isRefreshing)) {
+                when (val result = homePageResourceShowPage1) {
+                    is Resource.Success -> {
+                        // 排序逻辑移出 LazyColumn，减少重组时的计算
+                        val sortedBlocks = remember(result.data) {
+                            result.data.filter { homeBlockData(it) != null }.sortedWith(positionComparator)
+                        }
+
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                // Preserve the title's origin without translated empty space below it.
+                                top = pinnedPadding.calculateTopPadding() - 4.dp,
+                                bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing)
+                        ) {
+                            item(key = "ios-large-title") {
+                                Text(
+                                    stringResource(R.string.app_tab_home),
+                                    style = IosTypography.largeTitle,
+                                    color = LocalGlassColors.current.content,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
+                            items(
+                                items = sortedBlocks,
+                                key = { it.positionCode }
+                            ) { block ->
+                                HomeBlockItem(
+                                    block = block,
+                                    navController = navController,
+                                    viewModel = viewModel,
+                                    playerViewModel = playerViewModel,
+                                    device = device
+                                )
+                            }
+                        }
                     }
 
-
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            // Preserve the title's origin without translated empty space below it.
-                            top = pinnedPadding.calculateTopPadding() - 4.dp,
-                            bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing)
-                    ) {
-                        item(key = "ios-large-title") {
-                            Text(
-                                stringResource(R.string.app_tab_home),
-                                style = IosTypography.largeTitle,
-                                color = LocalGlassColors.current.content,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
-                        }
-                        items(
-                            items = sortedBlocks,
-                            key = { it.positionCode }
-                        ) { block ->
-                            HomeBlockItem(
-                                block = block,
-                                navController = navController,
-                                viewModel = viewModel,
-                                playerViewModel = playerViewModel,
-                                device = device
-                            )
-                        }
+                    is Resource.Error -> {
+                        // 这里可以加一个错误重试页面
                     }
-                }
 
-                is Resource.Error -> {
-                    // 这里可以加一个错误重试页面
-                }
-
-                Resource.Loading -> {
-                    HomeShimmer(
-                        contentPadding = PaddingValues(
-                            top = pinnedPadding.calculateTopPadding(),
-                            bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing,
-                        ),
-                    )
+                    Resource.Loading -> {
+                        HomeShimmer(
+                            contentPadding = PaddingValues(
+                                top = pinnedPadding.calculateTopPadding(),
+                                bottom = pinnedPadding.calculateBottomPadding() + HomeSectionSpacing,
+                            ),
+                        )
+                    }
                 }
             }
         }
