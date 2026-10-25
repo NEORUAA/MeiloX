@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -64,6 +66,7 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntSize
@@ -986,7 +989,7 @@ class AppleMusicTitleRenderingTest {
             val height = with(LocalDensity.current) { 68.dp.toPx() }
             val fullHeight = with(LocalDensity.current) { 240.dp.toPx() }
             val headingSize = with(LocalDensity.current) { 32.dp.toPx() }
-            val pullLimit = with(LocalDensity.current) { 24.dp.toPx() }
+            val pullLimit = height
             val scope = rememberCoroutineScope()
             val pull = remember(scope, pullLimit) {
                 PlayerQueueTopOverscroll(
@@ -1048,8 +1051,13 @@ class AppleMusicTitleRenderingTest {
                 }.first { it }
                 retainSpace.value = false
             }
-            Box(Modifier.width(160.dp).height(240.dp).background(Color.Black)
+            Box(Modifier.width(160.dp).height(240.dp).background(Color.Black).clipToBounds()
                 .testTag("empty_history_pull_host").nestedScroll(pull)) {
+                if (!hasHistory.value && !retainSpace.value) {
+                    Box(Modifier.fillMaxWidth().height(32.dp)
+                        .absoluteOffset { IntOffset(0, (pull.offset - headingSize).roundToInt()) }
+                        .testTag("empty_history_feedback").background(Color.Red))
+                }
                 LazyColumn(
                     state = state,
                     overscrollEffect = null,
@@ -1182,6 +1190,24 @@ class AppleMusicTitleRenderingTest {
         compose.onNodeWithTag("empty_history_pull_host").performTouchInput { up() }
         repeat(45) { compose.mainClock.advanceTimeByFrame() }
         compose.runOnIdle { assertEquals(0f, drawnTop, 1f) }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput {
+            down(Offset(width * 0.25f, height * 0.75f))
+            moveBy(Offset(0f, height * 0.9f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val feedbackBottom = compose.onNodeWithTag("empty_history_feedback").getUnclippedBoundsInRoot().bottom.value
+        val feedbackHostTop = compose.onNodeWithTag("empty_history_pull_host").getUnclippedBoundsInRoot().top.value
+        compose.runOnIdle {
+            assertTrue("A deep pull must expose empty-history feedback", drawnTop > viewportHeight / 240f * 24f)
+            assertEquals("Empty history must follow the header without adding a lazy item",
+                drawnTop, (feedbackBottom - feedbackHostTop) * viewportHeight / 240f, 1f)
+        }
+        compose.onNodeWithTag("empty_history_pull_host").performTouchInput { up() }
+        repeat(45) { compose.mainClock.advanceTimeByFrame() }
+        compose.runOnIdle {
+            assertEquals("Empty history must return to the visible title endpoint", 0f, drawnTop, 1f)
+            assertEquals(0, queueState!!.layoutInfo.visibleItemsInfo.first { it.key == PlayerQueueCurrentHeaderKey }.offset)
+        }
         compose.runOnIdle { queueScope!!.launch { queueState!!.scrollToItem(3) } }
         compose.mainClock.advanceTimeByFrame()
         compose.runOnIdle { assertTrue(queueState!!.canScrollBackward) }
@@ -1693,6 +1719,7 @@ class AppleMusicTitleRenderingTest {
         val progress = mutableStateOf(0.96f)
         val opacity = mutableStateOf(1f)
         var list: LazyListState? = null
+        var measuredTextHeight = 0
         val favoriteDescription = InstrumentationRegistry.getInstrumentation().targetContext
             .getString(R.string.app_tab_library_songs)
         val moreDescription = InstrumentationRegistry.getInstrumentation().targetContext
@@ -1720,6 +1747,7 @@ class AppleMusicTitleRenderingTest {
                                         title = "Queue title", subTitle = "Artist", isLiked = false,
                                         onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
                                         enabled = false, marqueeEnabled = false, needShadow = false,
+                                        onTextSizeChanged = { measuredTextHeight = it.height },
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
@@ -1733,6 +1761,7 @@ class AppleMusicTitleRenderingTest {
                                 title = "Queue title", subTitle = "Artist", isLiked = false,
                                 onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
                                 enabled = false, marqueeEnabled = false, needShadow = false,
+                                onTextSizeChanged = { measuredTextHeight = it.height },
                                 textModifier = motion, actionsModifier = motion,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -1769,6 +1798,17 @@ class AppleMusicTitleRenderingTest {
         compose.runOnIdle { progress.value = 0.96f }
         tops().zip(initial).forEach { (after, before) ->
             assertEquals("Reopening must observe the current list position", -12f * 0.96f, after - before, 1f)
+        }
+        compose.runOnIdle {
+            assertTrue(measuredTextHeight > 0)
+            val textTop = ((68f * pixelsPerDp - measuredTextHeight) / 2f).coerceAtLeast(0f)
+            fun target(top: Float) = playerQueueSnapTarget(
+                top, 84f * pixelsPerDp, 320f * pixelsPerDp, -1,
+                hasHistory = false, canPinUpcoming = true, headerTextTop = textTop,
+            )
+            assertEquals("Measured text must remain hidden before both lines clear the edge",
+                -84f * pixelsPerDp, target(-textTop - 1f)!!, 0f)
+            assertEquals("The measured two-line origin defines the reveal distance", 0f, target(-textTop)!!, 0f)
         }
     }
 

@@ -149,6 +149,7 @@ fun AppleMusicPlayer(
     var albumTextSize by remember { mutableStateOf(IntSize.Zero) }
     var albumActionsSize by remember { mutableStateOf(IntSize.Zero) }
     var headerTextSize by remember { mutableStateOf(IntSize.Zero) }
+    var queueHeaderTextHeightPx by remember { mutableIntStateOf(0) }
     var headerActionsSize by remember { mutableStateOf(IntSize.Zero) }
 
     LaunchedEffect(page) {
@@ -462,6 +463,9 @@ fun AppleMusicPlayer(
                                         active = active,
                                         selected = showQueue,
                                         animateEntryScroll = animateQueueEntryScroll,
+                                        currentHeaderTextTop = if (queueHeaderTextHeightPx > 0) {
+                                            ((headerSize - queueHeaderTextHeightPx) / 2f).coerceAtLeast(0f)
+                                        } else 0f,
                                         indication = null,
                                         horizontalPadding = AppleMusicDimensions.headerInset,
                                         bottomContentPadding = with(density) {
@@ -514,6 +518,7 @@ fun AppleMusicPlayer(
                                                                     fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal,
                                                                 ),
                                                                 needShadow = false,
+                                                                onTextSizeChanged = { queueHeaderTextHeightPx = it.height },
                                                                 onTextPositioned = { if (inlineHeaderVisible) headerTextCoordinates = it },
                                                                 onRowPositioned = { if (inlineHeaderVisible) headerRowCoordinates = it },
                                                                 textModifier = headerFade,

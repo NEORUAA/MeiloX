@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -92,6 +93,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -308,6 +310,7 @@ internal fun playerQueueSnapTarget(
     hasHistory: Boolean,
     canPinUpcoming: Boolean,
     historyHeight: Float = viewportHeight,
+    headerTextTop: Float = 0f,
 ): Float? {
     if (viewportHeight <= 0f || coverTop !in -coverHeight..viewportHeight) return null
     val historyLimit = historyHeight.coerceIn(0f, viewportHeight)
@@ -319,8 +322,10 @@ internal fun playerQueueSnapTarget(
         return if (hasHistory && ((scrollDirection < 0 && coverTop >= historyRevealThreshold) ||
                 (scrollDirection == 0 && coverTop >= historyLimit / 2f))) historyLimit else 0f
     }
-    return if (canPinUpcoming && (scrollDirection > 0 ||
-            (scrollDirection == 0 && coverTop <= -coverHeight / 2f))) -coverHeight else 0f
+    if (!canPinUpcoming) return 0f
+    if (scrollDirection > 0) return -coverHeight
+    // Both lines are visible only after their measured upper edge clears the viewport.
+    return if (coverTop + headerTextTop.coerceIn(0f, coverHeight) >= 0f) 0f else -coverHeight
 }
 
 @Composable
@@ -545,6 +550,7 @@ fun PlayerQueuePage(
     selected: Boolean = active,
     animateEntryScroll: Boolean = false,
     currentHeader: (@Composable (Modifier) -> Unit)? = null,
+    currentHeaderTextTop: Float = 0f,
     onHeaderPositionChanged: (State<PlayerQueueHeaderPosition>) -> Unit = {},
     bottomContentPadding: Dp = 56.dp,
 ) {
@@ -588,6 +594,7 @@ fun PlayerQueuePage(
     var measuredHeaderHeightPx by remember { mutableIntStateOf(0) }
     var controlsHeadingHeightPx by remember { mutableIntStateOf(0) }
     var historyHeadingHeightPx by remember { mutableIntStateOf(0) }
+    var emptyHistoryHeadingHeightPx by remember { mutableIntStateOf(0) }
     var autoplayHeadingHeightPx by remember { mutableIntStateOf(0) }
     var dragFrame by remember { mutableIntStateOf(0) }
     var initialScrollPending by remember(player) { mutableStateOf(true) }
@@ -624,7 +631,8 @@ fun PlayerQueuePage(
         }
     }
     val pullScope = rememberCoroutineScope()
-    val pullLimit = with(density) { 24.dp.toPx() }
+    // Preserve resistance while leaving room to reveal the transient empty heading.
+    val pullLimit = visualCoverHeightPx
     val topPull = remember(pullScope, pullLimit) {
         PlayerQueueTopOverscroll(
             pullScope, pullLimit,
@@ -1027,6 +1035,7 @@ fun PlayerQueuePage(
                 hasHistory = historyEntries.isNotEmpty(),
                 canPinUpcoming = inlineContentHeightPx + tailHeightPx >= height + inlineHeaderHeightPx - 0.5f,
                 historyHeight = historyHeightPx,
+                headerTextTop = currentHeaderTextTop,
             )
         },
     )
@@ -1103,6 +1112,44 @@ fun PlayerQueuePage(
         }
     }
 
+    val historyHeading: @Composable (Modifier) -> Unit = { headingModifier ->
+        Row(
+            modifier = headingModifier.fillMaxWidth()
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(horizontal = selectionPadding)
+                .padding(top = 4.dp, bottom = 10.dp)
+                .playerAdditiveBlend(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.queue_history),
+                modifier = Modifier.weight(1f),
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.clear),
+                modifier = Modifier.clickable(
+                    enabled = historyEntries.isNotEmpty(),
+                    interactionSource = null,
+                    indication = indication,
+                    role = Role.Button,
+                ) {
+                    rowsTransition = null
+                    val currentEntries = player.phoneQueueEntries()
+                    val current = currentEntries.indexOfFirst { it.rawIndex == player.currentMediaItemIndex }
+                    currentEntries.take(current.coerceAtLeast(0))
+                        .map { it.rawIndex }.sortedDescending().forEach(player::removeMediaItem)
+                    pendingHeaderAlignmentAnimated = false
+                    pendingHeaderAlignmentKey = currentEntry?.key
+                }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 15.sp,
+            )
+        }
+    }
+
     val openEntryMenu: (String, Rect) -> Unit = { key, bounds ->
         menuAnchorBounds = bounds
         menuEntryKey = key
@@ -1123,6 +1170,18 @@ fun PlayerQueuePage(
                 .onSizeChanged { viewportSize = it }
                 .onGloballyPositioned { viewportCoordinates = it },
         ) {
+            if (inlineCurrent && currentEntry != null && !showHistorySection) {
+                // This heading follows the same visual pull as the real header/artwork,
+                // but never occupies a lazy slot or adds an empty-history snap point.
+                historyHeading(
+                    Modifier.padding(horizontal = (horizontalPadding - selectionPadding).coerceAtLeast(0.dp))
+                        .onSizeChanged { emptyHistoryHeadingHeightPx = it.height }
+                        .absoluteOffset {
+                            IntOffset(0, (topPull.offset - emptyHistoryHeadingHeightPx).roundToInt())
+                        }
+                        .clearAndSetSemantics { },
+                )
+            }
             LazyColumn(
                 state = listState,
                 overscrollEffect = null,
@@ -1142,42 +1201,7 @@ fun PlayerQueuePage(
             ) {
                 if (inlineCurrent && showHistorySection) {
                     stickyHeader(key = "queue_history_section") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .onSizeChanged { historyHeadingHeightPx = it.height }
-                                .pointerInput(Unit) { detectTapGestures {} }
-                                .padding(horizontal = selectionPadding)
-                                .padding(top = 4.dp, bottom = 10.dp)
-                                .playerAdditiveBlend(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(R.string.queue_history),
-                                modifier = Modifier.weight(1f),
-                                color = Color.White.copy(alpha = 0.92f),
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                stringResource(R.string.clear),
-                                modifier = Modifier.clickable(
-                                    enabled = historyEntries.isNotEmpty(),
-                                    interactionSource = null,
-                                    indication = indication,
-                                    role = Role.Button,
-                                ) {
-                                    rowsTransition = null
-                                    val currentEntries = player.phoneQueueEntries()
-                                    val current = currentEntries.indexOfFirst { it.rawIndex == player.currentMediaItemIndex }
-                                    currentEntries.take(current.coerceAtLeast(0))
-                                        .map { it.rawIndex }.sortedDescending().forEach(player::removeMediaItem)
-                                    pendingHeaderAlignmentAnimated = false
-                                    pendingHeaderAlignmentKey = currentEntry?.key
-                                }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
-                                color = Color.White.copy(alpha = 0.55f),
-                                fontSize = 15.sp,
-                            )
-                        }
+                        historyHeading(Modifier.onSizeChanged { historyHeadingHeightPx = it.height })
                     }
                     item(key = "queue_history_padding") {
                         val padding = if (historyEntries.isEmpty()) {
