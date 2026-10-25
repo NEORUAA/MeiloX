@@ -97,6 +97,7 @@ import androidx.compose.ui.zIndex
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.Preferences
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -786,6 +787,22 @@ class MainActivity : ComponentActivity() {
                         window.isNavigationBarContrastEnforced = false
                         window.navigationBarDividerColor = transparent
                         onDispose { }
+                    }
+                    val immersiveLandscapePlayer = isPlayerPage &&
+                        windowConfiguration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                    DisposableEffect(windowInsetsController, immersiveLandscapePlayer) {
+                        val previousBehavior = windowInsetsController.systemBarsBehavior
+                        if (immersiveLandscapePlayer) {
+                            windowInsetsController.systemBarsBehavior =
+                                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            windowInsetsController.hide(WindowInsetsCompat.Type.statusBars())
+                        }
+                        onDispose {
+                            if (immersiveLandscapePlayer) {
+                                windowInsetsController.show(WindowInsetsCompat.Type.statusBars())
+                                windowInsetsController.systemBarsBehavior = previousBehavior
+                            }
+                        }
                     }
                     val (query, onQueryChange) = rememberSaveable(stateSaver = TextFieldValue.Saver) {
                         mutableStateOf(TextFieldValue())
