@@ -77,6 +77,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -110,6 +112,77 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun toolbarSymbolsMatchNativePointSizeWeightAndOpticalProportions() {
+        val style = mutableStateOf(IosToolbarActionStyle.Merged)
+        compose.setContent {
+            MaterialTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale = 1f),
+                    LocalGlassBackdrop provides emptyBackdrop(),
+                    LocalBlurBackdrop provides emptyBackdrop(),
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                    LocalGlassColors provides LocalGlassColors.current.copy(container = Color.White, content = Color.Black),
+                ) {
+                    IosTopToolbar(
+                        title = "Symbols",
+                        modifier = Modifier.width(360.dp).background(Color.White),
+                        actionsStyle = style.value,
+                        actions = {
+                            GlassIconButton({}, Modifier.testTag("nativeSearch")) { SfIcon(SfSymbol.Search, null) }
+                            GlassIconButton({}, Modifier.testTag("nativeMore")) { SfIcon("ellipsis", null) }
+                            GlassIconButton({}, Modifier.testTag("nativeHouse")) { SfIcon("house", null) }
+                            GlassIconButton({}, Modifier.testTag("regularSearch")) {
+                                SfIcon(SfSymbol.Search, null, weight = FontWeight.Normal)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+        fun ink(tag: String): Triple<Float, Float, Int> {
+            val image = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
+            var left = image.width
+            var top = image.height
+            var right = -1
+            var bottom = -1
+            var count = 0
+            for (y in 0 until image.height) for (x in 0 until image.width) {
+                // Exclude the glass outline outside the central 32 dp icon region.
+                val unit = image.width / 44f
+                if (kotlin.math.abs(x + 0.5f - image.width / 2f) > 16f * unit ||
+                    kotlin.math.abs(y + 0.5f - image.height / 2f) > 16f * unit) continue
+                val pixel = image[x, y]
+                if (pixel.red < 0.5f && pixel.green < 0.5f && pixel.blue < 0.5f) {
+                    left = minOf(left, x); right = maxOf(right, x)
+                    top = minOf(top, y); bottom = maxOf(bottom, y)
+                    count++
+                }
+            }
+            assertTrue("$tag draws a visible symbol", count > 0)
+            val unit = image.width / 44f
+            assertEquals("$tag remains horizontally centered", image.width / 2f, (left + right + 1) / 2f, unit)
+            return Triple((right - left + 1) / unit, (bottom - top + 1) / unit, count)
+        }
+        listOf(IosToolbarActionStyle.Merged, IosToolbarActionStyle.Separated).forEach { value ->
+            compose.runOnIdle { style.value = value }
+            compose.waitForIdle()
+            val search = ink("nativeSearch")
+            val more = ink("nativeMore")
+            val house = ink("nativeHouse")
+            // UIKit iOS 27 Body 17 pt / Medium / Large, measured after applying the
+            // actual toolbar UIImageView's preferredSymbolConfiguration (alpha >= 128).
+            assertEquals(21f, search.first, 0.67f)
+            assertEquals(21f, search.second, 0.67f)
+            assertEquals(19.667f, more.first, 0.67f)
+            assertEquals(4f, more.second, 0.67f)
+            assertTrue("Native optical widths are not normalized to one bounding box", search.first > more.first)
+            assertTrue("Wide symbols can extend past the 24 dp layout slot", house.first > 24f)
+            assertTrue("Explicit Regular weight is preserved", search.third > ink("regularSearch").third)
+        }
+    }
 
     @Test
     fun liquidMenuFieldPreservesSignedDistanceAndNormalsOnGpu() {

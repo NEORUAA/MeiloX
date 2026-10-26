@@ -649,6 +649,7 @@ fun GlassSurface(
 ) {
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
+    val toolbarSymbols = LocalIosToolbarActionGroup.current != null
     val isLight = !colors.isDark
     val navigationMaterial = emphasis == GlassEmphasis.Regular &&
         navigationSurfaceColor == null && sampleBackdrop && appearance.usesBackdrop
@@ -922,6 +923,7 @@ fun GlassSurface(
                 CompositionLocalProvider(
                     LocalContentColor provides contentColor,
                     LocalGlassContentColor provides contentColor,
+                    LocalSfToolbarSymbols provides toolbarSymbols,
                     LocalIosToolbarActionGroup provides null,
                     LocalToolbarActionSeparation provides null,
                     LocalBottomControlContact provides null,

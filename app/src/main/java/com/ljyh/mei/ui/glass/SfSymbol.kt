@@ -6,7 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.isUnspecified
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -94,6 +95,8 @@ private data class SfGlyphDrawCache(
     val bounds: Rect,
 )
 
+internal val LocalSfToolbarSymbols = staticCompositionLocalOf { false }
+
 @Composable
 fun SfIcon(
     symbol: SfSymbol,
@@ -103,19 +106,21 @@ fun SfIcon(
         ?: LocalGlassContentColor.current
         ?: LocalGlassColors.current.content,
     size: Dp = 24.dp,
-    fontSize: TextUnit = size.value.sp,
-    weight: FontWeight = FontWeight.Normal,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    weight: FontWeight? = null,
     mirrored: Boolean = false,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    val toolbar = LocalSfToolbarSymbols.current
     SfIconGlyph(
         codePoint = symbol.codePoint,
         contentDescription = contentDescription,
         modifier = modifier,
         tint = tint,
         size = size,
-        fontSize = fontSize,
-        weight = weight,
+        fontSize = resolveSymbolFontSize(size, fontSize, toolbar),
+        weight = weight ?: if (toolbar) FontWeight.Medium else FontWeight.Normal,
+        fitToSlot = !toolbar,
         mirrored = mirrored && symbol.autoMirrored && layoutDirection == LayoutDirection.Rtl,
     )
 }
@@ -129,21 +134,30 @@ fun SfIcon(
         ?: LocalGlassContentColor.current
         ?: LocalGlassColors.current.content,
     size: Dp = 24.dp,
-    fontSize: TextUnit = size.value.sp,
-    weight: FontWeight = FontWeight.Normal,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    weight: FontWeight? = null,
     mirrored: Boolean = false,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    val toolbar = LocalSfToolbarSymbols.current
     SfIconGlyph(
         codePoint = SfSymbolCatalog.codePoint(systemName),
         contentDescription = contentDescription,
         modifier = modifier,
         tint = tint,
         size = size,
-        fontSize = fontSize,
-        weight = weight,
+        fontSize = resolveSymbolFontSize(size, fontSize, toolbar),
+        weight = weight ?: if (toolbar) FontWeight.Medium else FontWeight.Normal,
+        fitToSlot = !toolbar,
         mirrored = mirrored && layoutDirection == LayoutDirection.Rtl,
     )
+}
+
+private fun resolveSymbolFontSize(size: Dp, fontSize: TextUnit, toolbar: Boolean): TextUnit {
+    if (!fontSize.isUnspecified) return fontSize
+    // UIKit's navigation bar uses Body (17 pt), Medium, Large in its standard icon slot.
+    // Scale the point size together with intentionally smaller/larger layout slots.
+    return (size.value * if (toolbar) 17f / 24f else 1f).sp
 }
 
 @Composable
@@ -155,6 +169,7 @@ private fun SfIconGlyph(
     size: Dp,
     fontSize: TextUnit,
     weight: FontWeight,
+    fitToSlot: Boolean,
     mirrored: Boolean,
 ) {
     val context = LocalContext.current
@@ -165,7 +180,7 @@ private fun SfIconGlyph(
     val glyph = remember(codePoint) { String(Character.toChars(codePoint)) }
     val requestedSize = with(density) { fontSize.toPx() }
     val iconSize = with(density) { size.toPx() }
-    val drawCache = remember(typeface, glyph, requestedSize, iconSize) {
+    val drawCache = remember(typeface, glyph, requestedSize, iconSize, fitToSlot) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             this.typeface = typeface
             textSize = requestedSize
@@ -176,11 +191,11 @@ private fun SfIconGlyph(
         paint.getTextBounds(glyph, 0, glyph.length, bounds)
         val safeWidth = iconSize * 0.88f
         val safeHeight = iconSize * 0.88f
-        val scale = minOf(
+        val scale = if (fitToSlot) minOf(
             1f,
             safeWidth / bounds.width().coerceAtLeast(1),
             safeHeight / bounds.height().coerceAtLeast(1),
-        )
+        ) else 1f
         if (scale < 1f) {
             paint.textSize *= scale
             paint.getTextBounds(glyph, 0, glyph.length, bounds)

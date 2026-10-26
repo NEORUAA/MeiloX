@@ -288,7 +288,6 @@ fun CommonSongListScreen(
                                             SfIcon(
                                                 if (active) SfSymbol.Close else SfSymbol.Search,
                                                 if (active) "关闭歌单搜索" else "搜索歌单",
-                                                size = 20.dp,
                                             )
                                         }
                                     }
