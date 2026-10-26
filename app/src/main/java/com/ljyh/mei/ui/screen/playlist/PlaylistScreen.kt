@@ -3,8 +3,6 @@ package com.ljyh.mei.ui.screen.playlist
 import com.ljyh.mei.constants.MusicQuality
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -37,6 +35,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
+import com.ljyh.mei.ui.component.utils.PageOverscrollHost
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
@@ -352,8 +351,8 @@ fun PlaylistScreen(
 
     // 8. UI 渲染
     if (playlistDetail is Resource.Error) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Error: ${(playlistDetail as Resource.Error).message}")
+        PageOverscrollHost {
+            Text("Error: ${(playlistDetail as Resource.Error).message}", Modifier.align(Alignment.Center))
         }
     } else {
         CommonSongListScreen(

@@ -1,8 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -25,6 +23,7 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.ui.component.utils.PageOverscrollHost
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
@@ -86,8 +85,8 @@ fun EveryDay(
     }
 
     if (everyDaySongs is Resource.Error) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Error: ${(everyDaySongs as Resource.Error).message}")
+        PageOverscrollHost {
+            Text("Error: ${(everyDaySongs as Resource.Error).message}", Modifier.align(Alignment.Center))
         }
     } else {
         CommonSongListScreen(

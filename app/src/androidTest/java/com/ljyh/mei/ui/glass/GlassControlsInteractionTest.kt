@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +114,101 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun pinnedPageKeepsToolbarFixedDuringBodyOverscroll() {
+        // Cover the fallback for loading, empty and short pages, plus native list overscroll.
+        val scenario = mutableStateOf(-1 to false)
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
+                CompositionLocalProvider(
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                ) {
+                    Box(Modifier.width(360.dp).height(600.dp)) {
+                        key(scenario.value) {
+                            val (rowCount, atBottom) = scenario.value
+                            val actions: @Composable RowScope.() -> Unit = {
+                                GlassIconButton({}, Modifier.testTag("overscrollRefresh")) {
+                                    SfIcon(SfSymbol.ArrowClockwise, null)
+                                }
+                            }
+                            if (rowCount < 0) {
+                                IosPinnedPage(
+                                    title = "Pinned toolbar",
+                                    bottomPadding = 0.dp,
+                                    modifier = Modifier.testTag("overscrollPage"),
+                                    onNavigateBack = {},
+                                    actions = actions,
+                                ) { padding ->
+                                    Box(Modifier.padding(padding).size(48.dp).testTag("overscrollBody"))
+                                }
+                            } else {
+                                IosPinnedListPage(
+                                    title = "Pinned toolbar",
+                                    bottomPadding = 0.dp,
+                                    modifier = Modifier.testTag("overscrollPage"),
+                                    listState = remember { LazyListState(if (atBottom) (rowCount - 1).coerceAtLeast(0) else 0) },
+                                    showsLargeTitle = false,
+                                    onNavigateBack = {},
+                                    actions = actions,
+                                ) {
+                                    items(rowCount) { index ->
+                                        Box(
+                                            Modifier.fillMaxWidth().height(48.dp).then(
+                                                if (index == if (atBottom) rowCount - 1 else 0) {
+                                                    Modifier.testTag("overscrollBody")
+                                                } else Modifier,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (rowCount in listOf(-1, 0, 1, 40)) for (atBottom in listOf(false, true)) {
+            compose.runOnIdle { scenario.value = rowCount to atBottom }
+            compose.waitForIdle()
+            val title = compose.onNodeWithText("Pinned toolbar")
+            val refresh = toolbarAction("overscrollRefresh")
+            val page = compose.onNodeWithTag("overscrollPage")
+            val titleBefore = title.getUnclippedBoundsInRoot()
+            val refreshBefore = refresh.getUnclippedBoundsInRoot()
+            val body = compose.onNodeWithTag("overscrollBody")
+            val bodyBefore = if (rowCount == 0) null else body.getUnclippedBoundsInRoot()
+            val direction = if (atBottom) -1f else 1f
+            var fingerDown = false
+            compose.mainClock.autoAdvance = false
+            try {
+                page.performTouchInput {
+                    down(Offset(center.x, height * 0.55f))
+                    moveBy(Offset(0f, direction * height * 0.05f))
+                    moveBy(Offset(0f, direction * height * 0.15f))
+                }
+                fingerDown = true
+                compose.mainClock.advanceTimeBy(64)
+                assertEquals(titleBefore, title.getUnclippedBoundsInRoot())
+                assertEquals(refreshBefore, refresh.getUnclippedBoundsInRoot())
+                if (bodyBefore != null) {
+                    val displacement = body.getUnclippedBoundsInRoot().top.value - bodyBefore.top.value
+                    assertTrue("Body rebounds for rows=$rowCount, bottom=$atBottom", displacement * direction > 1f)
+                }
+                page.performTouchInput { up() }
+                fingerDown = false
+                compose.mainClock.advanceTimeBy(2_000)
+                assertEquals(titleBefore, title.getUnclippedBoundsInRoot())
+                assertEquals(refreshBefore, refresh.getUnclippedBoundsInRoot())
+                if (bodyBefore != null) {
+                    assertEquals(bodyBefore.top.value, body.getUnclippedBoundsInRoot().top.value, 1f)
+                }
+            } finally {
+                if (fingerDown) page.performTouchInput { cancel() }
+                compose.mainClock.autoAdvance = true
+            }
+        }
+    }
 
     @Test
     fun toolbarSymbolsMatchNativePointSizeWeightAndOpticalProportions() {

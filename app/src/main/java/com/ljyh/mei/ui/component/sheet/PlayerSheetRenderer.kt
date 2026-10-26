@@ -147,17 +147,19 @@ internal class PlayerSheetLayers(
     var miniArtworkCoordinates: LayoutCoordinates? = null
     var fullArtworkCoordinates: LayoutCoordinates? = null
     val sourceMiniContent get() = openingBounds(
-        frozenMiniContent ?: miniLayoutBounds(miniContentCoordinates) ?: miniContentBounds,
+        frozenMiniContent,
+        miniLayoutBounds(miniContentCoordinates) ?: miniContentBounds,
     )
-    val miniScaleX get() = sourceContainer.width / (frozenContainer ?: miniBounds).width.coerceAtLeast(1f)
-    val miniScaleY get() = sourceContainer.height / (frozenContainer ?: miniBounds).height.coerceAtLeast(1f)
+    val miniScaleX get() = sourceMiniContent.width / miniContent.size.width.coerceAtLeast(1)
+    val miniScaleY get() = sourceMiniContent.height / miniContent.size.height.coerceAtLeast(1)
     private var frozenTargetArtwork by mutableStateOf<PlayerArtworkGeometry?>(null)
     private val recordedTransitionLayers = PlayerSheetCaptures<GraphicsLayer>()
     private var transitionCaptureActive = false
 
-    val sourceContainer get() = openingBounds(frozenContainer ?: miniBounds)
+    val sourceContainer get() = openingBounds(frozenContainer, miniBounds)
     val sourceArtwork get() = openingBounds(
-        frozenMiniArtwork ?: miniLayoutBounds(miniArtworkCoordinates) ?: miniArtworkBounds,
+        frozenMiniArtwork,
+        miniLayoutBounds(miniArtworkCoordinates) ?: miniArtworkBounds,
     )
     private val targetArtworkGeometry get() = frozenTargetArtwork ?: playerArtworkTargetGeometry(
         fullArtworkGeometry?.invoke(),
@@ -180,14 +182,14 @@ internal class PlayerSheetLayers(
     }
     val sharesArtwork get() = artworkOwnership.value
 
-    private fun openingBounds(layoutBounds: Rect): Rect {
-        val layout = frozenContainer ?: return layoutBounds
-        val pressed = openingPressedContainer ?: return layoutBounds
-        // Keep the raw return endpoint intact. Only the opening leg inherits the last
-        // visible press transform. A reversal releases it continuously back to raw bounds.
-        val visual = playerUntransformRect(layoutBounds, layout, pressed)
-        return playerContainerRect(layoutBounds, visual, pressFraction)
-    }
+    private fun openingBounds(capturedBounds: Rect?, currentBounds: Rect): Rect = playerMiniTransitionBounds(
+        capturedBounds ?: currentBounds,
+        frozenContainer,
+        openingPressedContainer,
+        currentBounds,
+        pressFraction,
+        state.progress,
+    )
 
     // Both coordinates are inside the same press-transformed glass layer. Relative
     // coordinates cancel that transform; layout sizes never include its scale.
@@ -247,8 +249,8 @@ internal class PlayerSheetLayers(
                 openingPressedContainer = null
             }
             frozenTargetArtwork = null
-            // Keep the original unpressed endpoints through the expanded state. Hidden
-            // mini-player layout/press updates must not redefine the collapse destination.
+            // Retain the opening capture only for continuity during an early reversal.
+            // A full-player return uses the settled mini-player layout directly.
             if (state.isCollapsed || state.isDismissed) {
                 frozenContainer = null
                 openingPressedContainer = null
@@ -256,6 +258,7 @@ internal class PlayerSheetLayers(
                 frozenMiniArtwork = null
             }
             pressRelease.reset()
+            if (state.isExpanded) pressRelease.update(1f)
         } else {
             if (!transitionCaptureActive) {
                 transitionCaptureActive = true

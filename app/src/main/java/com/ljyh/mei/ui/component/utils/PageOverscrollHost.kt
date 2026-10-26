@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.overscroll
 import androidx.compose.runtime.Composable
@@ -23,9 +24,12 @@ import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
 
 internal val LocalPageOverscrollFactory = staticCompositionLocalOf<OverscrollFactory?> { null }
 
-/** Cover short, empty, and loading pages without adding a logical scroll range. */
+/** Bounce only the page body, including short, empty, and loading content. */
 @Composable
-internal fun PageOverscrollHost(content: @Composable () -> Unit) {
+internal fun PageOverscrollHost(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
     val page = remember { PageOverscrollScope() }
     val factory = remember(page) { PageOverscrollFactory(page) }
     val stationaryScroll = rememberScrollableState { 0f }
@@ -34,11 +38,12 @@ internal fun PageOverscrollHost(content: @Composable () -> Unit) {
         LocalOverscrollFactory provides factory,
     ) {
         Box(
-            Modifier.fillMaxSize()
+            modifier.fillMaxSize()
                 .overscroll(page.effect)
                 .nestedScroll(page.connection)
                 .scrollable(stationaryScroll, Orientation.Vertical),
-        ) { content() }
+            content = content,
+        )
     }
 }
 
