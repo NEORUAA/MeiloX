@@ -59,14 +59,15 @@ internal fun rememberGlassMorphRenderer(
     active: Boolean,
     blurRadius: Dp = 2.dp,
     renderScale: Float = DefaultGlassRenderScale,
+    programs: LiquidMenuShaderPrograms? = null,
 ): GlassMorphRenderer {
     val density = LocalDensity.current
     val appearance = LocalGlassAppearance.current
     val source = rememberGraphicsLayer()
     val refracted = rememberGraphicsLayer()
     val material = rememberGraphicsLayer()
-    val renderer = remember(backdrop, density, blurRadius, renderScale, source, refracted, material, appearance) {
-        GlassMorphRenderer(backdrop, density, blurRadius, renderScale, source, refracted, material, appearance)
+    val renderer = remember(backdrop, density, blurRadius, renderScale, source, refracted, material, appearance, programs) {
+        GlassMorphRenderer(backdrop, density, blurRadius, renderScale, source, refracted, material, appearance, programs)
     }
     DisposableEffect(renderer, active) {
         // Keep shaders/layers across endpoints, but never reuse an old capture when a new
@@ -80,6 +81,14 @@ internal fun rememberGlassMorphRenderer(
     return renderer
 }
 
+/** One active menu per anchor; compile its mutable shader builders before the first tap. */
+internal class LiquidMenuShaderPrograms {
+    init { LiquidMenuNativeField.warmUp() }
+    val refraction = RuntimeShader(TransitionRefractionShader)
+    val highlight = RuntimeShader(TransitionHighlightShader)
+    val portal = RuntimeShader(LiquidMenuPortalShader)
+}
+
 /** Fixed-size source/effect layers shared by the player sheet and home control morphs. */
 internal class GlassMorphRenderer(
     private val backdrop: Backdrop,
@@ -90,9 +99,10 @@ internal class GlassMorphRenderer(
     private val refracted: GraphicsLayer,
     private val material: GraphicsLayer,
     private val appearance: GlassAppearance,
+    programs: LiquidMenuShaderPrograms? = null,
 ) {
-    private val shader = if (appearance.usesRefraction) RuntimeShader(TransitionRefractionShader) else null
-    private val highlight = RuntimeShader(TransitionHighlightShader)
+    private val shader = if (appearance.usesRefraction) programs?.refraction ?: RuntimeShader(TransitionRefractionShader) else null
+    private val highlight = programs?.highlight ?: RuntimeShader(TransitionHighlightShader)
     private val highlightBrush = ShaderBrush(highlight)
     private val pressLight = PressHighlightRenderer()
     private val innerShadows = NavigationInnerShadowRenderer(renderScale = renderScale)
@@ -113,6 +123,8 @@ internal class GlassMorphRenderer(
     }
 
     fun release() {
+        shader?.let { bindLiquidMenuField(it, null) }
+        bindLiquidMenuField(highlight, null)
         innerShadows.release()
         dropShadow.release()
     }
@@ -135,6 +147,12 @@ internal class GlassMorphRenderer(
         dropShadowAlpha: Float = 0f,
         isDark: Boolean = false,
         sampleScale: Offset = Offset(1f, 1f),
+        cornerRadii: Offset? = null,
+        lensBounds: Rect? = null,
+        secondaryLensBounds: Rect? = null,
+        secondaryLensRadii: Offset? = null,
+        lensSmoothing: Float = 0f,
+        menuField: LiquidMenuFieldTexture? = null,
         pressHighlight: GlassPressHighlight? = null,
         pressHighlightBounds: Rect? = null,
     ) = with(scope) {
@@ -196,15 +214,41 @@ internal class GlassMorphRenderer(
             recordedViewport = viewport
         }
         val refractionEffect = if (shader != null) {
+            val opticalBounds = lensBounds ?: bounds
             val sampleBounds = Rect(
-                sourceOffset.x + bounds.left * sampleScale.x,
-                sourceOffset.y + bounds.top * sampleScale.y,
-                sourceOffset.x + bounds.right * sampleScale.x,
-                sourceOffset.y + bounds.bottom * sampleScale.y,
+                sourceOffset.x + opticalBounds.left * sampleScale.x,
+                sourceOffset.y + opticalBounds.top * sampleScale.y,
+                sourceOffset.x + opticalBounds.right * sampleScale.x,
+                sourceOffset.y + opticalBounds.bottom * sampleScale.y,
             )
             shader.setFloatUniform("center", sampleBounds.center.x * renderScale, sampleBounds.center.y * renderScale)
             shader.setFloatUniform("halfSize", sampleBounds.width * renderScale / 2f, sampleBounds.height * renderScale / 2f)
             shader.setFloatUniform("radius", radius * minOf(sampleScale.x, sampleScale.y) * renderScale)
+            shader.setFloatUniform("ellipticalCorners", if (cornerRadii != null) 1f else 0f)
+            shader.setFloatUniform("cornerRadii",
+                (cornerRadii?.x ?: radius) * sampleScale.x * renderScale,
+                (cornerRadii?.y ?: radius) * sampleScale.y * renderScale,
+            )
+            shader.setFloatUniform("secondaryEnabled", if (secondaryLensBounds != null) 1f else 0f)
+            val secondary = secondaryLensBounds ?: opticalBounds
+            shader.setFloatUniform("secondaryCenter",
+                (sourceOffset.x + secondary.center.x * sampleScale.x) * renderScale,
+                (sourceOffset.y + secondary.center.y * sampleScale.y) * renderScale,
+            )
+            shader.setFloatUniform("secondaryHalfSize", secondary.width * sampleScale.x * renderScale / 2f, secondary.height * sampleScale.y * renderScale / 2f)
+            shader.setFloatUniform("secondaryRadii", (secondaryLensRadii?.x ?: radius) * sampleScale.x * renderScale, (secondaryLensRadii?.y ?: radius) * sampleScale.y * renderScale)
+            shader.setFloatUniform("smoothing", lensSmoothing * minOf(sampleScale.x, sampleScale.y) * renderScale)
+            bindLiquidMenuField(shader, menuField,
+                coordinateScale = Offset(sampleScale.x * renderScale, sampleScale.y * renderScale),
+                coordinateOffset = sourceOffset * renderScale,
+            )
+            shader.setFloatUniform("sampleExtent", ceil(viewport.width * renderScale), ceil(viewport.height * renderScale))
+            shader.setFloatUniform("drawingBounds",
+                (sourceOffset.x + bounds.left * sampleScale.x) * renderScale - 1f,
+                (sourceOffset.y + bounds.top * sampleScale.y) * renderScale - 1f,
+                (sourceOffset.x + bounds.right * sampleScale.x) * renderScale + 1f,
+                (sourceOffset.y + bounds.bottom * sampleScale.y) * renderScale + 1f,
+            )
             shader.setFloatUniform("height", refractionHeight.toPx() * renderScale)
             shader.setFloatUniform("amount", -refractionAmount.toPx() * renderScale)
             RenderEffect.createRuntimeShaderEffect(shader, "content")
@@ -224,9 +268,19 @@ internal class GlassMorphRenderer(
             }
             drawPath(path, Color(0xFF6E6E6E).copy(alpha = GlassBoxShadowAlpha), style = Stroke(0.65.dp.toPx()))
         }
-        highlight.setFloatUniform("center", bounds.center.x, bounds.center.y)
-        highlight.setFloatUniform("halfSize", bounds.width / 2f, bounds.height / 2f)
+        val opticalHighlightBounds = lensBounds ?: bounds
+        highlight.setFloatUniform("center", opticalHighlightBounds.center.x, opticalHighlightBounds.center.y)
+        highlight.setFloatUniform("halfSize", opticalHighlightBounds.width / 2f, opticalHighlightBounds.height / 2f)
         highlight.setFloatUniform("radius", radius)
+        highlight.setFloatUniform("ellipticalCorners", if (cornerRadii != null) 1f else 0f)
+        highlight.setFloatUniform("cornerRadii", cornerRadii?.x ?: radius, cornerRadii?.y ?: radius)
+        highlight.setFloatUniform("secondaryEnabled", if (secondaryLensBounds != null) 1f else 0f)
+        val secondaryHighlight = secondaryLensBounds ?: opticalHighlightBounds
+        highlight.setFloatUniform("secondaryCenter", secondaryHighlight.center.x, secondaryHighlight.center.y)
+        highlight.setFloatUniform("secondaryHalfSize", secondaryHighlight.width / 2f, secondaryHighlight.height / 2f)
+        highlight.setFloatUniform("secondaryRadii", secondaryLensRadii?.x ?: radius, secondaryLensRadii?.y ?: radius)
+        highlight.setFloatUniform("smoothing", lensSmoothing)
+        bindLiquidMenuField(highlight, menuField)
         highlight.setFloatUniform("opacity", highlightAlpha)
         // This rectangle anchors the light field; only the moving glass outline clips it.
         val lightBounds = pressHighlightBounds ?: bounds
@@ -271,7 +325,9 @@ internal class GlassMorphRenderer(
                             translate(-sourceOffset.x, -sourceOffset.y)
                             scale(1f / renderScale, 1f / renderScale, Offset.Zero)
                         }) { drawLayer(refracted) }
-                        drawNavigationGlassMaterial(tint, isDark, tintMultiplier)
+                        inset(bounds.left, bounds.top, size.width - bounds.right, size.height - bounds.bottom) {
+                            drawNavigationGlassMaterial(tint, isDark, tintMultiplier)
+                        }
                         innerShadows.draw(this, shape, bounds, isDark)
                     } finally {
                         drawContext.size = previousSize
@@ -292,6 +348,8 @@ internal class GlassMorphRenderer(
                         alpha = if (appearance.reduceTransparency) 1f
                             else (tint.alpha * tintMultiplier).coerceIn(0f, 1f),
                     ),
+                    topLeft = bounds.topLeft,
+                    size = bounds.size,
                 )
             }
         }
@@ -425,23 +483,116 @@ private class MorphCaptureBand {
 
 // Same edge depth and seven-sample dispersion as Navigation glass, in a fixed viewport.
 // Pixels outside the moving shell bypass sampling; Compose clips its continuous outline.
+internal const val LiquidMorphFieldShader = """
+uniform shader smoothedField;
+uniform float smoothedFieldEnabled;
+uniform float2 fieldCoordinateScale;
+uniform float2 fieldCoordinateOffset;
+uniform float fieldDistanceScale;
+uniform float2 fieldGradientScale;
+uniform float2 fieldExtent;
+// QuartzCore supercircle_sdf_sampler (24A434, 0x1c39c8dd0).
+// Oversized radii are intentional during overrounding; the native builder's
+// curvature terms handle them before the two fields are combined.
+float3 roundedFieldGradient(float2 point, float2 origin, float2 extent, float2 radii) {
+    float2 r = max(radii, float2(0.001));
+    float radius = min(r.x, r.y);
+    float2 inverseAxis = radius / r;
+    float2 local = (point - origin) * inverseAxis;
+    float2 halfExtent = extent * inverseAxis;
+    float expandedRadius = radius * 1.5286649465560913;
+    float2 curvature = clamp(2.8915570351735034 -
+        1.4457785175867517 * (halfExtent * 2.0) / (radius * 1.528665), 0.0, 1.0);
+    float baseRadius = radius * (1.5286649465560913 -
+        0.5286649465560913 * max(curvature.x, curvature.y));
+    float2 edge = abs(local) - halfExtent;
+    float2 circle = edge + baseRadius;
+    float interior = min(max(circle.x, circle.y), 0.0);
+    float2 uv = (edge + expandedRadius) / expandedRadius;
+    float2 z = max(uv, 0.0);
+    float t = min(z.x, z.y) / max(max(z.x, z.y), 0.000001);
+    float d = length(z);
+    float bezier = ((((-0.9260540008544922 * t + 3.1560099124908447) * t -
+        3.6412200927734375) * t + 1.268030047416687) * t + 0.2685309946537018) * t * t;
+    float raw = d + 1.0 - 1.0 / (1.0 - bezier * min(d, 1.0));
+    float alternate = length(max(1.5286649465560913 * uv - 0.5286649465560913, 0.0));
+    float difference = 0.3458344340324402 - raw + 0.6541655659675598 * alternate;
+    float weight = clamp((z.x < z.y ? 1.0 : -1.0) * (t - 1.0) + 0.5, 0.0, 1.0);
+    float distance = interior + expandedRadius *
+        (raw - 1.0 + difference * mix(curvature.x, curvature.y, weight));
+    float2 normal = max(circle, 0.0);
+    float normalLength = length(normal);
+    normal = normalLength > 0.000001 ? normal / normalLength :
+        (circle.x > circle.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
+    normal *= float2(local.x < 0.0 ? -1.0 : 1.0, local.y < 0.0 ? -1.0 : 1.0);
+    float2 oval = float2(local.x, local.y * halfExtent.x / max(halfExtent.y, 0.000001));
+    float ovalLength = length(oval);
+    oval = ovalLength > 0.000001 ? oval / ovalLength : normal;
+    normal = mix(normal, oval, 0.5);
+    normal /= max(length(normal), 0.000001);
+    // CASDF transforms the canonical gradient after normalization, without
+    // renormalizing it before SDFUnion computes the alignment-dependent radius.
+    return float3(distance, normal * inverseAxis);
+}
+float3 liquidFieldGradient(float2 point) {
+    if (smoothedFieldEnabled > 0.5) {
+        float2 pixel = clamp(point * fieldCoordinateScale + fieldCoordinateOffset,
+            float2(0.5), fieldExtent - float2(0.5));
+        float3 field = smoothedField.eval(pixel).rgb;
+        return field * float3(fieldDistanceScale, fieldGradientScale);
+    }
+    float3 a = roundedFieldGradient(point, center, halfSize, cornerRadii);
+    if (secondaryEnabled < 0.5) return a;
+    float3 b = roundedFieldGradient(point, secondaryCenter, secondaryHalfSize, secondaryRadii);
+    // QuartzCore SDFUnion, iOS 24A434, 0x1c39e27d0: only opposing
+    // unit gradients widen the polynomial union between the two skins.
+    float k = smoothing * clamp(0.5 - 0.5 * dot(a.yz, b.yz), 0.0, 1.0);
+    if (k <= 0.000001) return a.x < b.x ? a : b;
+    float h = clamp(0.5 + 0.5 * (a.x - b.x) / k, 0.0, 1.0);
+    return float3(mix(a.x, b.x, h) - k * h * (1.0 - h), mix(a.yz, b.yz, h));
+}
+
+"""
+
 private const val TransitionRefractionShader = """
 uniform shader content;
+uniform float2 sampleExtent;
+uniform float4 drawingBounds;
 uniform float2 center;
 uniform float2 halfSize;
 uniform float radius;
+uniform float2 cornerRadii;
+uniform float ellipticalCorners;
+uniform float secondaryEnabled;
+uniform float2 secondaryCenter;
+uniform float2 secondaryHalfSize;
+uniform float2 secondaryRadii;
+uniform float smoothing;
 uniform float height;
 uniform float amount;
 
 float2 safeNormal(float2 v) { return v / max(length(v), 0.0001); }
 
+$LiquidMorphFieldShader
+
+half4 sampleContent(float2 coord) {
+    return content.eval(clamp(coord, float2(0.5), sampleExtent - float2(0.5)));
+}
+
 half4 main(float2 coord) {
-    if (height <= 0.0 || amount == 0.0) return content.eval(coord);
+    if (ellipticalCorners > 0.5 && (coord.x < drawingBounds.x || coord.y < drawingBounds.y ||
+        coord.x > drawingBounds.z || coord.y > drawingBounds.w)) return half4(0.0);
+    if (height <= 0.0 || amount == 0.0) return sampleContent(coord);
     float2 p = coord - center;
     float2 q = abs(p) - halfSize + radius;
     float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
-    if (abs(p.x) > halfSize.x + 1.0 || abs(p.y) > halfSize.y + 1.0) return half4(0.0);
-    if (-sd >= height) return content.eval(coord);
+    float3 liquid = float3(0.0);
+    if (ellipticalCorners > 0.5) {
+        liquid = liquidFieldGradient(coord);
+        sd = liquid.x;
+    }
+    if (secondaryEnabled < 0.5 && (abs(p.x) > halfSize.x + 1.0 || abs(p.y) > halfSize.y + 1.0)) return half4(0.0);
+    if (-sd >= height) return sampleContent(coord);
     float x = clamp(1.0 + min(sd, 0.0) / height, 0.0, 1.0);
     float d = (1.0 - sqrt(max(0.0, 1.0 - x * x))) * amount;
     float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
@@ -449,16 +600,21 @@ half4 main(float2 coord) {
     float gx = step(corner.y, corner.x);
     float2 grad = sign(p) * (max(corner.x, corner.y) >= 0.0
         ? safeNormal(max(corner, 0.0)) : float2(gx, 1.0 - gx));
-    grad = safeNormal(grad + safeNormal(p));
+    if (ellipticalCorners > 0.5) {
+        grad = liquid.yz;
+    } else {
+        grad = safeNormal(grad + safeNormal(p));
+    }
     float2 refracted = coord + d * grad;
-    float2 dispersion = d * grad * (p.x * p.y / max(halfSize.x * halfSize.y, 0.0001));
-    half4 red = content.eval(refracted + dispersion);
-    half4 orange = content.eval(refracted + dispersion * (2.0 / 3.0));
-    half4 yellow = content.eval(refracted + dispersion * (1.0 / 3.0));
-    half4 green = content.eval(refracted);
-    half4 cyan = content.eval(refracted - dispersion * (1.0 / 3.0));
-    half4 blue = content.eval(refracted - dispersion * (2.0 / 3.0));
-    half4 purple = content.eval(refracted - dispersion);
+    float dispersionFactor = clamp(p.x * p.y / max(halfSize.x * halfSize.y, 0.0001), -1.0, 1.0);
+    float2 dispersion = d * grad * dispersionFactor;
+    half4 red = sampleContent(refracted + dispersion);
+    half4 orange = sampleContent(refracted + dispersion * (2.0 / 3.0));
+    half4 yellow = sampleContent(refracted + dispersion * (1.0 / 3.0));
+    half4 green = sampleContent(refracted);
+    half4 cyan = sampleContent(refracted - dispersion * (1.0 / 3.0));
+    half4 blue = sampleContent(refracted - dispersion * (2.0 / 3.0));
+    half4 purple = sampleContent(refracted - dispersion);
     return half4(
         (red.r + orange.r + yellow.r) / 3.5 + purple.r / 7.0,
         (yellow.g + green.g + cyan.g) / 3.5 + orange.g / 7.0,
@@ -473,10 +629,18 @@ private const val TransitionHighlightShader = """
 uniform float2 center;
 uniform float2 halfSize;
 uniform float radius;
+uniform float2 cornerRadii;
+uniform float ellipticalCorners;
+uniform float secondaryEnabled;
+uniform float2 secondaryCenter;
+uniform float2 secondaryHalfSize;
+uniform float2 secondaryRadii;
+uniform float smoothing;
 uniform float opacity;
 uniform float2 pressPosition;
 uniform float pressRadius;
 uniform float pressOpacity;
+$LiquidMorphFieldShader
 half4 main(float2 coord) {
     float2 p = coord - center;
     float r = min(radius * 1.5, min(halfSize.x, halfSize.y));
@@ -485,6 +649,10 @@ half4 main(float2 coord) {
     float2 v = max(corner, 0.0);
     float2 grad = max(corner.x, corner.y) >= 0.0
         ? v / max(length(v), 0.0001) : float2(gx, 1.0 - gx);
+    if (ellipticalCorners > 0.5) {
+        float2 eg = liquidFieldGradient(coord).yz;
+        grad = eg / max(length(eg), 0.0001);
+    }
     float pressDistance = distance(coord, pressPosition);
     float pressFalloff = 1.0 - smoothstep(pressRadius * 0.5, pressRadius, pressDistance);
     return half4((opacity + pressOpacity * pressFalloff) * abs(grad.y));

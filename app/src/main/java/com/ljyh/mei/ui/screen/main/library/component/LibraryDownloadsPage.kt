@@ -25,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -92,10 +91,8 @@ internal fun LibraryDownloadsPage(
     var searchActive by rememberSaveable { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(DownloadLibraryFilter.All) }
     var sort by rememberSaveable { mutableStateOf(DownloadLibrarySort.Recent) }
-    var sortAnchor by remember { mutableStateOf<Rect?>(null) }
+    val sortAnchor = rememberIosMenuAnchorState()
     var sortOpen by remember { mutableStateOf(false) }
-    val sortTriggerAlpha = remember { mutableFloatStateOf(1f) }
-    val sortSeparation = remember { mutableFloatStateOf(0f) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var menuAnchor by remember { mutableStateOf<Rect?>(null) }
     var info by remember { mutableStateOf<Song?>(null) }
@@ -151,14 +148,11 @@ internal fun LibraryDownloadsPage(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            Box(Modifier.onGloballyPositioned { sortAnchor = it.boundsInWindow() }) {
-                GlassIconButton(
-                    onClick = { sortOpen = true },
-                    modifier = Modifier.graphicsLayer { alpha = sortTriggerAlpha.floatValue },
-                    groupSurfaceSeparation = { sortSeparation.floatValue },
-                ) {
-                    SfIcon("arrow.up.arrow.down", stringResource(R.string.local_library_sort), size = 18.dp)
-                }
+            GlassIconButton(
+                onClick = { sortOpen = true },
+                modifier = Modifier.iosMenuAnchor(sortAnchor),
+            ) {
+                SfIcon("arrow.up.arrow.down", stringResource(R.string.local_library_sort), size = 18.dp)
             }
             if (isNavigationTab) GlobalProfileAvatarButton()
         },
@@ -244,15 +238,12 @@ internal fun LibraryDownloadsPage(
     }
 
     if (sortOpen) IosCascadingMenu(
-        anchorBounds = sortAnchor,
+        anchorBounds = sortAnchor.bounds,
+        menuAnchorState = sortAnchor,
         title = stringResource(R.string.local_library_sort),
         expandedDescription = stringResource(R.string.menu_expanded),
         collapsedDescription = stringResource(R.string.menu_collapsed),
         onDismiss = { sortOpen = false },
-        onTriggerAlphaChanged = { sortTriggerAlpha.floatValue = it },
-        onTriggerSeparationChanged = if (isNavigationTab) {
-            { sortSeparation.floatValue = it }
-        } else null,
         items = DownloadLibrarySort.entries.map { value ->
             IosCascadingMenuItem(stringResource(value.labelRes()), systemName = if (value == sort) "checkmark" else null, onClick = { sort = value })
         },

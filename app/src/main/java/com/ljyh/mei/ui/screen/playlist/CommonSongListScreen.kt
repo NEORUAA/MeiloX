@@ -29,12 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -62,6 +59,8 @@ import com.ljyh.mei.ui.glass.GlassButton
 import com.ljyh.mei.ui.glass.GlassSurface
 import com.ljyh.mei.ui.glass.IosPinnedListPage
 import com.ljyh.mei.ui.glass.IosTypography
+import com.ljyh.mei.ui.glass.iosMenuAnchor
+import com.ljyh.mei.ui.glass.rememberIosMenuAnchorState
 import com.ljyh.mei.ui.glass.LocalGlassColors
 import com.ljyh.mei.ui.glass.LocalGlassBackdrop
 import com.ljyh.mei.ui.glass.LocalGlassDimensions
@@ -126,11 +125,7 @@ fun CommonSongListScreen(
         enabled = useCoverBackground,
     )
     var detailMenuOpen by remember { mutableStateOf(false) }
-    val detailMenuTriggerAlpha = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
-    val detailMenuSeparation = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val triggerFadePaint = remember { androidx.compose.ui.graphics.Paint() }
-
-    var detailMenuAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val detailMenuAnchor = rememberIosMenuAnchorState()
     val device = rememberDeviceInfo()
     val bottomPadding = LocalPlayerAwareWindowInsets.current
         .asPaddingValues()
@@ -308,18 +303,7 @@ fun CommonSongListScreen(
                     } else if (detailMenu != null) {
                         com.ljyh.mei.ui.glass.GlassIconButton(
                             onClick = { detailMenuOpen = true },
-                            groupSurfaceSeparation = { detailMenuSeparation.floatValue },
-                            modifier = Modifier.onGloballyPositioned { detailMenuAnchor = it.boundsInWindow() }
-                                .drawWithContent {
-                                    val alpha = detailMenuTriggerAlpha.floatValue
-                                    if (alpha >= 1f) drawContent()
-                                    else if (alpha > 0f) {
-                                        triggerFadePaint.alpha = alpha
-                                        drawContext.canvas.saveLayer(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height), triggerFadePaint)
-                                        drawContent()
-                                        drawContext.canvas.restore()
-                                    }
-                                },
+                            modifier = Modifier.iosMenuAnchor(detailMenuAnchor),
                             enabled = !isLoading,
                         ) { SfIcon(SfSymbol.Ellipsis, detailMenuTitle) }
                     }
@@ -386,16 +370,12 @@ fun CommonSongListScreen(
 
             if (detailMenuOpen && detailMenu != null) {
                 com.ljyh.mei.ui.glass.IosCascadingMenu(
-                    anchorBounds = detailMenuAnchor, items = detailMenu,
+                    anchorBounds = detailMenuAnchor.bounds, items = detailMenu,
+                    menuAnchorState = detailMenuAnchor,
                     title = detailMenuTitle,
                     expandedDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_expanded),
                     collapsedDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_collapsed),
-                    onDismiss = { detailMenuOpen = false; detailMenuTriggerAlpha.floatValue = 1f },
-                    onTriggerAlphaChanged = { detailMenuTriggerAlpha.floatValue = it },
-                    onTriggerSeparationChanged = if (onPlaylistSearchQueryChange != null) {
-                        { detailMenuSeparation.floatValue = it }
-                    } else null,
-                    triggerSeparationEnabled = searchSeparation < com.ljyh.mei.ui.glass.ToolbarDetachProgress,
+                    onDismiss = { detailMenuOpen = false },
                 )
             }
             PlaylistActionOverlay(

@@ -27,20 +27,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -83,6 +89,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
+import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.utils.color.ColorExtractionUtils
@@ -103,6 +110,240 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun liquidMenuFieldPreservesSignedDistanceAndNormalsOnGpu() {
+        assertTrue("The installed build includes the native field fast path", LiquidMenuNativeField.warmUp())
+        val contour = LiquidMenuContour(Rect(0f, 0f, 180f, 140f), Offset(34f, 34f), null, Offset.Zero, 8f)
+        val data = requireNotNull(contour.sampledField())
+        val pixel = (0 until data.width * data.height).first { index ->
+            data.rgba[index * 4] < -2f && data.rgba[index * 4 + 1] < -0.25f && data.rgba[index * 4 + 2] < -0.25f
+        }
+        val texture = LiquidMenuFieldTexture().apply { update(data, Offset.Zero) }
+        val shader = android.graphics.RuntimeShader("""
+            uniform shader field;
+            uniform float2 samplePoint;
+            half4 main(float2 p) {
+                float3 value = field.eval(samplePoint).rgb;
+                return half4(-value.r * 0.01, -value.g, -value.b, 1.0);
+            }
+        """)
+        shader.setInputBuffer("field", requireNotNull(texture.input))
+        shader.setFloatUniform("samplePoint", pixel % data.width + 0.5f, pixel / data.width + 0.5f)
+        compose.setContent {
+            Canvas(Modifier.size(24.dp).testTag("signedField")) { drawRect(ShaderBrush(shader)) }
+        }
+        val image = compose.onNodeWithTag("signedField").captureToImage().toPixelMap()
+        val actual = image[image.width / 2, image.height / 2]
+        assertEquals(-data.rgba[pixel * 4] * 0.01f, actual.red, 2f / 255f)
+        assertEquals(-data.rgba[pixel * 4 + 1], actual.green, 2f / 255f)
+        assertEquals(-data.rgba[pixel * 4 + 2], actual.blue, 2f / 255f)
+    }
+
+    @Test
+    fun liquidMenuSamplingCoversSpringOvershootBeyondItsRestingHost() {
+        val overshoot = mutableFloatStateOf(1.03f)
+        val navigationMaterial = mutableStateOf(true)
+        val negativeOrigin = mutableStateOf(false)
+        compose.setContent {
+            val backdrop = rememberCanvasBackdrop { drawRect(Color(0xFF315A8C)) }
+            CompositionLocalProvider(LocalGlassAppearance provides GlassAppearance()) {
+                Column(Modifier.width(240.dp).testTag("overshootScene")) {
+                    repeat(2) { index ->
+                        val host = remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        val renderer = rememberGlassMorphRenderer(backdrop, true, blurRadius = 4.dp)
+                        Box(Modifier.size(240.dp, 190.dp)) {
+                            Box(Modifier.padding(24.dp).size(
+                                if (index == 0) 160.dp else 200.dp,
+                                if (index == 0) 120.dp else 160.dp,
+                            ).onGloballyPositioned { host.value = it }.drawBehind {
+                                val coordinates = host.value ?: return@drawBehind
+                                renderer.draw(
+                                    scope = this,
+                                    coordinates = coordinates,
+                                    viewport = Rect(0f, 0f, 720.dp.toPx(), 812.dp.toPx()),
+                                    origin = coordinates.positionInRoot(),
+                                    bounds = Rect(
+                                        if (negativeOrigin.value) Offset(-8.dp.toPx(), -6.dp.toPx()) else Offset.Zero,
+                                        Size(160.dp.toPx() * overshoot.floatValue, 120.dp.toPx() * overshoot.floatValue),
+                                    ),
+                                    radius = 16.dp.toPx(),
+                                    shape = com.kyant.shapes.RoundedRectangle(16.dp),
+                                    tint = Color(0x66334455),
+                                    highlightAlpha = 0f,
+                                    navigationOutline = false,
+                                    navigationMaterial = navigationMaterial.value,
+                                    refractionAmount = 0.dp,
+                                )
+                            })
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        listOf(true, false).forEach { material ->
+            listOf(1.03f, 1.12f).forEach { scale ->
+                listOf(false, true).forEach { negative ->
+                compose.runOnIdle {
+                    navigationMaterial.value = material
+                    overshoot.floatValue = scale
+                    negativeOrigin.value = negative
+                }
+                compose.waitForIdle()
+                val image = compose.onNodeWithTag("overshootScene").captureToImage().toPixelMap()
+                val density = image.width / 240f
+                val points = if (negative) listOf(80f to 60f, -4f to 60f, 80f to -3f)
+                    else listOf(80f to 60f, 161f to 60f, 80f to 121f)
+                points.forEach { (x, y) ->
+                    val actual = image[((24f + x) * density).toInt(), ((24f + y) * density).toInt()]
+                    val control = image[((24f + x) * density).toInt(), ((214f + y) * density).toInt()]
+                    val label = "material=$material overshoot=$scale negativeOrigin=$negative at($x,$y)"
+                    assertEquals("$label red", control.red, actual.red, 2f / 255f)
+                    assertEquals("$label green", control.green, actual.green, 2f / 255f)
+                    assertEquals("$label blue", control.blue, actual.blue, 2f / 255f)
+                    assertEquals("$label alpha", control.alpha, actual.alpha, 2f / 255f)
+                }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun liquidMenuSamplingStaysFixedDuringRearScaleAndPressDrag() {
+        val scale = mutableFloatStateOf(1f)
+        val darkBackground = mutableStateOf(false)
+        var highlight: InteractiveHighlight? = null
+        compose.setContent {
+            val density = LocalDensity.current
+            val page = rememberLayerBackdrop()
+            val base = rememberCanvasBackdrop { drawRect(Color.Black) }
+            val backdrop = rememberSharedGlassBackdrop(base, page)
+            val motion = remember { LiquidMenuMorphMotion() }
+            val screenOrigin = remember { mutableStateOf<Offset?>(null) }
+            val scope = rememberCoroutineScope()
+            val press = remember(scope) {
+                // Keep the press light constant at these interior sample points, so a
+                // pixel difference measures sampling movement rather than moving light.
+                InteractiveHighlight(scope) { _, _ -> Offset.Zero }
+            }
+            SideEffect { highlight = press }
+            CompositionLocalProvider(
+                LocalGlassAppearance provides GlassAppearance(),
+                LocalGlassColors provides LocalGlassColors.current.copy(container = Color.Transparent),
+            ) {
+                Box(Modifier.size(320.dp, 300.dp).testTag("liquidSamplingScene")) {
+                    Canvas(Modifier.fillMaxSize().layerBackdrop(page).trackBackdropPosition(page)) {
+                        if (darkBackground.value) drawRect(Color.Black) else drawRect(Brush.linearGradient(
+                            listOf(Color.Red, Color.Green, Color.Blue),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height),
+                        ))
+                    }
+                    Box(Modifier.padding(40.dp).size(240.dp, 200.dp)
+                        .testTag("liquidSamplingHost")
+                        .onGloballyPositioned { coordinates ->
+                            val origin = coordinates.localToScreen(Offset.Zero)
+                            if (screenOrigin.value != origin) {
+                                val target = Rect(origin, Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat()))
+                                val source = Rect(origin, with(density) { Size(80.dp.toPx(), 40.dp.toPx()) })
+                                motion.initialize(source, target, with(density) { 34.dp.toPx() }, density.density)
+                                motion.retarget(true)
+                                motion.advanceBy(5f)
+                                screenOrigin.value = origin
+                            }
+                        },
+                    ) {
+                        screenOrigin.value?.let { origin ->
+                            LiquidMenuMorphSurface(
+                                motion = motion,
+                                screenOrigin = origin,
+                                backdrop = backdrop,
+                                exportChildBackdrop = false,
+                                sourcePortal = null,
+                                shaderPrograms = null,
+                                menuScale = { scale.floatValue },
+                                transformOrigin = TransformOrigin(0.85f, 0.15f),
+                                highlight = press,
+                            ) { }
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val scene = compose.onNodeWithTag("liquidSamplingScene")
+        val host = compose.onNodeWithTag("liquidSamplingHost")
+        fun checkScales(reference: androidx.compose.ui.graphics.PixelMap, phase: String) {
+            val density = reference.width / 320f
+            listOf(0.94f, 0.76f, 1.03f, 1f).forEach { value ->
+                compose.runOnIdle { scale.floatValue = value }
+                compose.waitForIdle()
+                val actual = scene.captureToImage().toPixelMap()
+                listOf(120f, 140f, 160f).forEach { xDp ->
+                    listOf(100f, 110f, 120f).forEach { yDp ->
+                        val x = (xDp * density).toInt()
+                        val y = (yDp * density).toInt()
+                        val expected = reference[x, y]
+                        val sampled = actual[x, y]
+                        val label = "$phase scale=$value at ($xDp,$yDp)"
+                        assertEquals("$label red", expected.red, sampled.red, 4f / 255f)
+                        assertEquals("$label green", expected.green, sampled.green, 4f / 255f)
+                        assertEquals("$label blue", expected.blue, sampled.blue, 4f / 255f)
+                    }
+                }
+            }
+        }
+        checkScales(scene.captureToImage().toPixelMap(), "rear menu")
+        host.performTouchInput { down(Offset(40f, 40f)) }
+        compose.waitForIdle()
+        compose.runOnIdle { assertTrue(requireNotNull(highlight).pressProgress > 0.99f) }
+        val pressed = scene.captureToImage().toPixelMap()
+        host.performTouchInput { moveBy(Offset(60f, 30f)) }
+        compose.waitForIdle()
+        compose.runOnIdle { assertTrue(requireNotNull(highlight).offset.getDistance() > 30f) }
+        try {
+            checkScales(pressed, "pressed drag")
+            // A black scene isolates leaked additive press light: the exterior shadow
+            // can only darken it, while a rectangular light would brighten all corners.
+            compose.runOnIdle { darkBackground.value = true }
+            compose.waitForIdle()
+            listOf(0.94f, 0.76f, 1.03f, 1f).forEach { value ->
+                compose.runOnIdle { scale.floatValue = value }
+                compose.waitForIdle()
+                val image = scene.captureToImage().toPixelMap()
+                val density = image.width / 320f
+                val sceneBounds = scene.fetchSemanticsNode().boundsInRoot
+                val hostBounds = host.fetchSemanticsNode().boundsInRoot
+                val press = requireNotNull(highlight)
+                val layer = GraphicsLayerBlockScope().apply {
+                    reset(androidx.compose.ui.unit.Density(density), hostBounds.size)
+                    transformOrigin = TransformOrigin(0.85f, 0.15f)
+                    applyGlassDragScale(press.pressProgress, press.offset)
+                    scaleX *= value
+                    scaleY *= value
+                }
+                val pivot = Offset(hostBounds.width * 0.85f, hostBounds.height * 0.15f)
+                val origin = hostBounds.topLeft - sceneBounds.topLeft + Offset(
+                    pivot.x * (1f - layer.scaleX) + layer.translationX,
+                    pivot.y * (1f - layer.scaleY) + layer.translationY,
+                )
+                val inset = 4f * density
+                listOf(inset, hostBounds.width - inset).forEach { x ->
+                    listOf(inset, hostBounds.height - inset).forEach { y ->
+                        val point = origin + Offset(x * layer.scaleX, y * layer.scaleY)
+                        val pixel = image[point.x.toInt(), point.y.toInt()]
+                        val label = "Press light stays inside the curved skin: scale=$value at $point"
+                        assertEquals("$label red", 0f, pixel.red, 2f / 255f)
+                        assertEquals("$label green", 0f, pixel.green, 2f / 255f)
+                        assertEquals("$label blue", 0f, pixel.blue, 2f / 255f)
+                    }
+                }
+            }
+        } finally {
+            host.performTouchInput { up() }
+        }
+    }
 
     @Test
     fun popupSamplingStaysFixedWhileItsLayerExpandsAndCollapses() {
@@ -974,19 +1215,25 @@ class GlassControlsInteractionTest {
     }
 
     @Test
-    fun toolbarPopupDetachmentReversesImmediatelyAndSingleActionsOpenWithoutDetaching() {
+    fun toolbarPopupMorphsTheWholeSourceAndReversesWithoutDetaching() {
         val groupedOpen = mutableStateOf(false)
         val singleOpen = mutableStateOf(false)
         val groupedStyle = mutableStateOf(IosToolbarActionStyle.Merged)
-        val reportsSeparation = mutableStateOf(true)
-        val separationEnabled = mutableStateOf(true)
-        var separation = 0f
+        var groupedAnchor: IosMenuAnchorState? = null
+        var singleAnchor: IosMenuAnchorState? = null
+        var groupedGroup: ToolbarActionGroup? = null
         var groupedClosed = 0
         var groupedAlpha = 0f
         var singleAlpha = 0f
         compose.setContent {
             MaterialTheme {
                 val backdrop = rememberCanvasBackdrop { drawRect(Color(0xFFBAC8DD)) }
+                val groupedSource = rememberIosMenuAnchorState()
+                val singleSource = rememberIosMenuAnchorState()
+                SideEffect {
+                    groupedAnchor = groupedSource
+                    singleAnchor = singleSource
+                }
                 CompositionLocalProvider(
                     LocalGlassAppearance provides GlassAppearance(),
                     LocalGlassBackdrop provides backdrop,
@@ -997,19 +1244,18 @@ class GlassControlsInteractionTest {
                             title = "Grouped",
                             actionsStyle = groupedStyle.value,
                             actions = {
+                                val group = LocalIosToolbarActionGroup.current
+                                SideEffect { groupedGroup = group }
                                 GlassIconButton({}) { SfIcon(SfSymbol.Search, null) }
                                 IosPopupMenu(
                                     expanded = groupedOpen.value,
                                     onExpandedChange = { groupedOpen.value = it },
                                     itemCount = 1,
+                                    menuAnchorState = groupedSource,
                                     onMenuAlphaChanged = { groupedAlpha = it },
-                                    anchorSeparationEnabled = separationEnabled.value,
-                                    onAnchorSeparationChanged = if (reportsSeparation.value) {
-                                        { separation = it }
-                                    } else null,
                                     onClosed = { groupedClosed++ },
                                     anchor = { open ->
-                                        GlassIconButton(open, Modifier.testTag("groupedPopupAnchor")) {
+                                        GlassIconButton(open, Modifier.iosMenuAnchor(groupedSource).testTag("groupedPopupAnchor")) {
                                             SfIcon(SfSymbol.Ellipsis, null)
                                         }
                                     },
@@ -1025,9 +1271,10 @@ class GlassControlsInteractionTest {
                                     expanded = singleOpen.value,
                                     onExpandedChange = { singleOpen.value = it },
                                     itemCount = 1,
+                                    menuAnchorState = singleSource,
                                     onMenuAlphaChanged = { singleAlpha = it },
                                     anchor = { open ->
-                                        GlassIconButton(open, Modifier.testTag("singlePopupAnchor")) {
+                                        GlassIconButton(open, Modifier.iosMenuAnchor(singleSource).testTag("singlePopupAnchor")) {
                                             SfIcon(SfSymbol.Ellipsis, null)
                                         }
                                     },
@@ -1041,53 +1288,127 @@ class GlassControlsInteractionTest {
             }
         }
         compose.waitForIdle()
+        var fusedBounds = Rect.Zero
+        compose.runOnIdle {
+            val group = requireNotNull(groupedGroup)
+            val run = group.sharedRuns().single()
+            fusedBounds = requireNotNull(groupedAnchor).bounds!!
+            assertEquals("The source covers the complete fused surface", group.visualBoundsInWindow(run), fusedBounds)
+            assertTrue("Both action slots belong to the source", fusedBounds.width > run.first().bounds!!.width * 1.9f)
+            val preview = requireNotNull(groupedAnchor).previewBounds!!
+            assertTrue("The native pivot follows the trigger preview inside the fused source", preview.width < fusedBounds.width * 0.6f)
+            assertTrue("The preview remains inside the complete source", fusedBounds.contains(preview.center))
+        }
         compose.mainClock.autoAdvance = false
+        fun advanceUntil(condition: () -> Boolean) {
+            // Android measures a new Popup outside the Compose test clock. Let each
+            // layout frame finish before checking the handoff or advancing its springs.
+            compose.waitUntil(timeoutMillis = 5_000L) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+                compose.runOnIdle(condition)
+            }
+        }
+        fun awaitCollapsed(tag: String, sourceRestored: () -> Boolean) {
+            advanceUntil(sourceRestored)
+            // Source restoration precedes Android removing the popup's semantic root.
+            compose.waitUntil(timeoutMillis = 5_000L) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+                compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty()
+            }
+        }
         try {
             toolbarAction("groupedPopupAnchor").performClick()
+            advanceUntil {
+                val group = requireNotNull(groupedGroup)
+                assertEquals("No detachment runs while the popup is being measured", 0f, group.separationProgress.value, 0.001f)
+                assertEquals("The source stays fused throughout the handoff", 1, group.sharedRuns().size)
+                requireNotNull(groupedAnchor).isAcquired
+            }
+            compose.onNodeWithTag("groupedPopupItem").assertExists()
             compose.mainClock.advanceTimeBy(96L)
-            compose.onNodeWithTag("groupedPopupItem").assertDoesNotExist()
-            var reversingFrom = 0f
+            var openingAlpha = 0f
             compose.runOnIdle {
-                assertTrue("The shared anchor separates before the popup appears", separation > 0f && separation < 1f)
-                reversingFrom = separation
+                val source = requireNotNull(groupedAnchor)
+                val group = requireNotNull(groupedGroup)
+                assertTrue("The menu acquires the whole source as soon as it opens", source.isAcquired)
+                assertTrue("A fused source retains its foreground portal", source.portal != null)
+                assertEquals(source.bounds!!.size, source.portal!!.sourceBounds.size)
+                assertEquals(fusedBounds, source.bounds)
+                assertTrue("Every fused action is hidden behind the menu", group.members.all {
+                    group.isMenuSourceHidden(listOf(it))
+                })
+                assertEquals("Opening never separates the source", 0f, group.separationProgress.value, 0.001f)
+                assertTrue("The menu begins appearing immediately", groupedAlpha > 0f)
+                openingAlpha = groupedAlpha
+                groupedOpen.value = false
             }
-            toolbarAction("groupedPopupAnchor").performClick()
-            compose.mainClock.advanceTimeBy(160L)
+            compose.mainClock.advanceTimeBy(80L)
+            compose.onNodeWithTag("groupedPopupItem").assertExists()
+            var closingAlpha = 0f
             compose.runOnIdle {
-                assertTrue("A second tap reverses the neck without waiting for a menu collapse", separation < reversingFrom)
+                assertTrue("Closing reverses the existing transition", groupedAlpha < openingAlpha)
+                assertTrue("The source stays acquired until the menu reaches it", requireNotNull(groupedAnchor).isAcquired)
+                assertEquals("Interrupted closing does not finish the lifecycle", 0, groupedClosed)
+                closingAlpha = groupedAlpha
             }
-            compose.mainClock.advanceTimeBy(160L)
+            val closingBounds = compose.onNodeWithTag("groupedPopupItem").getUnclippedBoundsInRoot()
+            compose.runOnIdle { groupedOpen.value = true }
+            compose.waitForIdle()
+            val reopenedBounds = compose.onNodeWithTag("groupedPopupItem").getUnclippedBoundsInRoot()
+            listOf(
+                closingBounds.left to reopenedBounds.left,
+                closingBounds.top to reopenedBounds.top,
+                closingBounds.right to reopenedBounds.right,
+                closingBounds.bottom to reopenedBounds.bottom,
+            ).forEach { (before, after) ->
+                assertEquals("Retargeting preserves the physical menu before the next frame", before.value, after.value, 0.5f)
+            }
+            compose.mainClock.advanceTimeBy(80L)
+            compose.onNodeWithTag("groupedPopupItem").assertExists()
+            compose.runOnIdle {
+                assertTrue("Reopening continues from the closing animation", groupedAlpha > closingAlpha)
+                assertTrue(requireNotNull(groupedAnchor).isAcquired)
+                assertEquals(0, groupedClosed)
+                groupedOpen.value = false
+            }
+            awaitCollapsed("groupedPopupItem") { !requireNotNull(groupedAnchor).isAcquired && groupedClosed == 1 }
             compose.onNodeWithTag("groupedPopupItem").assertDoesNotExist()
             compose.runOnIdle {
-                assertEquals("The anchor rejoins before the 450ms popup close duration", 1, groupedClosed)
-                assertEquals(0f, separation, 0.02f)
+                assertFalse("A completed collapse restores the source", requireNotNull(groupedAnchor).isAcquired)
+                assertTrue(requireNotNull(groupedGroup).members.none {
+                    requireNotNull(groupedGroup).isMenuSourceHidden(listOf(it))
+                })
+                assertEquals(1, groupedClosed)
+                assertEquals(0f, requireNotNull(groupedGroup).separationProgress.value, 0.001f)
+                groupedStyle.value = IosToolbarActionStyle.Separated
             }
 
-            compose.runOnIdle { groupedStyle.value = IosToolbarActionStyle.Separated }
-            compose.mainClock.advanceTimeBy(1200L)
-            listOf(false, true).forEach { externalCallback ->
-                compose.runOnIdle {
-                    reportsSeparation.value = externalCallback
-                    separationEnabled.value = !externalCallback
-                }
-                toolbarAction("groupedPopupAnchor").performClick()
-                compose.mainClock.advanceTimeBy(64L)
-                compose.onNodeWithTag("groupedPopupItem").assertExists()
-                compose.runOnIdle {
-                    assertTrue("Already separated actions immediately show their popup", groupedAlpha > 0f)
-                    assertEquals("No redundant detachment runs", 0f, separation, 0.02f)
-                    groupedOpen.value = false
-                }
-                compose.mainClock.advanceTimeBy(600L)
-                compose.onNodeWithTag("groupedPopupItem").assertDoesNotExist()
+            advanceUntil { requireNotNull(groupedGroup).separationProgress.value >= 0.999f }
+            toolbarAction("groupedPopupAnchor").performClick()
+            advanceUntil { requireNotNull(groupedAnchor).isAcquired }
+            compose.onNodeWithTag("groupedPopupItem").assertExists()
+            compose.mainClock.advanceTimeBy(64L)
+            compose.runOnIdle {
+                assertTrue("A separated action morphs only its own surface", requireNotNull(groupedAnchor).bounds!!.width < fusedBounds.width * 0.6f)
+                assertEquals("The menu preserves the existing separated style", 1f, requireNotNull(groupedGroup).separationProgress.value, 0.001f)
+                groupedOpen.value = false
             }
+            awaitCollapsed("groupedPopupItem") { !requireNotNull(groupedAnchor).isAcquired && groupedClosed == 2 }
 
             toolbarAction("singlePopupAnchor").performClick()
-            compose.mainClock.advanceTimeBy(64L)
+            advanceUntil { requireNotNull(singleAnchor).isAcquired }
             compose.onNodeWithTag("singlePopupItem").assertExists()
+            compose.mainClock.advanceTimeBy(64L)
             compose.runOnIdle {
                 assertTrue("A standalone action immediately starts showing its popup", singleAlpha > 0f)
+                assertTrue("The standalone source uses the same handoff", requireNotNull(singleAnchor).isAcquired)
+                singleOpen.value = false
             }
+            awaitCollapsed("singlePopupItem") { !requireNotNull(singleAnchor).isAcquired }
+            compose.onNodeWithTag("singlePopupItem").assertDoesNotExist()
+            compose.runOnIdle { assertFalse(requireNotNull(singleAnchor).isAcquired) }
         } finally {
             compose.runOnIdle {
                 groupedOpen.value = false

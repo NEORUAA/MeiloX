@@ -1,7 +1,6 @@
 package com.ljyh.mei.ui.glass
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -45,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -66,6 +66,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
@@ -78,6 +80,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -110,7 +113,6 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -724,7 +726,7 @@ fun IosStepper(
 
 /** Figma nodes 770:21901 and 754:62668. */
 @Composable
-fun IosContextMenu(
+internal fun IosContextMenu(
     visible: Boolean,
     modifier: Modifier = Modifier,
     backdrop: Backdrop = LocalBlurBackdrop.current,
@@ -743,6 +745,11 @@ fun IosContextMenu(
     exportChildBackdrop: Boolean = true,
     initialTransformOrigin: TransformOrigin? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    morphMotion: LiquidMenuMorphMotion? = null,
+    morphSourceAcquired: Boolean = true,
+    morphSourcePortal: ToolbarMenuPortal? = null,
+    morphShaderPrograms: LiquidMenuShaderPrograms? = null,
+    onMorphReady: ((Rect) -> Unit)? = null,
     content: @Composable ColumnScope.(LayerBackdrop) -> Unit,
 ) {
     if (!visible) return
@@ -753,6 +760,7 @@ fun IosContextMenu(
     val progress = animationProgress.coerceIn(0f, 1f)
     val menuHeight = heightOverride ?: (20.dp + 44.dp * itemCount)
     val radius = 34.dp
+    var menuScreenOrigin by remember { mutableStateOf<Offset?>(null) }
     val menuShape = remember(radius) { RoundedRectangle(radius) }
     val transitionScale = 0.24f + 0.76f * animationProgress
     val startOrigin = initialTransformOrigin ?: TransformOrigin(1f, if (opensAbove) 1f else 0f)
@@ -824,10 +832,12 @@ fun IosContextMenu(
             // creates a bounded layer even with Unbounded edge treatment, so it must stay
             // outside the spring-sized menu to avoid exposing a menu-sized rectangle.
             .blur(
-                (8.dp * (1f - progress)).coerceAtLeast(0.dp),
+                if (morphMotion == null) (8.dp * (1f - progress)).coerceAtLeast(0.dp) else 0.dp,
                 BlurredEdgeTreatment.Unbounded,
             )
-            .graphicsLayer { alpha = menuAlpha.coerceIn(0f, 1f) }
+            .graphicsLayer {
+                alpha = if (morphMotion != null && (!morphMotion.initialized || !morphSourceAcquired)) 0f else menuAlpha.coerceIn(0f, 1f)
+            }
             .size(width = popupHostWidth, height = popupHostHeight),
     ) {
         Box(
@@ -844,6 +854,8 @@ fun IosContextMenu(
                     .size(width = menuWidth, height = menuHeight)
                     .onGloballyPositioned { coordinates ->
                         samplingCoordinates = coordinates
+                        menuScreenOrigin = coordinates.localToScreen(Offset.Zero)
+                        onMorphReady?.invoke(Rect(coordinates.localToScreen(Offset.Zero), Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())))
                         // Measure outside the animated glass layer. Capturing a pressed row
                         // includes transient drag scale and gives the child a stale endpoint.
                         val origin = coordinates.localToScreen(androidx.compose.ui.geometry.Offset.Zero)
@@ -855,7 +867,20 @@ fun IosContextMenu(
                         )
                     },
             ) {
-                Column(
+                if (morphMotion != null && morphMotion.initialized && menuScreenOrigin != null) {
+                    LiquidMenuMorphSurface(
+                        motion = morphMotion,
+                        screenOrigin = menuScreenOrigin!!,
+                        backdrop = backdrop,
+                        exportChildBackdrop = exportChildBackdrop,
+                        sourcePortal = morphSourcePortal,
+                        shaderPrograms = morphShaderPrograms,
+                        menuScale = menuScale,
+                        transformOrigin = startOrigin,
+                        highlight = interactiveHighlight,
+                        content = content,
+                    )
+                } else Column(
                     Modifier
                         .fillMaxSize()
                         .navigationGlassBackground(
@@ -881,7 +906,7 @@ fun IosContextMenu(
                         )
                         .then(interactiveHighlight.modifier)
                         .then(interactiveHighlight.gestureModifier)
-                        .clip(ContinuousRoundedRectangle(radius))
+                        .clip(menuShape)
                         .padding(10.dp)
                         .graphicsLayer { alpha = contentAlpha.coerceIn(0f, 1f) },
                 ) {
@@ -893,12 +918,9 @@ fun IosContextMenu(
 }
 
 /**
- * Anchored iOS popup whose glass surface grows out of the trigger itself.
- * One Popup window covers the whole expand/open/collapse lifecycle and `progress` is the
- * single source of truth: the spring always continues from the current value and velocity,
- * so toggling at any moment reverses the motion in place instead of swapping to a separate
- * closing copy (which could lose the collapse animation entirely). While collapsing the
- * window is non-focusable and its rows are non-interactive, so it cannot be dismissed twice.
+ * Keeps one Popup and one connected source through opening, retargeting and collapse.
+ * Toolbar menus use independent liquid geometry and optical channels; other anchors retain
+ * the compact popup transition. The source returns only after the physical surface settles.
  */
 @Composable
 fun IosPopupMenu(
@@ -920,152 +942,119 @@ fun IosPopupMenu(
     heightOverride: androidx.compose.ui.unit.Dp? = null,
     onMenuBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     onMenuAlphaChanged: ((Float) -> Unit)? = null,
-    onAnchorSeparationChanged: ((Float) -> Unit)? = null,
-    anchorSeparationEnabled: Boolean = true,
+    menuAnchorState: IosMenuAnchorState? = null,
     onClosed: (() -> Unit)? = null,
-    overlayContent: @Composable BoxScope.(Float) -> Unit = {},
+    overlayContent: @Composable BoxScope.(() -> Float) -> Unit = {},
     anchor: @Composable (onClick: () -> Unit) -> Unit,
     content: @Composable ColumnScope.(LayerBackdrop, close: () -> Unit) -> Unit,
 ) {
     var anchorSize by remember { mutableStateOf(IntSize.Zero) }
-    var popupAlive by remember { mutableStateOf(expanded) }
-    var transitionStarted by remember { mutableStateOf(expanded) }
+    var popupAlive by remember { mutableStateOf(false) }
+    var transitionStarted by remember { mutableStateOf(false) }
     var opensAbove by remember { mutableStateOf(false) }
     var anchorFractionX by remember { mutableFloatStateOf(1f) }
-    val progress = remember { Animatable(if (expanded) 1f else 0f) }
-    val transformOriginProgress = remember { Animatable(if (expanded) 1f else 0f) }
-    val menuAlpha = remember { Animatable(if (expanded) 1f else 0f) }
-    val shadowAlpha = remember { Animatable(if (expanded) 1f else 0f) }
-    val separatesToolbarAnchor = anchorSeparationEnabled &&
-        (LocalIosToolbarActionGroup.current?.sharedRuns()?.isNotEmpty() == true || onAnchorSeparationChanged != null)
-    var detachAnchorForTransition by remember { mutableStateOf(expanded && separatesToolbarAnchor) }
-    val anchorSeparation = remember { Animatable(if (expanded) 1f else 0f) }
-    var contentAlpha by remember { mutableFloatStateOf(if (expanded) 1f else 0f) }
-
-    LaunchedEffect(Unit) {
-        var previousFraction = progress.value
-        snapshotFlow { progress.value }
-            .collect { currentFraction ->
-                val isEntering = currentFraction >= previousFraction
-                previousFraction = currentFraction
-                contentAlpha = if (isEntering) {
-                    0.2f + 0.8f * currentFraction
-                } else if (currentFraction > 0.5f) {
-                    1f
-                } else {
-                    currentFraction * 2f
-                }
-            }
+    val progress = remember { Animatable(0f) }
+    val transformOriginProgress = remember { Animatable(0f) }
+    val menuAlpha = remember { Animatable(0f) }
+    val shadowAlpha = remember { Animatable(0f) }
+    val localMenuAnchor = rememberIosMenuAnchorState()
+    val sourceAnchor = menuAnchorState ?: localMenuAnchor
+    val toolbarGroup = LocalIosToolbarActionGroup.current
+    LaunchedEffect(sourceAnchor, toolbarGroup) {
+        if (toolbarGroup != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            sourceAnchor.prewarmShaders()
+        }
     }
-
-    LaunchedEffect(Unit) {
-        var previousFraction = progress.value
-        var shadowVisible = progress.value >= 0.78f
-        var animationJob: Job? = null
-        snapshotFlow { progress.value }
-            .collect { currentFraction ->
-                val isEntering = currentFraction >= previousFraction
-                previousFraction = currentFraction
-                val newVisible = if (isEntering) {
-                    currentFraction >= 0.78f
-                } else {
-                    currentFraction >= 0.99f
-                }
-                if (newVisible != shadowVisible) {
-                    shadowVisible = newVisible
-                    animationJob?.cancel()
-                    animationJob = launch {
-                        if (newVisible) {
-                            shadowAlpha.animateTo(1f, tween(200))
-                        } else if (shadowAlpha.value >= 1f) {
-                            shadowAlpha.animateTo(0f, tween(50))
-                        } else {
-                            shadowAlpha.snapTo(0f)
-                        }
-                    }
-                }
-            }
-    }
+    val hostView = LocalView.current
+    val density = LocalDensity.current
+    val liquidMotion = remember { LiquidMenuMorphMotion() }
+    val morphsToolbar = menuAnchorState != null || toolbarGroup != null
+    var windowScreenOffset by remember { mutableStateOf(Offset.Zero) }
+    DisposableEffect(sourceAnchor) { onDispose { sourceAnchor.release() } }
+    var morphSourceBounds by remember { mutableStateOf<Rect?>(null) }
+    var surfaceReady by remember { mutableStateOf(false) }
+    var measuredMorphTarget by remember { mutableStateOf<Rect?>(null) }
+    var positionAnchorBounds by remember { mutableStateOf<Rect?>(null) }
+    val usesMorph = morphSourceBounds != null
+    val resolvedFullScreen = fullScreen || usesMorph
+    val contentAlpha = if (usesMorph) {
+        ((progress.value - 0.12f) / 0.64f).coerceIn(0f, 1f)
+    } else progress.value.coerceIn(0f, 1f)
 
     LaunchedEffect(expanded) {
-        if (expanded) coroutineScope {
+        if (expanded) {
             transitionStarted = true
-            detachAnchorForTransition = detachAnchorForTransition || separatesToolbarAnchor
-            if (detachAnchorForTransition) {
-                launch {
-                    anchorSeparation.animateTo(
-                        1f,
-                        spring(dampingRatio = 0.82f, stiffness = 400f, visibilityThreshold = 0.02f),
-                    )
+            if (!popupAlive) {
+                surfaceReady = false
+                measuredMorphTarget = null
+                positionAnchorBounds = externalAnchorBounds
+                if (morphsToolbar) {
+                    val source = snapshotFlow { sourceAnchor.bounds?.takeUnless { it.isEmpty } }.first { it != null }!!
+                    val screen = IntArray(2)
+                    val window = IntArray(2)
+                    hostView.getLocationOnScreen(screen)
+                    hostView.getLocationInWindow(window)
+                    windowScreenOffset = Offset((screen[0] - window[0]).toFloat(), (screen[1] - window[1]).toFloat())
+                    morphSourceBounds = source.translate(windowScreenOffset)
                 }
-                // Continue as soon as the neck has separated; the spring may settle behind
-                // the menu without holding an already detached button on screen.
-                snapshotFlow { anchorSeparation.value }.first { it >= 1f }
             }
             popupAlive = true
-            coroutineScope {
-                launch {
-                    progress.animateTo(
-                        targetValue = 1f,
-                        initialVelocity = if (detachAnchorForTransition) anchorSeparation.velocity.coerceIn(0f, 3f) else 0f,
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = 240f,
-                            visibilityThreshold = 0.0001f,
-                        ),
+            if (morphSourceBounds != null) {
+                snapshotFlow { surfaceReady }.first { it }
+                if (!sourceAnchor.isAcquired || !liquidMotion.initialized) {
+                    morphSourceBounds = sourceAnchor.acquire()?.translate(windowScreenOffset) ?: morphSourceBounds
+                    liquidMotion.initialize(
+                        morphSourceBounds!!,
+                        requireNotNull(measuredMorphTarget),
+                        with(density) { 34.dp.toPx() },
+                        density.density,
+                        through = sourceAnchor.previewBounds?.translate(windowScreenOffset) ?: morphSourceBounds!!,
                     )
                 }
-                launch {
-                    transformOriginProgress.animateTo(
-                        targetValue = 1f,
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = 500f,
-                            visibilityThreshold = 0.0001f,
-                        ),
-                    )
+                // Reopening during collapse retains the live contour and every velocity.
+            }
+            coroutineScope {
+                if (morphSourceBounds != null) launch {
+                    progress.snapTo(1f)
+                    transformOriginProgress.snapTo(1f)
+                    shadowAlpha.snapTo(1f)
+                    liquidMotion.animateTo(true)
+                } else launch {
+                    progress.animateTo(1f, spring(
+                        // AnimationKit liquidMorph: response 0.3 s, mass normalized to 1.
+                        dampingRatio = 0.8f,
+                        stiffness = 438.65f,
+                        visibilityThreshold = 0.001f,
+                    ))
+                }
+                if (morphSourceBounds == null) {
+                    launch { transformOriginProgress.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 500f)) }
+                    launch { shadowAlpha.animateTo(1f, tween(200)) }
                 }
                 launch { menuAlpha.animateTo(1f, tween(120)) }
             }
-        } else coroutineScope {
-            // A second tap during detachment reverses the neck immediately; there is no
-            // popup to collapse yet, so it must not wait for the menu's closing duration.
-            if (popupAlive) {
-                launch {
-                    progress.animateTo(
-                        targetValue = 0f,
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = 400f,
-                            visibilityThreshold = 0.0001f,
-                        ),
-                    )
+        } else {
+            if (popupAlive) coroutineScope {
+                if (morphSourceBounds != null && liquidMotion.initialized) launch {
+                    sourceAnchor.liveBounds?.let {
+                        liquidMotion.updateSource(
+                            it.translate(windowScreenOffset),
+                            through = sourceAnchor.previewBounds?.translate(windowScreenOffset) ?: it.translate(windowScreenOffset),
+                        )
+                    }
+                    liquidMotion.animateTo(false)
                 }
-                launch {
-                    transformOriginProgress.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(
-                            durationMillis = 450,
-                            easing = CubicBezierEasing(0f, 0f, 0f, 1f),
-                        ),
-                    )
+                if (morphSourceBounds == null) {
+                    launch { progress.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 438.65f, visibilityThreshold = 0.001f)) }
+                    launch { transformOriginProgress.animateTo(0f, tween(300)) }
+                    launch { shadowAlpha.animateTo(0f, tween(160)) }
                 }
-                launch { menuAlpha.animateTo(0f, tween(400)) }
-                snapshotFlow { progress.value <= 0.001f && menuAlpha.value <= 0f }.first { it }
+                launch { menuAlpha.animateTo(0f, tween(300)) }
             }
-            progress.snapTo(0f)
-            transformOriginProgress.snapTo(0f)
-            menuAlpha.snapTo(0f)
+            sourceAnchor.release()
             popupAlive = false
-            if (detachAnchorForTransition) {
-                anchorSeparation.animateTo(
-                    0f,
-                    spring(dampingRatio = 0.82f, stiffness = 400f, visibilityThreshold = 0.02f),
-                )
-            } else {
-                anchorSeparation.snapTo(0f)
-            }
-            detachAnchorForTransition = false
+            morphSourceBounds = null
+            surfaceReady = false
             if (transitionStarted) {
                 transitionStarted = false
                 onClosed?.invoke()
@@ -1074,23 +1063,22 @@ fun IosPopupMenu(
     }
 
     val currentAlphaCallback by androidx.compose.runtime.rememberUpdatedState(onMenuAlphaChanged)
-    val currentSeparationCallback by androidx.compose.runtime.rememberUpdatedState(onAnchorSeparationChanged)
-    LaunchedEffect(anchorSeparation) {
-        snapshotFlow { anchorSeparation.value.coerceIn(0f, 1f) }
-            .collect { currentSeparationCallback?.invoke(it) }
-    }
     LaunchedEffect(menuAlpha) {
-        androidx.compose.runtime.snapshotFlow { menuAlpha.value.coerceIn(0f, 1f) }
+        snapshotFlow { menuAlpha.value.coerceIn(0f, 1f) }
             .collect { currentAlphaCallback?.invoke(it) }
     }
 
     val anchorFadePaint = remember { Paint() }
 
-    Box(modifier.onSizeChanged { anchorSize = it }) {
+    Box(modifier.onSizeChanged { anchorSize = it }.onGloballyPositioned {
+        if (menuAnchorState == null) localMenuAnchor.bind(toolbarGroup, it.boundsInWindow())
+    }) {
         Box(
             Modifier
                 .drawWithContent {
-                    val alpha = if (keepAnchorVisible) {
+                    val alpha = if (sourceAnchor.isAcquired && !sourceAnchor.isGroupedSource) {
+                        0f
+                    } else if (keepAnchorVisible || usesMorph) {
                         1f
                     } else {
                         1f - menuAlpha.value.coerceIn(0f, 1f)
@@ -1116,7 +1104,7 @@ fun IosPopupMenu(
                 },
         ) {
             CompositionLocalProvider(
-                LocalToolbarActionSeparation provides { anchorSeparation.value.coerceIn(0f, 1f) },
+                LocalToolbarActionSeparation provides { 0f },
             ) {
                 anchor { onExpandedChange(!expanded) }
             }
@@ -1167,10 +1155,10 @@ fun IosPopupMenu(
                     opensAbove = resolved
                 }
             }
-            var fullScreenMenuOffset by remember(positionProvider, externalAnchorBounds, fullScreen) {
+            var resolvedFullScreenMenuOffset by remember(positionProvider, positionAnchorBounds, resolvedFullScreen) {
                 mutableStateOf<IntOffset?>(null)
             }
-            val popupPositionProvider = remember(positionProvider, externalAnchorBounds, fullScreen) {
+            val popupPositionProvider = remember(positionProvider, positionAnchorBounds, resolvedFullScreen) {
                 object : PopupPositionProvider {
                     override fun calculatePosition(
                         anchorBounds: IntRect,
@@ -1179,15 +1167,15 @@ fun IosPopupMenu(
                         popupContentSize: IntSize,
                     ): IntOffset {
                         val menuOffset = positionProvider.calculatePosition(
-                            externalAnchorBounds?.let {
+                            positionAnchorBounds?.let {
                                 IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
                             } ?: anchorBounds,
                             windowSize,
                             layoutDirection,
                             popupContentSize,
                         )
-                        return if (fullScreen) {
-                            fullScreenMenuOffset = menuOffset
+                        return if (resolvedFullScreen) {
+                            resolvedFullScreenMenuOffset = menuOffset
                             IntOffset.Zero
                         } else {
                             menuOffset
@@ -1209,7 +1197,7 @@ fun IosPopupMenu(
                 // outside taps (dismiss) instead of letting them vanish into the window.
                 Box(
                     Modifier
-                        .then(if (fullScreen) Modifier.fillMaxSize() else Modifier),
+                        .then(if (resolvedFullScreen) Modifier.fillMaxSize() else Modifier),
                     contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
                 ) {
                     // The dismiss target is a sibling so it never merges submenu pane semantics.
@@ -1223,18 +1211,18 @@ fun IosPopupMenu(
                         // Wide cascading menus exceed the platform Popup's measured width.
                         // Keep their window at screen size and position the existing animation
                         // shell inside it so its right-hand shadow is not cut off by the window.
-                        if (fullScreen && fullScreenMenuOffset == null) return@CompositionLocalProvider
+                        if (resolvedFullScreen && resolvedFullScreenMenuOffset == null) return@CompositionLocalProvider
                         IosContextMenu(
                             visible = true,
-                            modifier = if (fullScreen) {
-                                Modifier.absoluteOffset { fullScreenMenuOffset ?: IntOffset.Zero }
+                            modifier = if (resolvedFullScreen) {
+                                Modifier.absoluteOffset { resolvedFullScreenMenuOffset ?: IntOffset.Zero }
                             } else {
                                 Modifier
                             },
                             backdrop = backdrop,
                             animationProgress = progress.value,
                             transformOriginProgress = transformOriginProgress.value,
-                            menuAlpha = menuAlpha.value,
+                            menuAlpha = if (usesMorph) 1f else menuAlpha.value,
                             contentAlpha = contentAlpha,
                             shadowAlpha = shadowAlpha.value,
                             opensAbove = opensAbove,
@@ -1247,11 +1235,19 @@ fun IosPopupMenu(
                             } else null,
                             menuWidth = menuWidth,
                             onMenuBoundsChanged = onMenuBoundsChanged,
+                            morphMotion = liquidMotion.takeIf { usesMorph },
+                            morphSourceAcquired = sourceAnchor.isAcquired,
+                            morphSourcePortal = sourceAnchor.portal,
+                            morphShaderPrograms = sourceAnchor.shaderPrograms,
+                            onMorphReady = { target ->
+                                if (usesMorph && !surfaceReady) measuredMorphTarget = target
+                                surfaceReady = true
+                            },
                         ) { childBackdrop ->
                             content(childBackdrop) { onExpandedChange(false) }
                         }
                     }
-                    overlayContent(menuAlpha.value.coerceIn(0f, 1f))
+                    overlayContent { menuAlpha.value.coerceIn(0f, 1f) }
                 }
             }
         }

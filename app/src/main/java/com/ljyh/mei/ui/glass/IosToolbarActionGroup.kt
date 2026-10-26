@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -24,12 +26,15 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathIterator
@@ -37,7 +42,12 @@ import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.PathSegment as ComposePathSegment
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
@@ -53,6 +63,8 @@ import com.kyant.capsule.path.toPath
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -69,6 +81,90 @@ internal const val ToolbarDetachProgress = 0.8f
 internal val LocalIosToolbarActionGroup = staticCompositionLocalOf<ToolbarActionGroup?> { null }
 internal val LocalToolbarActionSeparation = staticCompositionLocalOf<(() -> Float)?> { null }
 
+/** Transfers a complete connected toolbar surface to its menu without changing its layout. */
+@Stable
+class IosMenuAnchorState internal constructor() {
+    private var group: ToolbarActionGroup? = null
+    private var triggerBounds by mutableStateOf<Rect?>(null)
+    private var acquiredBounds by mutableStateOf<Rect?>(null)
+    private var acquiredGroup: ToolbarActionGroup? = null
+    @Volatile
+    internal var shaderPrograms: LiquidMenuShaderPrograms? = null
+        private set
+
+    @Synchronized
+    internal fun prewarmShaders() {
+        if (shaderPrograms == null) shaderPrograms = LiquidMenuShaderPrograms()
+    }
+    internal var portal by mutableStateOf<ToolbarMenuPortal?>(null)
+        private set
+
+    /** Group content is hidden in the final Row draw, after its portal is recorded. */
+    internal val isGroupedSource: Boolean get() = acquiredGroup != null
+    internal var isAcquired by mutableStateOf(false)
+        private set
+
+    /** Window coordinates, shared by the trigger and the popup position provider. */
+    val bounds: Rect?
+        get() = acquiredBounds ?: liveBounds
+
+    /** Follow the source's live press transform while the popup keeps its placement frozen. */
+    internal val liveBounds: Rect?
+        get() = triggerBounds?.let { source ->
+            group?.menuSourceBounds(source) ?: source
+        }
+
+    /** The native through item is the trigger, while the source may be its entire fused run. */
+    internal val previewBounds: Rect?
+        get() = triggerBounds?.let { source ->
+            group?.menuPreviewBounds(source) ?: source
+        }
+
+    internal fun bind(group: ToolbarActionGroup?, bounds: Rect) {
+        this.group = group
+        triggerBounds = bounds
+    }
+
+    internal fun acquire(): Rect? {
+        if (isAcquired) return acquiredBounds
+        val source = triggerBounds?.takeUnless { it.isEmpty } ?: return null
+        val sourceGroup = group
+        val run = sourceGroup?.menuSourceRun(source).orEmpty()
+        acquiredBounds = if (run.isEmpty()) source else sourceGroup!!.visualBoundsInWindow(run)
+        acquiredGroup = sourceGroup.takeIf { run.isNotEmpty() }
+        portal = acquiredGroup?.foregroundPortal(run)
+        isAcquired = true
+        acquiredGroup?.hideMenuSource(this, run)
+        return acquiredBounds
+    }
+
+    internal fun release() {
+        acquiredGroup?.restoreMenuSource(this)
+        acquiredGroup = null
+        portal = null
+        acquiredBounds = null
+        isAcquired = false
+    }
+}
+
+@Composable
+fun rememberIosMenuAnchorState(): IosMenuAnchorState {
+    val state = remember { IosMenuAnchorState() }
+    DisposableEffect(state) {
+        onDispose { state.release() }
+    }
+    return state
+}
+
+/** Attach to the source button even when its menu is composed outside the toolbar. */
+@Composable
+fun Modifier.iosMenuAnchor(state: IosMenuAnchorState): Modifier {
+    val group = LocalIosToolbarActionGroup.current
+    LaunchedEffect(state) { withContext(Dispatchers.Default) { state.prewarmShaders() } }
+    return onGloballyPositioned { state.bind(group, it.boundsInWindow()) }
+        .graphicsLayer { alpha = if (state.isAcquired && !state.isGroupedSource) 0f else 1f }
+}
+
 /** Shares only the material; each action retains its own hit target and interaction state. */
 @Composable
 internal fun IosToolbarActionGroup(
@@ -84,7 +180,10 @@ internal fun IosToolbarActionGroup(
     )
     val progress = rememberUpdatedState((separationProgress ?: styleProgress).coerceIn(0f, 1f))
     val density = LocalDensity.current
-    val group = remember(density) { ToolbarActionGroup(with(density) { 8.dp.toPx() }, density, progress) }
+    val foregroundLayer = rememberGraphicsLayer()
+    val group = remember(density, foregroundLayer) {
+        ToolbarActionGroup(with(density) { 8.dp.toPx() }, density, progress, foregroundLayer)
+    }
     val colors = LocalGlassColors.current
     val appearance = LocalGlassAppearance.current
     val backdrop = LocalGlassBackdrop.current
@@ -115,6 +214,7 @@ internal fun IosToolbarActionGroup(
                     pressOverlay = { group.drawPressHighlight(this, run) },
                     layerBlock = {
                         group.applyTransform(this, group.bounds(run), group.pressTransform(run.first()))
+                        alpha = if (group.isMenuSourceHidden(run)) 0f else 1f
                     },
                     appearance = appearance,
                 )
@@ -134,6 +234,19 @@ internal fun IosToolbarActionGroup(
         } }
         CompositionLocalProvider(LocalIosToolbarActionGroup provides group) {
             Row(
+                modifier = Modifier.drawWithContent {
+                    if (size.width <= 0f || size.height <= 0f) {
+                        drawContent()
+                        return@drawWithContent
+                    }
+                    // Child layers retain their opacity for the outgoing portal. Suppress
+                    // the original glyphs only in this final draw, after recording them.
+                    foregroundLayer.record { this@drawWithContent.drawContent() }
+                    group.markForegroundRecorded()
+                    val hidden = group.foregroundOcclusionPath()
+                    if (hidden == null) drawLayer(foregroundLayer)
+                    else clipPath(hidden, clipOp = ClipOp.Difference) { drawLayer(foregroundLayer) }
+                },
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content,
@@ -196,8 +309,15 @@ internal class ToolbarActionMember(
     fun applyPressTransform(scope: GraphicsLayerScope) {
         val base = bounds ?: return
         group.applyTransform(scope, base, group.pressTransform(this))
+        scope.alpha = if (group.isMenuSourceHidden(listOf(this)) && !group.isMenuSourcePortaled(this)) 0f else 1f
     }
 }
+
+/** The original foreground stays GPU-resident while the menu deforms its source envelope. */
+internal data class ToolbarMenuPortal(
+    val layer: GraphicsLayer,
+    val sourceBounds: Rect,
+)
 
 /** A single affine transform is shared by the shell and every icon in a fused run. */
 internal data class ToolbarActionTransform(
@@ -219,12 +339,16 @@ internal class ToolbarActionGroup(
     val gap: Float,
     val density: Density,
     val separationProgress: State<Float>,
+    private val foregroundLayer: GraphicsLayer,
 ) {
     private val pressScope = GraphicsLayerBlockScope()
     private val pressRenderer = PressHighlightRenderer()
 
     val members = mutableStateListOf<ToolbarActionMember>()
     var coordinates: LayoutCoordinates? = null
+    private var menuSources by mutableStateOf<Map<IosMenuAnchorState, List<ToolbarActionMember>>>(emptyMap())
+    private var foregroundRecorded = false
+    private val foregroundOcclusion = Path()
 
     private val layoutRuns = derivedStateOf(structuralEqualityPolicy()) { calculateRuns() }
     private val connectedRuns = derivedStateOf(structuralEqualityPolicy()) {
@@ -278,6 +402,82 @@ internal class ToolbarActionGroup(
     fun connectedRun(member: ToolbarActionMember): List<ToolbarActionMember> {
         return connectedRuns.value.firstOrNull { member in it } ?: listOf(member)
     }
+
+    private fun menuSourceMember(source: Rect): ToolbarActionMember? {
+        val origin = coordinates?.takeIf { it.isAttached }?.localToWindow(Offset.Zero) ?: return null
+        val localSource = source.translate(-origin)
+        return members.filter { it.bounds?.overlaps(localSource) == true }
+            .maxByOrNull { member ->
+                val intersection = member.bounds!!.intersect(localSource)
+                intersection.width * intersection.height
+            }
+    }
+
+    internal fun menuSourceRun(source: Rect): List<ToolbarActionMember> =
+        menuSourceMember(source)?.let(::connectedRun).orEmpty()
+
+    internal fun menuPreviewBounds(source: Rect): Rect? =
+        menuSourceMember(source)?.let { visualBoundsInWindow(listOf(it)) }
+
+    internal fun menuSourceBounds(source: Rect): Rect? {
+        val run = menuSourceRun(source)
+        if (run.isEmpty()) return null
+        return visualBoundsInWindow(run)
+    }
+
+    internal fun visualBoundsInWindow(run: List<ToolbarActionMember>): Rect {
+        val coordinates = coordinates?.takeIf { it.isAttached } ?: return Rect.Zero
+        val bounds = bounds(run)
+        val transform = pressTransform(run.first())
+        val topLeft = coordinates.localToWindow(transform.map(bounds.topLeft))
+        val bottomRight = coordinates.localToWindow(transform.map(bounds.bottomRight))
+        return Rect(topLeft, bottomRight)
+    }
+
+    internal fun markForegroundRecorded() {
+        foregroundRecorded = true
+    }
+
+    internal fun foregroundPortal(run: List<ToolbarActionMember>): ToolbarMenuPortal? {
+        // Shared runs draw their material outside the Row, leaving a clean glyph portal.
+        // Single controls retain the existing hidden-source path to avoid replaying glass.
+        if (!foregroundRecorded || run.size < 2) return null
+        val sourceBounds = visualBoundsInGroup(run)
+        if (sourceBounds.isEmpty) return null
+        return ToolbarMenuPortal(foregroundLayer, sourceBounds)
+    }
+
+    internal fun isMenuSourcePortaled(member: ToolbarActionMember): Boolean =
+        menuSources.any { (owner, run) -> owner.portal != null && member in run }
+
+    internal fun foregroundOcclusionPath(): Path? {
+        foregroundOcclusion.rewind()
+        menuSources.forEach { (owner, run) ->
+            if (owner.portal != null) {
+                // Include antialias coverage around the glyph layer's physical run bounds.
+                foregroundOcclusion.addRect(visualBoundsInGroup(run).inflate(1f))
+            }
+        }
+        return foregroundOcclusion.takeUnless { it.isEmpty }
+    }
+
+    private fun visualBoundsInGroup(run: List<ToolbarActionMember>): Rect {
+        val bounds = bounds(run)
+        if (bounds.isEmpty) return Rect.Zero
+        val transform = pressTransform(run.first())
+        return Rect(transform.map(bounds.topLeft), transform.map(bounds.bottomRight))
+    }
+
+    internal fun hideMenuSource(owner: IosMenuAnchorState, run: List<ToolbarActionMember>) {
+        menuSources = menuSources + (owner to run)
+    }
+
+    internal fun restoreMenuSource(owner: IosMenuAnchorState) {
+        menuSources = menuSources - owner
+    }
+
+    internal fun isMenuSourceHidden(run: List<ToolbarActionMember>): Boolean =
+        menuSources.values.any { hidden -> run.any { it in hidden } }
 
     private fun transform(bounds: Rect, highlight: InteractiveHighlight): ToolbarActionTransform {
         pressScope.reset(density, bounds.size)

@@ -78,8 +78,7 @@ fun IosCascadingMenu(
     backdrop: Backdrop = LocalBlurBackdrop.current,
     headerActions: List<IosCascadingMenuItem> = emptyList(),
     onTriggerAlphaChanged: ((Float) -> Unit)? = null,
-    onTriggerSeparationChanged: ((Float) -> Unit)? = null,
-    triggerSeparationEnabled: Boolean = true,
+    menuAnchorState: IosMenuAnchorState? = null,
     useAccentIcons: Boolean = true,
     centerHorizontally: Boolean = false,
     expandFromAnchor: Alignment.Horizontal? = null,
@@ -160,8 +159,7 @@ fun IosCascadingMenu(
         menuScale = menuScale,
         onMenuBoundsChanged = { menuBounds = it },
         onMenuAlphaChanged = { onTriggerAlphaChanged?.invoke(1f - it) },
-        onAnchorSeparationChanged = onTriggerSeparationChanged,
-        anchorSeparationEnabled = triggerSeparationEnabled,
+        menuAnchorState = menuAnchorState,
         onClosed = {
             if (started && !open) {
                 onDismiss()
@@ -202,7 +200,7 @@ fun IosCascadingMenu(
                 Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null) { childExpanded = false })
                 IosContextMenu(
                     visible = true,
-                    modifier = Modifier.absoluteOffset(left, top).graphicsLayer { alpha = menuAlpha },
+                    modifier = Modifier.absoluteOffset(left, top).graphicsLayer { alpha = menuAlpha() },
                     backdrop = backdrop,
                     exportChildBackdrop = false,
                     compact = true,
