@@ -72,6 +72,7 @@ import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.playlist.FinalPerfectCollage
 import com.ljyh.mei.ui.component.playlist.PlaylistBackground
 import com.ljyh.mei.ui.component.playlist.TrackActionMenu
+import com.ljyh.mei.ui.component.utils.PageOverscrollHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.glass.GlassIconButton
 import com.ljyh.mei.ui.glass.IosTopToolbar
@@ -153,7 +154,7 @@ fun LocalSongListScreen(
                 )
             }
         ) { padding ->
-            Box(
+            PageOverscrollHost(
                 Modifier
                     .fillMaxSize()
                     .padding(padding)

@@ -50,6 +50,7 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.runtimeShaderEffect
 import com.kyant.backdrop.isRuntimeShaderSupported
 import com.ljyh.mei.R
+import com.ljyh.mei.ui.component.utils.PageOverscrollHost
 
 private val HorizontalProgressiveBlurShader = progressiveBlurPassShader(isVertical = false)
 private val VerticalProgressiveBlurShader = progressiveBlurPassShader(
@@ -398,7 +399,8 @@ fun IosPinnedPage(
                         else Modifier.background(pageBackground),
                     ),
             ) {
-                content(contentPadding)
+                // The fallback must share the body's bounds, never the fixed toolbar's layer.
+                PageOverscrollHost { content(contentPadding) }
             }
             Box(
                 Modifier
