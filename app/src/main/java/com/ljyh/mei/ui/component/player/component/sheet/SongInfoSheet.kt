@@ -36,7 +36,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.ui.glass.IosModalSheet
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import com.ljyh.mei.utils.TimeUtils
 import com.ljyh.mei.utils.image.saveImageToGallery
 import com.ljyh.mei.utils.setClipboard
@@ -52,7 +52,7 @@ fun SongInfoSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier
     ) {

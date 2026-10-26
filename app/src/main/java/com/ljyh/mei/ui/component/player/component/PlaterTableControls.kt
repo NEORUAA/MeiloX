@@ -28,7 +28,7 @@ import com.ljyh.mei.playback.PlayMode
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseIcon
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicSkipIcon
 import com.ljyh.mei.playback.PlayerConnection
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.utils.rememberEnumPreference
 
 @OptIn(UnstableApi::class)

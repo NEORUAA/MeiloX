@@ -31,10 +31,10 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.ui.component.player.OverlayState
-import com.ljyh.mei.ui.glass.GlassSearchBar
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -65,7 +65,7 @@ fun ArtistSongsScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        IosPinnedListPage(
+        GlasmioPinnedListPage(
             title = title,
             listState = if (isSearching) searchListState else catalogListState,
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
@@ -75,7 +75,7 @@ fun ArtistSongsScreen(
             onNavigateBack = navController::popBackStack,
         ) {
             item(key = "catalog-search") {
-                GlassSearchBar(
+                GlasmioSearchBar(
                     query = query,
                     onQueryChange = { query = it; viewModel.updateQuery(id, it.text) },
                     active = searchActive,
@@ -117,7 +117,7 @@ fun ArtistSongsScreen(
             }
             if (state.error != null) {
                 item(key = "retry") {
-                    IosListRow(
+                    GlasmioListRow(
                         title = stringResource(R.string.retry),
                         subtitle = state.error,
                         onClick = {
@@ -128,7 +128,7 @@ fun ArtistSongsScreen(
             } else if (isSearching) {
                 if (state.hasMore && !state.isLoading) {
                     item(key = "continue-search") {
-                        IosListRow(
+                        GlasmioListRow(
                             title = stringResource(R.string.artist_catalog_search_continue),
                             onClick = { viewModel.continueSearch(id) },
                         )

@@ -1,5 +1,25 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
+import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioActionSheetContent
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+
 import android.app.Activity
 import android.net.Uri
 import android.provider.MediaStore
@@ -50,7 +70,6 @@ import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.glass.*
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -91,7 +110,7 @@ internal fun LibraryDownloadsPage(
     var searchActive by rememberSaveable { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(DownloadLibraryFilter.All) }
     var sort by rememberSaveable { mutableStateOf(DownloadLibrarySort.Recent) }
-    val sortAnchor = rememberIosMenuAnchorState()
+    val sortAnchor = rememberGlasmioMenuAnchorState()
     var sortOpen by remember { mutableStateOf(false) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var menuAnchor by remember { mutableStateOf<Rect?>(null) }
@@ -140,7 +159,7 @@ internal fun LibraryDownloadsPage(
         } else permission.launch(LocalLibraryViewModel.audioPermission)
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = pageTitle,
         listState = listState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
@@ -148,9 +167,9 @@ internal fun LibraryDownloadsPage(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlassIconButton(
+            GlasmioIconButton(
                 onClick = { sortOpen = true },
-                modifier = Modifier.iosMenuAnchor(sortAnchor),
+                modifier = Modifier.glasmioMenuAnchor(sortAnchor),
             ) {
                 SfIcon("arrow.up.arrow.down", stringResource(R.string.local_library_sort), size = 18.dp)
             }
@@ -158,7 +177,7 @@ internal fun LibraryDownloadsPage(
         },
     ) {
         item("library-search") {
-            GlassSearchBar(
+            GlasmioSearchBar(
                 query = search,
                 onQueryChange = { search = it },
                 active = searchActive,
@@ -171,7 +190,7 @@ internal fun LibraryDownloadsPage(
             )
         }
         if (!isCategoryPage) item("library-pages") {
-            GlassSegmentedControl(
+            GlasmioSegmentedControl(
                 items = pages.map { it to stringResource(it.titleRes) },
                 selected = LibraryPage.Downloads,
                 onSelected = onPageSelect,
@@ -180,7 +199,7 @@ internal fun LibraryDownloadsPage(
             )
         }
         item("download-filters") {
-            GlassSegmentedControl(
+            GlasmioSegmentedControl(
                 items = DownloadLibraryFilter.entries.map { it to stringResource(it.labelRes()) },
                 selected = filter,
                 onSelected = { filter = it },
@@ -188,15 +207,15 @@ internal fun LibraryDownloadsPage(
             )
         }
         item("local-scan") {
-            IosGroupedList {
-                IosListRow(
+            GlasmioGroupedList {
+                GlasmioListRow(
                     title = stringResource(R.string.local_library_scan),
                     subtitle = stringResource(if (permissionDenied) R.string.local_library_permission else R.string.local_library_scan_hint),
                     systemName = "folder",
                     showTopSeparator = false,
                     onClick = if (scan.isScanning) null else ::scanDevice,
                     trailing = {
-                        if (scan.isScanning) GlassIconButton(viewModel::cancelScan) {
+                        if (scan.isScanning) GlasmioIconButton(viewModel::cancelScan) {
                             SfIcon("xmark", stringResource(R.string.local_library_scan_cancel), size = 16.dp)
                         } else SfIcon("arrow.clockwise", null, size = 18.dp, tint = colors.accent)
                     },
@@ -215,7 +234,7 @@ internal fun LibraryDownloadsPage(
                         }
                     }
                 }
-                IosListRow(
+                GlasmioListRow(
                     title = stringResource(R.string.library_play_all),
                     systemName = "play.fill",
                     detail = stringResource(R.string.local_library_count, entries.size),
@@ -237,7 +256,7 @@ internal fun LibraryDownloadsPage(
         }
     }
 
-    if (sortOpen) IosCascadingMenu(
+    if (sortOpen) GlasmioCascadingMenu(
         anchorBounds = sortAnchor.bounds,
         menuAnchorState = sortAnchor,
         title = stringResource(R.string.local_library_sort),
@@ -245,7 +264,7 @@ internal fun LibraryDownloadsPage(
         collapsedDescription = stringResource(R.string.menu_collapsed),
         onDismiss = { sortOpen = false },
         items = DownloadLibrarySort.entries.map { value ->
-            IosCascadingMenuItem(stringResource(value.labelRes()), systemName = if (value == sort) "checkmark" else null, onClick = { sort = value })
+            GlasmioCascadingMenuItem(stringResource(value.labelRes()), systemName = if (value == sort) "checkmark" else null, onClick = { sort = value })
         },
     )
     allEntries.firstOrNull { it.key == selectedKey }?.let { entry ->
@@ -292,13 +311,13 @@ internal fun LibraryDownloadsPage(
     info?.let { song -> LocalFileInfo(song) { info = null } }
     LocalMatchSheet(viewModel)
     deleteEntry?.let { entry ->
-        IosAlertDialog(
+        GlasmioAlertDialog(
             onDismissRequest = { deleteEntry = null },
             title = if (entry.canPlay) stringResource(R.string.local_library_delete_confirm, entry.title) else stringResource(R.string.local_library_remove_record),
             message = if (entry.canPlay) stringResource(R.string.local_library_delete_hint) else null,
             buttons = listOf(
-                IosAlertButtonSpec(stringResource(R.string.cancel), { deleteEntry = null }, IosAlertButtonRole.Cancel),
-                IosAlertButtonSpec(stringResource(R.string.delete), {
+                GlasmioAlertButtonSpec(stringResource(R.string.cancel), { deleteEntry = null }, GlasmioAlertButtonRole.Cancel),
+                GlasmioAlertButtonSpec(stringResource(R.string.delete), {
                     deleteEntry = null
                     if (scan.isScanning) viewModel.cancelScan()
                     if (entry.task != null) DownloadManager.deleteTask(context, entry.task.songId) { removed ->
@@ -320,7 +339,7 @@ internal fun LibraryDownloadsPage(
                             else Toast.makeText(context, R.string.local_library_delete_failed, Toast.LENGTH_SHORT).show()
                         }
                     }
-                }, IosAlertButtonRole.Destructive),
+                }, GlasmioAlertButtonRole.Destructive),
             ),
         )
     }
@@ -373,8 +392,8 @@ private fun LocalLibraryProgress(progress: Float) {
 private fun LocalFileInfo(song: Song, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val colors = LocalGlassColors.current
-    IosModalSheet(onDismissRequest = onDismiss) {
-        IosActionSheetContent(title = song.title, message = song.artist.joinToString(" / ")) {
+    GlasmioBottomSheet(onDismissRequest = onDismiss) {
+        GlasmioActionSheetContent(title = song.title, message = song.artist.joinToString(" / ")) {
             val fields = listOf(
                 stringResource(R.string.local_library_format) to song.fileFormat.orEmpty().uppercase().ifBlank { "—" },
                 stringResource(R.string.local_library_duration) to formatLocalDuration(song.duration),
@@ -401,14 +420,14 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
     var searchActive by remember(state.song?.id) { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     if (state.song == null) return
-    IosModalSheet(onDismissRequest = viewModel::dismissMatch) {
+    GlasmioBottomSheet(onDismissRequest = viewModel::dismissMatch) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(stringResource(R.string.local_library_match), style = IosTypography.title2, color = colors.content)
             Text(stringResource(R.string.local_library_match_hint), style = IosTypography.subheadline, color = colors.secondaryContent)
-            GlassSearchBar(query = query, onQueryChange = { query = it }, active = searchActive, onActiveChange = { searchActive = it }, onClose = { searchActive = false; focus.clearFocus() },
+            GlasmioSearchBar(query = query, onQueryChange = { query = it }, active = searchActive, onActiveChange = { searchActive = it }, onClose = { searchActive = false; focus.clearFocus() },
                 placeholder = stringResource(R.string.search_bar_search), closeContentDescription = stringResource(R.string.cancel),
                 onSearch = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, modifier = Modifier.fillMaxWidth())
-            GlassButton(onClick = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, enabled = !state.isSearching && query.text.isNotBlank()) {
+            GlasmioButton(onClick = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, enabled = !state.isSearching && query.text.isNotBlank()) {
                 SfIcon("magnifyingglass", null, size = 17.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.search_bar_search))
@@ -417,7 +436,7 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
             state.error?.let { Text(it, color = colors.destructive, style = IosTypography.subheadline) }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 330.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(state.candidates, key = { it.id }) { result ->
-                    IosListRow(title = result.title, subtitle = result.artists.joinToString(" / ") { it.name }, detail = formatLocalDuration(result.duration), showTopSeparator = false,
+                    GlasmioListRow(title = result.title, subtitle = result.artists.joinToString(" / ") { it.name }, detail = formatLocalDuration(result.duration), showTopSeparator = false,
                         leading = { AsyncImage(result.coverUrl, null, Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)), contentScale = ContentScale.Crop) },
                         onClick = if (state.isApplying) null else ({ searchActive = false; focus.clearFocus(); candidate = result }))
                 }
@@ -426,11 +445,11 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
         }
     }
     candidate?.let { result ->
-        IosAlertDialog(onDismissRequest = { candidate = null }, title = stringResource(R.string.local_library_match_confirm),
+        GlasmioAlertDialog(onDismissRequest = { candidate = null }, title = stringResource(R.string.local_library_match_confirm),
             message = "${result.title}\n${result.artists.joinToString(" / ") { it.name }}\n${result.album.title}",
             buttons = listOf(
-                IosAlertButtonSpec(stringResource(R.string.cancel), { candidate = null }, IosAlertButtonRole.Cancel),
-                IosAlertButtonSpec(stringResource(R.string.local_library_apply), { candidate = null; viewModel.applyMatch(result) }),
+                GlasmioAlertButtonSpec(stringResource(R.string.cancel), { candidate = null }, GlasmioAlertButtonRole.Cancel),
+                GlasmioAlertButtonSpec(stringResource(R.string.local_library_apply), { candidate = null; viewModel.applyMatch(result) }),
             ))
     }
 }

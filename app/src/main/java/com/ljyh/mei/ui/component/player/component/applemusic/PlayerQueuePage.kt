@@ -112,9 +112,9 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.playbackOrderIndices
 import com.ljyh.mei.playback.queueEntryId
-import com.ljyh.mei.ui.glass.IosMenuItem
-import com.ljyh.mei.ui.glass.IosPopupMenu
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.smallImage
 import kotlinx.coroutines.flow.first
@@ -1403,7 +1403,7 @@ fun PlayerQueuePage(
     }
 
     // Keep the popup outside lazy items so removal cannot dispose its closing animation.
-    IosPopupMenu(
+    GlasmioMenu(
         expanded = menuExpanded,
         onExpandedChange = { menuExpanded = it },
         itemCount = 1,
@@ -1434,7 +1434,7 @@ fun PlayerQueuePage(
         },
         anchor = { Spacer(Modifier.size(1.dp)) },
     ) { childBackdrop, close ->
-        IosMenuItem(
+        GlasmioMenuItem(
             title = stringResource(R.string.queue_remove),
             systemName = "trash",
             destructive = true,

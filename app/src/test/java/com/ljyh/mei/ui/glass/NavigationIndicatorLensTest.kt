@@ -1,5 +1,19 @@
 package com.ljyh.mei.ui.glass
 
+import io.github.neoruaa.glasmio.glass.NavigationIndicatorRefractionAmount
+import io.github.neoruaa.glasmio.glass.NavigationIndicatorRefractionHeight
+import io.github.neoruaa.glasmio.glass.SegmentedIndicatorHeight
+import io.github.neoruaa.glasmio.glass.SegmentedIndicatorHorizontalExpansion
+import io.github.neoruaa.glasmio.glass.SegmentedIndicatorPressedScale
+import io.github.neoruaa.glasmio.glass.SegmentedIndicatorRefractionAmount
+import io.github.neoruaa.glasmio.glass.SegmentedIndicatorRefractionHeight
+import io.github.neoruaa.glasmio.glass.navigationLensSourceHeight
+import io.github.neoruaa.glasmio.glass.navigationPanelCenterOffset
+import io.github.neoruaa.glasmio.glass.navigationPressScale
+import io.github.neoruaa.glasmio.glass.navigationTabPanelScale
+import io.github.neoruaa.glasmio.glass.navigationTabPressOffset
+import io.github.neoruaa.glasmio.glass.segmentedIndicatorSize
+
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection

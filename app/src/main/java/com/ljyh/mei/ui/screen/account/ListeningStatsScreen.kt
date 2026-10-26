@@ -58,22 +58,22 @@ import com.ljyh.mei.data.model.melox.ListeningStatsPeriod
 import com.ljyh.mei.data.model.melox.ListeningStatsSectionType
 import com.ljyh.mei.data.model.melox.ListeningStatsReport
 import com.ljyh.mei.data.model.melox.ListeningStatsYear
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.LocalGlassSurfaceBrightness
-import com.ljyh.mei.ui.glass.LocalGlassSurfaceStyle
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.glass.LocalGlassSurfaceBrightness
+import io.github.neoruaa.glasmio.glass.LocalGlassSurfaceStyle
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import java.text.NumberFormat
@@ -94,7 +94,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val colors = LocalGlassColors.current
     var showInfo by rememberSaveable { mutableStateOf(false) }
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.listening_stats_title),
         subtitle = state.summary?.let {
             stringResource(R.string.listening_stats_total) + " " + listeningDuration(it.totalSeconds / 60, it.totalSeconds > 0)
@@ -103,16 +103,16 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
         onNavigateBack = navController::navigateUp,
         verticalArrangement = Arrangement.spacedBy(16.dp),
         actions = {
-            GlassIconButton({ showInfo = true }) {
+            GlasmioIconButton({ showInfo = true }) {
                 SfIcon("info.circle", stringResource(R.string.listening_stats_info_title))
             }
-            GlassIconButton(viewModel::refresh, enabled = !state.loading && !state.refreshing) {
+            GlasmioIconButton(viewModel::refresh, enabled = !state.loading && !state.refreshing) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
             }
         },
     ) {
         item {
-            GlassSegmentedControl(
+            GlasmioSegmentedControl(
                 items = listOf(
                     ListeningStatsPeriod.Week to stringResource(R.string.listening_stats_week),
                     ListeningStatsPeriod.Month to stringResource(R.string.listening_stats_month),
@@ -131,7 +131,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
                     LocalContentColor provides colors.content,
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        GlassIconButton(viewModel::previous, enabled = state.canGoPrevious && !state.loading) {
+                        GlasmioIconButton(viewModel::previous, enabled = state.canGoPrevious && !state.loading) {
                             SfIcon("chevron.left", stringResource(R.string.listening_stats_previous), size = 24.dp,
                                 tint = if (state.canGoPrevious && !state.loading) colors.content else colors.tertiaryContent)
                         }
@@ -143,7 +143,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
                             textAlign = TextAlign.Center,
                         )
                         if (!state.isLatest) {
-                            GlassButton(
+                            GlasmioButton(
                                 viewModel::current,
                                 modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize),
                             ) {
@@ -155,7 +155,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
                             }
                             Spacer(Modifier.width(8.dp))
                         }
-                        GlassIconButton(viewModel::next, enabled = state.canGoNext && !state.loading) {
+                        GlasmioIconButton(viewModel::next, enabled = state.canGoNext && !state.loading) {
                             SfIcon("chevron.right", stringResource(R.string.listening_stats_next), size = 24.dp,
                                 tint = if (state.canGoNext && !state.loading) colors.content else colors.tertiaryContent)
                         }
@@ -181,19 +181,19 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
         }
         state.error?.let {
             item {
-                GlassCard(Modifier.fillMaxWidth()) {
+                GlasmioCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(stringResource(R.string.listening_stats_error), fontWeight = FontWeight.SemiBold)
                         Text(stringResource(R.string.listening_stats_retry_message), color = colors.secondaryContent)
-                        GlassButton(viewModel::refresh) { Text(stringResource(R.string.retry)) }
+                        GlasmioButton(viewModel::refresh) { Text(stringResource(R.string.retry)) }
                     }
                 }
             }
         }
         if (state.summaryError != null && state.summary == null && !state.loading) {
             item {
-                GlassCard(Modifier.fillMaxWidth()) {
-                    IosListRow(
+                GlasmioCard(Modifier.fillMaxWidth()) {
+                    GlasmioListRow(
                         title = stringResource(R.string.listening_stats_total),
                         detail = stringResource(R.string.listening_stats_load_failed),
                         onClick = viewModel::refresh, showTopSeparator = false,
@@ -218,11 +218,11 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
         }
     }
     if (showInfo) {
-        IosAlertDialog(
+        GlasmioAlertDialog(
             onDismissRequest = { showInfo = false },
             title = stringResource(R.string.listening_stats_info_title),
             message = stringResource(R.string.listening_stats_info_message),
-            buttons = listOf(IosAlertButtonSpec(stringResource(R.string.done), { showInfo = false }, IosAlertButtonRole.Cancel)),
+            buttons = listOf(GlasmioAlertButtonSpec(stringResource(R.string.done), { showInfo = false }, GlasmioAlertButtonRole.Cancel)),
         )
     }
 }
@@ -231,7 +231,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
 private fun ListeningReportCard(report: ListeningStatsReport) {
     val colors = LocalGlassColors.current
     var showDays by rememberSaveable(report.period, report.startTimeMs, report.endTimeMs) { mutableStateOf(false) }
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(top = 20.dp, bottom = 8.dp)) {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(stringResource(R.string.listening_stats_duration), color = colors.secondaryContent,
@@ -245,7 +245,7 @@ private fun ListeningReportCard(report: ListeningStatsReport) {
                 Text(stringResource(R.string.listening_stats_chart_hint), style = MaterialTheme.typography.labelSmall,
                     color = colors.secondaryContent, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
                 ListeningReportSections(report)
-                IosListRow(
+                GlasmioListRow(
                     title = stringResource(if (showDays) R.string.listening_stats_hide_days else R.string.listening_stats_show_days),
                     systemName = "calendar",
                     onClick = { showDays = !showDays },
@@ -253,7 +253,7 @@ private fun ListeningReportCard(report: ListeningStatsReport) {
                 )
                 if (showDays) {
                     report.bins.forEach { bin ->
-                        IosListRow(title = binDateLabel(bin), detail = listeningDuration(bin.durationMinutes))
+                        GlasmioListRow(title = binDateLabel(bin), detail = listeningDuration(bin.durationMinutes))
                     }
                 }
             } else {
@@ -283,7 +283,7 @@ private fun ListeningReportSections(report: ListeningStatsReport) {
             ListeningStatsSectionType.LikedSongsPercent, ListeningStatsSectionType.RecommendedSongsPercent ->
                 NumberFormat.getPercentInstance().format(section.value / 100.0)
         }
-        IosListRow(title = stringResource(title), detail = detail)
+        GlasmioListRow(title = stringResource(title), detail = detail)
     }
 }
 
@@ -426,7 +426,7 @@ private fun ListeningDayArrow(
 @Composable
 private fun ListeningYearCard(year: ListeningStatsYear) {
     val colors = LocalGlassColors.current
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(year.year.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -444,7 +444,7 @@ private fun ListeningYearCard(year: ListeningStatsYear) {
 @Composable
 private fun ListeningEmptyCard(year: Boolean) {
     val colors = LocalGlassColors.current
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SfIcon("headphones", null, size = 38.dp, tint = colors.secondaryContent)

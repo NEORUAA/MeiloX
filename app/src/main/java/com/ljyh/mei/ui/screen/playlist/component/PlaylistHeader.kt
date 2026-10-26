@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,19 +47,19 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
 import com.ljyh.mei.ui.component.playlist.FinalPerfectCollage
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.utils.rememberEnumPreference
 
 /**
  * iOS-style playlist hero. The cover and actions intentionally stay self-contained so the
- * playlist page can be hosted by [IosPinnedListPage] without a second app bar or card system.
+ * playlist page can be hosted by [GlasmioPinnedListPage] without a second app bar or card system.
  */
 @Composable
 fun PlaylistHeader(
@@ -189,7 +191,7 @@ fun PlaylistHeader(
                     pending = isSubscriptionPending,
                 )
             } else {
-                GlassIconButton(
+                GlasmioIconButton(
                     onClick = onShufflePlay,
                     enabled = count > 0,
                     style = GlassSurfaceStyle.Navigation,
@@ -200,7 +202,7 @@ fun PlaylistHeader(
                 ) {
                     SfIcon("shuffle", null, size = 24.dp, weight = FontWeight.SemiBold)
                 }
-                GlassButton(
+                GlasmioButton(
                     onClick = onPlayAll,
                     style = GlassSurfaceStyle.Navigation,
                     detailAction = detailAction,
@@ -214,7 +216,7 @@ fun PlaylistHeader(
                         style = IosTypography.headline,
                     )
                 }
-                GlassIconButton(
+                GlasmioIconButton(
                     onClick = { onSubscribed(isSubscribed) },
                     enabled = !isSubscriptionPending,
                     style = GlassSurfaceStyle.Navigation,
@@ -241,7 +243,7 @@ fun PlaylistHeader(
                 }
             }
             onDownload?.let { download ->
-                GlassIconButton(onClick = download) {
+                GlasmioIconButton(onClick = download) {
                     SfIcon(
                         "arrow.down.circle",
                         stringResource(R.string.track_action_download),

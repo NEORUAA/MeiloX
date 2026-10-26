@@ -54,16 +54,16 @@ import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.data.network.clearNeteaseAccountSession
 import com.ljyh.mei.data.network.setNeteaseWebSession
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosTextField
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioTextField
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.navigation.MeiNavigator
@@ -90,7 +90,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
         .asPaddingValues()
         .calculateBottomPadding()
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.netease_login),
         subtitle = stringResource(R.string.netease_mobile_login_page_subtitle),
         showsLargeTitle = false,
@@ -111,7 +111,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                     style = IosTypography.body,
                     color = LocalGlassColors.current.secondaryContent,
                 )
-                GlassButton(
+                GlasmioButton(
                     onClick = { showMobileLoginSheet = true },
                     modifier = Modifier.fillMaxWidth(),
                     style = GlassSurfaceStyle.Standard,
@@ -122,7 +122,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
-                GlassButton(
+                GlasmioButton(
                     onClick = { Screen.NeteaseWebLogin.navigate(navController) },
                     modifier = Modifier.fillMaxWidth(),
                     style = GlassSurfaceStyle.Standard,
@@ -176,7 +176,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        IosPinnedListPage(
+        GlasmioPinnedListPage(
             title = stringResource(R.string.netease_web_login),
             subtitle = stringResource(when {
                 detected -> R.string.netease_login_detected
@@ -189,7 +189,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             onNavigateBack = navController::navigateUp,
             actions = {
                 if (detected) {
-                    GlassButton(
+                    GlasmioButton(
                         onClick = navController::finishNeteaseLogin,
                         emphasis = GlassEmphasis.Prominent,
                     ) { Text(stringResource(R.string.done)) }
@@ -217,7 +217,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             }
         }
         if (!detected && !showCookieLoginSheet) {
-            GlassButton(
+            GlasmioButton(
                 onClick = {
                     cookieLogin.pauseForManualLogin()
                     showCookieLoginSheet = true
@@ -312,7 +312,7 @@ private fun NeteaseCookieLoginSheet(
         }
     }
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
         contentWindowInsets = { WindowInsets.statusBars.union(WindowInsets.ime) },
     ) {
@@ -328,8 +328,8 @@ private fun NeteaseCookieLoginSheet(
                 fontWeight = FontWeight.Bold,
             )
 
-            IosGroupedList {
-                IosTextField(
+            GlasmioGroupedList {
+                GlasmioTextField(
                     value = cookieValue,
                     onValueChange = {
                         cookieValue = it
@@ -364,7 +364,7 @@ private fun NeteaseCookieLoginSheet(
                 )
             }
 
-            IosGroupedList {
+            GlasmioGroupedList {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -402,7 +402,7 @@ private fun NeteaseCookieLoginSheet(
                 )
             }
 
-            GlassButton(
+            GlasmioButton(
                 onClick = submit,
                 modifier = Modifier.fillMaxWidth(),
                 style = GlassSurfaceStyle.Standard,

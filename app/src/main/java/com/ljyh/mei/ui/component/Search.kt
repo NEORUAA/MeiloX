@@ -75,7 +75,7 @@ import androidx.compose.ui.util.lerp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AppBarHeight
-import com.ljyh.mei.ui.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurface
 import kotlin.math.max
 import kotlin.math.roundToInt
 

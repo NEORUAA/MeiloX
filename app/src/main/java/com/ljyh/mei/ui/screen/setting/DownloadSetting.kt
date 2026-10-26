@@ -27,16 +27,16 @@ import com.ljyh.mei.constants.AutoCacheQualityKey
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQuality
 import com.ljyh.mei.constants.DownloadQualityKey
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassSurface
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosStepper
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioStepper
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.DownloadManager
@@ -65,7 +65,7 @@ fun DownloadSetting(
         DownloadQuality.EXHIGH,
     )
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.download_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -96,14 +96,14 @@ fun DownloadSetting(
         }
         item {
             SettingsGroup(stringResource(R.string.automatic_cache)) {
-                GlassCard(Modifier.fillMaxWidth(), onClick = { onAutomaticCacheChange(!automaticCache) }) {
+                GlasmioCard(Modifier.fillMaxWidth(), onClick = { onAutomaticCacheChange(!automaticCache) }) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         SfIcon("arrow.down.circle", null)
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.automatic_cache_by_play_count))
                             Text(stringResource(R.string.automatic_cache_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        GlassToggle(automaticCache, onAutomaticCacheChange)
+                        GlasmioSwitch(automaticCache, onAutomaticCacheChange)
                     }
                 }
             }
@@ -111,10 +111,10 @@ fun DownloadSetting(
         if (automaticCache) {
             item {
                 SettingsGroup(stringResource(R.string.automatic_cache_threshold)) {
-                    GlassCard(Modifier.fillMaxWidth()) {
+                    GlasmioCard(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.automatic_cache_count, threshold), modifier = Modifier.weight(1f))
-                            IosStepper(value = threshold, onValueChange = onThresholdChange, range = 1..100)
+                            GlasmioStepper(value = threshold, onValueChange = onThresholdChange, range = 1..100)
                         }
                     }
                 }
@@ -136,7 +136,7 @@ private fun DownloadQualityCard(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    GlassCard(
+    GlasmioCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
     ) {

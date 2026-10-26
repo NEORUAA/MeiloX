@@ -21,12 +21,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.R
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -42,7 +42,7 @@ fun ArtistInfoScreen(
 
     LaunchedEffect(id) { viewModel.getArtistDetail(id) }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.artist_info_title),
         subtitle = artist?.name,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
@@ -58,14 +58,14 @@ fun ArtistInfoScreen(
                 }
             }
             is Resource.Error -> item(key = "error") {
-                IosGroupedList {
+                GlasmioGroupedList {
                     Text(
                         text = detail.message,
                         style = IosTypography.body,
                         color = LocalGlassColors.current.secondaryContent,
                         modifier = Modifier.padding(16.dp),
                     )
-                    IosListRow(
+                    GlasmioListRow(
                         title = stringResource(R.string.retry),
                         onClick = { viewModel.getArtistDetail(id) },
                     )
@@ -91,7 +91,7 @@ fun ArtistInfoScreen(
                                 style = IosTypography.body,
                                 color = LocalGlassColors.current.secondaryContent,
                             )
-                            GlassButton(onClick = { navController.popBackStack() }) {
+                            GlasmioButton(onClick = { navController.popBackStack() }) {
                                 Text(stringResource(R.string.navigation_back))
                             }
                         }
@@ -99,18 +99,18 @@ fun ArtistInfoScreen(
                 } else {
                     item(key = "works") {
                         ArtistInfoSection(stringResource(R.string.artist_info_works)) {
-                            IosListRow(
+                            GlasmioListRow(
                                 title = stringResource(R.string.artist_info_songs),
                                 detail = artistData.musicSize.toString(),
                                 onClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") },
                                 showTopSeparator = false,
                             )
-                            IosListRow(
+                            GlasmioListRow(
                                 title = stringResource(R.string.artist_info_albums),
                                 detail = artistData.albumSize.toString(),
                                 onClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") },
                             )
-                            IosListRow(
+                            GlasmioListRow(
                                 title = stringResource(R.string.artist_info_music_videos),
                                 detail = artistData.mvSize.toString(),
                             )
@@ -125,7 +125,7 @@ fun ArtistInfoScreen(
                         item(key = "identities") {
                             ArtistInfoSection(stringResource(R.string.artist_info_identities)) {
                                 identities.forEachIndexed { index, identity ->
-                                    IosListRow(
+                                    GlasmioListRow(
                                         title = identity,
                                         showTopSeparator = index != 0,
                                     )
@@ -140,7 +140,7 @@ fun ArtistInfoScreen(
                         item(key = "expertise") {
                             ArtistInfoSection(stringResource(R.string.artist_info_expertise)) {
                                 expertise.forEachIndexed { index, expert ->
-                                    IosListRow(
+                                    GlasmioListRow(
                                         title = expert.expertIdentiyName.trim(),
                                         detail = expert.expertIdentiyCount.toString(),
                                         showTopSeparator = index != 0,
@@ -215,7 +215,7 @@ private fun ArtistInfoSection(title: String, content: @Composable () -> Unit) {
             color = LocalGlassColors.current.content,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
-        IosGroupedList { content() }
+        GlasmioGroupedList { content() }
     }
 }
 

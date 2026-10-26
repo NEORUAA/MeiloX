@@ -1,5 +1,45 @@
 package com.ljyh.mei.ui.glass
 
+import io.github.neoruaa.glasmio.core.GlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.core.defaultGlassColors
+import io.github.neoruaa.glasmio.glass.GlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.glass.GlasmioToolbarActionStyle
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GraphicsLayerBlockScope
+import io.github.neoruaa.glasmio.glass.LiquidMenuContour
+import io.github.neoruaa.glasmio.glass.LiquidMenuFieldTexture
+import io.github.neoruaa.glasmio.glass.LiquidMenuMorphMotion
+import io.github.neoruaa.glasmio.glass.LiquidMenuMorphSurface
+import io.github.neoruaa.glasmio.glass.LiquidMenuNativeField
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.glass.LocalIosToolbarActionGroup
+import io.github.neoruaa.glasmio.glass.ToolbarActionGroup
+import io.github.neoruaa.glasmio.glass.ToolbarMenuPortal
+import io.github.neoruaa.glasmio.glass.applyGlassDragScale
+import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
+import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.glass.rememberGlassMorphRenderer
+import io.github.neoruaa.glasmio.glass.rememberSharedGlassBackdrop
+import io.github.neoruaa.glasmio.glass.rememberStationaryBackdrop
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.ui.GlasmioTopBar
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
@@ -92,8 +132,8 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.shapes.Capsule
-import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
-import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
+import io.github.neoruaa.glasmio.glass.PressHighlightRenderer
+import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.utils.color.ColorExtractionUtils
@@ -128,12 +168,12 @@ class GlassControlsInteractionTest {
                         key(scenario.value) {
                             val (rowCount, atBottom) = scenario.value
                             val actions: @Composable RowScope.() -> Unit = {
-                                GlassIconButton({}, Modifier.testTag("overscrollRefresh")) {
+                                GlasmioIconButton({}, Modifier.testTag("overscrollRefresh")) {
                                     SfIcon(SfSymbol.ArrowClockwise, null)
                                 }
                             }
                             if (rowCount < 0) {
-                                IosPinnedPage(
+                                GlasmioPinnedPage(
                                     title = "Pinned toolbar",
                                     bottomPadding = 0.dp,
                                     modifier = Modifier.testTag("overscrollPage"),
@@ -143,7 +183,7 @@ class GlassControlsInteractionTest {
                                     Box(Modifier.padding(padding).size(48.dp).testTag("overscrollBody"))
                                 }
                             } else {
-                                IosPinnedListPage(
+                                GlasmioPinnedListPage(
                                     title = "Pinned toolbar",
                                     bottomPadding = 0.dp,
                                     modifier = Modifier.testTag("overscrollPage"),
@@ -212,9 +252,9 @@ class GlassControlsInteractionTest {
 
     @Test
     fun toolbarSymbolsMatchNativePointSizeWeightAndOpticalProportions() {
-        val style = mutableStateOf(IosToolbarActionStyle.Merged)
+        val style = mutableStateOf(GlasmioToolbarActionStyle.Merged)
         compose.setContent {
-            MaterialTheme {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
                 val density = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density.density, fontScale = 1f),
@@ -223,15 +263,15 @@ class GlassControlsInteractionTest {
                     LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
                     LocalGlassColors provides LocalGlassColors.current.copy(container = Color.White, content = Color.Black),
                 ) {
-                    IosTopToolbar(
+                    GlasmioTopBar(
                         title = "Symbols",
                         modifier = Modifier.width(360.dp).background(Color.White),
                         actionsStyle = style.value,
                         actions = {
-                            GlassIconButton({}, Modifier.testTag("nativeSearch")) { SfIcon(SfSymbol.Search, null) }
-                            GlassIconButton({}, Modifier.testTag("nativeMore")) { SfIcon("ellipsis", null) }
-                            GlassIconButton({}, Modifier.testTag("nativeHouse")) { SfIcon("house", null) }
-                            GlassIconButton({}, Modifier.testTag("regularSearch")) {
+                            GlasmioIconButton({}, Modifier.testTag("nativeSearch")) { SfIcon(SfSymbol.Search, null) }
+                            GlasmioIconButton({}, Modifier.testTag("nativeMore")) { SfIcon("ellipsis", null) }
+                            GlasmioIconButton({}, Modifier.testTag("nativeHouse")) { SfIcon("house", null) }
+                            GlasmioIconButton({}, Modifier.testTag("regularSearch")) {
                                 SfIcon(SfSymbol.Search, null, weight = FontWeight.Normal)
                             }
                         },
@@ -263,7 +303,7 @@ class GlassControlsInteractionTest {
             assertEquals("$tag remains horizontally centered", image.width / 2f, (left + right + 1) / 2f, unit)
             return Triple((right - left + 1) / unit, (bottom - top + 1) / unit, count)
         }
-        listOf(IosToolbarActionStyle.Merged, IosToolbarActionStyle.Separated).forEach { value ->
+        listOf(GlasmioToolbarActionStyle.Merged, GlasmioToolbarActionStyle.Separated).forEach { value ->
             compose.runOnIdle { style.value = value }
             compose.waitForIdle()
             val search = ink("nativeSearch")
@@ -617,7 +657,7 @@ class GlassControlsInteractionTest {
         compose.setContent {
             MusicTheme(seedColor = Color.Red, isDark = false) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
-                    if (visible.value) IosCascadingMenu(
+                    if (visible.value) GlasmioCascadingMenu(
                         anchorBounds = Rect(24f, 160f, 224f, 204f),
                         title = "Player destinations",
                         expandedDescription = "Expanded",
@@ -625,15 +665,15 @@ class GlassControlsInteractionTest {
                         backdrop = emptyBackdrop(),
                         onDismiss = { dismissals++; visible.value = false },
                         items = listOf(
-                            IosCascadingMenuItem(
+                            GlasmioCascadingMenuItem(
                                 title = "Go to artist",
                                 subtitle = "Artist A, Artist B",
                                 children = listOf(
-                                    IosCascadingMenuItem("Artist A", onClick = { artistClicks++ }),
-                                    IosCascadingMenuItem("Artist B"),
+                                    GlasmioCascadingMenuItem("Artist A", onClick = { artistClicks++ }),
+                                    GlasmioCascadingMenuItem("Artist B"),
                                 ),
                             ),
-                            IosCascadingMenuItem("Go to album"),
+                            GlasmioCascadingMenuItem("Go to album"),
                         ),
                     )
                 }
@@ -684,7 +724,7 @@ class GlassControlsInteractionTest {
         compose.setContent {
             MaterialTheme {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    IosPopupMenu(
+                    GlasmioMenu(
                         expanded = expanded.value,
                         onExpandedChange = { expanded.value = it },
                         itemCount = 1,
@@ -701,7 +741,7 @@ class GlassControlsInteractionTest {
                             contentMounts++
                             onDispose { contentDisposals++ }
                         }
-                        IosMenuItem(
+                        GlasmioMenuItem(
                             title = "Select quality",
                             onClick = { anchorWidth.value = 144.dp; close() },
                             backdrop = backdrop,
@@ -885,7 +925,7 @@ class GlassControlsInteractionTest {
                 LazyColumn(Modifier.width(320.dp).height(240.dp).testTag("scrollHost"), state = state) {
                     item { Box(Modifier.fillMaxWidth().height(48.dp)) }
                     item("segments") {
-                        GlassSegmentedControl(
+                        GlasmioSegmentedControl(
                             items = List(3) { it to "Tab $it" },
                             selected = selection.value,
                             onSelected = { selection.value = it; selections += it },
@@ -932,7 +972,7 @@ class GlassControlsInteractionTest {
         compose.setContent {
             MaterialTheme {
                 key(selected.value) {
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = List(6) { it to "Tab $it" },
                         selected = selected.value,
                         onSelected = { selected.value = it },
@@ -973,7 +1013,7 @@ class GlassControlsInteractionTest {
                     LazyColumn(Modifier.width(320.dp).height(240.dp), state = state) {
                         items(2) { Box(Modifier.fillMaxWidth().height(48.dp)) }
                         item("library-pages") {
-                            GlassSegmentedControl(
+                            GlasmioSegmentedControl(
                                 items = listOf(0 to "Songs", 1 to "Playlists"),
                                 selected = selected.value,
                                 onSelected = { selected.value = it },
@@ -1009,7 +1049,7 @@ class GlassControlsInteractionTest {
                         Modifier.width(320.dp).height(72.dp).background(Color.Black).testTag("scene"),
                         contentAlignment = Alignment.Center,
                     ) {
-                        GlassSegmentedControl(
+                        GlasmioSegmentedControl(
                             items = listOf(0 to "First", 1 to "Second"),
                             selected = 0,
                             onSelected = {},
@@ -1054,7 +1094,7 @@ class GlassControlsInteractionTest {
                     LocalLayoutDirection provides direction.value,
                     LocalGlassAppearance provides appearance.value,
                 ) {
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = List(count.value) { it to "Tab $it" },
                         selected = selection.value,
                         onSelected = { selection.value = it; selections += it },
@@ -1117,7 +1157,7 @@ class GlassControlsInteractionTest {
                         Modifier.size(120.dp, 72.dp).background(Color.Black).testTag("toggleScene"),
                         contentAlignment = Alignment.Center,
                     ) {
-                        GlassToggle(checked.value, { checked.value = it }, Modifier.testTag("toggle"), backdrop = emptyBackdrop())
+                        GlasmioSwitch(checked.value, { checked.value = it }, Modifier.testTag("toggle"), backdrop = emptyBackdrop())
                     }
                 }
             }
@@ -1279,7 +1319,7 @@ class GlassControlsInteractionTest {
 
     @Test
     fun toolbarGroupingKeepsActionsIndependentAndSearchExpansionAnchored() {
-        val actionStyle = mutableStateOf(IosToolbarActionStyle.Merged)
+        val actionStyle = mutableStateOf(GlasmioToolbarActionStyle.Merged)
         val actionsEnabled = mutableStateOf(true)
         val searchWidth = mutableStateOf(44.dp)
         val separation = mutableStateOf<Float?>(null)
@@ -1294,15 +1334,15 @@ class GlassControlsInteractionTest {
                     LocalBlurBackdrop provides backdrop,
                 ) {
                     Column(Modifier.width(360.dp)) {
-                        IosTopToolbar(
+                        GlasmioTopBar(
                             title = "Actions",
                             actionsStyle = actionStyle.value,
                             actions = {
-                                GlassIconButton(
+                                GlasmioIconButton(
                                     onClick = { actionCalls += "first" },
                                     modifier = Modifier.testTag("firstAction"),
                                 ) { SfIcon(SfSymbol.Search, null, modifier = Modifier.testTag("firstIcon")) }
-                                GlassIconButton(
+                                GlasmioIconButton(
                                     onClick = { actionCalls += "second" },
                                     onLongClick = { actionCalls += "secondLong" },
                                     enabled = actionsEnabled.value,
@@ -1310,11 +1350,11 @@ class GlassControlsInteractionTest {
                                 ) { SfIcon(SfSymbol.Ellipsis, null, modifier = Modifier.testTag("secondIcon")) }
                             },
                         )
-                        IosTopToolbar(
+                        GlasmioTopBar(
                             title = "Search",
                             actionsSeparationProgress = separation.value,
                             navigation = {
-                                GlassIconButton({}, Modifier.testTag("backAction")) {
+                                GlasmioIconButton({}, Modifier.testTag("backAction")) {
                                     SfIcon(SfSymbol.ChevronBack, null)
                                 }
                             },
@@ -1336,7 +1376,7 @@ class GlassControlsInteractionTest {
                                         }
                                     }
                                 }
-                                GlassIconButton({}, Modifier.testTag("searchMenu")) {
+                                GlasmioIconButton({}, Modifier.testTag("searchMenu")) {
                                     SfIcon(SfSymbol.Ellipsis, null, modifier = Modifier.testTag("searchMenuIcon"))
                                 }
                             },
@@ -1351,7 +1391,7 @@ class GlassControlsInteractionTest {
 
         val originalActions = listOf("firstAction", "secondAction", "firstIcon", "secondIcon")
             .associateWith(::bounds)
-        listOf(IosToolbarActionStyle.Merged, IosToolbarActionStyle.Separated).forEach { style ->
+        listOf(GlasmioToolbarActionStyle.Merged, GlasmioToolbarActionStyle.Separated).forEach { style ->
             compose.runOnIdle {
                 actionStyle.value = style
                 actionCalls.clear()
@@ -1367,7 +1407,7 @@ class GlassControlsInteractionTest {
                 compose.mainClock.advanceTimeBy(160L)
                 assertTrue("The pressed icon follows the drag scale",
                     bounds("firstIcon").width > originalActions.getValue("firstIcon").width + 0.5f)
-                if (style == IosToolbarActionStyle.Merged) {
+                if (style == GlasmioToolbarActionStyle.Merged) {
                     assertTrue("A fused neighbor scales with the whole capsule",
                         bounds("secondIcon").width > originalActions.getValue("secondIcon").width + 0.5f)
                     assertTrue("A fused neighbor moves around the capsule center",
@@ -1446,13 +1486,13 @@ class GlassControlsInteractionTest {
     fun toolbarPortalKeepsContentScaleAndInsetsAsThePressSettles() {
         val portal = mutableStateOf<ToolbarMenuPortal?>(null)
         val motion = LiquidMenuMorphMotion()
-        var anchor: IosMenuAnchorState? = null
+        var anchor: GlasmioMenuAnchorState? = null
         var previewOrigin = Offset.Zero
         var previewSize = Size.Zero
         var density = 1f
         compose.setContent {
             val backdrop = rememberCanvasBackdrop { drawRect(Color.White) }
-            val source = rememberIosMenuAnchorState()
+            val source = rememberGlasmioMenuAnchorState()
             val scope = rememberCoroutineScope()
             val highlight = remember(scope) { InteractiveHighlight(scope) }
             SideEffect { anchor = source }
@@ -1462,12 +1502,12 @@ class GlassControlsInteractionTest {
                 LocalBlurBackdrop provides backdrop,
             ) {
                 Column(Modifier.width(320.dp)) {
-                    IosTopToolbar(title = "Portal", actions = {
+                    GlasmioTopBar(title = "Portal", actions = {
                         Row(Modifier.testTag("portalSourceContent"), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
-                            GlassIconButton({}, Modifier.iosMenuAnchor(source).testTag("portalPressSource")) {
+                            GlasmioIconButton({}, Modifier.glasmioMenuAnchor(source).testTag("portalPressSource")) {
                                 SfIcon("arrow.up.arrow.down", null, tint = Color.Green)
                             }
-                            GlassIconButton({}) {
+                            GlasmioIconButton({}) {
                                 Box(Modifier.size(36.dp).background(Color.Blue, androidx.compose.foundation.shape.CircleShape))
                             }
                         }
@@ -1556,9 +1596,9 @@ class GlassControlsInteractionTest {
         val singleOpen = mutableStateOf(false)
         val singleLabel = mutableStateOf("Recommended")
         val singleLabelColor = mutableStateOf(Color.Magenta)
-        val groupedStyle = mutableStateOf(IosToolbarActionStyle.Merged)
-        var groupedAnchor: IosMenuAnchorState? = null
-        var singleAnchor: IosMenuAnchorState? = null
+        val groupedStyle = mutableStateOf(GlasmioToolbarActionStyle.Merged)
+        var groupedAnchor: GlasmioMenuAnchorState? = null
+        var singleAnchor: GlasmioMenuAnchorState? = null
         var groupedGroup: ToolbarActionGroup? = null
         var groupedClosed = 0
         var groupedAlpha = 0f
@@ -1566,8 +1606,8 @@ class GlassControlsInteractionTest {
         compose.setContent {
             MaterialTheme {
                 val backdrop = rememberCanvasBackdrop { drawRect(Color(0xFFBAC8DD)) }
-                val groupedSource = rememberIosMenuAnchorState()
-                val singleSource = rememberIosMenuAnchorState()
+                val groupedSource = rememberGlasmioMenuAnchorState()
+                val singleSource = rememberGlasmioMenuAnchorState()
                 SideEffect {
                     groupedAnchor = groupedSource
                     singleAnchor = singleSource
@@ -1578,14 +1618,14 @@ class GlassControlsInteractionTest {
                     LocalBlurBackdrop provides backdrop,
                 ) {
                     Column(Modifier.width(360.dp)) {
-                        IosTopToolbar(
+                        GlasmioTopBar(
                             title = "Grouped",
                             actionsStyle = groupedStyle.value,
                             actions = {
                                 val group = LocalIosToolbarActionGroup.current
                                 SideEffect { groupedGroup = group }
-                                GlassIconButton({}) { SfIcon(SfSymbol.Search, null) }
-                                IosPopupMenu(
+                                GlasmioIconButton({}) { SfIcon(SfSymbol.Search, null) }
+                                GlasmioMenu(
                                     expanded = groupedOpen.value,
                                     onExpandedChange = { groupedOpen.value = it },
                                     itemCount = 1,
@@ -1593,31 +1633,31 @@ class GlassControlsInteractionTest {
                                     onMenuAlphaChanged = { groupedAlpha = it },
                                     onClosed = { groupedClosed++ },
                                     anchor = { open ->
-                                        GlassIconButton(open, Modifier.iosMenuAnchor(groupedSource).testTag("groupedPopupAnchor")) {
+                                        GlasmioIconButton(open, Modifier.glasmioMenuAnchor(groupedSource).testTag("groupedPopupAnchor")) {
                                             SfIcon(SfSymbol.Ellipsis, null)
                                         }
                                     },
                                 ) { backdrop, close ->
-                                    IosMenuItem("Grouped item", close, Modifier.testTag("groupedPopupItem"), backdrop = backdrop)
+                                    GlasmioMenuItem("Grouped item", close, Modifier.testTag("groupedPopupItem"), backdrop = backdrop)
                                 }
                             },
                         )
-                        IosTopToolbar(
+                        GlasmioTopBar(
                             title = "Single",
                             actions = {
-                                IosPopupMenu(
+                                GlasmioMenu(
                                     expanded = singleOpen.value,
                                     onExpandedChange = { singleOpen.value = it },
                                     itemCount = 1,
                                     menuAnchorState = singleSource,
                                     onMenuAlphaChanged = { singleAlpha = it },
                                     anchor = { open ->
-                                        GlassButton(open, Modifier.width(132.dp).iosMenuAnchor(singleSource).testTag("singlePopupAnchor")) {
+                                        GlasmioButton(open, Modifier.width(132.dp).glasmioMenuAnchor(singleSource).testTag("singlePopupAnchor")) {
                                             androidx.compose.material3.Text(singleLabel.value, color = singleLabelColor.value)
                                         }
                                     },
                                 ) { backdrop, close ->
-                                    IosMenuItem("Single item", close, Modifier.testTag("singlePopupItem"), backdrop = backdrop)
+                                    GlasmioMenuItem("Single item", close, Modifier.testTag("singlePopupItem"), backdrop = backdrop)
                                 }
                             },
                         )
@@ -1720,7 +1760,7 @@ class GlassControlsInteractionTest {
                 })
                 assertEquals(1, groupedClosed)
                 assertEquals(0f, requireNotNull(groupedGroup).separationProgress.value, 0.001f)
-                groupedStyle.value = IosToolbarActionStyle.Separated
+                groupedStyle.value = GlasmioToolbarActionStyle.Separated
             }
 
             advanceUntil { requireNotNull(groupedGroup).separationProgress.value >= 0.999f }
@@ -1795,7 +1835,7 @@ class GlassControlsInteractionTest {
                                     .padding(32.dp),
                             ) {
                                 val callbackRevision = revision.value
-                                GlassToggle(
+                                GlasmioSwitch(
                                     checked = checked.value,
                                     onCheckedChange = { value ->
                                         calls += callbackRevision to value

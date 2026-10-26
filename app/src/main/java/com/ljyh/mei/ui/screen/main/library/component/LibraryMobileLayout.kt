@@ -75,17 +75,17 @@ import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.glass.GlassSearchBar
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.LocalGroupedListIconColor
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.core.LocalGroupedListIconColor
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -105,12 +105,12 @@ import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
 import com.ljyh.mei.ui.screen.podcast.PodcastTab
 import com.ljyh.mei.utils.rememberPreference
-import com.ljyh.mei.ui.component.utils.pullToRefreshRebound
+import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Adds rows directly to the parent lazy list while retaining the visual treatment of
- * [IosGroupedList]. The original component owns a ColumnScope, so putting a large dynamic list
+ * [GlasmioGroupedList]. The original component owns a ColumnScope, so putting a large dynamic list
  * inside it eagerly composes every row. Each row gets the corresponding edge shape here and can
  * therefore be composed and disposed independently by the parent LazyColumn.
  */
@@ -308,7 +308,7 @@ fun LibraryMobileLayout(
         if (!collectionLoading) isPullRefreshing = false
     }
 
-    IosPinnedPage(
+    GlasmioPinnedPage(
         title = title,
         bottomPadding = insets.calculateBottomPadding(),
         collapseProgress = collapseProgress,
@@ -356,7 +356,7 @@ fun LibraryMobileLayout(
                         )
                     }
                     item(key = "library-search") {
-                        GlassSearchBar(
+                        GlasmioSearchBar(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },
                             active = searchActive,
@@ -373,7 +373,7 @@ fun LibraryMobileLayout(
                     }
                     if (!isCategoryPage) {
                         item(key = "library-pages") {
-                            GlassSegmentedControl(
+                            GlasmioSegmentedControl(
                                 items = pages.map { it to stringResource(it.titleRes) },
                                 selected = selectedPage,
                                 onSelected = onPageSelect,
@@ -398,8 +398,8 @@ fun LibraryMobileLayout(
                                 item(key = "liked-error") { CollectionFooter(false, true, onRetryLikedSongs) }
                             } else if (visibleLikedSongs.isNotEmpty()) {
                                 item(key = "liked-actions") {
-                                    IosGroupedList {
-                                        IosListRow(
+                                    GlasmioGroupedList {
+                                        GlasmioListRow(
                                             title = stringResource(R.string.library_play_all),
                                             systemName = "play.fill",
                                             showTopSeparator = false,
@@ -413,7 +413,7 @@ fun LibraryMobileLayout(
                                                 )
                                             },
                                         )
-                                        IosListRow(
+                                        GlasmioListRow(
                                             title = stringResource(R.string.library_heart_mode),
                                             systemName = "heart.circle.fill",
                                             onClick = {
@@ -459,7 +459,7 @@ fun LibraryMobileLayout(
 
                         LibraryPage.Playlists -> {
                             item(key = "playlist-filter") {
-                                GlassSegmentedControl(
+                                GlasmioSegmentedControl(
                                     items = listOf(
                                         LibraryPlaylistFilter.All to stringResource(R.string.library_filter_all),
                                         LibraryPlaylistFilter.Created to stringResource(R.string.library_filter_created),
@@ -472,8 +472,8 @@ fun LibraryMobileLayout(
                             }
                             if (!isSearching) {
                                 item(key = "playlist-rank") {
-                                    IosGroupedList {
-                                        IosListRow(
+                                    GlasmioGroupedList {
+                                        GlasmioListRow(
                                             title = stringResource(R.string.account_listening_rank),
                                             systemName = "chart.bar.xaxis",
                                             showTopSeparator = false,
@@ -638,8 +638,8 @@ private fun CollectionFooter(loading: Boolean, failed: Boolean, onClick: () -> U
             CircularProgressIndicator(color = LocalGlassColors.current.accent)
         }
     } else {
-        IosGroupedList {
-            IosListRow(
+        GlasmioGroupedList {
+            GlasmioListRow(
                 title = stringResource(if (failed) R.string.retry else R.string.library_load_more),
                 subtitle = if (failed) stringResource(R.string.library_collection_load_failed) else null,
                 systemName = if (failed) "arrow.clockwise" else "chevron.down",
@@ -820,7 +820,7 @@ private fun LazyListScope.libraryCloudItems(
             key = { "cloud-${it.id}" },
             contentType = "cloud-song",
         ) { song, index ->
-            IosListRow(
+            GlasmioListRow(
                 title = song.name,
                 subtitle = listOf(song.artist, song.album).filter(String::isNotBlank).joinToString(" · "),
                 showTopSeparator = index > 0,
@@ -894,7 +894,7 @@ private fun LazyListScope.libraryHistoryItems(
             key = { it.key },
             contentType = "history-item",
         ) { item, index ->
-            IosListRow(
+            GlasmioListRow(
                 title = item.song.title,
                 subtitle = item.song.artists.joinToString(" / ") { it.name },
                 detail = item.playedAt?.let { DateUtils.getRelativeTimeSpanString(it).toString() },

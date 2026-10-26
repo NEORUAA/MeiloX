@@ -13,8 +13,8 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserNicknameKey
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.rememberPreference
@@ -28,7 +28,7 @@ fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
     val (nickname) = rememberPreference(UserNicknameKey, "")
     val accountDescription = stringResource(R.string.account_home)
 
-    GlassIconButton(
+    GlasmioIconButton(
         onClick = {
             if (cookie.isBlank()) {
                 Screen.NeteaseLogin.navigate(navController)

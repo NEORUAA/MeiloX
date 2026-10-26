@@ -31,13 +31,13 @@ import com.ljyh.mei.data.model.melox.AccountConnectionPage
 import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -144,7 +144,7 @@ fun AccountConnectionsScreen(
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     LaunchedEffect(userId, type) { viewModel.load(userId, type) }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(
             if (type == AccountConnectionType.Following) R.string.account_follows else R.string.account_followers,
         ),
@@ -152,7 +152,7 @@ fun AccountConnectionsScreen(
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlassIconButton(viewModel::refresh, enabled = !state.loading) {
+            GlasmioIconButton(viewModel::refresh, enabled = !state.loading) {
                 if (state.loading && state.page != null) {
                     CircularProgressIndicator(Modifier.size(20.dp))
                 } else {
@@ -191,7 +191,7 @@ fun AccountConnectionsScreen(
             contentType = "account-connection",
             firstItemTopPadding = 10.dp,
         ) { user, index ->
-            IosListRow(
+            GlasmioListRow(
                 title = user.nickname,
                 subtitle = user.signature?.takeIf(String::isNotBlank),
                 showTopSeparator = index > 0,
@@ -223,7 +223,7 @@ fun AccountConnectionsScreen(
         } else if (state.page?.hasMore == true && !state.loading && state.error == null) {
             item(key = "connections-load-more") {
                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    GlassButton(viewModel::loadMore) { Text(stringResource(R.string.account_load_more)) }
+                    GlasmioButton(viewModel::loadMore) { Text(stringResource(R.string.account_load_more)) }
                 }
             }
         }
@@ -232,10 +232,10 @@ fun AccountConnectionsScreen(
 
 @Composable
 private fun ConnectionsError(message: String, onRetry: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+    GlasmioCard(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(message, color = MaterialTheme.colorScheme.error)
-            GlassButton(onRetry) { Text(stringResource(R.string.retry)) }
+            GlasmioButton(onRetry) { Text(stringResource(R.string.retry)) }
         }
     }
 }

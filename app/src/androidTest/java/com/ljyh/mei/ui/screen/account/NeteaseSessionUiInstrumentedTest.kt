@@ -17,7 +17,7 @@ import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.ui.glass.GlassBackdropHost
+import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiRoute
 import com.ljyh.mei.ui.screen.Screen
@@ -197,7 +197,7 @@ class NeteaseSessionUiInstrumentedTest {
             instrumentation.runOnMainSync {
                 activity.setContent {
                     MusicTheme(seedColor = Color.Red, isDark = false) {
-                        GlassBackdropHost(
+                        GlasmioBackdropHost(
                             modifier = Modifier.fillMaxSize(), sampledContent = {},
                             overlayContent = { content() },
                         )

@@ -12,9 +12,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.GlassMorphRenderer
-import com.ljyh.mei.ui.glass.defaultGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.GlassMorphRenderer
+import io.github.neoruaa.glasmio.core.defaultGlassColors
 
 /** The sheet keeps its approved motion; only the glass renderer is shared with home controls. */
 @Composable

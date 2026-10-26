@@ -39,3 +39,12 @@ dependencyResolutionManagement {
 
 rootProject.name = "music"
 include(":app")
+
+// Local source integration is explicit; CI resolves the pinned published artifacts.
+if (providers.gradleProperty("glasmio.source").orNull == "true") {
+    val glasmioDirectory = file("../Glasmio")
+    require(glasmioDirectory.resolve("settings.gradle.kts").isFile) {
+        "-Pglasmio.source=true requires a Glasmio checkout beside MeiloX."
+    }
+    includeBuild(glasmioDirectory)
+}

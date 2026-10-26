@@ -81,22 +81,22 @@ import com.ljyh.mei.data.model.melox.ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSurface
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosMenuItem
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosPopupMenu
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -115,15 +115,15 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
     val currentUser = currentUserId.toLongOrNull() ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.private_messages),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlassIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
+            GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
                 SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
             }
-            GlassIconButton(viewModel::refresh) {
+            GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
             }
         },
@@ -134,10 +134,10 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (state.conversations.isNotEmpty()) {
             item(key = "private-conversation-group") {
-                IosGroupedList {
+                GlasmioGroupedList {
                     state.conversations.forEachIndexed { index, conversation ->
                         val participant = conversation.participant(currentUser)
-                        IosListRow(
+                        GlasmioListRow(
                             title = participant.displayName,
                             subtitle = conversation.summary,
                             leading = {
@@ -193,12 +193,12 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         }
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.message_start),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlassIconButton(viewModel::refresh) {
+            GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
             }
         },
@@ -241,9 +241,9 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         }
         if (filtered.isNotEmpty()) {
             item(key = "message-contact-group") {
-                IosGroupedList {
+                GlasmioGroupedList {
                     filtered.forEachIndexed { index, contact ->
-                        IosListRow(
+                        GlasmioListRow(
                             title = contact.displayName,
                             subtitle = contact.signature?.takeIf(String::isNotBlank),
                             leading = {
@@ -336,7 +336,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
         }
     }
 
-    IosPinnedPage(
+    GlasmioPinnedPage(
         title = participantName ?: stringResource(R.string.private_conversation),
         bottomPadding = bottomPadding,
         onNavigateBack = navController::navigateUp,
@@ -461,7 +461,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                         },
                     )
                 }
-                GlassButton(
+                GlasmioButton(
                     onClick = send,
                     enabled = draft.isNotBlank() && !state.isSending,
                     emphasis = GlassEmphasis.Prominent,
@@ -656,7 +656,7 @@ private fun IosMessageBubble(
             if (onCopy == null) {
                 BubbleBody()
             } else {
-                IosPopupMenu(
+                GlasmioMenu(
                     expanded = contextMenuExpanded,
                     onExpandedChange = { contextMenuExpanded = it },
                     itemCount = 1,
@@ -671,7 +671,7 @@ private fun IosMessageBubble(
                         )
                     },
                 ) { childBackdrop, close ->
-                    IosMenuItem(
+                    GlasmioMenuItem(
                         title = stringResource(R.string.message_copy_content),
                         systemName = "document.on.clipboard",
                         backdrop = childBackdrop,

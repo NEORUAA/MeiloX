@@ -41,16 +41,18 @@ import com.ljyh.mei.constants.LyricVisualStyleKey
 import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsFontScaleKey
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.GlassSlider
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPopupButton
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.ui.GlasmioSlider
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
-import com.ljyh.mei.ui.component.ConfirmationDialog
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
@@ -76,14 +78,14 @@ fun LyricsSettings() {
     var floatingScalePreview by remember { mutableStateOf<Float?>(null) }
     val floatingScale = floatingScalePreview ?: storedFloatingScale
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.lyrics_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
     ) {
         item {
             SettingsGroup(stringResource(R.string.lyrics_visual_style)) {
-                GlassCard(Modifier.fillMaxWidth()) {
+                GlasmioCard(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -92,7 +94,7 @@ fun LyricsSettings() {
                             stringResource(R.string.lyrics_style_presentation),
                             modifier = Modifier.weight(1f),
                         )
-                        IosPopupButton(
+                        GlasmioPopUpButton(
                             selected = style,
                             items = LyricVisualStyle.entries,
                             onSelected = onStyle,
@@ -137,13 +139,13 @@ fun LyricsSettings() {
             SettingsGroup(stringResource(R.string.floating_lyrics_settings)) {
                 LyricsToggleRow(stringResource(R.string.floating_lyrics_translation), floatingTranslation, onFloatingTranslation)
                 LyricsToggleRow(stringResource(R.string.floating_lyrics_next_line), floatingNext, onFloatingNext)
-                GlassCard(Modifier.fillMaxWidth()) {
+                GlasmioCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.floating_lyrics_size), modifier = Modifier.weight(1f))
                             Text("${(floatingScale * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        GlassSlider(
+                        GlasmioSlider(
                             value = floatingScale,
                             onValueChange = { floatingScalePreview = it },
                             valueRange = .75f..1.35f,
@@ -153,7 +155,7 @@ fun LyricsSettings() {
                         )
                     }
                 }
-                GlassCard(Modifier.fillMaxWidth()) {
+                GlasmioCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         SfIcon("pip", null, size = 24.dp)
                         Text(stringResource(R.string.floating_lyrics_usage), modifier = Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -187,13 +189,27 @@ internal fun FlymeStatusBarLyricsSetting(
             },
         )
     }
-    ConfirmationDialog(
-        title = stringResource(R.string.flyme_status_bar_lyrics),
-        text = stringResource(R.string.flyme_status_bar_lyrics_warning),
-        onConfirm = { onCheckedChange(true) },
-        onDismiss = {},
-        openDialog = showWarning,
-    )
+    if (showWarning.value) {
+        GlasmioAlertDialog(
+            onDismissRequest = { showWarning.value = false },
+            title = stringResource(R.string.flyme_status_bar_lyrics),
+            message = stringResource(R.string.flyme_status_bar_lyrics_warning),
+            buttons = listOf(
+                GlasmioAlertButtonSpec(
+                    label = stringResource(android.R.string.cancel),
+                    role = GlasmioAlertButtonRole.Cancel,
+                    onClick = { showWarning.value = false },
+                ),
+                GlasmioAlertButtonSpec(
+                    label = stringResource(android.R.string.ok),
+                    onClick = {
+                        showWarning.value = false
+                        onCheckedChange(true)
+                    },
+                ),
+            ),
+        )
+    }
 }
 
 @Composable
@@ -213,13 +229,13 @@ private fun LyricsToggleRow(
     onCheckedChange: (Boolean) -> Unit,
     toggleModifier: Modifier = Modifier,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, modifier = Modifier.weight(1f))
-            GlassToggle(checked, onCheckedChange, modifier = toggleModifier)
+            GlasmioSwitch(checked, onCheckedChange, modifier = toggleModifier)
         }
     }
 }

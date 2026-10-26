@@ -34,7 +34,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.constants.SuggestionItemHeight
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.SearchBarIconOffsetX
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.icons.SfIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import timber.log.Timber

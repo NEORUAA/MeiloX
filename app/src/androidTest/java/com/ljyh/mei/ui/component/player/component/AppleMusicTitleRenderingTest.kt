@@ -104,9 +104,9 @@ import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicArtworkFr
 import com.ljyh.mei.ui.component.player.component.applemusic.playerArtworkMotion
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
-import com.ljyh.mei.ui.component.sheet.expandedAnchor
+import io.github.neoruaa.glasmio.scaffold.expandedAnchor
 import com.ljyh.mei.ui.component.sheet.playerArtwork
-import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.ui.component.player.component.applemusic.animatePlayerQueueRows
@@ -474,7 +474,7 @@ class AppleMusicTitleRenderingTest {
             val state = rememberLazyListState()
             listState = state
             scope = rememberCoroutineScope()
-            val sheet = rememberBottomSheetState(0.dp, 400.dp, 48.dp, expandedAnchor)
+            val sheet = rememberGlasmioBottomSheetState(0.dp, 400.dp, 48.dp, expandedAnchor)
             val layers = rememberPlayerSheetLayers(sheet)
             val layoutSize = with(density) { 140.dp.roundToPx() }
             val normalBounds = with(density) { Rect(60.dp.toPx(), 80.dp.toPx(), 200.dp.toPx(), 220.dp.toPx()) }

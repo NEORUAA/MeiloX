@@ -44,14 +44,14 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -250,7 +250,7 @@ fun CloudMusicScreen(
         }
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = cloudTitle,
         subtitle = state.page?.let { page ->
             stringResource(R.string.cloud_music_quota, formatBytes(page.usedSize), formatBytes(page.maxSize))
@@ -259,10 +259,10 @@ fun CloudMusicScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlassIconButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
+            GlasmioIconButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
                 SfIcon("arrow.up.circle.fill", stringResource(R.string.cloud_upload), size = 18.dp)
             }
-            GlassIconButton(onClick = viewModel::refresh) {
+            GlasmioIconButton(onClick = viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh), size = 18.dp)
             }
             if (isNavigationTab) GlobalProfileAvatarButton()
@@ -273,7 +273,7 @@ fun CloudMusicScreen(
         val hasErrorContent = state.error != null
         if (state.isUploading) {
             item {
-                GlassCard(
+                GlasmioCard(
                     Modifier.fillMaxWidth().padding(
                         top = 10.dp,
                         bottom = if (hasLoadingContent || hasErrorContent || songs.isNotEmpty()) 10.dp else 0.dp,
@@ -325,7 +325,7 @@ fun CloudMusicScreen(
                 contentType = "cloud-song",
                 firstItemTopPadding = if (hasPreviousContent) 0.dp else 10.dp,
             ) { song, index ->
-                IosListRow(
+                GlasmioListRow(
                     title = song.name,
                     subtitle = listOf(song.artist, song.album)
                         .filter(String::isNotBlank)
@@ -340,7 +340,7 @@ fun CloudMusicScreen(
                         )
                     },
                     trailing = {
-                        GlassButton(
+                        GlasmioButton(
                             onClick = { viewModel.delete(song) },
                             enabled = song.id !in state.deletingIds,
                             emphasis = GlassEmphasis.Regular,
@@ -375,7 +375,7 @@ internal fun CloudMusicPaginationFooter(state: CloudMusicUiState, onLoadMore: ()
             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
         } else {
             state.loadMoreError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            GlassButton(onClick = onLoadMore, enabled = !state.isLoading) {
+            GlasmioButton(onClick = onLoadMore, enabled = !state.isLoading) {
                 Text(stringResource(if (state.loadMoreError != null) R.string.retry else R.string.library_load_more))
             }
         }

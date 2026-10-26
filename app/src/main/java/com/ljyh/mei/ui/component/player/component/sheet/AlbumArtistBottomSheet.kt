@@ -34,7 +34,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.ui.glass.IosModalSheet
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import com.ljyh.mei.utils.smallImage
 
 @Composable
@@ -50,7 +50,7 @@ fun AlbumArtistBottomSheet(
     val context = LocalContext.current
     val navigableArtists = artistList.filter { it.id > 0 }
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier
     ) {

@@ -43,9 +43,9 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.weapi.CommentX
 import com.ljyh.mei.data.model.weapi.FComment
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.screen.comment.CommentLikeState
 import com.ljyh.mei.ui.screen.comment.CommentReplyTarget
 import java.text.NumberFormat

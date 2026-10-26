@@ -1,5 +1,12 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
-import com.ljyh.mei.ui.glass.*
 import com.ljyh.mei.ui.local.LocalSelectionToolbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -47,7 +53,7 @@ fun DetailSelectionToolbar(
     DisposableEffect(selection.active, toolbar) {
         if (selection.active) toolbar.content.value = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                GlassIconButton(
+                GlasmioIconButton(
                     style = GlassSurfaceStyle.Navigation,
                     enabled = !preparing,
                     onClick = {
@@ -69,7 +75,7 @@ fun DetailSelectionToolbar(
                 ) {
                     SfIcon("checkmark.circle", stringResource(R.string.album_select_all), tint = LocalGlassColors.current.accent)
                 }
-                GlassIconButton(
+                GlasmioIconButton(
                     style = GlassSurfaceStyle.Navigation,
                     enabled = selection.ids.isNotEmpty() && !preparing,
                     onClick = { download() },
@@ -92,13 +98,13 @@ fun detailMenuItems(
     onSubscribe: () -> Unit,
     onRefresh: () -> Unit,
     subscriptionEnabled: Boolean = true,
-): List<IosCascadingMenuItem> {
+): List<GlasmioCascadingMenuItem> {
     return listOf(
-        IosCascadingMenuItem(downloadTitle, "arrow.down.circle", children = MusicQuality.entries.map { quality ->
-            IosCascadingMenuItem(stringResource(quality.labelRes), onClick = { onDownload(quality) })
+        GlasmioCascadingMenuItem(downloadTitle, "arrow.down.circle", children = MusicQuality.entries.map { quality ->
+            GlasmioCascadingMenuItem(stringResource(quality.labelRes), onClick = { onDownload(quality) })
         }),
-        IosCascadingMenuItem(stringResource(R.string.album_multi_select), "checklist", onClick = onSelect),
-        IosCascadingMenuItem(subscriptionTitle, if (subscribed) "checkmark" else "plus", separatorBefore = true, enabled = subscriptionEnabled, onClick = onSubscribe),
-        IosCascadingMenuItem(stringResource(R.string.album_refresh), "arrow.clockwise", onClick = onRefresh),
+        GlasmioCascadingMenuItem(stringResource(R.string.album_multi_select), "checklist", onClick = onSelect),
+        GlasmioCascadingMenuItem(subscriptionTitle, if (subscribed) "checkmark" else "plus", separatorBefore = true, enabled = subscriptionEnabled, onClick = onSubscribe),
+        GlasmioCascadingMenuItem(stringResource(R.string.album_refresh), "arrow.clockwise", onClick = onRefresh),
     )
 }

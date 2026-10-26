@@ -44,11 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.IosSheetButton
-import com.ljyh.mei.ui.glass.IosSheetTopToolbar
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import kotlinx.coroutines.flow.collect
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -87,20 +87,20 @@ fun PlaylistOrderSheet(
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
             .collect { loadVisible(it) }
     }
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = { if (!state.saving) onDismiss() },
         sheetState = sheetState,
     ) {
         Column(Modifier.fillMaxWidth().heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.82f)) {
-            IosSheetTopToolbar(
+            GlasmioSheetTopToolbar(
                 title = stringResource(R.string.playlist_order_title),
                 navigation = {
-                    IosSheetButton(onClick = onDismiss, enabled = !state.saving) {
+                    GlasmioSheetButton(onClick = onDismiss, enabled = !state.saving) {
                         Text(stringResource(R.string.playlist_order_cancel))
                     }
                 },
                 actions = {
-                    IosSheetButton(
+                    GlasmioSheetButton(
                         onClick = onSave,
                         enabled = !state.loading && !state.saving &&
                             state.error != PlaylistOrderError.LoadFailed && state.error != PlaylistOrderError.PlaylistChanged,
@@ -125,7 +125,7 @@ fun PlaylistOrderSheet(
                         PlaylistOrderError.PlaylistChanged -> R.string.playlist_order_changed
                     }), color = colors.secondaryContent, fontSize = 14.sp)
                     if (error != PlaylistOrderError.SaveFailed) {
-                        IosSheetButton(onClick = onReload, modifier = Modifier.padding(top = 8.dp)) {
+                        GlasmioSheetButton(onClick = onReload, modifier = Modifier.padding(top = 8.dp)) {
                             Text(stringResource(R.string.playlist_order_reload))
                         }
                     }

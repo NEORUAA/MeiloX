@@ -40,15 +40,15 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosScrollableTabRow
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioScrollableTabRow
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
@@ -103,14 +103,14 @@ fun DownloadManageScreen(
     val taskAggregation = remember(allTasks) { aggregateDownloadTasks(allTasks) }
     val filteredTasks = taskAggregation.tasksByFilter.getValue(selectedFilter)
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.download_management),
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
             if (allTasks.isNotEmpty()) {
-                GlassIconButton({ DownloadManager.deleteAll(context) }) {
+                GlasmioIconButton({ DownloadManager.deleteAll(context) }) {
                     SfIcon("trash", stringResource(R.string.clear_downloads))
                 }
             }
@@ -118,7 +118,7 @@ fun DownloadManageScreen(
         },
     ) {
         item(key = "download-filters") {
-            IosScrollableTabRow(
+            GlasmioScrollableTabRow(
                 items = DownloadFilter.entries.map { it to "${stringResource(it.titleRes)} ${taskAggregation.counts.getValue(it)}" },
                 selected = selectedFilter,
                 onSelected = { selectedFilter = it },
@@ -127,7 +127,7 @@ fun DownloadManageScreen(
         }
         if (filteredTasks.isEmpty()) {
             item(key = "download-empty") {
-                GlassCard(Modifier.fillMaxWidth().padding(vertical = 28.dp)) {
+                GlasmioCard(Modifier.fillMaxWidth().padding(vertical = 28.dp)) {
                 Column(
                     Modifier.fillMaxWidth().padding(vertical = 52.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -189,7 +189,7 @@ private fun DownloadTaskItem(
         DownloadStatus.COMPLETED -> stringResource(R.string.download_completed)
         DownloadStatus.FAILED -> stringResource(R.string.download_failed)
     }
-    IosListRow(
+    GlasmioListRow(
         title = task.songTitle.ifBlank { task.songId },
         subtitle = task.songArtist,
         detail = statusText,
@@ -213,15 +213,15 @@ private fun DownloadTaskItem(
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
             if (task.status == DownloadStatus.PENDING || task.status == DownloadStatus.DOWNLOADING) {
-                GlassIconButton(onPause, modifier = Modifier.padding(start = 6.dp)) {
+                GlasmioIconButton(onPause, modifier = Modifier.padding(start = 6.dp)) {
                     SfIcon("pause", stringResource(R.string.pause), size = 17.dp)
                 }
             } else if (task.status == DownloadStatus.PAUSED || task.status == DownloadStatus.FAILED) {
-                GlassIconButton(onResume, modifier = Modifier.padding(start = 6.dp)) {
+                GlasmioIconButton(onResume, modifier = Modifier.padding(start = 6.dp)) {
                     SfIcon("play.fill", stringResource(R.string.resume), size = 17.dp)
                 }
             }
-            GlassIconButton(onDelete, modifier = Modifier.padding(start = 6.dp)) {
+            GlasmioIconButton(onDelete, modifier = Modifier.padding(start = 6.dp)) {
                 SfIcon("trash", stringResource(R.string.delete), size = 17.dp)
             }
             }

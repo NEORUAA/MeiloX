@@ -11,7 +11,7 @@ import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge
 import com.ljyh.mei.data.network.NeteaseUrsUpSmsRequiredException
-import com.ljyh.mei.ui.glass.GlassBackdropHost
+import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
 import com.ljyh.mei.ui.theme.MusicTheme
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.*
@@ -53,7 +53,7 @@ class NeteaseUpSmsUiInstrumentedTest {
         compose.runOnUiThread {
             compose.activity.setContent {
                 MusicTheme(seedColor = Color.Red, isDark = false) {
-                    GlassBackdropHost(modifier = Modifier.fillMaxSize(), sampledContent = {}, overlayContent = {
+                    GlasmioBackdropHost(modifier = Modifier.fillMaxSize(), sampledContent = {}, overlayContent = {
                         NeteaseMobileLoginSheet(
                             onDismiss = {}, onSubmitPassword = { _, _, _ -> error("Unexpected password login") },
                             onRequestSmsCode = { _, _, _ -> throw NeteaseUrsUpSmsRequiredException(challenge) },

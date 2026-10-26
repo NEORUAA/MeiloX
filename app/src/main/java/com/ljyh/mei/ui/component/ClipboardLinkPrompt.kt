@@ -17,10 +17,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.melox.NeteaseMusicLink
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassSurface
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.icons.SfIcon
 
 @Composable
 fun ClipboardLinkPrompt(
@@ -48,8 +48,8 @@ fun ClipboardLinkPrompt(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
-                    GlassButton(onDismiss) { Text(stringResource(R.string.clipboard_ignore)) }
-                    GlassButton(onOpen, emphasis = GlassEmphasis.Prominent) {
+                    GlasmioButton(onDismiss) { Text(stringResource(R.string.clipboard_ignore)) }
+                    GlasmioButton(onOpen, emphasis = GlassEmphasis.Prominent) {
                         Text(stringResource(if (isSong) R.string.clipboard_open_song else R.string.clipboard_view_invitation))
                     }
                 }

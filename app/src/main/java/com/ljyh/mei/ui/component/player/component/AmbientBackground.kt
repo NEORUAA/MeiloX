@@ -29,7 +29,7 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import com.skydoves.cloudy.cloudy
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

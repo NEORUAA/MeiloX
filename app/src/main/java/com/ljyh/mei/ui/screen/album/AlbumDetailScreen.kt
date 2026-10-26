@@ -1,5 +1,11 @@
 package com.ljyh.mei.ui.screen.album
 
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.DetailPageHorizontalPadding
 
@@ -39,9 +45,9 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -208,24 +214,24 @@ fun AlbumDetailScreen(
         },
     )
     val detailMenu = listOf(
-        com.ljyh.mei.ui.glass.IosCascadingMenuItem(
+        io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_download_all, uiData.tracks.size),
             "arrow.down.circle",
             children = MusicQuality.entries.map { quality ->
-                com.ljyh.mei.ui.glass.IosCascadingMenuItem(androidx.compose.ui.res.stringResource(quality.labelRes), onClick = { doDownload(uiData.tracks, quality) })
+                io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem(androidx.compose.ui.res.stringResource(quality.labelRes), onClick = { doDownload(uiData.tracks, quality) })
             },
         ),
-        com.ljyh.mei.ui.glass.IosCascadingMenuItem(
+        io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_multi_select), "checklist",
             onClick = { selectedIds = emptySet(); selectionMode = true },
         ),
-        com.ljyh.mei.ui.glass.IosCascadingMenuItem(
+        io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem(
             subscriptionLabel,
             if (isSubscribed) "checkmark" else "plus", separatorBefore = true,
             enabled = !subscription.isLoading && !subscription.isUpdating,
             onClick = ::toggleSubscription,
         ),
-        com.ljyh.mei.ui.glass.IosCascadingMenuItem(
+        io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_refresh), "arrow.clockwise",
             onClick = { viewModel.getAlbumDetail(id.toString()); viewModel.refreshSubscription(id) },
         ),
@@ -236,20 +242,20 @@ fun AlbumDetailScreen(
                 androidx.compose.foundation.layout.Row(
                     Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
                 ) {
-                    com.ljyh.mei.ui.glass.GlassIconButton(style = com.ljyh.mei.ui.glass.GlassSurfaceStyle.Navigation, onClick = {
+                    io.github.neoruaa.glasmio.ui.GlasmioIconButton(style = io.github.neoruaa.glasmio.glass.GlassSurfaceStyle.Navigation, onClick = {
                         val visibleIds = displayedUiData.tracks.map { it.id.toString() }.toSet()
                         selectedIds = if (visibleIds.isNotEmpty() && selectedIds.containsAll(visibleIds)) selectedIds - visibleIds else selectedIds + visibleIds
                     }, enabled = displayedUiData.tracks.isNotEmpty()) {
-                        com.ljyh.mei.ui.glass.SfIcon("checkmark.circle", androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_select_all),
-                            tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.accent)
+                        io.github.neoruaa.glasmio.icons.SfIcon("checkmark.circle", androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_select_all),
+                            tint = io.github.neoruaa.glasmio.core.LocalGlassColors.current.accent)
                     }
-                    com.ljyh.mei.ui.glass.GlassIconButton(style = com.ljyh.mei.ui.glass.GlassSurfaceStyle.Navigation, onClick = {
+                    io.github.neoruaa.glasmio.ui.GlasmioIconButton(style = io.github.neoruaa.glasmio.glass.GlassSurfaceStyle.Navigation, onClick = {
                         pendingDownloadTracks = uiData.tracks.filter { it.id.toString() in selectedIds }
                         showDownloadDialog = pendingDownloadTracks.isNotEmpty()
                     }, enabled = selectedIds.isNotEmpty()) {
-                        com.ljyh.mei.ui.glass.SfIcon(com.ljyh.mei.ui.glass.SfSymbol.Download,
+                        io.github.neoruaa.glasmio.icons.SfIcon(io.github.neoruaa.glasmio.icons.SfSymbol.Download,
                             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_download_selected),
-                            tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.accent)
+                            tint = io.github.neoruaa.glasmio.core.LocalGlassColors.current.accent)
                     }
                 }
             }
@@ -302,7 +308,7 @@ fun AlbumDetailScreen(
 
     // 6. UI 渲染
     if (albumDetail is Resource.Error) {
-        IosPinnedListPage(
+        GlasmioPinnedListPage(
             title = stringResource(com.ljyh.mei.R.string.playlist_table_album),
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             showsLargeTitle = false,
@@ -319,7 +325,7 @@ fun AlbumDetailScreen(
                         stringResource(com.ljyh.mei.R.string.load_failed),
                         color = LocalGlassColors.current.secondaryContent,
                     )
-                    GlassButton(onClick = { viewModel.getAlbumDetail(id.toString()) }) {
+                    GlasmioButton(onClick = { viewModel.getAlbumDetail(id.toString()) }) {
                         Text(stringResource(com.ljyh.mei.R.string.retry))
                     }
                 }

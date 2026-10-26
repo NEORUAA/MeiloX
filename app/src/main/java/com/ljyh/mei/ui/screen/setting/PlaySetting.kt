@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.screen.setting
 
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,19 +59,19 @@ import com.ljyh.mei.playback.UsbAudioStatus
 import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import com.ljyh.mei.ui.component.player.isXiaomiFloatingLyricsPermissionRequired
 import com.ljyh.mei.ui.component.player.openFloatingLyricsPermissionSettings
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassSlider
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPopupButton
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.ui.GlasmioSlider
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -134,14 +136,14 @@ fun PlaySetting(
         floatingLyricsBackgroundAllowed = hasFloatingLyricsBackgroundPermission(context)
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.playback_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
     ) {
         item {
             SettingsGroup(stringResource(R.string.playback_behavior)) {
-                GlassCard(
+                GlasmioCard(
                     modifier = Modifier.fillMaxWidth().alpha(if (usbBitPerfect) 0.38f else 1f),
                     onClick = if (usbBitPerfect) null else { { Screen.EqualizerSettings.navigate(navController) } },
                 ) {
@@ -173,7 +175,7 @@ fun PlaySetting(
                     description = stringResource(R.string.restore_playback_state_description),
                 )
                 ValueRow(stringResource(R.string.music_quality), "waveform") {
-                    IosPopupButton(
+                    GlasmioPopUpButton(
                         selected = musicQuality,
                         items = MusicQuality.entries,
                         onSelected = { quality ->
@@ -195,7 +197,7 @@ fun PlaySetting(
                         stringResource(usbAudioStatus.labelResource()) + "\n" + stringResource(R.string.audio_output_usb_description)
                     } else null,
                 ) {
-                    IosPopupButton(
+                    GlasmioPopUpButton(
                         selected = audioOutputMode,
                         items = audioOutputModes,
                         onSelected = onAudioOutputModeChange,
@@ -207,7 +209,7 @@ fun PlaySetting(
         item {
             SettingsGroup(stringResource(R.string.notification_controls)) {
                 ValueRow(stringResource(R.string.notification_left_action), notificationLeftAction.systemName) {
-                    IosPopupButton(
+                    GlasmioPopUpButton(
                         selected = notificationLeftAction,
                         items = NotificationAction.entries,
                         onSelected = { action ->
@@ -218,7 +220,7 @@ fun PlaySetting(
                     )
                 }
                 ValueRow(stringResource(R.string.notification_right_action), notificationRightAction.systemName) {
-                    IosPopupButton(
+                    GlasmioPopUpButton(
                         selected = notificationRightAction,
                         items = NotificationAction.entries,
                         onSelected = { action ->
@@ -229,7 +231,7 @@ fun PlaySetting(
                     )
                 }
                 if (notificationLeftAction == NotificationAction.FloatingLyrics || notificationRightAction == NotificationAction.FloatingLyrics) {
-                    GlassCard(
+                    GlasmioCard(
                         Modifier.fillMaxWidth(),
                         onClick = { openFloatingLyricsPermissionSettings(context) },
                     ) {
@@ -265,8 +267,8 @@ fun PlaySetting(
         }
         if (autoMixEnabled && !usbBitPerfect) {
             item {
-                com.ljyh.mei.ui.glass.IosGroupedList {
-                    GlassSegmentedControl(
+                io.github.neoruaa.glasmio.ui.GlasmioGroupedList {
+                    GlasmioSegmentedControl(
                         items = listOf(AutoMixMode.Smart to stringResource(R.string.automix_smart), AutoMixMode.Fixed to stringResource(R.string.automix_fixed)),
                         selected = autoMixMode, onSelected = onAutoMixModeChange,
                         modifier = Modifier.fillMaxWidth().padding(10.dp),
@@ -280,7 +282,7 @@ fun PlaySetting(
                             onAutoMixDurationChange(autoMixDurationPreview ?: storedAutoMixDuration)
                         },
                     )
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = listOf(
                             AutoMixFadeCurve.EqualPower to stringResource(R.string.fade_equal_power),
                             AutoMixFadeCurve.Smooth to stringResource(R.string.fade_smooth),
@@ -288,12 +290,12 @@ fun PlaySetting(
                         ), selected = fadeCurve, onSelected = onFadeCurveChange,
                         modifier = Modifier.fillMaxWidth().padding(10.dp),
                     )
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = listOf(4, 8, 16).map { it to stringResource(R.string.automix_bars, it) },
                         selected = transitionBars, onSelected = onTransitionBarsChange,
                         modifier = Modifier.fillMaxWidth().padding(10.dp),
                     )
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = listOf(0, 2, 4, 8).map { it to if (it == 0) stringResource(R.string.automix_tail_none) else stringResource(R.string.automix_tail_bars, it) },
                         selected = tailCutBars, onSelected = onTailCutBarsChange,
                         modifier = Modifier.fillMaxWidth().padding(10.dp),
@@ -313,17 +315,17 @@ fun PlaySetting(
         }
     }
     if (showFloatingLyricsPermission) {
-        IosAlertDialog(
+        GlasmioAlertDialog(
             onDismissRequest = { showFloatingLyricsPermission = false },
             title = stringResource(R.string.notification_floating_lyrics_background_permission),
             message = floatingLyricsPermissionDescription,
             buttons = listOf(
-                IosAlertButtonSpec(
+                GlasmioAlertButtonSpec(
                     label = stringResource(R.string.notification_floating_lyrics_permission_later),
-                    role = IosAlertButtonRole.Cancel,
+                    role = GlasmioAlertButtonRole.Cancel,
                     onClick = { showFloatingLyricsPermission = false },
                 ),
-                IosAlertButtonSpec(
+                GlasmioAlertButtonSpec(
                     label = stringResource(R.string.pc_qr_login_open_settings),
                     onClick = {
                         showFloatingLyricsPermission = false
@@ -349,7 +351,7 @@ private fun ToggleRow(
     description: String? = null,
     enabled: Boolean = true,
 ) {
-    GlassCard(
+    GlasmioCard(
         Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f),
         onClick = if (enabled) { { onCheckedChange(!checked) } } else null,
     ) {
@@ -365,14 +367,14 @@ private fun ToggleRow(
                     )
                 }
             }
-            GlassToggle(checked, onCheckedChange, enabled = enabled)
+            GlasmioSwitch(checked, onCheckedChange, enabled = enabled)
         }
     }
 }
 
 @Composable
 private fun ValueRow(title: String, symbol: String, description: String? = null, value: @Composable () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SfIcon(symbol, contentDescription = null)
@@ -415,10 +417,10 @@ private fun SliderRow(
     range: ClosedFloatingPointRange<Float>,
     onValueChangeFinished: () -> Unit,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Text(title)
-            GlassSlider(
+            GlasmioSlider(
                 value,
                 onValueChange,
                 modifier = Modifier.fillMaxWidth(),

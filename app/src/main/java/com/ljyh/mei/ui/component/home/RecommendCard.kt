@@ -58,7 +58,7 @@ import com.ljyh.mei.constants.RecommendCardCornerRadius
 import com.ljyh.mei.constants.RecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardReflectionHeight
 import com.ljyh.mei.constants.RecommendCardWidth
-import com.ljyh.mei.ui.glass.progressiveBackdropBlur
+import io.github.neoruaa.glasmio.glass.progressiveBackdropBlur
 import com.ljyh.mei.utils.largeImage
 import kotlin.math.max
 

@@ -28,7 +28,7 @@ import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.playlist.AddToPlaylistSheet
 import com.ljyh.mei.ui.component.playlist.CreatePlaylistSheet
 import com.ljyh.mei.ui.component.playlist.TrackActionMenu
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.LyricSource
@@ -37,11 +37,11 @@ import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.social.NeteaseShareSheet
 import com.ljyh.mei.utils.setClipboard
@@ -56,7 +56,7 @@ import timber.log.Timber
 fun CommonOverlayHandler(
     overlayHandler: PlayerOverlayHandler,
     stateContainer: PlayerStateContainer,
-    sheetState: BottomSheetState? = null,
+    sheetState: GlasmioBottomSheetState? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -225,13 +225,13 @@ fun CommonOverlayHandler(
             LaunchedEffect(playerConnection, mediaMetadata?.id) {
                 playerConnection?.refreshAvailableMusicQualities()
             }
-            IosAlertDialog(
+            GlasmioAlertDialog(
                 onDismissRequest = overlayHandler::dismiss,
                 title = stringResource(R.string.music_quality),
             ) {
-                IosGroupedList {
+                GlasmioGroupedList {
                     localPlaybackInfo?.let { info ->
-                        IosListRow(
+                        GlasmioListRow(
                             title = localPlaybackQualityTitle(info, includeSource = true),
                             showTopSeparator = false,
                             onClick = {
@@ -253,7 +253,7 @@ fun CommonOverlayHandler(
                         )
                     }
                     availableQualities.forEachIndexed { index, quality ->
-                        IosListRow(
+                        GlasmioListRow(
                             title = stringResource(quality.labelRes),
                             showTopSeparator = index != 0 || localPlaybackInfo != null,
                             onClick = {
@@ -275,7 +275,7 @@ fun CommonOverlayHandler(
                         )
                     }
                     if (isLoadingQualities || (availableQualities.isEmpty() && localPlaybackInfo == null)) {
-                        IosListRow(
+                        GlasmioListRow(
                             title = stringResource(
                                 if (isLoadingQualities) R.string.track_quality_loading
                                 else R.string.track_quality_unavailable,

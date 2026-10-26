@@ -1,5 +1,41 @@
 package com.ljyh.mei.ui.glass
 
+import io.github.neoruaa.glasmio.core.GlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.defaultGlassColors
+import io.github.neoruaa.glasmio.glass.BottomContactLensTransform
+import io.github.neoruaa.glasmio.glass.BottomControlContact
+import io.github.neoruaa.glasmio.glass.BottomNavigationContact
+import io.github.neoruaa.glasmio.glass.GlassPressHighlight
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.glass.GraphicsLayerBlockScope
+import io.github.neoruaa.glasmio.glass.LiquidContactCapsule
+import io.github.neoruaa.glasmio.glass.LiquidContactShape
+import io.github.neoruaa.glasmio.glass.LiquidMenuContour
+import io.github.neoruaa.glasmio.glass.LiquidMenuContourWorkspace
+import io.github.neoruaa.glasmio.glass.LiquidMenuMorphMotion
+import io.github.neoruaa.glasmio.glass.LocalBottomControlContact
+import io.github.neoruaa.glasmio.glass.NavigationDropShadowRenderer
+import io.github.neoruaa.glasmio.glass.NavigationInnerShadowRenderer
+import io.github.neoruaa.glasmio.glass.clipGlassShape
+import io.github.neoruaa.glasmio.glass.drawNavigationGlassMaterial
+import io.github.neoruaa.glasmio.glass.expandedLiquidMenuShadowHole
+import io.github.neoruaa.glasmio.glass.liquidContactShape
+import io.github.neoruaa.glasmio.glass.navigationContactLens
+import io.github.neoruaa.glasmio.glass.navigationGlassBackground
+import io.github.neoruaa.glasmio.glass.navigationLensSourceDropShadow
+import io.github.neoruaa.glasmio.glass.navigationShadowLiftEffect
+import io.github.neoruaa.glasmio.glass.rememberBottomControlContactMember
+import io.github.neoruaa.glasmio.glass.rememberGlassMorphRenderer
+import io.github.neoruaa.glasmio.glass.rememberMorphingNavigationGlass
+import io.github.neoruaa.glasmio.glass.rememberNavigationInnerShadows
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioNavigationBar
+import io.github.neoruaa.glasmio.ui.GlasmioTabItem
+
 import android.graphics.RenderNode
 import android.graphics.Region
 import androidx.compose.animation.core.animateFloatAsState
@@ -77,17 +113,17 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
 import com.ljyh.mei.ui.component.sheet.PlayerSheetLayers
-import com.ljyh.mei.ui.component.sheet.collapsedAnchor
-import com.ljyh.mei.ui.component.sheet.expandedAnchor
-import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.collapsedAnchor
+import io.github.neoruaa.glasmio.scaffold.expandedAnchor
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.ljyh.mei.ui.component.sheet.playerContainerRect
-import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
+import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertArrayEquals
@@ -103,9 +139,9 @@ import org.junit.runner.RunWith
 class GlassBottomBarInteractionTest {
     @get:Rule val compose = createComposeRule()
 
-    private val home = GlassTabItem("home", "Home", SfSymbol.House)
-    private val radio = GlassTabItem("radio", "Radio", SfSymbol.RadioFilled)
-    private val library = GlassTabItem("library", "Library", SfSymbol.MusicNoteList)
+    private val home = GlasmioTabItem("home", "Home", SfSymbol.House)
+    private val radio = GlasmioTabItem("radio", "Radio", SfSymbol.RadioFilled)
+    private val library = GlasmioTabItem("library", "Library", SfSymbol.MusicNoteList)
     private val items = mutableStateOf(listOf(home, radio, library))
     private val selectedKey = mutableStateOf(home.key)
     private val compactProgress = mutableFloatStateOf(0f)
@@ -134,7 +170,7 @@ class GlassBottomBarInteractionTest {
                     LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
                     LocalGlassColors provides defaultGlassColors(isDark = false),
                 ) {
-                    IosPinnedListPage(
+                    GlasmioPinnedListPage(
                         title = "Search",
                         bottomPadding = 0.dp,
                         bottomPaddingValues = insets,
@@ -612,7 +648,7 @@ class GlassBottomBarInteractionTest {
                         compose.waitForIdle()
                         val bar = compose.onNodeWithTag("bottomBar")
                         val barBounds = bar.fetchSemanticsNode().boundsInRoot
-                        fun center(item: GlassTabItem<String>): Offset {
+                        fun center(item: GlasmioTabItem<String>): Offset {
                             val icon = visibleTabIconBounds(item)
                             return Offset(icon.center.x - barBounds.left, barBounds.height / 2f)
                         }
@@ -773,139 +809,6 @@ class GlassBottomBarInteractionTest {
                 val x = pressed.width / 2
                 val y = pressed.height / 2
                 assertTrue("Clipping must preserve the interior press light", pressed[x, y].red > resting[x, y].red + 0.02f)
-            }
-        }
-    }
-
-    @Test
-    fun opaqueLensSourceTintPreservesSelectedTabPixelsWithoutInnerFilters() {
-        val progress = mutableFloatStateOf(0f)
-        val press = mutableFloatStateOf(0f)
-        val paletteIndex = mutableStateOf(0)
-        val palettes = listOf(
-            defaultGlassColors(false).copy(accent = Color(0xFFFF3B30), content = Color(0xFF263648)),
-            defaultGlassColors(true).copy(accent = Color(0xFF51B6FF), content = Color.White),
-            defaultGlassColors(false).copy(accent = Color(0xFFFF3B30).copy(alpha = 0.6f)),
-            defaultGlassColors(false).copy(content = Color(0xFF263648).copy(alpha = 0.55f)),
-        )
-        val backing = Color(0xFF2E233B)
-        compose.setContent {
-            val colors = palettes[paletteIndex.value]
-            val selectedFilter = remember(colors) {
-                derivedStateOf {
-                    val compactTint = androidx.compose.ui.graphics.lerp(colors.accent, colors.content, progress.floatValue)
-                    ColorFilter.tint(androidx.compose.ui.graphics.lerp(compactTint, colors.content, press.floatValue))
-                }
-            }
-            val optimizedFilter = navigationLensSourceColorFilter(colors, selectedFilter)
-            val opaque = colors.accent.alpha == 1f && colors.content.alpha == 1f
-            assertTrue("Only fully opaque source colors can skip the inner filter",
-                if (opaque) optimizedFilter == null else optimizedFilter === selectedFilter)
-            val sourceScale = remember {
-                { lerp(1f, 1.2f, press.floatValue) * (1f - progress.floatValue).coerceAtLeast(0.82f) }
-            }
-            val labelAlpha = remember { { (1f - progress.floatValue * 1.35f).coerceIn(0f, 1f) } }
-            val lateScale = remember {
-                { lerp(1f, (22f / 28f) / 0.82f, compactIconLateProgress(progress.floatValue)) }
-            }
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalGlassColors provides colors, LocalLiquidTabScale provides sourceScale) {
-                MaterialTheme {
-                    Row {
-                        listOf(false, true).forEachIndexed { index, optimized ->
-                            if (index > 0) Spacer(Modifier.width(16.dp))
-                            Box(
-                                Modifier.size(160.dp, 80.dp).background(backing)
-                                    .testTag(if (optimized) "optimizedLensSourceTab" else "referenceLensSourceTab"),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                val width = lerp(160f, 48f, progress.floatValue).dp - 8.dp
-                                Box(
-                                    Modifier.width(width).height(56.dp).graphicsLayer {
-                                        colorFilter = ColorFilter.tint(colors.accent)
-                                    },
-                                ) {
-                                    MorphingSelectedNavigationItem(
-                                        item = library,
-                                        compactProgress = progress,
-                                        fullWidthPx = with(density) { 160.dp.toPx() },
-                                        compactWidthPx = with(density) { 48.dp.toPx() },
-                                        itemCount = 3,
-                                        selectedIndex = 1,
-                                        isLtr = true,
-                                        horizontalInsetPx = with(density) { 4.dp.toPx() },
-                                        selectedContentLateScale = lateScale,
-                                        labelAlpha = labelAlpha,
-                                        selectedIconColorFilter = if (optimized) optimizedFilter else selectedFilter,
-                                        contentColor = colors.content,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        palettes.indices.forEach { palette ->
-            listOf(0f, 0.5f, 0.99f).forEach { compact ->
-                listOf(0f, 0.5f, 0.99f).forEach { pressed ->
-                    compose.runOnIdle {
-                        paletteIndex.value = palette
-                        progress.floatValue = compact
-                        press.floatValue = pressed
-                    }
-                    compose.waitForIdle()
-                    val reference = compose.onNodeWithTag("referenceLensSourceTab").captureToImage().toPixelMap()
-                    val actual = compose.onNodeWithTag("optimizedLensSourceTab").captureToImage().toPixelMap()
-                    assertEquals(reference.width, actual.width)
-                    assertEquals(reference.height, actual.height)
-                    var maximum = 0
-                    var total = 0L
-                    var count = 0
-                    var contentPixels = 0
-                    var labelPixels = 0
-                    var maximumPoint = Offset.Zero
-                    var maximumExpected = Color.Transparent
-                    var maximumObserved = Color.Transparent
-                    fun compare(expected: Float, observed: Float, x: Int, y: Int) {
-                        val error = abs((expected * 255f).roundToInt() - (observed * 255f).roundToInt())
-                        if (error > maximum) {
-                            maximum = error
-                            maximumPoint = Offset(x.toFloat(), y.toFloat())
-                            maximumExpected = reference[x, y]
-                            maximumObserved = actual[x, y]
-                        }
-                        total += error
-                        count++
-                    }
-                    repeat(reference.height) { y ->
-                        repeat(reference.width) { x ->
-                            val expected = reference[x, y]
-                            val observed = actual[x, y]
-                            compare(expected.red, observed.red, x, y)
-                            compare(expected.green, observed.green, x, y)
-                            compare(expected.blue, observed.blue, x, y)
-                            compare(expected.alpha, observed.alpha, x, y)
-                            val contentDifference = maxOf(
-                                abs(expected.red - backing.red), abs(expected.green - backing.green),
-                                abs(expected.blue - backing.blue),
-                            )
-                            if (contentDifference > 8f / 255f) {
-                                contentPixels++
-                                if (y > reference.height * 0.6f) labelPixels++
-                            }
-                        }
-                    }
-                    val label = "Lens source tab: palette=$palette, compact=$compact, press=$pressed"
-                    assertTrue("$label must contain the real selected icon", contentPixels > 20)
-                    if (compact == 0f) assertTrue("$label must contain the visible label", labelPixels > 10)
-                    assertTrue(
-                        "$label maximum RGBA error: $maximum at $maximumPoint, " +
-                            "expected=$maximumExpected, actual=$maximumObserved",
-                        maximum <= 2,
-                    )
-                    assertTrue("$label mean RGBA error: ${total.toDouble() / count}", total.toDouble() / count <= 1.0)
-                }
             }
         }
     }
@@ -1757,10 +1660,10 @@ class GlassBottomBarInteractionTest {
 
     @Test
     fun miniPlayerReturnsDirectlyToTheFinalNavigationPosition() {
-        lateinit var sheet: BottomSheetState
+        lateinit var sheet: GlasmioBottomSheetState
         lateinit var layers: PlayerSheetLayers
         compose.setContent {
-            sheet = rememberBottomSheetState(
+            sheet = rememberGlasmioBottomSheetState(
                 dismissedBound = 0.dp,
                 collapsedBound = 48.dp,
                 expandedBound = 400.dp,
@@ -1819,11 +1722,11 @@ class GlassBottomBarInteractionTest {
     @Test
     fun openingPlayerSettlesInterruptedMiniNavigationWithoutResumingItAfterReturn() {
         val compact = mutableStateOf(false)
-        lateinit var sheet: BottomSheetState
+        lateinit var sheet: GlasmioBottomSheetState
         lateinit var progress: State<Float>
         compose.mainClock.autoAdvance = false
         compose.setContent {
-            sheet = rememberBottomSheetState(
+            sheet = rememberGlasmioBottomSheetState(
                 dismissedBound = 0.dp,
                 collapsedBound = 48.dp,
                 expandedBound = 400.dp,
@@ -1853,11 +1756,11 @@ class GlassBottomBarInteractionTest {
 
     @Test
     fun artworkLayoutSizeResumesUpdatesAfterFrozenTransition() {
-        lateinit var sheet: BottomSheetState
+        lateinit var sheet: GlasmioBottomSheetState
         lateinit var layers: PlayerSheetLayers
         lateinit var layoutSize: State<IntSize>
         compose.setContent {
-            sheet = rememberBottomSheetState(
+            sheet = rememberGlasmioBottomSheetState(
                 dismissedBound = 0.dp,
                 collapsedBound = 48.dp,
                 expandedBound = 400.dp,
@@ -1900,7 +1803,7 @@ class GlassBottomBarInteractionTest {
             listOf(false, true).map { liquidGlassEnabled -> isDark to liquidGlassEnabled }
         }
         val scenarioIndex = mutableStateOf(0)
-        var activeSheet: BottomSheetState? = null
+        var activeSheet: GlasmioBottomSheetState? = null
         val compactMiniProgress = mutableFloatStateOf(0f)
         compose.setContent {
             val scenario = scenarios[scenarioIndex.value]
@@ -1908,7 +1811,7 @@ class GlassBottomBarInteractionTest {
                 val (isDark, liquidGlassEnabled) = scenario
                 val backing = if (isDark) Color(0xFF343434) else Color(0xFFB3B3B3)
                 val backdrop = rememberCanvasBackdrop { drawRect(backing) }
-                val sheet = rememberBottomSheetState(
+                val sheet = rememberGlasmioBottomSheetState(
                     dismissedBound = 0.dp,
                     collapsedBound = 48.dp,
                     expandedBound = 400.dp,
@@ -2155,7 +2058,7 @@ class GlassBottomBarInteractionTest {
         }
     }
 
-    private fun visibleTabIconBounds(item: GlassTabItem<String>): Rect =
+    private fun visibleTabIconBounds(item: GlasmioTabItem<String>): Rect =
         compose.onAllNodesWithContentDescription(item.label, useUnmergedTree = true)
             .fetchSemanticsNodes().last { node ->
                 // The unmerged tree retains the invisible lens source beneath clearing semantics.
@@ -2170,7 +2073,7 @@ class GlassBottomBarInteractionTest {
                     LocalGlassAppearance provides glassAppearance.value,
                     LocalLayoutDirection provides barLayoutDirection.value,
                 ) {
-                    GlassBottomBar(
+                    GlasmioNavigationBar(
                         items = items.value,
                         selectedKey = selectedKey.value,
                         onSelected = { key ->

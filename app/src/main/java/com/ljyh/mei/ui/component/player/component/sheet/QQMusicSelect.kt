@@ -55,12 +55,12 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.glass.IosSheetButton
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.IosSheetTopToolbar
-import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.LyricCandidate
 import com.ljyh.mei.ui.model.LyricSource
@@ -147,7 +147,7 @@ internal fun LyricSelectionSheet(
         if (closeRequested) closeSheet()
     }
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = {
             // Swipe and scrim dismissal already finish the sheet's own hide animation.
             if (!closing) onDismiss()
@@ -158,10 +158,10 @@ internal fun LyricSelectionSheet(
     ) {
         val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Column(Modifier.fillMaxWidth()) {
-            IosSheetTopToolbar(
+            GlasmioSheetTopToolbar(
                 title = stringResource(R.string.lyric_selection_title),
                 actions = {
-                    IosSheetTopToolbarButton(onClick = { closeSheet() }, enabled = !closing) {
+                    GlasmioSheetToolbarButton(onClick = { closeSheet() }, enabled = !closing) {
                         SfIcon("xmark", stringResource(R.string.lyric_selection_close), size = 20.dp)
                     }
                 },
@@ -233,7 +233,7 @@ private fun LyricTimingControls(
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.lyric_selection_delay), style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IosSheetButton(onClick = { onAdjustOffset(-500) }, enabled = enabled) {
+            GlasmioSheetButton(onClick = { onAdjustOffset(-500) }, enabled = enabled) {
                 Text(stringResource(R.string.lyric_selection_earlier))
             }
             Text(
@@ -243,7 +243,7 @@ private fun LyricTimingControls(
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.content,
             )
-            IosSheetButton(onClick = { onAdjustOffset(500) }, enabled = enabled) {
+            GlasmioSheetButton(onClick = { onAdjustOffset(500) }, enabled = enabled) {
                 Text(stringResource(R.string.lyric_selection_later))
             }
         }
@@ -253,10 +253,10 @@ private fun LyricTimingControls(
             color = colors.secondaryContent,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            IosSheetButton(onClick = onResetOffset, enabled = enabled, modifier = Modifier.weight(1f)) {
+            GlasmioSheetButton(onClick = onResetOffset, enabled = enabled, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.lyric_selection_reset_delay), style = MaterialTheme.typography.labelLarge)
             }
-            IosSheetButton(onClick = onResetSource, enabled = enabled, modifier = Modifier.weight(1f)) {
+            GlasmioSheetButton(onClick = onResetSource, enabled = enabled, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.lyric_selection_reset_source), style = MaterialTheme.typography.labelLarge)
             }
         }

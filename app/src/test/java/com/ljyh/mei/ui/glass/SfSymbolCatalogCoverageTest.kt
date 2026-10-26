@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.glass
 
+import io.github.neoruaa.glasmio.icons.SfSymbolCatalog
+
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,14 +13,6 @@ class SfSymbolCatalogCoverageTest {
         val projectRoot = generateSequence(File(workingDirectory)) { it.parentFile }
             .first { File(it, "app/src/main/java").isDirectory }
         val sourceRoot = File(projectRoot, "app/src/main/java")
-        val catalogSource = File(
-            sourceRoot,
-            "com/ljyh/mei/ui/glass/SfSymbolCatalog.kt",
-        ).readText()
-        val catalog = Regex("\\\"([A-Za-z][A-Za-z0-9.]+)\\\" to 0x")
-            .findAll(catalogSource)
-            .map { it.groupValues[1] }
-            .toSet()
         val direct = Regex("SfIcon\\(\\s*(?:systemName\\s*=\\s*)?\\\"([A-Za-z][A-Za-z0-9.]+)\\\"")
         val named = Regex("\\bsystemName\\s*=\\s*\\\"([A-Za-z][A-Za-z0-9.]+)\\\"")
         val forwarded = Regex(
@@ -51,7 +45,7 @@ class SfSymbolCatalogCoverageTest {
                 fixed + conditional + enums
             }
             .toSet()
-        val missing = required - catalog
+        val missing = required.filter { SfSymbolCatalog.codePointOrNull(it) == null }
 
         assertTrue("Missing SF Symbols: ${missing.sorted().joinToString()}", missing.isEmpty())
     }

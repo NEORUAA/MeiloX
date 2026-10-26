@@ -13,12 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosAlertFieldGroup
-import com.ljyh.mei.ui.glass.IosAlertTextField
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioAlertFieldGroup
+import io.github.neoruaa.glasmio.ui.GlasmioAlertTextField
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 
 
 @Composable
@@ -32,16 +32,16 @@ fun AlertDialogInput(
     var inputText by remember { mutableStateOf(TextFieldValue()) }
 
     if (showDialog) {
-        IosAlertDialog(
+        GlasmioAlertDialog(
             onDismissRequest = onDismiss,
             title = title,
             buttons = listOf(
-                IosAlertButtonSpec(
+                GlasmioAlertButtonSpec(
                     label = stringResource(android.R.string.cancel),
                     onClick = onDismiss,
-                    role = IosAlertButtonRole.Cancel,
+                    role = GlasmioAlertButtonRole.Cancel,
                 ),
-                IosAlertButtonSpec(
+                GlasmioAlertButtonSpec(
                     label = stringResource(android.R.string.ok),
                     onClick = {
                         onConfirm(inputText.text)
@@ -50,14 +50,14 @@ fun AlertDialogInput(
                 ),
             ),
         ) {
-            IosAlertFieldGroup {
+            GlasmioAlertFieldGroup {
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .height(1.dp)
                         .background(LocalGlassColors.current.separator),
                 )
-                IosAlertTextField(
+                GlasmioAlertTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = label,

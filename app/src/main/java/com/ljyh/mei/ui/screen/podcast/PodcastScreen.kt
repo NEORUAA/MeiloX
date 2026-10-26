@@ -60,14 +60,14 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
 import com.ljyh.mei.ui.component.item.Track
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -117,7 +117,7 @@ fun PodcastScreen(
         }
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.podcasts),
         bottomPadding = bottomPadding,
         listState = listState,
@@ -132,7 +132,7 @@ fun PodcastScreen(
     ) {
         item(key = "podcast-tabs") {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 22.dp)) {
-                GlassSegmentedControl(
+                GlasmioSegmentedControl(
                     items = listOf(
                         PodcastTab.Discover to stringResource(R.string.podcast_discover),
                         PodcastTab.Subscriptions to stringResource(R.string.podcast_my_subscriptions),
@@ -215,7 +215,7 @@ fun PodcastScreen(
                         contentType = "subscribed-podcast",
                         horizontalPadding = 16.dp,
                     ) { podcast, index ->
-                        IosListRow(
+                        GlasmioListRow(
                             title = podcast.name,
                             subtitle = podcast.host?.nickname ?: podcast.category,
                             detail = stringResource(R.string.podcast_program_count, podcast.programCount),
@@ -589,7 +589,7 @@ private fun InlineErrorState(message: String?, retry: () -> Unit) {
             message ?: stringResource(R.string.load_failed),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        GlassButton(onClick = retry) { Text(stringResource(R.string.retry)) }
+        GlasmioButton(onClick = retry) { Text(stringResource(R.string.retry)) }
     }
 }
 
@@ -618,7 +618,7 @@ private fun PodcastSubscriptionsEmptyState(
             modifier = Modifier.padding(top = 5.dp),
         )
         if (actionLabel != null && onAction != null) {
-            GlassButton(onClick = onAction, modifier = Modifier.padding(top = 16.dp)) {
+            GlasmioButton(onClick = onAction, modifier = Modifier.padding(top = 16.dp)) {
                 Text(actionLabel)
             }
         }
@@ -642,7 +642,7 @@ fun PodcastPaginationFooter(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            GlassButton(onClick = onLoadMore) { Text(stringResource(R.string.retry)) }
+            GlasmioButton(onClick = onLoadMore) { Text(stringResource(R.string.retry)) }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)

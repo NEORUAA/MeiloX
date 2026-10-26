@@ -50,9 +50,9 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.playlist.AnimatedSoundWave
 import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.utils.smallImage
 
 private val DetailTrackArtworkSize = 48.dp

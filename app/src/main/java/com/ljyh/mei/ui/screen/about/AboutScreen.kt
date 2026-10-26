@@ -41,14 +41,14 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.BetaUpdatesEnabledKey
 import com.ljyh.mei.constants.DevModeKey
 import com.ljyh.mei.constants.Github
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -113,7 +113,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
         }
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.settings_about),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -159,7 +159,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                     },
 //                    stringResource(R.string.about_check_updates_description),
                 ) { checkForUpdates() }
-                GlassCard(
+                GlasmioCard(
                     Modifier.fillMaxWidth(),
                     onClick = if (isCheckingUpdate || isSavingBetaPreference) null else ({ setBetaUpdatesEnabled(!betaUpdatesEnabled) }),
                 ) {
@@ -169,7 +169,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                             stringResource(R.string.about_check_beta_updates),
                             modifier = Modifier.weight(1f).padding(horizontal = 13.dp),
                         )
-                        GlassToggle(
+                        GlasmioSwitch(
                             checked = betaUpdatesEnabled,
                             onCheckedChange = ::setBetaUpdatesEnabled,
                             enabled = !isCheckingUpdate && !isSavingBetaPreference,
@@ -229,7 +229,7 @@ private fun AboutSectionTitle(title: String) {
 
 @Composable
 private fun AboutEntry(systemName: String, title: String, subtitle: String? = null, onClick: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), onClick = onClick) {
+    GlasmioCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null, size = 21.dp)
             Column(Modifier.weight(1f).padding(horizontal = 13.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

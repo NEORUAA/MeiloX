@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalColorfulPageBackgrounds
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import kotlinx.coroutines.CancellationException

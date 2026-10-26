@@ -7,8 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.ljyh.mei.ui.glass.GlassPressHighlight
-import com.ljyh.mei.ui.liquidglass.pressHighlightSpring
+import io.github.neoruaa.glasmio.glass.GlassPressHighlight
+import io.github.neoruaa.glasmio.glass.pressHighlightSpring
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job

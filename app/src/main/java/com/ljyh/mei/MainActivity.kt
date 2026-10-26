@@ -175,12 +175,12 @@ import com.ljyh.mei.ui.component.player.floatingLyricsPipParams
 import com.ljyh.mei.playback.ENABLE_FLOATING_LYRICS
 import com.ljyh.mei.playback.DISABLE_FLOATING_LYRICS
 import androidx.lifecycle.Lifecycle
-import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.syncPlaybackVisibility
-import com.ljyh.mei.ui.component.utils.appBarScrollBehavior
-import com.ljyh.mei.ui.component.utils.resetHeightOffset
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioAppBarScrollBehavior
+import io.github.neoruaa.glasmio.scaffold.resetHeightOffset
 import com.ljyh.mei.ui.local.LocalDatabase
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -189,24 +189,24 @@ import com.ljyh.mei.ui.local.LocalPageAppearance
 import com.ljyh.mei.ui.local.LocalColorfulPageBackgrounds
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.local.LocalUserData
-import com.ljyh.mei.ui.glass.GlassBottomBar
-import com.ljyh.mei.ui.glass.BottomNavigationContact
-import com.ljyh.mei.ui.glass.LocalBottomControlContact
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassTabItem
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosBottomSearchToolbar
-import com.ljyh.mei.ui.glass.CompactBottomControlIconSize
-import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.GlassAppearance
-import com.ljyh.mei.ui.glass.LocalGlassAppearance
-import com.ljyh.mei.ui.glass.LocalBlurBackdrop
-import com.ljyh.mei.ui.glass.defaultGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
-import com.ljyh.mei.ui.glass.rememberSharedGlassBackdrop
-import com.ljyh.mei.ui.glass.trackBackdropPosition
+import io.github.neoruaa.glasmio.ui.GlasmioNavigationBar
+import io.github.neoruaa.glasmio.glass.BottomNavigationContact
+import io.github.neoruaa.glasmio.glass.LocalBottomControlContact
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioTabItem
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioSearchToolbar
+import io.github.neoruaa.glasmio.ui.CompactBottomControlIconSize
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.GlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassAppearance
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.core.defaultGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.glass.rememberSharedGlassBackdrop
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import com.ljyh.mei.ui.screen.Index
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.account.NeteaseLegacyWebSessionNotice
@@ -466,7 +466,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(keepBottomBarExpanded) {
                 if (keepBottomBarExpanded) navigationBarVisible = true
             }
-            val scrollPlayerSheet = remember { mutableStateOf<BottomSheetState?>(null) }
+            val scrollPlayerSheet = remember { mutableStateOf<GlasmioBottomSheetState?>(null) }
             val searchActiveState = rememberUpdatedState(active)
             val nestedScrollConnection = remember {
                 object : NestedScrollConnection {
@@ -710,7 +710,7 @@ class MainActivity : ComponentActivity() {
                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                         label = "CompactBottomNavigation",
                     )
-                    val playerBottomSheetState = rememberBottomSheetState(
+                    val playerBottomSheetState = rememberGlasmioBottomSheetState(
                         dismissedBound = 0.dp,
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
@@ -985,7 +985,7 @@ class MainActivity : ComponentActivity() {
                                             ) {
                                                 // Retained entries must observe preferences loaded after recreation.
                                                 val entryNavigationItems = currentNavigationItems.value
-                                                val entryTopAppBarScrollBehavior = appBarScrollBehavior(
+                                                val entryTopAppBarScrollBehavior = rememberGlasmioAppBarScrollBehavior(
                                                     canScroll = {
                                                         !meiRoute.route.startsWith("search_result/") &&
                                                             (playerBottomSheetState.isCollapsed ||
@@ -1155,7 +1155,7 @@ class MainActivity : ComponentActivity() {
                             CompositionLocalProvider(
                                 LocalGlassBackdrop provides bottomControlsBackdrop,
                             ) {
-                                IosBottomSearchToolbar(
+                                GlasmioSearchToolbar(
                                     query = query,
                                     onQueryChange = onQueryChange,
                                     onSearch = onSearch,
@@ -1178,7 +1178,7 @@ class MainActivity : ComponentActivity() {
                             ?: navigationItems.firstOrNull { it.name == lastSelectedTab }
                             ?: Index.Home
                         val navigationTabs = navigationItems.map { item ->
-                            GlassTabItem(
+                            GlasmioTabItem(
                                 key = item,
                                 label = stringResource(item.labelRes),
                                 symbol = item.symbol,
@@ -1359,7 +1359,7 @@ private fun Scene<NavKey>.currentRoute(): String? =
 private fun BoxScope.AnimatedMiniPlayerLayer(
     compactProgress: State<Float>,
     searchVerticalOffset: () -> Dp,
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     backdrop: Backdrop,
     pageDarkAppearance: Boolean?,
     onBackgroundReadyChanged: (Boolean) -> Unit,
@@ -1395,13 +1395,13 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
 @Composable
 private fun AnimatedBottomNavigationRow(
     compactProgress: State<Float>,
-    items: List<GlassTabItem<Index>>,
+    items: List<GlasmioTabItem<Index>>,
     selectedKey: Index,
     onExpand: () -> Unit,
     onSelected: (Index) -> Unit,
     onSearchClick: () -> Unit,
     backdrop: Backdrop,
-    playerBottomSheetState: BottomSheetState,
+    playerBottomSheetState: GlasmioBottomSheetState,
     bottomMargin: Dp,
 ) {
     BottomNavigationContact(
@@ -1418,7 +1418,7 @@ private fun AnimatedBottomNavigationRow(
                 IntOffset(x = 0, y = (slideOffset + compactInset).roundToPx())
             },
     ) {
-        GlassBottomBar(
+        GlasmioNavigationBar(
             items = items,
             selectedKey = selectedKey,
             onExpand = onExpand,
@@ -1448,7 +1448,7 @@ private fun AnimatedHomeSearchButton(
     onClick: () -> Unit,
 ) {
     val progress = compactProgress.value
-    GlassIconButton(
+    GlasmioIconButton(
         onClick = onClick,
         backdrop = backdrop,
         style = GlassSurfaceStyle.Navigation,

@@ -30,16 +30,16 @@ import com.ljyh.mei.constants.EqualizerPreampKey
 import com.ljyh.mei.constants.EqualizerPresetKey
 import com.ljyh.mei.playback.EqualizerBand
 import com.ljyh.mei.playback.EqualizerPreset
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSlider
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSlider
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -87,18 +87,18 @@ fun EqualizerSettings() {
         setSerializedGains(updated.joinToString(","))
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.equalizer),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlassButton(onClick = { applyPreset(EqualizerPreset.Flat) }) {
+            GlasmioButton(onClick = { applyPreset(EqualizerPreset.Flat) }) {
                 Text(stringResource(R.string.equalizer_reset))
             }
         },
     ) {
         item {
-            GlassCard(Modifier.fillMaxWidth(), onClick = { setEnabled(!enabled) }) {
+            GlasmioCard(Modifier.fillMaxWidth(), onClick = { setEnabled(!enabled) }) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     SfIcon("slider.vertical.3", null)
                     Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
@@ -109,7 +109,7 @@ fun EqualizerSettings() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    GlassToggle(enabled, setEnabled)
+                    GlasmioSwitch(enabled, setEnabled)
                 }
             }
         }
@@ -124,7 +124,7 @@ fun EqualizerSettings() {
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(EqualizerPreset.entries, key = EqualizerPreset::name) { item ->
-                    GlassButton(
+                    GlasmioButton(
                         onClick = { applyPreset(item) },
                         enabled = enabled,
                         emphasis = if (item == (previewPreset ?: preset)) GlassEmphasis.Prominent else GlassEmphasis.Regular,
@@ -135,7 +135,7 @@ fun EqualizerSettings() {
             }
         }
         item(key = "equalizer-bands") {
-            IosGroupedList {
+            GlasmioGroupedList {
                 EqualizerSliderCard(
                     title = stringResource(R.string.equalizer_preamp), value = previewPreamp ?: preamp, enabled = enabled,
                     onValueChange = {
@@ -166,7 +166,7 @@ private fun EqualizerSliderCard(
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, modifier = Modifier.weight(1f))
@@ -175,7 +175,7 @@ private fun EqualizerSliderCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            GlassSlider(
+            GlasmioSlider(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),

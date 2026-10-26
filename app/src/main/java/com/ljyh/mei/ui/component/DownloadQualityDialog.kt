@@ -9,11 +9,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.DownloadQuality
-import com.ljyh.mei.ui.glass.IosAlertButton
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButton
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 
 @Composable
 fun DownloadConfirmDialog(
@@ -24,18 +24,18 @@ fun DownloadConfirmDialog(
     onGoToSettings: () -> Unit,
     onGoToDownloadManage: () -> Unit = {}
 ) {
-    IosAlertDialog(
+    GlasmioAlertDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.download_confirm_title),
     ) {
-        IosGroupedList {
-            IosListRow(
+        GlasmioGroupedList {
+            GlasmioListRow(
                 title = stringResource(R.string.download_current_quality),
                 subtitle = currentQuality.description,
                 detail = currentQuality.label,
                 showTopSeparator = false,
             )
-            IosListRow(
+            GlasmioListRow(
                 title = stringResource(R.string.download_save_location),
                 subtitle = downloadPath,
             )
@@ -44,20 +44,20 @@ fun DownloadConfirmDialog(
             Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         ) {
-            IosAlertButton(
+            GlasmioAlertButton(
                 text = stringResource(R.string.download_change_settings),
                 onClick = onGoToSettings,
                 modifier = Modifier.weight(1f),
-                role = IosAlertButtonRole.Cancel,
+                role = GlasmioAlertButtonRole.Cancel,
             )
-            IosAlertButton(
+            GlasmioAlertButton(
                 text = stringResource(R.string.download_view_queue),
                 onClick = onGoToDownloadManage,
                 modifier = Modifier.weight(1f),
-                role = IosAlertButtonRole.Cancel,
+                role = GlasmioAlertButtonRole.Cancel,
             )
         }
-        IosAlertButton(
+        GlasmioAlertButton(
             text = stringResource(R.string.download_start),
             onClick = onConfirm,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),

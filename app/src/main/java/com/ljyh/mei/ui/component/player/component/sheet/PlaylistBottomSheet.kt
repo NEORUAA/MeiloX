@@ -62,17 +62,17 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.playback.playbackOrderIndices
 import com.ljyh.mei.playback.queueEntryId
-import com.ljyh.mei.ui.glass.IosModalSheetShape
-import com.ljyh.mei.ui.glass.IosSheetSurface
-import com.ljyh.mei.ui.glass.IosSheetTopToolbar
-import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.applyGlassDragScale
-import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
+import io.github.neoruaa.glasmio.ui.GlasmioModalSheetShape
+import io.github.neoruaa.glasmio.ui.GlasmioSheetSurface
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.glass.applyGlassDragScale
+import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.smallImage
@@ -172,10 +172,10 @@ fun PlaylistContent(
 
     Column(modifier) {
         if (showTitleBar) {
-            IosSheetTopToolbar(
+            GlasmioSheetTopToolbar(
                 title = stringResource(R.string.queue_title, queueEntries.size),
                 actions = {
-                    IosSheetTopToolbarButton(onClick = onDismiss) {
+                    GlasmioSheetToolbarButton(onClick = onDismiss) {
                         SfIcon("xmark", stringResource(R.string.queue_close), size = 20.dp)
                     }
                 },
@@ -262,7 +262,7 @@ fun PlaylistContent(
 @Composable
 fun PlaylistBottomSheet(onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val screenShape = IosModalSheetShape
+    val screenShape = GlasmioModalSheetShape
     val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
@@ -284,7 +284,7 @@ fun PlaylistBottomSheet(onDismiss: () -> Unit) {
         dragHandle = null,
         contentWindowInsets = { WindowInsets.statusBars },
     ) {
-        IosSheetSurface(
+        GlasmioSheetSurface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f),
             shape = screenShape,
             interactiveHighlight = interactiveHighlight,

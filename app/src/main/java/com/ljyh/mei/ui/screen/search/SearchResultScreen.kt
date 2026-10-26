@@ -50,12 +50,12 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.player.OverlayState
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.GlassSearchBar
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -100,7 +100,7 @@ fun SearchResultScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        IosPinnedListPage(
+        GlasmioPinnedListPage(
             title = stringResource(R.string.search_details_title),
             bottomPadding = bottomPadding,
             listState = listState,
@@ -108,7 +108,7 @@ fun SearchResultScreen(
             onNavigateBack = navController::navigateUp,
         ) {
             item(key = "search-query") {
-                GlassSearchBar(
+                GlasmioSearchBar(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
                     active = searchActive,
@@ -184,7 +184,7 @@ fun SearchTypeFilterRow(
         .filter { it != SearchType.History && (it != SearchType.Podcast || podcastsEnabled) }
         .map { it to stringResource(it.labelRes) }
 
-    GlassSegmentedControl(
+    GlasmioSegmentedControl(
         items = tabItems,
         selected = selected,
         onSelected = onSelect,
@@ -224,7 +224,7 @@ fun LazyListScope.SearchResultList(
             val songs = data.result.songs.orEmpty()
             if (songs.isEmpty()) {
                 item(key = "search-empty-${type.name}") {
-                    IosGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
                 }
             } else {
                 groupedLazyItems(
@@ -234,7 +234,7 @@ fun LazyListScope.SearchResultList(
                     firstItemTopPadding = 10.dp,
                 ) { song, index ->
                     val media = song.toMediaData()
-                    IosListRow(
+                    GlasmioListRow(
                         title = media.title,
                         subtitle = media.artists
                             .map { it.name.trim() }
@@ -281,7 +281,7 @@ fun LazyListScope.SearchResultList(
             val artists = data.result.artists.orEmpty()
             if (artists.isEmpty()) {
                 item(key = "search-empty-${type.name}") {
-                    IosGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
                 }
             } else {
                 groupedLazyItems(
@@ -305,7 +305,7 @@ fun LazyListScope.SearchResultList(
             val albums = data.result.albums.orEmpty()
             if (albums.isEmpty()) {
                 item(key = "search-empty-${type.name}") {
-                    IosGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
                 }
             } else {
                 groupedLazyItems(
@@ -315,7 +315,7 @@ fun LazyListScope.SearchResultList(
                     firstItemTopPadding = 10.dp,
                 ) { album, index ->
                     val albumModel = album.toAlbum()
-                    IosListRow(
+                    GlasmioListRow(
                         title = albumModel.title,
                         subtitle = listOf(
                             albumModel.artist.joinToString(" / ") { it.name },
@@ -342,7 +342,7 @@ fun LazyListScope.SearchResultList(
             val playlists = data.result.playlists.orEmpty()
             if (playlists.isEmpty()) {
                 item(key = "search-empty-${type.name}") {
-                    IosGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
                 }
             } else {
                 groupedLazyItems(
@@ -352,7 +352,7 @@ fun LazyListScope.SearchResultList(
                     firstItemTopPadding = 10.dp,
                 ) { playlist, index ->
                     val playlistModel = playlist.toPlaylist()
-                    IosListRow(
+                    GlasmioListRow(
                         title = playlistModel.title,
                         subtitle = "${playlistModel.count} • ${playlistModel.authorName}",
                         showTopSeparator = index > 0,
@@ -376,7 +376,7 @@ fun LazyListScope.SearchResultList(
             val podcasts = data.result.podcasts.orEmpty()
             if (podcasts.isEmpty()) {
                 item(key = "search-empty-${type.name}") {
-                    IosGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
                 }
             } else {
                 groupedLazyItems(
@@ -385,7 +385,7 @@ fun LazyListScope.SearchResultList(
                     contentType = "search-podcast",
                     firstItemTopPadding = 10.dp,
                 ) { podcast, index ->
-                    IosListRow(
+                    GlasmioListRow(
                         title = podcast.name,
                         subtitle = listOfNotNull(podcast.host?.nickname, podcast.category)
                             .filter(String::isNotBlank)
@@ -418,7 +418,7 @@ private fun ArtistSearchRow(
     showTopSeparator: Boolean,
     onClick: () -> Unit,
 ) {
-    IosListRow(
+    GlasmioListRow(
         title = artist.name,
         subtitle = artist.alias.joinToString(" ").takeIf(String::isNotBlank),
         showTopSeparator = showTopSeparator,
@@ -436,7 +436,7 @@ private fun ArtistSearchRow(
 
 @Composable
 fun EmptyView() {
-    IosListRow(
+    GlasmioListRow(
         title = stringResource(R.string.no_search_results),
         showTopSeparator = false,
     )

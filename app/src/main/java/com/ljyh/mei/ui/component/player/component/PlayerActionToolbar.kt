@@ -45,7 +45,7 @@ import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.playback.PlayMode
 import com.ljyh.mei.playback.SleepTimerState
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.utils.TimeUtils.makeTimeString

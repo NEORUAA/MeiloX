@@ -14,15 +14,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.api.CommentSortType
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.IosContextMenu
-import com.ljyh.mei.ui.glass.IosMenuItem
-import com.ljyh.mei.ui.glass.IosPopupMenu
-import com.ljyh.mei.ui.glass.IosTopToolbar
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.ui.GlasmioContextMenu
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.ui.GlasmioTopBar
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,11 +34,11 @@ fun CommentTopBar(
     modifier: Modifier = Modifier
 ) {
     androidx.compose.foundation.layout.Box(modifier) {
-        IosTopToolbar(
+        GlasmioTopBar(
             title = if (total > 0) stringResource(R.string.comment_title_count, total)
             else stringResource(R.string.comment_title),
             navigation = {
-                GlassIconButton(onClick = onBack) {
+                GlasmioIconButton(onClick = onBack) {
                     SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
                 }
             },
@@ -55,12 +55,12 @@ fun CommentSortAction(
     onSortTypeChange: (CommentSortType) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    IosPopupMenu(
+    GlasmioMenu(
         expanded = expanded,
         onExpandedChange = { expanded = it },
         itemCount = CommentSortType.entries.size,
         anchor = { onClick ->
-            GlassButton(
+            GlasmioButton(
                 onClick = onClick,
                 modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize),
             ) {
@@ -73,7 +73,7 @@ fun CommentSortAction(
         },
     ) { childBackdrop, close ->
         CommentSortType.entries.forEach { type ->
-            IosMenuItem(
+            GlasmioMenuItem(
                 title = commentSortLabel(type),
                 onClick = {
                     onSortTypeChange(type)

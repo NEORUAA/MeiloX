@@ -3,7 +3,7 @@ package com.ljyh.mei.ui.navigation
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.icons.SfSymbol
 
 enum class ContentFeature {
     Podcasts,

@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.component.sheet
 
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
+
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -78,9 +81,9 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.capsule.Continuity
 import com.kyant.capsule.continuities.G1Continuity
-import com.ljyh.mei.ui.glass.GlassPressHighlight
-import com.ljyh.mei.ui.glass.clipGlassShape
-import com.ljyh.mei.ui.glass.rememberGlassMorphRenderer
+import io.github.neoruaa.glasmio.glass.GlassPressHighlight
+import io.github.neoruaa.glasmio.glass.clipGlassShape
+import io.github.neoruaa.glasmio.glass.rememberGlassMorphRenderer
 import com.ljyh.mei.ui.component.player.LocalPlayerArtwork
 import kotlinx.coroutines.CoroutineScope
 import kotlin.math.roundToInt
@@ -89,7 +92,7 @@ internal val LocalPlayerSheet = staticCompositionLocalOf<PlayerSheetLayers?> { n
 
 @Stable
 internal class PlayerSheetLayers(
-    val state: BottomSheetState,
+    val state: GlasmioBottomSheetState,
     val miniHost: GraphicsLayer,
     val miniContent: GraphicsLayer,
     val fullContent: GraphicsLayer,
@@ -293,7 +296,7 @@ private fun LayoutCoordinates?.visualBounds(): Rect? {
 }
 
 @Composable
-internal fun rememberPlayerSheetLayers(state: BottomSheetState): PlayerSheetLayers {
+internal fun rememberPlayerSheetLayers(state: GlasmioBottomSheetState): PlayerSheetLayers {
     val scope = rememberCoroutineScope()
     val miniHost = rememberGraphicsLayer()
     val mini = rememberGraphicsLayer()
@@ -398,7 +401,7 @@ private fun Modifier.observePressHighlight(layers: PlayerSheetLayers): Modifier 
 
 @Composable
 private fun Modifier.sheetGestures(
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     layers: PlayerSheetLayers,
     onHorizontalSwipe: ((HorizontalSwipeDirection) -> Unit)?,
 ): Modifier = observePressHighlight(layers).pointerInput(state, onHorizontalSwipe) {
@@ -520,7 +523,7 @@ private fun Modifier.clipPlayerBackground(
 
 @Composable
 fun BottomSheet(
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     modifier: Modifier = Modifier,
     collapsedDragOffset: () -> Dp = { 0.dp },
     collapsedDragHeight: Dp = 0.dp,

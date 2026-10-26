@@ -80,11 +80,11 @@ import com.ljyh.mei.ui.component.player.FloatingLyricsPipContent
 import com.ljyh.mei.ui.component.player.component.applemusic.playerAdditiveBlend
 import com.ljyh.mei.ui.component.player.component.applemusic.playerContentFade
 import com.ljyh.mei.ui.component.player.component.sheet.LyricSelectionSheet
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.LocalBlurBackdrop
-import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.defaultGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.defaultGlassColors
 import com.ljyh.mei.ui.model.LyricCandidate
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricVariant
@@ -1028,7 +1028,7 @@ class PlayerLyricsRenderingTest {
                     LocalGlassBackdrop provides emptyBackdrop(),
                     LocalBlurBackdrop provides emptyBackdrop(),
                 ) {
-                    IosModalSheet(onDismissRequest = {}) {
+                    GlasmioBottomSheet(onDismissRequest = {}) {
                         val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
                         SideEffect { window.set(dialogWindow) }
                         Text("Sheet content", Modifier.padding(24.dp))

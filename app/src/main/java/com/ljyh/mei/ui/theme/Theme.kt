@@ -6,8 +6,6 @@ import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -18,15 +16,26 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.R
 import com.ljyh.mei.constants.DefaultInterfaceLetterSpacing
 import com.ljyh.mei.constants.InterfaceLetterSpacingKey
 import com.ljyh.mei.constants.MaxInterfaceLetterSpacing
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import com.ljyh.mei.utils.rememberPreference
-import com.ljyh.mei.ui.component.utils.LocalPageOverscrollFactory
+import io.github.neoruaa.glasmio.core.GlasmioShapes
+import io.github.neoruaa.glasmio.core.GlasmioTheme
+import io.github.neoruaa.glasmio.core.LocalGlassAppearance
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassContentColor
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.core.LocalGroupedListIconColor
+import io.github.neoruaa.glasmio.icons.GlasmioIconProvider
+import io.github.neoruaa.glasmio.scaffold.LocalPageOverscrollFactory
 import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
 
 /** Raw custom or dynamic accent; null selects the current mode's default accent. */
@@ -34,7 +43,7 @@ val LocalAccentSeedColor = staticCompositionLocalOf<Color?> { null }
 private val LocalDynamicAccent = staticCompositionLocalOf { false }
 val LocalInterfaceLetterSpacing = compositionLocalOf { DefaultInterfaceLetterSpacing.sp }
 
-private val AppShapes = Shapes(
+private val AppShapes = GlasmioShapes(
     extraSmall = ContinuousRoundedRectangle(2.dp),
     small = ContinuousRoundedRectangle(4.dp),
     medium = ContinuousRoundedRectangle(8.dp),
@@ -101,18 +110,34 @@ fun MusicTheme(
             error = Color(0xFFFF383C),
         )
     }
-    MaterialTheme(
+    val context = LocalContext.current
+    val symbolTypeface = remember(context) {
+        ResourcesCompat.getFont(context.applicationContext, R.font.sf_pro)
+    }
+    GlasmioTheme(
+        isDark = isDark,
         colorScheme = colorScheme,
         typography = typography,
+        appearance = LocalGlassAppearance.current,
+        dimensions = LocalGlassDimensions.current,
         shapes = AppShapes,
     ) {
-        CompositionLocalProvider(
-            LocalOverscrollFactory provides (LocalPageOverscrollFactory.current ?: MiuixOverscrollFactory),
-            LocalDynamicAccent provides dynamicAccent,
-            LocalInterfaceLetterSpacing provides letterSpacing,
-            LocalContentColor provides colorScheme.onBackground,
-            LocalTextStyle provides typography.bodyLarge,
-            content = content,
-        )
+        GlasmioIconProvider(
+            symbolTypeface = symbolTypeface,
+            defaultTint = {
+                LocalGroupedListIconColor.current
+                    ?: LocalGlassContentColor.current
+                    ?: LocalGlassColors.current.content
+            },
+        ) {
+            CompositionLocalProvider(
+                LocalOverscrollFactory provides (LocalPageOverscrollFactory.current ?: MiuixOverscrollFactory),
+                LocalDynamicAccent provides dynamicAccent,
+                LocalInterfaceLetterSpacing provides letterSpacing,
+                LocalContentColor provides colorScheme.onBackground,
+                LocalTextStyle provides typography.bodyLarge,
+                content = content,
+            )
+        }
     }
 }

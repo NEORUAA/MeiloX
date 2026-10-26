@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.screen.main.library
 
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.asPaddingValues
@@ -26,9 +29,9 @@ import androidx.compose.ui.graphics.Color
 import com.ljyh.mei.constants.LibraryStyle
 import com.ljyh.mei.constants.LibraryDefaultPageKey
 import com.ljyh.mei.constants.LibraryStyleKey
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.CloudMusicEnabledKey
 import com.ljyh.mei.constants.DownloadsEnabledKey
@@ -39,7 +42,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import com.ljyh.mei.ui.glass.IosPinnedListPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
 import com.ljyh.mei.ui.screen.main.library.component.LibraryMobileLayout
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.navigation.ContentFeature
@@ -148,7 +151,7 @@ fun EmptyLoginState(
     category: LibraryPage? = null,
 ) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(category?.titleRes ?: R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
@@ -158,8 +161,8 @@ fun EmptyLoginState(
     ) {
         if (category == null) {
             item(key = "signed-out-downloads") {
-                com.ljyh.mei.ui.glass.IosGroupedList {
-                    IosListRow(
+                io.github.neoruaa.glasmio.ui.GlasmioGroupedList {
+                    GlasmioListRow(
                         title = stringResource(R.string.app_tab_library_downloads),
                         leading = { SfIcon(LibraryPage.Downloads.symbol, null, tint = LocalGlassColors.current.accent) },
                         showTopSeparator = false,
@@ -175,7 +178,7 @@ fun EmptyLoginState(
                 modifier = Modifier.fillParentMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                com.ljyh.mei.ui.glass.GlassCard(
+                io.github.neoruaa.glasmio.ui.GlasmioCard(
                     modifier = Modifier.padding(24.dp),
                     onClick = { Screen.NeteaseLogin.navigate(navController) },
                 ) {
@@ -183,7 +186,7 @@ fun EmptyLoginState(
                         modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        com.ljyh.mei.ui.glass.SfIcon("person.crop.circle", null, size = 42.dp)
+                        io.github.neoruaa.glasmio.icons.SfIcon("person.crop.circle", null, size = 42.dp)
                         Text(
                             stringResource(com.ljyh.mei.R.string.library_sign_in),
                             modifier = Modifier.padding(top = 12.dp),
@@ -201,7 +204,7 @@ private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boole
     val navController = LocalNavController.current
     val colors = LocalGlassColors.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         horizontalContentPadding = 6.dp,
@@ -213,7 +216,7 @@ private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boole
     ) {
         categories.forEachIndexed { index, page ->
             item(key = "library-category:${page.name}") {
-                IosListRow(
+                GlasmioListRow(
                     title = stringResource(page.titleRes),
                     leading = { SfIcon(page.symbol, null, tint = colors.accent) },
                     showTopSeparator = index > 0,

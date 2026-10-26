@@ -32,9 +32,9 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.playback.LocalPlaybackInfo
-import com.ljyh.mei.ui.glass.IosMenuItem
-import com.ljyh.mei.ui.glass.IosPopupMenu
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.icons.SfIcon
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -113,7 +113,7 @@ fun PlayerQualityDropdown(
         else -> null
     }
 
-    IosPopupMenu(
+    GlasmioMenu(
         expanded = expanded,
         onExpandedChange = {
             if (it && !expanded) {
@@ -162,7 +162,7 @@ fun PlayerQualityDropdown(
         },
     ) { childBackdrop, close ->
         localPlaybackInfo?.let { info ->
-            IosMenuItem(
+            GlasmioMenuItem(
                 title = localPlaybackQualityTitle(info, includeSource = true),
                 onClick = {
                     onLocalSourceSelected()
@@ -173,7 +173,7 @@ fun PlayerQualityDropdown(
             )
         }
         availableQualities.forEach { option ->
-            IosMenuItem(
+            GlasmioMenuItem(
                 title = stringResource(option.labelRes),
                 onClick = {
                     onQualitySelected(option)
@@ -184,7 +184,7 @@ fun PlayerQualityDropdown(
             )
         }
         statusTitle?.let {
-            IosMenuItem(
+            GlasmioMenuItem(
                 title = it,
                 onClick = {},
                 enabled = false,

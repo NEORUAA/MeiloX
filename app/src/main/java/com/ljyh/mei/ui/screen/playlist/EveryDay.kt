@@ -23,7 +23,7 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.utils.PageOverscrollHost
+import io.github.neoruaa.glasmio.scaffold.GlasmioOverscrollHost
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
@@ -85,7 +85,7 @@ fun EveryDay(
     }
 
     if (everyDaySongs is Resource.Error) {
-        PageOverscrollHost {
+        GlasmioOverscrollHost {
             Text("Error: ${(everyDaySongs as Resource.Error).message}", Modifier.align(Alignment.Center))
         }
     } else {

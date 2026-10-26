@@ -50,11 +50,11 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.weapi.Playlists
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.rememberIosGridCollapseProgress
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioGridCollapseProgress
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -73,7 +73,7 @@ fun FindMusicScreen(
     val playlistState by viewModel.highQualityPlaylist.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val listState = rememberLazyGridState()
-    val collapseProgress = rememberIosGridCollapseProgress(listState)
+    val collapseProgress = rememberGlasmioGridCollapseProgress(listState)
     val title = titleOverride ?: stringResource(R.string.app_tab_explore)
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val glassColors = LocalGlassColors.current
@@ -84,7 +84,7 @@ fun FindMusicScreen(
     }
     LaunchedEffect(selectedCategory) { listState.scrollToItem(0) }
 
-    IosPinnedPage(
+    GlasmioPinnedPage(
         title = title,
         bottomPadding = bottom,
         modifier = modifier,

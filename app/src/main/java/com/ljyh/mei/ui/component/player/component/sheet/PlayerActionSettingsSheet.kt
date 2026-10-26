@@ -17,10 +17,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PlayerActionKey
-import com.ljyh.mei.ui.glass.IosActionSheetContent
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioActionSheetContent
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.utils.rememberPreference
 
@@ -36,14 +36,14 @@ fun PlayerActionSettingsSheet(onDismiss: () -> Unit) {
 
     fun save() = setActionString(PlayerAction.toSettings(selected))
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismiss,
     ) {
-        IosActionSheetContent(
+        GlasmioActionSheetContent(
             title = stringResource(R.string.player_action_customize),
             message = stringResource(R.string.player_action_customize_hint),
         ) {
-            IosListRow(
+            GlasmioListRow(
                 title = stringResource(R.string.player_action_visible),
                 detail = "${selected.size}/5",
                 showTopSeparator = false,
@@ -58,7 +58,7 @@ fun PlayerActionSettingsSheet(onDismiss: () -> Unit) {
                             }
                 }
             }
-            IosListRow(title = stringResource(R.string.player_action_available))
+            GlasmioListRow(title = stringResource(R.string.player_action_available))
             available.forEach { action ->
                 PlayerActionRow(action, selected = false) {
                             if (selected.size < 5) {
@@ -75,7 +75,7 @@ fun PlayerActionSettingsSheet(onDismiss: () -> Unit) {
 
 @Composable
 private fun PlayerActionRow(action: PlayerAction, selected: Boolean, onClick: () -> Unit) {
-    IosListRow(
+    GlasmioListRow(
         title = stringResource(action.labelRes),
         systemName = action.systemName,
         onClick = onClick,

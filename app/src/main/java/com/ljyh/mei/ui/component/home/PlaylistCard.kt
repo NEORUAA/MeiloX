@@ -41,8 +41,8 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlaylistCardSize
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.utils.largeImage
 
 @Composable

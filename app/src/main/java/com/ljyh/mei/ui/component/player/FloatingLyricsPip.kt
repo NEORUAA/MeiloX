@@ -44,8 +44,8 @@ import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.playback.PlayerConnection
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.utils.rememberPreference
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
@@ -145,7 +145,7 @@ internal fun FloatingLyricsPipContent(
 ) {
     val colors = LocalGlassColors.current
     Box(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlasmioCard(Modifier.fillMaxWidth()) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.Center,

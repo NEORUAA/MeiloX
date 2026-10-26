@@ -32,15 +32,15 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.IosTextField
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioTextField
+import io.github.neoruaa.glasmio.icons.SfIcon
 
 @Composable
 fun CreatePlaylistSheet(
@@ -66,7 +66,7 @@ fun CreatePlaylistSheet(
         runCatching { focusRequester.requestFocus() }
     }
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismiss,
         contentWindowInsets = { WindowInsets.statusBars.union(WindowInsets.ime) },
     ) {
@@ -80,8 +80,8 @@ fun CreatePlaylistSheet(
                     fontWeight = FontWeight.Bold,
                 )
 
-                IosGroupedList {
-                    IosTextField(
+                GlasmioGroupedList {
+                    GlasmioTextField(
                         value = text,
                         onValueChange = { if (it.length <= 20) text = it },
                         modifier = Modifier.focusRequester(focusRequester),
@@ -94,7 +94,7 @@ fun CreatePlaylistSheet(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 if (text.isNotEmpty()) {
-                                    GlassIconButton(onClick = { text = "" }, modifier = Modifier.size(34.dp)) {
+                                    GlasmioIconButton(onClick = { text = "" }, modifier = Modifier.size(34.dp)) {
                                         SfIcon("xmark", stringResource(R.string.clear), size = 16.dp)
                                     }
                                 }
@@ -103,7 +103,7 @@ fun CreatePlaylistSheet(
                     )
                 }
 
-                GlassCard(
+                GlasmioCard(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { isPrivate = !isPrivate },
                 ) {
@@ -126,7 +126,7 @@ fun CreatePlaylistSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        GlassToggle(checked = isPrivate, onCheckedChange = { isPrivate = it })
+                        GlasmioSwitch(checked = isPrivate, onCheckedChange = { isPrivate = it })
                     }
                 }
 
@@ -134,10 +134,10 @@ fun CreatePlaylistSheet(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                 ) {
-                    GlassButton(onClick = onDismiss) {
+                    GlasmioButton(onClick = onDismiss) {
                         Text(stringResource(R.string.cancel))
                     }
-                    GlassButton(
+                    GlasmioButton(
                         onClick = submit,
                         enabled = text.isNotBlank(),
                         emphasis = GlassEmphasis.Prominent,

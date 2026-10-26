@@ -35,11 +35,11 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
-import com.ljyh.mei.ui.component.utils.PageOverscrollHost
+import io.github.neoruaa.glasmio.scaffold.GlasmioOverscrollHost
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
-import com.ljyh.mei.ui.glass.IosCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -310,7 +310,7 @@ fun PlaylistScreen(
         onSubscribe = { toggleSubscription() },
         onRefresh = { selection.finish(); viewModel.getPlaylistDetail(id.toString()) },
     ).toMutableList().apply {
-        if (uiData.isCreator) add(2, IosCascadingMenuItem(
+        if (uiData.isCreator) add(2, GlasmioCascadingMenuItem(
             androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.playlist_order_title),
             "line.3.horizontal",
             enabled = playlistDetail is Resource.Success && trackOrder == null,
@@ -351,7 +351,7 @@ fun PlaylistScreen(
 
     // 8. UI 渲染
     if (playlistDetail is Resource.Error) {
-        PageOverscrollHost {
+        GlasmioOverscrollHost {
             Text("Error: ${(playlistDetail as Resource.Error).message}", Modifier.align(Alignment.Center))
         }
     } else {

@@ -20,10 +20,10 @@ import com.ljyh.mei.ui.component.player.component.FluidBackground
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.BottomSheet
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
-import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
-import com.ljyh.mei.ui.glass.trackBackdropPosition
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -33,7 +33,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 @OptIn(UnstableApi::class)
 @Composable
 fun ClassicPlayer(
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     modifier: Modifier = Modifier,
     stateContainer: PlayerStateContainer,
     overlayHandler: PlayerOverlayHandler,

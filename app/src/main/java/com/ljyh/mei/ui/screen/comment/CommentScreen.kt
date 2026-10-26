@@ -58,16 +58,16 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassSurface
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -131,7 +131,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
     val bottomPadding = maxOf(insets.calculateBottomPadding(), keyboardBottom)
     val signIn = { Screen.NeteaseLogin.navigate(navController) }
 
-    IosPinnedPage(
+    GlasmioPinnedPage(
         title = if (total > 0) stringResource(R.string.comment_title_count, total) else stringResource(R.string.comment_title),
         bottomPadding = bottomPadding,
         topBarBlurProgress = if (pagingItems.itemCount > 0) topBarBlurProgress else 0f,
@@ -213,7 +213,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
                             )
                         }
-                        GlassButton(
+                        GlasmioButton(
                             onClick = signIn,
                             emphasis = GlassEmphasis.Prominent,
                             style = GlassSurfaceStyle.Navigation,
@@ -269,7 +269,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
                                 )
                             }
                         }
-                        GlassButton(
+                        GlasmioButton(
                             onClick = viewModel::publish,
                             enabled = composer.canSend,
                             emphasis = GlassEmphasis.Prominent,

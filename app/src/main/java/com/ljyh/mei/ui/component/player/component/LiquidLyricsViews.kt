@@ -56,7 +56,7 @@ import com.ljyh.mei.constants.LyricLongToneEnabledKey
 import com.ljyh.mei.constants.LyricRomanizationEnabledKey
 import com.ljyh.mei.constants.LyricTranslationEnabledKey
 import com.ljyh.mei.constants.LyricVisualStyle
-import com.ljyh.mei.ui.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurface
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.utils.rememberPreference
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine

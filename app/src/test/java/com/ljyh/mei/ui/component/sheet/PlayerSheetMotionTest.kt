@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.component.sheet
 
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.collapsedAnchor
+import io.github.neoruaa.glasmio.scaffold.dismissedAnchor
+import io.github.neoruaa.glasmio.scaffold.expandedAnchor
+
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
@@ -164,7 +169,7 @@ class PlayerSheetMotionTest {
 
     @Test fun consecutiveDeltasAccumulateWithoutWaitingForCoroutines() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         try {
             state.beginDrag()
@@ -179,7 +184,7 @@ class PlayerSheetMotionTest {
 
     @Test fun cancellationReturnsToTheStartingEndpoint() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
             800.dp, 800.dp, expandedAnchor)
         try {
             state.beginDrag()
@@ -192,7 +197,7 @@ class PlayerSheetMotionTest {
 
     @Test fun contentVisibilityDoesNotRestartAtExpandedDragBoundaries() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
             800.dp, 800.dp, expandedAnchor)
         try {
             assertTrue(state.isContentVisible)
@@ -211,7 +216,7 @@ class PlayerSheetMotionTest {
 
     @Test fun contentUpdatesStartOnOpeningAndStopOnlyAfterCollapseSettles() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         try {
             assertFalse(state.isContentVisible)
@@ -228,7 +233,7 @@ class PlayerSheetMotionTest {
 
     @Test fun reversalAndMissingRenderLayersStillReachLiveEndpoints() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         var frame = 0L
         suspend fun frames(count: Int) {
@@ -253,7 +258,7 @@ class PlayerSheetMotionTest {
 
     @Test fun grabDuringSpringStartsAtRenderedPositionAndReleaseUsesDirection() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 2f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         try {
             state.expandSoft()
@@ -269,7 +274,7 @@ class PlayerSheetMotionTest {
 
     @Test fun clickTakesTransitionOwnershipBeforeTheFirstAnimationFrame() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         try {
             assertFalse(state.hasBeenShown)
@@ -288,7 +293,7 @@ class PlayerSheetMotionTest {
 
     @Test fun cancelledOpeningRetainsTheHostButReleasesTransitionInput() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
             800.dp, 100.dp, collapsedAnchor)
         try {
             state.expandSoft()
@@ -303,7 +308,7 @@ class PlayerSheetMotionTest {
     @Test fun restoredPlaybackReversesDismissalBeforeOrAfterItFinishes() = runBlocking {
         for (restoreAfterFrames in listOf(0, 8, 180)) {
             val clock = BroadcastFrameClock()
-            val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
+            val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 100.dp,
                 800.dp, 100.dp, collapsedAnchor)
             var frame = 0L
             suspend fun frames(count: Int) {
@@ -329,7 +334,7 @@ class PlayerSheetMotionTest {
     @Test fun playbackVisibilityUpdatesPreserveExpansionAndUserDragging() = runBlocking {
         val clock = BroadcastFrameClock()
         val anchors = mutableListOf<Int>()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, { anchors += it },
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, { anchors += it },
             0.dp, 100.dp, 800.dp, 100.dp, collapsedAnchor)
         var frame = 0L
         suspend fun frames(count: Int) {
@@ -367,7 +372,7 @@ class PlayerSheetMotionTest {
             for (clearAfterFrames in listOf(0, 8)) {
                 val clock = BroadcastFrameClock()
                 val initialValue = if (initialAnchor == dismissedAnchor) 0.dp else 100.dp
-                val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {},
+                val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {},
                     0.dp, 100.dp, 800.dp, initialValue, initialAnchor)
                 var frame = 0L
                 suspend fun frames(count: Int) {
@@ -392,9 +397,9 @@ class PlayerSheetMotionTest {
         for (framesBeforeNavigation in listOf(0, 8)) {
             val clock = BroadcastFrameClock()
             val scope = CoroutineScope(coroutineContext + clock)
-            val previous = BottomSheetState(scope, 1f, {}, 0.dp, 150.dp,
+            val previous = GlasmioBottomSheetState(scope, 1f, {}, 0.dp, 150.dp,
                 800.dp, 800.dp, expandedAnchor)
-            var replacement: BottomSheetState? = null
+            var replacement: GlasmioBottomSheetState? = null
             var frame = 0L
             suspend fun frames(count: Int) {
                 repeat(count) { yield(); frame += 16_666_667L; clock.sendFrame(frame); yield() }
@@ -402,7 +407,7 @@ class PlayerSheetMotionTest {
             try {
                 previous.collapseSoft()
                 frames(framesBeforeNavigation)
-                val current = BottomSheetState(scope, 1f, {}, 0.dp, 100.dp,
+                val current = GlasmioBottomSheetState(scope, 1f, {}, 0.dp, 100.dp,
                     800.dp, previous.value, previous.targetAnchor,
                     previouslyShown = previous.hasBeenShown,
                     previouslyCollapsed = previous.isCollapsed)
@@ -428,7 +433,7 @@ class PlayerSheetMotionTest {
 
     @Test fun movingCollapsedNavigationAnchorDoesNotOpenThePlayer() = runBlocking {
         val clock = BroadcastFrameClock()
-        val state = BottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 150.dp,
+        val state = GlasmioBottomSheetState(CoroutineScope(coroutineContext + clock), 1f, {}, 0.dp, 150.dp,
             800.dp, 100.dp, collapsedAnchor, previouslyShown = true)
         try {
             state.relocate()

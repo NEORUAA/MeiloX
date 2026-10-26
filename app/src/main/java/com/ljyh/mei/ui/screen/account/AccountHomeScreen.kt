@@ -69,26 +69,26 @@ import com.ljyh.mei.data.model.melox.ListeningStatsSummary
 import com.ljyh.mei.data.model.melox.UserPlayRecord
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
-import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.ui.component.utils.pullToRefreshRebound
+import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
@@ -177,13 +177,13 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.account_home),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlassIconButton(viewModel::refresh) {
+            GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
             }
         },
@@ -234,14 +234,14 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
         }
         state.error?.let { message ->
             item {
-                GlassCard(
+                GlasmioCard(
                     Modifier
                         .fillMaxWidth()
                         .padding(top = 10.dp),
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(message, color = MaterialTheme.colorScheme.error)
-                        GlassButton(viewModel::refresh, emphasis = GlassEmphasis.Prominent) {
+                        GlasmioButton(viewModel::refresh, emphasis = GlassEmphasis.Prominent) {
                             Text(stringResource(R.string.retry))
                         }
                     }
@@ -255,7 +255,7 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                 contentType = "account-playlist",
                 firstItemTopPadding = 10.dp,
             ) { playlist, index ->
-                IosListRow(
+                GlasmioListRow(
                     title = playlist.name,
                     subtitle = stringResource(R.string.account_track_count, playlist.trackCount),
                     showTopSeparator = index > 0,
@@ -287,7 +287,7 @@ private fun AccountHero(
     onConnections: (AccountConnectionType) -> Unit,
     onRankings: () -> Unit,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
             Column(
                 Modifier.fillMaxWidth()
@@ -358,12 +358,12 @@ private fun AccountHero(
                     Modifier.weight(1f),
                 )
             }
-            IosListRow(
+            GlasmioListRow(
                 title = stringResource(R.string.listening_stats_entry),
                 systemName = "clock",
                 onClick = onListeningStats,
             )
-            IosListRow(
+            GlasmioListRow(
                 title = stringResource(R.string.account_listening_rank),
                 systemName = "chart.bar.xaxis",
                 onClick = onRankings,
@@ -505,7 +505,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
         }
     }
     LaunchedEffect(userId) { viewModel.load(userId, ListeningPeriod.Week) }
-    IosPinnedPage(
+    GlasmioPinnedPage(
         title = stringResource(R.string.account_listening_rank),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -535,7 +535,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
                     ListeningSummary(state.totalSongsListened)
                 }
                 item(key = "rank-period") {
-                    GlassSegmentedControl(
+                    GlasmioSegmentedControl(
                         items = listOf(
                             ListeningPeriod.Week to stringResource(R.string.account_week),
                             ListeningPeriod.AllTime to stringResource(R.string.account_all_time),
@@ -590,7 +590,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
                             contentType = "account-rank-record",
                             firstItemTopPadding = 10.dp,
                         ) { record, index ->
-                            IosListRow(
+                            GlasmioListRow(
                                 title = record.song.name,
                                 subtitle = record.song.artists.joinToString(" / "),
                                 detail = record.playCount?.let {

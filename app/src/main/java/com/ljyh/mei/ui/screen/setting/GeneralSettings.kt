@@ -28,18 +28,18 @@ import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPopupButton
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -66,7 +66,7 @@ fun GeneralSettings() {
         else R.string.netease_logout_web,
     )
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.general_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -100,7 +100,7 @@ fun GeneralSettings() {
         }
         item {
             SettingsGroup(stringResource(R.string.settings_account)) {
-                GlassCard(
+                GlasmioCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .alpha(if (cookie.isNotBlank()) 1f else 0.38f),
@@ -130,7 +130,7 @@ fun GeneralSettings() {
                     }
                 }
                 if (sessionType != NeteaseSessionType.None) {
-                    IosListRow(
+                    GlasmioListRow(
                         title = logoutTitle,
                         systemName = "rectangle.portrait.and.arrow.forward",
                         onClick = { showLogoutConfirmation = true },
@@ -153,19 +153,19 @@ fun GeneralSettings() {
 
 @Composable
 internal fun NeteaseLogoutConfirmation(title: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    IosAlertDialog(
+    GlasmioAlertDialog(
         onDismissRequest = onDismiss,
         title = title,
         message = stringResource(R.string.netease_logout_confirm_message),
         buttons = listOf(
-            IosAlertButtonSpec(
+            GlasmioAlertButtonSpec(
                 label = stringResource(R.string.cancel),
-                role = IosAlertButtonRole.Cancel,
+                role = GlasmioAlertButtonRole.Cancel,
                 onClick = onDismiss,
             ),
-            IosAlertButtonSpec(
+            GlasmioAlertButtonSpec(
                 label = stringResource(R.string.netease_logout_confirm),
-                role = IosAlertButtonRole.Destructive,
+                role = GlasmioAlertButtonRole.Destructive,
                 onClick = onConfirm,
             ),
         ),
@@ -180,14 +180,14 @@ private fun GeneralToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    GlassCard(Modifier.fillMaxWidth(), onClick = { onCheckedChange(!checked) }) {
+    GlasmioCard(Modifier.fillMaxWidth(), onClick = { onCheckedChange(!checked) }) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null)
             Column(Modifier.weight(1f).padding(horizontal = 13.dp)) {
                 Text(stringResource(titleRes))
                 Text(stringResource(descriptionRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            GlassToggle(checked, onCheckedChange)
+            GlasmioSwitch(checked, onCheckedChange)
         }
     }
 }
@@ -202,11 +202,11 @@ private fun <T> GeneralChoice(
     onSelected: (T) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null)
             Text(title, modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
-            IosPopupButton(
+            GlasmioPopUpButton(
                 selected = selected,
                 items = values,
                 onSelected = onSelected,

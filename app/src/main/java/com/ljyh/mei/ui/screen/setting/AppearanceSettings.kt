@@ -72,16 +72,17 @@ import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.constants.TabletAnimationStyle
 import com.ljyh.mei.constants.TabletAnimationStyleKey
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSlider
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
-import com.ljyh.mei.ui.glass.IosColorPicker
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosPopupButton
-import com.ljyh.mei.ui.glass.IosTypography
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSlider
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioColorPicker
+import io.github.neoruaa.glasmio.ui.GlasmioColorPickerLabels
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
+import io.github.neoruaa.glasmio.core.IosTypography
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.navigation.ContentFeature
@@ -151,7 +152,7 @@ fun AppearanceSettings(
     val (secondaryBold, setSecondaryBold) = rememberPreference(AccompanimentLyricTextBoldKey, true)
     val (debug, setDebug) = rememberPreference(DebugKey, false)
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.appearance_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -315,7 +316,7 @@ fun AppearanceSettings(
             }
         }
     }
-    IosColorPicker(
+    GlasmioColorPicker(
         visible = showColorPicker,
         selectedColor = androidx.compose.ui.graphics.Color(accentColorArgb.toInt()),
         onColorSelected = { color ->
@@ -323,6 +324,12 @@ fun AppearanceSettings(
         },
         onDismiss = { showColorPicker = false },
         title = stringResource(R.string.appearance_accent_color),
+        labels = GlasmioColorPickerLabels(
+            grid = stringResource(R.string.color_picker_grid),
+            spectrum = stringResource(R.string.color_picker_spectrum),
+            sliders = stringResource(R.string.color_picker_sliders),
+            opacity = stringResource(R.string.color_picker_opacity),
+        ),
     )
 }
 
@@ -336,14 +343,14 @@ private fun AppearanceLetterSpacing(savedSpacing: Float, setSpacing: (Float) -> 
     val title = stringResource(R.string.appearance_letter_spacing)
     val valueLabel = stringResource(R.string.appearance_letter_spacing_value, displayedSpacing)
 
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SfIcon("textformat.size", null)
                 Text(title, Modifier.weight(1f).padding(horizontal = 13.dp))
                 Text(valueLabel, style = IosTypography.subheadline, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            GlassSlider(
+            GlasmioSlider(
                 value = displayedSpacing,
                 onValueChange = { draftSpacing = it },
                 onValueChangeFinished = {
@@ -370,14 +377,14 @@ private fun AppearanceBottomFloatingSpacing(savedSpacing: Int, setSpacing: (Int)
     val title = stringResource(R.string.appearance_bottom_floating_extra_spacing)
     val valueLabel = stringResource(R.string.appearance_bottom_floating_extra_spacing_value, displayedSpacing)
 
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SfIcon("arrow.up", null)
                 Text(title, Modifier.weight(1f).padding(horizontal = 13.dp))
                 Text(valueLabel, style = IosTypography.subheadline, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            GlassSlider(
+            GlasmioSlider(
                 value = displayedSpacing.toFloat(),
                 onValueChange = { draftSpacing = it.roundToInt().coerceIn(0, MaxBottomFloatingContentExtraSpacing) },
                 onValueChangeFinished = { setSpacing(draftSpacing ?: spacing) },
@@ -405,7 +412,7 @@ private fun AppearanceToggle(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlassCard(
+    GlasmioCard(
         Modifier.fillMaxWidth().semantics { if (!enabled) disabled() },
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
     ) {
@@ -420,7 +427,7 @@ private fun AppearanceToggle(
                     Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            GlassToggle(checked, onCheckedChange, enabled = enabled)
+            GlasmioSwitch(checked, onCheckedChange, enabled = enabled)
         }
     }
 }
@@ -435,14 +442,14 @@ private fun <T> AppearanceChoice(
     onSelected: (T) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SfIcon(systemName, null)
             Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
-            IosPopupButton(
+            GlasmioPopUpButton(
                 selected = selected,
                 items = values,
                 onSelected = onSelected,

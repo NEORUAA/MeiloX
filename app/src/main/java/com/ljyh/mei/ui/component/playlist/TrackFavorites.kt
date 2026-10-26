@@ -14,8 +14,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 
 @Composable
 internal fun rememberFavoriteTrackIds(

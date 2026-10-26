@@ -2,7 +2,7 @@ package com.ljyh.mei.ui.screen
 
 import androidx.annotation.StringRes
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.ContentFeature
 

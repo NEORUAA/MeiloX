@@ -1,5 +1,9 @@
 package com.ljyh.mei.ui.component.item
 
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -68,10 +72,10 @@ fun Track(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (selected != null) {
-            com.ljyh.mei.ui.glass.SfIcon(
+            io.github.neoruaa.glasmio.icons.SfIcon(
                 if (selected) "checkmark.circle.fill" else "circle", null,
                 modifier = Modifier.trackDetailInkBlend(detailInkBlend),
-                size = 24.dp, tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
+                size = 24.dp, tint = io.github.neoruaa.glasmio.core.LocalGlassColors.current.content,
             )
             Spacer(Modifier.width(12.dp))
         }
@@ -161,11 +165,11 @@ fun Track(
                         .then(if (detailInkBlend) Modifier.offset(x = 13.dp) else Modifier)
                         .onGloballyPositioned { menuAnchor = it.boundsInWindow() },
                 ) {
-                    com.ljyh.mei.ui.glass.SfIcon(
-                        symbol = com.ljyh.mei.ui.glass.SfSymbol.Ellipsis,
+                    io.github.neoruaa.glasmio.icons.SfIcon(
+                        symbol = io.github.neoruaa.glasmio.icons.SfSymbol.Ellipsis,
                         contentDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.more_actions_title),
                         modifier = Modifier.trackDetailInkBlend(detailInkBlend),
-                        tint = com.ljyh.mei.ui.glass.LocalGlassColors.current.content,
+                        tint = io.github.neoruaa.glasmio.core.LocalGlassColors.current.content,
                         size = 18.dp,
                     )
                 }

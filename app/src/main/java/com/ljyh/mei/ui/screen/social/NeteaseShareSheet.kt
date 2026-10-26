@@ -43,16 +43,16 @@ import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.model.melox.ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosSheetTopToolbar
-import com.ljyh.mei.ui.glass.IosSheetTopToolbarButton
-import com.ljyh.mei.ui.glass.IosModalSheet
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -147,11 +147,11 @@ fun NeteaseShareSheet(
         if (mode == NeteaseShareMode.PrivateMessage) viewModel.loadContacts()
     }
 
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismiss,
     ) {
         Column(Modifier.fillMaxWidth()) {
-            IosSheetTopToolbar(
+            GlasmioSheetTopToolbar(
                 title = stringResource(
                     when (mode) {
                         NeteaseShareMode.Menu -> R.string.share_song
@@ -161,11 +161,11 @@ fun NeteaseShareSheet(
                 ),
                 actions = {
                     if (mode != NeteaseShareMode.Menu) {
-                        IosSheetTopToolbarButton(onClick = { mode = NeteaseShareMode.Menu }) {
+                        GlasmioSheetToolbarButton(onClick = { mode = NeteaseShareMode.Menu }) {
                             SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
                         }
                     }
-                    IosSheetTopToolbarButton(onClick = onDismiss) {
+                    GlasmioSheetToolbarButton(onClick = onDismiss) {
                         SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
                     }
                 },
@@ -177,7 +177,7 @@ fun NeteaseShareSheet(
             ) {
                 ShareResourcePreview(resource)
                 when (mode) {
-                    NeteaseShareMode.Menu -> IosGroupedList {
+                    NeteaseShareMode.Menu -> GlasmioGroupedList {
                         ShareModeButton("paperplane", R.string.netease_private_message, showTopSeparator = false) {
                             mode = NeteaseShareMode.PrivateMessage
                         }
@@ -212,7 +212,7 @@ fun NeteaseShareSheet(
                         when {
                             state.isLoadingContacts -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
                             state.contacts.isEmpty() && state.error == null -> Text(stringResource(R.string.share_no_contacts))
-                            else -> IosGroupedList {
+                            else -> GlasmioGroupedList {
                                 LazyColumn(
                                     modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp),
                                 ) {
@@ -231,7 +231,7 @@ fun NeteaseShareSheet(
                                 }
                             }
                         }
-                        GlassButton(
+                        GlasmioButton(
                             onClick = {
                                 viewModel.sendPrivate(resource, selectedContactIds, message, onDismiss)
                             },
@@ -242,7 +242,7 @@ fun NeteaseShareSheet(
                     }
                     NeteaseShareMode.Timeline -> {
                         ShareMessageField(message, { message = it }, R.string.share_say_something)
-                        GlassButton(
+                        GlasmioButton(
                             onClick = { viewModel.shareTimeline(resource, message, onDismiss) },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !state.isSending,
@@ -263,7 +263,7 @@ private fun ShareModeButton(
     showTopSeparator: Boolean = true,
     onClick: () -> Unit,
 ) {
-    IosListRow(
+    GlasmioListRow(
         title = stringResource(labelRes),
         systemName = systemName,
         showTopSeparator = showTopSeparator,
@@ -273,8 +273,8 @@ private fun ShareModeButton(
 
 @Composable
 private fun ShareResourcePreview(resource: ShareResource) {
-    IosGroupedList {
-        IosListRow(
+    GlasmioGroupedList {
+        GlasmioListRow(
             title = resource.title,
             subtitle = resource.subtitle,
             showTopSeparator = false,
@@ -292,7 +292,7 @@ private fun ShareResourcePreview(resource: ShareResource) {
 
 @Composable
 private fun ShareMessageField(value: String, onValueChange: (String) -> Unit, placeholderRes: Int) {
-    IosGroupedList {
+    GlasmioGroupedList {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -317,7 +317,7 @@ private fun ContactSelectionRow(
     showTopSeparator: Boolean,
     onClick: () -> Unit,
 ) {
-    IosListRow(
+    GlasmioListRow(
         title = contact.displayName,
         showTopSeparator = showTopSeparator,
         subtitle = contact.signature?.takeIf(String::isNotBlank),

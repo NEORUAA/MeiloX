@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+
 import com.ljyh.mei.constants.MusicQuality
 
 import androidx.compose.animation.core.Animatable
@@ -55,19 +60,19 @@ import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
 import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassSurface
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.iosMenuAnchor
-import com.ljyh.mei.ui.glass.rememberIosMenuAnchorState
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.LocalGlassDimensions
-import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
+import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -104,7 +109,7 @@ fun CommonSongListScreen(
     onPlaylistSearchActiveChange: (Boolean) -> Unit = {},
     viewModel: PlaylistViewModel = hiltViewModel(),
     onShufflePlay: () -> Unit = onPlayAll,
-    detailMenu: List<com.ljyh.mei.ui.glass.IosCascadingMenuItem>? = null,
+    detailMenu: List<io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem>? = null,
     selectionMode: Boolean = false,
     selectedTrackIds: Set<String> = emptySet(),
     onSelectionDone: () -> Unit = {},
@@ -125,7 +130,7 @@ fun CommonSongListScreen(
         enabled = useCoverBackground,
     )
     var detailMenuOpen by remember { mutableStateOf(false) }
-    val detailMenuAnchor = rememberIosMenuAnchorState()
+    val detailMenuAnchor = rememberGlasmioMenuAnchorState()
     val device = rememberDeviceInfo()
     val bottomPadding = LocalPlayerAwareWindowInsets.current
         .asPaddingValues()
@@ -138,7 +143,7 @@ fun CommonSongListScreen(
     val searchProgress = searchTransition.value.coerceIn(0f, 1f)
     // Keep icon slots fixed while the liquid neck separates, then grow the input to the left.
     val searchSeparation = (searchProgress / 0.7f).coerceIn(0f, 1f)
-    val searchExpansionStart = 0.7f * com.ljyh.mei.ui.glass.ToolbarDetachProgress
+    val searchExpansionStart = 0.7f * io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
     val searchExpansion = ((searchProgress - searchExpansionStart) / (1f - searchExpansionStart)).coerceIn(0f, 1f)
         .let { it * it * (3f - 2f * it) }
     val focusManager = LocalFocusManager.current
@@ -190,7 +195,7 @@ fun CommonSongListScreen(
         LocalGroupedListBackgroundAlpha provides listBackgroundAlpha,
     ) {
         Box(Modifier.fillMaxSize()) {
-            IosPinnedListPage(
+            GlasmioPinnedListPage(
                 title = if (isPlaylistSearchActive || searchProgress > 0.05f) "" else uiData.title,
                 subtitle = uiData.creatorName.takeIf {
                     !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
@@ -296,13 +301,13 @@ fun CommonSongListScreen(
                         }
                     }
                     if (selectionMode) {
-                        GlassButton(onClick = onSelectionDone, modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize)) {
+                        GlasmioButton(onClick = onSelectionDone, modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize)) {
                             Text(androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done), color = LocalGlassColors.current.accent)
                         }
                     } else if (detailMenu != null) {
-                        com.ljyh.mei.ui.glass.GlassIconButton(
+                        io.github.neoruaa.glasmio.ui.GlasmioIconButton(
                             onClick = { detailMenuOpen = true },
-                            modifier = Modifier.iosMenuAnchor(detailMenuAnchor),
+                            modifier = Modifier.glasmioMenuAnchor(detailMenuAnchor),
                             enabled = !isLoading,
                         ) { SfIcon(SfSymbol.Ellipsis, detailMenuTitle) }
                     }
@@ -368,7 +373,7 @@ fun CommonSongListScreen(
             }
 
             if (detailMenuOpen && detailMenu != null) {
-                com.ljyh.mei.ui.glass.IosCascadingMenu(
+                io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu(
                     anchorBounds = detailMenuAnchor.bounds, items = detailMenu,
                     menuAnchorState = detailMenuAnchor,
                     title = detailMenuTitle,
@@ -406,7 +411,7 @@ fun ActionButton(
     onClick: () -> Unit,
     color: androidx.compose.ui.graphics.Color = LocalGlassColors.current.secondaryContent,
 ) {
-    GlassButton(onClick = onClick) {
+    GlasmioButton(onClick = onClick) {
         SfIcon(SfSymbol.Ellipsis, text, size = 18.dp, tint = color)
         Text(text, style = IosTypography.caption, color = color, modifier = Modifier.padding(start = 6.dp))
     }

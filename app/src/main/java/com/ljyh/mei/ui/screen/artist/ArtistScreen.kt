@@ -85,16 +85,16 @@ import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.shimmer.ListItemPlaceHolder
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPageHorizontalPadding
-import com.ljyh.mei.ui.glass.IosPinnedPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.defaultGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.IosPageHorizontalPadding
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.core.defaultGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -169,7 +169,7 @@ fun ArtistScreen(
                         .coerceIn(0f, 1f)
                 }
             }
-            IosPinnedPage(
+            GlasmioPinnedPage(
                 title = artistData?.artist?.name.orEmpty(),
                 bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
                 collapseProgress = topBarCollapseProgress,
@@ -320,7 +320,7 @@ fun ArtistScreen(
                             ?: (artistSongs as? Resource.Success)?.data?.artist?.musicSize
                         if (songCount != null) {
                             item(key = "all-artist-songs") {
-                                IosListRow(
+                                GlasmioListRow(
                                     title = stringResource(R.string.artist_all_songs_count, songCount),
                                     modifier = Modifier.padding(
                                         horizontal = DetailPageHorizontalPadding - IosPageHorizontalPadding,
@@ -385,7 +385,7 @@ fun ArtistScreen(
                             ?: (artistAlbums as? Resource.Success)?.data?.artist?.albumSize
                         if (albumCount != null) {
                             item(key = "all-artist-albums") {
-                                IosListRow(
+                                GlasmioListRow(
                                     title = stringResource(R.string.artist_all_albums_count, albumCount),
                                     modifier = Modifier.padding(
                                         horizontal = DetailPageHorizontalPadding - IosPageHorizontalPadding,
@@ -510,7 +510,7 @@ private fun ArtistUnavailableState(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 6.dp),
         )
-        GlassButton(
+        GlasmioButton(
             onClick = onNavigateBack,
             modifier = Modifier.padding(top = 20.dp),
         ) {

@@ -104,9 +104,9 @@ import com.ljyh.mei.ui.component.player.component.PlayerControlsSection
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.BottomSheet
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
-import com.ljyh.mei.ui.component.sheet.HorizontalSwipeDirection
-import com.ljyh.mei.ui.glass.trackBackdropPosition
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.min
@@ -117,7 +117,7 @@ private enum class AppleMusicPlayerPage { Artwork, Lyrics, Queue }
 @OptIn(UnstableApi::class)
 @Composable
 fun AppleMusicPlayer(
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     modifier: Modifier = Modifier,
     stateContainer: PlayerStateContainer,
     overlayHandler: PlayerOverlayHandler,

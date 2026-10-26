@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.ljyh.mei.data.model.AlbumPhoto
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.SingleImagePickerSheet
-import com.ljyh.mei.ui.glass.IosModalSheet
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,7 +22,7 @@ fun PhotoPickerSheet(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    IosModalSheet(onDismissRequest = onDismiss) {
+    GlasmioBottomSheet(onDismissRequest = onDismiss) {
         when (photoAlbum) {
             is Resource.Success -> {
                 SingleImagePickerSheet(

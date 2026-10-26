@@ -8,9 +8,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.BuildConfig
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.utils.VersionUpdateResult
 
 @Composable
@@ -22,7 +22,7 @@ fun VersionUpdateAlert(
     val context = LocalContext.current
     when (result) {
         is VersionUpdateResult.UpdateAvailable -> {
-            IosAlertDialog(
+            GlasmioAlertDialog(
                 onDismissRequest = onDismiss,
                 title = stringResource(
                     if (result.comparisonKnown) R.string.about_update_available_title
@@ -35,12 +35,12 @@ fun VersionUpdateAlert(
                     result.currentBuildLabel ?: BuildConfig.VERSION_NAME,
                 ),
                 buttons = listOf(
-                    IosAlertButtonSpec(
+                    GlasmioAlertButtonSpec(
                         label = stringResource(R.string.cancel),
-                        role = IosAlertButtonRole.Cancel,
+                        role = GlasmioAlertButtonRole.Cancel,
                         onClick = onDismiss,
                     ),
-                    IosAlertButtonSpec(
+                    GlasmioAlertButtonSpec(
                         label = stringResource(R.string.about_open_update),
                         onClick = {
                             onDismiss()
@@ -63,7 +63,7 @@ fun VersionUpdateAlert(
         }
 
         VersionUpdateResult.UpToDate -> {
-            IosAlertDialog(
+            GlasmioAlertDialog(
                 onDismissRequest = onDismiss,
                 title = stringResource(R.string.about_update_up_to_date_title),
                 message = stringResource(
@@ -71,9 +71,9 @@ fun VersionUpdateAlert(
                     BuildConfig.VERSION_NAME,
                 ),
                 buttons = listOf(
-                    IosAlertButtonSpec(
+                    GlasmioAlertButtonSpec(
                         label = stringResource(R.string.done),
-                        role = IosAlertButtonRole.Cancel,
+                        role = GlasmioAlertButtonRole.Cancel,
                         onClick = onDismiss,
                     ),
                 ),
@@ -81,14 +81,14 @@ fun VersionUpdateAlert(
         }
 
         VersionUpdateResult.Failed -> {
-            IosAlertDialog(
+            GlasmioAlertDialog(
                 onDismissRequest = onDismiss,
                 title = stringResource(R.string.about_update_failed_title),
                 message = stringResource(R.string.about_update_failed_message),
                 buttons = listOf(
-                    IosAlertButtonSpec(
+                    GlasmioAlertButtonSpec(
                         label = stringResource(R.string.done),
-                        role = IosAlertButtonRole.Cancel,
+                        role = GlasmioAlertButtonRole.Cancel,
                         onClick = onDismiss,
                     ),
                 ),

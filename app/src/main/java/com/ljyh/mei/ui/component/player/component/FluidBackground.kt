@@ -41,7 +41,7 @@ import com.ljyh.mei.ui.component.player.component.mesh.runMeshFrames
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.playerBackgroundAlpha
 import com.ljyh.mei.ui.component.utils.LifecycleStartedEffect
-import com.ljyh.mei.ui.glass.trackBackdropPosition
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

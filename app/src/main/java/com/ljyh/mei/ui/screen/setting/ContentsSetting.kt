@@ -30,14 +30,14 @@ import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassToggle
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosReorderableGroup
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioReorderableGroup
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.navigation.ContentFeature
@@ -110,7 +110,7 @@ fun ContentsSetting(
         }
     }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.content_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
@@ -119,14 +119,14 @@ fun ContentsSetting(
             SettingsGroup(stringResource(R.string.content_modules)) {
                 contentFeatureSettings.forEach { setting ->
                     val enabled = enabledByFeature.getValue(setting.feature)
-                    GlassCard(Modifier.fillMaxWidth(), onClick = { setFeature(setting.feature, !enabled) }) {
+                    GlasmioCard(Modifier.fillMaxWidth(), onClick = { setFeature(setting.feature, !enabled) }) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             SfIcon(setting.symbol, null)
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(setting.titleRes))
                                 Text(stringResource(setting.descriptionRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            GlassToggle(enabled, onCheckedChange = { setFeature(setting.feature, it) })
+                            GlasmioSwitch(enabled, onCheckedChange = { setFeature(setting.feature, it) })
                         }
                     }
                 }
@@ -138,7 +138,7 @@ fun ContentsSetting(
                     Triple(Index.FindMusic, findMusicTab, setFindMusicTab),
                     Triple(Index.Library, libraryTab, setLibraryTab),
                 ).forEach { (item, enabled, setEnabled) ->
-                    GlassCard(
+                    GlasmioCard(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { setEnabled(!enabled) },
                     ) {
@@ -149,7 +149,7 @@ fun ContentsSetting(
                         ) {
                             SfIcon(item.symbol, null)
                             Text(stringResource(item.labelRes), modifier = Modifier.weight(1f))
-                            GlassToggle(checked = enabled, onCheckedChange = setEnabled)
+                            GlasmioSwitch(checked = enabled, onCheckedChange = setEnabled)
                         }
                     }
                 }
@@ -162,11 +162,11 @@ fun ContentsSetting(
                         ContentFeature.CloudMusic -> Index.Cloud
                         ContentFeature.ListeningHistory -> Index.History
                     }
-                    GlassCard(modifier = Modifier.fillMaxWidth(), onClick = if (moduleEnabled) ({ setTabEnabled(setting.feature, !enabled) }) else null) {
+                    GlasmioCard(modifier = Modifier.fillMaxWidth(), onClick = if (moduleEnabled) ({ setTabEnabled(setting.feature, !enabled) }) else null) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             SfIcon(navigationItem.symbol, null)
                             Text(stringResource(setting.titleRes), modifier = Modifier.weight(1f))
-                            GlassToggle(checked = enabled && moduleEnabled, onCheckedChange = { setTabEnabled(setting.feature, it) }, enabled = moduleEnabled)
+                            GlasmioSwitch(checked = enabled && moduleEnabled, onCheckedChange = { setTabEnabled(setting.feature, it) }, enabled = moduleEnabled)
                         }
                     }
                 }
@@ -184,7 +184,7 @@ fun ContentsSetting(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SettingsSectionTitle(stringResource(R.string.content_tab_order))
-                IosReorderableGroup(
+                GlasmioReorderableGroup(
                     items = reorderable,
                     onReorder = { reordered ->
                         val reorderedIterator = reordered.iterator()

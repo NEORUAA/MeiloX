@@ -16,11 +16,11 @@ import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -38,14 +38,14 @@ fun SettingScreen(
     val sessionType = rememberNeteaseSessionType()
     val (userNickname) = rememberPreference(UserNicknameKey, "")
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.settings),
         bottomPadding = insets.calculateBottomPadding(),
         actions = { GlobalProfileAvatarButton() },
     ) {
         item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
         item {
-            IosGroupedList {
+            GlasmioGroupedList {
                 if (sessionType == NeteaseSessionType.None) {
                     SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
                         Screen.NeteaseLogin.navigate(navController)
@@ -59,7 +59,7 @@ fun SettingScreen(
                         Screen.AccountHome.navigate(navController)
                     }
                     val canAuthorize = sessionType == NeteaseSessionType.Mobile
-                    IosListRow(
+                    GlasmioListRow(
                         title = stringResource(R.string.pc_qr_login),
                         systemName = "viewfinder",
                         subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
@@ -73,7 +73,7 @@ fun SettingScreen(
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_application)) }
         item {
-            IosGroupedList {
+            GlasmioGroupedList {
                 SettingsEntry(stringResource(R.string.general_settings), "gearshape", false) { Screen.GeneralSettings.navigate(navController) }
                 SettingsEntry(stringResource(R.string.settings_appearance), "paintbrush") { Screen.AppearanceSettings.navigate(navController) }
                 SettingsEntry(stringResource(R.string.settings_content), "rectangle.grid.1x2") { Screen.ContentSettings.navigate(navController) }
@@ -85,7 +85,7 @@ fun SettingScreen(
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_extensions)) }
         item {
-            IosGroupedList {
+            GlasmioGroupedList {
                 SettingsEntry(stringResource(R.string.private_messages), "message", false) { Screen.PrivateMessages.navigate(navController) }
                 SettingsEntry(stringResource(R.string.listen_together), "person.2.wave.2") { Screen.ListenTogether.navigate(navController) }
                 SettingsEntry(stringResource(R.string.song_recognition), "waveform.badge.magnifyingglass") { Screen.SongRecognition.navigate(navController) }
@@ -93,7 +93,7 @@ fun SettingScreen(
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_information)) }
         item {
-            IosGroupedList {
+            GlasmioGroupedList {
                 SettingsEntry(stringResource(R.string.settings_about), "info.circle", false) { Screen.About.navigate(navController) }
             }
         }
@@ -117,7 +117,7 @@ fun SettingsGroup(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsSectionTitle(title)
-        IosGroupedList(content = content)
+        GlasmioGroupedList(content = content)
     }
 }
 
@@ -127,7 +127,7 @@ private fun SettingsEntry(
     systemName: String,
     showTopSeparator: Boolean = true,
     onClick: () -> Unit,
-) = IosListRow(
+) = GlasmioListRow(
     title = title,
     systemName = systemName,
     showTopSeparator = showTopSeparator,

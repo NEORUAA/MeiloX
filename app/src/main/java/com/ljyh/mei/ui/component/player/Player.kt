@@ -29,15 +29,15 @@ import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.overlay.rememberOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.player.state.rememberPlayerStateContainer
-import com.ljyh.mei.ui.component.sheet.BottomSheetState
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
-import com.ljyh.mei.ui.glass.LocalBlurBackdrop
-import com.ljyh.mei.ui.glass.LocalGlassBackdrop
-import com.ljyh.mei.ui.glass.LocalGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.SheetGroupedListBackgroundAlpha
-import com.ljyh.mei.ui.glass.rememberRasterizedPlayerBackdrop
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.glass.rememberRasterizedBackdrop
 import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.size.Precision
@@ -57,7 +57,7 @@ internal val LocalPlayerBackgroundReadyChanged = staticCompositionLocalOf<(Boole
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun BottomSheetPlayer(
-    state: BottomSheetState,
+    state: GlasmioBottomSheetState,
     modifier: Modifier = Modifier,
     compactMiniPlayerProgress: State<Float>,
     miniPlayerVerticalOffset: () -> Dp,
@@ -79,9 +79,9 @@ fun BottomSheetPlayer(
     // separate source so sheets can sample it without changing that visual z-order.
     val playerCoverBackdrop = rememberLayerBackdrop()
     val playerBackdrop = rememberCombinedBackdrop(
-        rememberRasterizedPlayerBackdrop(playerBackgroundBackdrop),
-        rememberRasterizedPlayerBackdrop(playerContentBackdrop),
-        rememberRasterizedPlayerBackdrop(playerCoverBackdrop),
+        rememberRasterizedBackdrop(playerBackgroundBackdrop),
+        rememberRasterizedBackdrop(playerContentBackdrop),
+        rememberRasterizedBackdrop(playerCoverBackdrop),
     )
 
     // 获取播放器样式

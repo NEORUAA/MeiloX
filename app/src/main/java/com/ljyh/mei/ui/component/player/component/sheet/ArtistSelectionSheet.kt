@@ -21,7 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.ui.glass.IosModalSheet
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +30,7 @@ fun ArtistSelectionSheet(
     onDismiss: () -> Unit,
     onArtistClick: (MediaMetadata.Artist) -> Unit
 ) {
-    IosModalSheet(
+    GlasmioBottomSheet(
         onDismissRequest = onDismiss,
         skipPartiallyExpanded = false,
     ) {

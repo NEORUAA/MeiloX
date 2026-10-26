@@ -52,15 +52,15 @@ import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassSurfaceStyle
-import com.ljyh.mei.ui.glass.IosGroupedList
-import com.ljyh.mei.ui.glass.IosListRow
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.IosTypography
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -142,7 +142,7 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
     val history = remember(historyJson) { decodeSearchHistory(historyJson) }
     var showAllHistory by rememberSaveable { mutableStateOf(false) }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = stringResource(R.string.app_tab_search),
         bottomPadding = 0.dp,
         bottomPaddingValues = bottomPaddingValues,
@@ -199,7 +199,7 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
                             style = IosTypography.body,
                             color = colors.secondaryContent,
                         )
-                        GlassButton(
+                        GlasmioButton(
                             onClick = viewModel::refresh,
                             modifier = Modifier.padding(top = 8.dp),
                         ) {
@@ -277,13 +277,13 @@ internal fun SearchHistorySection(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.search_history_title), Modifier.weight(1f),
                 style = IosTypography.title2, fontWeight = FontWeight.Bold, color = colors.content)
-            GlassButton(onClick = onClear, style = GlassSurfaceStyle.Navigation) {
+            GlasmioButton(onClick = onClear, style = GlassSurfaceStyle.Navigation) {
                 Text(stringResource(R.string.search_history_clear))
             }
         }
-        IosGroupedList(Modifier.padding(top = 8.dp)) {
+        GlasmioGroupedList(Modifier.padding(top = 8.dp)) {
             history.forEachIndexed { index, query ->
-                IosListRow(
+                GlasmioListRow(
                     title = query, systemName = "clock", showTopSeparator = index > 0,
                     onClick = { onSearch(query) },
                     trailing = {
@@ -299,7 +299,7 @@ internal fun SearchHistorySection(
                     },
                 )
             }
-            if (canExpand) IosListRow(
+            if (canExpand) GlasmioListRow(
                 title = stringResource(R.string.search_history_show_all), onClick = onExpand,
             )
         }

@@ -24,10 +24,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
 import androidx.compose.foundation.layout.asPaddingValues
 import java.io.File
 import java.text.SimpleDateFormat
@@ -49,14 +49,14 @@ fun LogScreen(
     val secondaryTextColor = colors.secondaryContent
     val logBackgroundColor = colors.elevatedBackground
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = "日志收集",
         onNavigateBack = navController::popBackStack,
         bottomPadding = LocalPlayerAwareWindowInsets.current
             .asPaddingValues()
             .calculateBottomPadding(),
         actions = {
-            GlassIconButton(onClick = viewModel::clearAllLogs) {
+            GlasmioIconButton(onClick = viewModel::clearAllLogs) {
                 SfIcon("trash", "Clear All")
             }
         },

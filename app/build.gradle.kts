@@ -171,6 +171,8 @@ kotlin {
 }
 
 dependencies {
+    implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.0")
+    implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.0")
 
     implementation(libs.oboe)
     implementation(libs.androidx.core.ktx)

@@ -37,15 +37,15 @@ import com.ljyh.mei.data.model.melox.RecognizedSong
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.recognition.RecognitionDuration
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.GlassSegmentedControl
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -61,13 +61,13 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
         ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) viewModel.start() }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = recognitionTitle,
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
     ) {
         item {
-            GlassSegmentedControl(
+            GlasmioSegmentedControl(
                 items = RecognitionDuration.entries.map { duration ->
                     duration to stringResource(duration.titleResource())
                 },
@@ -77,7 +77,7 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
             )
         }
         item {
-            GlassCard(Modifier.fillMaxWidth()) {
+            GlasmioCard(Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -101,7 +101,7 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    GlassButton(
+                    GlasmioButton(
                         onClick = {
                             if (state.isWorking) viewModel.stop()
                             else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -115,7 +115,7 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
         }
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         items(state.results, key = { it.id }) { song ->
-            GlassCard(
+            GlasmioCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val media = song.asMediaMetadata().toMediaItem()

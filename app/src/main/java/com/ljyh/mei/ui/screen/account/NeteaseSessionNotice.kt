@@ -16,9 +16,9 @@ import com.ljyh.mei.constants.NeteaseWebSessionNoticeDismissedKey
 import com.ljyh.mei.data.network.NeteaseSessionType
 import com.ljyh.mei.data.network.neteaseSessionType
 import com.ljyh.mei.data.network.shouldExplainLegacyWebSession
-import com.ljyh.mei.ui.glass.IosAlertButtonRole
-import com.ljyh.mei.ui.glass.IosAlertButtonSpec
-import com.ljyh.mei.ui.glass.IosAlertDialog
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
+import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
+import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.dataStore
@@ -62,17 +62,17 @@ internal fun NeteaseLegacyWebSessionDialog(
     onDoNotRemind: () -> Unit,
     onSignInAgain: () -> Unit,
 ) {
-    IosAlertDialog(
+    GlasmioAlertDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.netease_web_session_notice_title),
         message = stringResource(R.string.netease_web_session_notice_message),
         buttons = listOf(
-            IosAlertButtonSpec(
+            GlasmioAlertButtonSpec(
                 label = stringResource(R.string.netease_web_session_do_not_remind),
-                role = IosAlertButtonRole.Cancel,
+                role = GlasmioAlertButtonRole.Cancel,
                 onClick = onDoNotRemind,
             ),
-            IosAlertButtonSpec(
+            GlasmioAlertButtonSpec(
                 label = stringResource(R.string.netease_web_session_sign_in_again),
                 onClick = onSignInAgain,
             ),

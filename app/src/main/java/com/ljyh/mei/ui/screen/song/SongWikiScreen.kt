@@ -44,14 +44,14 @@ import com.ljyh.mei.data.model.melox.SongWikiSongReference
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.glass.GlassButton
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.GlassEmphasis
-import com.ljyh.mei.ui.glass.GlassIconButton
-import com.ljyh.mei.ui.glass.IosPinnedListPage
-import com.ljyh.mei.ui.glass.LocalGlassColors
-import com.ljyh.mei.ui.glass.SfIcon
-import com.ljyh.mei.ui.glass.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.glass.GlassEmphasis
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -129,12 +129,12 @@ fun SongWikiScreen(
     val pageTitle = stringResource(R.string.song_wiki)
     LaunchedEffect(songId) { viewModel.load(songId) }
 
-    IosPinnedListPage(
+    GlasmioPinnedListPage(
         title = pageTitle,
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlassIconButton({ viewModel.load(songId, force = true) }) {
+            GlasmioIconButton({ viewModel.load(songId, force = true) }) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
             }
         },
@@ -146,7 +146,7 @@ fun SongWikiScreen(
                 }
             }
             state.error != null -> item {
-                GlassCard(Modifier.fillMaxWidth()) {
+                GlasmioCard(Modifier.fillMaxWidth()) {
                     Column(
                         Modifier.fillMaxWidth().padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -154,7 +154,7 @@ fun SongWikiScreen(
                     ) {
                         SfIcon(SfSymbol.Warning, null, size = 34.dp)
                         Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                        GlassButton(
+                        GlasmioButton(
                             onClick = { viewModel.load(songId) },
                             emphasis = GlassEmphasis.Prominent,
                         ) { Text(stringResource(R.string.retry)) }
@@ -283,7 +283,7 @@ fun SongWikiScreen(
                 }
                 wiki.contributionUrl?.let { url ->
                     item {
-                        GlassButton(
+                        GlasmioButton(
                             onClick = { uriHandler.openUri(url) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -302,7 +302,7 @@ fun SongWikiScreen(
 
 @Composable
 private fun WikiEmptyCard() {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlasmioCard(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth().padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -327,7 +327,7 @@ private fun WikiSection(title: String, content: @Composable () -> Unit) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
-        GlassCard(Modifier.fillMaxWidth()) {
+        GlasmioCard(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 content()
             }
@@ -391,7 +391,7 @@ private fun WikiArtworkRow(
     symbolName: String,
     onClick: () -> Unit,
 ) {
-    GlassCard(
+    GlasmioCard(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         onClick = onClick,
     ) {

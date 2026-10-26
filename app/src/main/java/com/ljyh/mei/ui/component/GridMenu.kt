@@ -23,8 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ljyh.mei.ui.glass.GlassCard
-import com.ljyh.mei.ui.glass.SfIcon
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.icons.SfIcon
 
 
 val GridMenuItemHeight = 96.dp
@@ -93,7 +93,7 @@ private fun LazyGridScope.GridMenuItem(
     onClick: () -> Unit,
 ) {
     item {
-        GlassCard(
+        GlasmioCard(
             modifier = modifier
                 .height(GridMenuItemHeight)
                 .alpha(if (enabled) 1f else 0.5f),

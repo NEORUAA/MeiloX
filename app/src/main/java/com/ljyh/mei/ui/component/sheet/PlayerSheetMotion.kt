@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.component.sheet
 
+import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.scaffold.dismissedAnchor
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -27,7 +30,7 @@ internal fun playerSheetSpring() = spring<Dp>(
 )
 
 @Composable
-internal fun rememberMiniPlayerCompactProgress(compact: Boolean, sheet: BottomSheetState): State<Float> {
+internal fun rememberMiniPlayerCompactProgress(compact: Boolean, sheet: GlasmioBottomSheetState): State<Float> {
     val target = if (compact) 1f else 0f
     val animation = remember { Animatable(target) }
     val playerVisible by remember(sheet) { derivedStateOf { sheet.isContentVisible } }
@@ -40,7 +43,7 @@ internal fun rememberMiniPlayerCompactProgress(compact: Boolean, sheet: BottomSh
     return animation.asState()
 }
 
-internal fun BottomSheetState.syncPlaybackVisibility(hasCurrentMediaItem: Boolean) {
+internal fun GlasmioBottomSheetState.syncPlaybackVisibility(hasCurrentMediaItem: Boolean) {
     // Restoration can finish before dismissal settles. Reverse its target instead
     // of waiting for isDismissed, while preserving expansion and user gestures.
     if (hasCurrentMediaItem) {

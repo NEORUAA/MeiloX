@@ -3,7 +3,7 @@ package com.ljyh.mei.ui.component.sheet
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.ljyh.mei.ui.glass.GlassPressHighlight
+import io.github.neoruaa.glasmio.glass.GlassPressHighlight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
