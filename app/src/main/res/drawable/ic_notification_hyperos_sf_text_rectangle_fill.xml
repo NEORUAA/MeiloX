@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exported with the SF Symbols CLI. SF Symbol: text.rectangle.fill (Regular-S). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- HyperOS normalizes custom actions to 40dp; retain the native 24dp SF glyph. -->
+    <group android:translateX="8" android:translateY="8">
+        <group
+            android:scaleX="0.2208081180"
+            android:scaleY="0.2208081180"
+            android:translateX="-0.1563281730"
+            android:translateY="19.7735691137">
+            <!-- Combine the SF layers so monochrome text remains transparent. -->
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:fillType="evenOdd"
+                android:pathData="M22.2168 0.390625L87.8906 0.390625C96.2402 0.390625 100.342-3.71094 100.342-11.9141L100.342-58.4961C100.342-66.6992 96.2402-70.8008 87.8906-70.8008L22.2168-70.8008C13.916-70.8008 9.76562-66.6992 9.76562-58.4961L9.76562-11.9141C9.76562-3.71094 13.916 0.390625 22.2168 0.390625ZM27.3438-48.1934C25.7812-48.1934 24.5605-49.4141 24.5605-50.9766C24.5605-52.4902 25.7812-53.6621 27.3438-53.6621L82.8125-53.6621C84.375-53.6621 85.5469-52.4902 85.5469-50.9766C85.5469-49.4141 84.375-48.1934 82.8125-48.1934ZM27.3438-33.1055C25.7812-33.1055 24.5605-34.3262 24.5605-35.8887C24.5605-37.4023 25.7812-38.5742 27.3438-38.5742L53.9551-38.5742C55.5176-38.5742 56.6895-37.4023 56.6895-35.8887C56.6895-34.3262 55.5176-33.1055 53.9551-33.1055Z" />
+        </group>
+    </group>
+</vector>
