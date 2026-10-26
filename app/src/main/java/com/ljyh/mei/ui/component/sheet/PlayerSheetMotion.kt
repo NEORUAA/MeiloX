@@ -1,7 +1,14 @@
 package com.ljyh.mei.ui.component.sheet
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Dp
@@ -18,6 +25,20 @@ internal fun playerSheetSpring() = spring<Dp>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PlayerSheetStiffness,
 )
+
+@Composable
+internal fun rememberMiniPlayerCompactProgress(compact: Boolean, sheet: BottomSheetState): State<Float> {
+    val target = if (compact) 1f else 0f
+    val animation = remember { Animatable(target) }
+    val playerVisible by remember(sheet) { derivedStateOf { sheet.isContentVisible } }
+    LaunchedEffect(target, playerVisible) {
+        // The opening capture keeps its visible origin. Settle the hidden mini player
+        // at the navigation's destination before it becomes the return endpoint.
+        if (playerVisible) animation.snapTo(target)
+        else animation.animateTo(target, spring(stiffness = Spring.StiffnessMediumLow))
+    }
+    return animation.asState()
+}
 
 internal fun BottomSheetState.syncPlaybackVisibility(hasCurrentMediaItem: Boolean) {
     // Restoration can finish before dismissal settles. Reverse its target instead
@@ -171,6 +192,28 @@ internal fun playerUntransformRect(rect: Rect, visual: Rect, layout: Rect): Rect
         layout.left + (rect.right - visual.left) * layout.width / visual.width,
         layout.top + (rect.bottom - visual.top) * layout.height / visual.height,
     )
+}
+
+/** Return directly to the settled layout, retaining continuity for an interrupted opening. */
+internal fun playerMiniTransitionBounds(
+    capturedBounds: Rect,
+    capturedContainer: Rect?,
+    pressedContainer: Rect?,
+    currentBounds: Rect,
+    openingFraction: Float,
+    progress: Float,
+): Rect {
+    if (capturedContainer == null) return currentBounds
+    val opening = pressedContainer?.let {
+        playerUntransformRect(capturedBounds, capturedContainer, it)
+    } ?: capturedBounds
+    val destination = currentBounds.takeIf { it.isUsable() } ?: capturedBounds
+    val p = progress.coerceIn(0f, 1f)
+    // The shell already interpolates this endpoint toward the full player by p.
+    // Remove that interpolation from the remaining opening fraction: a full-player
+    // return uses only the final destination, while an early reversal stays continuous.
+    val originWeight = if (p < 1f) ((openingFraction - p) / (1f - p)).coerceIn(0f, 1f) else 0f
+    return playerContainerRect(destination, opening, originWeight)
 }
 
 internal fun playerMiniLayoutRect(

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.sheet
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.*
@@ -49,5 +50,51 @@ class PlayerSheetPressOriginTest {
         assertEquals(layout, playerMiniLayoutRect(null, localPress, IntSize(400, 50), layout))
         assertEquals(layout, playerMiniLayoutRect(pressed, Rect.Zero, IntSize(400, 50), layout))
         assertEquals(layout, playerMiniLayoutRect(pressed, localPress, IntSize.Zero, layout))
+    }
+
+    @Test fun fullPlayerReturnsDirectlyToTheSettledNavigationEndpoint() {
+        val compact = Rect(76f, 748f, 364f, 798f)
+        val compactArtwork = Rect(88f, 756f, 120f, 788f)
+        val release = PlayerPressRelease()
+        release.update(0.4f)
+        assertBounds(pressed, playerMiniTransitionBounds(layout, layout, pressed, compact, release.fraction(0.4f), 0.4f))
+        release.update(1f)
+        for (progress in listOf(1f, 0.95f, 0.5f, 0.1f, 0f)) {
+            release.update(progress)
+            val container = playerMiniTransitionBounds(layout, layout, pressed, compact, release.fraction(progress), progress)
+            val cover = playerMiniTransitionBounds(artwork, layout, pressed, compactArtwork, release.fraction(progress), progress)
+            assertBounds(compact, container)
+            assertBounds(compactArtwork, cover)
+            if (progress == 0.5f) {
+                assertBounds(Rect(38f, 374f, 402f, 799f), playerContainerRect(container, host, progress))
+            }
+        }
+    }
+
+    @Test fun immediateOpeningReversalTakesOneContinuousPathToTheSettledEndpoint() {
+        val release = PlayerPressRelease()
+        release.update(0.4f)
+        val compact = Rect(76f, 748f, 364f, 798f)
+        val firstFrame = playerContainerRect(pressed, host, 0.4f)
+        var previousTop = firstFrame.top
+        for (step in 40 downTo 0) {
+            val progress = step / 100f
+            release.update(progress)
+            val source = playerMiniTransitionBounds(layout, layout, pressed, compact, release.fraction(progress), progress)
+            val frame = playerContainerRect(source, host, progress)
+            if (step == 40) assertBounds(firstFrame, frame)
+            else assertEquals("The return has a single trajectory", 8.2825f, frame.top - previousTop, 0.0002f)
+            if (step == 20) assertBounds(Rect(39.2f, 582.35f, 403.2f, 783.85f), frame)
+            previousTop = frame.top
+        }
+        assertBounds(compact, playerMiniTransitionBounds(layout, layout, pressed, compact, release.fraction(0f), 0f))
+    }
+
+    @Test fun unpressedOpeningAndMissingCurrentGeometryKeepUsableEndpoints() {
+        val compact = layout.translate(Offset(0f, 48f))
+        assertBounds(layout, playerMiniTransitionBounds(layout, layout, null, compact, 1f, 0.4f))
+        assertBounds(compact, playerMiniTransitionBounds(layout, layout, null, compact, 0f, 0f))
+        assertBounds(layout, playerMiniTransitionBounds(layout, layout, pressed, Rect.Zero, 0f, 0f))
+        assertBounds(compact, playerMiniTransitionBounds(layout, null, null, compact, 1f, 0.4f))
     }
 }

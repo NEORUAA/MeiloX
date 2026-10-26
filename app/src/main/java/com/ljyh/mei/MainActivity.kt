@@ -176,6 +176,7 @@ import com.ljyh.mei.playback.ENABLE_FLOATING_LYRICS
 import com.ljyh.mei.playback.DISABLE_FLOATING_LYRICS
 import androidx.lifecycle.Lifecycle
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
 import com.ljyh.mei.ui.component.sheet.BottomSheetState
 import com.ljyh.mei.ui.component.sheet.syncPlaybackVisibility
 import com.ljyh.mei.ui.component.utils.appBarScrollBehavior
@@ -709,15 +710,14 @@ class MainActivity : ComponentActivity() {
                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                         label = "CompactBottomNavigation",
                     )
-                    val compactMiniPlayerProgress = animateFloatAsState(
-                        targetValue = if (shouldCompactMiniPlayer) 1f else 0f,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        label = "CompactMiniPlayer",
-                    )
                     val playerBottomSheetState = rememberBottomSheetState(
                         dismissedBound = 0.dp,
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
+                    )
+                    val compactMiniPlayerProgress = rememberMiniPlayerCompactProgress(
+                        compact = shouldCompactMiniPlayer,
+                        sheet = playerBottomSheetState,
                     )
                     val playerBackgroundReady = remember { mutableStateOf(false) }
                     val onPlayerBackgroundReadyChanged = remember {

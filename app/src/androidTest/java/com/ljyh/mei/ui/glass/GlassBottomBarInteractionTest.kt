@@ -84,7 +84,9 @@ import com.ljyh.mei.ui.component.sheet.PlayerSheetLayers
 import com.ljyh.mei.ui.component.sheet.collapsedAnchor
 import com.ljyh.mei.ui.component.sheet.expandedAnchor
 import com.ljyh.mei.ui.component.sheet.rememberBottomSheetState
+import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
+import com.ljyh.mei.ui.component.sheet.playerContainerRect
 import com.ljyh.mei.ui.liquidglass.InteractiveHighlight
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -1749,6 +1751,102 @@ class GlassBottomBarInteractionTest {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @Test
+    fun miniPlayerReturnsDirectlyToTheFinalNavigationPosition() {
+        lateinit var sheet: BottomSheetState
+        lateinit var layers: PlayerSheetLayers
+        compose.setContent {
+            sheet = rememberBottomSheetState(
+                dismissedBound = 0.dp,
+                collapsedBound = 48.dp,
+                expandedBound = 400.dp,
+                initialAnchor = collapsedAnchor,
+            )
+            layers = rememberPlayerSheetLayers(sheet)
+        }
+        compose.runOnIdle {
+            layers.updateHost(Rect(0f, 0f, 280f, 400f))
+            val original = Rect(12f, 304f, 268f, 352f)
+            val compact = Rect(68f, 352f, 212f, 400f)
+            val originalArtwork = Rect(20f, 312f, 52f, 344f)
+            val compactArtwork = Rect(76f, 360f, 108f, 392f)
+            for (openingProgress in listOf(0.4f, 1f)) {
+                sheet.snapTo(sheet.collapsedBound)
+                layers.updateFrozenBounds()
+                layers.miniBounds = original
+                layers.miniContentBounds = original
+                layers.miniArtworkBounds = originalArtwork
+                layers.prepareTransition()
+                sheet.expandSoft()
+                sheet.snapTo(sheet.collapsedBound + (sheet.expandedBound - sheet.collapsedBound) * openingProgress)
+                layers.updateFrozenBounds()
+
+                layers.miniBounds = compact
+                layers.miniContentBounds = compact
+                layers.miniArtworkBounds = compactArtwork
+                val openingFrame = playerContainerRect(layers.sourceContainer, layers.hostBounds, sheet.progress)
+                sheet.collapseSoft()
+                layers.updateFrozenBounds()
+                assertEquals("Reversing the player must stay continuous", openingFrame,
+                    playerContainerRect(layers.sourceContainer, layers.hostBounds, sheet.progress))
+
+                sheet.snapTo(sheet.collapsedBound + (sheet.expandedBound - sheet.collapsedBound) * openingProgress / 2)
+                layers.updateFrozenBounds()
+                val returningFrame = playerContainerRect(layers.sourceContainer, layers.hostBounds, sheet.progress)
+                assertEquals("The return goes straight to the final position",
+                    if (openingProgress == 1f) 176f else 267.2f, returningFrame.top, 0.001f)
+                assertEquals("The content follows its glass", layers.sourceContainer, layers.sourceMiniContent)
+                if (openingProgress == 1f) {
+                    assertEquals("The interrupted position is no longer a return endpoint", compact, layers.sourceContainer)
+                    assertEquals("The cover also uses its final position directly", compactArtwork, layers.sourceArtwork)
+                }
+
+                sheet.snapTo(sheet.collapsedBound + 0.01.dp)
+                layers.updateFrozenBounds()
+                assertTrue("The last moving frame already reaches the bottom", abs(layers.sourceContainer.top - compact.top) < 0.01f)
+                assertTrue("The cover has no delayed relocation", abs(layers.sourceArtwork.top - compactArtwork.top) < 0.01f)
+                sheet.snapTo(sheet.collapsedBound)
+                layers.updateFrozenBounds()
+                assertEquals(compact, layers.sourceContainer)
+            }
+        }
+    }
+
+    @Test
+    fun openingPlayerSettlesInterruptedMiniNavigationWithoutResumingItAfterReturn() {
+        val compact = mutableStateOf(false)
+        lateinit var sheet: BottomSheetState
+        lateinit var progress: State<Float>
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            sheet = rememberBottomSheetState(
+                dismissedBound = 0.dp,
+                collapsedBound = 48.dp,
+                expandedBound = 400.dp,
+                initialAnchor = collapsedAnchor,
+            )
+            progress = rememberMiniPlayerCompactProgress(compact.value, sheet)
+        }
+        for (target in listOf(true, false)) {
+            compose.runOnIdle { compact.value = target }
+            compose.mainClock.advanceTimeBy(64)
+            compose.runOnIdle {
+                assertTrue("Normal navigation still animates", progress.value > 0f && progress.value < 1f)
+                sheet.expand(tween(400))
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                assertEquals("Opening settles the hidden mini player at its destination", if (target) 1f else 0f, progress.value, 0f)
+                sheet.collapse(tween(100))
+            }
+            compose.mainClock.advanceTimeBy(160)
+            compose.runOnIdle {
+                assertTrue(sheet.isCollapsed)
+                assertEquals("Returning must not resume interrupted navigation", if (target) 1f else 0f, progress.value, 0f)
             }
         }
     }
