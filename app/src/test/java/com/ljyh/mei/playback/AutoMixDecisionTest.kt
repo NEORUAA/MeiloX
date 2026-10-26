@@ -5,6 +5,13 @@ import androidx.media3.common.Player
 import com.ljyh.mei.constants.AutoMixFadeCurve
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,6 +20,109 @@ import org.junit.Test
 import kotlin.math.sqrt
 
 class AutoMixDecisionTest {
+    @Test
+    fun standbyWithoutASmartPlanWaitsUntilTheFixedTransitionNeedsPreparation() {
+        fun defer(
+            hasPlan: Boolean = false,
+            remaining: Long = 60_000L,
+            duration: Long = 8_000L,
+        ) = shouldDeferAutoMixStandby(hasPlan, remaining, duration)
+
+        assertTrue(defer())
+        assertFalse(defer(hasPlan = true))
+        assertTrue(defer(remaining = 13_001L))
+        assertFalse(defer(remaining = 13_000L))
+        assertFalse(defer(remaining = 8_000L))
+        assertTrue(defer(remaining = 35_001L, duration = 30_000L))
+        assertFalse(defer(remaining = 35_000L, duration = 30_000L))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun fixedFallbackCancelsAnalysisAndPreventsRestartingItBehindTheStandbyLoader() = runTest {
+        val analysis = SmartAutoMixAnalysisTask(this)
+        val pair = "outgoing" to "incoming"
+        var cancelled = false
+        assertTrue(analysis.start(pair) {
+            try {
+                awaitCancellation()
+            } finally {
+                cancelled = true
+            }
+        })
+        runCurrent()
+        analysis.skip(pair)
+        runCurrent()
+        assertTrue(cancelled)
+        assertFalse(analysis.isPending)
+        analysis.cancelPending()
+        assertFalse(analysis.start(pair) {})
+        assertTrue(analysis.start("incoming" to "next") {})
+        runCurrent()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun pendingSmartAnalysisStopsForPauseAndCanRetryWithoutRepeatingCompletedWork() = runTest {
+        val analysis = SmartAutoMixAnalysisTask(this)
+        val pair = "outgoing" to "incoming"
+        var cancelled = false
+        assertTrue(analysis.start(pair) {
+            try {
+                awaitCancellation()
+            } finally {
+                cancelled = true
+            }
+        })
+        runCurrent()
+        analysis.cancelPending()
+        runCurrent()
+        assertTrue(cancelled)
+
+        var completed = 0
+        assertTrue(analysis.start(pair) { completed++ })
+        runCurrent()
+        analysis.cancelPending()
+        assertFalse(analysis.start(pair) { completed++ })
+        assertEquals(1, completed)
+
+        analysis.reset()
+        assertTrue(analysis.start(pair) { completed++ })
+        runCurrent()
+        assertEquals(2, completed)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun cancelledAnalysisFinishingLateCannotClearOrRepeatItsReplacement() = runTest {
+        val analysis = SmartAutoMixAnalysisTask(this)
+        val pair = "outgoing" to "incoming"
+        val releasePrevious = CompletableDeferred<Unit>()
+        val completeReplacement = CompletableDeferred<Unit>()
+        assertTrue(analysis.start(pair) {
+            try {
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable) { releasePrevious.await() }
+                analysis.allowRetry(pair)
+            }
+        })
+        runCurrent()
+        analysis.cancelPending()
+        assertTrue(analysis.start(pair) { completeReplacement.await() })
+        runCurrent()
+        releasePrevious.complete(Unit)
+        runCurrent()
+
+        assertEquals(pair, analysis.attempt)
+        assertFalse(analysis.start("another" to "pair") {})
+        completeReplacement.complete(Unit)
+        runCurrent()
+        assertFalse(analysis.start(pair) {})
+        assertTrue(analysis.start("another" to "pair") {})
+        runCurrent()
+    }
+
     @Test
     fun failedMixRecoversOnlyOneDelayedInternalEndPauseOnTheSameEntry() {
         val recovery = AutoMixEndPauseRecovery()

@@ -7,11 +7,14 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaDataSource
 import android.net.Uri
+import androidx.media3.datasource.cache.Cache
+import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.nio.ByteBuffer
@@ -81,8 +84,9 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
     ): BeatNetPairAnalysis = withContext(Dispatchers.Default) {
         analysisMutex.withLock {
             val outgoingStart = (outgoingDurationMs - WINDOW_DURATION_MS).coerceAtLeast(0)
-            val outgoing = analyze(outgoingId, outgoingSource, outgoingStart)
+            // Fill the incoming head before waiting for the current deck's future tail bytes.
             val incoming = analyze(incomingId, incomingSource, 0)
+            val outgoing = analyze(outgoingId, outgoingSource, outgoingStart)
             BeatNetPairAnalysis(outgoing, incoming)
         }
     }
@@ -170,105 +174,117 @@ class BeatNetAutoMixAnalyzer(private val context: Context) : AutoCloseable {
 
 internal class AndroidAudioDecoder(
     private val context: Context,
-    cacheDataSourceFactory: CacheDataSource.Factory? = null,
+    cache: Cache? = null,
+    private val cacheDataSourceFactory: (Cache) -> CacheDataSource.Factory = {
+        // Analysis closes each bounded read itself, so no smaller sink fragments are needed.
+        CacheManager.getCacheDataSourceFactory(context, it, CacheDataSink.DEFAULT_FRAGMENT_SIZE)
+    },
 ) {
-    private val cacheFactory by lazy { cacheDataSourceFactory ?: CacheManager.getCacheDataSourceFactory(context) }
+    private val sourceCache by lazy { cache ?: CacheManager.getSimpleCache(context) }
 
     suspend fun decode(uri: Uri, startMs: Long, durationMs: Long): FloatArray {
         return decode(ResolvedMediaSource(uri, actualQuality = "", cacheKey = null), startMs, durationMs)
     }
 
     suspend fun decode(source: ResolvedMediaSource, startMs: Long, durationMs: Long): FloatArray {
-        val extractor = MediaExtractor()
-        var codec: MediaCodec? = null
-        var dataSource: MediaDataSource? = null
-        try {
-            val uri = source.uri
-            if (source.cacheKey != null || uri.scheme == "http" || uri.scheme == "https") {
-                val coroutineContext = currentCoroutineContext()
-                dataSource = CacheMediaDataSource(source, cacheFactory) { coroutineContext.ensureActive() }
-                extractor.setDataSource(dataSource)
-            } else {
-                extractor.setDataSource(context, uri, emptyMap())
-            }
-            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
-                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-            } ?: error("No audio track is available for BeatNet analysis")
-            val inputFormat = extractor.getTrackFormat(trackIndex)
-            // Analysis is background work, not a real-time playback decoder.
-            inputFormat.setInteger(MediaFormat.KEY_PRIORITY, 1)
-            val mime = inputFormat.getString(MediaFormat.KEY_MIME) ?: error("Audio codec is unknown")
-            extractor.selectTrack(trackIndex)
-            val startUs = startMs * 1_000
-            val endUs = (startMs + durationMs) * 1_000
-            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            codec = MediaCodec.createDecoderByType(mime).apply {
-                configure(inputFormat, null, null, 0)
-                start()
-            }
+        val coroutineContext = currentCoroutineContext()
+        return try {
+            runInterruptible(Dispatchers.IO) {
+                val extractor = MediaExtractor()
+                var codec: MediaCodec? = null
+                var dataSource: MediaDataSource? = null
+                try {
+                    val uri = source.uri
+                    if (source.cacheKey != null || uri.scheme == "http" || uri.scheme == "https") {
+                        dataSource = CacheMediaDataSource(source, sourceCache, cacheDataSourceFactory) { coroutineContext.ensureActive() }
+                        extractor.setDataSource(dataSource)
+                    } else {
+                        extractor.setDataSource(context, uri, emptyMap())
+                    }
+                    val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                        extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                    } ?: error("No audio track is available for BeatNet analysis")
+                    val inputFormat = extractor.getTrackFormat(trackIndex)
+                    // Analysis is background work, not a real-time playback decoder.
+                    inputFormat.setInteger(MediaFormat.KEY_PRIORITY, 1)
+                    val mime = inputFormat.getString(MediaFormat.KEY_MIME) ?: error("Audio codec is unknown")
+                    extractor.selectTrack(trackIndex)
+                    val startUs = startMs * 1_000
+                    val endUs = (startMs + durationMs) * 1_000
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    codec = MediaCodec.createDecoderByType(mime).apply {
+                        configure(inputFormat, null, null, 0)
+                        start()
+                    }
 
-            val pcm = BeatNetPcmBuffer(durationMs)
-            var outputSampleRate = inputFormat.integerOrDefault(MediaFormat.KEY_SAMPLE_RATE, 44_100)
-            var outputChannels = inputFormat.integerOrDefault(MediaFormat.KEY_CHANNEL_COUNT, 2)
-            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
-            var inputEnded = false
-            var outputEnded = false
-            val info = MediaCodec.BufferInfo()
-            while (!outputEnded) {
-                currentCoroutineContext().ensureActive()
-                if (!inputEnded) {
-                    val inputIndex = codec.dequeueInputBuffer(10_000)
-                    if (inputIndex >= 0) {
-                        val buffer = codec.getInputBuffer(inputIndex) ?: error("Audio decoder input is unavailable")
-                        val sampleTime = extractor.sampleTime
-                        val size = if (sampleTime < 0 || sampleTime >= endUs) -1 else extractor.readSampleData(buffer, 0)
-                        if (size < 0) {
-                            codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputEnded = true
-                        } else {
-                            codec.queueInputBuffer(inputIndex, 0, size, sampleTime, 0)
-                            extractor.advance()
-                        }
-                    }
-                }
-                when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000)) {
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val format = codec.outputFormat
-                        outputSampleRate = format.integerOrDefault(MediaFormat.KEY_SAMPLE_RATE, outputSampleRate)
-                        outputChannels = format.integerOrDefault(MediaFormat.KEY_CHANNEL_COUNT, outputChannels)
-                        pcmEncoding = format.integerOrDefault(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-                    }
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
-                    else -> if (outputIndex >= 0) {
-                        if (info.size > 0 && info.presentationTimeUs < endUs) {
-                            val output = codec.getOutputBuffer(outputIndex)
-                            if (output != null) {
-                                pcm.append(
-                                    buffer = output,
-                                    offset = info.offset,
-                                    size = info.size,
-                                    presentationTimeUs = info.presentationTimeUs,
-                                    channels = outputChannels,
-                                    encoding = pcmEncoding,
-                                    sampleRate = outputSampleRate,
-                                    requestedStartUs = startUs,
-                                    requestedEndUs = endUs,
-                                )
+                    val pcm = BeatNetPcmBuffer(durationMs)
+                    var outputSampleRate = inputFormat.integerOrDefault(MediaFormat.KEY_SAMPLE_RATE, 44_100)
+                    var outputChannels = inputFormat.integerOrDefault(MediaFormat.KEY_CHANNEL_COUNT, 2)
+                    var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+                    var inputEnded = false
+                    var outputEnded = false
+                    val info = MediaCodec.BufferInfo()
+                    while (!outputEnded) {
+                        coroutineContext.ensureActive()
+                        if (!inputEnded) {
+                            val inputIndex = codec.dequeueInputBuffer(10_000)
+                            if (inputIndex >= 0) {
+                                val buffer = codec.getInputBuffer(inputIndex) ?: error("Audio decoder input is unavailable")
+                                val sampleTime = extractor.sampleTime
+                                val size = if (sampleTime < 0 || sampleTime >= endUs) -1 else extractor.readSampleData(buffer, 0)
+                                if (size < 0) {
+                                    codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputEnded = true
+                                } else {
+                                    codec.queueInputBuffer(inputIndex, 0, size, sampleTime, 0)
+                                    extractor.advance()
+                                }
                             }
                         }
-                        outputEnded = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        codec.releaseOutputBuffer(outputIndex, false)
+                        when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000)) {
+                            MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                                val format = codec.outputFormat
+                                outputSampleRate = format.integerOrDefault(MediaFormat.KEY_SAMPLE_RATE, outputSampleRate)
+                                outputChannels = format.integerOrDefault(MediaFormat.KEY_CHANNEL_COUNT, outputChannels)
+                                pcmEncoding = format.integerOrDefault(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+                            }
+                            MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                            else -> if (outputIndex >= 0) {
+                                if (info.size > 0 && info.presentationTimeUs < endUs) {
+                                    val output = codec.getOutputBuffer(outputIndex)
+                                    if (output != null) {
+                                        pcm.append(
+                                            buffer = output,
+                                            offset = info.offset,
+                                            size = info.size,
+                                            presentationTimeUs = info.presentationTimeUs,
+                                            channels = outputChannels,
+                                            encoding = pcmEncoding,
+                                            sampleRate = outputSampleRate,
+                                            requestedStartUs = startUs,
+                                            requestedEndUs = endUs,
+                                        )
+                                    }
+                                }
+                                outputEnded = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                                codec.releaseOutputBuffer(outputIndex, false)
+                            }
+                        }
                     }
+                    pcm.finish()
+                    check(pcm.sampleCount > 0) { "Audio decoder returned no samples" }
+                    pcm.samples
+                } finally {
+                    runCatching { codec?.stop() }
+                    runCatching { codec?.release() }
+                    runCatching { extractor.release() }
+                    runCatching { dataSource?.close() }
                 }
             }
-            pcm.finish()
-            check(pcm.sampleCount > 0) { "Audio decoder returned no samples" }
-            return pcm.samples
-        } finally {
-            runCatching { codec?.stop() }
-            codec?.release()
-            extractor.release()
-            dataSource?.close()
+        } catch (error: Exception) {
+            // Native extractors can translate a cancelled callback into IOException.
+            coroutineContext.ensureActive()
+            throw error
         }
     }
 }

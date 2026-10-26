@@ -49,11 +49,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
-import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
-import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
@@ -181,10 +177,6 @@ class MusicService : MediaLibraryService(),
     private lateinit var playbackPersistence: PlaybackPersistence
     private var isRestoringPlayback = true
     private lateinit var connectivityManager: ConnectivityManager
-    private lateinit var baseMediaSourceFactory: DefaultMediaSourceFactory
-    private lateinit var preloadManager: DefaultPreloadManager
-    private val preloadStrategy = MusicPreloadStrategy()
-    private var preloadedMediaItem: MediaItem? = null
     val currentMediaMetadata = MutableStateFlow<MediaMetadata?>(null)
     val availableMusicQualities = MutableStateFlow<List<MusicQuality>>(emptyList())
     val currentMusicQuality = MutableStateFlow<MusicQuality?>(null)
@@ -256,36 +248,6 @@ class MusicService : MediaLibraryService(),
         }
         playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
-        baseMediaSourceFactory = DefaultMediaSourceFactory(createDataSourceFactory())
-            .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()) // 应用自定义错误策略
-        val preloadManagerBuilder = DefaultPreloadManager.Builder(
-            this,
-            preloadStrategy
-        )
-            .setMediaSourceFactory(baseMediaSourceFactory) // 告诉管理器用什么去下载
-
-        val playerMediaSourceFactory = object : MediaSource.Factory {
-            // 必须实现的方法，委托给 baseMediaSourceFactory
-            override fun setDrmSessionManagerProvider(provider: DrmSessionManagerProvider) = apply {
-                baseMediaSourceFactory.setDrmSessionManagerProvider(provider)
-            }
-
-            override fun setLoadErrorHandlingPolicy(policy: LoadErrorHandlingPolicy) = apply {
-                baseMediaSourceFactory.setLoadErrorHandlingPolicy(policy)
-            }
-
-            override fun getSupportedTypes(): IntArray = baseMediaSourceFactory.supportedTypes
-
-            // 创建 MediaSource
-            override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-                // 优先问 PreloadManager 要预加载好的 Source
-                return preloadManager.getMediaSource(mediaItem)
-                // 如果没预加载过，就创建一个新的
-                    ?: baseMediaSourceFactory.createMediaSource(mediaItem)
-            }
-        }
-
-
         flymeNotificationProvider = FlymeLyricsNotificationProvider(
             PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID) { player.mediaMetadata.title },
             ::triggerNotificationUpdate,
@@ -302,8 +264,11 @@ class MusicService : MediaLibraryService(),
         val firstDeck = ExoPlayer.Builder(this)
             .experimentalSetDynamicSchedulingEnabled(false)
             .setStuckBufferingDetectionTimeoutMs(STUCK_BUFFERING_TIMEOUT_MS)
-            //媒体源工厂
-            .setMediaSourceFactory(playerMediaSourceFactory)
+            // Keep next-period loading on the deck that will consume those bytes.
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(createDataSourceFactory())
+                    .setLoadErrorHandlingPolicy(MusicLoadErrorHandlingPolicy()),
+            )
             //渲染器工厂
             .setRenderersFactory(createRenderersFactory())
             //处理音频焦点变化和音频播放行为
@@ -317,12 +282,6 @@ class MusicService : MediaLibraryService(),
             .setSeekBackIncrementMs(5000)
             .setSeekForwardIncrementMs(5000)
             .build()
-            .also { builtPlayer ->
-                // PreloadMediaSource must be prepared on the same looper that consumes it.
-                preloadManager = preloadManagerBuilder
-                    .setPreloadLooper(builtPlayer.playbackLooper)
-                    .build()
-            }
         val secondDeck = ExoPlayer.Builder(this)
             .experimentalSetDynamicSchedulingEnabled(false)
             .setStuckBufferingDetectionTimeoutMs(STUCK_BUFFERING_TIMEOUT_MS)
@@ -383,17 +342,14 @@ class MusicService : MediaLibraryService(),
                     playbackPersistence.invalidateQueue()
                     schedulePlaybackSnapshot()
                 }
-                updatePreload()
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (isRefreshingPlaybackSource) return
-                updatePreload()
                 automaticCachePlayback.reset()
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                updatePreload()
                 schedulePlaybackSnapshot()
                 scope.launch {
                     context.dataStore.edit { preferences ->
@@ -403,7 +359,6 @@ class MusicService : MediaLibraryService(),
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
-                updatePreload()
                 schedulePlaybackSnapshot()
                 scope.launch {
                     context.dataStore.edit { preferences ->
@@ -650,31 +605,10 @@ class MusicService : MediaLibraryService(),
         }.onFailure { Timber.tag("MusicService").w(it, "Unable to save final playback snapshot") }
     }
 
-    private fun updatePreload() {
-        val nextIndex = player.nextPlaybackMediaItemIndex().takeIf {
-            it != player.currentMediaItemIndex && it in 0 until player.mediaItemCount
-        } ?: C.INDEX_UNSET
-        val nextItem = if (nextIndex == C.INDEX_UNSET) null else player.getMediaItemAt(nextIndex)
-        if (nextItem == preloadedMediaItem && nextIndex == preloadStrategy.nextPlayingIndex) return
-        preloadedMediaItem?.let(preloadManager::remove)
-        preloadedMediaItem = nextItem
-        preloadStrategy.nextPlayingIndex = nextIndex
-        if (nextItem != null) {
-            preloadManager.add(nextItem, nextIndex)
-        }
-        preloadManager.invalidate()
-    }
-
     /** Clears sources tied to the previous quality while keeping the player playlist intact. */
     fun resetPlaybackSourcesForQualityChange() {
         if (::autoMixController.isInitialized) {
             autoMixController.resetForQualityChange()
-        }
-        if (::preloadManager.isInitialized) {
-            // BasePreloadManager requires all lifecycle calls on its construction thread.
-            preloadManager.reset()
-            preloadedMediaItem = null
-            preloadStrategy.nextPlayingIndex = C.INDEX_UNSET
         }
     }
 
@@ -695,7 +629,6 @@ class MusicService : MediaLibraryService(),
         } finally {
             isRefreshingPlaybackSource = false
         }
-        updatePreload()
         refreshAvailableMusicQualities()
     }
 
@@ -1283,7 +1216,6 @@ class MusicService : MediaLibraryService(),
         sleepTimer.clear()
         player.removeListener(sleepTimer)
         queueManager.release()
-        preloadManager.release()
         autoMixController.release()
         if (::audioPlayer.isInitialized) audioPlayer.release()
         equalizerConfigurationState.release()
@@ -1413,7 +1345,13 @@ class MusicService : MediaLibraryService(),
                 currentMusicQuality.value = null
                 availableMusicQualities.value = availableMusicQualities.value - listOfNotNull(failedQuality).toSet()
                 isLoadingMusicQualities.value = false
-                if (scheduleSourceRecovery(qualityFallback = true, failedCacheKey = failedCacheKey)) return
+                // A timeout can justify a lower bitrate without proving the cached bytes corrupt.
+                if (scheduleSourceRecovery(
+                        qualityFallback = true,
+                        failedCacheKey = failedCacheKey,
+                        preserveCache = stalled,
+                    )
+                ) return
             }
         }
 
@@ -1550,7 +1488,6 @@ class MusicService : MediaLibraryService(),
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
             checkFmModeLoadMore()
         }
-        updatePreload()
     }
 
     private fun checkFmModeLoadMore() {
