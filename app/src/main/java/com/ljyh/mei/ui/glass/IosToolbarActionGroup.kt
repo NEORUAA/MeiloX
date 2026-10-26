@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -264,8 +265,9 @@ internal fun rememberToolbarActionMember(
 ): ToolbarActionMember? {
     val group = LocalIosToolbarActionGroup.current.takeIf { eligible }
     val currentSeparation = rememberUpdatedState(separation)
-    val member = remember(group, highlight, material) {
-        group?.let { ToolbarActionMember(it, material, currentSeparation, highlight) }
+    val foregroundLayer = if (group != null) rememberGraphicsLayer() else null
+    val member = remember(group, highlight, material, foregroundLayer) {
+        group?.let { ToolbarActionMember(it, material, currentSeparation, highlight, requireNotNull(foregroundLayer)) }
     }
     DisposableEffect(member) {
         member?.group?.members?.add(member)
@@ -285,9 +287,18 @@ internal class ToolbarActionMember(
     val material: ToolbarActionMaterial,
     val separation: State<(() -> Float)?>,
     val highlight: InteractiveHighlight,
+    val foregroundLayer: GraphicsLayer,
 ) {
     var coordinates: LayoutCoordinates? = null
     var bounds: Rect? by mutableStateOf(null)
+    var foregroundSize = Size.Zero
+        private set
+
+    fun drawForeground(scope: ContentDrawScope) = with(scope) {
+        foregroundLayer.record { this@with.drawContent() }
+        foregroundSize = size
+        drawLayer(foregroundLayer)
+    }
 
     val sharesSurface: Boolean
         get() = group.connectedRun(this).size > 1
@@ -439,9 +450,15 @@ internal class ToolbarActionGroup(
     }
 
     internal fun foregroundPortal(run: List<ToolbarActionMember>): ToolbarMenuPortal? {
+        if (run.size == 1) {
+            // A standalone control draws its own glass inside the Row. Transfer only
+            // its live content layer, before the press transform, without replaying glass.
+            val member = run.single()
+            if (member.foregroundSize.isEmpty()) return null
+            return ToolbarMenuPortal(member.foregroundLayer, Rect(Offset.Zero, member.foregroundSize))
+        }
         // Shared runs draw their material outside the Row, leaving a clean glyph portal.
-        // Single controls retain the existing hidden-source path to avoid replaying glass.
-        if (!foregroundRecorded || run.size < 2) return null
+        if (!foregroundRecorded || run.isEmpty()) return null
         val sourceBounds = visualBoundsInGroup(run)
         if (sourceBounds.isEmpty) return null
         return ToolbarMenuPortal(foregroundLayer, sourceBounds)

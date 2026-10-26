@@ -22,6 +22,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -916,7 +917,10 @@ fun GlassSurface(
                     } else {
                         Modifier
                     },
-                ),
+                )
+                .then(if (toolbarMember != null && !sharesToolbarSurface) {
+                    Modifier.drawWithContent { toolbarMember.drawForeground(this) }
+                } else Modifier),
             contentAlignment = contentAlignment,
             content = {
                 val contentColor = if (emphasis == GlassEmphasis.Prominent) Color.White else colors.content

@@ -1291,6 +1291,8 @@ class GlassControlsInteractionTest {
     fun toolbarPopupMorphsTheWholeSourceAndReversesWithoutDetaching() {
         val groupedOpen = mutableStateOf(false)
         val singleOpen = mutableStateOf(false)
+        val singleLabel = mutableStateOf("Recommended")
+        val singleLabelColor = mutableStateOf(Color.Magenta)
         val groupedStyle = mutableStateOf(IosToolbarActionStyle.Merged)
         var groupedAnchor: IosMenuAnchorState? = null
         var singleAnchor: IosMenuAnchorState? = null
@@ -1347,8 +1349,8 @@ class GlassControlsInteractionTest {
                                     menuAnchorState = singleSource,
                                     onMenuAlphaChanged = { singleAlpha = it },
                                     anchor = { open ->
-                                        GlassIconButton(open, Modifier.iosMenuAnchor(singleSource).testTag("singlePopupAnchor")) {
-                                            SfIcon(SfSymbol.Ellipsis, null)
+                                        GlassButton(open, Modifier.width(132.dp).iosMenuAnchor(singleSource).testTag("singlePopupAnchor")) {
+                                            androidx.compose.material3.Text(singleLabel.value, color = singleLabelColor.value)
                                         }
                                     },
                                 ) { backdrop, close ->
@@ -1473,12 +1475,27 @@ class GlassControlsInteractionTest {
             toolbarAction("singlePopupAnchor").performClick()
             advanceUntil { requireNotNull(singleAnchor).isAcquired }
             compose.onNodeWithTag("singlePopupItem").assertExists()
-            compose.mainClock.advanceTimeBy(64L)
+            compose.mainClock.advanceTimeBy(1_000L)
             compose.runOnIdle {
                 assertTrue("A standalone action immediately starts showing its popup", singleAlpha > 0f)
                 assertTrue("The standalone source uses the same handoff", requireNotNull(singleAnchor).isAcquired)
+                assertTrue("A standalone label retains a clean foreground portal", requireNotNull(singleAnchor).portal != null)
+                singleLabel.value = "Latest"
+                singleLabelColor.value = Color.Green
                 singleOpen.value = false
             }
+            compose.mainClock.advanceTimeBy(240L)
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertTrue("The closing source is still owned by the liquid surface", requireNotNull(singleAnchor).isAcquired)
+            }
+            val closingImage = compose.onNode(isPopup()).captureToImage().toPixelMap()
+            var labelPixels = 0
+            for (y in 0 until closingImage.height) for (x in 0 until closingImage.width) {
+                val pixel = closingImage[x, y]
+                if (pixel.green > 0.4f && maxOf(pixel.red, pixel.blue) < pixel.green * 0.5f) labelPixels++
+            }
+            assertTrue("The returning capsule draws its live label before releasing the source", labelPixels > 20)
             awaitCollapsed("singlePopupItem") { !requireNotNull(singleAnchor).isAcquired }
             compose.onNodeWithTag("singlePopupItem").assertDoesNotExist()
             compose.runOnIdle { assertFalse(requireNotNull(singleAnchor).isAcquired) }
