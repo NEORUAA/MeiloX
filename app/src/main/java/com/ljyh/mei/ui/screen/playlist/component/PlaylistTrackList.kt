@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
+import com.kyant.capsule.ContinuousRoundedRectangle
 import androidx.compose.ui.geometry.Rect
 
 import androidx.compose.foundation.background
@@ -30,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -366,7 +366,7 @@ internal fun PlaylistSurface(
     }
     val colors = LocalGlassColors.current
     val backgroundAlpha = LocalGroupedListBackgroundAlpha.current.coerceIn(0f, 1f)
-    val shape = RoundedCornerShape(
+    val shape = ContinuousRoundedRectangle(
         topStart = if (isFirst) 26.dp else 0.dp,
         topEnd = if (isFirst) 26.dp else 0.dp,
         bottomStart = if (isLast) 26.dp else 0.dp,

@@ -46,7 +46,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -637,7 +636,7 @@ internal fun NeteaseMobileLoginSheet(
                                     Text(
                                         text = label,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(12.dp))
+                                            .clip(ContinuousRoundedRectangle(12.dp))
                                             .clickable(
                                                 enabled = canRequestCode,
                                                 onClick = requestSmsCode,
@@ -866,7 +865,7 @@ private fun ScannerReticle() {
                 .border(
                     width = 3.dp,
                     color = Color.White.copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = ContinuousRoundedRectangle(24.dp),
                 ),
         )
     }
