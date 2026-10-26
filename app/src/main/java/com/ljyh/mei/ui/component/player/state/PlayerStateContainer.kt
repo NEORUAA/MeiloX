@@ -96,6 +96,9 @@ class PlayerStateContainer(
     var controlsVisible by mutableStateOf(true)
         internal set
 
+    var qualityMenuVisible by mutableStateOf(false)
+        internal set
+
     internal fun refreshProgress() {
         val player = playerConnection.player
         val currentItem = player.currentMediaItem

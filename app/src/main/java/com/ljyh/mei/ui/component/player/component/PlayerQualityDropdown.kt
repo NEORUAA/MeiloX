@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,8 +86,13 @@ fun PlayerQualityDropdown(
     modifier: Modifier = Modifier,
     backgroundColor: Color = Color.White.copy(alpha = 0.15f),
     cornerRadius: Dp = 6.dp,
+    onMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val menuVisibilityChanged by rememberUpdatedState(onMenuVisibilityChanged)
+    DisposableEffect(Unit) {
+        onDispose { menuVisibilityChanged(false) }
+    }
     val pendingTitle = stringResource(R.string.player_quality_pending)
     val hasResolvedQuality = isPlayingLocalSource || quality != null
     val qualityTitle = when {
@@ -109,9 +116,14 @@ fun PlayerQualityDropdown(
     IosPopupMenu(
         expanded = expanded,
         onExpandedChange = {
-            if (it && !expanded) onMenuOpened()
+            if (it && !expanded) {
+                menuVisibilityChanged(true)
+                onMenuOpened()
+            }
             expanded = it
         },
+        // Keep the anchor in place until the popup has finished collapsing.
+        onClosed = { menuVisibilityChanged(false) },
         itemCount = availableQualities.size + (if (localPlaybackInfo != null) 1 else 0) +
             (if (statusTitle != null) 1 else 0),
         modifier = modifier.background(backgroundColor, ContinuousRoundedRectangle(cornerRadius)),

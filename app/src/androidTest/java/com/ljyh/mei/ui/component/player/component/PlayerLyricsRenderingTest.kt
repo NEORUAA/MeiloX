@@ -74,6 +74,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.player.FloatingLyricsPipContent
 import com.ljyh.mei.ui.component.player.component.applemusic.playerAdditiveBlend
@@ -113,6 +114,76 @@ import org.junit.runner.RunWith
 class PlayerLyricsRenderingTest {
     @get:Rule val compose = createComposeRule()
     private val clickedLine = AtomicReference<ISyncedLine>()
+
+    @Test
+    fun qualityMenuPausesLyricsAutoHideThroughCollapseAndRestartsTheIdleTimer() {
+        val quality = mutableStateOf(MusicQuality.EXHIGH)
+        val menuVisible = mutableStateOf(false)
+        val controlsVisible = mutableStateOf(true)
+        val showBadge = mutableStateOf(true)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassBackdrop provides emptyBackdrop(),
+                    LocalBlurBackdrop provides emptyBackdrop(),
+                ) {
+                    PlayerLyricsControlsAutoHide(
+                        controlsVisible = controlsVisible.value,
+                        expanded = true,
+                        active = true,
+                        isPlaying = true,
+                        blocked = menuVisible.value,
+                        onHide = { controlsVisible.value = false },
+                    )
+                    if (showBadge.value) PlayerQualityDropdown(
+                        quality = quality.value,
+                        availableQualities = listOf(MusicQuality.EXHIGH, MusicQuality.LOSSLESS),
+                        isLoading = false,
+                        localPlaybackInfo = null,
+                        isPlayingLocalSource = false,
+                        onMenuOpened = {},
+                        onQualitySelected = { quality.value = it },
+                        onLocalSourceSelected = {},
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        onMenuVisibilityChanged = { menuVisible.value = it },
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText(context.getString(MusicQuality.EXHIGH.labelRes)).performClick()
+        compose.mainClock.advanceTimeBy(10_000)
+        compose.runOnIdle {
+            assertTrue(menuVisible.value)
+            assertTrue("The quality menu must keep playback controls visible", controlsVisible.value)
+        }
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithText(context.getString(MusicQuality.LOSSLESS.labelRes)).performClick()
+            compose.runOnIdle {
+                assertEquals(MusicQuality.LOSSLESS, quality.value)
+                assertTrue("The collapsing popup still owns its anchor", menuVisible.value)
+            }
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.runOnIdle {
+                assertFalse(menuVisible.value)
+                assertTrue(controlsVisible.value)
+            }
+            compose.mainClock.advanceTimeBy(3_500)
+            compose.runOnIdle { assertTrue("Dismissal starts a fresh idle interval", controlsVisible.value) }
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.runOnIdle { assertFalse(controlsVisible.value) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+
+        compose.onNodeWithText(context.getString(MusicQuality.LOSSLESS.labelRes)).performClick()
+        compose.runOnIdle { assertTrue(menuVisible.value) }
+        compose.runOnIdle { showBadge.value = false }
+        compose.runOnIdle { assertFalse(menuVisible.value) }
+    }
 
     @Test
     fun floatingLyricsRemainReadableWhenTheCardThemeChanges() {

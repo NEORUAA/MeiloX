@@ -579,6 +579,64 @@ class GlassControlsInteractionTest {
     }
 
     @Test
+    fun popupContentSurvivesAnchorCaptionResizeDuringCollapse() {
+        val expanded = mutableStateOf(false)
+        val anchorWidth = mutableStateOf(44.dp)
+        var contentMounts = 0
+        var contentDisposals = 0
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    IosPopupMenu(
+                        expanded = expanded.value,
+                        onExpandedChange = { expanded.value = it },
+                        itemCount = 1,
+                        backdrop = emptyBackdrop(),
+                        fullScreen = true,
+                        centerHorizontally = true,
+                        expandFromAnchor = Alignment.CenterHorizontally,
+                        anchor = { open ->
+                            Box(Modifier.width(anchorWidth.value).height(24.dp)
+                                .testTag("resizingPopupAnchor").clickable(onClick = open))
+                        },
+                    ) { backdrop, close ->
+                        DisposableEffect(Unit) {
+                            contentMounts++
+                            onDispose { contentDisposals++ }
+                        }
+                        IosMenuItem(
+                            title = "Select quality",
+                            onClick = { anchorWidth.value = 144.dp; close() },
+                            backdrop = backdrop,
+                        )
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("resizingPopupAnchor").performClick()
+        compose.onNodeWithText("Select quality").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(1, contentMounts)
+            assertEquals(0, contentDisposals)
+        }
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithText("Select quality").performClick()
+            repeat(5) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.runOnIdle {
+                    assertEquals("Caption resizing must not recreate the collapsing menu", 1, contentMounts)
+                    assertEquals("The popup content must remain resident until closure", 0, contentDisposals)
+                }
+            }
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.runOnIdle { assertEquals(1, contentDisposals) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
     fun musicThemeKeepsStaticSeedsAndInheritsDynamicContrastOnlyWhenEnabled() {
         val seed = mutableStateOf(Color.Red)
         val dark = mutableStateOf(false)
