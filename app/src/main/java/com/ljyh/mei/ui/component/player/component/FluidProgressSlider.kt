@@ -54,10 +54,12 @@ fun FluidProgressSlider(
     onPositionChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onTrackTopChanged: ((Float) -> Unit)? = null,
+    onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     if (playerStyle == PlayerStyle.AppleMusic) {
-        AppleMusicProgressSlider(position, duration, onPositionChange, modifier, onTrackTopChanged)
+        AppleMusicProgressSlider(position, duration, onPositionChange, modifier, onTrackTopChanged,
+            onQualityMenuVisibilityChanged)
         return
     }
     val playerConnection = LocalPlayerConnection.current
@@ -232,6 +234,7 @@ fun FluidProgressSlider(
                 onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 onLocalSourceSelected = { playerConnection?.useLocalSource() },
+                onMenuVisibilityChanged = onQualityMenuVisibilityChanged,
                 style = commonTextStyle.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.6f),
             )

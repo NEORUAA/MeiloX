@@ -168,11 +168,12 @@ class MusicServiceQualityRecoveryTest {
                 PlaybackException("Injected source decoder failure", null, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED),
                 rejectsIdentity = true,
             )),
+            verifyCache = true,
         )
     }
 
     @Test
-    fun stalledSourceRetriesItsQualityThenRejectsOnlyTheRepeatedSource() {
+    fun stalledSourceRetriesItsQualityThenFallsBackWithoutDeletingCachedBytes() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("issue57Recovery") == "true")
         verifyPausedSourceRecovery(
             listOf(
@@ -191,13 +192,18 @@ class MusicServiceQualityRecoveryTest {
                         PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
                     ),
                     rejectsIdentity = true,
+                    invalidatesCache = false,
                 ),
             ),
             verifyCache = true,
         )
     }
 
-    private data class RecoveryFailure(val error: PlaybackException, val rejectsIdentity: Boolean)
+    private data class RecoveryFailure(
+        val error: PlaybackException,
+        val rejectsIdentity: Boolean,
+        val invalidatesCache: Boolean = rejectsIdentity,
+    )
 
     private fun verifyPausedSourceRecovery(failures: List<RecoveryFailure>, verifyCache: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -352,14 +358,14 @@ class MusicServiceQualityRecoveryTest {
                         provider.isRejectedCachedSource(mediaId, fakeKey))
                 }
                 if (verifyCache) {
-                    assertEquals("Only rejected probe bytes may be removed", !failure.rejectsIdentity, cache.isCached(fakeKey, 0L, 16L))
+                    assertEquals("Only invalid media bytes may be removed", !failure.invalidatesCache, cache.isCached(fakeKey, 0L, 16L))
                     retainedProbeKeys.forEach { key ->
                         assertTrue("Recovery must retain the previous retry's cached bytes", cache.isCached(key, 0L, 16L))
                     }
                     protectedSpans.forEach { (key, position, length) ->
                         assertTrue("Recovery must retain pre-existing source cache spans", cache.isCached(key, position, length))
                     }
-                    if (!failure.rejectsIdentity) retainedProbeKeys += fakeKey
+                    if (!failure.invalidatesCache) retainedProbeKeys += fakeKey
                 }
                 val preferenceAfter = runBlocking { context.dataStore.data.first()[MusicQualityKey] }
                 assertEquals("Recovery must never rewrite the user's preferred quality", preferenceBefore, preferenceAfter)

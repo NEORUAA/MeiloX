@@ -58,7 +58,8 @@ fun PlayerProgressSlider(
     duration: Long,
     isPlaying: Boolean, // 新增：需要根据播放状态控制波浪滚动
     onPositionChange: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val playerConnection = LocalPlayerConnection.current
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
@@ -251,6 +252,7 @@ fun PlayerProgressSlider(
                 onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 onLocalSourceSelected = { playerConnection?.useLocalSource() },
+                onMenuVisibilityChanged = onQualityMenuVisibilityChanged,
                 style = timeTextStyle,
                 color = Color.White.copy(alpha = 0.8f),
             )

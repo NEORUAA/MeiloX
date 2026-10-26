@@ -24,8 +24,11 @@ import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.toEnum
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -94,9 +97,8 @@ class AutoMixController internal constructor(
     private var recoveryJob: Job? = null
     private var recoveryDeck: ExoPlayer? = null
     private val endPauseRecovery = AutoMixEndPauseRecovery()
-    private var analysisJob: Job? = null
+    private val analysisTask = SmartAutoMixAnalysisTask(scope)
     private var smartPlan: SmartAutoMixPlan? = null
-    private var analyzedAttempt: Pair<String, String>? = null
     private var sourceGeneration = 0L
     private var monitorJob: Job? = null
     private var preferenceJob: Job? = null
@@ -122,6 +124,10 @@ class AutoMixController internal constructor(
             context.dataStore.data.map { it.toAutoMixConfiguration() }.distinctUntilChanged().collectLatest { updated ->
                 val previous = configuration
                 configuration = updated
+                if (configuration != previous) {
+                    analysisTask.reset()
+                    smartPlan = null
+                }
                 monitorJob?.cancel()
                 monitorJob = null
                 if (!configuration.enabled) {
@@ -228,6 +234,10 @@ class AutoMixController internal constructor(
         transition.incomingDeck.playWhenReady = playWhenReady
     }
 
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (!isPlaying) analysisTask.cancelPending()
+    }
+
     override fun onRepeatModeChanged(repeatMode: Int) {
         endPauseRecovery.cancel()
         if (isPromotingDeck) return
@@ -255,7 +265,7 @@ class AutoMixController internal constructor(
         preparationGeneration++
         stopRecovery()
         transitionJob?.cancel()
-        analysisJob?.cancel()
+        analysisTask.reset()
         monitorJob?.cancel()
         preferenceJob?.cancel()
         retryJob?.cancel()
@@ -269,10 +279,8 @@ class AutoMixController internal constructor(
     /** Drops deck state so neither player can reuse a source resolved for the old quality. */
     fun resetForQualityChange() {
         sourceGeneration++
-        analysisJob?.cancel()
-        analysisJob = null
+        analysisTask.reset()
         smartPlan = null
-        analyzedAttempt = null
         resetRetryState()
         cancelTransition(prepareAfterCancel = false)
     }
@@ -313,8 +321,20 @@ class AutoMixController internal constructor(
             return
         }
 
-        val outgoingId = player.currentMediaItem?.mediaId
-        val planMatchesTarget = analyzedAttempt == (outgoingId to nextItem.mediaId)
+        val targetChanged = preparedMediaId != nextItem.mediaId || preparedTargetIndex != nextIndex
+        if (targetChanged) {
+            clearStandby(resetRetry = false)
+            analysisTask.reset()
+            smartPlan = null
+            preparedMediaId = nextItem.mediaId
+            preparedTargetIndex = nextIndex
+        }
+        // Keep the logical target on paused restoration without starting another audio loader.
+        if (!player.isPlaying) return
+
+        val outgoingId = player.currentMediaItem?.mediaId ?: return
+        val attempt = outgoingId to nextItem.mediaId
+        val planMatchesTarget = analysisTask.attempt == attempt
         val incomingStartMs = smartPlan
             ?.takeIf { planMatchesTarget }
             ?.incomingStartMs
@@ -327,14 +347,22 @@ class AutoMixController internal constructor(
         ) {
             return
         }
-
-        val targetChanged = preparedMediaId != nextItem.mediaId || preparedTargetIndex != nextIndex
-        if (targetChanged) {
-            analysisJob?.cancel()
-            analysisJob = null
-            smartPlan = null
-            analyzedAttempt = null
+        if (shouldDeferAutoMixStandby(
+                hasPlan = smartPlan != null && planMatchesTarget,
+                remainingMs = remainingMs,
+                fixedTransitionDurationMs = configuration.durationMs,
+            )
+        ) {
+            // Keep a separate loader out of normal playback until its transition needs the bytes.
+            if (standby.mediaItemCount != 0 || standby.playbackState != Player.STATE_IDLE) {
+                preparationGeneration++
+                standby.stop()
+                standby.clearMediaItems()
+                preparedIncomingStartMs = 0L
+            }
+            return
         }
+        if (configuration.mode == AutoMixMode.Smart && smartPlan == null) analysisTask.skip(attempt)
         preparationGeneration++
         val items = List(player.mediaItemCount, player::getMediaItemAt)
         standby.stop()
@@ -363,7 +391,7 @@ class AutoMixController internal constructor(
         val duration = player.duration
         if (duration <= 0L || duration == C.TIME_UNSET) return
         val remaining = duration - player.currentPosition
-        if (remaining <= SMART_ANALYSIS_WINDOW_MS + 5_000L && preparedMediaId == null) prepareNext()
+        prepareNext()
         if (configuration.mode == AutoMixMode.Smart && remaining <= SMART_ANALYSIS_WINDOW_MS) {
             ensureSmartPlan(duration)
         }
@@ -379,15 +407,16 @@ class AutoMixController internal constructor(
     }
 
     private fun ensureSmartPlan(outgoingDurationMs: Long) {
-        if (analysisJob != null || smartPlan != null || preparedTargetIndex < 0) return
+        if (!configuration.enabled || configuration.mode != AutoMixMode.Smart || !player.isPlaying ||
+            smartPlan != null || preparedTargetIndex < 0
+        ) return
         val outgoing = player.currentMediaItem ?: return
-        val incoming = player.getMediaItemAt(preparedTargetIndex)
+        val incomingIndex = preparedTargetIndex
+        val incoming = player.getMediaItemAt(incomingIndex)
         val attempt = outgoing.mediaId to incoming.mediaId
-        if (analyzedAttempt == attempt) return
         val generation = sourceGeneration
         val preparation = preparationGeneration
-        analyzedAttempt = attempt
-        analysisJob = scope.launch {
+        analysisTask.start(attempt) {
             var analysisAccepted = false
             try {
                 val pair = analyzer.analyzePair(
@@ -405,19 +434,18 @@ class AutoMixController internal constructor(
                     tempoMatching = configuration.tempoMatching,
                     maximumTempoAdjustmentPercent = configuration.maximumTempoAdjustmentPercent,
                 )
-                if (generation == sourceGeneration && preparation == preparationGeneration &&
+                currentCoroutineContext().ensureActive()
+                if (configuration.enabled && configuration.mode == AutoMixMode.Smart && player.isPlaying &&
+                    generation == sourceGeneration && preparation == preparationGeneration &&
                     preparedMediaId == incoming.mediaId &&
-                    player.currentMediaItem?.mediaId == outgoing.mediaId
+                    preparedTargetIndex == incomingIndex &&
+                    player.getMediaItemAtOrNull(incomingIndex)?.queueEntryId == incoming.queueEntryId &&
+                    player.currentMediaItem?.mediaId == outgoing.mediaId &&
+                    player.currentMediaItem?.queueEntryId == outgoing.queueEntryId
                 ) {
                     analysisAccepted = true
                     smartPlan = plan
-                    if (plan != null) {
-                        if (plan.incomingStartMs != preparedIncomingStartMs) {
-                            prepareNext(force = true)
-                        } else {
-                            updateTempo(player.standbyDeck, plan.incomingStartRate)
-                        }
-                    }
+                    if (plan != null) prepareNext(force = true)
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -426,13 +454,11 @@ class AutoMixController internal constructor(
                 Timber.tag(TAG).w(error, "BeatNet analysis ran out of memory; using fixed crossfade")
             } finally {
                 if (generation == sourceGeneration) {
-                    analysisJob = null
                     if (!analysisAccepted && preparation != preparationGeneration &&
-                        analyzedAttempt == attempt &&
                         preparedMediaId == incoming.mediaId &&
                         player.currentMediaItem?.mediaId == outgoing.mediaId
                     ) {
-                        analyzedAttempt = null
+                        analysisTask.allowRetry(attempt)
                     }
                 }
             }
@@ -646,6 +672,7 @@ class AutoMixController internal constructor(
     }
 
     private fun clearPreparedState(resetRetry: Boolean) {
+        analysisTask.cancelPending()
         preparedMediaId = null
         preparedTargetIndex = C.INDEX_UNSET
         preparedIncomingStartMs = 0L
@@ -715,6 +742,56 @@ class AutoMixController internal constructor(
         private const val RECOVERY_DURATION_MS = 200L
     }
 }
+
+/** Owns one pending analysis without letting a cancelled predecessor clear its replacement. */
+internal class SmartAutoMixAnalysisTask(private val scope: CoroutineScope) {
+    private var job: Job? = null
+    val isPending: Boolean get() = job != null
+    var attempt: Pair<String, String>? = null
+        private set
+
+    fun start(attempt: Pair<String, String>, action: suspend CoroutineScope.() -> Unit): Boolean {
+        if (job != null || this.attempt == attempt) return false
+        this.attempt = attempt
+        val pending = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                action()
+            } finally {
+                if (job === currentCoroutineContext()[Job]) job = null
+            }
+        }
+        job = pending
+        pending.start()
+        return true
+    }
+
+    fun cancelPending() {
+        if (job != null) reset()
+    }
+
+    fun reset() {
+        job?.cancel()
+        job = null
+        attempt = null
+    }
+
+    fun skip(attempt: Pair<String, String>) {
+        reset()
+        this.attempt = attempt
+    }
+
+    suspend fun allowRetry(attempt: Pair<String, String>) {
+        if (job === currentCoroutineContext()[Job] && this.attempt == attempt) this.attempt = null
+    }
+}
+
+/** A completed Smart plan reuses its analyzed head; other modes load near their fixed transition. */
+internal fun shouldDeferAutoMixStandby(
+    hasPlan: Boolean,
+    remainingMs: Long,
+    fixedTransitionDurationMs: Long,
+): Boolean = !hasPlan &&
+    remainingMs > fixedTransitionDurationMs.coerceAtLeast(1_000L) + 5_000L
 
 /** A failed mix may leave one already queued internal pause, never a user playback request. */
 internal class AutoMixEndPauseRecovery {

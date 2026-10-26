@@ -575,6 +575,7 @@ fun AppleMusicPlayer(
                                     onLongClick = {},
                                     controlsVisible = stateContainer.controlsVisible,
                                     onToggleControls = { stateContainer.controlsVisible = it },
+                                    controlsAutoHideBlocked = stateContainer.qualityMenuVisible,
                                 )
                             },
                         )
@@ -749,6 +750,7 @@ fun AppleMusicPlayer(
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 isCompact = isCompactHeight || isLandscape,
                                 onProgressTrackTopChanged = { progressTrackTopInRoot = it },
+                                onQualityMenuVisibilityChanged = { stateContainer.qualityMenuVisible = it },
                             )
                         }
                     }

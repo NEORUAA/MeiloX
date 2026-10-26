@@ -1124,8 +1124,9 @@ fun IosPopupMenu(
                         menuHeight * PopupMenuOvershootScale
                 ).roundToPx()
             }
+            // Popup tracks live anchor bounds; caption resizing must not reset its
+            // resolved offset and briefly dispose the content during collapse.
             val positionProvider = remember(
-                anchorSize,
                 targetMenuHeightPx,
                 targetMenuWidthPx,
                 horizontalInsetPx,

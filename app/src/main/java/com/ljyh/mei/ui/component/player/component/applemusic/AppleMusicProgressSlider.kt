@@ -76,6 +76,7 @@ internal fun AppleMusicProgressSlider(
     onPositionChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onTrackTopChanged: ((Float) -> Unit)? = null,
+    onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val playerConnection = LocalPlayerConnection.current
     val mediaId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.id
@@ -280,6 +281,7 @@ internal fun AppleMusicProgressSlider(
                 onMenuOpened = { playerConnection?.refreshAvailableMusicQualities() },
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 onLocalSourceSelected = { playerConnection?.useLocalSource() },
+                onMenuVisibilityChanged = onQualityMenuVisibilityChanged,
                 style = textStyle.copy(fontSize = 11.sp),
                 color = Color.White.copy(alpha = 0.45f),
                 backgroundColor = Color(0x14FFFFFF),

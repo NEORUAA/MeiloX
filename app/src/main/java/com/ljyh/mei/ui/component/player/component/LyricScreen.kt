@@ -126,6 +126,7 @@ fun LyricScreen(
     sourceBadgeBottomInset: () -> Dp = { 0.dp },
     controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
     showSourceBadge: Boolean = true,
+    controlsAutoHideBlocked: Boolean = false,
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -152,12 +153,10 @@ fun LyricScreen(
         if (!active) manualScroll.onHidden()
     }
 
-    LifecycleStartedEffect(controlsVisible, expanded, active, isPlaying) {
-        if (controlsVisible && expanded && active && isPlaying) {
-            delay(5000)
-            onToggleControls(false)
-        }
-    }
+    PlayerLyricsControlsAutoHide(
+        controlsVisible, expanded, active, isPlaying, controlsAutoHideBlocked,
+        onHide = { onToggleControls(false) },
+    )
 
 
     val nestedScrollConnection = remember(manualScroll, onToggleControls) {
@@ -613,6 +612,23 @@ internal fun isLyricLineVisible(
 ): Boolean = itemSize > 0 &&
     itemOffset + itemSize > viewportStart + keepAliveZonePx &&
     itemOffset < viewportEnd - keepAliveZonePx
+
+@Composable
+internal fun PlayerLyricsControlsAutoHide(
+    controlsVisible: Boolean,
+    expanded: Boolean,
+    active: Boolean,
+    isPlaying: Boolean,
+    blocked: Boolean,
+    onHide: () -> Unit,
+) {
+    LifecycleStartedEffect(controlsVisible, expanded, active, isPlaying, blocked) {
+        if (controlsVisible && expanded && active && isPlaying && !blocked) {
+            delay(5_000)
+            onHide()
+        }
+    }
+}
 
 @Composable
 private fun LyricSourceBadge(

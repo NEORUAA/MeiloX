@@ -44,6 +44,7 @@ fun PlayerControlsSection(
     onMoreClick: () -> Unit,
     isCompact: Boolean = false,
     onProgressTrackTopChanged: ((Float) -> Unit)? = null,
+    onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     // 紧凑模式下间距减半
     val spacerHeight = if (isCompact) 8.dp else 24.dp
@@ -54,7 +55,8 @@ fun PlayerControlsSection(
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        PlayerProgressSection(position, duration, isPlaying, playerConnection, onProgressTrackTopChanged)
+        PlayerProgressSection(position, duration, isPlaying, playerConnection, onProgressTrackTopChanged,
+            onQualityMenuVisibilityChanged)
 
         Spacer(Modifier.height(spacerHeight))
 
@@ -104,6 +106,7 @@ private fun PlayerProgressSection(
     isPlaying: Boolean,
     playerConnection: PlayerConnection,
     onProgressTrackTopChanged: ((Float) -> Unit)?,
+    onQualityMenuVisibilityChanged: (Boolean) -> Unit,
 ) {
     // Read the ticking position here so only progress recomposes, leaving the
     // title, sheet and glass playback controls outside this update boundary.
@@ -123,8 +126,10 @@ private fun PlayerProgressSection(
         .padding(horizontal = progressPadding)
     val seek: (Long) -> Unit = { playerConnection.player.seekTo(it) }
     if (progressBarStyle == ProgressBarStyle.LINEAR) {
-        FluidProgressSlider(currentPosition, currentDuration, seek, modifier, onProgressTrackTopChanged)
+        FluidProgressSlider(currentPosition, currentDuration, seek, modifier, onProgressTrackTopChanged,
+            onQualityMenuVisibilityChanged)
     } else {
-        PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier)
+        PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier,
+            onQualityMenuVisibilityChanged)
     }
 }

@@ -8,6 +8,8 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.Cache
+import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,9 +17,17 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -75,6 +85,130 @@ class BeatNetAutoMixAnalyzerTest {
         verifyNetworkAnalysisUsesCache(fullyCached = false)
     }
 
+    @Test
+    fun concurrentAnalysisDoesNotDownloadAnInFlightPlaybackRangeAgain() {
+        val bytes = ByteArray(256 * 1024) { (it * 31 + 7).toByte() }
+        HttpFixture(bytes).use { server ->
+            val factory = CacheManager.getCacheDataSourceFactory(context)
+            val cache = checkNotNull(factory.cache)
+            val key = "concurrent-analysis-${System.nanoTime()}"
+            val source = ResolvedMediaSource(
+                uri = server.uri, actualQuality = "lossless", cacheKey = key,
+                contentLength = bytes.size.toLong(),
+            )
+            val playback = factory.createDataSource()
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                playback.open(DataSpec.Builder().setUri(server.uri).setKey(key)
+                    .setLength(bytes.size.toLong()).build())
+                val started = CountDownLatch(1)
+                val analysis = executor.submit<ByteArray> {
+                    CacheMediaDataSource(source, cache, { CacheManager.getCacheDataSourceFactory(context, it) }) {}.use { reader ->
+                        started.countDown()
+                        ByteArray(4_096).also {
+                            assertEquals(it.size, reader.readAt(0, it, 0, it.size))
+                        }
+                    }
+                }
+                assertTrue(started.await(5, TimeUnit.SECONDS))
+                // Give a second reader time to contend while playback still owns the cache hole.
+                server.awaitRequests(2, 300)
+                val buffer = ByteArray(8_192)
+                while (playback.read(buffer, 0, buffer.size) != C.RESULT_END_OF_INPUT) Unit
+                playback.close()
+                assertArrayEquals(bytes.copyOfRange(0, 4_096), analysis.get(5, TimeUnit.SECONDS))
+                android.util.Log.i("BeatNetCacheTest",
+                    "concurrent bytes=${server.bytesServed} expected=${bytes.size} requests=${server.requestCount}")
+                assertEquals("Concurrent analysis must reuse the bytes being cached by playback",
+                    bytes.size.toLong(), server.bytesServed)
+            } finally {
+                playback.close()
+                executor.shutdownNow()
+                cache.removeResource(key)
+            }
+        }
+    }
+
+    @Test
+    fun decoderCancellationDoesNotWaitForAnOpenPlaybackCacheHole() = runBlocking {
+        withFixture { file ->
+            withNetworkSource(file.readBytes()) { server, factory, source ->
+                val playback = factory.createDataSource()
+                try {
+                    playback.open(DataSpec.Builder().setUri(source.uri).setKey(source.cacheKey)
+                        .setLength(file.length()).build())
+                    val waiting = CountDownLatch(1)
+                    val cache = checkNotNull(factory.cache)
+                    val observed = object : Cache by cache {
+                        override fun startReadWrite(key: String, position: Long, length: Long): CacheSpan {
+                            waiting.countDown()
+                            return cache.startReadWrite(key, position, length)
+                        }
+
+                        override fun startReadWriteNonBlocking(key: String, position: Long, length: Long): CacheSpan? {
+                            waiting.countDown()
+                            return cache.startReadWriteNonBlocking(key, position, length)
+                        }
+                    }
+                    val analysis = async(Dispatchers.IO) {
+                        AndroidAudioDecoder(context, observed, ::httpFactory).decode(source, 0L, WINDOW_MS)
+                    }
+                    try {
+                        assertTrue("The real extractor must reach the held cache range",
+                            waiting.await(5, TimeUnit.SECONDS))
+                        withTimeout(2_000) { analysis.cancelAndJoin() }
+                        assertEquals("Cancelled analysis must not bypass the active playback writer",
+                            1, server.requestCount)
+                    } finally {
+                        analysis.cancel()
+                    }
+                } finally {
+                    playback.close()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun analysisCanReadCommittedPlaybackFragmentsBeforeTheWriterCloses() {
+        val bytes = ByteArray(2 * 1024 * 1024) { (it * 31 + 7).toByte() }
+        HttpFixture(bytes).use { server ->
+            val factory = CacheManager.getCacheDataSourceFactory(context)
+            val cache = checkNotNull(factory.cache)
+            val key = "visible-playback-fragment-${System.nanoTime()}"
+            val source = ResolvedMediaSource(uri = server.uri, actualQuality = "jymaster",
+                cacheKey = key, contentLength = bytes.size.toLong())
+            val playback = factory.createDataSource()
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                playback.open(DataSpec.Builder().setUri(server.uri).setKey(key)
+                    .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
+                    .setLength(bytes.size.toLong()).build())
+                val buffer = ByteArray(8_192)
+                var read = 0
+                while (read < 1024 * 1024) {
+                    val count = playback.read(buffer, 0, buffer.size)
+                    assertTrue(count > 0)
+                    read += count
+                }
+                assertTrue("A paused standby writer must expose its committed head",
+                    cache.isCached(key, 0, 512 * 1024))
+                val analysis = executor.submit<ByteArray> {
+                    CacheMediaDataSource(source, cache, { CacheManager.getCacheDataSourceFactory(context, it) }) {}.use { reader ->
+                        ByteArray(4_096).also { assertEquals(it.size, reader.readAt(0, it, 0, it.size)) }
+                    }
+                }
+                assertArrayEquals(bytes.copyOfRange(0, 4_096), analysis.get(3, TimeUnit.SECONDS))
+                assertEquals("Reading committed head bytes must not open another HTTP request",
+                    1, server.requestCount)
+            } finally {
+                playback.close()
+                executor.shutdownNow()
+                cache.removeResource(key)
+            }
+        }
+    }
+
     private suspend fun verifyNetworkAnalysisUsesCache(fullyCached: Boolean) {
         withFixture { file ->
             withNetworkSource(file.readBytes()) { server, factory, resolved ->
@@ -87,7 +221,7 @@ class BeatNetAutoMixAnalyzerTest {
                 val playbackBytes = server.bytesServed
                 assertEquals(if (fullyCached) file.length() else 16_384L, playbackBytes)
                 val unknownLengthSource = if (fullyCached) null else {
-                    CacheMediaDataSource(resolved.copy(contentLength = null), factory) {}.also {
+                    CacheMediaDataSource(resolved.copy(contentLength = null), checkNotNull(factory.cache), ::httpFactory) {}.also {
                         assertEquals(C.LENGTH_UNSET.toLong(), it.size)
                         assertEquals(C.RESULT_END_OF_INPUT, it.readAt(file.length() + 1, ByteArray(1), 0, 1))
                     }
@@ -95,7 +229,7 @@ class BeatNetAutoMixAnalyzerTest {
 
                 var firstAnalysisBytes = playbackBytes
                 repeat(2) { attempt ->
-                    val decoder = AndroidAudioDecoder(context, factory)
+                    val decoder = AndroidAudioDecoder(context, checkNotNull(factory.cache), ::httpFactory)
                     for (startMs in listOf(0L, FIXTURE_DURATION_MS - WINDOW_MS)) {
                         val samples = decoder.decode(resolved, startMs, WINDOW_MS)
                         assertTrue(samples.any { abs(it) > 0.25f })
@@ -124,7 +258,7 @@ class BeatNetAutoMixAnalyzerTest {
     fun cacheReadAheadPreservesRandomAccessAcrossBufferBoundaries() = runBlocking {
         val bytes = ByteArray(3 * 65_536 + 17) { (it * 31 + 7).toByte() }
         withNetworkSource(bytes) { server, factory, resolved ->
-            CacheMediaDataSource(resolved, factory) {}.use { reader ->
+            CacheMediaDataSource(resolved, checkNotNull(factory.cache), ::httpFactory) {}.use { reader ->
                 val start = 65_536 - 8
                 val count = 65_536 + 16
                 val output = ByteArray(count + 12) { -1 }
@@ -150,6 +284,10 @@ class BeatNetAutoMixAnalyzerTest {
             }
         }
     }
+
+    private fun httpFactory(cache: Cache) = CacheDataSource.Factory()
+        .setCache(cache)
+        .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
 
     private suspend fun withNetworkSource(
         bytes: ByteArray,
@@ -232,12 +370,20 @@ class BeatNetAutoMixAnalyzerTest {
     /** Serves real range requests and counts response bodies without a networking mock. */
     private class HttpFixture(private val bytes: ByteArray) : AutoCloseable {
         private val socket = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+        private val handlers = Executors.newCachedThreadPool()
+        private val clients = java.util.concurrent.ConcurrentHashMap.newKeySet<Socket>()
+        private val activeHandlers = AtomicInteger()
         val uri: Uri = Uri.parse("http://127.0.0.1:${socket.localPort}/fixture.flac")
         private val trafficLock = Any()
         private var transferredBytes = 0L
-        private var completedRequests = 0
-        val bytesServed: Long get() = synchronized(trafficLock) { transferredBytes }
-        val requestCount: Int get() = synchronized(trafficLock) { completedRequests }
+        private var receivedRequests = 0
+        val bytesServed: Long get() {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (activeHandlers.get() != 0 && System.nanoTime() < deadline) Thread.sleep(1)
+            check(activeHandlers.get() == 0) { "HTTP response bodies did not finish" }
+            return synchronized(trafficLock) { transferredBytes }
+        }
+        val requestCount: Int get() = synchronized(trafficLock) { receivedRequests }
         private val worker = thread(name = "beatnet-http-fixture", isDaemon = true) {
             while (!socket.isClosed) {
                 val client = try {
@@ -245,6 +391,23 @@ class BeatNetAutoMixAnalyzerTest {
                 } catch (error: java.io.IOException) {
                     if (socket.isClosed) break else throw error
                 }
+                clients += client
+                activeHandlers.incrementAndGet()
+                handlers.execute { serve(client) }
+            }
+        }
+
+        fun awaitRequests(count: Int, timeoutMs: Long): Boolean {
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            while (System.nanoTime() < deadline) {
+                if (requestCount >= count) return true
+                Thread.sleep(5)
+            }
+            return requestCount >= count
+        }
+
+        private fun serve(client: Socket) {
+            try {
                 client.use {
                     val input = client.getInputStream().bufferedReader(Charsets.US_ASCII)
                     input.readLine() ?: return@use
@@ -255,6 +418,7 @@ class BeatNetAutoMixAnalyzerTest {
                         if (line.startsWith("Range:", ignoreCase = true)) range = line.substringAfter(':').trim()
                     }
                     val requested = range?.removePrefix("bytes=")?.split('-', limit = 2)
+                    synchronized(trafficLock) { receivedRequests++ }
                     val start = requested?.getOrNull(0)?.toIntOrNull() ?: 0
                     if (start >= bytes.size) {
                         synchronized(trafficLock) {
@@ -263,7 +427,6 @@ class BeatNetAutoMixAnalyzerTest {
                                     "Content-Range: bytes */${bytes.size}\r\nConnection: close\r\n\r\n")
                                     .toByteArray(Charsets.US_ASCII),
                             )
-                            completedRequests++
                         }
                         return@use
                     }
@@ -277,25 +440,35 @@ class BeatNetAutoMixAnalyzerTest {
                         append("\r\n")
                     }
                     try {
-                        synchronized(trafficLock) {
-                            client.getOutputStream().apply {
-                                write(headers.toByteArray(Charsets.US_ASCII))
-                                write(bytes, start, length)
-                                flush()
+                        client.getOutputStream().apply {
+                            write(headers.toByteArray(Charsets.US_ASCII))
+                            var sent = 0
+                            while (sent < length) {
+                                val count = minOf(8_192, length - sent)
+                                write(bytes, start + sent, count)
+                                synchronized(trafficLock) { transferredBytes += count }
+                                sent += count
                             }
-                            transferredBytes += length
-                            completedRequests++
+                            flush()
                         }
                     } catch (_: java.io.IOException) {
                         // Platform extractors may close a range early after finding their track.
                     }
                 }
+            } catch (_: java.io.IOException) {
+                // Cancellation closes active fixture sockets.
+            } finally {
+                clients -= client
+                activeHandlers.decrementAndGet()
             }
         }
 
         override fun close() {
             socket.close()
             worker.join(5_000)
+            clients.forEach { runCatching { it.close() } }
+            handlers.shutdownNow()
+            handlers.awaitTermination(5, TimeUnit.SECONDS)
         }
     }
 
