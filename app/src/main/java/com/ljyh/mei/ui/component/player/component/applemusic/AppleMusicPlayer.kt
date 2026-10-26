@@ -149,6 +149,7 @@ fun AppleMusicPlayer(
     var albumTextSize by remember { mutableStateOf(IntSize.Zero) }
     var albumActionsSize by remember { mutableStateOf(IntSize.Zero) }
     var headerTextSize by remember { mutableStateOf(IntSize.Zero) }
+    var queueHeaderTextHeightPx by remember { mutableIntStateOf(0) }
     var headerActionsSize by remember { mutableStateOf(IntSize.Zero) }
 
     LaunchedEffect(page) {
@@ -462,6 +463,9 @@ fun AppleMusicPlayer(
                                         active = active,
                                         selected = showQueue,
                                         animateEntryScroll = animateQueueEntryScroll,
+                                        currentHeaderTextTop = if (queueHeaderTextHeightPx > 0) {
+                                            ((headerSize - queueHeaderTextHeightPx) / 2f).coerceAtLeast(0f)
+                                        } else 0f,
                                         indication = null,
                                         horizontalPadding = AppleMusicDimensions.headerInset,
                                         bottomContentPadding = with(density) {
@@ -514,6 +518,7 @@ fun AppleMusicPlayer(
                                                                     fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal,
                                                                 ),
                                                                 needShadow = false,
+                                                                onTextSizeChanged = { queueHeaderTextHeightPx = it.height },
                                                                 onTextPositioned = { if (inlineHeaderVisible) headerTextCoordinates = it },
                                                                 onRowPositioned = { if (inlineHeaderVisible) headerRowCoordinates = it },
                                                                 textModifier = headerFade,
@@ -905,7 +910,14 @@ private fun Modifier.playerDetailPage(opacity: State<Float>, active: Boolean): M
             if (visible.value) placeable.place(0, 0)
         }
     }
-        .playerContentFade(opacity)
+        .graphicsLayer {
+            alpha = opacity.value
+            // One progress keeps fade and scale continuous when the switch reverses.
+            val scale = 0.92f + 0.08f * alpha
+            scaleX = scale
+            scaleY = scale
+            compositingStrategy = CompositingStrategy.ModulateAlpha
+        }
         .then(if (active) Modifier else Modifier.clearAndSetSemantics { })
         .pointerInput(active) {
             // Consume inactive-page gestures, including empty space, until its

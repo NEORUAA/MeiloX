@@ -113,6 +113,14 @@ class AppleMusicArtworkMotionTest {
         finalRelease.join()
         assertEquals(0f, pull.offset, 0f)
         assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, -40f), NestedScrollSource.UserInput))
+        val historyPull = PlayerQueueTopOverscroll(scope, 68f, isAtTop = { true }) { true }
+        historyPull.onPreScroll(Offset(0f, 500f), NestedScrollSource.UserInput)
+        assertTrue("A deep first-song pull must leave room for the empty heading", historyPull.offset > 24f)
+        assertTrue(historyPull.offset < 68f)
+        val historyRelease = launch(clock) { historyPull.release() }
+        frames(120)
+        historyRelease.join()
+        assertEquals("Empty-history feedback must return to the visible header", 0f, historyPull.offset, 0f)
     }
 
     @Test fun autoplaySectionSeparatesOnlyTheDisplayedUpcomingEntries() {
@@ -323,7 +331,8 @@ class AppleMusicArtworkMotionTest {
             hasHistory: Boolean = true,
             canPinUpcoming: Boolean = true,
             historyHeight: Float = 600f,
-        ) = playerQueueSnapTarget(top, 84f, 600f, direction, hasHistory, canPinUpcoming, historyHeight)
+            textTop: Float = 14.5f,
+        ) = playerQueueSnapTarget(top, 84f, 600f, direction, hasHistory, canPinUpcoming, historyHeight, textTop)
 
         assertEquals(0f, target(48f, -1)!!, 0f)
         assertEquals(0f, target(149f, -1)!!, 0f)
@@ -331,7 +340,7 @@ class AppleMusicArtworkMotionTest {
         assertEquals(600f, target(240f, -1)!!, 0f)
         assertEquals(0f, target(552f, 1)!!, 0f)
         assertEquals(-84f, target(-16f, 1)!!, 0f)
-        assertEquals(0f, target(-68f, -1)!!, 0f)
+        assertEquals(-84f, target(-68f, -1)!!, 0f)
         assertEquals(0f, target(-16f, 1, canPinUpcoming = false)!!, 0f)
         assertEquals(0f, target(48f, -1, hasHistory = false)!!, 0f)
         assertEquals(0f, target(200f, 0)!!, 0f)
@@ -346,6 +355,20 @@ class AppleMusicArtworkMotionTest {
             assertEquals(-84f, target(-16f, 1, historyHeight = historyHeight)!!, 0f)
         }
         assertEquals(600f, target(240f, -1, historyHeight = 900f)!!, 0f)
+        for (textTop in listOf(0f, 8f, 14.5f, 30f)) {
+            for (direction in listOf(-1, 0)) {
+                assertEquals("A partial metadata row must return to the hidden endpoint", -84f,
+                    target(-textTop - 0.5f, direction, textTop = textTop)!!, 0f)
+                assertEquals("Both lines clearing the edge must reveal the header", 0f,
+                    target(-textTop, direction, textTop = textTop)!!, 0f)
+                assertEquals(0f, target(-textTop + 0.5f, direction, textTop = textTop)!!, 0f)
+            }
+        }
+        assertEquals("Upward hiding must keep its existing behavior", -84f, target(-2f, 1)!!, 0f)
+        for (top in listOf(1f, 24f, 68f)) {
+            assertEquals("Empty history must not create another settled position", 0f,
+                target(top, -1, hasHistory = false)!!, 0f)
+        }
     }
 
     @Test fun shortHistoryFillsOnlyTheSpaceBetweenItsHeadingAndSongs() {
