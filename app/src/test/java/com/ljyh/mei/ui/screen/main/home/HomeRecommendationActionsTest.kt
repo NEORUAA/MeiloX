@@ -95,6 +95,54 @@ class HomeRecommendationActionsTest {
     }
 
     @Test
+    fun missingOrInvalidTitlesKeepPlaylistAndSongContentRenderable() {
+        val invalidTitles = listOf(null, "null", "\"\"", "\" \\t\"", "[]", "[\"Title\"]", "{}", "42", "true")
+        for (title in invalidTitles) {
+            val titleField = title?.let { "\"title\":$it," }.orEmpty()
+            for (position in HomePlaylistBlockCodes + HomeSongBlockCodes) {
+                val content = if (position in HomeSongBlockCodes) {
+                    """{"header":{${titleField}"showMore":false},"content":{"items":[{"items":[{}]}]}}"""
+                } else {
+                    """{${titleField}"resources":[{},{}]}"""
+                }
+                val data = checkNotNull(homeBlockData(homeBlock(position, """{"template":{"blockResource":$content}}""")))
+
+                assertNull("Expected no title for $position with $title", homeBlockTitle(data, position))
+            }
+        }
+    }
+
+    @Test
+    fun missingOrInvalidSongHeadersKeepSongContentRenderable() {
+        for (header in listOf(null, "null", "[]", "\"Header\"", "42", "true")) {
+            val headerField = header?.let { "\"header\":$it," }.orEmpty()
+            for (position in HomeSongBlockCodes) {
+                val data = checkNotNull(homeBlockData(homeBlock(
+                    position,
+                    """{"template":{${headerField}"title":"Root title","content":{"items":[{"items":[{}]}]}}}""",
+                )))
+
+                assertNull("Expected no title for $position with header $header", homeBlockTitle(data, position))
+            }
+        }
+    }
+
+    @Test
+    fun sectionTitlesUseTheExpectedContainerAndPreserveServerText() {
+        for (position in HomePlaylistBlockCodes + HomeSongBlockCodes) {
+            val data = checkNotNull(homeBlockData(homeBlock(
+                position,
+                """{"template":{"blockResource":{"title":"  Playlists  ","header":{"title":"  Songs  "},"resources":[{},{}],"content":{"items":[{"items":[{}]}]}}}}""",
+            )))
+
+            assertEquals(
+                if (position in HomeSongBlockCodes) "  Songs  " else "  Playlists  ",
+                homeBlockTitle(data, position),
+            )
+        }
+    }
+
+    @Test
     fun resourceKeysFollowCardsAcrossReorderingAndDistinguishRepeatedServerEntries() {
         val first = resource("""{"resourceType":"playList","resourceId":"42","action":"orpheus://playlist/42"}""")
         val second = resource("""{"resourceType":"playList","resourceId":"7","action":"orpheus://playlist/7"}""")

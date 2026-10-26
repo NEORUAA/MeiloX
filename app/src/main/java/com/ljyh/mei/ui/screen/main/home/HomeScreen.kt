@@ -455,9 +455,8 @@ private fun HomeBlockItem(
         // --- 各种歌单推荐 (雷达、云村、场景等) ---
         in HomePlaylistBlockCodes -> {
             // 将这些相似的逻辑合并处理，减少代码重复
-            val title = if (block.positionCode == "PAGE_RECOMMEND_RADAR")
-                (blockData.get("title")?.asString ?: "雷达歌单")
-            else blockData.get("title").asString
+            val title = homeBlockTitle(blockData, block.positionCode)
+                ?: if (block.positionCode == "PAGE_RECOMMEND_RADAR") "雷达歌单" else null
 
             // 处理数据源字段差异
             val resourceArray = if (block.positionCode == "PAGE_RECOMMEND_RADAR")
@@ -484,7 +483,7 @@ private fun HomeBlockItem(
                 ) { resource ->
                     val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
                     val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
-                        title.contains("热门金曲")
+                        title?.contains("热门金曲") == true
                     val separateCaptions = isRadar || isArtistPlaylist
                     val coverText = resource.resourceExtInfo?.coverText
                     val coverCaption = coverText?.filter(String::isNotBlank)
@@ -516,7 +515,7 @@ private fun HomeBlockItem(
 
         // --- 私人推荐歌曲 / 相似歌曲 (三行滑动) ---
         in HomeSongBlockCodes -> {
-            val title = blockData.get("header").asJsonObject.get("title").asString
+            val title = homeBlockTitle(blockData, block.positionCode)
             val itemsArray = blockData.get("content").asJsonObject.get("items").asJsonArray
 
             val songsBlocks = remember(itemsArray) {
@@ -528,7 +527,7 @@ private fun HomeBlockItem(
                 }
             }
 
-            Title(title)
+            title?.let { Title(it) }
             TripleLaneSlider(
                 songsArray = songsBlocks,
                 isTablet = device.isTablet,
@@ -579,14 +578,14 @@ private fun HomePageResourceShow.Data.Block.DslData.BlockResource.Resource.toMus
 
 @Composable
 private fun BlockWithTitle(
-    title: String,
+    title: String?,
     resources: List<HomeCardResource>,
     rowHeight: Dp? = null,
     content: @Composable (HomeCardResource) -> Unit
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
     Column {
-        Title(title)
+        title?.let { Title(it) }
         val listState = rememberLazyListState()
         LazyRow(
             state = listState,

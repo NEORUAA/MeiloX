@@ -64,6 +64,15 @@ internal fun homeBlockData(block: HomePageResourceShow.Data.Block): JsonObject? 
     return data.takeIf { hasContent }
 }
 
+/** Section titles are optional even when the server supplies usable cards. */
+internal fun homeBlockTitle(data: JsonObject, positionCode: String): String? {
+    val container = if (positionCode in HomeSongBlockCodes) {
+        data.get("header")?.takeIf { it.isJsonObject }?.asJsonObject
+    } else data
+    return container?.get("title")?.takeIf { it.isJsonPrimitive }?.asJsonPrimitive
+        ?.takeIf { it.isString }?.asString?.takeIf(String::isNotBlank)
+}
+
 fun selectSpecialField(jsonObject: JsonObject): JsonObject? {
     if (jsonObject.get("blockResource")?.isJsonObject == true) {
         return jsonObject.getAsJsonObject("blockResource")
