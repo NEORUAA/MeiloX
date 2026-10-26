@@ -149,6 +149,11 @@ internal class PlaybackNotificationProvider(
     private val songTitle: () -> CharSequence?,
 ) :
     DefaultMediaNotificationProvider(context, { notificationId }, channelId, R.string.app_name_en) {
+    init {
+        // Publish the app badge through the notification icon, as NetEase does.
+        setSmallIcon(R.drawable.ic_notification_app)
+    }
+
     override fun getNotificationContentTitle(metadata: MediaMetadata): CharSequence? =
         songTitle() ?: super.getNotificationContentTitle(metadata)
 
