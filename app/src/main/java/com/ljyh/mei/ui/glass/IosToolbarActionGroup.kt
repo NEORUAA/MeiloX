@@ -328,7 +328,13 @@ internal class ToolbarActionMember(
 internal data class ToolbarMenuPortal(
     val layer: GraphicsLayer,
     val sourceBounds: Rect,
-)
+    private val sourceBoundsProvider: (() -> Rect)? = null,
+) {
+    // The retained Row follows the live press transform. Normalize its contents
+    // against that same transform, while keeping the acquisition bounds unchanged.
+    val currentSourceBounds: Rect
+        get() = sourceBoundsProvider?.invoke()?.takeUnless { it.isEmpty } ?: sourceBounds
+}
 
 /** A single affine transform is shared by the shell and every icon in a fused run. */
 internal data class ToolbarActionTransform(
@@ -461,7 +467,7 @@ internal class ToolbarActionGroup(
         if (!foregroundRecorded || run.isEmpty()) return null
         val sourceBounds = visualBoundsInGroup(run)
         if (sourceBounds.isEmpty) return null
-        return ToolbarMenuPortal(foregroundLayer, sourceBounds)
+        return ToolbarMenuPortal(foregroundLayer, sourceBounds) { visualBoundsInGroup(run) }
     }
 
     internal fun isMenuSourcePortaled(member: ToolbarActionMember): Boolean =

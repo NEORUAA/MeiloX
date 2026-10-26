@@ -1288,6 +1288,114 @@ class GlassControlsInteractionTest {
     }
 
     @Test
+    fun toolbarPortalKeepsContentScaleAndInsetsAsThePressSettles() {
+        val portal = mutableStateOf<ToolbarMenuPortal?>(null)
+        val motion = LiquidMenuMorphMotion()
+        var anchor: IosMenuAnchorState? = null
+        var previewOrigin = Offset.Zero
+        var previewSize = Size.Zero
+        var density = 1f
+        compose.setContent {
+            val backdrop = rememberCanvasBackdrop { drawRect(Color.White) }
+            val source = rememberIosMenuAnchorState()
+            val scope = rememberCoroutineScope()
+            val highlight = remember(scope) { InteractiveHighlight(scope) }
+            SideEffect { anchor = source }
+            CompositionLocalProvider(
+                LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                LocalGlassBackdrop provides backdrop,
+                LocalBlurBackdrop provides backdrop,
+            ) {
+                Column(Modifier.width(320.dp)) {
+                    IosTopToolbar(title = "Portal", actions = {
+                        Row(Modifier.testTag("portalSourceContent"), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                            GlassIconButton({}, Modifier.iosMenuAnchor(source).testTag("portalPressSource")) {
+                                SfIcon("arrow.up.arrow.down", null, tint = Color.Green)
+                            }
+                            GlassIconButton({}) {
+                                Box(Modifier.size(36.dp).background(Color.Blue, androidx.compose.foundation.shape.CircleShape))
+                            }
+                        }
+                    })
+                    Box(Modifier.size(240.dp, 160.dp).testTag("portalScalePreview")
+                        .onGloballyPositioned {
+                            previewOrigin = it.localToScreen(Offset.Zero)
+                            previewSize = Size(it.size.width.toFloat(), it.size.height.toFloat())
+                        }) {
+                        density = LocalDensity.current.density
+                        portal.value?.let {
+                            LiquidMenuMorphSurface(
+                                motion, previewOrigin, backdrop, false, it, null,
+                                menuScale = { 1f }, transformOrigin = TransformOrigin.Center,
+                                highlight = highlight,
+                            ) { }
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        fun avatar(image: androidx.compose.ui.graphics.PixelMap): IntRect {
+            var left = image.width
+            var top = image.height
+            var right = -1
+            var bottom = -1
+            for (y in 0 until image.height) for (x in 0 until image.width) {
+                val color = image[x, y]
+                if (color.blue > 0.8f && maxOf(color.red, color.green) < 0.2f) {
+                    left = minOf(left, x)
+                    top = minOf(top, y)
+                    right = maxOf(right, x)
+                    bottom = maxOf(bottom, y)
+                }
+            }
+            assertTrue("The source avatar remains visible", right >= left && bottom >= top)
+            return IntRect(left, top, right + 1, bottom + 1)
+        }
+        val referenceImage = compose.onNodeWithTag("portalSourceContent").captureToImage()
+        val reference = avatar(referenceImage.toPixelMap())
+        val sourceSize = Size(referenceImage.width.toFloat(), referenceImage.height.toFloat())
+        val trigger = toolbarAction("portalPressSource")
+        compose.mainClock.autoAdvance = false
+        var held = false
+        try {
+            trigger.performTouchInput { down(center) }
+            held = true
+            compose.mainClock.advanceTimeBy(320L)
+            compose.waitForIdle()
+            compose.runOnIdle {
+                val acquired = requireNotNull(requireNotNull(anchor).acquire())
+                assertTrue("The fixture acquires a physically expanded source", acquired.width > sourceSize.width * 1.05f)
+                portal.value = requireNotNull(anchor).portal
+                motion.initialize(Rect(previewOrigin, sourceSize), Rect(previewOrigin, previewSize), 34f * density, density)
+                motion.retarget(true)
+                motion.advanceBy(5f)
+                motion.retarget(false)
+                motion.advanceBy(5f)
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            fun check(phase: String) {
+                val actual = avatar(compose.onNodeWithTag("portalScalePreview").captureToImage().toPixelMap())
+                assertEquals("$phase avatar width", reference.width.toFloat(), actual.width.toFloat(), 2f)
+                assertEquals("$phase avatar height", reference.height.toFloat(), actual.height.toFloat(), 2f)
+                assertEquals("$phase horizontal inset", reference.left.toFloat(), actual.left.toFloat(), 2f)
+                assertEquals("$phase vertical inset", reference.top.toFloat(), actual.top.toFloat(), 2f)
+            }
+            check("Held press")
+            trigger.performTouchInput { up() }
+            held = false
+            compose.mainClock.advanceTimeBy(1_200L)
+            compose.waitForIdle()
+            check("Settled press before source release")
+        } finally {
+            if (held) trigger.performTouchInput { cancel() }
+            compose.runOnIdle { anchor?.release(); portal.value = null }
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
     fun toolbarPopupMorphsTheWholeSourceAndReversesWithoutDetaching() {
         val groupedOpen = mutableStateOf(false)
         val singleOpen = mutableStateOf(false)

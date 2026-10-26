@@ -235,13 +235,14 @@ internal fun LiquidMenuMorphSurface(
                 val frame = motion.frame
                 if (frame.sourceOpacity <= 0f) return@drawWithContent
                 val target = frame.sourceLobe?.translate(-screenOrigin) ?: return@drawWithContent
-                val crop = sourcePortal.sourceBounds
-                if (drawCache.recordedSource !== sourcePortal) {
+                val crop = sourcePortal.currentSourceBounds
+                if (drawCache.recordedSource !== sourcePortal || drawCache.recordedSourceBounds != crop) {
                     sourceContents.clip = true
                     sourceContents.record(IntSize(ceil(crop.width).toInt(), ceil(crop.height).toInt())) {
                         withTransform({ translate(-crop.left, -crop.top) }) { drawLayer(sourcePortal.layer) }
                     }
                     drawCache.recordedSource = sourcePortal
+                    drawCache.recordedSourceBounds = crop
                 }
                 sourceContents.renderEffect = if (frame.sourceBlur > 0.01f) RenderEffect.createBlurEffect(
                     frame.sourceBlur, frame.sourceBlur, Shader.TileMode.CLAMP,
@@ -279,6 +280,7 @@ internal fun LiquidMenuMorphSurface(
 /** Draw-local recordings must not invalidate composition when their capture bands grow. */
 private class LiquidMenuDrawCache {
     var recordedSource: ToolbarMenuPortal? = null
+    var recordedSourceBounds: Rect? = null
     var foregroundCapture: Rect? = null
     var viewport: Rect? = null
 }
