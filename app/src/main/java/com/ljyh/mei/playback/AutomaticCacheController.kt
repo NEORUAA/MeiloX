@@ -16,11 +16,43 @@ import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Counts a queue entry only after actual playback, never from paused restoration or buffering. */
+internal class AutomaticCachePlaybackTracker(private val scope: CoroutineScope) {
+    private var pending: Job? = null
+    private var recorded = false
+
+    fun update(isPlaying: Boolean, recordPlayback: suspend () -> Unit) {
+        if (!isPlaying) {
+            if (!recorded) {
+                pending?.cancel()
+                pending = null
+            }
+            return
+        }
+        if (recorded || pending != null) return
+        pending = scope.launch {
+            delay(5_000L)
+            recorded = true
+            recordPlayback()
+        }
+    }
+
+    fun reset() {
+        pending?.cancel()
+        pending = null
+        recorded = false
+    }
+}
 
 @Singleton
 class AutomaticCacheController @Inject constructor(

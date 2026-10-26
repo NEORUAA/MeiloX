@@ -172,7 +172,7 @@ class MusicService : MediaLibraryService(),
         private set
     private val serviceJob = SupervisorJob()
     var scope = CoroutineScope(Dispatchers.Main + serviceJob)
-    private var automaticCacheJob: Job? = null
+    private val automaticCachePlayback = AutomaticCachePlaybackTracker(scope)
     private lateinit var playbackHistoryReporter: PlaybackHistoryReporter
     private val playbackHistorySession = PlaybackHistorySession()
     private var playbackSnapshotJob: Job? = null
@@ -389,19 +389,7 @@ class MusicService : MediaLibraryService(),
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (isRefreshingPlaybackSource) return
                 updatePreload()
-                automaticCacheJob?.cancel()
-                if (mediaItem != null) {
-                    automaticCacheJob = scope.launch {
-                        delay(AUTOMATIC_CACHE_DELAY_MS)
-                        try {
-                            automaticCacheController.recordPlayback(mediaItem)
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Exception) {
-                            Timber.tag("MusicService").e(error, "record automatic cache playback error")
-                        }
-                    }
-                }
+                automaticCachePlayback.reset()
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -887,6 +875,15 @@ class MusicService : MediaLibraryService(),
             )
         ) {
             val mediaItem = player.currentMediaItem
+            automaticCachePlayback.update(player.isPlaying && mediaItem != null) {
+                try {
+                    automaticCacheController.recordPlayback(checkNotNull(mediaItem))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.tag("MusicService").e(error, "record automatic cache playback error")
+                }
+            }
             val update = playbackHistorySession.update(
                 mediaId = mediaItem?.mediaId,
                 isPlaying = player.isPlaying,
@@ -1274,7 +1271,7 @@ class MusicService : MediaLibraryService(),
         periodicSnapshotJob?.cancel()
         playbackRestoreJob?.cancel()
         playbackSnapshotJob?.cancel()
-        automaticCacheJob?.cancel()
+        automaticCachePlayback.reset()
         if (::playbackHistoryReporter.isInitialized) {
             recordPlaybackDuration(playbackHistorySession.finish(SystemClock.elapsedRealtime()))
             playbackHistoryReporter.close()
@@ -1588,7 +1585,6 @@ class MusicService : MediaLibraryService(),
         private const val MAX_SOURCE_RECOVERY_ATTEMPTS = 1
         private const val STUCK_BUFFERING_TIMEOUT_MS = 30_000
         private const val PLAYBACK_SNAPSHOT_INTERVAL_MS = 5_000L
-        private const val AUTOMATIC_CACHE_DELAY_MS = 5_000L
         private const val FAILURE_PROGRESS_SAMPLE_MS = 500L
         const val ACTION_CANCEL_SLEEP_TIMER = "com.ljyh.mei.action.CANCEL_SLEEP_TIMER"
         const val ACTION_TOGGLE_PLAYBACK = "com.ljyh.mei.action.TOGGLE_PLAYBACK"
