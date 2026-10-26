@@ -2,6 +2,10 @@ package com.ljyh.mei.playback
 
 import android.media.AudioFormat
 import androidx.media3.common.Player
+import androidx.datastore.preferences.core.mutablePreferencesOf
+import com.ljyh.mei.constants.AudioOutputMode
+import com.ljyh.mei.constants.AudioOutputModeKey
+import com.ljyh.mei.constants.AutoMixEnabledKey
 import com.ljyh.mei.constants.AutoMixFadeCurve
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -20,6 +24,20 @@ import org.junit.Test
 import kotlin.math.sqrt
 
 class AutoMixDecisionTest {
+    @Test
+    fun bitPerfectSuspendsAutoMixWithoutChangingTheStoredPreference() {
+        val preferences = mutablePreferencesOf(AutoMixEnabledKey to true)
+        AudioOutputMode.entries.forEach { mode ->
+            preferences[AudioOutputModeKey] = mode.name
+            assertEquals(mode != AudioOutputMode.UsbBitPerfect, preferences.toAutoMixConfiguration().enabled)
+            assertTrue(preferences[AutoMixEnabledKey] == true)
+        }
+        preferences[AudioOutputModeKey] = "unknown-future-output"
+        assertTrue(preferences.toAutoMixConfiguration().enabled)
+        preferences[AutoMixEnabledKey] = false
+        assertFalse(preferences.toAutoMixConfiguration().enabled)
+    }
+
     @Test
     fun standbyWithoutASmartPlanWaitsUntilTheFixedTransitionNeedsPreparation() {
         fun defer(

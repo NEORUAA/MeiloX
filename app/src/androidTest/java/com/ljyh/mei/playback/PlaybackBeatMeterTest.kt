@@ -3,15 +3,25 @@ package com.ljyh.mei.playback
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Debug
+import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioOutput
+import androidx.media3.exoplayer.audio.AudioOutputProvider
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutput
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioOutput
+import androidx.media3.exoplayer.audio.ForwardingAudioOutputProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -20,6 +30,8 @@ import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CoroutineStart
@@ -35,6 +47,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assume.assumeTrue
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -180,6 +193,176 @@ class PlaybackBeatMeterTest {
     }
 
     @Test
+    fun usbBitPerfectWithoutADacKeepsPlayingThroughTheSystemOutput() {
+        val manager = context.getSystemService(AudioManager::class.java)
+        assumeTrue(manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).none {
+            it.type in listOf(AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_ACCESSORY)
+        })
+        val file = makeTone(durationSeconds = 4)
+        val usb = UsbAudioOutput(context) {}
+        usb.setEnabled(true)
+        val deck = onMain {
+            ExoPlayer.Builder(context).setRenderersFactory(object : DefaultRenderersFactory(context) {
+                override fun buildAudioSink(
+                    context: Context,
+                    enableFloatOutput: Boolean,
+                    enableAudioTrackPlaybackParams: Boolean,
+                ) = UsbBitPerfectAudioSink(context, usb, DefaultAudioSink.Builder(context).build())
+            }).build().apply {
+                volume = .1f
+                setMediaItem(outputItem(file, "usb-fallback"))
+                prepare()
+                play()
+            }
+        }
+        try {
+            waitForOutput(deck, "Missing USB hardware must leave ordinary playback available") { it.currentPosition >= 300 }
+            val expected = if (Build.VERSION.SDK_INT >= 34) UsbAudioStatus.WaitingForDevice else UsbAudioStatus.Unavailable
+            assertEquals(expected, usb.status.value)
+            onMain { deck.seekTo(3_000) }
+            waitForOutput(deck, "USB fallback must drain normally") { it.playbackState == Player.STATE_ENDED }
+            assertEquals(expected, usb.status.value)
+        } finally {
+            onMain { deck.release() }
+            usb.release()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun nativeEnginesPlayPauseSeekApplySonicTempoAndDrainToTheEnd() {
+        val file = makeTone(durationSeconds = 10, sampleRate = 44_100, channels = 2)
+        try {
+            for (openSles in listOf(false, true)) {
+                val name = if (openSles) "OpenSL ES" else "AAudio"
+                val provider = ProbedAudioProvider(NativeAudioOutputProvider(context, openSles), native = true)
+                val deck = createOutputDeck(listOf(outputItem(file, "native")), provider)
+                try {
+                    waitForOutput(deck, "$name must start real native playback") { it.currentPosition >= 300 }
+                    provider.assertNativeOutputs(name)
+                    onMain { deck.pause() }
+                    SystemClock.sleep(150)
+                    val paused = onMain { deck.currentPosition }
+                    SystemClock.sleep(300)
+                    onMain {
+                        assertFalse(deck.playWhenReady)
+                        assertEquals("$name must hold the paused playback head", paused.toDouble(), deck.currentPosition.toDouble(), 40.0)
+                        deck.seekTo(2_000)
+                        deck.setPlaybackSpeed(1.05f)
+                    }
+                    waitForOutput(deck, "$name must prepare a paused seek") { it.playbackState == Player.STATE_READY }
+                    onMain {
+                        assertEquals(2_000.0, deck.currentPosition.toDouble(), 50.0)
+                        assertFalse(deck.playWhenReady)
+                        assertEquals(1.05f, deck.playbackParameters.speed, .0001f)
+                        deck.play()
+                    }
+                    waitForOutput(deck, "$name must resume from the seek") { it.currentPosition >= 2_300 }
+
+                    // The final isolated two seconds verify Sonic changes the emitted PCM count,
+                    // rather than merely changing ExoPlayer's reported playback parameters.
+                    onMain { deck.seekTo(8_000) }
+                    waitForOutput(deck, "$name must drain its final PCM without hanging", timeoutMs = 6_000) {
+                        it.playbackState == Player.STATE_ENDED
+                    }
+                    provider.assertNativeOutputs(name)
+                    val finalOutput = provider.outputs.last()
+                    assertFalse("Native speed adjustment must run through Sonic", finalOutput.config.usePlaybackParameters)
+                    val expectedFrames = finalOutput.config.sampleRate * 2 / 1.05
+                    assertEquals("$name must render the tempo-adjusted final two seconds", expectedFrames,
+                        finalOutput.writtenFrames.toDouble(), 1_500.0)
+                    onMain {
+                        assertEquals(10_000.0, deck.currentPosition.toDouble(), 80.0)
+                        assertEquals(null, deck.playerError)
+                    }
+                } finally {
+                    onMain { deck.release() }
+                }
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun modeSinkSwitchesRealOutputsWithoutChangingTheQueueOrPlaybackIntent() {
+        val file = makeTone(durationSeconds = 8)
+        val items = List(3) { outputItem(file, "queue-$it") }
+        val initial = ProbedAudioProvider(AudioTrackAudioOutputProvider.Builder(context).build(), native = false)
+        val sinkCreations = AtomicInteger()
+        val deck = createOutputDeck(items, initial, startIndex = 1, startPositionMs = 1_000, sinkCreations = sinkCreations)
+        try {
+            waitForOutput(deck, "AudioTrack must start before changing modes") { it.currentPosition >= 1_200 }
+            onMain { deck.pause() }
+            SystemClock.sleep(150)
+            val queue = onMain { outputQueue(deck) }
+
+            for (playing in listOf(false, true)) {
+                if (playing) {
+                    val start = onMain { deck.currentPosition.also { deck.play() } }
+                    waitForOutput(deck, "The retained queue must resume") { it.currentPosition >= start + 150 }
+                }
+                for (mode in listOf("AAudio", "OpenSL ES", "AudioTrack")) {
+                    val provider = when (mode) {
+                        "AAudio" -> ProbedAudioProvider(NativeAudioOutputProvider(context, false), native = true)
+                        "OpenSL ES" -> ProbedAudioProvider(NativeAudioOutputProvider(context, true), native = true)
+                        else -> ProbedAudioProvider(AudioTrackAudioOutputProvider.Builder(context).build(), native = false)
+                    }
+                    val before = onMain {
+                        val position = deck.currentPosition
+                        val indexToRestore = deck.currentMediaItemIndex
+                        val resumePlayback = deck.playWhenReady
+                        deck.stop()
+                        for (index in 0 until deck.rendererCount) {
+                            if (deck.getRendererType(index) == C.TRACK_TYPE_AUDIO) {
+                                deck.createMessage(deck.getRenderer(index))
+                                    .setType(Renderer.MSG_SET_AUDIO_OUTPUT_PROVIDER)
+                                    .setPayload(provider)
+                                    .send()
+                            }
+                        }
+                        deck.seekTo(indexToRestore, position)
+                        deck.prepare()
+                        deck.playWhenReady = resumePlayback
+                        position
+                    }
+                    waitForOutput(deck, "$mode must initialize after a live mode change") {
+                        it.playbackState == Player.STATE_READY && provider.outputs.isNotEmpty()
+                    }
+                    if (provider.native) provider.assertNativeOutputs(mode)
+                    else assertTrue("AudioTrack must use its platform output", provider.outputs.all { it.audioTrack })
+                    onMain {
+                        assertEquals("Switching to $mode must retain every queue entry", queue, outputQueue(deck))
+                        assertEquals("Switching to $mode must retain the selected entry", 1, deck.currentMediaItemIndex)
+                        assertEquals("Switching to $mode must retain playback intent", playing, deck.playWhenReady)
+                        assertEquals("Switching to $mode must retain playback position", before.toDouble(),
+                            deck.currentPosition.toDouble(), if (playing) 600.0 else 50.0)
+                    }
+                    if (playing) {
+                        waitForOutput(deck, "$mode must continue advancing after switching") { it.currentPosition >= before + 150 }
+                    } else {
+                        SystemClock.sleep(150)
+                        onMain { assertEquals(before.toDouble(), deck.currentPosition.toDouble(), 50.0) }
+                    }
+                }
+            }
+            assertEquals("Each provider change must rebuild the sink's processing configuration", 7, sinkCreations.get())
+            onMain { deck.seekTo(2, 7_300) }
+            waitForOutput(deck, "The final queue item must finish after all output changes", timeoutMs = 5_000) {
+                it.playbackState == Player.STATE_ENDED
+            }
+            onMain {
+                assertEquals(queue, outputQueue(deck))
+                assertEquals(2, deck.currentMediaItemIndex)
+                assertTrue(deck.playWhenReady)
+            }
+        } finally {
+            onMain { deck.release() }
+            file.delete()
+        }
+    }
+
+    @Test
     fun boundedPcmAnalysisCostOnTheDevice() {
         val frames = 4_800
         val pcm = ByteBuffer.allocateDirect(frames * 2 * 4).order(ByteOrder.nativeOrder())
@@ -285,16 +468,118 @@ class PlaybackBeatMeterTest {
         return deck
     }
 
-    private fun makeTone(durationSeconds: Int = 3): File {
-        val frames = 48_000 * durationSeconds
-        val pcmBytes = frames * 2
+    private class OutputProbe(
+        val config: AudioOutputProvider.OutputConfig,
+        val audioTrack: Boolean,
+        val implementation: String,
+    ) {
+        val writtenBytes = AtomicLong()
+        val writtenFrames: Long
+            get() = writtenBytes.get() /
+                ((if (config.encoding == C.ENCODING_PCM_FLOAT) 4 else 2) * Integer.bitCount(config.channelMask))
+    }
+
+    private class ProbedAudioProvider(provider: AudioOutputProvider, val native: Boolean) :
+        ForwardingAudioOutputProvider(provider) {
+        val outputs = CopyOnWriteArrayList<OutputProbe>()
+
+        override fun getAudioOutput(config: AudioOutputProvider.OutputConfig): AudioOutput {
+            val output = super.getAudioOutput(config)
+            val probe = OutputProbe(config, output is AudioTrackAudioOutput, output.javaClass.simpleName)
+            outputs += probe
+            return object : ForwardingAudioOutput(output) {
+                override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
+                    val start = buffer.position()
+                    return super.write(buffer, encodedAccessUnitCount, presentationTimeUs).also {
+                        probe.writtenBytes.addAndGet((buffer.position() - start).toLong())
+                    }
+                }
+            }
+        }
+
+        fun assertNativeOutputs(name: String) {
+            assertTrue("$name must initialize an actual native stream", outputs.isNotEmpty())
+            assertTrue("$name must never fall back to AudioTrack", outputs.all {
+                !it.audioTrack && it.implementation == "NativeAudioOutput"
+            })
+        }
+    }
+
+    private fun createOutputDeck(
+        items: List<MediaItem>,
+        provider: ProbedAudioProvider,
+        startIndex: Int = 0,
+        startPositionMs: Long = 0,
+        sinkCreations: AtomicInteger = AtomicInteger(),
+    ): ExoPlayer = onMain {
+        ExoPlayer.Builder(context)
+            .setRenderersFactory(object : DefaultRenderersFactory(context) {
+                override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean) =
+                    ModeAudioSink(provider) { output ->
+                        sinkCreations.incrementAndGet()
+                        DefaultAudioSink.Builder(context)
+                            .setEnableFloatOutput(enableFloatOutput)
+                            .setEnableAudioOutputPlaybackParameters(true)
+                            .setAudioOutputProvider(output)
+                            .build()
+                    }
+            })
+            .experimentalSetDynamicSchedulingEnabled(false)
+            .build().apply {
+                volume = 0f
+                setMediaItems(items, startIndex, startPositionMs)
+                prepare()
+                play()
+            }
+    }
+
+    private fun outputItem(file: File, id: String): MediaItem = MediaItem.Builder()
+        .setMediaId(id)
+        .setUri(file.toURI().toString())
+        .build()
+        .withQueueEntryId()
+
+    private fun outputQueue(deck: ExoPlayer): List<Pair<String, String?>> =
+        List(deck.mediaItemCount) { deck.getMediaItemAt(it).let { item -> item.mediaId to item.queueEntryId } }
+
+    private fun waitForOutput(
+        deck: ExoPlayer,
+        message: String,
+        timeoutMs: Long = 5_000,
+        predicate: (ExoPlayer) -> Boolean,
+    ) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (onMain {
+                    assertEquals(message, null, deck.playerError)
+                    predicate(deck)
+                }) return
+            SystemClock.sleep(20)
+        }
+        onMain {
+            assertTrue("$message (state=${deck.playbackState}, position=${deck.currentPosition}, error=${deck.playerError})", predicate(deck))
+        }
+    }
+
+    private fun <T> onMain(block: () -> T): T {
+        var result: Result<T>? = null
+        instrumentation.runOnMainSync { result = runCatching(block) }
+        return checkNotNull(result).getOrThrow()
+    }
+
+    private fun makeTone(durationSeconds: Int = 3, sampleRate: Int = 48_000, channels: Int = 1): File {
+        val frames = sampleRate * durationSeconds
+        val pcmBytes = frames * 2 * channels
         val wav = ByteBuffer.allocate(44 + pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
         wav.put("RIFF".toByteArray()).putInt(36 + pcmBytes).put("WAVEfmt ".toByteArray())
-        wav.putInt(16).putShort(1).putShort(1).putInt(48_000).putInt(96_000).putShort(2).putShort(16)
+        wav.putInt(16).putShort(1).putShort(channels.toShort()).putInt(sampleRate)
+            .putInt(sampleRate * 2 * channels).putShort((2 * channels).toShort()).putShort(16)
         wav.put("data".toByteArray()).putInt(pcmBytes)
         repeat(frames) { frame ->
-            val phase = 2 * PI * frame / 48_000
-            wav.putShort(((sin(phase * 100) + sin(phase * 1_000) + sin(phase * 10_000)) * 2_000).toInt().toShort())
+            val phase = 2 * PI * frame / sampleRate
+            repeat(channels) {
+                wav.putShort(((sin(phase * 100) + sin(phase * 1_000) + sin(phase * 10_000)) * 2_000).toInt().toShort())
+            }
         }
         return File.createTempFile("beat-meter-", ".wav", context.cacheDir).apply { writeBytes(wav.array()) }
     }

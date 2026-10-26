@@ -109,6 +109,11 @@ android {
             //noinspection ChromeOsAbiSupport
             abiFilters += "arm64-v8a"
         }
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
     externalNativeBuild {
         cmake {
@@ -136,11 +141,14 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+        prefab = true
     }
     packaging {
         // Direct-distribution APKs prioritize download size. Android extracts these
         // entries at install time instead of mmap'ing them directly from the APK.
         jniLibs.useLegacyPackaging = true
+        // The bundled Netease SDK and Oboe share the compatible libc++ runtime.
+        jniLibs.pickFirsts += "lib/arm64-v8a/libc++_shared.so"
         dex.useLegacyPackaging = true
     }
 }
@@ -164,6 +172,7 @@ kotlin {
 
 dependencies {
 
+    implementation(libs.oboe)
     implementation(libs.androidx.core.ktx)
     implementation(libs.bcprov.jdk18on)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -65,6 +65,7 @@ val AccompanimentLyricTextBoldKey = booleanPreferencesKey("accompanimentLyricTex
 
 val LoopPlaybackKey = booleanPreferencesKey("loopPlayback")
 val AllowConcurrentPlaybackKey = booleanPreferencesKey("playback.allowConcurrentPlayback")
+val AudioOutputModeKey = stringPreferencesKey("playback.audioOutputMode")
 val PreviousPlaybackKey = booleanPreferencesKey("previousPlayback")
 val NoAudioSourceKey = booleanPreferencesKey("noAudioSource")
 val IsShuffleModeKey = booleanPreferencesKey("shuffleMode")
@@ -174,6 +175,8 @@ enum class PlayerStyle {
 }
 
 enum class AppAppearance { System, Light, Dark }
+
+enum class AudioOutputMode { AudioTrack, AAudio, OpenSLES, UsbBitPerfect }
 
 enum class AutoMixMode { Smart, Fixed }
 enum class AutoMixFadeCurve { EqualPower, Smooth, Linear }

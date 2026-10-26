@@ -23,6 +23,57 @@ import org.junit.Test
 @UnstableApi
 class PlaybackBeatMeterTest {
     @Test
+    fun usbPcmSeekDoesNotReapplyConsumedEncoderDelay() {
+        val first = UsbPcmFrameQueue(frameSize = 4, delayFrames = 2, paddingFrames = 0)
+        first.queue(ByteBuffer.allocateDirect(16))
+        assertEquals(0, first.remainingDelayFrames)
+        val reopened = UsbPcmFrameQueue(frameSize = 4, delayFrames = first.remainingDelayFrames, paddingFrames = 0)
+        val afterSeek = ByteArray(16) { it.toByte() }
+        val input = ByteBuffer.allocateDirect(16).put(afterSeek).apply { flip() }
+        assertEquals(afterSeek.size, reopened.queue(input))
+        val emitted = ByteArray(16)
+        checkNotNull(reopened.pending).get(emitted)
+        assertEquals(afterSeek.toList(), emitted.toList())
+    }
+
+    @Test
+    fun usbPcmTrimmingPreservesAllRetainedSampleBytesAcrossBuffers() {
+        val queue = UsbPcmFrameQueue(frameSize = 4, delayFrames = 2, paddingFrames = 2)
+        val source = ByteArray(40) { (it * 13).toByte() }
+        val emitted = ArrayList<Byte>()
+        for (part in listOf(source.copyOfRange(0, 12), source.copyOfRange(12, 28), source.copyOfRange(28, 40))) {
+            val input = ByteBuffer.allocateDirect(part.size).order(ByteOrder.nativeOrder()).put(part).apply { flip() }
+            queue.queue(input)
+            assertEquals(input.limit(), input.position())
+            queue.pending?.let { pending ->
+                while (pending.hasRemaining()) emitted += pending.get()
+                queue.clearPending()
+            }
+        }
+        queue.discardPadding()
+        assertEquals(source.copyOfRange(8, 32).toList(), emitted)
+    }
+
+    @Test
+    fun usbPcmStagingKeepsPendingBytesStableDuringPartialWrites() {
+        val queue = UsbPcmFrameQueue(frameSize = 6, delayFrames = 0, paddingFrames = 0)
+        val source = ByteArray(30) { (it * 7).toByte() }
+        val input = ByteBuffer.allocateDirect(source.size).order(ByteOrder.nativeOrder()).put(source).apply { flip() }
+        assertEquals(source.size, queue.queue(input))
+        val pending = checkNotNull(queue.pending)
+        assertTrue(pending.isDirect)
+        assertEquals(ByteOrder.nativeOrder(), pending.order())
+        val emitted = ArrayList<Byte>()
+        while (pending.hasRemaining()) {
+            repeat(minOf(6, pending.remaining())) { emitted += pending.get() }
+            assertSame(pending, queue.pending)
+        }
+        assertEquals(source.toList(), emitted)
+        assertEquals(source.toList(), ByteArray(source.size) { input.get(it) }.toList())
+        queue.clearPending()
+    }
+
+    @Test
     fun partialOutputWritesRemainBitExactAndUseThePlayoutClock() = runBlocking {
         val meter = PlaybackBeatMeter()
         val observation = launch(start = CoroutineStart.UNDISPATCHED) { meter.spectrum.collect() }

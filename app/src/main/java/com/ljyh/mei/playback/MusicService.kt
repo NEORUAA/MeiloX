@@ -23,6 +23,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY
 import androidx.media3.common.Player.EVENT_TIMELINE_CHANGED
@@ -41,13 +42,16 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.AudioOutputProvider
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioOutputProvider
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaConstants
@@ -69,6 +73,8 @@ import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import androidx.lifecycle.Lifecycle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AllowConcurrentPlaybackKey
+import com.ljyh.mei.constants.AudioOutputMode
+import com.ljyh.mei.constants.AudioOutputModeKey
 import com.ljyh.mei.constants.IsShuffleModeKey
 import com.ljyh.mei.constants.LoopPlaybackKey
 import com.ljyh.mei.constants.NotificationAction
@@ -104,6 +110,7 @@ import com.ljyh.mei.playback.CacheManager.removePlaybackEntries
 import com.ljyh.mei.utils.CoilBitmapLoader
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
+import com.ljyh.mei.utils.toEnum
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -149,6 +156,9 @@ class MusicService : MediaLibraryService(),
     lateinit var lyricManager: com.ljyh.mei.utils.lyric.LyricManager
     private lateinit var autoMixController: AutoMixController
     private lateinit var equalizerConfigurationState: EqualizerConfigurationState
+    private lateinit var usbAudioOutput: UsbAudioOutput
+    val audioOutputStatus get() = usbAudioOutput.status
+    private var audioOutputMode = AudioOutputMode.AudioTrack
     val context = this
     private lateinit var mediaSession: MediaLibrarySession
     private var notificationLeftAction = NotificationAction.PlayMode
@@ -248,6 +258,15 @@ class MusicService : MediaLibraryService(),
         }
         playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
+        audioOutputMode = context.dataStore[AudioOutputModeKey].toEnum(AudioOutputMode.AudioTrack)
+        usbAudioOutput = UsbAudioOutput(this) {
+            scope.launch {
+                if (::player.isInitialized && audioOutputMode == AudioOutputMode.UsbBitPerfect) {
+                    applyAudioOutputMode(audioOutputMode, force = true)
+                }
+            }
+        }
+        usbAudioOutput.setEnabled(audioOutputMode == AudioOutputMode.UsbBitPerfect)
         flymeNotificationProvider = FlymeLyricsNotificationProvider(
             PlaybackNotificationProvider(this, NOTIFICATION_ID, CHANNEL_ID) { player.mediaMetadata.title },
             ::triggerNotificationUpdate,
@@ -396,7 +415,7 @@ class MusicService : MediaLibraryService(),
             },
         )
         audioPlayer = AudioPlayer(player) {
-            autoMixController.isTransitioning
+            autoMixController.isTransitioning || audioOutputMode == AudioOutputMode.UsbBitPerfect
         }
         listenTogetherStore.attachPlayer(player)
         val singletonImageLoader = SingletonImageLoader.get(this)
@@ -422,6 +441,11 @@ class MusicService : MediaLibraryService(),
         }
 
 
+        scope.launch {
+            context.dataStore.data.map { it[AudioOutputModeKey].toEnum(AudioOutputMode.AudioTrack) }
+                .distinctUntilChanged()
+                .collect { applyAudioOutputMode(it) }
+        }
         scope.launch {
             context.dataStore.data.map { it[AllowConcurrentPlaybackKey] ?: false }
                 .distinctUntilChanged()
@@ -742,6 +766,10 @@ class MusicService : MediaLibraryService(),
     }
 
     private fun updateAudioEffectSession() {
+        if (audioOutputMode != AudioOutputMode.AudioTrack) {
+            closeAudioEffectSession()
+            return
+        }
         val isBufferingOrReady =
             player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY
         if (isBufferingOrReady && player.playWhenReady) {
@@ -757,6 +785,7 @@ class MusicService : MediaLibraryService(),
         }
         updateAudioEffectSession()
         if (!::audioPlayer.isInitialized) return
+        if (audioOutputMode == AudioOutputMode.UsbBitPerfect) return
         if (
             ::autoMixController.isInitialized &&
             autoMixController.isTransitioning
@@ -1223,6 +1252,7 @@ class MusicService : MediaLibraryService(),
 
         closeAudioEffectSession()
         player.release()
+        usbAudioOutput.release()
         serviceJob.cancel()
         super.onDestroy()
     }
@@ -1275,28 +1305,81 @@ class MusicService : MediaLibraryService(),
         }
     }
 
+    private class ProfileAudioOutputProvider(
+        val mode: AudioOutputMode,
+        delegate: AudioOutputProvider,
+    ) : ForwardingAudioOutputProvider(delegate)
+
+    private fun createAudioOutputProvider(mode: AudioOutputMode): AudioOutputProvider =
+        ProfileAudioOutputProvider(mode, when (mode) {
+            AudioOutputMode.AAudio -> NativeAudioOutputProvider(this, useOpenSles = false)
+            AudioOutputMode.OpenSLES -> NativeAudioOutputProvider(this, useOpenSles = true)
+            else -> AudioTrackAudioOutputProvider.Builder(this).build()
+        })
+
+    /** Reopen both physical outputs without replacing the queue or its entry identities. */
+    private fun applyAudioOutputMode(mode: AudioOutputMode, force: Boolean = false) {
+        if (!force && audioOutputMode == mode) return
+        audioOutputMode = mode
+        autoMixController.resetForQualityChange()
+        audioPlayer.reset()
+        val deck = player.activeDeck
+        val index = deck.currentMediaItemIndex
+        val position = deck.currentPosition
+        val prepared = deck.playbackState != Player.STATE_IDLE
+        val resumePlayback = deck.playWhenReady
+        usbAudioOutput.setEnabled(mode == AudioOutputMode.UsbBitPerfect)
+        closeAudioEffectSession()
+        player.deckPlayers.forEach { physicalDeck ->
+            // Re-negotiate the decoder too: the old output may use passthrough or a
+            // different PCM depth that the newly selected engine cannot consume.
+            physicalDeck.stop()
+            physicalDeck.volume = 1f
+            physicalDeck.playbackParameters = PlaybackParameters.DEFAULT
+            physicalDeck.skipSilenceEnabled = false
+            for (rendererIndex in 0 until physicalDeck.rendererCount) {
+                if (physicalDeck.getRendererType(rendererIndex) == C.TRACK_TYPE_AUDIO) {
+                    physicalDeck.createMessage(physicalDeck.getRenderer(rendererIndex))
+                        .setType(Renderer.MSG_SET_AUDIO_OUTPUT_PROVIDER)
+                        .setPayload(createAudioOutputProvider(mode))
+                        .send()
+                }
+            }
+        }
+        if (prepared && index in 0 until deck.mediaItemCount) {
+            deck.seekTo(index, position)
+            deck.prepare()
+            deck.playWhenReady = resumePlayback
+        }
+        updateAudioEffectSession()
+    }
+
     private fun createRenderersFactory() =
         object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ) = DefaultAudioSink.Builder(this@MusicService)
-                .setAudioOutputProvider(
-                    beatMeter.wrap(AudioTrackAudioOutputProvider.Builder(this@MusicService).build()),
-                )
-                .setEnableFloatOutput(enableFloatOutput)
-                // AutoMix continuously changes tempo. Sonic's parameter changes drain and
-                // restart the PCM processor chain, producing periodic gaps during overlap.
-                // Apply tempo at AudioTrack instead, keeping the EQ/PCM pipeline continuous.
-                .setEnableAudioOutputPlaybackParameters(true)
-                .setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(
-                        arrayOf(TenBandEqualizerProcessor(equalizerConfigurationState)),
-                        SilenceSkippingAudioProcessor(2_000_000, 0.01f, 2_000_000, 0, 256),
-                        SonicAudioProcessor()
-                    )
-                ).build()
+            ): AudioSink = ModeAudioSink(createAudioOutputProvider(audioOutputMode)) { provider ->
+                val mode = (provider as ProfileAudioOutputProvider).mode
+                val fallback = DefaultAudioSink.Builder(this@MusicService)
+                    .setAudioOutputProvider(beatMeter.wrap(provider))
+                    .setEnableFloatOutput(enableFloatOutput)
+                    // AutoMix continuously changes tempo. Keep its PCM pipeline continuous
+                    // with AudioTrack playback parameters; native providers use Sonic.
+                    .setEnableAudioOutputPlaybackParameters(true)
+                    .setAudioProcessorChain(
+                        DefaultAudioSink.DefaultAudioProcessorChain(
+                            if (mode == AudioOutputMode.UsbBitPerfect) emptyArray()
+                            else arrayOf(TenBandEqualizerProcessor(equalizerConfigurationState)),
+                            SilenceSkippingAudioProcessor(2_000_000, 0.01f, 2_000_000, 0, 256),
+                            SonicAudioProcessor(),
+                        ),
+                    ).build()
+                if (mode == AudioOutputMode.UsbBitPerfect) {
+                    UsbBitPerfectAudioSink(this@MusicService, usbAudioOutput, fallback)
+                } else fallback
+            }
         }.setEnableDecoderFallback(true)
 
     inner class MusicBinder : Binder() {

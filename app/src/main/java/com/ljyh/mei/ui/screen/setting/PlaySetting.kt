@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,12 +15,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -27,6 +30,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AllowConcurrentPlaybackKey
+import com.ljyh.mei.constants.AudioOutputMode
+import com.ljyh.mei.constants.AudioOutputModeKey
 import com.ljyh.mei.constants.AutoMixDurationKey
 import com.ljyh.mei.constants.AutoMixEnabledKey
 import com.ljyh.mei.constants.AutoMixFadeCurve
@@ -48,6 +53,7 @@ import com.ljyh.mei.constants.NotificationRightActionKey
 import com.ljyh.mei.constants.PreviousPlaybackKey
 import com.ljyh.mei.constants.RestorePlaybackPositionKey
 import com.ljyh.mei.constants.RestorePlaybackStateKey
+import com.ljyh.mei.playback.UsbAudioStatus
 import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import com.ljyh.mei.ui.component.player.isXiaomiFloatingLyricsPermissionRequired
 import com.ljyh.mei.ui.component.player.openFloatingLyricsPermissionSettings
@@ -80,6 +86,12 @@ fun PlaySetting(
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
+    val (audioOutputMode, onAudioOutputModeChange) = rememberEnumPreference(AudioOutputModeKey, AudioOutputMode.AudioTrack)
+    val usbBitPerfect = audioOutputMode == AudioOutputMode.UsbBitPerfect
+    val usbAudioStatus = playerConnection?.service?.audioOutputStatus?.collectAsState()?.value ?: UsbAudioStatus.Inactive
+    val audioOutputModes = remember {
+        AudioOutputMode.entries.filter { it != AudioOutputMode.UsbBitPerfect || Build.VERSION.SDK_INT >= 34 }
+    }
     val (musicQuality, onMusicQualityChange) = rememberEnumPreference(MusicQualityKey, MusicQuality.EXHIGH)
     val (loopPlayback, onLoopPlaybackChange) = rememberPreference(LoopPlaybackKey, true)
     val (allowConcurrentPlayback, onAllowConcurrentPlaybackChange) = rememberPreference(AllowConcurrentPlaybackKey, false)
@@ -129,7 +141,10 @@ fun PlaySetting(
     ) {
         item {
             SettingsGroup(stringResource(R.string.playback_behavior)) {
-                GlassCard(modifier = Modifier.fillMaxWidth(), onClick = { Screen.EqualizerSettings.navigate(navController) }) {
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth().alpha(if (usbBitPerfect) 0.38f else 1f),
+                    onClick = if (usbBitPerfect) null else { { Screen.EqualizerSettings.navigate(navController) } },
+                ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         SfIcon("slider.vertical.3", contentDescription = null)
                         Text(stringResource(R.string.equalizer), modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
@@ -171,6 +186,20 @@ fun PlaySetting(
                             }
                         },
                         label = { "${it.explanation} · ${it.text}" },
+                    )
+                }
+                ValueRow(
+                    title = stringResource(R.string.audio_output),
+                    symbol = "speaker.wave.2.fill",
+                    description = if (usbBitPerfect) {
+                        stringResource(usbAudioStatus.labelResource()) + "\n" + stringResource(R.string.audio_output_usb_description)
+                    } else null,
+                ) {
+                    IosPopupButton(
+                        selected = audioOutputMode,
+                        items = audioOutputModes,
+                        onSelected = onAudioOutputModeChange,
+                        label = { stringResource(it.labelResource()) },
                     )
                 }
             }
@@ -228,10 +257,13 @@ fun PlaySetting(
         }
         item {
             SettingsGroup(stringResource(R.string.automix)) {
-                ToggleRow(stringResource(R.string.automix_enabled), "waveform.path", autoMixEnabled, onAutoMixEnabledChange)
+                ToggleRow(
+                    stringResource(R.string.automix_enabled), "waveform.path", autoMixEnabled, onAutoMixEnabledChange,
+                    enabled = !usbBitPerfect,
+                )
             }
         }
-        if (autoMixEnabled) {
+        if (autoMixEnabled && !usbBitPerfect) {
             item {
                 com.ljyh.mei.ui.glass.IosGroupedList {
                     GlassSegmentedControl(
@@ -315,8 +347,12 @@ private fun ToggleRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     description: String? = null,
+    enabled: Boolean = true,
 ) {
-    GlassCard(Modifier.fillMaxWidth(), onClick = { onCheckedChange(!checked) }) {
+    GlassCard(
+        Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f),
+        onClick = if (enabled) { { onCheckedChange(!checked) } } else null,
+    ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(symbol, contentDescription = null)
             Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
@@ -329,20 +365,46 @@ private fun ToggleRow(
                     )
                 }
             }
-            GlassToggle(checked, onCheckedChange)
+            GlassToggle(checked, onCheckedChange, enabled = enabled)
         }
     }
 }
 
 @Composable
-private fun ValueRow(title: String, symbol: String, value: @Composable () -> Unit) {
+private fun ValueRow(title: String, symbol: String, description: String? = null, value: @Composable () -> Unit) {
     GlassCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            SfIcon(symbol, contentDescription = null)
-            Text(title, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
-            value()
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SfIcon(symbol, contentDescription = null)
+                Text(title, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
+                value()
+            }
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
     }
+}
+
+private fun AudioOutputMode.labelResource(): Int = when (this) {
+    AudioOutputMode.AudioTrack -> R.string.audio_output_audiotrack
+    AudioOutputMode.AAudio -> R.string.audio_output_aaudio
+    AudioOutputMode.OpenSLES -> R.string.audio_output_opensles
+    AudioOutputMode.UsbBitPerfect -> R.string.audio_output_usb
+}
+
+private fun UsbAudioStatus.labelResource(): Int = when (this) {
+    UsbAudioStatus.Inactive -> R.string.audio_output_usb_inactive
+    UsbAudioStatus.WaitingForDevice -> R.string.audio_output_usb_waiting
+    UsbAudioStatus.UnsupportedDevice -> R.string.audio_output_usb_unsupported_device
+    UsbAudioStatus.UnsupportedFormat -> R.string.audio_output_usb_unsupported_format
+    UsbAudioStatus.Active -> R.string.audio_output_usb_active
+    UsbAudioStatus.Unavailable -> R.string.audio_output_usb_unavailable
 }
 
 @Composable

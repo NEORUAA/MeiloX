@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(meilox_native LANGUAGES C CXX ASM)
 
+find_package(oboe REQUIRED CONFIG)
+add_library(native_audio_output SHARED native_audio_output.cpp)
+target_compile_features(native_audio_output PRIVATE cxx_std_17)
+target_compile_options(native_audio_output PRIVATE -O3 -fvisibility=hidden)
+target_link_libraries(native_audio_output oboe::oboe)
+
 add_library(netease_log_policy SHARED netease_log_policy.c)
 
 find_library(log_lib log)

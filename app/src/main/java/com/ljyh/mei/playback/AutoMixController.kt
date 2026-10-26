@@ -20,6 +20,8 @@ import com.ljyh.mei.constants.AutoMixModeKey
 import com.ljyh.mei.constants.AutoMixTailCutBarsKey
 import com.ljyh.mei.constants.AutoMixTempoMatchingKey
 import com.ljyh.mei.constants.AutoMixTransitionBarsKey
+import com.ljyh.mei.constants.AudioOutputMode
+import com.ljyh.mei.constants.AudioOutputModeKey
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.toEnum
 import kotlinx.coroutines.CancellationException
@@ -958,8 +960,9 @@ internal fun shouldBlockAutoMixSecondaryPreparation(
 ): Boolean = sameRetryTarget && !isScheduledRetry &&
     (retryJobActive || retryAttempts >= maxRetryAttempts)
 
-private fun Preferences.toAutoMixConfiguration() = AutoMixRuntimeConfiguration(
-    enabled = this[AutoMixEnabledKey] ?: false,
+internal fun Preferences.toAutoMixConfiguration() = AutoMixRuntimeConfiguration(
+    enabled = (this[AutoMixEnabledKey] ?: false) &&
+        this[AudioOutputModeKey].toEnum(AudioOutputMode.AudioTrack) != AudioOutputMode.UsbBitPerfect,
     mode = this[AutoMixModeKey].toEnum(AutoMixMode.Smart),
     durationMs = (((this[AutoMixDurationKey] ?: 8f).coerceIn(3f, 20f)) * 1_000).toLong(),
     fadeCurve = this[AutoMixFadeCurveKey].toEnum(AutoMixFadeCurve.EqualPower),
