@@ -30,6 +30,7 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         with:
+          cmdline-tools-version: 15859902
           packages: platform-tools
 
       - name: Install Android SDK packages
