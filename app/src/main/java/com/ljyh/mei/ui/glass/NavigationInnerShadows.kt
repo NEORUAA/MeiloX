@@ -130,7 +130,11 @@ internal class NavigationInnerShadowRenderer(
         }.asAndroidPath()
         val combineCorners = outlinePath.isConvex ||
             (nextKey.shape as? LiquidContactShape)?.hasConsistentWinding == true
-        shadowHolePath = expandedShadowHole(40f * scope.density, combineCorners)
+        shadowHolePath = if (nextKey.shape is LiquidMenuContour) {
+            expandedLiquidMenuShadowHole(outlinePath, 40f * scope.density)
+        } else {
+            expandedShadowHole(40f * scope.density, combineCorners)
+        }
         if (blurDensity != scope.density) {
             // Figma exports blur 10/30 as Gaussian sigma 5/15. Android converts its
             // public radius to sigma = radius * 0.57735 + 0.5; invert that after
@@ -302,6 +306,7 @@ half4 main(half4 src, half4 dst) {
     return half4(src.rgb * (1.0 - dst.a) + dst.rgb * (1.0 - src.a) + burn,
         src.a + dst.a - overlap);
 }
+
 """
 
         // Apply premultiplied source-over linear burn, then both saturated Plus
@@ -331,5 +336,22 @@ half4 main(float2 position) {
     return half4(half3(s * a), a);
 }
 """
+    }
+}
+
+/** The menu skin is one clockwise contour, so nonzero winding gives its exact union. */
+internal fun expandedLiquidMenuShadowHole(outline: android.graphics.Path, spread: Float): android.graphics.Path {
+    val bounds = android.graphics.RectF().also { outline.computeBounds(it, true) }
+    return android.graphics.Path().apply {
+        fillType = android.graphics.Path.FillType.WINDING
+        for (x in floatArrayOf(-spread, spread)) {
+            for (y in floatArrayOf(-spread, spread)) addPath(outline, x, y)
+        }
+        // Keep the connecting strips in the same winding path. PathOp intersections
+        // of nearly coincident morph edges can drop large regions even on success.
+        addRect(bounds.centerX() - spread, bounds.top - spread,
+            bounds.centerX() + spread, bounds.bottom + spread, android.graphics.Path.Direction.CW)
+        addRect(bounds.left - spread, bounds.centerY() - spread,
+            bounds.right + spread, bounds.centerY() + spread, android.graphics.Path.Direction.CW)
     }
 }

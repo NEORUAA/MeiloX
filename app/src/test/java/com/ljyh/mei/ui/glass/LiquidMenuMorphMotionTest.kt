@@ -278,6 +278,27 @@ class LiquidMenuMorphMotionTest {
     }
 
     @Test
+    fun liquidCoverageRemainsStableAcrossRightAndBottomTextureGridBoundaries() {
+        listOf(101.4f, 101.7f, 101.9f, 101.99f, 102.01f, 102.2f).forEach { extent ->
+            listOf(false, true).forEach { vertical ->
+                val bounds = if (vertical) Rect(0f, 0f, 81.9f, extent) else Rect(0f, 0f, extent, 81.9f)
+                val field = requireNotNull(LiquidMenuContour(
+                    bounds, Offset(10f, 10f), null, Offset.Zero, 1f,
+                ).sampledField())
+                val point = if (vertical) Offset(40f, extent - 0.1f) else Offset(extent - 0.1f, 40f)
+                val distance = field.distance(point.x, point.y)
+                // Match the portal's forward-difference coverage at a straight edge.
+                val aa = abs(field.distance(point.x + 1f, point.y) - distance) +
+                    abs(field.distance(point.x, point.y + 1f) - distance)
+                val label = "extent=$extent vertical=$vertical"
+                assertEquals("$label keeps its outward derivative", 1f, aa, 0.002f)
+                assertEquals("$label keeps subpixel coverage", 0.6f,
+                    (-distance / aa + 0.5f).coerceIn(0f, 1f), 0.002f)
+            }
+        }
+    }
+
+    @Test
     fun cachedContourPreservesSubpixelRootsAcrossOvershootAndReversal() {
         var evaluations = 0L
         var sampledFrames = 0

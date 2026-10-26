@@ -1113,6 +1113,59 @@ class GlassBottomBarInteractionTest {
     }
 
     @Test
+    fun liquidMenuInnerShadowHolePreservesCoverageDuringMotion() {
+        val source = Rect(870f, 155f, 1072f, 287f)
+        val target = Rect(358f, 155f, 1072f, 611f)
+        val motion = LiquidMenuMorphMotion().apply { initialize(source, target, 102f, 3f) }
+        val workspace = LiquidMenuContourWorkspace()
+        val clip = Region(-1024, -1024, 2048, 2048)
+        listOf(true, false).forEach { opening ->
+            motion.retarget(opening)
+            repeat(240) { frame ->
+                motion.advanceBy(1f / 240f)
+                val value = motion.frame
+                val world = LiquidMenuContour(value.bounds, Offset(value.radiusX, value.radiusY),
+                    value.sourceLobe, Offset(value.sourceRadiusX, value.sourceRadiusY), value.smoothing)
+                val bounds = world.exteriorBounds()
+                val local = LiquidMenuContour(value.bounds.translate(-bounds.topLeft),
+                    Offset(value.radiusX, value.radiusY), value.sourceLobe?.translate(-bounds.topLeft),
+                    Offset(value.sourceRadiusX, value.sourceRadiusY), value.smoothing, workspace)
+                val outline = android.graphics.Path(local.path(bounds.size).asAndroidPath())
+                val actual = Region().apply {
+                    setPath(expandedLiquidMenuShadowHole(outline, 120f), clip)
+                }
+                // Rasterize each dilation component independently before their integer
+                // region union, so the reference never intersects floating-point curves.
+                val expected = Region()
+                fun include(component: android.graphics.Path) {
+                    expected.op(Region().apply { setPath(component, clip) }, Region.Op.UNION)
+                }
+                for (x in floatArrayOf(-120f, 120f)) for (y in floatArrayOf(-120f, 120f)) {
+                    include(android.graphics.Path(outline).apply { offset(x, y) })
+                }
+                val extent = android.graphics.RectF().also { outline.computeBounds(it, true) }
+                include(android.graphics.Path().apply {
+                    addRect(extent.centerX() - 120f, extent.top - 120f,
+                        extent.centerX() + 120f, extent.bottom + 120f, android.graphics.Path.Direction.CW)
+                })
+                include(android.graphics.Path().apply {
+                    addRect(extent.left - 120f, extent.centerY() - 120f,
+                        extent.right + 120f, extent.centerY() + 120f, android.graphics.Path.Direction.CW)
+                })
+                val difference = Region(actual).apply { op(expected, Region.Op.XOR) }
+                // Ignore at most two pixels of boundary raster rounding, while keeping
+                // the broad interior holes that caused visible one-frame triangles.
+                val core = Region(difference)
+                for (x in intArrayOf(-2, 0, 2)) for (y in intArrayOf(-2, 0, 2)) {
+                    if (x != 0 || y != 0) core.op(Region(difference).apply { translate(x, y) }, Region.Op.INTERSECT)
+                }
+                assertTrue("The shadow hole stays complete: opening=$opening frame=$frame bounds=${core.bounds}",
+                    core.isEmpty)
+            }
+        }
+    }
+
+    @Test
     fun navigationInnerShadowsPreserveContrastInsideSmallShapes() {
         val backingColors = listOf(Color.White, Color(0xFFF0F0F0), Color(0xFF202020), Color(0xFF404040))
         val bounds = listOf(Rect(8f, 8f, 52f, 52f), Rect(88f, 8f, 168f, 56f))

@@ -309,9 +309,12 @@ internal class LiquidMenuGaussianField {
         for (index in 0..radius) weights[index] /= sum
 
         val bounds = contour.exteriorBounds()
-        origin = bounds.topLeft
-        width = max(2, ceil(bounds.width / step).toInt() + 1)
-        height = max(2, ceil(bounds.height / step).toInt() + 1)
+        // Coverage probes the field one pixel beyond the moving skin. Keep an output
+        // texel on every side so those derivatives never hit the texture clamp. Moving
+        // by one whole step preserves the original interior sampling lattice.
+        origin = bounds.topLeft - Offset(step, step)
+        width = max(2, ceil(bounds.width / step).toInt() + 1) + 2
+        height = max(2, ceil(bounds.height / step).toInt() + 1) + 2
         val paddedWidth = width + radius * 2
         val paddedHeight = height + radius * 2
         val rawSize = paddedWidth * paddedHeight * 3
