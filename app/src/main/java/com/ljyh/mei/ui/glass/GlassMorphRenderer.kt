@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.ceil
+import kotlin.math.floor
 import com.kyant.backdrop.Backdrop
 import com.ljyh.mei.ui.liquidglass.PressHighlightRenderer
 
@@ -108,6 +109,9 @@ internal class GlassMorphRenderer(
     private val innerShadows = NavigationInnerShadowRenderer(renderScale = renderScale)
     private val dropShadow = NavigationDropShadowRenderer(renderScale = renderScale)
     private val shadowLiftEffect = if (appearance.usesBackdrop) navigationShadowLiftEffect() else null
+    private val reusableOutlinePath = Path()
+    private var materialWidth = 0
+    private var materialHeight = 0
     private var recordedViewport: Rect? = null
     private val sourceEffect = if (appearance.usesBackdrop) run {
         val color = RenderEffect.createColorFilterEffect(
@@ -155,12 +159,13 @@ internal class GlassMorphRenderer(
         menuField: LiquidMenuFieldTexture? = null,
         pressHighlight: GlassPressHighlight? = null,
         pressHighlightBounds: Rect? = null,
+        outlinePath: Path? = null,
     ) = with(scope) {
         if (bounds.isEmpty || viewport.isEmpty) return@with
         val recordedLayoutDirection = layoutDirection
-        val outline = shape.createOutline(bounds.size, layoutDirection, this)
-        val path = Path().apply {
-            when (outline) {
+        val path = outlinePath ?: reusableOutlinePath.apply {
+            rewind()
+            when (val outline = shape.createOutline(bounds.size, layoutDirection, this@with)) {
                 is Outline.Rectangle -> addRect(outline.rect)
                 is Outline.Rounded -> addRoundRect(outline.roundRect)
                 is Outline.Generic -> addPath(outline.path)
@@ -299,12 +304,29 @@ internal class GlassMorphRenderer(
             if (pressHighlightBounds != null) 0.5f * 0.38f * (pressHighlight?.progress ?: 0f) else 0f,
         )
         val useNavigationMaterial = navigationMaterial && appearance.usesBackdrop
+        var materialOrigin = Offset.Zero
         if (useNavigationMaterial) {
             val nativeSize = size
-            val bufferSize = IntSize(
-                ceil(viewport.width * renderScale).toInt(),
-                ceil(viewport.height * renderScale).toInt(),
+            // The material has no filter of its own. Its guarded source/effect layers
+            // keep the full optical capture; only the final compositing target is cropped.
+            // Integer texel origins preserve the original raster and bilinear sample grid.
+            materialOrigin = Offset(
+                floor((sourceOffset.x + bounds.left) * renderScale) - 1f,
+                floor((sourceOffset.y + bounds.top) * renderScale) - 1f,
             )
+            // Reserve the stable endpoint host on the first frame, avoiding repeated
+            // allocations while the opening droplet grows through the size buckets.
+            val requiredWidth = maxOf(
+                (ceil((sourceOffset.x + bounds.right) * renderScale) + 1f - materialOrigin.x).toInt(),
+                ceil(nativeSize.width * renderScale).toInt() + 3,
+            )
+            val requiredHeight = maxOf(
+                (ceil((sourceOffset.y + bounds.bottom) * renderScale) + 1f - materialOrigin.y).toInt(),
+                ceil(nativeSize.height * renderScale).toInt() + 3,
+            )
+            materialWidth = maxOf(materialWidth, (requiredWidth + 63) / 64 * 64)
+            materialHeight = maxOf(materialHeight, (requiredHeight + 63) / 64 * 64)
+            val bufferSize = IntSize(materialWidth, materialHeight)
             material.clip = true
             material.compositingStrategy = CompositingStrategy.Offscreen
             material.record(
@@ -312,8 +334,9 @@ internal class GlassMorphRenderer(
                 layoutDirection = recordedLayoutDirection,
                 size = bufferSize,
             ) {
-                // Material pixels map to (local + sourceOffset) * renderScale.
+                // Material pixels map to (local + sourceOffset) * renderScale - origin.
                 withTransform({
+                    translate(-materialOrigin.x, -materialOrigin.y)
                     scale(renderScale, renderScale, Offset.Zero)
                     translate(sourceOffset.x, sourceOffset.y)
                 }) {
@@ -356,7 +379,10 @@ internal class GlassMorphRenderer(
         clipGlassShape(bounds, radius, shape, path) {
             if (useNavigationMaterial) {
                 withTransform({
-                    translate(-sourceOffset.x, -sourceOffset.y)
+                    translate(
+                        materialOrigin.x / renderScale - sourceOffset.x,
+                        materialOrigin.y / renderScale - sourceOffset.y,
+                    )
                     scale(1f / renderScale, 1f / renderScale, Offset.Zero)
                 }) { drawLayer(material) }
             }

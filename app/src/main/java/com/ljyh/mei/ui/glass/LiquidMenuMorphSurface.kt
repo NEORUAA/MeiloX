@@ -77,8 +77,7 @@ internal fun LiquidMenuMorphSurface(
     val fieldTexture = remember { LiquidMenuFieldTexture() }
     val foreground = rememberGraphicsLayer()
     val sourceContents = rememberGraphicsLayer()
-    var recordedSource by remember { mutableStateOf<ToolbarMenuPortal?>(null) }
-    var foregroundCapture by remember(motion) { mutableStateOf<Rect?>(null) }
+    val drawCache = remember(motion) { LiquidMenuDrawCache() }
     val menuLayerBlock: GraphicsLayerScope.() -> Unit = {
         this.transformOrigin = transformOrigin
         applyGlassDragScale(highlight.pressProgress, highlight.offset)
@@ -88,7 +87,6 @@ internal fun LiquidMenuMorphSurface(
     }
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     // A fixed capture band avoids changing the sampled background as the contour moves.
-    var viewport by remember(motion) { mutableStateOf<Rect?>(null) }
     Box(
         Modifier.fillMaxSize()
             .onGloballyPositioned { coordinates = it }
@@ -136,7 +134,7 @@ internal fun LiquidMenuMorphSurface(
                 val sampleGuard = 200.dp.toPx()
                 val opticalGuard = 2f * kotlin.math.abs(frame.lensAmount) * maxOf(1f, sampleScale.x, sampleScale.y) + 50.dp.toPx()
                 val required = visualBounds.inflate(opticalGuard)
-                val previousCapture = viewport
+                val previousCapture = drawCache.viewport
                 val capture = if (previousCapture == null) Rect(
                     minOf(origin.x, visualBounds.left) - sampleGuard,
                     minOf(origin.y, visualBounds.top) - sampleGuard,
@@ -148,7 +146,7 @@ internal fun LiquidMenuMorphSurface(
                     minOf(required.left, previousCapture.left), minOf(required.top, previousCapture.top),
                     maxOf(required.right, previousCapture.right), maxOf(required.bottom, previousCapture.bottom),
                 ) else previousCapture
-                if (capture != previousCapture) viewport = capture
+                drawCache.viewport = capture
                 renderer.draw(
                     scope = this,
                     coordinates = host,
@@ -163,6 +161,7 @@ internal fun LiquidMenuMorphSurface(
                     lensSmoothing = frame.smoothing,
                     menuField = fieldTexture,
                     shape = shape,
+                    outlinePath = path,
                     tint = colors.container,
                     highlightAlpha = 0.5f * (0.54f + 0.38f * highlight.pressProgress),
                     refractionHeight = frame.lensHeight.toDp(),
@@ -192,12 +191,12 @@ internal fun LiquidMenuMorphSurface(
                             minOf(0f, bounds.left) - guard, minOf(0f, bounds.top) - guard,
                             maxOf(size.width, bounds.right) + guard, maxOf(size.height, bounds.bottom) + guard,
                         )
-                        val old = foregroundCapture
+                        val old = drawCache.foregroundCapture
                         val capture = if (old == null) initial else Rect(
                             minOf(old.left, needed.left), minOf(old.top, needed.top),
                             maxOf(old.right, needed.right), maxOf(old.bottom, needed.bottom),
                         )
-                        if (capture != old) foregroundCapture = capture
+                        drawCache.foregroundCapture = capture
                         foreground.record(IntSize(ceil(capture.width).toInt(), ceil(capture.height).toInt())) {
                             withTransform({ translate(-capture.left, -capture.top) }) {
                                 this@drawWithContent.drawContent()
@@ -234,14 +233,15 @@ internal fun LiquidMenuMorphSurface(
         if (sourcePortal != null) {
             Box(Modifier.fillMaxSize().drawWithContent {
                 val frame = motion.frame
+                if (frame.sourceOpacity <= 0f) return@drawWithContent
                 val target = frame.sourceLobe?.translate(-screenOrigin) ?: return@drawWithContent
                 val crop = sourcePortal.sourceBounds
-                if (recordedSource !== sourcePortal) {
+                if (drawCache.recordedSource !== sourcePortal) {
                     sourceContents.clip = true
                     sourceContents.record(IntSize(ceil(crop.width).toInt(), ceil(crop.height).toInt())) {
                         withTransform({ translate(-crop.left, -crop.top) }) { drawLayer(sourcePortal.layer) }
                     }
-                    recordedSource = sourcePortal
+                    drawCache.recordedSource = sourcePortal
                 }
                 sourceContents.renderEffect = if (frame.sourceBlur > 0.01f) RenderEffect.createBlurEffect(
                     frame.sourceBlur, frame.sourceBlur, Shader.TileMode.CLAMP,
@@ -274,6 +274,13 @@ internal fun LiquidMenuMorphSurface(
             }.padding(10.dp),
         ) { content(childBackdrop) }
     }
+}
+
+/** Draw-local recordings must not invalidate composition when their capture bands grow. */
+private class LiquidMenuDrawCache {
+    var recordedSource: ToolbarMenuPortal? = null
+    var foregroundCapture: Rect? = null
+    var viewport: Rect? = null
 }
 
 /** Signed FP16 data avoids color conversion, premultiplication and RGBA8 distance quantization. */
