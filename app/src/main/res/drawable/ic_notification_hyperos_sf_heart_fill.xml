@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exported with the SF Symbols CLI. SF Symbol: heart.fill (Regular-S). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- HyperOS normalizes custom actions to 40dp; retain the native 24dp SF glyph. -->
+    <group android:translateX="8" android:translateY="8">
+        <group
+            android:scaleX="0.2602286786"
+            android:scaleY="0.2602286786"
+            android:translateX="-0.5412943879"
+            android:translateY="20.8373555145">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M48.1934 1.70898C49.0723 1.70898 50.3418 1.12305 51.2207 0.537109C73.1445-13.3301 86.6211-29.541 86.6211-46.0938C86.6211-59.8633 77.1484-69.6289 64.9902-69.6289C57.3242-69.6289 51.7578-65.4297 48.1934-59.082C44.6777-65.3809 39.0625-69.6289 31.3965-69.6289C19.2383-69.6289 9.76562-59.8633 9.76562-46.0938C9.76562-29.541 23.2422-13.3301 45.166 0.537109C46.0449 1.12305 47.3633 1.70898 48.1934 1.70898Z" />
+        </group>
+    </group>
+</vector>

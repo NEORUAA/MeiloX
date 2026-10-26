@@ -27,6 +27,34 @@ internal const val FLOATING_LYRICS_ENABLED = "floatingLyricsEnabled"
 internal const val ENABLE_FLOATING_LYRICS = "com.neoruaa.meilox.floatingLyrics.ENABLE"
 internal const val DISABLE_FLOATING_LYRICS = "com.neoruaa.meilox.floatingLyrics.DISABLE"
 
+private val useHyperOsNotificationIcons: Boolean by lazy {
+    val versionName = if (Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) {
+        try {
+            Class.forName("android.os.SystemProperties")
+                .getMethod("get", String::class.java, String::class.java)
+                .invoke(null, "ro.mi.os.version.name", "") as? String ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    } else ""
+    usesHyperOsNotificationIcons(Build.MANUFACTURER, versionName)
+}
+
+internal fun usesHyperOsNotificationIcons(manufacturer: String, versionName: String): Boolean =
+    manufacturer.equals("Xiaomi", ignoreCase = true) && versionName.isNotEmpty()
+
+/** Matches the reference clients' separate 40dp resources for HyperOS custom actions. */
+internal fun hyperOsNotificationIcon(icon: Int): Int = when (icon) {
+    R.drawable.ic_notification_sf_shuffle -> R.drawable.ic_notification_hyperos_sf_shuffle
+    R.drawable.ic_notification_sf_repeat -> R.drawable.ic_notification_hyperos_sf_repeat
+    R.drawable.ic_notification_sf_repeat_1 -> R.drawable.ic_notification_hyperos_sf_repeat_1
+    R.drawable.ic_notification_sf_heart -> R.drawable.ic_notification_hyperos_sf_heart
+    R.drawable.ic_notification_sf_heart_fill -> R.drawable.ic_notification_hyperos_sf_heart_fill
+    R.drawable.ic_notification_sf_text_rectangle -> R.drawable.ic_notification_hyperos_sf_text_rectangle
+    R.drawable.ic_notification_sf_text_rectangle_fill -> R.drawable.ic_notification_hyperos_sf_text_rectangle_fill
+    else -> icon
+}
+
 internal fun floatingLyricsIntent(context: Context, enabled: Boolean): Intent =
     Intent(context, MainActivity::class.java)
         .setAction(if (enabled) ENABLE_FLOATING_LYRICS else DISABLE_FLOATING_LYRICS)
@@ -56,6 +84,7 @@ internal fun notificationButton(
     liked: Boolean,
     enabled: Boolean,
     floatingLyricsEnabled: Boolean = false,
+    useHyperOsIcons: Boolean = useHyperOsNotificationIcons,
 ): CommandButton? {
     val icon: Int
     val label: Int
@@ -92,7 +121,7 @@ internal fun notificationButton(
     }
     // ICON_UNDEFINED keeps controllers from substituting a predefined icon for the SF glyph.
     return CommandButton.Builder(CommandButton.ICON_UNDEFINED)
-        .setCustomIconResId(icon)
+        .setCustomIconResId(if (useHyperOsIcons) hyperOsNotificationIcon(icon) else icon)
         .setDisplayName(context.getString(label))
         .setSessionCommand(SessionCommand(
             if (left) NOTIFICATION_LEFT_COMMAND else NOTIFICATION_RIGHT_COMMAND,
