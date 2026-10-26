@@ -114,7 +114,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                 GlasmioButton(
                     onClick = { showMobileLoginSheet = true },
                     modifier = Modifier.fillMaxWidth(),
-                    style = GlassSurfaceStyle.Standard,
+                    style = GlassSurfaceStyle.Navigation,
                     emphasis = GlassEmphasis.Prominent,
                 ) {
                     Text(
@@ -125,7 +125,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                 GlasmioButton(
                     onClick = { Screen.NeteaseWebLogin.navigate(navController) },
                     modifier = Modifier.fillMaxWidth(),
-                    style = GlassSurfaceStyle.Standard,
+                    style = GlassSurfaceStyle.Navigation,
                 ) {
                     SfIcon("globe", null, size = 19.dp)
                     Spacer(Modifier.width(8.dp))
@@ -230,7 +230,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                         bottom = bottomPadding + 12.dp,
                     )
                     .fillMaxWidth(),
-                style = GlassSurfaceStyle.Standard,
+                style = GlassSurfaceStyle.Navigation,
             ) {
                 SfIcon("key", null, size = 19.dp)
                 Spacer(Modifier.width(8.dp))
@@ -405,7 +405,7 @@ private fun NeteaseCookieLoginSheet(
             GlasmioButton(
                 onClick = submit,
                 modifier = Modifier.fillMaxWidth(),
-                style = GlassSurfaceStyle.Standard,
+                style = GlassSurfaceStyle.Navigation,
                 enabled = cookieValue.isNotBlank() && !isSubmitting,
                 emphasis = GlassEmphasis.Prominent,
             ) {
