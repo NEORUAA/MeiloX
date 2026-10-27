@@ -329,25 +329,24 @@ fun PlaylistScreen(
         )
     }
 
-    if (showDownloadDialog) {
-        DownloadConfirmDialog(
-            currentQuality = downloadQuality,
-            downloadPath = downloadPath,
-            onDismiss = { showDownloadDialog = false },
-            onConfirm = {
-                showDownloadDialog = false
-                doBulkDownload(pendingDownloadTracks)
-            },
-            onGoToSettings = {
-                showDownloadDialog = false
-                Screen.DownloadSettings.navigate(navController)
-            },
-            onGoToDownloadManage = {
-                showDownloadDialog = false
-                Screen.DownloadManage.navigate(navController)
-            }
-        )
-    }
+    DownloadConfirmDialog(
+        visible = showDownloadDialog,
+        currentQuality = downloadQuality,
+        downloadPath = downloadPath,
+        onDismiss = { showDownloadDialog = false },
+        onConfirm = {
+            showDownloadDialog = false
+            doBulkDownload(pendingDownloadTracks)
+        },
+        onGoToSettings = {
+            showDownloadDialog = false
+            Screen.DownloadSettings.navigate(navController)
+        },
+        onGoToDownloadManage = {
+            showDownloadDialog = false
+            Screen.DownloadManage.navigate(navController)
+        }
+    )
 
     // 8. UI 渲染
     if (playlistDetail is Resource.Error) {

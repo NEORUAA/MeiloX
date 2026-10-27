@@ -217,14 +217,13 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
             )
         }
     }
-    if (showInfo) {
-        GlasmioAlertDialog(
-            onDismissRequest = { showInfo = false },
-            title = stringResource(R.string.listening_stats_info_title),
-            message = stringResource(R.string.listening_stats_info_message),
-            buttons = listOf(GlasmioAlertButtonSpec(stringResource(R.string.done), { showInfo = false }, GlasmioAlertButtonRole.Cancel)),
-        )
-    }
+    GlasmioAlertDialog(
+        visible = showInfo,
+        onDismissRequest = { showInfo = false },
+        title = stringResource(R.string.listening_stats_info_title),
+        message = stringResource(R.string.listening_stats_info_message),
+        buttons = listOf(GlasmioAlertButtonSpec(stringResource(R.string.done), { showInfo = false }, GlasmioAlertButtonRole.Cancel)),
+    )
 }
 
 @Composable

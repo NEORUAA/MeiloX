@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.podcast
 
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -560,8 +561,9 @@ fun PodcastDetailScreen(
             }
         },
     )
-    pendingDownload?.let { selected ->
+    rememberAlertContent(pendingDownload)?.let { selected ->
         com.ljyh.mei.ui.component.DownloadConfirmDialog(
+            visible = pendingDownload != null,
             currentQuality = downloadQuality, downloadPath = downloadPath,
             onDismiss = { pendingDownload = null },
             onConfirm = { pendingDownload = null; download(selected, downloadQuality.toMusicQuality()) },

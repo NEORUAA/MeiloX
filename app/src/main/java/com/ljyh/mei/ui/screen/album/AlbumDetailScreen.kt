@@ -263,25 +263,24 @@ fun AlbumDetailScreen(
         onDispose { selectionToolbar.content.value = null }
     }
 
-    if (showDownloadDialog) {
-        DownloadConfirmDialog(
-            currentQuality = downloadQuality,
-            downloadPath = downloadPath,
-            onDismiss = { showDownloadDialog = false },
-            onConfirm = {
-                showDownloadDialog = false
-                doDownload(pendingDownloadTracks)
-            },
-            onGoToSettings = {
-                showDownloadDialog = false
-                Screen.DownloadSettings.navigate(navController)
-            },
-            onGoToDownloadManage = {
-                showDownloadDialog = false
-                Screen.DownloadManage.navigate(navController)
-            }
-        )
-    }
+    DownloadConfirmDialog(
+        visible = showDownloadDialog,
+        currentQuality = downloadQuality,
+        downloadPath = downloadPath,
+        onDismiss = { showDownloadDialog = false },
+        onConfirm = {
+            showDownloadDialog = false
+            doDownload(pendingDownloadTracks)
+        },
+        onGoToSettings = {
+            showDownloadDialog = false
+            Screen.DownloadSettings.navigate(navController)
+        },
+        onGoToDownloadManage = {
+            showDownloadDialog = false
+            Screen.DownloadManage.navigate(navController)
+        }
+    )
 
     // 6. 提取播放队列构建逻辑 (避免重复)
     fun buildListQueue(startIndex: Int = 0): ListQueue? {

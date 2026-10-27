@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component
 
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -18,11 +19,13 @@ fun VersionUpdateAlert(
     result: VersionUpdateResult?,
     onDismiss: () -> Unit,
 ) {
-    if (result == null) return
+    val visible = result != null
+    val displayedResult = rememberAlertContent(result) ?: return
     val context = LocalContext.current
-    when (result) {
+    when (val result = displayedResult) {
         is VersionUpdateResult.UpdateAvailable -> {
             GlasmioAlertDialog(
+                visible = visible,
                 onDismissRequest = onDismiss,
                 title = stringResource(
                     if (result.comparisonKnown) R.string.about_update_available_title
@@ -64,6 +67,7 @@ fun VersionUpdateAlert(
 
         VersionUpdateResult.UpToDate -> {
             GlasmioAlertDialog(
+                visible = visible,
                 onDismissRequest = onDismiss,
                 title = stringResource(R.string.about_update_up_to_date_title),
                 message = stringResource(
@@ -82,6 +86,7 @@ fun VersionUpdateAlert(
 
         VersionUpdateResult.Failed -> {
             GlasmioAlertDialog(
+                visible = visible,
                 onDismissRequest = onDismiss,
                 title = stringResource(R.string.about_update_failed_title),
                 message = stringResource(R.string.about_update_failed_message),

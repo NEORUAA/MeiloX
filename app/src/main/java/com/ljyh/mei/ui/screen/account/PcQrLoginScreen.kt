@@ -5,6 +5,7 @@
  */
 package com.ljyh.mei.ui.screen.account
 
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import android.Manifest
 import android.app.Activity
 import android.content.ClipData
@@ -339,11 +340,12 @@ fun PcQrLoginScreen(viewModel: PcQrLoginViewModel = hiltViewModel()) {
         }
     }
 
-    if (state.isDialogVisible) {
-        val session = state.session ?: return
-        val busy = state.phase != PcQrLoginPhase.AwaitingConfirmation
+    rememberAlertContent(state.takeIf { it.isDialogVisible && it.session != null })?.let { dialogState ->
+        val session = dialogState.session ?: return@let
+        val busy = dialogState.phase != PcQrLoginPhase.AwaitingConfirmation
         val platform = session.platform.ifBlank { stringResource(R.string.pc_qr_login_generic_platform) }
         GlasmioAlertDialog(
+            visible = state.isDialogVisible && state.session != null,
             onDismissRequest = {},
             title = stringResource(R.string.pc_qr_login_confirm_title),
             message = stringResource(R.string.pc_qr_login_confirm_message, platform),
@@ -371,7 +373,7 @@ fun PcQrLoginScreen(viewModel: PcQrLoginViewModel = hiltViewModel()) {
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp),
                 )
             }
-            state.error?.takeIf { it.kind == PcQrLoginErrorKind.Request }?.let { error ->
+            dialogState.error?.takeIf { it.kind == PcQrLoginErrorKind.Request }?.let { error ->
                 Text(
                     text = error.localizedMessage(),
                     modifier = Modifier.padding(bottom = 12.dp),

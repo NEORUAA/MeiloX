@@ -22,9 +22,11 @@ fun DownloadConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     onGoToSettings: () -> Unit,
-    onGoToDownloadManage: () -> Unit = {}
+    onGoToDownloadManage: () -> Unit = {},
+    visible: Boolean = true,
 ) {
     GlasmioAlertDialog(
+        visible = visible,
         onDismissRequest = onDismiss,
         title = stringResource(R.string.download_confirm_title),
     ) {
@@ -46,20 +48,20 @@ fun DownloadConfirmDialog(
         ) {
             GlasmioAlertButton(
                 text = stringResource(R.string.download_change_settings),
-                onClick = onGoToSettings,
+                onClick = { if (visible) onGoToSettings() },
                 modifier = Modifier.weight(1f),
                 role = GlasmioAlertButtonRole.Cancel,
             )
             GlasmioAlertButton(
                 text = stringResource(R.string.download_view_queue),
-                onClick = onGoToDownloadManage,
+                onClick = { if (visible) onGoToDownloadManage() },
                 modifier = Modifier.weight(1f),
                 role = GlasmioAlertButtonRole.Cancel,
             )
         }
         GlasmioAlertButton(
             text = stringResource(R.string.download_start),
-            onClick = onConfirm,
+            onClick = { if (visible) onConfirm() },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }

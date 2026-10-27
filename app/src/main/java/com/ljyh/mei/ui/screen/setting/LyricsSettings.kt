@@ -189,27 +189,26 @@ internal fun FlymeStatusBarLyricsSetting(
             },
         )
     }
-    if (showWarning.value) {
-        GlasmioAlertDialog(
-            onDismissRequest = { showWarning.value = false },
-            title = stringResource(R.string.flyme_status_bar_lyrics),
-            message = stringResource(R.string.flyme_status_bar_lyrics_warning),
-            buttons = listOf(
-                GlasmioAlertButtonSpec(
-                    label = stringResource(android.R.string.cancel),
-                    role = GlasmioAlertButtonRole.Cancel,
-                    onClick = { showWarning.value = false },
-                ),
-                GlasmioAlertButtonSpec(
-                    label = stringResource(android.R.string.ok),
-                    onClick = {
-                        showWarning.value = false
-                        onCheckedChange(true)
-                    },
-                ),
+    GlasmioAlertDialog(
+        visible = showWarning.value,
+        onDismissRequest = { showWarning.value = false },
+        title = stringResource(R.string.flyme_status_bar_lyrics),
+        message = stringResource(R.string.flyme_status_bar_lyrics_warning),
+        buttons = listOf(
+            GlasmioAlertButtonSpec(
+                label = stringResource(android.R.string.cancel),
+                role = GlasmioAlertButtonRole.Cancel,
+                onClick = { showWarning.value = false },
             ),
-        )
-    }
+            GlasmioAlertButtonSpec(
+                label = stringResource(android.R.string.ok),
+                onClick = {
+                    showWarning.value = false
+                    onCheckedChange(true)
+                },
+            ),
+        ),
+    )
 }
 
 @Composable

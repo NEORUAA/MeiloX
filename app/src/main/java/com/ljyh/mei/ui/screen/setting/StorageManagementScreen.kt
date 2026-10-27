@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import android.content.Context
 import android.net.Uri
 import android.os.StatFs
@@ -327,8 +328,9 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
         }
     }
 
-    confirmation?.let { action ->
+    rememberAlertContent(confirmation)?.let { action ->
         GlasmioAlertDialog(
+            visible = confirmation != null,
             onDismissRequest = { confirmation = null },
             title = stringResource(action.confirmationTitle),
             message = stringResource(action.confirmationMessage),

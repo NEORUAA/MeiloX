@@ -214,78 +214,7 @@ fun CommonOverlayHandler(
             )
         }
 
-        is OverlayState.MusicQualitySelection -> {
-            val playerConnection = LocalPlayerConnection.current
-            val currentQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
-            val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
-            val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
-            val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
-            val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
-            val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
-            LaunchedEffect(playerConnection, mediaMetadata?.id) {
-                playerConnection?.refreshAvailableMusicQualities()
-            }
-            GlasmioAlertDialog(
-                onDismissRequest = overlayHandler::dismiss,
-                title = stringResource(R.string.music_quality),
-            ) {
-                GlasmioGroupedList {
-                    localPlaybackInfo?.let { info ->
-                        GlasmioListRow(
-                            title = localPlaybackQualityTitle(info, includeSource = true),
-                            showTopSeparator = false,
-                            onClick = {
-                                playerConnection?.useLocalSource()
-                                overlayHandler.dismiss()
-                            },
-                            trailing = if (isPlayingLocalSource) {
-                                {
-                                    SfIcon(
-                                        "checkmark",
-                                        contentDescription = null,
-                                        size = 17.dp,
-                                        tint = LocalGlassColors.current.content,
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                    availableQualities.forEachIndexed { index, quality ->
-                        GlasmioListRow(
-                            title = stringResource(quality.labelRes),
-                            showTopSeparator = index != 0 || localPlaybackInfo != null,
-                            onClick = {
-                                playerConnection?.changeQuality(quality)
-                                overlayHandler.dismiss()
-                            },
-                            trailing = if (!isPlayingLocalSource && quality == currentQuality) {
-                                {
-                                    SfIcon(
-                                        "checkmark",
-                                        contentDescription = null,
-                                        size = 17.dp,
-                                        tint = LocalGlassColors.current.content,
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                    if (isLoadingQualities || (availableQualities.isEmpty() && localPlaybackInfo == null)) {
-                        GlasmioListRow(
-                            title = stringResource(
-                                if (isLoadingQualities) R.string.track_quality_loading
-                                else R.string.track_quality_unavailable,
-                            ),
-                            showTopSeparator = availableQualities.isNotEmpty() || localPlaybackInfo != null,
-                        )
-                    }
-                }
-            }
-        }
+        is OverlayState.MusicQualitySelection -> Unit
 
         is OverlayState.TrackActionMenu -> {
             TrackActionMenu(
@@ -300,4 +229,81 @@ fun CommonOverlayHandler(
             )
         }
     }
+    val qualityDialogVisible = overlayHandler.currentOverlayValue is OverlayState.MusicQualitySelection
+    GlasmioAlertDialog(
+        visible = qualityDialogVisible,
+        onDismissRequest = overlayHandler::dismiss,
+        title = stringResource(R.string.music_quality),
+    ) {
+        val playerConnection = LocalPlayerConnection.current
+        val currentQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
+        val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
+        val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
+        val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
+        val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
+        val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
+        LaunchedEffect(qualityDialogVisible, playerConnection, mediaMetadata?.id) {
+            if (qualityDialogVisible) playerConnection?.refreshAvailableMusicQualities()
+        }
+        GlasmioGroupedList {
+            localPlaybackInfo?.let { info ->
+                GlasmioListRow(
+                    title = localPlaybackQualityTitle(info, includeSource = true),
+                    showTopSeparator = false,
+                    onClick = {
+                        if (qualityDialogVisible) {
+                            playerConnection?.useLocalSource()
+                            overlayHandler.dismiss()
+                        }
+                    },
+                    trailing = if (isPlayingLocalSource) {
+                        {
+                            SfIcon(
+                                "checkmark",
+                                contentDescription = null,
+                                size = 17.dp,
+                                tint = LocalGlassColors.current.content,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+            availableQualities.forEachIndexed { index, quality ->
+                GlasmioListRow(
+                    title = stringResource(quality.labelRes),
+                    showTopSeparator = index != 0 || localPlaybackInfo != null,
+                    onClick = {
+                        if (qualityDialogVisible) {
+                            playerConnection?.changeQuality(quality)
+                            overlayHandler.dismiss()
+                        }
+                    },
+                    trailing = if (!isPlayingLocalSource && quality == currentQuality) {
+                        {
+                            SfIcon(
+                                "checkmark",
+                                contentDescription = null,
+                                size = 17.dp,
+                                tint = LocalGlassColors.current.content,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+            if (isLoadingQualities || (availableQualities.isEmpty() && localPlaybackInfo == null)) {
+                GlasmioListRow(
+                    title = stringResource(
+                        if (isLoadingQualities) R.string.track_quality_loading
+                        else R.string.track_quality_unavailable,
+                    ),
+                    showTopSeparator = availableQualities.isNotEmpty() || localPlaybackInfo != null,
+                )
+            }
+        }
+    }
+
 }

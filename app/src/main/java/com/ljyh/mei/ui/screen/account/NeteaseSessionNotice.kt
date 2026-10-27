@@ -39,21 +39,20 @@ fun NeteaseLegacyWebSessionNotice() {
     val preferences by context.dataStore.data.collectAsStateWithLifecycle(initialValue = null)
     var handledThisLaunch by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    if (!handledThisLaunch && preferences?.shouldExplainLegacyWebSession() == true) {
-        NeteaseLegacyWebSessionDialog(
-            onDismiss = { handledThisLaunch = true },
-            onDoNotRemind = {
-                handledThisLaunch = true
-                scope.launch {
-                    context.dataStore.edit { it[NeteaseWebSessionNoticeDismissedKey] = true }
-                }
-            },
-            onSignInAgain = {
-                handledThisLaunch = true
-                Screen.NeteaseLogin.navigate(navController)
-            },
-        )
-    }
+    NeteaseLegacyWebSessionDialog(
+        visible = !handledThisLaunch && preferences?.shouldExplainLegacyWebSession() == true,
+        onDismiss = { handledThisLaunch = true },
+        onDoNotRemind = {
+            handledThisLaunch = true
+            scope.launch {
+                context.dataStore.edit { it[NeteaseWebSessionNoticeDismissedKey] = true }
+            }
+        },
+        onSignInAgain = {
+            handledThisLaunch = true
+            Screen.NeteaseLogin.navigate(navController)
+        },
+    )
 }
 
 @Composable
@@ -61,8 +60,10 @@ internal fun NeteaseLegacyWebSessionDialog(
     onDismiss: () -> Unit,
     onDoNotRemind: () -> Unit,
     onSignInAgain: () -> Unit,
+    visible: Boolean = true,
 ) {
     GlasmioAlertDialog(
+        visible = visible,
         onDismissRequest = onDismiss,
         title = stringResource(R.string.netease_web_session_notice_title),
         message = stringResource(R.string.netease_web_session_notice_message),

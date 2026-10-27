@@ -314,27 +314,26 @@ fun PlaySetting(
             }
         }
     }
-    if (showFloatingLyricsPermission) {
-        GlasmioAlertDialog(
-            onDismissRequest = { showFloatingLyricsPermission = false },
-            title = stringResource(R.string.notification_floating_lyrics_background_permission),
-            message = floatingLyricsPermissionDescription,
-            buttons = listOf(
-                GlasmioAlertButtonSpec(
-                    label = stringResource(R.string.notification_floating_lyrics_permission_later),
-                    role = GlasmioAlertButtonRole.Cancel,
-                    onClick = { showFloatingLyricsPermission = false },
-                ),
-                GlasmioAlertButtonSpec(
-                    label = stringResource(R.string.pc_qr_login_open_settings),
-                    onClick = {
-                        showFloatingLyricsPermission = false
-                        openFloatingLyricsPermissionSettings(context)
-                    },
-                ),
+    GlasmioAlertDialog(
+        visible = showFloatingLyricsPermission,
+        onDismissRequest = { showFloatingLyricsPermission = false },
+        title = stringResource(R.string.notification_floating_lyrics_background_permission),
+        message = floatingLyricsPermissionDescription,
+        buttons = listOf(
+            GlasmioAlertButtonSpec(
+                label = stringResource(R.string.notification_floating_lyrics_permission_later),
+                role = GlasmioAlertButtonRole.Cancel,
+                onClick = { showFloatingLyricsPermission = false },
             ),
-        )
-    }
+            GlasmioAlertButtonSpec(
+                label = stringResource(R.string.pc_qr_login_open_settings),
+                onClick = {
+                    showFloatingLyricsPermission = false
+                    openFloatingLyricsPermissionSettings(context)
+                },
+            ),
+        ),
+    )
 }
 
 @Composable

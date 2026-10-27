@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
@@ -310,8 +311,9 @@ internal fun LibraryDownloadsPage(
     share?.let { NeteaseShareSheet(it, onDismiss = { share = null }) }
     info?.let { song -> LocalFileInfo(song) { info = null } }
     LocalMatchSheet(viewModel)
-    deleteEntry?.let { entry ->
+    rememberAlertContent(deleteEntry)?.let { entry ->
         GlasmioAlertDialog(
+            visible = deleteEntry != null,
             onDismissRequest = { deleteEntry = null },
             title = if (entry.canPlay) stringResource(R.string.local_library_delete_confirm, entry.title) else stringResource(R.string.local_library_remove_record),
             message = if (entry.canPlay) stringResource(R.string.local_library_delete_hint) else null,
@@ -419,8 +421,7 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
     var query by remember(state.song?.id) { mutableStateOf(TextFieldValue(state.query)) }
     var searchActive by remember(state.song?.id) { mutableStateOf(false) }
     val focus = LocalFocusManager.current
-    if (state.song == null) return
-    GlasmioBottomSheet(onDismissRequest = viewModel::dismissMatch) {
+    if (state.song != null) GlasmioBottomSheet(onDismissRequest = viewModel::dismissMatch) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(stringResource(R.string.local_library_match), style = IosTypography.title2, color = colors.content)
             Text(stringResource(R.string.local_library_match_hint), style = IosTypography.subheadline, color = colors.secondaryContent)
@@ -444,8 +445,8 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
             }
         }
     }
-    candidate?.let { result ->
-        GlasmioAlertDialog(onDismissRequest = { candidate = null }, title = stringResource(R.string.local_library_match_confirm),
+    rememberAlertContent(candidate)?.let { result ->
+        GlasmioAlertDialog(visible = candidate != null, onDismissRequest = { candidate = null }, title = stringResource(R.string.local_library_match_confirm),
             message = "${result.title}\n${result.artists.joinToString(" / ") { it.name }}\n${result.album.title}",
             buttons = listOf(
                 GlasmioAlertButtonSpec(stringResource(R.string.cancel), { candidate = null }, GlasmioAlertButtonRole.Cancel),

@@ -196,6 +196,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioTabItem
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioSearchToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioTextSelectionHost
+import io.github.neoruaa.glasmio.ui.GlasmioTextSelectionLabels
 import io.github.neoruaa.glasmio.ui.CompactBottomControlIconSize
 import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -563,6 +565,18 @@ class MainActivity : ComponentActivity() {
                     LocalPageAppearance provides registerPageAppearance,
                     LocalColorfulPageBackgrounds provides colorfulPageBackgrounds,
                 ) {
+                    GlasmioTextSelectionHost(
+                        backdrop = bottomControlsBackdrop,
+                        labels = GlasmioTextSelectionLabels(
+                            cut = stringResource(android.R.string.cut),
+                            copy = stringResource(android.R.string.copy),
+                            paste = stringResource(android.R.string.paste),
+                            selectAll = stringResource(android.R.string.selectAll),
+                            more = stringResource(R.string.more_actions_title),
+                            expanded = stringResource(R.string.menu_expanded),
+                            collapsed = stringResource(R.string.menu_collapsed),
+                        ),
+                    ) {
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1289,6 +1303,7 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { startupUpdateResult = null },
                         )
                         }
+                    }
                     }
                 }
             }

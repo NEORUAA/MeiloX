@@ -139,21 +139,21 @@ fun GeneralSettings() {
             }
         }
     }
-    if (showLogoutConfirmation && sessionType != NeteaseSessionType.None) {
-        NeteaseLogoutConfirmation(
-            title = logoutTitle,
-            onDismiss = { showLogoutConfirmation = false },
-            onConfirm = {
-                showLogoutConfirmation = false
-                scope.launch { logoutNetease(context) }
-            },
-        )
-    }
+    NeteaseLogoutConfirmation(
+        visible = showLogoutConfirmation && sessionType != NeteaseSessionType.None,
+        title = logoutTitle,
+        onDismiss = { showLogoutConfirmation = false },
+        onConfirm = {
+            showLogoutConfirmation = false
+            scope.launch { logoutNetease(context) }
+        },
+    )
 }
 
 @Composable
-internal fun NeteaseLogoutConfirmation(title: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+internal fun NeteaseLogoutConfirmation(title: String, onDismiss: () -> Unit, onConfirm: () -> Unit, visible: Boolean = true) {
     GlasmioAlertDialog(
+        visible = visible,
         onDismissRequest = onDismiss,
         title = title,
         message = stringResource(R.string.netease_logout_confirm_message),
