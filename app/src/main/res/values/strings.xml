@@ -166,6 +166,9 @@
     <string name="publish">Publish</string>
     <string name="search_discovery_hint">Search songs, albums, artists, playlists, and podcasts</string>
     <string name="private_messages">Private Messages</string>
+    <string name="official_messages">Official Messages</string>
+    <string name="official_messages_empty">No official messages</string>
+    <string name="message_load_more">Load more</string>
     <string name="message_start">Start a message</string>
     <string name="message_search_contacts">Search people you follow</string>
     <string name="private_conversation">Conversation</string>

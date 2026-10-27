@@ -102,16 +102,19 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
@@ -135,6 +138,9 @@ import com.kyant.shapes.Capsule
 import io.github.neoruaa.glasmio.glass.PressHighlightRenderer
 import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
+import com.ljyh.mei.ui.screen.social.privateConversationItems
+import com.ljyh.mei.data.model.melox.MessageContact
+import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import org.junit.Assert.assertEquals
@@ -154,6 +160,43 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun privateConversationsRemainTouchableAfterScrollingToOldMessages() {
+        val currentUser = MessageContact(100, "Current user", null, null, null)
+        val conversations = List(50) { index ->
+            val contact = MessageContact(1_000L + index, "Contact $index", null, null, null)
+            PrivateConversation(
+                id = "conversation-$index",
+                fromUser = if (index % 2 == 0) contact else currentUser,
+                toUser = if (index % 2 == 0) currentUser else contact,
+                lastMessageTime = 1_700_000_000_000L - index * 86_400_000L,
+                summary = "Message $index",
+                unreadCount = if (index == 0) 3 else 0,
+            )
+        }
+        val openedUsers = mutableListOf<Long>()
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
+                Box(Modifier.width(360.dp).height(600.dp)) {
+                    GlasmioPinnedListPage(
+                        title = "Private messages",
+                        bottomPadding = 0.dp,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(0.dp),
+                    ) {
+                        privateConversationItems(conversations, currentUser.id, openedUsers::add)
+                    }
+                }
+            }
+        }
+
+        for (index in listOf(0, 24, 49, 0)) {
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Contact $index"))
+            compose.onNodeWithText("Contact $index").assertIsDisplayed().performTouchInput { click() }
+            compose.runOnIdle { assertEquals(1_000L + index, openedUsers.lastOrNull()) }
+        }
+        compose.runOnIdle { assertEquals(listOf(1_000L, 1_024L, 1_049L, 1_000L), openedUsers) }
+    }
 
     @Test
     fun pinnedPageKeepsToolbarFixedDuringBodyOverscroll() {

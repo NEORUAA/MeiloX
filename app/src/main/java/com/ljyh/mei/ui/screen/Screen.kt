@@ -45,6 +45,7 @@ sealed class Screen(val route:String) {
     data object CloudMusic: Screen("cloud_music")
     data object Search: Screen("search")
     data object PrivateMessages: Screen("private_messages")
+    data object OfficialMessages: Screen("official_messages")
     data object PrivateConversation: Screen("private_message")
     data object MessageContacts: Screen("message_contacts")
     data object ListenTogether: Screen("listen_together")

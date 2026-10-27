@@ -45,6 +45,7 @@ import com.ljyh.mei.data.model.melox.PodcastPage
 import com.ljyh.mei.data.model.melox.PodcastProgram
 import com.ljyh.mei.data.model.melox.PodcastProgramPage
 import com.ljyh.mei.data.model.melox.PrivateConversation
+import com.ljyh.mei.data.model.melox.PrivateConversationPage
 import com.ljyh.mei.data.model.melox.PrivateMessage
 import com.ljyh.mei.data.model.melox.PrivateMessagePayload
 import com.ljyh.mei.data.model.melox.SearchDiscovery
@@ -970,6 +971,14 @@ class MeloXRepository @Inject constructor(
             "/api/msg/private/users",
             mapOf("offset" to offset, "limit" to limit, "total" to "true"),
         ).array("msgs").mapNotNull(::parseConversation)
+
+    suspend fun officialConversations(before: Long = -1, limit: Int = 20): PrivateConversationPage =
+        parseOfficialConversations(
+            requestEapi(
+                "/api/communication/aggregation/dialogue/list",
+                officialConversationsBody(before, limit),
+            ),
+        )
 
     suspend fun privateMessages(userId: Long, before: Long = -1, limit: Int = 100): List<PrivateMessage> =
         request(
@@ -2059,10 +2068,11 @@ private fun parseContact(value: JsonObject?): MessageContact? = value?.let {
         avatarUrl = it.string("avatarUrl"),
         signature = it.string("signature"),
         remarkName = it.string("remarkName"),
+        avatarBadgeUrl = it.objectOrNull("avatarDetail")?.string("identityIconUrl"),
     )
 }
 
-private fun parseConversation(element: JsonElement?): PrivateConversation? {
+internal fun parseConversation(element: JsonElement?): PrivateConversation? {
     val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
     val from = parseContact(value.objectOrNull("fromUser"))
     val to = parseContact(value.objectOrNull("toUser"))
@@ -2073,6 +2083,50 @@ private fun parseConversation(element: JsonElement?): PrivateConversation? {
         lastMessageTime = value.long("lastMsgTime") ?: 0,
         summary = decodeMessagePayload(value.string("lastMsg")).summary,
         unreadCount = value.int("newMsgCount") ?: 0,
+        isOfficialGroup = value.int("aggregationType") == 1 ||
+            listOfNotNull(from, to).any { it.id == 8888L || it.nickname == "官方号消息" },
+    )
+}
+
+internal fun officialConversationsBody(before: Long, limit: Int): Map<String, Any> = mapOf(
+    // NetEase 9.6.13 uses aggregation type 1 and the official related ID 8888.
+    "dialogueAggregationQueryMeta" to Gson().toJson(
+        mapOf("aggregationType" to 1, "relatedId" to 8888L, "time" to before, "limit" to limit),
+    ),
+)
+
+internal fun parseOfficialConversations(response: JsonObject): PrivateConversationPage {
+    val data = response.objectOrNull("data") ?: error("Missing official message list")
+    val records = data.get("records")?.let {
+        if (it.isJsonPrimitive && it.asJsonPrimitive.isString) JsonParser.parseString(it.asString) else it
+    }?.takeIf(JsonElement::isJsonArray)?.asJsonArray ?: error("Missing official message records")
+    val conversations = records.mapNotNull { element ->
+        val value = element.objectValue() ?: return@mapNotNull null
+        val user = value.objectOrNull("userInfoVO")?.array("userInfoDetailList")
+            ?.firstOrNull()?.objectValue()
+        val lastMessage = value.objectOrNull("lastMsg")
+        val noticeAccount = lastMessage?.objectOrNull("noticeAccount")
+            ?.takeIf { lastMessage.boolean("noticeAccountFlag") == true }
+        val contact = parseContact(user)?.let { contact ->
+            if (noticeAccount == null) contact else contact.copy(
+                nickname = noticeAccount.string("name") ?: contact.nickname,
+                avatarUrl = noticeAccount.string("avatarUrl") ?: contact.avatarUrl,
+                remarkName = null,
+            )
+        } ?: return@mapNotNull null
+        PrivateConversation(
+            id = contact.id.toString(),
+            fromUser = contact,
+            toUser = null,
+            lastMessageTime = lastMessage?.long("time") ?: 0L,
+            summary = lastMessage?.string("briefText").orEmpty(),
+            unreadCount = value.objectOrNull("msgCountVO")?.int("unreadCount")?.coerceAtLeast(0) ?: 0,
+        )
+    }
+    return PrivateConversationPage(
+        conversations = conversations,
+        hasMore = data.boolean("more") == true && records.size() > 0,
+        nextTime = records.lastOrNull()?.objectValue()?.objectOrNull("lastMsg")?.long("time") ?: -1,
     )
 }
 

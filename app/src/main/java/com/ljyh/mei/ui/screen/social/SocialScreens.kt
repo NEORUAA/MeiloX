@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -86,7 +88,6 @@ import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
-import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
 import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
@@ -101,27 +102,39 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.setClipboard
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
+fun ConversationsScreen(
+    viewModel: ConversationsViewModel = hiltViewModel(),
+    officialMessages: Boolean = false,
+) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val currentUserId by rememberPreference(UserIdKey, "")
     val currentUser = currentUserId.toLongOrNull() ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    LifecycleResumeEffect(officialMessages) {
+        viewModel.load(officialMessages)
+        onPauseOrDispose {}
+    }
 
     GlasmioPinnedListPage(
-        title = stringResource(R.string.private_messages),
+        title = stringResource(if (officialMessages) R.string.official_messages else R.string.private_messages),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
-                SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
+            if (!officialMessages) {
+                GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
+                    SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
+                }
             }
             GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
@@ -132,52 +145,181 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
             item { Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         }
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        if (state.conversations.isNotEmpty()) {
-            item(key = "private-conversation-group") {
-                GlasmioGroupedList {
-                    state.conversations.forEachIndexed { index, conversation ->
-                        val participant = conversation.participant(currentUser)
-                        GlasmioListRow(
-                            title = participant.displayName,
-                            subtitle = conversation.summary,
-                            leading = {
-                                AsyncImage(
-                                    model = participant.avatarUrl,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
-                                )
-                            },
-                            trailing = if (conversation.unreadCount > 0) {
-                                {
-                                    Box(
-                                        Modifier
-                                            .size(24.dp)
-                                            .background(LocalGlassColors.current.accent, CircleShape),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            conversation.unreadCount.coerceAtMost(99).toString(),
-                                            style = IosTypography.caption,
-                                            color = Color.White,
-                                        )
-                                    }
-                                }
-                            } else {
-                                null
-                            },
-                            showTopSeparator = index > 0,
-                            onClick = {
-                                Screen.PrivateConversation.navigate(navController) {
-                                    addPath(participant.id.toString())
-                                }
-                            },
-                        )
+        privateConversationItems(
+            conversations = state.conversations,
+            currentUserId = currentUser,
+            officialMessages = officialMessages,
+            onOfficialGroupClick = { Screen.OfficialMessages.navigate(navController) },
+            onConversationClick = { userId ->
+                Screen.PrivateConversation.navigate(navController) {
+                    addPath(userId.toString())
+                }
+            },
+        )
+        if (officialMessages && !state.isLoading && state.error == null && state.conversations.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.official_messages_empty),
+                    Modifier.padding(16.dp),
+                    color = LocalGlassColors.current.secondaryContent,
+                )
+            }
+        }
+        if (state.hasMore) {
+            item(key = "load-more-conversations") {
+                if (state.error == null) {
+                    LaunchedEffect(state.conversations.size) { viewModel.loadMore() }
+                }
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    if (state.isLoadingMore) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                    } else {
+                        GlasmioButton(onClick = viewModel::loadMore) {
+                            Text(stringResource(R.string.message_load_more))
+                        }
                     }
                 }
             }
         }
     }
+}
+
+internal fun LazyListScope.privateConversationItems(
+    conversations: List<PrivateConversation>,
+    currentUserId: Long,
+    onConversationClick: (Long) -> Unit,
+    onOfficialGroupClick: () -> Unit = {},
+    officialMessages: Boolean = false,
+) {
+    groupedLazyItems(
+        items = conversations.sortedByDescending(PrivateConversation::isOfficialGroup),
+        key = { "private-conversation-${it.id}" },
+        contentType = "private-conversation",
+        firstItemTopPadding = 10.dp,
+    ) { conversation, index ->
+        val participant = conversation.participant(currentUserId)
+        if (officialMessages) {
+            OfficialConversationRow(conversation, participant) { onConversationClick(participant.id) }
+            return@groupedLazyItems
+        }
+        GlasmioListRow(
+            title = if (conversation.isOfficialGroup) {
+                stringResource(R.string.official_messages)
+            } else participant.displayName,
+            subtitle = conversation.summary,
+            leading = {
+                if (conversation.isOfficialGroup) {
+                    OfficialMessagesAvatar(participant.avatarUrl)
+                } else {
+                    AsyncImage(
+                        model = participant.avatarUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
+                    )
+                }
+            },
+            trailing = if (conversation.unreadCount > 0) {
+                {
+                    if (conversation.isOfficialGroup) {
+                        Box(Modifier.size(8.dp).background(LocalGlassColors.current.destructive, CircleShape))
+                    } else Box(
+                        Modifier
+                            .size(24.dp)
+                            .background(LocalGlassColors.current.accent, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            conversation.unreadCount.coerceAtMost(99).toString(),
+                            style = IosTypography.caption,
+                            color = Color.White,
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            showTopSeparator = index > 0,
+            onClick = {
+                if (conversation.isOfficialGroup) onOfficialGroupClick() else onConversationClick(participant.id)
+            },
+        )
+    }
+}
+
+@Composable
+private fun OfficialConversationRow(
+    conversation: PrivateConversation,
+    participant: MessageContact,
+    onClick: () -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp)) {
+            AsyncImage(
+                model = participant.avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize().clip(CircleShape),
+            )
+            participant.avatarBadgeUrl?.let { badgeUrl ->
+                AsyncImage(
+                    model = badgeUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp).align(Alignment.BottomEnd),
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    participant.displayName,
+                    Modifier.weight(1f),
+                    style = IosTypography.body,
+                    color = colors.content,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (conversation.lastMessageTime > 0) {
+                    Text(
+                        formatConversationTime(conversation.lastMessageTime),
+                        style = IosTypography.caption,
+                        color = colors.tertiaryContent,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    conversation.summary,
+                    Modifier.weight(1f),
+                    style = IosTypography.subheadline,
+                    color = colors.secondaryContent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (conversation.unreadCount > 0) {
+                    Box(Modifier.size(8.dp).background(colors.destructive, CircleShape))
+                }
+            }
+        }
+    }
+}
+
+private fun formatConversationTime(timestamp: Long): String {
+    val time = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val now = Calendar.getInstance()
+    val sameYear = time.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+    val pattern = when {
+        sameYear && time.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR) -> "HH:mm"
+        sameYear -> "M/d"
+        else -> "yyyy/M/d"
+    }
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
 }
 
 @Composable
@@ -197,6 +339,7 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         title = stringResource(R.string.message_start),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
             GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
@@ -204,7 +347,7 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         },
     ) {
         item {
-            GlassSurface(Modifier.fillMaxWidth(), shape = ContinuousRoundedRectangle(50)) {
+            GlassSurface(Modifier.fillMaxWidth().padding(top = 10.dp), shape = ContinuousRoundedRectangle(50)) {
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -239,31 +382,30 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         if (!state.isLoading && state.error == null && filtered.isEmpty()) {
             item { Text(stringResource(R.string.share_no_contacts), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        if (filtered.isNotEmpty()) {
-            item(key = "message-contact-group") {
-                GlasmioGroupedList {
-                    filtered.forEachIndexed { index, contact ->
-                        GlasmioListRow(
-                            title = contact.displayName,
-                            subtitle = contact.signature?.takeIf(String::isNotBlank),
-                            leading = {
-                                AsyncImage(
-                                    model = contact.avatarUrl,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
-                                )
-                            },
-                            showTopSeparator = index > 0,
-                            onClick = {
-                                Screen.PrivateConversation.navigate(navController) {
-                                    addPath(contact.id.toString())
-                                }
-                            },
-                        )
+        groupedLazyItems(
+            items = filtered,
+            key = { "message-contact-${it.id}" },
+            contentType = "message-contact",
+            firstItemTopPadding = 10.dp,
+        ) { contact, index ->
+            GlasmioListRow(
+                title = contact.displayName,
+                subtitle = contact.signature?.takeIf(String::isNotBlank),
+                leading = {
+                    AsyncImage(
+                        model = contact.avatarUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
+                    )
+                },
+                showTopSeparator = index > 0,
+                onClick = {
+                    Screen.PrivateConversation.navigate(navController) {
+                        addPath(contact.id.toString())
                     }
-                }
-            }
+                },
+            )
         }
     }
 }
@@ -736,10 +878,3 @@ private fun ShareResource.toMediaMetadata() = MediaMetadata(
     duration = 0,
     album = MediaMetadata.Album(0, ""),
 )
-
-private fun PrivateConversation.participant(currentUserId: Long): MessageContact =
-    fromUser?.takeIf { it.id != currentUserId }
-        ?: toUser?.takeIf { it.id != currentUserId }
-        ?: fromUser
-        ?: toUser
-        ?: MessageContact(0, "NetEase user", null, null, null)
