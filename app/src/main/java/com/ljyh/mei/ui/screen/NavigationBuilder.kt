@@ -120,6 +120,10 @@ fun NavGraphBuilder.navigationBuilder(
         ConversationsScreen()
     }
 
+    composable(Screen.OfficialMessages.route) {
+        ConversationsScreen(officialMessages = true)
+    }
+
     composable(Screen.MessageContacts.route) {
         MessageContactsScreen()
     }
@@ -412,6 +416,7 @@ fun navigationEntry(
         route == Screen.CloudMusic.route -> CloudMusicScreen(isNavigationTab = isNavigationTab)
         route == Screen.Search.route -> SearchLandingScreen()
         route == Screen.PrivateMessages.route -> ConversationsScreen()
+        route == Screen.OfficialMessages.route -> ConversationsScreen(officialMessages = true)
         route == Screen.MessageContacts.route -> MessageContactsScreen()
         route == Screen.ListenTogether.route -> ListenTogetherScreen()
         route == Screen.SongRecognition.route -> SongRecognitionScreen()

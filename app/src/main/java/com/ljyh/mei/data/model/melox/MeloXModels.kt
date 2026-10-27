@@ -101,6 +101,7 @@ data class MessageContact(
     val avatarUrl: String?,
     val signature: String?,
     val remarkName: String?,
+    val avatarBadgeUrl: String? = null,
 ) {
     val displayName: String get() = remarkName?.takeIf(String::isNotBlank) ?: nickname
 }
@@ -131,6 +132,20 @@ data class PrivateConversation(
     val lastMessageTime: Long,
     val summary: String,
     val unreadCount: Int,
+    val isOfficialGroup: Boolean = false,
+) {
+    fun participant(currentUserId: Long): MessageContact =
+        fromUser?.takeIf { it.id != currentUserId }
+            ?: toUser?.takeIf { it.id != currentUserId }
+            ?: fromUser
+            ?: toUser
+            ?: MessageContact(0, "NetEase user", null, null, null)
+}
+
+data class PrivateConversationPage(
+    val conversations: List<PrivateConversation>,
+    val hasMore: Boolean,
+    val nextTime: Long,
 )
 
 data class PrivateMessage(

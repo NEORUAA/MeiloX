@@ -165,6 +165,9 @@
     <string name="publish">发布</string>
     <string name="search_discovery_hint">搜索歌曲、专辑、艺人、歌单与播客</string>
     <string name="private_messages">私信</string>
+    <string name="official_messages">官方号消息</string>
+    <string name="official_messages_empty">暂无官方号消息</string>
+    <string name="message_load_more">加载更多</string>
     <string name="message_start">发起私信</string>
     <string name="message_search_contacts">搜索关注的人</string>
     <string name="private_conversation">会话</string>

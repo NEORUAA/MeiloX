@@ -105,25 +105,32 @@ import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.setClipboard
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
+fun ConversationsScreen(
+    viewModel: ConversationsViewModel = hiltViewModel(),
+    officialMessages: Boolean = false,
+) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val currentUserId by rememberPreference(UserIdKey, "")
     val currentUser = currentUserId.toLongOrNull() ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    LaunchedEffect(officialMessages) { viewModel.load(officialMessages) }
 
     GlasmioPinnedListPage(
-        title = stringResource(R.string.private_messages),
+        title = stringResource(if (officialMessages) R.string.official_messages else R.string.private_messages),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
-                SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
+            if (!officialMessages) {
+                GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
+                    SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
+                }
             }
             GlasmioIconButton(viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
@@ -134,9 +141,40 @@ fun ConversationsScreen(viewModel: ConversationsViewModel = hiltViewModel()) {
             item { Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         }
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        privateConversationItems(state.conversations, currentUser) { userId ->
-            Screen.PrivateConversation.navigate(navController) {
-                addPath(userId.toString())
+        privateConversationItems(
+            conversations = state.conversations,
+            currentUserId = currentUser,
+            officialMessages = officialMessages,
+            onOfficialGroupClick = { Screen.OfficialMessages.navigate(navController) },
+            onConversationClick = { userId ->
+                Screen.PrivateConversation.navigate(navController) {
+                    addPath(userId.toString())
+                }
+            },
+        )
+        if (officialMessages && !state.isLoading && state.error == null && state.conversations.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.official_messages_empty),
+                    Modifier.padding(16.dp),
+                    color = LocalGlassColors.current.secondaryContent,
+                )
+            }
+        }
+        if (state.hasMore) {
+            item(key = "load-more-conversations") {
+                if (state.error == null) {
+                    LaunchedEffect(state.conversations.size) { viewModel.loadMore() }
+                }
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    if (state.isLoadingMore) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                    } else {
+                        GlasmioButton(onClick = viewModel::loadMore) {
+                            Text(stringResource(R.string.message_load_more))
+                        }
+                    }
+                }
             }
         }
     }
@@ -146,28 +184,42 @@ internal fun LazyListScope.privateConversationItems(
     conversations: List<PrivateConversation>,
     currentUserId: Long,
     onConversationClick: (Long) -> Unit,
+    onOfficialGroupClick: () -> Unit = {},
+    officialMessages: Boolean = false,
 ) {
     groupedLazyItems(
-        items = conversations,
+        items = conversations.sortedByDescending(PrivateConversation::isOfficialGroup),
         key = { "private-conversation-${it.id}" },
         contentType = "private-conversation",
         firstItemTopPadding = 10.dp,
     ) { conversation, index ->
         val participant = conversation.participant(currentUserId)
+        if (officialMessages) {
+            OfficialConversationRow(conversation, participant) { onConversationClick(participant.id) }
+            return@groupedLazyItems
+        }
         GlasmioListRow(
-            title = participant.displayName,
+            title = if (conversation.isOfficialGroup) {
+                stringResource(R.string.official_messages)
+            } else participant.displayName,
             subtitle = conversation.summary,
             leading = {
-                AsyncImage(
-                    model = participant.avatarUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
-                )
+                if (conversation.isOfficialGroup) {
+                    OfficialMessagesAvatar(participant.avatarUrl)
+                } else {
+                    AsyncImage(
+                        model = participant.avatarUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(50)),
+                    )
+                }
             },
             trailing = if (conversation.unreadCount > 0) {
                 {
-                    Box(
+                    if (conversation.isOfficialGroup) {
+                        Box(Modifier.size(8.dp).background(LocalGlassColors.current.destructive, CircleShape))
+                    } else Box(
                         Modifier
                             .size(24.dp)
                             .background(LocalGlassColors.current.accent, CircleShape),
@@ -185,10 +237,85 @@ internal fun LazyListScope.privateConversationItems(
             },
             showTopSeparator = index > 0,
             onClick = {
-                onConversationClick(participant.id)
+                if (conversation.isOfficialGroup) onOfficialGroupClick() else onConversationClick(participant.id)
             },
         )
     }
+}
+
+@Composable
+private fun OfficialConversationRow(
+    conversation: PrivateConversation,
+    participant: MessageContact,
+    onClick: () -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp)) {
+            AsyncImage(
+                model = participant.avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize().clip(CircleShape),
+            )
+            participant.avatarBadgeUrl?.let { badgeUrl ->
+                AsyncImage(
+                    model = badgeUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp).align(Alignment.BottomEnd),
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    participant.displayName,
+                    Modifier.weight(1f),
+                    style = IosTypography.body,
+                    color = colors.content,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (conversation.lastMessageTime > 0) {
+                    Text(
+                        formatConversationTime(conversation.lastMessageTime),
+                        style = IosTypography.caption,
+                        color = colors.tertiaryContent,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    conversation.summary,
+                    Modifier.weight(1f),
+                    style = IosTypography.subheadline,
+                    color = colors.secondaryContent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (conversation.unreadCount > 0) {
+                    Box(Modifier.size(8.dp).background(colors.destructive, CircleShape))
+                }
+            }
+        }
+    }
+}
+
+private fun formatConversationTime(timestamp: Long): String {
+    val time = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val now = Calendar.getInstance()
+    val sameYear = time.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+    val pattern = when {
+        sameYear && time.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR) -> "HH:mm"
+        sameYear -> "M/d"
+        else -> "yyyy/M/d"
+    }
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
 }
 
 @Composable
@@ -747,10 +874,3 @@ private fun ShareResource.toMediaMetadata() = MediaMetadata(
     duration = 0,
     album = MediaMetadata.Album(0, ""),
 )
-
-private fun PrivateConversation.participant(currentUserId: Long): MessageContact =
-    fromUser?.takeIf { it.id != currentUserId }
-        ?: toUser?.takeIf { it.id != currentUserId }
-        ?: fromUser
-        ?: toUser
-        ?: MessageContact(0, "NetEase user", null, null, null)
