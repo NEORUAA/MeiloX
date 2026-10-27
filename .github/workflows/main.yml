@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: NEORUAA/Glasmio
-          ref: 909493883882081267f0413bb926648cb24c2786
+          ref: 9e5986216ed587ebfde9ae26d12ba7ea5fca02ba
           path: .glasmio-ci
           persist-credentials: false
 
@@ -45,7 +45,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
 
       - uses: gradle/gradle-build-action@v2
         with:
