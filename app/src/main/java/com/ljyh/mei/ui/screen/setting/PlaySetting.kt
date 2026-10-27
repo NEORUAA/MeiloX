@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -374,10 +375,17 @@ private fun ToggleRow(
 @Composable
 private fun ValueRow(title: String, symbol: String, description: String? = null, value: @Composable () -> Unit) {
     GlasmioCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = if (description == null) 0.dp else 14.dp)) {
+            Row(
+                Modifier.heightIn(min = if (description == null) 52.dp else 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 SfIcon(symbol, contentDescription = null)
-                Text(title, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f)
+                        .padding(horizontal = 14.dp, vertical = if (description == null) 14.dp else 0.dp),
+                )
                 value()
             }
             if (description != null) {

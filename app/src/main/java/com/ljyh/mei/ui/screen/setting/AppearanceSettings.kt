@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -444,11 +445,12 @@ private fun <T> AppearanceChoice(
 ) {
     GlasmioCard(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(14.dp),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                .alpha(if (enabled) 1f else 0.38f).padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SfIcon(systemName, null)
-            Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
+            Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp, vertical = 14.dp))
             GlasmioPopUpButton(
                 selected = selected,
                 items = values,
