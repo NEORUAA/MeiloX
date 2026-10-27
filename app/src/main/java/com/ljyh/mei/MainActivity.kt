@@ -85,6 +85,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -587,6 +588,7 @@ class MainActivity : ComponentActivity() {
                             }
                     ) {
                     val focusManager = LocalFocusManager.current
+                    val keyboardController = LocalSoftwareKeyboardController.current
                     val density = LocalDensity.current
                     val windowsInsets = WindowInsets.systemBars
                     val navigationInsets = WindowInsets.navigationBars
@@ -729,6 +731,16 @@ class MainActivity : ComponentActivity() {
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
                     )
+                    LaunchedEffect(playerBottomSheetState, focusManager, keyboardController) {
+                        snapshotFlow { playerBottomSheetState.isContentVisible }.collect { visible ->
+                            if (visible) {
+                                // The player overlays the current page, so release its input focus.
+                                focusSearchOnEntry = false
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
+                            }
+                        }
+                    }
                     val compactMiniPlayerProgress = rememberMiniPlayerCompactProgress(
                         compact = shouldCompactMiniPlayer,
                         sheet = playerBottomSheetState,

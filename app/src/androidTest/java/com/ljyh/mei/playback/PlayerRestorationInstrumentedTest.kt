@@ -11,13 +11,18 @@ import android.os.IBinder
 import android.view.WindowInsets
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -129,6 +134,37 @@ class PlayerRestorationInstrumentedTest {
             connection?.let(context::unbindService)
             if (!keepFixture) silence?.delete()
         }
+    }
+
+    @Test
+    fun openingPlayerFromSearchDismissesKeyboardAndPreservesQuery() {
+        val query = "Unsubmitted playback query"
+        val searchInput = compose.onNode(hasSetTextAction())
+        fun awaitKeyboard(visible: Boolean) {
+            compose.waitUntil(5_000) {
+                onMain {
+                    compose.activity.window.decorView.rootWindowInsets
+                        ?.isVisible(WindowInsets.Type.ime()) == visible
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription(context.getString(R.string.app_tab_search)).performClick()
+        searchInput.performTextInput(query)
+        searchInput.assertIsFocused()
+        awaitKeyboard(true)
+
+        compose.onNodeWithText(TITLE).performClick()
+
+        awaitKeyboard(false)
+        searchInput.assertIsNotFocused()
+        onMain { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        searchInput.assertIsDisplayed().assertIsNotFocused().assertTextEquals(query)
+        awaitKeyboard(false)
+        // Editing remains available when the user explicitly focuses search again.
+        searchInput.performClick().assertIsFocused()
+        awaitKeyboard(true)
     }
 
     @Test
