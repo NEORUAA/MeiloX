@@ -23,6 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Checkout pinned Glasmio source
+        uses: actions/checkout@v4
+        with:
+          repository: NEORUAA/Glasmio
+          ref: 909493883882081267f0413bb926648cb24c2786
+          path: .glasmio-ci
+          persist-credentials: false
+
+      - name: Place Glasmio beside the app checkout
+        run: mv "$GITHUB_WORKSPACE/.glasmio-ci" "$GITHUB_WORKSPACE/../Glasmio"
+
       - uses: actions/setup-java@v3
         with:
           distribution: temurin
@@ -41,6 +52,7 @@ jobs:
           gradle-version: current
           arguments: >-
             assembleRelease
+            -Pglasmio.source=true
             -Pmei.buildCommitSha=${{ github.sha }}
             -Pmei.ciRunNumber=${{ github.run_number }}
             -Pmei.ciRunAttempt=${{ github.run_attempt }}

@@ -40,6 +40,16 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的第三方�
 
 功能仍在持续调整中，实际可用范围会随版本和网易云音乐接口状态变化。
 
+## Build from source
+
+Use JDK 21 and Android SDK 37.0. Until the first Glasmio release is published, build with the same source revision pinned in CI:
+
+```sh
+git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
+git -C ../Glasmio checkout 909493883882081267f0413bb926648cb24c2786
+./gradlew -Pglasmio.source=true :app:assembleDebug
+```
+
 ## 歌词共享
 
 已接入 [Lyricon Provider](https://tomakino.github.io/lyricon/zh-cn/developer/provider/)、[SuperLyricApi](https://github.com/HChenX/SuperLyricApi) 和 [ColorOS Live Lyrics Bridge](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge) 接口，用于共享歌词、逐字时间、翻译及播放状态。
@@ -52,6 +62,7 @@ MeiloX 的界面、歌词和底层能力受以下项目启发或直接使用其�
 
 - [Mei](https://github.com/ljyh223/Mei)：上游 Android 项目与基础能力；
 - [MeloX](https://github.com/youshen2/MeloX)：iOS 版参考实现与产品方向；
+- [Glasmio](https://github.com/NEORUAA/Glasmio)：共享的 iOS 风格组件与液态玻璃界面库；
 - [amll-ttml-db](https://github.com/Steve-xmh/amll-ttml-db)：高质量逐字歌词数据；
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui)：歌词模型与渲染组件；
 - [Lyricon](https://github.com/tomakino/lyricon)：词幕 Provider SDK；
