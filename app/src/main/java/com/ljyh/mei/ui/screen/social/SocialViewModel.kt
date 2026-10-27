@@ -49,7 +49,6 @@ class ConversationsViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     fun load(officialMessages: Boolean) {
-        if (this.officialMessages == officialMessages) return
         this.officialMessages = officialMessages
         refresh()
     }

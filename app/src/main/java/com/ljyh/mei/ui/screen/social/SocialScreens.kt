@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -119,7 +120,10 @@ fun ConversationsScreen(
     val currentUserId by rememberPreference(UserIdKey, "")
     val currentUser = currentUserId.toLongOrNull() ?: 0L
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    LaunchedEffect(officialMessages) { viewModel.load(officialMessages) }
+    LifecycleResumeEffect(officialMessages) {
+        viewModel.load(officialMessages)
+        onPauseOrDispose {}
+    }
 
     GlasmioPinnedListPage(
         title = stringResource(if (officialMessages) R.string.official_messages else R.string.private_messages),
