@@ -304,12 +304,16 @@ class AppleMusicArtworkMotionTest {
                     assertTrue("The header must be able to reach the viewport top", contentHeight + tail >= viewport)
                     assertTrue("The tail must reserve at least one song row", tail >= rowHeight)
                     if (contentHeight + rowHeight >= viewport) assertEquals(rowHeight, tail, 0f)
+                    val collapsedTail = playerQueueTailHeight(viewport, contentHeight, rowHeight, fadeDepth, 84f,
+                        keepHeaderCollapsed = true)
+                    assertTrue("Even the final song must retain a collapsed header", contentHeight + collapsedTail >= viewport + 84f)
                 }
             }
         }
         assertEquals(56f, playerQueueTailHeight(280f, 600f, rowHeight, 0f), 0f)
         assertEquals(130f, playerQueueTailHeight(460f, 414f, rowHeight, 104f, 84f), 0f)
         assertEquals(212f, playerQueueTailHeight(460f, 248f, rowHeight, 104f, 84f), 0f)
+        assertEquals(296f, playerQueueTailHeight(460f, 248f, rowHeight, 104f, 84f, keepHeaderCollapsed = true), 0f)
         for (fadeDepth in listOf(0f, 56f, 104f, 200f)) {
             assertEquals(56f, playerQueueTailHeight(460f, 488f, rowHeight, fadeDepth, 84f), 0f)
             assertEquals(56f, playerQueueTailHeight(460f, 1000f, rowHeight, fadeDepth, 84f), 0f)

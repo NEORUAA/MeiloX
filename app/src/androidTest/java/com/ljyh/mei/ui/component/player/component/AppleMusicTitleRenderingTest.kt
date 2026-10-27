@@ -93,6 +93,7 @@ import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPag
 import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderPosition
 import com.ljyh.mei.ui.component.player.component.applemusic.rememberPlayerQueueHeaderAnchor
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderAnchor
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderAlignmentEffect
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueCurrentHeaderKey
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueHeaderPosition
 import com.ljyh.mei.ui.component.player.component.applemusic.PhoneQueueEntry
@@ -113,6 +114,7 @@ import com.ljyh.mei.ui.component.player.component.applemusic.animatePlayerQueueR
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueTopOverscroll
 import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueueSnapEffect
 import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueSnapTarget
+import com.ljyh.mei.ui.component.player.component.applemusic.playerQueueTailHeight
 import androidx.media3.common.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -570,6 +572,164 @@ class AppleMusicTitleRenderingTest {
             compose.runOnIdle { scope.launch { detailProgress.animateTo(0f, tween(160)) } }
             checkFrames(12)
             compose.runOnIdle { assertEquals("Album reaches its endpoint", 0f, detailProgress.value, 0f) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test fun selectingSongsPreservesCollapsedOrExpandedHeaderWithoutAnotherGesture() {
+        compose.mainClock.autoAdvance = false
+        val current = mutableStateOf(0)
+        val request = mutableStateOf<String?>(null)
+        val collapsed = mutableStateOf(false)
+        val rowsMoving = mutableStateOf(false)
+        val anchorPending = mutableStateOf(false)
+        var state: LazyListState? = null
+        var scope: CoroutineScope? = null
+        var aligned = 0
+        var headerHeightPx = 0
+        compose.setContent {
+            val queueState = rememberLazyListState()
+            state = queueState
+            scope = rememberCoroutineScope()
+            val index = current.value
+            val headerIndex = index + if (index > 0) 4 else 2
+            headerHeightPx = with(LocalDensity.current) { 84.dp.roundToPx() }
+            val headerScrolledOut = remember(queueState) {
+                derivedStateOf {
+                    queueState.layoutInfo.visibleItemsInfo.any {
+                        (it.key == PlayerQueueCurrentHeaderKey && it.offset < 0) ||
+                            (it.key == "queue_upcoming_controls" && it.offset <= 0)
+                    }
+                }
+            }
+            val tailHeight = playerQueueTailHeight(320f, 164f + (9 - index) * 56f, 56f, 0f, 84f,
+                keepHeaderCollapsed = headerScrolledOut.value || (request.value != null && collapsed.value)).dp
+            val selectSong: (Int) -> Unit = { song ->
+                collapsed.value = queueState.layoutInfo.visibleItemsInfo.any {
+                    it.key == "queue_upcoming_controls" && it.offset <= 0
+                }
+                request.value = song.toString()
+                rowsMoving.value = true
+                anchorPending.value = true
+                current.value = song
+            }
+            val input = remember {
+                PlayerQueueTopOverscroll(scope!!, 68f, isAtTop = { false },
+                    onUserInput = { request.value = null }) { false }
+            }
+            PlayerQueueHeaderAlignmentEffect(
+                queueState, request.value, headerIndex, animated = true,
+                canAlign = { !rowsMoving.value && !anchorPending.value },
+                onScrollInProgress = {},
+                onAligned = { key ->
+                    assertEquals(current.value.toString(), key)
+                    request.value = null
+                    aligned++
+                },
+                headerScrollOffset = if (collapsed.value) headerHeightPx else 0,
+            )
+            LazyColumn(state = queueState,
+                modifier = Modifier.width(160.dp).height(320.dp).testTag("selected_queue").nestedScroll(input)) {
+                if (index > 0) {
+                    stickyHeader(key = "history_heading") { Box(Modifier.height(32.dp)) }
+                    item(key = "queue_history_padding") { Box(Modifier.height(0.dp)) }
+                    items(count = index, key = { "song_$it" }) { song ->
+                        Box(Modifier.fillMaxWidth().height(56.dp).testTag("select_song_$song")
+                            .clickable { selectSong(song) })
+                    }
+                }
+                item(key = "history_gap") { Box(Modifier.height(if (index > 0) 16.dp else 0.dp)) }
+                stickyHeader(key = "current_boundary") { Box(Modifier.height(0.dp)) }
+                item(key = PlayerQueueCurrentHeaderKey) { Box(Modifier.height(84.dp)) }
+                stickyHeader(key = "queue_upcoming_controls") { Box(Modifier.height(80.dp)) }
+                items(count = 9 - index, key = { "song_${index + it + 1}" }) { row ->
+                    val song = index + row + 1
+                    Box(Modifier.fillMaxWidth().height(56.dp).testTag("select_song_$song")
+                        .clickable { selectSong(song) })
+                }
+                item(key = "tail") { Box(Modifier.height(tailHeight)) }
+            }
+        }
+        fun advance(count: Int, keepCollapsed: Boolean = false) = repeat(count) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle {
+                if (keepCollapsed) {
+                    val header = state!!.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                    assertTrue("A collapsed selection must never reveal the full header",
+                        header == null || header.offset + header.size <= 0)
+                    assertEquals("The mode controls must remain pinned throughout selection", 0,
+                        state!!.layoutInfo.visibleItemsInfo.first { it.key == "queue_upcoming_controls" }.offset)
+                }
+            }
+        }
+        try {
+            advance(2)
+            val selections = listOf(1, 2, 8, 9, 1, 9, 0)
+            for ((step, song) in selections.withIndex()) {
+                if (step >= 2) {
+                    val index = current.value
+                    val headerIndex = index + if (index > 0) 4 else 2
+                    val scrollIndex = if (song > index) headerIndex + song - index + 1 else 0
+                    compose.onNodeWithTag("selected_queue").performScrollToIndex(scrollIndex)
+                    advance(2)
+                    compose.runOnIdle {
+                        assertTrue("Exercise selection with the old header outside the viewport",
+                            state!!.layoutInfo.visibleItemsInfo.none { it.key == PlayerQueueCurrentHeaderKey })
+                    }
+                }
+                compose.onNodeWithTag("select_song_$song").performTouchInput { click(center) }
+                advance(2)
+                compose.runOnIdle {
+                    scope!!.launch {
+                        if (collapsed.value) {
+                            val index = current.value
+                            state!!.scrollToItem(index + if (index > 0) 4 else 2, headerHeightPx)
+                        } else state!!.scrollToItem(0)
+                    }
+                }
+                advance(2)
+                compose.runOnIdle {
+                    if (song > 0 && !collapsed.value) {
+                        val header = state!!.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+                        assertTrue("New history leaves the header below or outside the viewport",
+                            header == null || header.offset > 0)
+                    }
+                    rowsMoving.value = false
+                }
+                advance(2)
+                compose.runOnIdle {
+                    assertEquals("Alignment must wait for the new anchor geometry", song.toString(), request.value)
+                    anchorPending.value = false
+                }
+                advance(90, keepCollapsed = collapsed.value)
+                compose.runOnIdle {
+                    if (!collapsed.value) {
+                        assertEquals("Expanded selections must return the full header without another drag", 0,
+                            state!!.layoutInfo.visibleItemsInfo.first { it.key == PlayerQueueCurrentHeaderKey }.offset)
+                    }
+                    assertEquals(null, request.value)
+                }
+            }
+            compose.runOnIdle { assertEquals(selections.size, aligned) }
+
+            compose.onNodeWithTag("select_song_2").performTouchInput { click(center) }
+            advance(2)
+            compose.onNodeWithTag("selected_queue").performTouchInput {
+                down(Offset(width * 0.5f, height * 0.5f))
+                moveBy(Offset(0f, -height * 0.1f))
+            }
+            compose.runOnIdle {
+                assertEquals("A new drag cancels the selection alignment", null, request.value)
+                rowsMoving.value = false
+                anchorPending.value = false
+            }
+            advance(30)
+            compose.runOnIdle {
+                assertTrue("The original drag must keep control", state!!.isScrollInProgress)
+                assertEquals(selections.size, aligned)
+            }
+            compose.onNodeWithTag("selected_queue").performTouchInput { up() }
         } finally {
             compose.mainClock.autoAdvance = true
         }

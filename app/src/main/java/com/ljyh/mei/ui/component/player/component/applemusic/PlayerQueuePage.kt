@@ -290,12 +290,17 @@ internal fun playerQueueTailHeight(
     rowHeight: Float,
     bottomContentPadding: Float,
     coverHeight: Float = 0f,
+    keepHeaderCollapsed: Boolean = false,
 ): Float {
-    if (contentHeight - coverHeight + rowHeight >= viewportHeight) return rowHeight
     val minimumTail = maxOf(rowHeight, bottomContentPadding)
     val hasScrollableUpcoming = contentHeight + minimumTail > viewportHeight
     val targetHeight = viewportHeight + if (hasScrollableUpcoming) coverHeight else 0f
-    return maxOf(minimumTail, targetHeight - contentHeight).coerceAtLeast(0f)
+    val tailHeight = if (contentHeight - coverHeight + rowHeight >= viewportHeight) {
+        rowHeight
+    } else {
+        maxOf(minimumTail, targetHeight - contentHeight).coerceAtLeast(0f)
+    }
+    return if (keepHeaderCollapsed) maxOf(tailHeight, viewportHeight + coverHeight - contentHeight) else tailHeight
 }
 
 internal fun playerQueueHistoryPadding(
@@ -398,6 +403,38 @@ internal fun PlayerQueueSnapEffect(
     }
 }
 
+@Composable
+internal fun PlayerQueueHeaderAlignmentEffect(
+    listState: LazyListState,
+    requestKey: String?,
+    headerIndex: Int,
+    animated: Boolean,
+    canAlign: () -> Boolean,
+    onScrollInProgress: (Boolean) -> Unit,
+    onAligned: (String) -> Unit,
+    headerScrollOffset: Int = 0,
+) {
+    val currentCanAlign by rememberUpdatedState(canAlign)
+    val currentOnScrollInProgress by rememberUpdatedState(onScrollInProgress)
+    val currentOnAligned by rememberUpdatedState(onAligned)
+    LaunchedEffect(listState, requestKey, headerIndex, animated, headerScrollOffset) {
+        val key = requestKey ?: return@LaunchedEffect
+        // A selection can arrive before the new rows, anchor correction, or fling finish.
+        snapshotFlow { currentCanAlign() && !listState.isScrollInProgress }.first { it }
+        val header = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
+        if (header?.offset != -headerScrollOffset) {
+            currentOnScrollInProgress(true)
+            try {
+                if (animated) listState.animateScrollToItem(headerIndex, headerScrollOffset)
+                else listState.scrollToItem(headerIndex, headerScrollOffset)
+            } finally {
+                currentOnScrollInProgress(false)
+            }
+        }
+        currentOnAligned(key)
+    }
+}
+
 internal fun playerQueueAutoplaySectionIndex(
     currentQueueIndex: Int,
     autoplayQueueIndex: Int,
@@ -493,7 +530,8 @@ private class QueueRowsTransition(
     val snapshot: QueueRowsSnapshot,
     val beforeLayout: LazyListLayoutInfo,
     initial: Map<String, QueueRowVisual>,
-    val returnHeaderToTop: Boolean = false,
+    val alignHeader: Boolean = false,
+    val headerCollapsed: Boolean = false,
 ) {
     var before by mutableStateOf(initial)
     var after by mutableStateOf<Map<String, QueueRowVisual>?>(null)
@@ -588,6 +626,14 @@ fun PlayerQueuePage(
     val entriesByKey = remember(entriesSnapshot) { entriesSnapshot.associateBy { it.key } }
     val latestEntriesByKey by rememberUpdatedState(entriesByKey)
     val listState = rememberLazyListState()
+    val headerScrolledOut by remember(listState) {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.any {
+                (it.key == PlayerQueueCurrentHeaderKey && it.offset < 0) ||
+                    (it.key == "queue_upcoming_controls" && it.offset <= 0)
+            }
+        }
+    }
     val isListDragged by listState.interactionSource.collectIsDraggedAsState()
     var rowsTransition by remember(player) { mutableStateOf<QueueRowsTransition?>(null) }
     var emptyHistoryPaddingPx by remember(player) { mutableFloatStateOf(0f) }
@@ -603,8 +649,11 @@ fun PlayerQueuePage(
     var initialScrollPending by remember(player) { mutableStateOf(true) }
     var wasQueueSelected by remember(player) { mutableStateOf(false) }
     var automaticScrollInProgress by remember { mutableStateOf(false) }
+    var selectedHeaderAlignmentKey by remember(player) { mutableStateOf<String?>(null) }
+    var selectedHeaderCollapsed by remember(player) { mutableStateOf(false) }
     var pendingHeaderAlignmentKey by remember(player) { mutableStateOf<String?>(null) }
     var pendingHeaderAlignmentAnimated by remember(player) { mutableStateOf(false) }
+    var pendingHeaderCollapsed by remember(player) { mutableStateOf(false) }
     var menuEntryKey by remember { mutableStateOf<String?>(null) }
     var menuAnchorBounds by remember { mutableStateOf<Rect?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -629,6 +678,7 @@ fun PlayerQueuePage(
     val pullEnabledNow = rememberUpdatedState(pullEnabled)
     val onUserScrollNow = rememberUpdatedState {
         if (active && inlineCurrent) {
+            selectedHeaderAlignmentKey = null
             pendingHeaderAlignmentKey = null
             initialScrollPending = false
         }
@@ -681,6 +731,7 @@ fun PlayerQueuePage(
             rowHeight = rowHeightPx,
             bottomContentPadding = with(density) { bottomContentPadding.toPx() },
             coverHeight = inlineHeaderHeightPx,
+            keepHeaderCollapsed = headerScrolledOut || (pendingHeaderAlignmentKey != null && pendingHeaderCollapsed),
         ).toDouble()).toInt()
     } else with(density) { 8.dp.roundToPx() }
     val initialLayoutReady = viewportSize.height > 0 && measuredHeaderHeightPx > 0 &&
@@ -718,7 +769,7 @@ fun PlayerQueuePage(
             val layout = snapshotFlow { listState.layoutInfo to headerAnchor.isPending }
                 .first { (layout, pending) ->
                     if (layout === motion.beforeLayout || pending) return@first false
-                    if (!motion.returnHeaderToTop) return@first true
+                    if (!motion.alignHeader || historyEntries.isNotEmpty()) return@first true
                     val header = layout.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
                     val padding = layout.visibleItemsInfo.firstOrNull { it.key == "queue_history_padding" }
                     val retainedPadding = (emptyHistoryPaddingPx - historyHeadingHeightPx)
@@ -731,8 +782,11 @@ fun PlayerQueuePage(
             val target = captureRows(entries.toList(), currentEntry?.key, layout)
             val targetHeaderTop = target.headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
                 ?: motion.snapshot.headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
-            val returnDistance = if (motion.returnHeaderToTop) targetHeaderTop?.coerceAtLeast(0f) ?: 0f else 0f
-            val destinationSnapshot = if (motion.returnHeaderToTop && targetHeaderTop != null) target.copy(
+            val alignedHeaderTop = if (motion.headerCollapsed) -inlineHeaderHeightPx else 0f
+            val returnDistance = if (motion.alignHeader && targetHeaderTop != null) {
+                (targetHeaderTop - alignedHeaderTop).coerceAtLeast(0f)
+            } else 0f
+            val destinationSnapshot = if (motion.alignHeader && targetHeaderTop != null) target.copy(
                 tops = target.tops + mapOf(
                     PlayerQueueCurrentHeaderKey to targetHeaderTop,
                     "queue_upcoming_controls_bottom" to (targetHeaderTop + inlineHeaderHeightPx + controlsHeadingHeightPx),
@@ -780,6 +834,7 @@ fun PlayerQueuePage(
         val closing = inlineCurrent && !selected && wasQueueSelected
         wasQueueSelected = selected
         if (closing) {
+            selectedHeaderAlignmentKey = null
             pendingHeaderAlignmentKey = null
             initialScrollPending = false
         }
@@ -794,6 +849,7 @@ fun PlayerQueuePage(
             val animateAlignment = reopening && animateEntryScrollNow
             if (inlineCurrent) {
                 pendingHeaderAlignmentAnimated = animateAlignment
+                pendingHeaderCollapsed = false
                 pendingHeaderAlignmentKey = key
             }
             automaticScrollInProgress = true
@@ -811,42 +867,28 @@ fun PlayerQueuePage(
         }
     }
 
-    LaunchedEffect(
-        pendingHeaderAlignmentKey, pendingHeaderAlignmentAnimated, currentEntry?.key, currentHeaderIndex, inlineCurrent,
-        initialLayoutReady, viewportSize.height, inlineContentHeightPx, tailHeightPx, active, selected,
-    ) {
-        val key = pendingHeaderAlignmentKey ?: return@LaunchedEffect
-        if (!inlineCurrent || !initialLayoutReady || key != currentEntry?.key ||
-            (!selected && !initialScrollPending)
-        ) return@LaunchedEffect
-        snapshotFlow {
+    PlayerQueueHeaderAlignmentEffect(
+        listState = listState,
+        requestKey = pendingHeaderAlignmentKey,
+        headerIndex = currentHeaderIndex,
+        animated = pendingHeaderAlignmentAnimated,
+        headerScrollOffset = if (pendingHeaderCollapsed) inlineHeaderHeightPx.roundToInt() else 0,
+        canAlign = {
             val layout = listState.layoutInfo
             val viewportHeight = layout.viewportEndOffset - layout.viewportStartOffset
-            val tailApplied = inlineContentHeightPx >= viewportHeight ||
-                layout.visibleItemsInfo.any { it.key == "queue_bottom_space" && it.size == tailHeightPx }
-            viewportHeight > 0 && viewportHeight == viewportSize.height &&
-                tailApplied && !automaticScrollInProgress
-        }.first { it }
-        if (pendingHeaderAlignmentKey != key) return@LaunchedEffect
-        if (!listState.isScrollInProgress) {
-            val header = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
-            if (header?.offset != 0) {
-                automaticScrollInProgress = true
-                try {
-                    if (pendingHeaderAlignmentAnimated) {
-                        listState.animateScrollToItem(currentHeaderIndex)
-                    } else {
-                        listState.scrollToItem(currentHeaderIndex)
-                    }
-                } finally {
-                    automaticScrollInProgress = false
-                }
-            }
-        }
-        pendingHeaderAlignmentKey = null
-        // Prewarming follows playback until the first visit, without re-centering after gestures.
-        if (active) initialScrollPending = false
-    }
+            // Scrolling to an offscreen header measures its tail. Waiting for the tail
+            // to become visible first can leave a selection pending indefinitely.
+            inlineCurrent && initialLayoutReady && pendingHeaderAlignmentKey == currentEntry?.key &&
+                (selected || initialScrollPending) && viewportHeight > 0 && viewportHeight == viewportSize.height &&
+                !automaticScrollInProgress && rowsTransition == null && !headerAnchor.isPending
+        },
+        onScrollInProgress = { automaticScrollInProgress = it },
+        onAligned = { key ->
+            if (pendingHeaderAlignmentKey == key) pendingHeaderAlignmentKey = null
+            // Prewarming follows playback until the first visit, without re-centering after gestures.
+            if (active) initialScrollPending = false
+        },
+    )
 
     val headerPosition = rememberPlayerQueueHeaderPosition(
         listState, currentEntry?.let { PlayerQueueCurrentHeaderKey }, currentHeaderIndex, visualCoverHeightPx,
@@ -861,6 +903,7 @@ fun PlayerQueuePage(
         if (!inlineCurrent) return@LaunchedEffect
         listState.interactionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Start) {
+                selectedHeaderAlignmentKey = null
                 pendingHeaderAlignmentKey = null
                 initialScrollPending = false
             } else if (interaction is DragInteraction.Cancel) {
@@ -908,6 +951,16 @@ fun PlayerQueuePage(
                     val previousQueueIndex = entries.indexOfFirst { it.key == previous?.key }
                     val historyEmptied = previousQueueIndex > 0 && nextQueueIndex == 0
                     val changed = previous?.key != next?.key
+                    val alignSelectedHeader = changed && next != null && selectedHeaderAlignmentKey == next.key
+                    val alignCollapsedHeader = alignSelectedHeader && selectedHeaderCollapsed
+                    if (changed) {
+                        selectedHeaderAlignmentKey = null
+                        if (alignSelectedHeader) {
+                            pendingHeaderAlignmentAnimated = true
+                            pendingHeaderCollapsed = alignCollapsedHeader
+                            pendingHeaderAlignmentKey = next?.key
+                        }
+                    }
                     val changedOrder = entries.map { it.key } != nextEntries.map { it.key }
                     val layout = listState.layoutInfo
                     val snapshot = captureRows(entries.toList(), previous?.key, layout)
@@ -945,7 +998,8 @@ fun PlayerQueuePage(
                         }
                         rowsTransition = QueueRowsTransition(
                             snapshot, layout, before,
-                            returnHeaderToTop = nextQueueIndex == 0 && emptyHistoryPaddingPx > 0f,
+                            alignHeader = alignSelectedHeader || (nextQueueIndex == 0 && emptyHistoryPaddingPx > 0f),
+                            headerCollapsed = alignCollapsedHeader,
                         )
                     } else if (changed || changedOrder) {
                         rowsTransition = null
@@ -1148,6 +1202,7 @@ fun PlayerQueuePage(
                     currentEntries.take(current.coerceAtLeast(0))
                         .map { it.rawIndex }.sortedDescending().forEach(player::removeMediaItem)
                     pendingHeaderAlignmentAnimated = false
+                    pendingHeaderCollapsed = false
                     pendingHeaderAlignmentKey = currentEntry?.key
                 }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
                 color = Color.White.copy(alpha = 0.55f),
@@ -1161,6 +1216,15 @@ fun PlayerQueuePage(
         menuEntryKey = key
         menuRemovalRequested = false
         menuExpanded = true
+    }
+    val selectEntry: (String) -> Unit = { key ->
+        // Keep the presentation chosen before the asynchronous track selection.
+        // Playback alone must preserve history/upcoming browsing positions.
+        selectedHeaderCollapsed = listState.layoutInfo.visibleItemsInfo.any {
+            it.key == "queue_upcoming_controls" && it.offset <= 0
+        }
+        selectedHeaderAlignmentKey = key.takeIf { inlineCurrent }
+        playerConnection.service.queueManager.seekToQueueEntry(key)
     }
     Column(modifier.testTag("player_queue_page")) {
         if (!inlineCurrent) {
@@ -1224,7 +1288,7 @@ fun PlayerQueuePage(
                             indication = indication,
                             normalFade = normalFade,
                             additiveFade = additiveFade,
-                            onClick = { playerConnection.service.queueManager.seekToQueueEntry(entry.key) },
+                            onClick = { selectEntry(entry.key) },
                             onLongClick = { openEntryMenu(entry.key, it) },
                         )
                     }
@@ -1291,7 +1355,7 @@ fun PlayerQueuePage(
                                 indication = indication,
                                 normalFade = normalFade,
                                 additiveFade = additiveFade,
-                                onClick = { playerConnection.service.queueManager.seekToQueueEntry(entry.key) },
+                                onClick = { selectEntry(entry.key) },
                                 onLongClick = { openEntryMenu(entry.key, it) },
                                 selected = !inlineCurrent && entry.rawIndex == currentIndex,
                                 dragHandleModifier = Modifier.longPressDraggableHandle(
