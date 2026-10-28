@@ -32,9 +32,6 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.LyricSource
-import com.ljyh.mei.constants.PlayerStyle
-import com.ljyh.mei.constants.PlayerStyleKey
-import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.R
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
@@ -62,7 +59,6 @@ fun CommonOverlayHandler(
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerViewModel = stateContainer.playerViewModel
-    val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
     when (val overlay = overlayHandler.currentOverlayValue) {
         OverlayState.None -> {}
@@ -191,7 +187,7 @@ fun CommonOverlayHandler(
 
                 },
                 viewModel = playerViewModel,
-                onFindLyrics = if (playerStyle == PlayerStyle.AppleMusic && actionMetadata != null) {
+                onFindLyrics = if (actionMetadata != null) {
                     {
                         playerViewModel.searchQQSong(actionMetadata.title)
                         overlayHandler.showQQMusicSelection(actionMetadata)

@@ -50,6 +50,7 @@ fun PlayerHeader(
     iconColor: Color = Color.White,
     needShadow: Boolean = true,
     appleMusicStyle: Boolean = false,
+    applyStatusBarPadding: Boolean = true,
     onTextPositioned: (LayoutCoordinates) -> Unit = {},
     onRowPositioned: (LayoutCoordinates) -> Unit = {},
 ) {
@@ -71,7 +72,7 @@ fun PlayerHeader(
 
     Row(
         modifier = modifier
-            .statusBarsPadding()
+            .then(if (applyStatusBarPadding) Modifier.statusBarsPadding() else Modifier)
             .fillMaxWidth()
             .then(metadataClick)
             .onGloballyPositioned(onRowPositioned),

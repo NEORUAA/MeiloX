@@ -830,11 +830,11 @@ class MainActivity : ComponentActivity() {
                         if (immersiveLandscapePlayer) {
                             windowInsetsController.systemBarsBehavior =
                                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                            windowInsetsController.hide(WindowInsetsCompat.Type.statusBars())
+                            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
                         }
                         onDispose {
                             if (immersiveLandscapePlayer) {
-                                windowInsetsController.show(WindowInsetsCompat.Type.statusBars())
+                                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
                                 windowInsetsController.systemBarsBehavior = previousBehavior
                             }
                         }
