@@ -113,6 +113,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
+import com.ljyh.mei.AnimatedHomeSearchButton
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
@@ -129,7 +130,9 @@ import kotlin.math.roundToInt
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -197,6 +200,150 @@ class GlassBottomBarInteractionTest {
             assertEquals("IME padding must remain a measurement read", initialBuilds, contentBuilds)
             assertEquals("The original scrollable bottom reservation is preserved",
                 initialPadding + (140f * density).roundToInt(), listState.layoutInfo.afterContentPadding)
+        }
+    }
+
+    @Test
+    fun homeSearchMorphKeepsExactLiveHitAndSymbolSizes() {
+        val progress = mutableFloatStateOf(0f)
+        val description = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            .targetContext.getString(com.ljyh.mei.R.string.app_tab_search)
+        var density = 1f
+        var clicks = 0
+        compose.setContent {
+            density = LocalDensity.current.density
+            val backdrop = rememberCanvasBackdrop { drawRect(Color.White) }
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                    LocalGlassColors provides defaultGlassColors(isDark = false),
+                ) {
+                    Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
+                        AnimatedHomeSearchButton(progress, backdrop) { clicks++ }
+                    }
+                }
+            }
+        }
+        listOf(0f to (60f to 26f), 0.5f to (52f to 24f), 1f to (44f to 22f),
+            0.5f to (52f to 24f), 0f to (60f to 26f)).forEach { (value, sizes) ->
+            compose.runOnIdle { progress.floatValue = value }
+            compose.waitForIdle()
+            val hitBounds = compose.onNodeWithContentDescription(description).fetchSemanticsNode().boundsInRoot
+            val iconBounds = compose.onNodeWithContentDescription(description, useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals("The live search surface keeps its specified width at $value", sizes.first * density, hitBounds.width, 1f)
+            assertEquals("The live search surface keeps its specified height at $value", sizes.first * density, hitBounds.height, 1f)
+            assertEquals("SF Symbols keeps its live layout width at $value", sizes.second * density, iconBounds.width, 1f)
+            assertEquals("SF Symbols keeps its live layout height at $value", sizes.second * density, iconBounds.height, 1f)
+            assertEquals("The search glyph stays centered during the morph", hitBounds.center.x, iconBounds.center.x, 1f)
+            assertEquals("The search glyph stays centered during the morph", hitBounds.center.y, iconBounds.center.y, 1f)
+        }
+        compose.onNodeWithContentDescription(description).performClick()
+        compose.runOnIdle { assertEquals("The live search action remains clickable", 1, clicks) }
+    }
+
+    @Test
+    fun materialOwnerRebindingRetainsContactGeometryAndUsesLiveCallbacks() {
+        val owner = mutableStateOf(0)
+        val inset = mutableFloatStateOf(0f)
+        val sourceScale = mutableStateOf(Offset(0.94f, 0.86f))
+        val surfaceWidth = mutableFloatStateOf(90f)
+        val boundsCalls = IntArray(2)
+        val highlightCalls = IntArray(2)
+        val visualCalls = IntArray(2)
+        val visualBounds = arrayOfNulls<Rect>(2)
+        var contact: BottomControlContact? = null
+        var density = 1f
+        compose.setContent {
+            val currentOwner = owner.value
+            density = LocalDensity.current.density
+            val surfaceShape = remember { Capsule() }
+            val backdrop = rememberCanvasBackdrop { drawRect(Color.Gray) }
+            CompositionLocalProvider(
+                LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                LocalGlassColors provides defaultGlassColors(isDark = false),
+            ) {
+                Column {
+                    BottomNavigationContact(backdrop, Modifier.size(240.dp, 56.dp)) {
+                        contact = LocalBottomControlContact.current
+                        val first = rememberBottomControlContactMember(
+                            visualBounds = { size ->
+                                boundsCalls[currentOwner]++
+                                Rect(inset.floatValue, 0f, size.width, size.height)
+                            },
+                            materialPressProgress = { 0f },
+                            highlight = { GlassPressHighlight() },
+                            lensSourceActive = { true },
+                            lensSourceScale = { sourceScale.value },
+                        )
+                        Box(Modifier.size(160.dp, 56.dp).onGloballyPositioned { first?.updateCoordinates(it) })
+                        Spacer(Modifier.width(8.dp))
+                        val second = rememberBottomControlContactMember(
+                            visualBounds = { Rect(Offset.Zero, it) },
+                            materialPressProgress = { 0f },
+                            highlight = { GlassPressHighlight() },
+                        )
+                        Box(Modifier.size(56.dp).onGloballyPositioned { second?.updateCoordinates(it) })
+                    }
+                    GlassSurface(
+                        modifier = Modifier.size(surfaceWidth.floatValue.dp, 44.dp),
+                        backdrop = backdrop,
+                        shape = surfaceShape,
+                        pressHighlight = {
+                            highlightCalls[currentOwner]++
+                            GlassPressHighlight()
+                        },
+                        onVisualBoundsChanged = { bounds, _ ->
+                            visualCalls[currentOwner]++
+                            visualBounds[currentOwner] = bounds
+                        },
+                    ) {}
+                }
+            }
+        }
+        compose.waitForIdle()
+        lateinit var initialSurface: io.github.neoruaa.glasmio.glass.BottomContactSurface
+        compose.runOnIdle {
+            initialSurface = checkNotNull(contact?.surface?.value)
+            assertTrue("The material must have rendered its original owner", visualCalls[0] > 0)
+            assertTrue("The external highlight must have read its original owner", highlightCalls[0] > 0)
+            owner.value = 1
+        }
+        compose.waitForIdle()
+        var retiredBoundsCalls = 0
+        var retiredHighlightCalls = 0
+        var retiredVisualCalls = 0
+        compose.runOnIdle {
+            val rebound = checkNotNull(contact?.surface?.value)
+            assertSame("Unchanged callback geometry keeps its complete material snapshot", initialSurface, rebound)
+            assertTrue("The current geometry owner is evaluated even when its pixels are unchanged", boundsCalls[1] > 0)
+            assertTrue("The current visual owner is called after rebinding", visualCalls[1] > 0)
+            assertTrue("The current external highlight owner is used", highlightCalls[1] > 0)
+            assertEquals(visualBounds[0], visualBounds[1])
+            retiredBoundsCalls = boundsCalls[0]
+            retiredHighlightCalls = highlightCalls[0]
+            retiredVisualCalls = visualCalls[0]
+            inset.floatValue = 6f
+            surfaceWidth.floatValue = 102f
+        }
+        compose.waitForIdle()
+        lateinit var resizedSurface: io.github.neoruaa.glasmio.glass.BottomContactSurface
+        compose.runOnIdle {
+            val current = checkNotNull(contact)
+            resizedSurface = checkNotNull(current.surface.value)
+            assertNotSame("A changed contour must replace the material snapshot", initialSurface.shape, resizedSurface.shape)
+            assertEquals("The live inset reaches the contact geometry", 6f, current.members.first().capsule()!!.bounds.left, 0.01f)
+            assertEquals("The visual callback receives the current layout", 102f * density, visualBounds[1]!!.width, 1f)
+            assertEquals("Retired geometry callbacks cannot be retained", retiredBoundsCalls, boundsCalls[0])
+            assertEquals("Retired highlight callbacks cannot be retained", retiredHighlightCalls, highlightCalls[0])
+            assertEquals("Retired visual callbacks cannot be retained", retiredVisualCalls, visualCalls[0])
+            sourceScale.value = Offset(0.91f, 0.8f)
+        }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            val current = checkNotNull(contact)
+            assertEquals("The sampled material uses the current transform", sourceScale.value, current.lensTransform.value!!.scale)
+            assertNotSame("Changed refraction coverage cannot reuse the old material snapshot", resizedSurface.shape, current.surface.value!!.shape)
         }
     }
 

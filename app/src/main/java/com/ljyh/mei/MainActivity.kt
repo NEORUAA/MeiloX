@@ -90,6 +90,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
@@ -1500,28 +1503,47 @@ private fun AnimatedBottomNavigationRow(
 }
 
 @Composable
-private fun AnimatedHomeSearchButton(
+internal fun AnimatedHomeSearchButton(
     compactProgress: State<Float>,
     backdrop: Backdrop,
     onClick: () -> Unit,
 ) {
-    val progress = compactProgress.value
+    val sizeModifier = remember(compactProgress) {
+        Modifier.layout { measurable, constraints ->
+            // The live surface size belongs to measurement; its material composition
+            // can stay unchanged through every frame of the shared navigation spring.
+            val diameter = (NavigationBarSurfaceHeight - 16.dp * compactProgress.value)
+                .roundToPx().coerceAtLeast(0)
+            val placeable = measurable.measure(Constraints.fixed(
+                constraints.constrainWidth(diameter), constraints.constrainHeight(diameter),
+            ))
+            layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+        }
+    }
     GlasmioIconButton(
         onClick = onClick,
         backdrop = backdrop,
         style = GlassSurfaceStyle.Navigation,
-        modifier = Modifier.size(NavigationBarSurfaceHeight - 16.dp * progress),
+        modifier = sizeModifier,
         morphProgress = compactProgress,
         morphCaptureWidth = NavigationBarSurfaceHeight,
     ) {
-        SfIcon(
-            SfSymbol.Search,
-            contentDescription = stringResource(R.string.app_tab_search),
-            tint = LocalGlassColors.current.content,
-            size = 26.dp + (CompactBottomControlIconSize - 26.dp) * progress,
-            weight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-        )
+        HomeSearchIcon(compactProgress)
     }
+}
+
+@Composable
+private fun HomeSearchIcon(compactProgress: State<Float>) {
+    val progress = compactProgress.value
+    // Keep SF Symbols' exact live font size and ink bounds. Only this glyph needs
+    // recomposition as its size changes, without rebuilding the glass surface.
+    SfIcon(
+        SfSymbol.Search,
+        contentDescription = stringResource(R.string.app_tab_search),
+        tint = LocalGlassColors.current.content,
+        size = 26.dp + (CompactBottomControlIconSize - 26.dp) * progress,
+        weight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+    )
 }
 
 private fun playerAwareWindowInsetsForRoute(
