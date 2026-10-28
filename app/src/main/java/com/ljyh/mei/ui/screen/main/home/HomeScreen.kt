@@ -5,6 +5,11 @@ import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.calculateTargetValue
+import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -591,7 +597,7 @@ private fun BlockWithTitle(
         val listState = rememberLazyListState()
         LazyRow(
             state = listState,
-            flingBehavior = rememberSnapFlingBehavior(listState, SnapPosition.Start),
+            flingBehavior = rememberHomeRowFlingBehavior(listState),
             contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
             verticalAlignment = Alignment.Top,
@@ -600,6 +606,39 @@ private fun BlockWithTitle(
         ) {
             itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
                 content(resource)
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberHomeRowFlingBehavior(listState: LazyListState): FlingBehavior {
+    val snapping = rememberSnapFlingBehavior(listState, SnapPosition.Start)
+    val freeFling = ScrollableDefaults.flingBehavior()
+    val decay = rememberSplineBasedDecay<Float>()
+    return remember(listState, snapping, freeFling, decay) {
+        object : FlingBehavior {
+            override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+                val layout = listState.layoutInfo
+                val itemSize = layout.visibleItemsInfo.firstOrNull()?.size
+                    ?: return with(freeFling) { performFling(initialVelocity) }
+                // Each home cover row has uniform widths. Use its measured geometry so
+                // rotation, content padding and card spacing share the real scroll bounds.
+                val stride = itemSize.toFloat() + layout.mainAxisItemSpacing
+                val startDistance = listState.firstVisibleItemIndex * stride +
+                    listState.firstVisibleItemScrollOffset
+                val contentSize = layout.totalItemsCount * stride - layout.mainAxisItemSpacing +
+                    layout.beforeContentPadding + layout.afterContentPadding
+                val endDistance = (contentSize - layout.viewportSize.width - startDistance)
+                    .coerceAtLeast(0f)
+                val target = decay.calculateTargetValue(0f, initialVelocity)
+                // Snapping exactly to the first card consumes all velocity. A fling
+                // that would cross either edge must instead reach the overscroll effect.
+                val reachesEdge = (initialVelocity < 0f && -target >= startDistance) ||
+                    (initialVelocity > 0f && target >= endDistance)
+                return with(if (reachesEdge) freeFling else snapping) {
+                    performFling(initialVelocity)
+                }
             }
         }
     }
