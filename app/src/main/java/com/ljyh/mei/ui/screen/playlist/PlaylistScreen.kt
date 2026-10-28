@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import com.ljyh.mei.constants.MusicQuality
 
 import android.widget.Toast
@@ -35,7 +36,12 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
-import io.github.neoruaa.glasmio.scaffold.GlasmioOverscrollHost
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.asPaddingValues
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
@@ -61,7 +67,14 @@ fun PlaylistScreen(
 
     val context = LocalContext.current
     val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        MeiloXLoadingPage(
+            title = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.library_page_playlists),
+            onNavigateBack = { navController.popBackStack() },
+        )
+        return
+    }
     val scope = rememberCoroutineScope()
     val selection = rememberDetailSelection(id)
 
@@ -318,9 +331,13 @@ fun PlaylistScreen(
         ))
     }
 
-    trackOrder?.takeIf { it.playlistId == id.toString() }?.let { order ->
+    val activeOrder = trackOrder?.takeIf { it.playlistId == id.toString() }
+    var retainedOrder by remember(id) { mutableStateOf<PlaylistOrderState?>(null) }
+    if (activeOrder != null) androidx.compose.runtime.SideEffect { retainedOrder = activeOrder }
+    (activeOrder ?: retainedOrder)?.let { order ->
         PlaylistOrderSheet(
             state = order,
+            visible = activeOrder != null,
             onMove = viewModel::moveOrderedTrack,
             onVisibleTracks = viewModel::loadVisibleOrderTracks,
             onSave = viewModel::saveTrackOrder,
@@ -350,8 +367,14 @@ fun PlaylistScreen(
 
     // 8. UI 渲染
     if (playlistDetail is Resource.Error) {
-        GlasmioOverscrollHost {
-            Text("Error: ${(playlistDetail as Resource.Error).message}", Modifier.align(Alignment.Center))
+        MeiloXPinnedPage(
+            title = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.library_page_playlists),
+            bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+            onNavigateBack = { navController.popBackStack() },
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text((playlistDetail as Resource.Error).message)
+            }
         }
     } else {
         CommonSongListScreen(

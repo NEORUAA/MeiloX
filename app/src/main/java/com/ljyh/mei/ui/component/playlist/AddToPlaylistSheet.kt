@@ -1,14 +1,18 @@
 package com.ljyh.mei.ui.component.playlist
 
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.itemsIndexed
+import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,41 +39,58 @@ fun AddToPlaylistSheet(
     onSelectPlaylist: (Playlist) -> Unit,
     onCreateNewPlaylist: () -> Unit,
 ) {
-    GlasmioBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth()) {
-            GlasmioSheetTopToolbar(
-                title = stringResource(R.string.add_to_playlist_title),
-                actions = {
-                    GlasmioSheetToolbarButton(onClick = onDismiss) {
-                        SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
-                    }
-                },
-            )
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weight(1f, fill = false)) {
-                GlasmioGroupedList {
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss)
+    val listState = rememberLazyListState()
+    val title = stringResource(R.string.add_to_playlist_title)
+    GlasmioBottomSheet(
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = title,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
+            GlasmioSheetTopToolbar(title = title, actions = {
+                GlasmioSheetToolbarButton(onClick = { dismissal.requestDismiss() }) {
+                    SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
+                }
+            })
+        },
+    ) {
+        val padding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp,
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            item {
+                GlasmioGroupedList(Modifier.padding(bottom = 24.dp)) {
                     GlasmioListRow(
                         title = stringResource(R.string.create_playlist_title),
                         systemName = "plus.circle",
                         showTopSeparator = false,
-                        onClick = onCreateNewPlaylist,
+                        onClick = { dismissal.requestDismiss(onCreateNewPlaylist) },
                     )
                 }
-                if (playlists.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    GlasmioGroupedList(Modifier.weight(1f, fill = false)) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(0.dp),
-                        ) {
-                            itemsIndexed(playlists, key = { _, playlist -> playlist.id }) { index, playlist ->
-                                PlaylistSelectionItem(
-                                    playlist = playlist,
-                                    showTopSeparator = index > 0,
-                                    onClick = { onSelectPlaylist(playlist) },
-                                )
-                            }
-                        }
-                    }
+            }
+            itemsIndexed(playlists, key = { _, playlist -> "playlist:${playlist.id}" }) { index, playlist ->
+                val shape = ContinuousRoundedRectangle(
+                    topStart = if (index == 0) 26.dp else 0.dp,
+                    topEnd = if (index == 0) 26.dp else 0.dp,
+                    bottomStart = if (index == playlists.lastIndex) 26.dp else 0.dp,
+                    bottomEnd = if (index == playlists.lastIndex) 26.dp else 0.dp,
+                )
+                Box(Modifier.glasmioGroupedListBackground(shape)) {
+                    PlaylistSelectionItem(
+                        playlist = playlist,
+                        showTopSeparator = index > 0,
+                        onClick = { dismissal.requestDismiss { onSelectPlaylist(playlist) } },
+                    )
                 }
             }
         }

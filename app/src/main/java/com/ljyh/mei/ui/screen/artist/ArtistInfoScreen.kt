@@ -24,7 +24,7 @@ import com.ljyh.mei.data.network.Resource
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
@@ -42,7 +42,7 @@ fun ArtistInfoScreen(
 
     LaunchedEffect(id) { viewModel.getArtistDetail(id) }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.artist_info_title),
         subtitle = artist?.name,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),

@@ -53,6 +53,8 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.shapes.Capsule
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.CookieKey
@@ -62,7 +64,9 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.glass.rememberSharedGlassBackdrop
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGlassDimensions
@@ -98,6 +102,10 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
     val snackbar = remember { SnackbarHostState() }
     val backdrop = rememberLayerBackdrop()
     val background = LocalGlassColors.current.groupedBackground
+    // Match floating search: composite the untouched page canvas with the live foreground.
+    // The input and send button stay outside their own optical source.
+    val baseBackdrop = rememberCanvasBackdrop { drawRect(background) }
+    val composerBackdrop = rememberSharedGlassBackdrop(baseBackdrop, backdrop)
     val defaultComposerHeight = LocalGlassDimensions.current.controlHeight
     var composerHeight by remember(defaultComposerHeight) { mutableStateOf(defaultComposerHeight) }
     val blurDistancePx = with(density) { 56.dp.toPx() }
@@ -131,17 +139,19 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
     val bottomPadding = maxOf(insets.calculateBottomPadding(), keyboardBottom)
     val signIn = { Screen.NeteaseLogin.navigate(navController) }
 
-    GlasmioPinnedPage(
-        title = if (total > 0) stringResource(R.string.comment_title_count, total) else stringResource(R.string.comment_title),
-        bottomPadding = bottomPadding,
-        topBarBlurProgress = if (pagingItems.itemCount > 0) topBarBlurProgress else 0f,
-        onNavigateBack = { navController.popBackStack() },
-        actions = { CommentSortAction(sortType, viewModel::setSortType) },
-    ) { paddingValues ->
-        Box(Modifier.fillMaxSize()) {
+    val sortAction = CommentSortAction(sortType, viewModel::setSortType)
+    Box(Modifier.fillMaxSize()) {
+        MeiloXPinnedPage(
+            title = if (total > 0) stringResource(R.string.comment_title_count, total) else stringResource(R.string.comment_title),
+            bottomPadding = bottomPadding,
+            topBarBlurProgress = if (pagingItems.itemCount > 0) topBarBlurProgress else 0f,
+            onNavigateBack = { navController.popBackStack() },
+            actions = { listOf(sortAction) },
+            backgroundColor = background,
+        ) { paddingValues ->
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop).background(background),
+                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop).trackBackdropPosition(backdrop),
                 contentPadding = PaddingValues(
                     top = paddingValues.calculateTopPadding() + 8.dp,
                     bottom = paddingValues.calculateBottomPadding() + composerHeight + 16.dp,
@@ -188,104 +198,104 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
                     }
                 }
             }
-            Column(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp)
-                    .padding(bottom = bottomPadding + 8.dp)
-                    .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp)
+                .padding(bottom = bottomPadding + 8.dp)
+                .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    if (signedInUserId == null) {
-                        GlassSurface(
-                            modifier = Modifier.weight(1f),
-                            shape = ContinuousRoundedRectangle(50),
-                            style = GlassSurfaceStyle.Navigation,
-                            backdrop = backdrop,
-                        ) {
-                            Text(
-                                stringResource(R.string.comment_login_hint),
-                                style = IosTypography.body,
-                                color = LocalGlassColors.current.secondaryContent,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
-                            )
-                        }
-                        GlasmioButton(
-                            onClick = signIn,
-                            emphasis = GlassEmphasis.Prominent,
-                            style = GlassSurfaceStyle.Navigation,
-                            backdrop = backdrop,
-                        ) {
-                            Text(stringResource(R.string.comment_sign_in))
-                        }
-                    } else {
-                        GlassSurface(
-                            modifier = Modifier.weight(1f),
-                            shape = ContinuousRoundedRectangle(24.dp),
-                            style = GlassSurfaceStyle.Navigation,
-                            backdrop = backdrop,
-                        ) {
-                            Column(Modifier.fillMaxWidth()) {
-                                composer.replyTarget?.let { target ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
+                if (signedInUserId == null) {
+                    GlassSurface(
+                        modifier = Modifier.weight(1f),
+                        shape = Capsule(),
+                        style = GlassSurfaceStyle.Navigation,
+                        backdrop = composerBackdrop,
+                    ) {
+                        Text(
+                            stringResource(R.string.comment_login_hint),
+                            style = IosTypography.body,
+                            color = LocalGlassColors.current.secondaryContent,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                        )
+                    }
+                    GlasmioButton(
+                        onClick = signIn,
+                        emphasis = GlassEmphasis.Prominent,
+                        style = GlassSurfaceStyle.Navigation,
+                        backdrop = composerBackdrop,
+                    ) {
+                        Text(stringResource(R.string.comment_sign_in))
+                    }
+                } else {
+                    GlassSurface(
+                        modifier = Modifier.weight(1f),
+                        shape = ContinuousRoundedRectangle(24.dp),
+                        style = GlassSurfaceStyle.Navigation,
+                        backdrop = composerBackdrop,
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            composer.replyTarget?.let { target ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        stringResource(R.string.comment_replying_to, target.nickname) + " · " + target.content,
+                                        modifier = Modifier.weight(1f),
+                                        style = IosTypography.caption,
+                                        color = LocalGlassColors.current.accent,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Box(
+                                        Modifier.size(44.dp).clickable(enabled = !composer.isSending, role = Role.Button, onClick = viewModel::cancelReply),
+                                        contentAlignment = Alignment.Center,
                                     ) {
-                                        Text(
-                                            stringResource(R.string.comment_replying_to, target.nickname) + " · " + target.content,
-                                            modifier = Modifier.weight(1f),
-                                            style = IosTypography.caption,
-                                            color = LocalGlassColors.current.accent,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Box(
-                                            Modifier.size(44.dp).clickable(enabled = !composer.isSending, role = Role.Button, onClick = viewModel::cancelReply),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            SfIcon(SfSymbol.Close, stringResource(R.string.comment_cancel_reply), size = 16.dp, tint = LocalGlassColors.current.secondaryContent)
-                                        }
+                                        SfIcon(SfSymbol.Close, stringResource(R.string.comment_cancel_reply), size = 16.dp, tint = LocalGlassColors.current.secondaryContent)
                                     }
                                 }
-                                val placeholder = stringResource(R.string.comment_placeholder)
-                                BasicTextField(
-                                    value = composer.draft,
-                                    onValueChange = viewModel::updateDraft,
-                                    readOnly = composer.isSending,
-                                    minLines = 1,
-                                    maxLines = 4,
-                                    textStyle = IosTypography.body.copy(color = LocalGlassColors.current.content),
-                                    cursorBrush = SolidColor(LocalGlassColors.current.accent),
-                                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
-                                        .padding(horizontal = 16.dp, vertical = 13.dp)
-                                        .semantics { contentDescription = placeholder },
-                                    decorationBox = { inner ->
-                                        if (composer.draft.isEmpty()) Text(placeholder, style = IosTypography.body, color = LocalGlassColors.current.secondaryContent)
-                                        inner()
-                                    },
-                                )
                             }
-                        }
-                        GlasmioButton(
-                            onClick = viewModel::publish,
-                            enabled = composer.canSend,
-                            emphasis = GlassEmphasis.Prominent,
-                            style = GlassSurfaceStyle.Navigation,
-                            backdrop = backdrop,
-                        ) {
-                            if (composer.isSending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text(stringResource(R.string.send))
+                            val placeholder = stringResource(R.string.comment_placeholder)
+                            BasicTextField(
+                                value = composer.draft,
+                                onValueChange = viewModel::updateDraft,
+                                readOnly = composer.isSending,
+                                minLines = 1,
+                                maxLines = 4,
+                                textStyle = IosTypography.body.copy(color = LocalGlassColors.current.content),
+                                cursorBrush = SolidColor(LocalGlassColors.current.accent),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                                    .padding(horizontal = 16.dp, vertical = 13.dp)
+                                    .semantics { contentDescription = placeholder },
+                                decorationBox = { inner ->
+                                    if (composer.draft.isEmpty()) Text(placeholder, style = IosTypography.body, color = LocalGlassColors.current.secondaryContent)
+                                    inner()
+                                },
+                            )
                         }
                     }
-                }
-                composer.error?.let { message ->
-                    Text(stringResource(R.string.comment_send_failed, message), color = MaterialTheme.colorScheme.error, style = IosTypography.caption, modifier = Modifier.padding(horizontal = 16.dp))
+                    GlasmioButton(
+                        onClick = viewModel::publish,
+                        enabled = composer.canSend,
+                        emphasis = GlassEmphasis.Prominent,
+                        style = GlassSurfaceStyle.Navigation,
+                        backdrop = composerBackdrop,
+                    ) {
+                        if (composer.isSending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text(stringResource(R.string.send))
+                    }
                 }
             }
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomPadding + composerHeight + 16.dp))
+            composer.error?.let { message ->
+                Text(stringResource(R.string.comment_send_failed, message), color = MaterialTheme.colorScheme.error, style = IosTypography.caption, modifier = Modifier.padding(horizontal = 16.dp))
+            }
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomPadding + composerHeight + 16.dp))
     }
 }

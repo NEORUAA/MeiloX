@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.findmusic
 
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,8 +50,8 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.weapi.Playlists
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -84,16 +85,15 @@ fun FindMusicScreen(
     }
     LaunchedEffect(selectedCategory) { listState.scrollToItem(0) }
 
-    GlasmioPinnedPage(
+    MeiloXPinnedPage(
         title = title,
         bottomPadding = bottom,
         modifier = modifier,
         collapseProgress = collapseProgress,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = {
-            if (isNavigationTab) GlobalProfileAvatarButton()
-        },
+        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) { contentPadding ->
         Box(Modifier.fillMaxSize()) {
             when (val state = playlistState) {

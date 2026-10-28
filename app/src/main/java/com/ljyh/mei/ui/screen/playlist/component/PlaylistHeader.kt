@@ -1,6 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +59,7 @@ import com.ljyh.mei.utils.rememberEnumPreference
 
 /**
  * iOS-style playlist hero. The cover and actions intentionally stay self-contained so the
- * playlist page can be hosted by [GlasmioPinnedListPage] without a second app bar or card system.
+ * playlist page can be hosted by [MeiloXPinnedListPage] without a second app bar or card system.
  */
 @Composable
 fun PlaylistHeader(

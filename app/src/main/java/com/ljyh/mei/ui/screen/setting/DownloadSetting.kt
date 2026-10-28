@@ -29,11 +29,10 @@ import com.ljyh.mei.constants.DownloadQuality
 import com.ljyh.mei.constants.DownloadQualityKey
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioStepper
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -65,7 +64,7 @@ fun DownloadSetting(
         DownloadQuality.EXHIGH,
     )
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.download_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

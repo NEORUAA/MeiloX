@@ -1,11 +1,13 @@
 package com.ljyh.mei.ui.glass
 
 import io.github.neoruaa.glasmio.core.GlassAppearance
+import io.github.neoruaa.glasmio.core.GlasmioTheme
 import io.github.neoruaa.glasmio.core.LocalGlassAppearance
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGlassDimensions
 import io.github.neoruaa.glasmio.core.defaultGlassColors
 import io.github.neoruaa.glasmio.glass.GlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
 import io.github.neoruaa.glasmio.glass.GlasmioToolbarActionStyle
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.GraphicsLayerBlockScope
@@ -30,6 +32,8 @@ import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
 import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
+import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavHeaderMotion
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
@@ -60,6 +64,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -101,6 +106,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
@@ -111,6 +117,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -128,6 +135,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.SdkSuppress
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
@@ -142,6 +150,13 @@ import com.ljyh.mei.ui.screen.social.privateConversationItems
 import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.ui.theme.MusicTheme
+import com.ljyh.mei.R
+import com.ljyh.mei.data.model.api.CommentSortType
+import com.ljyh.mei.ui.navigation.MeiRoute
+import com.ljyh.mei.ui.navigation.MeiloXPageEntry
+import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.screen.comment.component.CommentSortAction
 import com.ljyh.mei.utils.color.ColorExtractionUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -814,6 +829,60 @@ class GlassControlsInteractionTest {
         } finally {
             compose.mainClock.autoAdvance = true
         }
+    }
+
+    @Test
+    fun commentSortMenuOpensFromItsSharedToolbarAnchorAndRetargetsSelection() {
+        val sort = mutableStateOf(CommentSortType.RECOMMEND)
+        val selections = mutableListOf<CommentSortType>()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        fun label(resource: Int) = context.getString(resource)
+        compose.setContent {
+            GlasmioTheme {
+                GlasmioBackdropHost(
+                    modifier = Modifier.fillMaxSize(),
+                    sampledContent = { Box(Modifier.fillMaxSize().background(Color.White)) },
+                    overlayContent = {
+                        val route = remember { MeiRoute("comment-sort-regression") }
+                        val headers = remember { MeiloXPageHeaders() }
+                        val motion = remember { GlasmioNavHeaderMotion(route.route) }
+                        GlasmioNavigationScaffold(motion, header = { headers.entry(it).spec }) {
+                            MeiloXPageEntry(route, headers) {
+                                val action = CommentSortAction(sort.value) {
+                                    selections += it
+                                    sort.value = it
+                                }
+                                MeiloXPinnedPage(title = "Comments", actions = { listOf(action) }) { padding ->
+                                    Text("Read-only comment fixture", Modifier.padding(padding))
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+
+        fun openFrom(resource: Int) {
+            compose.onNode(hasContentDescription(label(resource)) and hasClickAction()).performClick()
+            compose.onAllNodes(isPopup()).assertCountEquals(1)
+            for (option in listOf(R.string.comment_sort_recommended, R.string.comment_sort_hot, R.string.comment_sort_latest)) {
+                compose.onNode(hasText(label(option)) and hasAnyAncestor(isPopup())).assertIsDisplayed()
+            }
+        }
+        fun select(resource: Int) {
+            compose.onNode(hasText(label(resource)) and hasAnyAncestor(isPopup())).performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithContentDescription(label(resource)).assertIsDisplayed()
+        }
+
+        openFrom(R.string.comment_sort_recommended)
+        select(R.string.comment_sort_hot)
+        compose.runOnIdle { assertEquals(listOf(CommentSortType.HOT), selections) }
+        openFrom(R.string.comment_sort_hot)
+        select(R.string.comment_sort_latest)
+        compose.runOnIdle { assertEquals(listOf(CommentSortType.HOT, CommentSortType.TIME), selections) }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.album
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -46,7 +47,7 @@ import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.DownloadConfirmDialog
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -75,7 +76,14 @@ fun AlbumDetailScreen(
 
     val context = LocalContext.current
     val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        MeiloXLoadingPage(
+            title = stringResource(com.ljyh.mei.R.string.playlist_table_album),
+            onNavigateBack = { navController.popBackStack() },
+        )
+        return
+    }
 
     val albumDetail by viewModel.albumDetail.collectAsState()
     val subscription by viewModel.subscription.collectAsState()
@@ -307,7 +315,7 @@ fun AlbumDetailScreen(
 
     // 6. UI 渲染
     if (albumDetail is Resource.Error) {
-        GlasmioPinnedListPage(
+        MeiloXPinnedListPage(
             title = stringResource(com.ljyh.mei.R.string.playlist_table_album),
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             showsLargeTitle = false,

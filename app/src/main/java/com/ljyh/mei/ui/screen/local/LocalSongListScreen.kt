@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.local
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import androidx.compose.ui.geometry.Rect
 
 import androidx.compose.animation.AnimatedVisibility
@@ -75,7 +76,7 @@ import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import io.github.neoruaa.glasmio.scaffold.GlasmioOverscrollHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
-import io.github.neoruaa.glasmio.ui.GlasmioTopBar
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -93,7 +94,14 @@ fun LocalSongListScreen(
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        MeiloXLoadingPage(
+            title = title,
+            onNavigateBack = { navController.popBackStack() },
+        )
+        return
+    }
     val db = AppDatabase.getDatabase(context)
 
     val songs by when (filterType) {
@@ -136,71 +144,38 @@ fun LocalSongListScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        if (coverUrl != null) {
-            PlaylistBackground(coverUrl = coverUrl)
-        }
-
-        Scaffold(
-            containerColor = Color.Transparent,
-            topBar = {
-                GlasmioTopBar(
-                    title = title,
-                    collapseProgress = topBarCollapseProgress,
-                    navigation = {
-                        GlasmioIconButton(onClick = navController::navigateUp) {
-                            SfIcon("chevron.left", null, mirrored = true)
-                        }
-                    },
-                )
+        val blurDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
+        val topBarBlurProgress by remember(lazyListState, blurDistancePx) {
+            derivedStateOf {
+                if (lazyListState.firstVisibleItemIndex > 0) 1f
+                else (lazyListState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(0f, 1f)
             }
+        }
+        MeiloXPinnedPage(
+            title = title,
+            collapseProgress = topBarCollapseProgress,
+            topBarBlurProgress = topBarBlurProgress,
+            onNavigateBack = navController::navigateUp,
+            bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+            background = { coverUrl?.let { PlaylistBackground(coverUrl = it) } },
         ) { padding ->
-            GlasmioOverscrollHost(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                if (device.isTablet && device.isLandscape) {
-                    Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(0.4f).align(Alignment.CenterVertically)) {
-                            LocalSongListHeader(
-                                songs = songs,
-                                title = title,
-                                filterType = filterType,
-                                onPlayAll = { playerConnection.playQueue(buildQueue(0)) }
-                            )
-                        }
-                        PlaylistTrackList(
-                            modifier = Modifier.weight(0.6f),
-                            pagingItems = null,
-                            staticTracks = tracks,
-                            isTablet = true,
-                            onTrackClick = { track, index ->
-                                val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
-                                    !localAudioPathExists(it.path)
-                                } ?: false
-                                if (!isLost) {
-                                    playerConnection.onTrackClicked(
-                                        trackId = track.id.toString(),
-                                        buildQueue = { buildQueue(index) }
-                                    )
-                                }
-                            },
-                            onMoreClick = { track, anchor -> actionTrack = track; actionAnchor = anchor }
+            if (device.isTablet && device.isLandscape) {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(0.4f).align(Alignment.CenterVertically).padding(top = padding.calculateTopPadding())) {
+                        LocalSongListHeader(
+                            songs = songs,
+                            title = title,
+                            filterType = filterType,
+                            onPlayAll = { playerConnection.playQueue(buildQueue(0)) },
                         )
                     }
-                } else {
                     PlaylistTrackList(
+                        modifier = Modifier.weight(0.6f),
                         pagingItems = null,
                         staticTracks = tracks,
                         lazyListState = lazyListState,
-                        headerContent = {
-                            LocalSongListHeader(
-                                songs = songs,
-                                title = title,
-                                filterType = filterType,
-                                onPlayAll = { playerConnection.playQueue(buildQueue(0)) }
-                            )
-                        },
+                        contentPadding = padding,
+                        isTablet = true,
                         onTrackClick = { track, index ->
                             val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
                                 !localAudioPathExists(it.path)
@@ -208,17 +183,40 @@ fun LocalSongListScreen(
                             if (!isLost) {
                                 playerConnection.onTrackClicked(
                                     trackId = track.id.toString(),
-                                    buildQueue = { buildQueue(index) }
+                                    buildQueue = { buildQueue(index) },
                                 )
                             }
                         },
                         onMoreClick = { track, anchor -> actionTrack = track; actionAnchor = anchor },
-                        contentPadding = PaddingValues(
-                            bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-                                .calculateBottomPadding()
-                        )
                     )
                 }
+            } else {
+                PlaylistTrackList(
+                    pagingItems = null,
+                    staticTracks = tracks,
+                    lazyListState = lazyListState,
+                    headerContent = {
+                        LocalSongListHeader(
+                            songs = songs,
+                            title = title,
+                            filterType = filterType,
+                            onPlayAll = { playerConnection.playQueue(buildQueue(0)) },
+                        )
+                    },
+                    onTrackClick = { track, index ->
+                        val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
+                            !localAudioPathExists(it.path)
+                        } ?: false
+                        if (!isLost) {
+                            playerConnection.onTrackClicked(
+                                trackId = track.id.toString(),
+                                buildQueue = { buildQueue(index) },
+                            )
+                        }
+                    },
+                    onMoreClick = { track, anchor -> actionTrack = track; actionAnchor = anchor },
+                    contentPadding = padding,
+                )
             }
         }
 

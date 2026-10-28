@@ -2,6 +2,14 @@ package com.ljyh.mei.ui.screen
 
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.ui.Alignment
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -25,7 +33,15 @@ fun Test2(){
     )
 }
 @Composable
-fun Test(){
-    Test2()
-
+fun Test() {
+    val navController = LocalNavController.current
+    MeiloXPinnedPage(
+        title = "Test",
+        bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+        onNavigateBack = { navController.popBackStack() },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopStart) {
+            Test2()
+        }
+    }
 }

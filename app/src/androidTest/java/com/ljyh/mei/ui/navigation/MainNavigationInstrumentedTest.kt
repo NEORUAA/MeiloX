@@ -3,18 +3,22 @@ package com.ljyh.mei.ui.navigation
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -45,13 +49,17 @@ import com.ljyh.mei.constants.PodcastsTabEnabledKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.screen.Index
+import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.dataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 /** Exercises retained navigation entries and restores every preference changed by the tests. */
 @RunWith(AndroidJUnit4::class)
@@ -145,6 +153,71 @@ class MainNavigationInstrumentedTest {
         assertDestinationChrome(Index.Podcasts, topLevel = false)
         compose.onNodeWithContentDescription(text(R.string.navigation_back)).performClick()
         compose.onNode(hasSetTextAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsTitlesFollowTheirPagesWhileBackButtonRemainsShared() = withNavigationPreferences {
+        openTab(Index.Settings)
+        val settingsPage = "MeiloXPage:${Screen.Setting.route}"
+        val appearancePage = "MeiloXPage:${Screen.AppearanceSettings.route}"
+        val settingsTitle = "MeiloXPageTitle:${Screen.Setting.route}"
+        val appearanceTitle = "MeiloXPageTitle:${Screen.AppearanceSettings.route}"
+        compose.onNode(
+            hasScrollToNodeAction() and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
+        ).performScrollToNode(hasText(text(R.string.settings_appearance)))
+        compose.onAllNodesWithContentDescription(avatarDescription).assertCountEquals(1)
+
+        val density = compose.activity.resources.displayMetrics.density
+        val avatarBounds = compose.onNodeWithContentDescription(avatarDescription)
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("The avatar action must retain a square hit target", avatarBounds.height, avatarBounds.width, density)
+        assertEquals("The shared avatar action must retain its 44dp height", 44f * density, avatarBounds.height, density)
+        fun pageAndTitleX(page: String, title: String): Float {
+            compose.onNodeWithTag(title, useUnmergedTree = true)
+                .assert(hasAnyAncestor(hasTestTag(page)))
+            val pageX = compose.onNodeWithTag(page, useUnmergedTree = true)
+                .fetchSemanticsNode().positionInRoot.x
+            val titleX = compose.onNodeWithTag(title, useUnmergedTree = true)
+                .fetchSemanticsNode().positionInRoot.x
+            assertEquals("The title must use its own page transform", pageX, titleX, density)
+            return pageX
+        }
+
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText(text(R.string.settings_appearance)).performClick()
+            compose.mainClock.advanceTimeBy(96)
+            pageAndTitleX(settingsPage, settingsTitle)
+            val incomingX = pageAndTitleX(appearancePage, appearanceTitle)
+            val sharedBack = compose.onNodeWithContentDescription(text(R.string.navigation_back))
+            sharedBack.assert(!hasAnyAncestor(hasTestTag(settingsPage)))
+                .assert(!hasAnyAncestor(hasTestTag(appearancePage)))
+            val backX = sharedBack.fetchSemanticsNode().boundsInRoot.center.x
+
+            compose.mainClock.advanceTimeBy(96)
+            pageAndTitleX(settingsPage, settingsTitle)
+            val nextIncomingX = pageAndTitleX(appearancePage, appearanceTitle)
+            assertTrue("The incoming page must still be moving", incomingX - nextIncomingX > 4f * density)
+            assertEquals(
+                "The shared back button must retain its screen anchor while its appearance scales",
+                backX,
+                sharedBack.fetchSemanticsNode().boundsInRoot.center.x,
+                density,
+            )
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription(text(R.string.navigation_back)).assertCountEquals(1)
+        compose.onNodeWithTag(appearanceTitle, useUnmergedTree = true)
+            .assert(hasAnyAncestor(hasTestTag(appearancePage)))
+        compose.onAllNodesWithContentDescription(avatarDescription).assertCountEquals(0)
+
+        compose.onNodeWithContentDescription(text(R.string.navigation_back)).performClick()
+        assertDestinationChrome(Index.Settings, topLevel = true)
+        compose.onAllNodesWithContentDescription(avatarDescription).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription(text(R.string.navigation_back)).assertCountEquals(0)
     }
 
     private fun withNavigationPreferences(block: () -> Unit) {

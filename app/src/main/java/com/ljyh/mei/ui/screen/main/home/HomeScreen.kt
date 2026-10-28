@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.home
 
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
@@ -92,7 +93,7 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.extensions.togglePlayPause
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.home.CardExtInfo
 import com.ljyh.mei.ui.component.home.PlaylistCard
 import com.ljyh.mei.ui.component.home.RecommendCard
@@ -101,7 +102,7 @@ import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -209,12 +210,13 @@ fun HomeScreen(
         }
     }
 
-    GlasmioPinnedPage(
+    MeiloXPinnedPage(
         title = stringResource(R.string.app_tab_home),
         bottomPadding = systemBarsPadding.calculateBottomPadding(),
         collapseProgress = collapseProgress,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
-        actions = { GlobalProfileAvatarButton() },
+        actions = { listOf(globalProfileHeaderAction()) },
     ) { pinnedPadding ->
         PullToRefreshBox(
             isRefreshing = isRefreshing,

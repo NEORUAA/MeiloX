@@ -40,7 +40,7 @@ import com.ljyh.mei.ui.screen.local.component.EmptyLocalMusic
 import com.ljyh.mei.ui.screen.local.component.FolderItem
 import com.ljyh.mei.ui.screen.local.component.ManagementCard
 import com.ljyh.mei.ui.screen.local.component.SectionHeader
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,7 +68,7 @@ fun LocalMusicScreen(
             .sortedBy { it.first }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = "本地音乐",
         onNavigateBack = navController::navigateUp,
         bottomPadding = LocalPlayerAwareWindowInsets.current

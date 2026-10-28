@@ -1,12 +1,15 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -19,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.SleepTimerState
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
@@ -53,10 +57,17 @@ fun MoreActionsSheet(
     var showSortOptions by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<List<MoreAction>?>(null) }
 
+    val listState = rememberLazyListState()
+    val dismissal = rememberMeiloXSheetDismissal(onDismissRequest)
+
     GlasmioBottomSheet(
-        onDismissRequest = onDismissRequest,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = stringResource(R.string.more_actions_title),
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
             if (draft != null) GlasmioSheetTopToolbar(
                 title = stringResource(R.string.more_actions_order_title),
                 navigation = {
@@ -75,7 +86,7 @@ fun MoreActionsSheet(
                 navigation = onFindLyrics?.let { findLyrics ->
                     {
                         GlasmioSheetToolbarButton(
-                            onClick = findLyrics,
+                            onClick = { dismissal.requestDismiss { findLyrics() } },
                             onLongClick = onFindLyricsLongClick,
                         ) {
                             SfIcon(
@@ -137,54 +148,58 @@ fun MoreActionsSheet(
                     }
                 },
             )
-            LazyColumn(
-                // Size to content, capped by the sheet's available height (fill = false);
-                // a hardcoded max clipped longer lists instead of matching them.
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .weight(1f, fill = false),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                item {
-                    val editing = draft
-                    if (editing != null) {
-                        GlasmioReorderableGroup(
-                            items = editing,
-                            onReorder = { draft = it },
-                            dragHandleContentDescription = stringResource(R.string.reorder_drag_handle),
-                            moveUpLabel = stringResource(R.string.move_up),
-                            moveDownLabel = stringResource(R.string.move_down),
-                        ) { action ->
-                            SfIcon(action.systemName, null, tint = LocalGlassColors.current.accent)
-                            Spacer(Modifier.width(12.dp))
-                            Text(stringResource(action.labelRes), modifier = Modifier.weight(1f),
-                                color = LocalGlassColors.current.content)
-                        }
-                    } else GlasmioGroupedList {
-                        moreActions.forEachIndexed { index, action ->
-                            GlasmioListRow(
-                                title = stringResource(action.labelRes),
-                                systemName = action.systemName,
-                                detail = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state == SleepTimerState.EndOfTrack) {
-                                    stringResource(R.string.sleep_timer_track_short)
-                                } else null,
-                                trailing = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state is SleepTimerState.Countdown) {
-                                    {
-                                        val seconds = (sleepTimer.remainingMillis + 999L) / 1_000L
-                                        Text(
-                                            text = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60),
-                                            style = IosTypography.subheadline.copy(fontFeatureSettings = "tnum"),
-                                            color = LocalGlassColors.current.secondaryContent,
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        SfIcon("chevron.forward", null, size = 12.dp, tint = LocalGlassColors.current.separator)
-                                    }
-                                } else null,
-                                showTopSeparator = index > 0,
-                                onClick = { onActionClick(action) },
-                            )
-                        }
+        },
+    ) {
+        val sheetPadding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = sheetPadding.calculateTopPadding() + 8.dp,
+                end = 16.dp,
+                bottom = sheetPadding.calculateBottomPadding() + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            item {
+                val editing = draft
+                if (editing != null) {
+                    GlasmioReorderableGroup(
+                        items = editing,
+                        onReorder = { draft = it },
+                        dragHandleContentDescription = stringResource(R.string.reorder_drag_handle),
+                        moveUpLabel = stringResource(R.string.move_up),
+                        moveDownLabel = stringResource(R.string.move_down),
+                    ) { action ->
+                        SfIcon(action.systemName, null, tint = LocalGlassColors.current.accent)
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(action.labelRes), modifier = Modifier.weight(1f),
+                            color = LocalGlassColors.current.content)
+                    }
+                } else GlasmioGroupedList {
+                    moreActions.forEachIndexed { index, action ->
+                        GlasmioListRow(
+                            title = stringResource(action.labelRes),
+                            systemName = action.systemName,
+                            detail = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state == SleepTimerState.EndOfTrack) {
+                                stringResource(R.string.sleep_timer_track_short)
+                            } else null,
+                            trailing = if (action == MoreAction.SLEEP_TIMER && sleepTimer?.state is SleepTimerState.Countdown) {
+                                {
+                                    val seconds = (sleepTimer.remainingMillis + 999L) / 1_000L
+                                    Text(
+                                        text = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60),
+                                        style = IosTypography.subheadline.copy(fontFeatureSettings = "tnum"),
+                                        color = LocalGlassColors.current.secondaryContent,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    SfIcon("chevron.forward", null, size = 12.dp, tint = LocalGlassColors.current.separator)
+                                }
+                            } else null,
+                            showTopSeparator = index > 0,
+                            onClick = { dismissal.requestDismiss { onActionClick(action) } },
+                        )
                     }
                 }
             }

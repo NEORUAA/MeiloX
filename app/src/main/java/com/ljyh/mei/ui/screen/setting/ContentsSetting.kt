@@ -32,7 +32,7 @@ import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioReorderableGroup
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -110,7 +110,7 @@ fun ContentsSetting(
         }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.content_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.drawWithContent
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.recordPlayerContent
@@ -177,6 +178,7 @@ private fun MiniPlayerContent(
             .fillMaxWidth()
             .height(MiniPlayerHeight)
             .compactMiniPlayerHorizontalPadding(compactProgress)
+            .testTag("MeiloXMiniPlayerSurface")
             .onGloballyPositioned {
                 // This modifier is outside GlassSurface's press layer. Avoid boundsInRoot,
                 // which can clip the hidden mini player against the moving sheet outline.

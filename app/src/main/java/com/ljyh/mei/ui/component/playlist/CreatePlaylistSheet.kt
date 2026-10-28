@@ -1,9 +1,17 @@
 package com.ljyh.mei.ui.component.playlist
 
+import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetScrollEdge
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
@@ -11,29 +19,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
@@ -54,10 +57,15 @@ fun CreatePlaylistSheet(
     var isPrivate by remember { mutableStateOf(defaultHidden) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss)
+    val scrollState = rememberScrollState()
+    val scrollProgress = rememberMeiloXSheetScrollEdge(scrollState)
+    val sheetTitle = title ?: stringResource(R.string.create_playlist_title)
     val submit = {
         text.trim().takeIf(String::isNotEmpty)?.let {
-            onConfirm(it, isPrivate)
+            val privacy = isPrivate
             focusManager.clearFocus()
+            dismissal.requestDismiss { onConfirm(it, privacy) }
         }
         Unit
     }
@@ -67,19 +75,28 @@ fun CreatePlaylistSheet(
     }
 
     GlasmioBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = sheetTitle,
         contentWindowInsets = { WindowInsets.statusBars.union(WindowInsets.ime) },
+        topBarBlurProgress = scrollProgress,
+        topBar = {
+            GlasmioSheetTopToolbar(sheetTitle, actions = {
+                GlasmioSheetToolbarButton(onClick = { dismissal.requestDismiss() }) {
+                    SfIcon("xmark", stringResource(R.string.cancel))
+                }
+            })
+        },
     ) {
+        val padding = LocalGlasmioSheetContentPadding.current
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(
+                start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = 16.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-                Text(
-                    text = title ?: stringResource(R.string.create_playlist_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-
                 GlasmioGroupedList {
                     GlasmioTextField(
                         value = text,
@@ -91,7 +108,7 @@ fun CreatePlaylistSheet(
                                 Text(
                                     "${text.length}/20",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = LocalGlassColors.current.secondaryContent,
                                 )
                                 if (text.isNotEmpty()) {
                                     GlasmioIconButton(onClick = { text = "" }, modifier = Modifier.size(34.dp)) {
@@ -103,49 +120,34 @@ fun CreatePlaylistSheet(
                     )
                 }
 
-                GlasmioCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { isPrivate = !isPrivate },
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SfIcon(if (isPrivate) "lock.iphone" else "globe", null, size = 24.dp)
-                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(
-                                stringResource(R.string.private_playlist_toggle),
-                                fontWeight = FontWeight.Medium,
-                            )
-                            Text(
-                                stringResource(
-                                    if (isPrivate) R.string.private_playlist_only_me
-                                    else R.string.private_playlist_everyone,
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        GlasmioSwitch(checked = isPrivate, onCheckedChange = { isPrivate = it })
-                    }
+                GlasmioGroupedList {
+                    GlasmioListRow(
+                        title = stringResource(R.string.private_playlist_toggle),
+                        subtitle = stringResource(if (isPrivate) R.string.private_playlist_only_me else R.string.private_playlist_everyone),
+                        systemName = if (isPrivate) "lock.iphone" else "globe",
+                        showTopSeparator = false,
+                        onClick = { isPrivate = !isPrivate },
+                        trailing = { GlasmioSwitch(checked = isPrivate, onCheckedChange = { isPrivate = it }) },
+                    )
                 }
 
-                Row(
-                    Modifier.fillMaxWidth(),
+        }
+        Row(
+                    Modifier.fillMaxWidth().padding(bottom = padding.calculateBottomPadding())
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                 ) {
-                    GlasmioButton(onClick = onDismiss) {
+                    GlasmioButton(onClick = { dismissal.requestDismiss() }, size = GlasmioButtonSize.Large) {
                         Text(stringResource(R.string.cancel))
                     }
                     GlasmioButton(
                         onClick = submit,
                         enabled = text.isNotBlank(),
+                        size = GlasmioButtonSize.Large,
                         emphasis = GlassEmphasis.Prominent,
                     ) {
                         Text(stringResource(R.string.done))
                     }
                 }
-                Spacer(Modifier.size(4.dp))
-        }
     }
 }

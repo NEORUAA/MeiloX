@@ -121,6 +121,7 @@ fun MusicTheme(
         appearance = LocalGlassAppearance.current,
         dimensions = LocalGlassDimensions.current,
         shapes = AppShapes,
+        letterSpacing = letterSpacing,
     ) {
         GlasmioIconProvider(
             symbolTypeface = symbolTypeface,

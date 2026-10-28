@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 
@@ -41,8 +42,8 @@ import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.screen.main.library.component.LibraryMobileLayout
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.navigation.ContentFeature
@@ -68,8 +69,16 @@ fun LibraryScreen(
     category: LibraryPage? = null,
 ) {
     val context = LocalContext.current
+    val navController = LocalNavController.current
     val preferenceState by context.dataStore.data.collectAsState(initial = null)
-    val preferences = preferenceState ?: return
+    val preferences = preferenceState
+    if (preferences == null) {
+        MeiloXLoadingPage(
+            title = stringResource(category?.titleRes ?: R.string.app_tab_library),
+            onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
+        )
+        return
+    }
     val libraryStyle = preferences[LibraryStyleKey].toEnum(LibraryStyle.Default)
     val defaultPagePreference = preferences[LibraryDefaultPageKey].orEmpty()
     val podcastsEnabled = preferences[PodcastsEnabledKey] ?: true
@@ -80,7 +89,6 @@ fun LibraryScreen(
         if (preferences[ListeningHistoryEnabledKey] != false) add(ContentFeature.ListeningHistory)
     }
     val defaultPage = resolveLibraryDefaultPage(defaultPagePreference, libraryStyle, enabledFeatures)
-    val navController = LocalNavController.current
     var defaultPageApplied by rememberSaveable { mutableStateOf(false) }
     var selectedPage by rememberSaveable { mutableStateOf(defaultPage ?: LibraryPage.Songs) }
     LaunchedEffect(Unit) {
@@ -151,13 +159,11 @@ fun EmptyLoginState(
     category: LibraryPage? = null,
 ) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(category?.titleRes ?: R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = {
-            if (isNavigationTab) GlobalProfileAvatarButton()
-        },
+        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) {
         if (category == null) {
             item(key = "signed-out-downloads") {
@@ -204,7 +210,7 @@ private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boole
     val navController = LocalNavController.current
     val colors = LocalGlassColors.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         horizontalContentPadding = 6.dp,
@@ -212,7 +218,7 @@ private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boole
         verticalArrangement = Arrangement.spacedBy(0.dp),
         backgroundColor = if (colors.isDark) colors.groupedBackground else Color.White,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = { if (isNavigationTab) GlobalProfileAvatarButton() },
+        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) {
         categories.forEachIndexed { index, page ->
             item(key = "library-category:${page.name}") {

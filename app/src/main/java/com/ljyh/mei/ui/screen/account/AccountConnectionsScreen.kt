@@ -35,7 +35,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -144,7 +145,7 @@ fun AccountConnectionsScreen(
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     LaunchedEffect(userId, type) { viewModel.load(userId, type) }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(
             if (type == AccountConnectionType.Following) R.string.account_follows else R.string.account_followers,
         ),
@@ -152,13 +153,13 @@ fun AccountConnectionsScreen(
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlasmioIconButton(viewModel::refresh, enabled = !state.loading) {
-                if (state.loading && state.page != null) {
-                    CircularProgressIndicator(Modifier.size(20.dp))
-                } else {
-                    SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-                }
-            }
+            listOf(meiloxHeaderAction(
+                "refresh", stringResource(R.string.refresh), viewModel::refresh,
+                enabled = !state.loading, visualKey = state.loading && state.page != null,
+            ) {
+                if (state.loading && state.page != null) CircularProgressIndicator(Modifier.size(20.dp))
+                else SfIcon(SfSymbol.ArrowClockwise, null)
+            })
         },
     ) {
         if (state.loading && state.page == null) {

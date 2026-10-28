@@ -27,7 +27,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.ui.component.item.AlbumItem
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -52,7 +52,7 @@ fun ArtistAlbumsScreen(
         if (isSearching) searchListState.scrollToItem(0)
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.artist_all_albums),
         listState = if (isSearching) searchListState else catalogListState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),

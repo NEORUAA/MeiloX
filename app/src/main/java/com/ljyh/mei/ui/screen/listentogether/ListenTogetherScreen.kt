@@ -37,7 +37,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.glass.GlassSurface
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -54,14 +55,14 @@ fun ListenTogetherScreen(store: ListenTogetherStore = hiltViewModel<ListenTogeth
     }
     var invitationText by remember(initialInvitation) { mutableStateOf(initialInvitation) }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.listen_together),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlasmioIconButton(store::refresh) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(meiloxHeaderAction("refresh", stringResource(R.string.refresh), store::refresh) {
+                SfIcon(SfSymbol.ArrowClockwise, null)
+            })
         },
     ) {
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }

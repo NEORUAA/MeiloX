@@ -1,5 +1,32 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import kotlin.math.abs
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderGroup
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderSpec
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationFrame
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderMotion
+import io.github.neoruaa.glasmio.core.GlassAppearance
+import io.github.neoruaa.glasmio.core.GlasmioTheme
+import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +80,67 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun playlistSearchReservesTheRenderedDoneActionInBothDirectionsAndLargeType() {
+        val fontScale = mutableStateOf(1f)
+        val direction = mutableStateOf(LayoutDirection.Ltr)
+        val doneTextWidthPx = mutableIntStateOf(0)
+        var physicalDensity = 1f
+        val motion = object : GlasmioHeaderMotion {
+            override val frame = mutableStateOf(GlasmioNavigationFrame(0, "selection", "selection"))
+        }
+        compose.setContent {
+            physicalDensity = LocalDensity.current.density
+            CompositionLocalProvider(
+                LocalDensity provides Density(physicalDensity, fontScale.value),
+                LocalLayoutDirection provides direction.value,
+            ) {
+                GlasmioTheme(appearance = GlassAppearance(reduceTransparency = true)) {
+                    GlasmioBackdropHost(sampledContent = {}, overlayContent = {
+                        val doneLabel = stringResource(R.string.done)
+                        GlasmioNavigationScaffold(motion, header = {
+                            GlasmioHeaderSpec("", trailing = listOf(GlasmioHeaderGroup("actions", listOf(
+                                GlasmioHeaderAction("done", "done", "Selection done", {}) {
+                                    Text(doneLabel, modifier = Modifier.onSizeChanged { doneTextWidthPx.intValue = it.width })
+                                },
+                            ))))
+                        }) {
+                            BoxWithConstraints(Modifier.fillMaxSize()) {
+                                val endInset = playlistSearchEndInset(true, false, doneTextWidthPx.intValue)
+                                PlaylistHeaderSearchEditor(
+                                    query = "Preview", onQueryChange = {}, onClose = {},
+                                    contentAlpha = 1f, expansion = 1f,
+                                    focusRequester = remember { FocusRequester() },
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(
+                                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp,
+                                        end = endInset,
+                                    ).width((maxWidth - 68.dp - endInset).coerceAtLeast(44.dp)).height(44.dp),
+                                )
+                            }
+                        }
+                    })
+                }
+            }
+        }
+        for (layout in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+            for (scale in listOf(1f, 2f)) {
+                compose.runOnIdle { direction.value = layout; fontScale.value = scale }
+                fun actualGap(): Float {
+                    val editor = compose.onNodeWithTag("PlaylistHeaderSearchEditor", useUnmergedTree = true)
+                        .fetchSemanticsNode().boundsInRoot
+                    val done = compose.onNodeWithContentDescription("Selection done").fetchSemanticsNode().boundsInRoot
+                    return if (layout == LayoutDirection.Ltr) done.left - editor.right else editor.left - done.right
+                }
+                compose.waitUntil(5_000) { abs(actualGap() - 8f * physicalDensity) <= physicalDensity }
+                assertEquals("Editor must leave an 8dp visible gap at font scale $scale in $layout",
+                    8f * physicalDensity, actualGap(), physicalDensity)
+                val done = compose.onNodeWithContentDescription("Selection done").fetchSemanticsNode().boundsInRoot
+                assertEquals("The shared Done action keeps its 44dp hit height", 44f * physicalDensity,
+                    done.height, physicalDensity)
+            }
+        }
+    }
 
     @Test
     fun savedViewportSurvivesLoadingBeforeTheRestoredRowsArrive() {

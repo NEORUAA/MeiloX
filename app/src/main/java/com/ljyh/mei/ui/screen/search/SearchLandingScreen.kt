@@ -56,7 +56,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -142,7 +142,7 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
     val history = remember(historyJson) { decodeSearchHistory(historyJson) }
     var showAllHistory by rememberSaveable { mutableStateOf(false) }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.app_tab_search),
         bottomPadding = 0.dp,
         bottomPaddingValues = bottomPaddingValues,

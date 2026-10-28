@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import android.content.Context
 import android.net.Uri
@@ -45,11 +46,10 @@ import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.CacheManager
 import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -242,14 +242,17 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
     val (imageLimitMb, setImageLimitMb) = rememberPreference(ImageCacheLimitMbKey, DefaultImageCacheLimitMb)
     val (musicLimitMb, setMusicLimitMb) = rememberPreference(MusicCacheLimitMbKey, DefaultMusicCacheLimitMb)
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.storage_management),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlasmioIconButton(viewModel::refresh, enabled = !state.isBusy) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(meiloxHeaderAction(
+                key = "storage.refresh",
+                contentDescription = stringResource(R.string.refresh),
+                onClick = viewModel::refresh,
+                enabled = !state.isBusy,
+            ) { SfIcon(SfSymbol.ArrowClockwise, null) })
         },
     ) {
         item {

@@ -45,7 +45,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -113,7 +113,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
         }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.settings_about),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

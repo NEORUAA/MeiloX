@@ -8,26 +8,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -35,12 +28,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -57,8 +52,15 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
+import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.ui.GlasmioSheetState
+import io.github.neoruaa.glasmio.ui.rememberGlasmioSheetState
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -68,9 +70,7 @@ import com.ljyh.mei.ui.model.LyricVariant
 import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.TimeUtils.formatSeconds
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QQMusicSelectSheet(
     viewmodel: PlayerViewModel,
@@ -80,7 +80,7 @@ fun QQMusicSelectSheet(
     val searchResult by viewmodel.searchResult.collectAsState()
     val candidates by viewmodel.lyricCandidates.collectAsState()
     val offsetMs by viewmodel.lyricOffsetMs.collectAsState()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberGlasmioSheetState(skipPartiallyExpanded = false)
     val connection = LocalPlayerConnection.current
     val playingMetadata = connection?.mediaMetadata?.collectAsState()?.value
     val closeRequested = connection != null && playingMetadata?.id != mediaMetadata.id
@@ -111,7 +111,6 @@ fun QQMusicSelectSheet(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun LyricSelectionSheet(
     mediaMetadata: MediaMetadata,
@@ -124,23 +123,14 @@ internal fun LyricSelectionSheet(
     onResetOffset: () -> Unit,
     onResetSource: () -> Unit,
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    sheetState: GlasmioSheetState = rememberGlasmioSheetState(skipPartiallyExpanded = false),
     closeRequested: Boolean = false,
 ) {
-    val scope = rememberCoroutineScope()
-    var closing by remember(sheetState) { mutableStateOf(false) }
-    fun closeSheet(beforeClose: () -> Unit = {}) {
-        if (closing) return
-        closing = true
-        beforeClose()
-        scope.launch {
-            try {
-                sheetState.hide()
-                if (!sheetState.isVisible) onDismiss()
-            } finally {
-                closing = false
-            }
-        }
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss, sheetState = sheetState)
+    val listState = rememberLazyListState()
+    val closing = dismissal.isDismissing
+    fun closeSheet(afterClose: () -> Unit = {}) {
+        dismissal.requestDismiss(afterClose)
     }
 
     LaunchedEffect(closeRequested) {
@@ -148,16 +138,13 @@ internal fun LyricSelectionSheet(
     }
 
     GlasmioBottomSheet(
-        onDismissRequest = {
-            // Swipe and scrim dismissal already finish the sheet's own hide animation.
-            if (!closing) onDismiss()
-        },
+        onDismissRequest = dismissal::onDismissed,
         skipPartiallyExpanded = false,
+        fitContent = false,
         sheetState = sheetState,
-        contentNavigationBarInsets = { WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal) },
-    ) {
-        val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        Column(Modifier.fillMaxWidth()) {
+        title = stringResource(R.string.lyric_selection_title),
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
             GlasmioSheetTopToolbar(
                 title = stringResource(R.string.lyric_selection_title),
                 actions = {
@@ -166,18 +153,26 @@ internal fun LyricSelectionSheet(
                     }
                 },
             )
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f, fill = false).testTag("lyric-selection-list"),
-                contentPadding = PaddingValues(bottom = 24.dp + navigationBottomPadding),
-            ) {
-                item(key = "reference") {
-                    CurrentReferenceHeader(
-                        mediaMetadata.title,
-                        mediaMetadata.artists.firstOrNull()?.name.orEmpty(),
-                        mediaMetadata.duration,
-                    )
-                }
-                item(key = "timing") {
+        },
+    ) {
+        val sheetPadding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f).testTag("lyric-selection-list"),
+            contentPadding = PaddingValues(
+                start = 16.dp, top = sheetPadding.calculateTopPadding() + 8.dp,
+                end = 16.dp, bottom = sheetPadding.calculateBottomPadding() + 16.dp,
+            ),
+        ) {
+            item(key = "reference") {
+                CurrentReferenceHeader(
+                    mediaMetadata.title,
+                    mediaMetadata.artists.firstOrNull()?.name.orEmpty(),
+                    mediaMetadata.duration,
+                )
+            }
+            item(key = "timing") {
+                GlasmioGroupedList(Modifier.padding(top = 24.dp)) {
                     LyricTimingControls(
                         offsetMs = offsetMs,
                         enabled = !closing,
@@ -185,10 +180,25 @@ internal fun LyricSelectionSheet(
                         onResetOffset = onResetOffset,
                         onResetSource = onResetSource,
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                 }
-                items(candidates, key = { it.key }) { candidate ->
+            }
+            if (candidates.isNotEmpty()) item(key = "candidate-section-gap") { Spacer(Modifier.height(24.dp)) }
+            itemsIndexed(candidates, key = { _, candidate -> candidate.key }) { index, candidate ->
+                val shape = when {
+                    candidates.size == 1 -> ContinuousRoundedRectangle(26.dp)
+                    index == 0 -> ContinuousRoundedRectangle(topStart = 26.dp, topEnd = 26.dp)
+                    index == candidates.lastIndex -> ContinuousRoundedRectangle(bottomStart = 26.dp, bottomEnd = 26.dp)
+                    else -> RectangleShape
+                }
+                val separator = LocalGlassColors.current.separator
+                Box(Modifier.fillMaxWidth().glasmioGroupedListBackground(shape)) {
                     LyricCandidateItem(
+                        modifier = Modifier.drawBehind {
+                            if (index > 0) drawLine(
+                                separator, Offset(16.dp.toPx(), 0.5.dp.toPx()),
+                                Offset(size.width - 16.dp.toPx(), 0.5.dp.toPx()), 1.dp.toPx(),
+                            )
+                        },
                         candidate = candidate,
                         targetDuration = mediaMetadata.duration,
                         targetTitle = mediaMetadata.title,
@@ -196,25 +206,25 @@ internal fun LyricSelectionSheet(
                         onClick = { closeSheet { onSelectCandidate(candidate) } },
                     )
                 }
-                // Search status supplements native candidates instead of replacing them.
-                if (isLoading) {
-                    item(key = "loading") {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(Modifier.size(24.dp))
-                        }
+            }
+            // Search status supplements native candidates instead of replacing them.
+            if (isLoading) {
+                item(key = "loading") {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
                     }
-                } else if (errorMessage != null) {
-                    item(key = "error") {
-                        Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp))
-                    }
-                } else if (candidates.isEmpty()) {
-                    item(key = "empty") {
-                        Text(
-                            stringResource(R.string.lyric_selection_empty),
-                            color = LocalGlassColors.current.secondaryContent,
-                            modifier = Modifier.padding(20.dp),
-                        )
-                    }
+                }
+            } else if (errorMessage != null) {
+                item(key = "error") {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp))
+                }
+            } else if (candidates.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        stringResource(R.string.lyric_selection_empty),
+                        color = LocalGlassColors.current.secondaryContent,
+                        modifier = Modifier.padding(20.dp),
+                    )
                 }
             }
         }
@@ -265,33 +275,35 @@ private fun LyricTimingControls(
 
 @Composable
 private fun CurrentReferenceHeader(title: String, artist: String, duration: Long) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-            .padding(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = formatDuration(duration),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
+    GlasmioGroupedList {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = formatDuration(duration),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Text(text = artist, style = MaterialTheme.typography.bodySmall, color = LocalGlassColors.current.secondaryContent)
         }
-        Text(text = artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun LyricCandidateItem(
+    modifier: Modifier = Modifier,
     candidate: LyricCandidate,
     targetDuration: Long,
     targetTitle: String,
@@ -321,7 +333,7 @@ private fun LyricCandidateItem(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag("lyric-candidate-${candidate.key}")
             .clickable(enabled = enabled, onClick = onClick)

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.artist
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,7 +34,7 @@ import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.ui.component.player.OverlayState
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -48,7 +49,14 @@ fun ArtistSongsScreen(
     viewModel: ArtistSongsViewModel = hiltViewModel(key = "artist-songs:$id"),
 ) {
     val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        MeiloXLoadingPage(
+            title = stringResource(R.string.artist_all_songs),
+            onNavigateBack = { navController.popBackStack() },
+        )
+        return
+    }
     val state by viewModel.state.collectAsState()
     var overlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val title = stringResource(R.string.artist_all_songs)
@@ -65,7 +73,7 @@ fun ArtistSongsScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        GlasmioPinnedListPage(
+        MeiloXPinnedListPage(
             title = title,
             listState = if (isSearching) searchListState else catalogListState,
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),

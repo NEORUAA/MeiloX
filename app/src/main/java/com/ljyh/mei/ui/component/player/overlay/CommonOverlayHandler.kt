@@ -167,13 +167,16 @@ fun CommonOverlayHandler(
         }
 
         OverlayState.MoreAction -> {
+            // MoreActionsSheet queues this callback until its dismissal finishes. Capture
+            // the displayed track now so an automatic advance cannot retarget that action.
+            val actionMetadata = stateContainer.mediaMetadata.value
             MoreActionsSheet(
                 onDismissRequest = {
                     overlayHandler.dismiss()
                 },
                 onActionClick = { action ->
                     if (action == MoreAction.COMMENT || action == MoreAction.SONG_WIKI) {
-                        stateContainer.mediaMetadata.value?.let { v->
+                        actionMetadata?.let { v->
                             val destination = if (action == MoreAction.COMMENT) Screen.Comment else Screen.SongWiki
                             destination.navigate(navController) {
                                 addPath(v.id.toString())
@@ -183,25 +186,21 @@ fun CommonOverlayHandler(
                         }
 
                     }else{
-                        overlayHandler.handleMoreAction(action)
+                        overlayHandler.handleMoreAction(action, actionMetadata)
                     }
 
                 },
                 viewModel = playerViewModel,
-                onFindLyrics = if (playerStyle == PlayerStyle.AppleMusic && stateContainer.mediaMetadata.value != null) {
+                onFindLyrics = if (playerStyle == PlayerStyle.AppleMusic && actionMetadata != null) {
                     {
-                        stateContainer.mediaMetadata.value?.let { metadata ->
-                            playerViewModel.searchQQSong(metadata.title)
-                            overlayHandler.showQQMusicSelection(metadata)
-                        }
+                        playerViewModel.searchQQSong(actionMetadata.title)
+                        overlayHandler.showQQMusicSelection(actionMetadata)
                     }
                 } else null,
-                onFindLyricsLongClick = if (stateContainer.lyricLine.source == LyricSource.QQMusic) {
+                onFindLyricsLongClick = if (stateContainer.lyricLine.source == LyricSource.QQMusic && actionMetadata != null) {
                     {
-                        stateContainer.mediaMetadata.value?.let { metadata ->
-                            playerViewModel.deleteSongById(metadata.id.toString())
-                            android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        playerViewModel.deleteSongById(actionMetadata.id.toString())
+                        android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 } else null,
             )

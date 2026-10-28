@@ -43,10 +43,9 @@ import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsFontScaleKey
 import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -79,7 +78,7 @@ fun LyricsSettings() {
     var floatingScalePreview by remember { mutableStateOf<Float?>(null) }
     val floatingScale = floatingScalePreview ?: storedFloatingScale
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.lyrics_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

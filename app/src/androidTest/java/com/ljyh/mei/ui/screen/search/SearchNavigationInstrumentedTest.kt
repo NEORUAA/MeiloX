@@ -1,6 +1,16 @@
 package com.ljyh.mei.ui.screen.search
 
+import kotlin.math.abs
+import org.junit.Assume.assumeTrue
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.activity.BackEventCompat
+import android.content.res.Configuration
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
@@ -65,6 +75,74 @@ class SearchNavigationInstrumentedTest {
         compose.activity.dataStore.edit { preferences ->
             originalSearchHistory?.let { preferences[SearchHistoryKey] = it }
                 ?: preferences.remove(SearchHistoryKey)
+        }
+    }
+
+    @Test
+    fun miniPlayerUsesTheSearchControlGapWithAndWithoutTheKeyboard() {
+        // Exercise the retained queue without replacing the user's tracks or playback state.
+        val miniTag = "MeiloXMiniPlayerSurface"
+        try {
+            // Service connection and its retained playback snapshot can follow the Home title.
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithTag(miniTag, useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (_: ComposeTimeoutException) {
+            // An empty retained queue has no mini player; the assumption below covers that case.
+        }
+        assumeTrue(
+            "This placement regression needs an existing retained mini player",
+            compose.onAllNodesWithTag(miniTag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        openSearch()
+        val density = compose.activity.resources.displayMetrics.density
+        val tolerance = density
+        fun bounds(tag: String): Rect = compose.onNodeWithTag(tag, useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        fun keyboardVisible(): Boolean = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        fun assertSpacing(imeVisible: Boolean): Rect {
+            compose.waitUntil(10_000) {
+                val field = bounds("GlasmioSearchFieldSurface")
+                val cancel = bounds("GlasmioSearchCancelSurface")
+                val mini = bounds(miniTag)
+                keyboardVisible() == imeVisible &&
+                    abs((field.top - mini.bottom) - (cancel.left - field.right)) <= tolerance &&
+                    mini.height >= 43f * density
+            }
+            val field = bounds("GlasmioSearchFieldSurface")
+            val cancel = bounds("GlasmioSearchCancelSurface")
+            val mini = bounds(miniTag)
+            assertEquals("Horizontal controls retain their 8dp visible gap", 8f * density,
+                cancel.left - field.right, tolerance)
+            assertEquals("Mini player and search use the same visible edge gap",
+                cancel.left - field.right, field.top - mini.bottom, tolerance)
+            assertTrue("Search field retains a 44dp target", field.height >= 44f * density)
+            assertTrue("Cancel retains a 44dp target", cancel.height >= 44f * density)
+            return field
+        }
+        try {
+            compose.runOnUiThread {
+                WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                    .hide(WindowInsetsCompat.Type.ime())
+            }
+            val restingField = assertSpacing(imeVisible = false)
+            val configuration = compose.activity.resources.configuration
+            if (configuration.keyboard == Configuration.KEYBOARD_NOKEYS ||
+                configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_YES
+            ) {
+                searchInput().performClick()
+                compose.runOnUiThread {
+                    WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                        .show(WindowInsetsCompat.Type.ime())
+                }
+                val raisedField = assertSpacing(imeVisible = true)
+                assertTrue("Both controls must move above the keyboard", raisedField.top < restingField.top)
+            }
+        } finally {
+            compose.onNodeWithContentDescription(text(R.string.cancel)).performClick()
+            assertHome()
         }
     }
 

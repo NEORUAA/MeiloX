@@ -74,14 +74,13 @@ import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.constants.TabletAnimationStyle
 import com.ljyh.mei.constants.TabletAnimationStyleKey
 import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.ui.GlasmioColorPicker
 import io.github.neoruaa.glasmio.ui.GlasmioColorPickerLabels
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.core.IosTypography
 import com.ljyh.mei.ui.local.LocalNavController
@@ -153,7 +152,7 @@ fun AppearanceSettings(
     val (secondaryBold, setSecondaryBold) = rememberPreference(AccompanimentLyricTextBoldKey, true)
     val (debug, setDebug) = rememberPreference(DebugKey, false)
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.appearance_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

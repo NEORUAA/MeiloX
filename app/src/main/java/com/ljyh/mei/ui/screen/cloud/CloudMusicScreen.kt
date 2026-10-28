@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.cloud
 
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,13 +44,12 @@ import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -250,7 +250,7 @@ fun CloudMusicScreen(
         }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = cloudTitle,
         subtitle = state.page?.let { page ->
             stringResource(R.string.cloud_music_quota, formatBytes(page.usedSize), formatBytes(page.maxSize))
@@ -259,13 +259,20 @@ fun CloudMusicScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlasmioIconButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !state.isUploading) {
-                SfIcon("arrow.up.circle.fill", stringResource(R.string.cloud_upload), size = 18.dp)
-            }
-            GlasmioIconButton(onClick = viewModel::refresh) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh), size = 18.dp)
-            }
-            if (isNavigationTab) GlobalProfileAvatarButton()
+            listOfNotNull(
+                meiloxHeaderAction(
+                    key = "cloud.upload",
+                    contentDescription = stringResource(R.string.cloud_upload),
+                    onClick = { picker.launch(arrayOf("audio/*")) },
+                    enabled = !state.isUploading,
+                ) { SfIcon("arrow.up.circle.fill", null, size = 18.dp) },
+                meiloxHeaderAction(
+                    key = "cloud.refresh",
+                    contentDescription = stringResource(R.string.refresh),
+                    onClick = viewModel::refresh,
+                ) { SfIcon(SfSymbol.ArrowClockwise, null, size = 18.dp) },
+                if (isNavigationTab) globalProfileHeaderAction() else null,
+            )
         },
     ) {
         var hasPreviousContent = false

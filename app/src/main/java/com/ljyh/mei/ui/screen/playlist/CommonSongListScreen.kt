@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.mutableIntStateOf
 import io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
@@ -10,6 +15,8 @@ import com.ljyh.mei.constants.MusicQuality
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
@@ -62,7 +69,8 @@ import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
 import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassSurface
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
 import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
@@ -139,6 +147,7 @@ fun CommonSongListScreen(
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
     val searchFocusRequester = remember { FocusRequester() }
+    var doneActionTextWidthPx by remember { mutableIntStateOf(0) }
     val searchTransition = remember { Animatable(if (isPlaylistSearchActive) 1f else 0f) }
     val searchProgress = searchTransition.value.coerceIn(0f, 1f)
     // Keep icon slots fixed while the liquid neck separates, then grow the input to the left.
@@ -194,8 +203,13 @@ fun CommonSongListScreen(
     CompositionLocalProvider(
         LocalGroupedListBackgroundAlpha provides listBackgroundAlpha,
     ) {
-        Box(Modifier.fillMaxSize()) {
-            GlasmioPinnedListPage(
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val buttonSize = LocalGlassDimensions.current.iconButtonSize
+            val searchEndInset = playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
+            val expandedSearchWidth = (maxWidth - 68.dp - searchEndInset).coerceAtLeast(buttonSize)
+            val animatedSearchWidth = buttonSize + (expandedSearchWidth - buttonSize) * searchExpansion
+            val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
+            MeiloXPinnedListPage(
                 title = if (isPlaylistSearchActive || searchProgress > 0.05f) "" else uiData.title,
                 subtitle = uiData.creatorName.takeIf {
                     !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
@@ -210,107 +224,28 @@ fun CommonSongListScreen(
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
                 actionsSeparationProgress = searchSeparation,
                 actions = {
-                    if (onPlaylistSearchQueryChange != null) {
-                        BoxWithConstraints(Modifier.weight(1f, fill = false)) {
-                            val colors = LocalGlassColors.current
-                            val buttonSize = LocalGlassDimensions.current.iconButtonSize
-                            val expandedWidth = (maxWidth - buttonSize - 8.dp)
-                                .coerceAtLeast(buttonSize)
-                            val animatedWidth = buttonSize + (expandedWidth - buttonSize) * searchExpansion
-                            val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
-                            GlassSurface(
-                                modifier = Modifier
-                                    .width(animatedWidth.coerceIn(buttonSize, maxWidth.coerceAtLeast(buttonSize)))
-                                    .height(buttonSize),
-                                shape = Capsule(),
-                                onClick = if (isPlaylistSearchActive) null else {
-                                    { onPlaylistSearchActiveChange(true) }
-                                },
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(Capsule()),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Box(
-                                        modifier = Modifier.weight(1f),
-                                        contentAlignment = Alignment.CenterStart,
-                                    ) {
-                                        if (isPlaylistSearchActive || searchContentAlpha > 0f) {
-                                            BasicTextField(
-                                                value = playlistSearchQuery,
-                                                onValueChange = onPlaylistSearchQueryChange,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(start = 16.dp)
-                                                    .focusRequester(searchFocusRequester)
-                                                    .graphicsLayer { alpha = searchContentAlpha },
-                                                singleLine = true,
-                                                textStyle = IosTypography.body.copy(color = colors.content),
-                                                cursorBrush = SolidColor(colors.accent),
-                                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                                decorationBox = { innerTextField ->
-                                                    if (playlistSearchQuery.isEmpty()) {
-                                                        Text(
-                                                            text = "搜索歌名、歌手或专辑",
-                                                            style = IosTypography.body,
-                                                            color = colors.tertiaryContent,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                        )
-                                                    }
-                                                    innerTextField()
-                                                },
-                                            )
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(buttonSize)
-                                            .then(
-                                                if (isPlaylistSearchActive) {
-                                                    Modifier.clickable(
-                                                        interactionSource = null,
-                                                        indication = null,
-                                                        role = Role.Button,
-                                                    ) {
-                                                        onPlaylistSearchQueryChange("")
-                                                        focusManager.clearFocus()
-                                                        onPlaylistSearchActiveChange(false)
-                                                    }
-                                                } else {
-                                                    Modifier
-                                                },
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        androidx.compose.animation.Crossfade(
-                                            targetState = searchExpansion > 0.15f,
-                                            animationSpec = androidx.compose.animation.core.tween(120),
-                                            label = "PlaylistSearchIcon",
-                                        ) { active ->
-                                            SfIcon(
-                                                if (active) SfSymbol.Close else SfSymbol.Search,
-                                                if (active) "关闭歌单搜索" else "搜索歌单",
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    val searchAction = if (onPlaylistSearchQueryChange != null && searchProgress <= 0.001f) {
+                        listOf(meiloxHeaderAction("search", "搜索歌单", { onPlaylistSearchActiveChange(true) }) {
+                            SfIcon(SfSymbol.Search, null)
+                        })
+                    } else emptyList()
+                    val detailAction = when {
+                        selectionMode -> listOf(meiloxHeaderAction(
+                            "done", androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done), onSelectionDone,
+                        ) {
+                            Text(
+                                androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done),
+                                modifier = Modifier.onSizeChanged { doneActionTextWidthPx = it.width },
+                                color = LocalGlassColors.current.accent,
+                            )
+                        })
+                        detailMenu != null -> listOf(meiloxHeaderAction(
+                            "detail-menu", detailMenuTitle, { detailMenuOpen = true },
+                            enabled = !isLoading, menuAnchor = detailMenuAnchor,
+                        ) { SfIcon(SfSymbol.Ellipsis, null) })
+                        else -> emptyList()
                     }
-                    if (selectionMode) {
-                        GlasmioButton(onClick = onSelectionDone, modifier = Modifier.height(LocalGlassDimensions.current.iconButtonSize)) {
-                            Text(androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done), color = LocalGlassColors.current.accent)
-                        }
-                    } else if (detailMenu != null) {
-                        io.github.neoruaa.glasmio.ui.GlasmioIconButton(
-                            onClick = { detailMenuOpen = true },
-                            modifier = Modifier.glasmioMenuAnchor(detailMenuAnchor),
-                            enabled = !isLoading,
-                        ) { SfIcon(SfSymbol.Ellipsis, detailMenuTitle) }
-                    }
+                    searchAction + detailAction
                 },
             ) {
                 if (isLoading) {
@@ -372,6 +307,29 @@ fun CommonSongListScreen(
                 footer?.invoke(this)
             }
 
+            // The editor stays in this entry, outside the shared button host's hit surface.
+            if (onPlaylistSearchQueryChange != null && searchProgress > 0.001f) {
+                PlaylistHeaderSearchEditor(
+                    query = playlistSearchQuery,
+                    onQueryChange = onPlaylistSearchQueryChange,
+                    onClose = {
+                        onPlaylistSearchQueryChange("")
+                        focusManager.clearFocus()
+                        onPlaylistSearchActiveChange(false)
+                    },
+                    contentAlpha = searchContentAlpha,
+                    expansion = searchExpansion,
+                    focusRequester = searchFocusRequester,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                        .padding(
+                            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp,
+                            end = searchEndInset,
+                        )
+                        .width(animatedSearchWidth)
+                        .height(buttonSize),
+                )
+            }
+
             if (detailMenuOpen && detailMenu != null) {
                 io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu(
                     anchorBounds = detailMenuAnchor.bounds, items = detailMenu,
@@ -392,6 +350,69 @@ fun CommonSongListScreen(
                 onDownloadTrack = onTrackDownload,
                 viewModel = viewModel,
             )
+        }
+    }
+}
+
+/** Reserve the shared action's measured content, 20dp button padding and 8dp optical gap. */
+@Composable
+internal fun playlistSearchEndInset(selectionMode: Boolean, hasDetailMenu: Boolean, doneTextWidthPx: Int): Dp {
+    val actionWidth = when {
+        selectionMode -> maxOf(44.dp, with(LocalDensity.current) { doneTextWidthPx.toDp() } + 20.dp)
+        hasDetailMenu -> 44.dp
+        else -> 0.dp
+    }
+    return 16.dp + if (actionWidth > 0.dp) actionWidth + 8.dp else 0.dp
+}
+
+@Composable
+internal fun PlaylistHeaderSearchEditor(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    contentAlpha: Float,
+    expansion: Float,
+    focusRequester: FocusRequester,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalGlassColors.current
+    val buttonSize = LocalGlassDimensions.current.iconButtonSize
+    GlassSurface(modifier = modifier.testTag("PlaylistHeaderSearchEditor"), shape = Capsule()) {
+        Row(Modifier.fillMaxSize().clip(Capsule()), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp)
+                        .focusRequester(focusRequester).graphicsLayer { alpha = contentAlpha },
+                    singleLine = true,
+                    textStyle = IosTypography.body.copy(color = colors.content),
+                    cursorBrush = SolidColor(colors.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    decorationBox = { innerTextField ->
+                        if (query.isEmpty()) Text(
+                            "搜索歌名、歌手或专辑", style = IosTypography.body,
+                            color = colors.tertiaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        innerTextField()
+                    },
+                )
+            }
+            Box(
+                Modifier.size(buttonSize).clickable(
+                    interactionSource = null, indication = null, role = Role.Button, onClick = onClose,
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.animation.Crossfade(
+                    targetState = expansion > 0.15f,
+                    animationSpec = androidx.compose.animation.core.tween(120),
+                    label = "PlaylistSearchIcon",
+                ) { active ->
+                    SfIcon(if (active) SfSymbol.Close else SfSymbol.Search,
+                        if (active) "关闭歌单搜索" else "搜索歌单")
+                }
+            }
         }
     }
 }

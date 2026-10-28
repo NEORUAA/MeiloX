@@ -1,13 +1,20 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
+import io.github.neoruaa.glasmio.ui.GlasmioSheetValue
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import androidx.compose.runtime.SideEffect
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
-import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
 import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
 import io.github.neoruaa.glasmio.icons.SfIcon
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
-import io.github.neoruaa.glasmio.ui.GlasmioActionSheetContent
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
@@ -36,6 +43,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LinearProgressIndicator
@@ -68,7 +76,7 @@ import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.local.LocalNavController
@@ -160,7 +168,7 @@ internal fun LibraryDownloadsPage(
         } else permission.launch(LocalLibraryViewModel.audioPermission)
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = pageTitle,
         listState = listState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
@@ -168,13 +176,15 @@ internal fun LibraryDownloadsPage(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            GlasmioIconButton(
-                onClick = { sortOpen = true },
-                modifier = Modifier.glasmioMenuAnchor(sortAnchor),
-            ) {
-                SfIcon("arrow.up.arrow.down", stringResource(R.string.local_library_sort), size = 18.dp)
-            }
-            if (isNavigationTab) GlobalProfileAvatarButton()
+            listOfNotNull(
+                meiloxHeaderAction(
+                    key = "library-downloads.sort",
+                    contentDescription = stringResource(R.string.local_library_sort),
+                    onClick = { sortOpen = true },
+                    menuAnchor = sortAnchor,
+                ) { SfIcon("arrow.up.arrow.down", null, size = 18.dp) },
+                if (isNavigationTab) globalProfileHeaderAction() else null,
+            )
         },
     ) {
         item("library-search") {
@@ -393,20 +403,51 @@ private fun LocalLibraryProgress(progress: Float) {
 @Composable
 private fun LocalFileInfo(song: Song, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val colors = LocalGlassColors.current
-    GlasmioBottomSheet(onDismissRequest = onDismiss) {
-        GlasmioActionSheetContent(title = song.title, message = song.artist.joinToString(" / ")) {
-            val fields = listOf(
-                stringResource(R.string.local_library_format) to song.fileFormat.orEmpty().uppercase().ifBlank { "—" },
-                stringResource(R.string.local_library_duration) to formatLocalDuration(song.duration),
-                stringResource(R.string.local_library_size) to Formatter.formatFileSize(context, song.fileSize),
-                stringResource(R.string.local_library_audio) to listOfNotNull(song.bitrate?.takeIf { it > 0 }?.let { "${it / 1000} kbps" }, song.sampleRate?.takeIf { it > 0 }?.let { "$it Hz" }).joinToString(" · ").ifBlank { "—" },
-                stringResource(R.string.local_library_path) to song.path.orEmpty(),
-            )
-            fields.forEach { (label, value) ->
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(label, style = IosTypography.caption, color = colors.secondaryContent)
-                    Text(value, style = IosTypography.body, color = colors.content)
+    val listState = rememberLazyListState()
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss)
+    val fields = listOf(
+        stringResource(R.string.local_library_format) to song.fileFormat.orEmpty().uppercase().ifBlank { "—" },
+        stringResource(R.string.local_library_duration) to formatLocalDuration(song.duration),
+        stringResource(R.string.local_library_size) to Formatter.formatFileSize(context, song.fileSize),
+        stringResource(R.string.local_library_audio) to listOfNotNull(song.bitrate?.takeIf { it > 0 }?.let { "${it / 1000} kbps" }, song.sampleRate?.takeIf { it > 0 }?.let { "$it Hz" }).joinToString(" · ").ifBlank { "—" },
+        stringResource(R.string.local_library_path) to song.path.orEmpty(),
+    )
+    GlasmioBottomSheet(
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = song.title,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
+            GlasmioSheetTopToolbar(song.title, actions = {
+                GlasmioSheetToolbarButton(onClick = { dismissal.requestDismiss() }) {
+                    SfIcon("xmark", stringResource(R.string.cancel))
+                }
+            })
+        },
+    ) {
+        val colors = LocalGlassColors.current
+        val padding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item { Text(song.artist.joinToString(" / "), style = IosTypography.subheadline, color = colors.secondaryContent) }
+            item {
+                GlasmioGroupedList {
+                    fields.forEachIndexed { index, (label, value) ->
+                        if (index > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = colors.separator)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(label, style = IosTypography.caption, color = colors.secondaryContent)
+                            Text(value, style = IosTypography.body, color = colors.content)
+                        }
+                    }
                 }
             }
         }
@@ -416,32 +457,73 @@ private fun LocalFileInfo(song: Song, onDismiss: () -> Unit) {
 @Composable
 private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
     val state by viewModel.matchState.collectAsState()
-    val colors = LocalGlassColors.current
-    var candidate by remember(state.song?.id) { mutableStateOf<MediaMetadata?>(null) }
-    var query by remember(state.song?.id) { mutableStateOf(TextFieldValue(state.query)) }
-    var searchActive by remember(state.song?.id) { mutableStateOf(false) }
+    var retainedState by remember { mutableStateOf(state) }
+    if (state.song != null) SideEffect { retainedState = state }
+    val displayState = if (state.song != null) state else retainedState
+    var candidate by remember(displayState.song?.id) { mutableStateOf<MediaMetadata?>(null) }
+    var query by remember(displayState.song?.id) { mutableStateOf(TextFieldValue(displayState.query)) }
+    var searchActive by remember(displayState.song?.id) { mutableStateOf(false) }
     val focus = LocalFocusManager.current
-    if (state.song != null) GlasmioBottomSheet(onDismissRequest = viewModel::dismissMatch) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(stringResource(R.string.local_library_match), style = IosTypography.title2, color = colors.content)
-            Text(stringResource(R.string.local_library_match_hint), style = IosTypography.subheadline, color = colors.secondaryContent)
-            GlasmioSearchBar(query = query, onQueryChange = { query = it }, active = searchActive, onActiveChange = { searchActive = it }, onClose = { searchActive = false; focus.clearFocus() },
-                placeholder = stringResource(R.string.search_bar_search), closeContentDescription = stringResource(R.string.cancel),
-                onSearch = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, modifier = Modifier.fillMaxWidth())
-            GlasmioButton(onClick = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, enabled = !state.isSearching && query.text.isNotBlank()) {
+    val listState = rememberLazyListState()
+    val dismissal = rememberMeiloXSheetDismissal(
+        viewModel::dismissMatch,
+        confirmValueChange = { !state.isApplying || it != GlasmioSheetValue.Hidden },
+        visible = state.song != null,
+    )
+    GlasmioBottomSheet(
+        visible = state.song != null,
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = stringResource(R.string.local_library_match),
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
+            GlasmioSheetTopToolbar(stringResource(R.string.local_library_match), actions = {
+                GlasmioSheetToolbarButton(onClick = { dismissal.requestDismiss() }, enabled = state.song != null && !state.isApplying) {
+                    SfIcon("xmark", stringResource(R.string.cancel))
+                }
+            })
+        },
+    ) {
+        val colors = LocalGlassColors.current
+        val padding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item {
+                Text(stringResource(R.string.local_library_match_hint), style = IosTypography.subheadline, color = colors.secondaryContent)
+            }
+            item {
+                GlasmioSearchBar(query = query, onQueryChange = { query = it }, active = searchActive, onActiveChange = { searchActive = it }, onClose = { searchActive = false; focus.clearFocus() },
+                    placeholder = stringResource(R.string.search_bar_search), closeContentDescription = stringResource(R.string.cancel),
+                    onSearch = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, modifier = Modifier.fillMaxWidth())
+            }
+            if (displayState.isSearching || displayState.isApplying) item {
+                LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp), color = colors.accent, trackColor = colors.separator)
+            }
+            displayState.error?.let { error -> item { Text(error, color = colors.destructive, style = IosTypography.subheadline) } }
+            item {
+                GlasmioGroupedList {
+                    displayState.candidates.forEachIndexed { index, result ->
+                        GlasmioListRow(title = result.title, subtitle = result.artists.joinToString(" / ") { it.name }, detail = formatLocalDuration(result.duration), showTopSeparator = index > 0,
+                            leading = { AsyncImage(result.coverUrl, null, Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)), contentScale = ContentScale.Crop) },
+                            onClick = if (state.song == null || displayState.isApplying) null else ({ searchActive = false; focus.clearFocus(); candidate = result }))
+                    }
+                    if (!displayState.isSearching && displayState.candidates.isEmpty() && displayState.error == null) {
+                        Text(stringResource(R.string.local_library_no_matches), modifier = Modifier.padding(20.dp), style = IosTypography.subheadline, color = colors.secondaryContent)
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(bottom = padding.calculateBottomPadding()).padding(16.dp)) {
+            GlasmioButton(onClick = { searchActive = false; focus.clearFocus(); viewModel.searchMatches(query.text) }, enabled = state.song != null && !state.isSearching && !state.isApplying && query.text.isNotBlank(), modifier = Modifier.fillMaxWidth(), size = GlasmioButtonSize.Large) {
                 SfIcon("magnifyingglass", null, size = 17.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.search_bar_search))
-            }
-            if (state.isSearching || state.isApplying) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp), color = colors.accent, trackColor = colors.separator)
-            state.error?.let { Text(it, color = colors.destructive, style = IosTypography.subheadline) }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 330.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(state.candidates, key = { it.id }) { result ->
-                    GlasmioListRow(title = result.title, subtitle = result.artists.joinToString(" / ") { it.name }, detail = formatLocalDuration(result.duration), showTopSeparator = false,
-                        leading = { AsyncImage(result.coverUrl, null, Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)), contentScale = ContentScale.Crop) },
-                        onClick = if (state.isApplying) null else ({ searchActive = false; focus.clearFocus(); candidate = result }))
-                }
-                if (!state.isSearching && state.candidates.isEmpty() && state.error == null) item { Text(stringResource(R.string.local_library_no_matches), style = IosTypography.subheadline, color = colors.secondaryContent) }
             }
         }
     }

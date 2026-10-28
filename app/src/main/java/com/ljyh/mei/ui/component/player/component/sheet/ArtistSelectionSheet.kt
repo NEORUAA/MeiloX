@@ -1,81 +1,74 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistSelectionSheet(
     artists: List<MediaMetadata.Artist>,
     onDismiss: () -> Unit,
-    onArtistClick: (MediaMetadata.Artist) -> Unit
+    onArtistClick: (MediaMetadata.Artist) -> Unit,
 ) {
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss)
+    val listState = rememberLazyListState()
     GlasmioBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
         skipPartiallyExpanded = false,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 32.dp)
-        ) {
-            Text(
-                text = "选择艺人",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .padding(bottom = 8.dp)
+        fitContent = false,
+        title = "选择艺人",
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
+            GlasmioSheetTopToolbar(
+                title = "选择艺人",
+                actions = {
+                    GlasmioSheetToolbarButton(
+                        onClick = { dismissal.requestDismiss() },
+                        enabled = !dismissal.isDismissing,
+                    ) { SfIcon("xmark", stringResource(R.string.cancel)) }
+                },
             )
-
-            // 列表
-            artists.forEach { artist ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onArtistClick(artist) }
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Person, // 或者 Mic
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Text(
-                        text = artist.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
+        },
+    ) {
+        val padding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = padding.calculateTopPadding() + 8.dp,
+                end = 16.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+            ),
+        ) {
+            item {
+                GlasmioGroupedList {
+                    artists.forEachIndexed { index, artist ->
+                        GlasmioListRow(
+                            title = artist.name,
+                            systemName = "person.fill",
+                            showTopSeparator = index > 0,
+                            enabled = !dismissal.isDismissing,
+                            onClick = { dismissal.requestDismiss { onArtistClick(artist) } },
+                        )
+                    }
                 }
             }
         }

@@ -88,7 +88,7 @@ import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.core.IosPageHorizontalPadding
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
@@ -169,10 +169,18 @@ fun ArtistScreen(
                         .coerceIn(0f, 1f)
                 }
             }
-            GlasmioPinnedPage(
+            val blurDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
+            val topBarBlurProgress by remember(scrollState, blurDistancePx) {
+                derivedStateOf {
+                    if (scrollState.firstVisibleItemIndex > 0) 1f
+                    else (scrollState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(0f, 1f)
+                }
+            }
+            MeiloXPinnedPage(
                 title = artistData?.artist?.name.orEmpty(),
                 bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
                 collapseProgress = topBarCollapseProgress,
+                topBarBlurProgress = topBarBlurProgress,
                 onNavigateBack = navController::popBackStack,
                 backgroundColor = background.color,
                 backgroundBrush = background.brush,

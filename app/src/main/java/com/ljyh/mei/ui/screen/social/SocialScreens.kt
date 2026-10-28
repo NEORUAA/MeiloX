@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.screen.social
 
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.kyant.shapes.Capsule
 import androidx.compose.foundation.layout.ime
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -32,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -88,10 +91,13 @@ import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.glass.rememberSharedGlassBackdrop
+import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.ui.GlasmioMenu
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -125,19 +131,17 @@ fun ConversationsScreen(
         onPauseOrDispose {}
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(if (officialMessages) R.string.official_messages else R.string.private_messages),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            if (!officialMessages) {
-                GlasmioIconButton(onClick = { Screen.MessageContacts.navigate(navController) }) {
-                    SfIcon("person.crop.circle.badge.plus", stringResource(R.string.message_start))
-                }
-            }
-            GlasmioIconButton(viewModel::refresh) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
+            val composeAction = if (!officialMessages) listOf(meiloxHeaderAction(
+                "compose", stringResource(R.string.message_start), { Screen.MessageContacts.navigate(navController) },
+            ) { SfIcon("person.crop.circle.badge.plus", null) }) else emptyList()
+            composeAction + meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh) {
+                SfIcon(SfSymbol.ArrowClockwise, null)
             }
         },
     ) {
@@ -335,15 +339,15 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
         }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.message_start),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlasmioIconButton(viewModel::refresh) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh) {
+                SfIcon(SfSymbol.ArrowClockwise, null)
+            })
         },
     ) {
         item {
@@ -460,6 +464,9 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
     val bottomPadding = maxOf(insets.calculateBottomPadding(), keyboardBottom)
     val conversationBackdrop = rememberLayerBackdrop()
     val pageBackground = LocalGlassColors.current.groupedBackground
+    // Use the floating search's canvas-plus-live-page source without recording the composer.
+    val baseBackdrop = rememberCanvasBackdrop { drawRect(pageBackground) }
+    val composerBackdrop = rememberSharedGlassBackdrop(baseBackdrop, conversationBackdrop)
 
     LaunchedEffect(
         userId,
@@ -478,17 +485,26 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
         }
     }
 
-    GlasmioPinnedPage(
-        title = participantName ?: stringResource(R.string.private_conversation),
-        bottomPadding = bottomPadding,
-        onNavigateBack = navController::navigateUp,
-    ) { contentPadding ->
-        Box(Modifier.fillMaxSize()) {
+    val blurDistancePx = with(density) { 56.dp.toPx() }
+    val topBarBlurProgress by remember(messageListState, blurDistancePx) {
+        derivedStateOf {
+            if (messageListState.firstVisibleItemIndex > 0) 1f
+            else (messageListState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(0f, 1f)
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        MeiloXPinnedPage(
+            title = participantName ?: stringResource(R.string.private_conversation),
+            backgroundColor = pageBackground,
+            topBarBlurProgress = topBarBlurProgress,
+            bottomPadding = bottomPadding,
+            onNavigateBack = navController::navigateUp,
+        ) { contentPadding ->
             LazyColumn(
                 state = messageListState,
                 modifier = Modifier.fillMaxSize()
                     .layerBackdrop(conversationBackdrop)
-                    .background(pageBackground),
+                    .trackBackdropPosition(conversationBackdrop),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     top = contentPadding.calculateTopPadding() + 12.dp,
@@ -559,79 +575,79 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                     }
                 }
             }
-            state.error?.let { error ->
-                Text(
-                    error,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = bottomPadding + 64.dp),
-                )
-            }
-            Row(
+        }
+        state.error?.let { error ->
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.error,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = bottomPadding + 8.dp)
-                    .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(bottom = bottomPadding + 64.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = bottomPadding + 8.dp)
+                .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GlassSurface(
+                modifier = Modifier.weight(1f),
+                shape = Capsule(),
+                style = GlassSurfaceStyle.Navigation,
+                backdrop = composerBackdrop,
             ) {
-                GlassSurface(
-                    modifier = Modifier.weight(1f),
-                    shape = ContinuousRoundedRectangle(50),
-                    style = GlassSurfaceStyle.Navigation,
-                    backdrop = conversationBackdrop,
-                ) {
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { send() }),
-                        decorationBox = { inner ->
-                            if (draft.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.message_placeholder),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            inner()
-                        },
-                    )
-                }
-                GlasmioButton(
-                    onClick = send,
-                    enabled = draft.isNotBlank() && !state.isSending,
-                    emphasis = GlassEmphasis.Prominent,
-                    style = GlassSurfaceStyle.Navigation,
-                    backdrop = conversationBackdrop,
-                ) {
-                    Text(stringResource(R.string.send))
-                }
-            }
-            if (scrimAlpha > 0.001f) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(Color.Black.copy(alpha = scrimAlpha))
-                            contextMenuBounds?.let { bounds ->
-                                drawRoundRect(
-                                    color = Color.Transparent,
-                                    topLeft = Offset(bounds.left, bounds.top),
-                                    size = Size(bounds.width, bounds.height),
-                                    blendMode = BlendMode.Clear,
-                                )
-                            }
-                        },
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    decorationBox = { inner ->
+                        if (draft.isEmpty()) {
+                            Text(
+                                stringResource(R.string.message_placeholder),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        inner()
+                    },
                 )
             }
+            GlasmioButton(
+                onClick = send,
+                enabled = draft.isNotBlank() && !state.isSending,
+                emphasis = GlassEmphasis.Prominent,
+                style = GlassSurfaceStyle.Navigation,
+                backdrop = composerBackdrop,
+            ) {
+                Text(stringResource(R.string.send))
+            }
+        }
+        if (scrimAlpha > 0.001f) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(Color.Black.copy(alpha = scrimAlpha))
+                        contextMenuBounds?.let { bounds ->
+                            drawRoundRect(
+                                color = Color.Transparent,
+                                topLeft = Offset(bounds.left, bounds.top),
+                                size = Size(bounds.width, bounds.height),
+                                blendMode = BlendMode.Clear,
+                            )
+                        }
+                    },
+            )
         }
     }
 }

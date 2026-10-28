@@ -30,13 +30,13 @@ import com.ljyh.mei.ui.component.player.overlay.rememberOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.player.state.rememberPlayerStateContainer
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
+import io.github.neoruaa.glasmio.ui.GlasmioSheetGroupedListStyle
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetGroupedListStyle
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
 import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
-import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
-import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
 import io.github.neoruaa.glasmio.glass.rememberRasterizedBackdrop
 import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
@@ -179,7 +179,7 @@ fun BottomSheetPlayer(
     CompositionLocalProvider(
         LocalGlassBackdrop provides playerBackdrop,
         LocalBlurBackdrop provides playerBackdrop,
-        LocalGroupedListBackgroundAlpha provides SheetGroupedListBackgroundAlpha,
+        LocalGlasmioSheetGroupedListStyle provides GlasmioSheetGroupedListStyle.ToolbarTint,
     ) {
         CommonOverlayHandler(
             overlayHandler = overlayHandler,

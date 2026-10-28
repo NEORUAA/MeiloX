@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,13 +40,12 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.AppDatabase
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
-import io.github.neoruaa.glasmio.ui.GlasmioButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioScrollableTabRow
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -103,18 +103,20 @@ fun DownloadManageScreen(
     val taskAggregation = remember(allTasks) { aggregateDownloadTasks(allTasks) }
     val filteredTasks = taskAggregation.tasksByFilter.getValue(selectedFilter)
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.download_management),
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
-            if (allTasks.isNotEmpty()) {
-                GlasmioIconButton({ DownloadManager.deleteAll(context) }) {
-                    SfIcon("trash", stringResource(R.string.clear_downloads))
-                }
-            }
-            if (isNavigationTab) GlobalProfileAvatarButton()
+            listOfNotNull(
+                if (allTasks.isNotEmpty()) meiloxHeaderAction(
+                    key = "downloads.clear",
+                    contentDescription = stringResource(R.string.clear_downloads),
+                    onClick = { DownloadManager.deleteAll(context) },
+                ) { SfIcon("trash", null) } else null,
+                if (isNavigationTab) globalProfileHeaderAction() else null,
+            )
         },
     ) {
         item(key = "download-filters") {

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -23,7 +24,12 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.playback.queue.ListQueue
-import io.github.neoruaa.glasmio.scaffold.GlasmioOverscrollHost
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.asPaddingValues
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
@@ -38,7 +44,14 @@ fun EveryDay(
     val context = LocalContext.current
     val everyDaySongs by viewModel.everyDay.collectAsState()
     val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
+    if (playerConnection == null) {
+        MeiloXLoadingPage(
+            title = "每日推荐",
+            onNavigateBack = { navController.popBackStack() },
+        )
+        return
+    }
 
     val isLoading = everyDaySongs is Resource.Loading
     LaunchedEffect(true) {
@@ -85,8 +98,14 @@ fun EveryDay(
     }
 
     if (everyDaySongs is Resource.Error) {
-        GlasmioOverscrollHost {
-            Text("Error: ${(everyDaySongs as Resource.Error).message}", Modifier.align(Alignment.Center))
+        MeiloXPinnedPage(
+            title = "每日推荐",
+            bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+            onNavigateBack = { navController.popBackStack() },
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text((everyDaySongs as Resource.Error).message)
+            }
         }
     } else {
         CommonSongListScreen(

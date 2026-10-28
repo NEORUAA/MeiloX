@@ -116,7 +116,12 @@ import androidx.navigation3.scene.SinglePaneSceneStrategy
 import androidx.navigation3.scene.rememberNavigationEventState
 import androidx.navigation3.scene.rememberSceneState
 import androidx.navigationevent.compose.NavigationBackHandler
-import androidx.navigation3.ui.NavDisplay
+import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavDisplay
+import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavHeaderMotion
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationOperation
+import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
+import com.ljyh.mei.ui.navigation.MeiloXPageEntry
 import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
 import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
@@ -704,7 +709,8 @@ class MainActivity : ComponentActivity() {
                     // Keep the anchor stable while the navigation morphs. The mini player
                     // moves inside the collapsed host with the same continuous spring.
                     val collapsedBottomReservation = when {
-                        active -> navigationBottomMargin + 56.dp + NavigationBarBottomMargin
+                        active -> navigationBottomMargin + searchToolbarSurfaceHeight -
+                            searchToolbarVerticalOffset + searchControlSpacing
                         shouldAllowNavigationBar ->
                             navigationBottomMargin + NavigationBarHeight - NavigationBarBottomMargin
                         else -> navigationBottomMargin
@@ -979,6 +985,21 @@ class MainActivity : ComponentActivity() {
                                     val entryViewModelOwners = remember {
                                         mutableMapOf<String, MeiNavEntryViewModelStoreOwner>()
                                     }
+                                    val pageHeaders = remember { MeiloXPageHeaders() }
+                                    val headerMotion = remember {
+                                        GlasmioNavHeaderMotion((backStack.last() as MeiRoute).route) { from, to, pop ->
+                                            if (from in homeNavigationRoutes && to in homeNavigationRoutes
+                                            ) GlasmioNavigationOperation.Tab
+                                            else if (pop) GlasmioNavigationOperation.Pop
+                                            else GlasmioNavigationOperation.Push
+                                        }
+                                    }
+                                    LaunchedEffect(pageHeaders, headerMotion, backStack) {
+                                        snapshotFlow {
+                                            val frame = headerMotion.frame.value
+                                            backStack.map { (it as MeiRoute).route }.toSet() + frame.fromEntryKey + frame.toEntryKey
+                                        }.collect(pageHeaders::retain)
+                                    }
                                     val viewModelEntryDecorator = remember(context) {
                                         NavEntryDecorator<NavKey>(
                                             onPop = { contentKey ->
@@ -1054,13 +1075,15 @@ class MainActivity : ComponentActivity() {
                                                         if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
                                                         else entryPlayerAwareWindowInsets,
                                                 ) {
-                                                    navigationEntry(
-                                                        route = meiRoute.route,
-                                                        scrollBehavior = entryTopAppBarScrollBehavior,
-                                                        isNavigationTab = entryNavigationItems.any {
-                                                            it.route == meiRoute.route
-                                                        },
-                                                    )
+                                                    MeiloXPageEntry(meiRoute, pageHeaders) {
+                                                        navigationEntry(
+                                                            route = meiRoute.route,
+                                                            scrollBehavior = entryTopAppBarScrollBehavior,
+                                                            isNavigationTab = entryNavigationItems.any {
+                                                                it.route == meiRoute.route
+                                                            },
+                                                        )
+                                                    }
                                                 }
                                             }
                                         },
@@ -1085,51 +1108,57 @@ class MainActivity : ComponentActivity() {
                                         isBackEnabled = !predictiveBackAnimationEnabled && canGoBack,
                                         onBackCompleted = { navController.popBackStack() },
                                     )
-                                    NavDisplay(
-                                        sceneState = sceneState,
-                                        // NavDisplay retains this state in remembered gesture calculations.
-                                        navigationEventState = navigationEventState,
-                                        modifier = Modifier.fillMaxSize(),
-                                        transitionSpec = {
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultTransitionSpec<NavKey>().invoke(this)
-                                            }
-                                        },
-                                        popTransitionSpec = {
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultPopTransitionSpec<NavKey>().invoke(this)
-                                            }
-                                        },
-                                        predictivePopTransitionSpec = { swipeEdge ->
-                                            if (usesHomeAlphaTransition()) {
-                                                homeAlphaTransition()
-                                            } else {
-                                                defaultPredictivePopTransitionSpec<NavKey>()
-                                                    .invoke(this, swipeEdge)
-                                            }
-                                        },
-                                        transitionEffects = remember(
-                                            navController.usesMiuixTransitionEffects,
-                                        ) {
-                                            if (navController.usesMiuixTransitionEffects) {
-                                                NavDisplayTransitionEffects(
-                                                    enableCornerClip = true,
-                                                    dimAmount = 0.5f,
-                                                    blockInputDuringTransition = false,
-                                                )
-                                            } else {
-                                                NavDisplayTransitionEffects(
-                                                    enableCornerClip = false,
-                                                    dimAmount = 0f,
-                                                    blockInputDuringTransition = false,
-                                                )
-                                            }
-                                        },
-                                    )
+                                    GlasmioNavigationScaffold(
+                                        motion = headerMotion,
+                                        header = { pageHeaders.entry(it).spec },
+                                    ) {
+                                        GlasmioNavDisplay(
+                                            sceneState = sceneState,
+                                            motion = headerMotion,
+                                            // NavDisplay retains this state in remembered gesture calculations.
+                                            navigationEventState = navigationEventState,
+                                            modifier = Modifier.fillMaxSize(),
+                                            transitionSpec = {
+                                                if (usesHomeAlphaTransition()) {
+                                                    homeAlphaTransition()
+                                                } else {
+                                                    defaultTransitionSpec<NavKey>().invoke(this)
+                                                }
+                                            },
+                                            popTransitionSpec = {
+                                                if (usesHomeAlphaTransition()) {
+                                                    homeAlphaTransition()
+                                                } else {
+                                                    defaultPopTransitionSpec<NavKey>().invoke(this)
+                                                }
+                                            },
+                                            predictivePopTransitionSpec = { swipeEdge ->
+                                                if (usesHomeAlphaTransition()) {
+                                                    homeAlphaTransition()
+                                                } else {
+                                                    defaultPredictivePopTransitionSpec<NavKey>()
+                                                        .invoke(this, swipeEdge)
+                                                }
+                                            },
+                                            transitionEffects = remember(
+                                                navController.usesMiuixTransitionEffects,
+                                            ) {
+                                                if (navController.usesMiuixTransitionEffects) {
+                                                    NavDisplayTransitionEffects(
+                                                        enableCornerClip = true,
+                                                        dimAmount = 0.5f,
+                                                        blockInputDuringTransition = false,
+                                                    )
+                                                } else {
+                                                    NavDisplayTransitionEffects(
+                                                        enableCornerClip = false,
+                                                        dimAmount = 0f,
+                                                        blockInputDuringTransition = false,
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
                                     AnimatedVisibility(
                                         visible = active,
                                         enter = fadeIn(),
@@ -1194,8 +1223,7 @@ class MainActivity : ComponentActivity() {
                                         .fillMaxWidth()
                                         .padding(horizontal = bottomNavigationHorizontalMargin)
                                         .padding(searchToolbarBottomPadding)
-                                        // The 56dp controls are centered in a 64dp toolbar host.
-                                        .offset(y = 4.dp),
+                                        .offset(y = searchToolbarVerticalOffset),
                                 )
                             }
                         }
@@ -1378,6 +1406,9 @@ class MainActivity : ComponentActivity() {
 
 private val homeNavigationRoutes = Screen.MainScreens.map { it.route }.toSet()
 private val bottomNavigationHorizontalMargin = BottomBarHorizontalPadding
+private val searchToolbarSurfaceHeight = 48.dp
+private val searchToolbarVerticalOffset = 4.dp
+private val searchControlSpacing = 8.dp
 
 private fun Scene<NavKey>.currentRoute(): String? =
     entries.lastOrNull()?.contentKey as? String

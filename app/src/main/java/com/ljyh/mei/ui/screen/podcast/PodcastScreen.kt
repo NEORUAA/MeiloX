@@ -59,11 +59,11 @@ import com.ljyh.mei.data.model.melox.Podcast
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.item.Track
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -118,7 +118,7 @@ fun PodcastScreen(
         }
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.podcasts),
         bottomPadding = bottomPadding,
         listState = listState,
@@ -126,9 +126,7 @@ fun PodcastScreen(
         largeTitleHorizontalPadding = 16.dp,
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = {
-            if (isNavigationTab) GlobalProfileAvatarButton()
-        },
+        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
         backgroundColor = pageBackground,
     ) {
         item(key = "podcast-tabs") {

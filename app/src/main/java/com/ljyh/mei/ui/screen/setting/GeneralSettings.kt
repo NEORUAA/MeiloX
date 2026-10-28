@@ -30,9 +30,8 @@ import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
@@ -67,7 +66,7 @@ fun GeneralSettings() {
         else R.string.netease_logout_web,
     )
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.general_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

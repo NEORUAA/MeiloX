@@ -1,28 +1,31 @@
 package com.ljyh.mei.ui.screen.social
 
+import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
+import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
 import android.content.Intent
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,7 +33,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -49,6 +51,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -147,37 +151,50 @@ fun NeteaseShareSheet(
         if (mode == NeteaseShareMode.PrivateMessage) viewModel.loadContacts()
     }
 
+    val listState = rememberLazyListState()
+    val dismissal = rememberMeiloXSheetDismissal(onDismiss)
+    val sheetTitle = stringResource(when (mode) {
+        NeteaseShareMode.Menu -> R.string.share_song
+        NeteaseShareMode.PrivateMessage -> R.string.netease_private_message
+        NeteaseShareMode.Timeline -> R.string.netease_timeline_share
+    })
+    LaunchedEffect(mode) { listState.scrollToItem(0) }
     GlasmioBottomSheet(
-        onDismissRequest = onDismiss,
-    ) {
-        Column(Modifier.fillMaxWidth()) {
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = sheetTitle,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
+        topBar = {
             GlasmioSheetTopToolbar(
-                title = stringResource(
-                    when (mode) {
-                        NeteaseShareMode.Menu -> R.string.share_song
-                        NeteaseShareMode.PrivateMessage -> R.string.netease_private_message
-                        NeteaseShareMode.Timeline -> R.string.netease_timeline_share
-                    },
-                ),
-                actions = {
-                    if (mode != NeteaseShareMode.Menu) {
-                        GlasmioSheetToolbarButton(onClick = { mode = NeteaseShareMode.Menu }) {
-                            SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
-                        }
+                title = sheetTitle,
+                navigation = if (mode != NeteaseShareMode.Menu) ({
+                    GlasmioSheetToolbarButton(onClick = { mode = NeteaseShareMode.Menu }) {
+                        SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
                     }
-                    GlasmioSheetToolbarButton(onClick = onDismiss) {
+                }) else null,
+                actions = {
+                    GlasmioSheetToolbarButton(onClick = { dismissal.requestDismiss() }) {
                         SfIcon(SfSymbol.Close, stringResource(R.string.cancel))
                     }
                 },
             )
-            Column(
-                Modifier.fillMaxWidth().weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                ShareResourcePreview(resource)
-                when (mode) {
-                    NeteaseShareMode.Menu -> GlasmioGroupedList {
+        },
+    ) {
+        val padding = LocalGlasmioSheetContentPadding.current
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp,
+                bottom = if (mode == NeteaseShareMode.Menu) padding.calculateBottomPadding() + 16.dp else 16.dp,
+            ),
+        ) {
+            item(key = "resource") { Box(Modifier.padding(bottom = 16.dp)) { ShareResourcePreview(resource) } }
+            when (mode) {
+                NeteaseShareMode.Menu -> item(key = "share-modes") {
+                    GlasmioGroupedList {
                         ShareModeButton("paperplane", R.string.netease_private_message, showTopSeparator = false) {
                             mode = NeteaseShareMode.PrivateMessage
                         }
@@ -203,55 +220,70 @@ fun NeteaseShareSheet(
                             )
                         }
                     }
-                    NeteaseShareMode.PrivateMessage -> {
-                        ShareMessageField(message, { message = it }, R.string.share_message_optional)
-                        Text(
-                            stringResource(R.string.share_recipients_count, selectedContactIds.size),
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        when {
-                            state.isLoadingContacts -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                            state.contacts.isEmpty() && state.error == null -> Text(stringResource(R.string.share_no_contacts))
-                            else -> GlasmioGroupedList {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp),
-                                ) {
-                                items(state.contacts, key = MessageContact::id) { contact ->
-                                    ContactSelectionRow(
-                                        contact = contact,
-                                        selected = contact.id in selectedContactIds,
-                                        showTopSeparator = contact.id != state.contacts.firstOrNull()?.id,
-                                        onClick = {
-                                            selectedContactIds = if (contact.id in selectedContactIds) {
-                                                selectedContactIds - contact.id
-                                            } else selectedContactIds + contact.id
-                                        },
-                                    )
-                                }
-                                }
+                }
+                NeteaseShareMode.PrivateMessage -> {
+                    item(key = "message") {
+                        Box(Modifier.padding(bottom = 16.dp)) {
+                            ShareMessageField(message, { message = it }, R.string.share_message_optional)
+                        }
+                    }
+                    item(key = "recipients") {
+                        Text(stringResource(R.string.share_recipients_count, selectedContactIds.size),
+                            modifier = Modifier.padding(bottom = 12.dp), fontWeight = FontWeight.SemiBold)
+                    }
+                    when {
+                        state.isLoadingContacts -> item(key = "loading") {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
                             }
                         }
-                        GlasmioButton(
-                            onClick = {
-                                viewModel.sendPrivate(resource, selectedContactIds, message, onDismiss)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = selectedContactIds.isNotEmpty() && !state.isSending,
-                            emphasis = GlassEmphasis.Prominent,
-                        ) { Text(stringResource(R.string.send)) }
-                    }
-                    NeteaseShareMode.Timeline -> {
-                        ShareMessageField(message, { message = it }, R.string.share_say_something)
-                        GlasmioButton(
-                            onClick = { viewModel.shareTimeline(resource, message, onDismiss) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !state.isSending,
-                            emphasis = GlassEmphasis.Prominent,
-                        ) { Text(stringResource(R.string.publish)) }
+                        state.contacts.isEmpty() && state.error == null -> item(key = "empty") {
+                            Text(stringResource(R.string.share_no_contacts))
+                        }
+                        else -> itemsIndexed(state.contacts, key = { _, contact -> "contact:${contact.id}" }) { index, contact ->
+                            val shape = ContinuousRoundedRectangle(
+                                topStart = if (index == 0) 26.dp else 0.dp,
+                                topEnd = if (index == 0) 26.dp else 0.dp,
+                                bottomStart = if (index == state.contacts.lastIndex) 26.dp else 0.dp,
+                                bottomEnd = if (index == state.contacts.lastIndex) 26.dp else 0.dp,
+                            )
+                            Box(Modifier.glasmioGroupedListBackground(shape)) {
+                                ContactSelectionRow(
+                                    contact = contact,
+                                    selected = contact.id in selectedContactIds,
+                                    showTopSeparator = index > 0,
+                                    onClick = {
+                                        selectedContactIds = if (contact.id in selectedContactIds) {
+                                            selectedContactIds - contact.id
+                                        } else selectedContactIds + contact.id
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
-                state.error?.let { Text(it, color = LocalGlassColors.current.destructive) }
+                NeteaseShareMode.Timeline -> item(key = "message") {
+                    ShareMessageField(message, { message = it }, R.string.share_say_something)
+                }
             }
+            state.error?.let { error -> item(key = "error") {
+                Text(error, modifier = Modifier.padding(top = 12.dp), color = LocalGlassColors.current.destructive)
+            } }
+        }
+        if (mode != NeteaseShareMode.Menu) Box(
+            Modifier.fillMaxWidth().padding(bottom = padding.calculateBottomPadding()).padding(16.dp),
+        ) {
+            GlasmioButton(
+                onClick = {
+                    if (mode == NeteaseShareMode.PrivateMessage) {
+                        viewModel.sendPrivate(resource, selectedContactIds, message) { dismissal.requestDismiss() }
+                    } else viewModel.shareTimeline(resource, message) { dismissal.requestDismiss() }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                size = GlasmioButtonSize.Large,
+                enabled = !state.isSending && (mode != NeteaseShareMode.PrivateMessage || selectedContactIds.isNotEmpty()),
+                emphasis = GlassEmphasis.Prominent,
+            ) { Text(stringResource(if (mode == NeteaseShareMode.PrivateMessage) R.string.send else R.string.publish)) }
         }
     }
 }
@@ -299,10 +331,10 @@ private fun ShareMessageField(value: String, onValueChange: (String) -> Unit, pl
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             minLines = 2,
             maxLines = 5,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = LocalGlassColors.current.content),
             decorationBox = { inner ->
                 if (value.isEmpty()) {
-                    Text(stringResource(placeholderRes), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(placeholderRes), color = LocalGlassColors.current.secondaryContent)
                 }
                 inner()
             },

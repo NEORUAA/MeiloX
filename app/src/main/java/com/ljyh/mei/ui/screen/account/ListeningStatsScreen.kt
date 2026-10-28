@@ -67,7 +67,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGlassDimensions
 import io.github.neoruaa.glasmio.glass.LocalGlassSurfaceBrightness
@@ -94,7 +95,7 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val colors = LocalGlassColors.current
     var showInfo by rememberSaveable { mutableStateOf(false) }
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.listening_stats_title),
         subtitle = state.summary?.let {
             stringResource(R.string.listening_stats_total) + " " + listeningDuration(it.totalSeconds / 60, it.totalSeconds > 0)
@@ -103,12 +104,15 @@ fun ListeningStatsScreen(viewModel: ListeningStatsViewModel = hiltViewModel()) {
         onNavigateBack = navController::navigateUp,
         verticalArrangement = Arrangement.spacedBy(16.dp),
         actions = {
-            GlasmioIconButton({ showInfo = true }) {
-                SfIcon("info.circle", stringResource(R.string.listening_stats_info_title))
-            }
-            GlasmioIconButton(viewModel::refresh, enabled = !state.loading && !state.refreshing) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(
+                meiloxHeaderAction("info", stringResource(R.string.listening_stats_info_title), { showInfo = true }) {
+                    SfIcon("info.circle", null)
+                },
+                meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh,
+                    enabled = !state.loading && !state.refreshing) {
+                    SfIcon(SfSymbol.ArrowClockwise, null)
+                },
+            )
         },
     ) {
         item {

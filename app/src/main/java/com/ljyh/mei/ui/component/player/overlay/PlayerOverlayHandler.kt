@@ -150,8 +150,10 @@ class PlayerOverlayHandler(
     /**
      * 处理更多操作点击
      */
-    fun handleMoreAction(action: MoreAction) {
-        val mediaMetadata = stateContainer.mediaMetadata.value
+    fun handleMoreAction(
+        action: MoreAction,
+        mediaMetadata: MediaMetadata? = stateContainer.mediaMetadata.value,
+    ) {
         when (action) {
             MoreAction.ADD_TO_PLAYLIST -> {
                 mediaMetadata?.let {

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.song
 
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,8 +48,7 @@ import com.ljyh.mei.playback.queue.ListQueue
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -129,14 +129,16 @@ fun SongWikiScreen(
     val pageTitle = stringResource(R.string.song_wiki)
     LaunchedEffect(songId) { viewModel.load(songId) }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = pageTitle,
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlasmioIconButton({ viewModel.load(songId, force = true) }) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(meiloxHeaderAction(
+                key = "song-wiki.refresh",
+                contentDescription = stringResource(R.string.refresh),
+                onClick = { viewModel.load(songId, force = true) },
+            ) { SfIcon(SfSymbol.ArrowClockwise, null) })
         },
     ) {
         when {

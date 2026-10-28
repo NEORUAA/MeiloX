@@ -61,14 +61,13 @@ import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import com.ljyh.mei.ui.component.player.isXiaomiFloatingLyricsPermissionRequired
 import com.ljyh.mei.ui.component.player.openFloatingLyricsPermissionSettings
 import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -137,7 +136,7 @@ fun PlaySetting(
         floatingLyricsBackgroundAllowed = hasFloatingLyricsBackgroundPermission(context)
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.playback_settings),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),

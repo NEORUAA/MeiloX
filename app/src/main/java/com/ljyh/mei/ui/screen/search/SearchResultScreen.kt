@@ -54,7 +54,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -100,7 +100,7 @@ fun SearchResultScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        GlasmioPinnedListPage(
+        MeiloXPinnedListPage(
             title = stringResource(R.string.search_details_title),
             bottomPadding = bottomPadding,
             listState = listState,

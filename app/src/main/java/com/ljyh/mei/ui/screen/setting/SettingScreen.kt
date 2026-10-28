@@ -15,9 +15,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.UserNicknameKey
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -38,10 +38,10 @@ fun SettingScreen(
     val sessionType = rememberNeteaseSessionType()
     val (userNickname) = rememberPreference(UserNicknameKey, "")
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.settings),
         bottomPadding = insets.calculateBottomPadding(),
-        actions = { GlobalProfileAvatarButton() },
+        actions = { listOf(globalProfileHeaderAction()) },
     ) {
         item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
         item {

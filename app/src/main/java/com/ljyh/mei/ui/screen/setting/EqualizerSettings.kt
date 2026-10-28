@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,10 +34,9 @@ import com.ljyh.mei.playback.EqualizerPreset
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -87,14 +87,16 @@ fun EqualizerSettings() {
         setSerializedGains(updated.joinToString(","))
     }
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.equalizer),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         actions = {
-            GlasmioButton(onClick = { applyPreset(EqualizerPreset.Flat) }) {
-                Text(stringResource(R.string.equalizer_reset))
-            }
+            listOf(meiloxHeaderAction(
+                key = "equalizer.reset",
+                contentDescription = stringResource(R.string.equalizer_reset),
+                onClick = { applyPreset(EqualizerPreset.Flat) },
+            ) { Text(stringResource(R.string.equalizer_reset)) })
         },
     ) {
         item {

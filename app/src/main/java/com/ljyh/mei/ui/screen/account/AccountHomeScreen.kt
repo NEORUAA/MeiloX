@@ -76,8 +76,9 @@ import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -177,15 +178,15 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.account_home),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
-            GlasmioIconButton(viewModel::refresh) {
-                SfIcon(SfSymbol.ArrowClockwise, stringResource(R.string.refresh))
-            }
+            listOf(meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh) {
+                SfIcon(SfSymbol.ArrowClockwise, null)
+            })
         },
     ) {
         state.profile?.let { profile ->
@@ -505,11 +506,12 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
         }
     }
     LaunchedEffect(userId) { viewModel.load(userId, ListeningPeriod.Week) }
-    GlasmioPinnedPage(
+    MeiloXPinnedPage(
         title = stringResource(R.string.account_listening_rank),
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
         collapseProgress = collapseProgress,
+        topBarBlurProgress = collapseProgress,
     ) { contentPadding ->
         PullToRefreshBox(
             isRefreshing = state.refreshing,

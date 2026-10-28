@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -72,14 +73,14 @@ import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.GlobalProfileAvatarButton
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
@@ -308,14 +309,13 @@ fun LibraryMobileLayout(
         if (!collectionLoading) isPullRefreshing = false
     }
 
-    GlasmioPinnedPage(
+    MeiloXPinnedPage(
         title = title,
         bottomPadding = insets.calculateBottomPadding(),
         collapseProgress = collapseProgress,
+        topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = {
-            if (isNavigationTab) GlobalProfileAvatarButton()
-        },
+        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) { contentPadding ->
         LibraryCollectionRefresh(
             enabled = showsAlbums || showsPodcasts || selectedPage == LibraryPage.Playlists,

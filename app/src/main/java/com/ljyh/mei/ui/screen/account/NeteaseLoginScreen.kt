@@ -1,5 +1,14 @@
 package com.ljyh.mei.ui.screen.account
 
+import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetScrollEdge
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
+import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
+import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSheetValue
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import android.annotation.SuppressLint
 import android.view.View
 import android.webkit.CookieManager
@@ -26,13 +35,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -59,7 +68,8 @@ import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
-import io.github.neoruaa.glasmio.scaffold.GlasmioPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -90,7 +100,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
         .asPaddingValues()
         .calculateBottomPadding()
 
-    GlasmioPinnedListPage(
+    MeiloXPinnedListPage(
         title = stringResource(R.string.netease_login),
         subtitle = stringResource(R.string.netease_mobile_login_page_subtitle),
         showsLargeTitle = false,
@@ -176,7 +186,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        GlasmioPinnedListPage(
+        MeiloXPinnedListPage(
             title = stringResource(R.string.netease_web_login),
             subtitle = stringResource(when {
                 detected -> R.string.netease_login_detected
@@ -188,12 +198,10 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             bottomPadding = bottomPadding,
             onNavigateBack = navController::navigateUp,
             actions = {
-                if (detected) {
-                    GlasmioButton(
-                        onClick = navController::finishNeteaseLogin,
-                        emphasis = GlassEmphasis.Prominent,
-                    ) { Text(stringResource(R.string.done)) }
-                }
+                if (detected) listOf(meiloxHeaderAction(
+                    "done", stringResource(R.string.done), navController::finishNeteaseLogin,
+                ) { Text(stringResource(R.string.done), color = LocalGlassColors.current.accent) })
+                else emptyList()
             },
         ) {
             item(key = "netease-login-webview") {
@@ -283,7 +291,12 @@ private fun NeteaseCookieLoginSheet(
     var isSubmitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
-    val colors = LocalGlassColors.current
+    val dismissal = rememberMeiloXSheetDismissal(
+        onDismiss,
+        confirmValueChange = { !isSubmitting || it != GlasmioSheetValue.Hidden },
+    )
+    val scrollState = rememberScrollState()
+    val scrollProgress = rememberMeiloXSheetScrollEdge(scrollState)
     val invalidFormatMessage = stringResource(R.string.netease_cookie_login_invalid_format)
     val verificationFailedMessage = stringResource(R.string.netease_cookie_login_verification_failed)
 
@@ -304,7 +317,8 @@ private fun NeteaseCookieLoginSheet(
         scope.launch {
             isSubmitting = true
             if (onSubmit(normalizedValue)) {
-                onLoginSuccess()
+                isSubmitting = false
+                dismissal.requestDismiss(onLoginSuccess)
             } else {
                 errorMessage = verificationFailedMessage
                 isSubmitting = false
@@ -313,21 +327,31 @@ private fun NeteaseCookieLoginSheet(
     }
 
     GlasmioBottomSheet(
-        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        onDismissRequest = dismissal::onDismissed,
+        sheetState = dismissal.state,
+        skipPartiallyExpanded = false,
+        fitContent = false,
+        title = stringResource(R.string.netease_cookie_login),
         contentWindowInsets = { WindowInsets.statusBars.union(WindowInsets.ime) },
+        topBarBlurProgress = scrollProgress,
+        topBar = {
+            GlasmioSheetTopToolbar(stringResource(R.string.netease_cookie_login), actions = {
+                GlasmioSheetToolbarButton(
+                    onClick = { dismissal.requestDismiss() },
+                    enabled = !isSubmitting,
+                ) { SfIcon("xmark", stringResource(R.string.cancel)) }
+            })
+        },
     ) {
+        val colors = LocalGlassColors.current
+        val padding = LocalGlasmioSheetContentPadding.current
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 22.dp),
+                .fillMaxWidth().weight(1f)
+                .verticalScroll(scrollState)
+                .padding(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = stringResource(R.string.netease_cookie_login),
-                style = IosTypography.title2,
-                fontWeight = FontWeight.Bold,
-            )
-
             GlasmioGroupedList {
                 GlasmioTextField(
                     value = cookieValue,
@@ -402,9 +426,12 @@ private fun NeteaseCookieLoginSheet(
                 )
             }
 
+        }
+        Box(Modifier.fillMaxWidth().padding(bottom = padding.calculateBottomPadding()).padding(16.dp)) {
             GlasmioButton(
                 onClick = submit,
                 modifier = Modifier.fillMaxWidth(),
+                size = GlasmioButtonSize.Large,
                 style = GlassSurfaceStyle.Navigation,
                 enabled = cookieValue.isNotBlank() && !isSubmitting,
                 emphasis = GlassEmphasis.Prominent,
