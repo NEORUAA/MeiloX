@@ -22,14 +22,14 @@ import androidx.compose.ui.unit.dp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.HomeSectionSpacing
 import com.ljyh.mei.constants.HomeSectionTitlePadding
-import com.ljyh.mei.constants.HomeCardSpacing
+import com.ljyh.mei.constants.homeCardSpacing
 import com.ljyh.mei.constants.HomeRowHorizontalPadding
 import com.ljyh.mei.constants.homePlaylistCardSize
 import com.ljyh.mei.constants.RecommendCardCornerRadius
 import com.ljyh.mei.constants.RecommendCardHeight
-import com.ljyh.mei.constants.RecommendCardHeightTablet
+import com.ljyh.mei.constants.PortraitRecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardWidth
-import com.ljyh.mei.constants.RecommendCardWidthTablet
+import com.ljyh.mei.constants.PortraitRecommendCardWidth
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
@@ -40,8 +40,9 @@ private val cardShape = ContinuousRoundedRectangle(8.dp)
 @Composable
 fun HomeShimmer(contentPadding: PaddingValues) {
     val device = rememberDeviceInfo()
-    val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
-    val recommendCardHeight = if (device.isTablet) RecommendCardHeightTablet else RecommendCardHeight
+    val recommendCardWidth = if (device.isLandscape) RecommendCardWidth else PortraitRecommendCardWidth
+    val recommendCardHeight = if (device.isLandscape) RecommendCardHeight else PortraitRecommendCardHeight
+    val cardSpacing = homeCardSpacing(device.isLandscape)
 
     ShimmerHost {
         LazyColumn(
@@ -52,13 +53,14 @@ fun HomeShimmer(contentPadding: PaddingValues) {
                 RecommendRowShimmer(
                     cardWidth = recommendCardWidth,
                     cardHeight = recommendCardHeight,
-                    count = 3
+                    cardSpacing = cardSpacing,
+                    count = (device.screenWidthDp / (recommendCardWidth + cardSpacing).value).toInt() + 2
                 )
             }
             repeat(3) {
                 item {
                     PlaylistBlockShimmer(
-                        count = 4
+                        isLandscape = device.isLandscape,
                     )
                 }
             }
@@ -70,12 +72,13 @@ fun HomeShimmer(contentPadding: PaddingValues) {
 private fun RecommendRowShimmer(
     cardWidth: androidx.compose.ui.unit.Dp,
     cardHeight: androidx.compose.ui.unit.Dp,
+    cardSpacing: androidx.compose.ui.unit.Dp,
     count: Int = 3
 ) {
     Column {
         TitleShimmer()
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
         ) {
             items(count) {
@@ -95,19 +98,22 @@ private fun RecommendCardShimmer(
             .size(cardWidth, cardHeight)
             .clip(ContinuousRoundedRectangle(RecommendCardCornerRadius))
             .background(shimmerColor)
+            .homeArtworkBorder(ContinuousRoundedRectangle(RecommendCardCornerRadius))
     )
 }
 
 @Composable
 private fun PlaylistBlockShimmer(
-    count: Int = 4
+    isLandscape: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val cardSize = homePlaylistCardSize(maxWidth)
+        val cardSize = homePlaylistCardSize(isLandscape)
+        val cardSpacing = homeCardSpacing(isLandscape)
+        val count = (maxWidth / (cardSize + cardSpacing)).toInt() + 2
         Column {
             TitleShimmer()
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
                 contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
             ) {
                 items(count) {

@@ -93,6 +93,7 @@ fun RecommendCard(
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .clip(ContinuousRoundedRectangle(RecommendCardCornerRadius))
+            .homeArtworkBorder(ContinuousRoundedRectangle(RecommendCardCornerRadius))
             .background(Color.DarkGray)
             .clickable(enabled = !isLoading, onClick = onClick),
     ) {

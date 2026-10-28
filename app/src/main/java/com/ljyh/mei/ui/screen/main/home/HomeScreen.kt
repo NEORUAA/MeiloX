@@ -14,7 +14,6 @@ import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
@@ -66,7 +66,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,18 +78,18 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.HomeSectionSpacing
 import com.ljyh.mei.constants.HomeCardSpacing
+import com.ljyh.mei.constants.homeCardSpacing
 import com.ljyh.mei.constants.HomeRowHorizontalPadding
 import com.ljyh.mei.constants.homePlaylistCardSize
 import com.ljyh.mei.constants.HomeSectionTitlePadding
 import com.ljyh.mei.constants.HomeSongCoverSize
 import com.ljyh.mei.constants.HomeSongCoverCornerRadius
 import com.ljyh.mei.constants.HomeSongActionSize
-import com.ljyh.mei.constants.HomeSongNextPagePeek
 import com.ljyh.mei.constants.HomeSongRowSpacing
 import com.ljyh.mei.constants.RecommendCardHeight
-import com.ljyh.mei.constants.RecommendCardHeightTablet
+import com.ljyh.mei.constants.PortraitRecommendCardHeight
 import com.ljyh.mei.constants.RecommendCardWidth
-import com.ljyh.mei.constants.RecommendCardWidthTablet
+import com.ljyh.mei.constants.PortraitRecommendCardWidth
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block.DslData.BlockResource.Resource as HomeCardResource
@@ -328,8 +327,9 @@ private fun HomeBlockItem(
         }
     }
 
-    val recommendCardWidth = if (device.isTablet) RecommendCardWidthTablet else RecommendCardWidth
-    val recommendCardHeight = if (device.isTablet) RecommendCardHeightTablet else RecommendCardHeight
+    val recommendCardWidth = if (device.isLandscape) RecommendCardWidth else PortraitRecommendCardWidth
+    val recommendCardHeight = if (device.isLandscape) RecommendCardHeight else PortraitRecommendCardHeight
+    val cardSpacing = homeCardSpacing(device.isLandscape)
 
     // 解析逻辑缓存，只要 block 不变，就不会重新解析 JSON
     val blockData = remember(block) {
@@ -355,6 +355,7 @@ private fun HomeBlockItem(
                 title = getGreeting(),
                 resources = resources,
                 rowHeight = recommendCardHeight,
+                cardSpacing = cardSpacing,
             ) { resource ->
                 val recommendationKey = "${resource.resourceType}:${resource.resourceId}:${resource.action}"
                 RecommendCard(
@@ -483,40 +484,39 @@ private fun HomeBlockItem(
                 }
             }
 
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val playlistCardSize = homePlaylistCardSize(maxWidth)
-                BlockWithTitle(
-                    title = title,
-                    resources = resources,
-                ) { resource ->
-                    val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
-                    val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
-                        title?.contains("热门金曲") == true
-                    val separateCaptions = isRadar || isArtistPlaylist
-                    val coverText = resource.resourceExtInfo?.coverText
-                    val coverCaption = coverText?.filter(String::isNotBlank)
-                        ?.joinToString(if (isRadar) "" else " ")?.takeIf(String::isNotBlank)
-                    val artistCoverCaption = if (isArtistPlaylist) homeArtistPlaylistCoverText(resource) else null
-                    val coverImg = if (artistCoverCaption != null) {
-                        homeArtistPlaylistCoverWithoutCaption(resource.coverImg)
-                    } else resource.coverImg
-                    PlaylistCard(
-                        id = resource.resourceId,
-                        title = if (isRadar) coverCaption.orEmpty() else resource.title,
-                        coverImg = coverImg,
-                        subTitle = if (separateCaptions) null else coverText,
-                        extInfo = resource.resourceInteractInfo?.playCount,
-                        imageSize = !coverImg.contains("thumbnail"),
-                        cardSize = playlistCardSize,
-                        titleMaxLines = if (separateCaptions) 1 else 2,
-                        secondaryTitle = when {
-                            isRadar -> resource.title
-                            isArtistPlaylist -> artistCoverCaption ?: coverCaption
-                            else -> null
-                        },
-                    ) {
-                        Screen.PlayList.navigate(navController) { addPath(resource.resourceId) }
-                    }
+            val playlistCardSize = homePlaylistCardSize(device.isLandscape)
+            BlockWithTitle(
+                title = title,
+                resources = resources,
+                cardSpacing = cardSpacing,
+            ) { resource ->
+                val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
+                val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
+                    title?.contains("热门金曲") == true
+                val separateCaptions = isRadar || isArtistPlaylist
+                val coverText = resource.resourceExtInfo?.coverText
+                val coverCaption = coverText?.filter(String::isNotBlank)
+                    ?.joinToString(if (isRadar) "" else " ")?.takeIf(String::isNotBlank)
+                val artistCoverCaption = if (isArtistPlaylist) homeArtistPlaylistCoverText(resource) else null
+                val coverImg = if (artistCoverCaption != null) {
+                    homeArtistPlaylistCoverWithoutCaption(resource.coverImg)
+                } else resource.coverImg
+                PlaylistCard(
+                    id = resource.resourceId,
+                    title = if (isRadar) coverCaption.orEmpty() else resource.title,
+                    coverImg = coverImg,
+                    subTitle = if (separateCaptions) null else coverText,
+                    extInfo = resource.resourceInteractInfo?.playCount,
+                    imageSize = !coverImg.contains("thumbnail"),
+                    cardSize = playlistCardSize,
+                    titleMaxLines = if (separateCaptions) 1 else 2,
+                    secondaryTitle = when {
+                        isRadar -> resource.title
+                        isArtistPlaylist -> artistCoverCaption ?: coverCaption
+                        else -> null
+                    },
+                ) {
+                    Screen.PlayList.navigate(navController) { addPath(resource.resourceId) }
                 }
             }
         }
@@ -540,6 +540,7 @@ private fun HomeBlockItem(
                 songsArray = songsBlocks,
                 isTablet = device.isTablet,
                 screenWidthDp = device.screenWidthDp,
+                isLandscape = device.isLandscape,
             ) { songs, index ->
                 val flatSongs = songs.flatMap { it.items }.map { it.resourceId to null }
                 if (playerConnection.isPlaying(flatSongs[index].first)) {
@@ -589,6 +590,7 @@ private fun BlockWithTitle(
     title: String?,
     resources: List<HomeCardResource>,
     rowHeight: Dp? = null,
+    cardSpacing: Dp = HomeCardSpacing,
     content: @Composable (HomeCardResource) -> Unit
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
@@ -599,7 +601,7 @@ private fun BlockWithTitle(
             state = listState,
             flingBehavior = rememberHomeRowFlingBehavior(listState),
             contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
-            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             verticalAlignment = Alignment.Top,
             modifier = Modifier.fillMaxWidth()
                 .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
@@ -656,18 +658,13 @@ fun Title(text: String) {
     )
 }
 
-private val HomeSongPageSize = object : PageSize {
-    override fun Density.calculateMainAxisPageSize(availableSpace: Int, pageSpacing: Int): Int =
-        (availableSpace + HomeRowHorizontalPadding.roundToPx() - pageSpacing -
-            HomeSongNextPagePeek.roundToPx()).coerceAtLeast(1)
-}
-
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun TripleLaneSlider(
     songsArray: List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>,
     isTablet: Boolean = false,
     screenWidthDp: Int = 0,
+    isLandscape: Boolean = false,
     onClick: (List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>, Int) -> Unit
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -679,15 +676,18 @@ fun TripleLaneSlider(
         isTablet -> 2
         else -> 1
     }
+    val cardSpacing = homeCardSpacing(isLandscape)
+    val columnWidth = homePlaylistCardSize(isLandscape) * 2 + cardSpacing
+    val pageSize = PageSize.Fixed(columnWidth * columns + cardSpacing * (columns - 1))
 
     val pagerState = rememberPagerState(pageCount = { songsArray.size })
 
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxWidth(),
-        pageSize = HomeSongPageSize,
+        pageSize = pageSize,
         contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
-        pageSpacing = 16.dp,
+        pageSpacing = cardSpacing,
         beyondViewportPageCount = 1,
     ) { page ->
         val items = songsArray[page].items
@@ -695,10 +695,10 @@ fun TripleLaneSlider(
         val itemsPerColumn = ceil(items.size.toFloat() / columns).toInt()
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(cardSpacing),
         ) {
             for (col in 0 until columns) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.width(columnWidth)) {
                     val startIdx = col * itemsPerColumn
                     val endIdx = minOf(startIdx + itemsPerColumn, items.size)
                     for (i in startIdx until endIdx) {
