@@ -1,9 +1,11 @@
 package com.ljyh.mei.ui.component.player.component
 
 import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.glasmioGroupedListSeparator
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
@@ -16,8 +18,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
@@ -101,11 +106,17 @@ fun PrivateFmModeSelector(connection: PlayerConnection, backdrop: Backdrop, modi
     }
     if (showScenes) {
         val listState = rememberLazyListState()
-        val dismissal = rememberMeiloXSheetDismissal(onDismiss = { showScenes = false })
+        val dismissal = rememberMeiloXSheetDismissal(
+            onDismiss = { showScenes = false },
+            skipPartiallyExpanded = true,
+        )
         val title = stringResource(R.string.private_fm_scene_mode)
         GlasmioBottomSheet(
             onDismissRequest = dismissal::onDismissed,
             sheetState = dismissal.state,
+            skipPartiallyExpanded = true,
+            fitContent = false,
+            prefersScrollingExpandsWhenScrolledToEdge = false,
             title = title,
             topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
             topBar = {
@@ -118,7 +129,7 @@ fun PrivateFmModeSelector(connection: PlayerConnection, backdrop: Backdrop, modi
         ) {
             val padding = LocalGlasmioSheetContentPadding.current
             LazyColumn(
-                Modifier.fillMaxWidth().weight(1f), state = listState,
+                Modifier.fillMaxWidth().weight(1f).selectableGroup(), state = listState,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
                     top = padding.calculateTopPadding() + 8.dp,
                     bottom = padding.calculateBottomPadding() + 24.dp),
@@ -134,16 +145,39 @@ fun PrivateFmModeSelector(connection: PlayerConnection, backdrop: Backdrop, modi
                         GlasmioButton({ reload++ }) { Text(stringResource(R.string.retry)) }
                     }
                 } }
-                items(scenes, key = PrivateFmScene::code) { option ->
-                    GlasmioListRow(
-                        title = option.title,
+                itemsIndexed(scenes, key = { _, option -> option.code }) { index, option ->
+                    PrivateFmSceneRow(
+                        scene = option,
+                        selected = mode == PrivateFmMode.SCENE && scene?.code == option.code,
+                        showSeparator = index > 0,
                         onClick = { connection.setPrivateFmScene(option); dismissal.requestDismiss() },
-                        trailing = {
-                            if (mode == PrivateFmMode.SCENE && scene?.code == option.code) SfIcon("checkmark", null)
-                        },
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PrivateFmSceneRow(
+    scene: PrivateFmScene,
+    selected: Boolean,
+    showSeparator: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .glasmioGroupedListSeparator(colors.separator, horizontalInset = 20.dp, visible = showSeparator)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(scene.title, modifier = Modifier.weight(1f), style = IosTypography.body,
+            color = colors.content, softWrap = true)
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            if (selected) SfIcon("checkmark", null, size = 17.dp, tint = colors.content)
         }
     }
 }
