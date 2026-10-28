@@ -20,6 +20,7 @@ fun PlayerNavigationMenu(
     onArtistClick: (Long) -> Unit,
     onPlaylistClick: () -> Unit,
     onDismiss: () -> Unit,
+    viewportBounds: Rect? = null,
 ) {
     val navigableArtists = artists.filter { it.id > 0 }.distinctBy { it.id }
     val artistItems = if (navigableArtists.size > 1) {
@@ -33,6 +34,7 @@ fun PlayerNavigationMenu(
 
     GlasmioCascadingMenu(
         anchorBounds = anchorBounds,
+        viewportBounds = viewportBounds,
         title = stringResource(R.string.player_navigation_title),
         expandedDescription = stringResource(R.string.menu_expanded),
         collapsedDescription = stringResource(R.string.menu_collapsed),

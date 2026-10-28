@@ -127,6 +127,7 @@ fun LyricScreen(
     controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
     showSourceBadge: Boolean = true,
     controlsAutoHideBlocked: Boolean = false,
+    lyricOffset: Dp = 48.dp,
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -240,7 +241,7 @@ fun LyricScreen(
                     // to animate from. Keep a full window laid out beyond each edge.
                     val keepAliveZone = LocalConfiguration.current.screenHeightDp.dp
                     val keepAliveZonePx = with(LocalDensity.current) { keepAliveZone.roundToPx() }
-                    val lyricOffsetPx = with(LocalDensity.current) { 48.dp.roundToPx() }
+                    val lyricOffsetPx = with(LocalDensity.current) { lyricOffset.roundToPx() }
                     var animatedPosition by remember(player) { mutableLongStateOf(initialPosition) }
                     var placementGeneration by remember(player) { mutableIntStateOf(0) }
                     val lyricAlpha = remember(player) { Animatable(0f) }
@@ -430,7 +431,7 @@ fun LyricScreen(
                                     fontWeight = if (translationLyricTextBold) FontWeight.Bold else FontWeight.Normal,
                                     textMotion = TextMotion.Animated,
                                 ),
-                                offset = 48.dp,
+                                offset = lyricOffset,
                                 keepAliveZone = keepAliveZone,
                                 placementGeneration = placementGeneration,
                                 topFadeHeight = topFadeHeight,

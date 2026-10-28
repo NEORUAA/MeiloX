@@ -105,24 +105,11 @@ fun PlayerActionToolbar(
         actions.forEach { action ->
             when (action) {
                 PlayerAction.PLAY_MODE -> {
-                    ShadowedIconButton(
+                    PlayerPlayModeButton(
+                        playMode = playMode,
                         pressedAlpha = pressedAlpha,
-                        onClick = { playerConnection.switchPlayMode() }
-                    ) {
-                        val systemName = when (playMode) {
-                            PlayMode.REPEAT_MODE_ONE -> "repeat.1"
-                            PlayMode.REPEAT_MODE_ALL -> "repeat"
-                            PlayMode.SHUFFLE_MODE_ALL -> "shuffle"
-                        }
-                        AnimatedContent(targetState = systemName, label = "PlayModeIcon") { target ->
-                            SfIcon(
-                                target,
-                                stringResource(com.ljyh.mei.R.string.player_action_play_mode),
-                                tint = Color.White,
-                                weight = FontWeight.Medium,
-                            )
-                        }
-                    }
+                        onClick = { playerConnection.switchPlayMode() },
+                    )
                 }
 
                 PlayerAction.QUEUE -> {
@@ -249,7 +236,35 @@ fun PlayerActionToolbar(
 }
 
 @Composable
-private fun PlayerPageActionButton(
+internal fun PlayerPlayModeButton(
+    playMode: PlayMode,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    pressedAlpha: Float = 0.3f,
+) {
+    ShadowedIconButton(
+        modifier = modifier,
+        pressedAlpha = pressedAlpha,
+        onClick = onClick,
+    ) {
+        val systemName = when (playMode) {
+            PlayMode.REPEAT_MODE_ONE -> "repeat.1"
+            PlayMode.REPEAT_MODE_ALL -> "repeat"
+            PlayMode.SHUFFLE_MODE_ALL -> "shuffle"
+        }
+        AnimatedContent(targetState = systemName, label = "PlayModeIcon") { target ->
+            SfIcon(
+                target,
+                stringResource(com.ljyh.mei.R.string.player_action_play_mode),
+                tint = Color.White,
+                weight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun PlayerPageActionButton(
     systemName: String,
     contentDescription: String,
     isSelected: Boolean,
@@ -257,9 +272,10 @@ private fun PlayerPageActionButton(
     iconSize: Dp = 24.dp,
     iconWeight: FontWeight = FontWeight.Medium,
     pressedAlpha: Float = 0.3f,
+    modifier: Modifier = Modifier,
 ) {
     ShadowedIconButton(
-        modifier = Modifier.semantics { selected = isSelected },
+        modifier = modifier.semantics { selected = isSelected },
         onClick = onClick,
         pressedAlpha = pressedAlpha,
         dimOnPress = !isSelected,

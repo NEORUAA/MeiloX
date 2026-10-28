@@ -22,6 +22,7 @@ sealed interface OverlayState {
         val anchorBounds: Rect? = null,
         val playlistTitle: String? = null,
         val playlistId: Long? = null,
+        val viewportBounds: Rect? = null,
     ) : OverlayState
     data class SongInfo(val metadata: MediaMetadata): OverlayState
     data object MoreAction: OverlayState

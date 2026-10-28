@@ -85,6 +85,7 @@ fun CommonOverlayHandler(
                     artists = overlay.artists,
                     playlistTitle = overlay.playlistTitle,
                     anchorBounds = anchor,
+                    viewportBounds = overlay.viewportBounds,
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
                     onPlaylistClick = {

@@ -102,12 +102,14 @@ class PlayerOverlayHandler(
         artists: List<MediaMetadata.Artist>,
         cover: String,
         anchorBounds: Rect? = null,
+        viewportBounds: Rect? = null,
     ) {
         val connection = stateContainer.playerConnection
         _currentOverlay.value = OverlayState.AlbumArtist(
             album, artists, cover, anchorBounds,
             playlistTitle = connection.queueTitle.value,
             playlistId = connection.service.queueManager.playlistSource?.playlistId,
+            viewportBounds = viewportBounds,
         )
     }
 
