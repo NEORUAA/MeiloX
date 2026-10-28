@@ -60,6 +60,13 @@ import com.ljyh.mei.ui.screen.account.NeteaseWebLoginScreen
 import com.ljyh.mei.ui.screen.account.PcQrLoginScreen
 import com.ljyh.mei.ui.screen.account.ListeningStatsScreen
 import com.ljyh.mei.ui.screen.account.AccountHomeScreen
+import com.ljyh.mei.ui.screen.account.OfficialNeteasePage
+import com.ljyh.mei.ui.screen.account.OfficialNeteasePageScreen
+import com.ljyh.mei.ui.screen.account.AccountSecurityScreen
+import com.ljyh.mei.ui.screen.account.MusicianAccountScreen
+import com.ljyh.mei.ui.screen.account.AccountBindingsScreen
+import com.ljyh.mei.ui.screen.account.AccountDevicesScreen
+import com.ljyh.mei.ui.screen.account.AccountDeviceTab
 import com.ljyh.mei.ui.screen.account.AccountConnectionsScreen
 import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.ui.screen.account.ListeningRankScreen
@@ -156,6 +163,22 @@ fun NavGraphBuilder.navigationBuilder(
 
     composable(Screen.AccountHome.route) {
         AccountHomeScreen()
+    }
+    composable(Screen.NeteaseMusician.route) {
+        MusicianAccountScreen()
+    }
+    composable(Screen.AccountSecurity.route) {
+        AccountSecurityScreen()
+    }
+    composable(Screen.AccountBindings.route) { AccountBindingsScreen() }
+    composable(Screen.AccountDevices.route) { AccountDevicesScreen() }
+    composable(Screen.AccountAuthorizations.route) { AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations) }
+    composable(
+        route = "${Screen.AccountWeb.route}/{page}",
+        arguments = listOf(navArgument("page") { type = NavType.StringType }),
+    ) { entry ->
+        OfficialNeteasePage.entries.firstOrNull { it.name == entry.arguments?.getString("page") }
+            ?.let { OfficialNeteasePageScreen(it) }
     }
 
     composable(Screen.ListeningStats.route) {
@@ -424,6 +447,16 @@ fun navigationEntry(
         route == Screen.NeteaseWebLogin.route -> NeteaseWebLoginScreen()
         route == Screen.PcQrLogin.route -> PcQrLoginScreen()
         route == Screen.AccountHome.route -> AccountHomeScreen()
+        route == Screen.NeteaseMusician.route -> MusicianAccountScreen()
+        route == Screen.AccountSecurity.route -> AccountSecurityScreen()
+        route == Screen.AccountBindings.route -> AccountBindingsScreen()
+        route == Screen.AccountDevices.route -> AccountDevicesScreen()
+        route == Screen.AccountAuthorizations.route -> AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations)
+        route.startsWith("${Screen.AccountWeb.route}/") -> {
+            OfficialNeteasePage.entries.firstOrNull {
+                it.name == route.substringAfter("${Screen.AccountWeb.route}/")
+            }?.let { OfficialNeteasePageScreen(it) }
+        }
         route == Screen.ListeningStats.route -> ListeningStatsScreen()
         route == Screen.Test.route -> Test()
         route == Screen.Setting.route -> SettingScreen(scrollBehavior)

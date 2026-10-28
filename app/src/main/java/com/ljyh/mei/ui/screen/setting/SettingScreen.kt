@@ -58,6 +58,12 @@ fun SettingScreen(
                     ) {
                         Screen.AccountHome.navigate(navController)
                     }
+                    SettingsEntry(stringResource(R.string.netease_musician), "mic") {
+                        Screen.NeteaseMusician.navigate(navController)
+                    }
+                    SettingsEntry(stringResource(R.string.account_security), "shield") {
+                        Screen.AccountSecurity.navigate(navController)
+                    }
                     val canAuthorize = sessionType == NeteaseSessionType.Mobile
                     GlasmioListRow(
                         title = stringResource(R.string.pc_qr_login),

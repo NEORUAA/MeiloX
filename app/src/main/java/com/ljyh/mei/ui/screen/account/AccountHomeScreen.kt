@@ -1,5 +1,11 @@
 package com.ljyh.mei.ui.screen.account
 
+import io.github.neoruaa.glasmio.core.*
+import io.github.neoruaa.glasmio.glass.*
+import io.github.neoruaa.glasmio.icons.*
+import io.github.neoruaa.glasmio.ui.*
+import io.github.neoruaa.glasmio.scaffold.*
+
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -211,6 +217,20 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                                 addPath(displayedProfile.id.toString())
                             }
                         },
+                    )
+                }
+            }
+            item {
+                GlasmioGroupedList {
+                    GlasmioListRow(
+                        title = stringResource(R.string.netease_musician),
+                        systemName = "mic",
+                        onClick = { Screen.NeteaseMusician.navigate(navController) },
+                    )
+                    GlasmioListRow(
+                        title = stringResource(R.string.account_security),
+                        systemName = "shield",
+                        onClick = { Screen.AccountSecurity.navigate(navController) },
                     )
                 }
             }
