@@ -1,7 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
@@ -36,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.kyant.backdrop.Backdrop
@@ -44,7 +42,6 @@ import com.ljyh.mei.constants.PlayerHorizontalPadding
 import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.component.PlayerControls
 import com.ljyh.mei.ui.component.player.component.FluidProgressSlider
 import com.ljyh.mei.ui.component.player.component.LyricScreen
@@ -57,7 +54,6 @@ import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
-import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.utils.rememberEnumPreference
 import kotlinx.coroutines.launch
 
@@ -71,7 +67,6 @@ fun ClassicPhoneLayout(
 ) {
 
 
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -182,29 +177,13 @@ fun ClassicPhoneLayout(
                 1 -> {
                     LyricScreen(
                         lyricData = lyricLine,
-                        // Account for the pager inset while matching the progress track.
-                        sourceBadgeEndOffset = PlayerHorizontalPadding - 8.dp,
+                        showSourceBadge = false,
                         playerConnection = stateContainer.playerConnection,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = PlayerHorizontalPadding),
-                        onClick = {
-                            mediaMetadata?.let {
-                                if (overlayHandler.currentOverlayValue is OverlayState.None) {
-                                    stateContainer.playerViewModel.searchQQSong(it.title)
-                                    overlayHandler.showQQMusicSelection(
-                                        mediaMetadata = it
-                                    )
-                                }
-                            }
-                        },
-                        onLongClick = { source ->
-                            if (source == LyricSource.QQMusic && mediaMetadata != null) {
-                                stateContainer.playerViewModel.deleteSongById(id = mediaMetadata!!.id.toString())
-                                Toast.makeText(context, "已删除QQ音乐歌词", Toast.LENGTH_SHORT)
-                                    .show()
-                            }
-                        },
+                        onClick = {},
+                        onLongClick = {},
                         controlsVisible = stateContainer.controlsVisible,
                         onToggleControls = {},
                     )

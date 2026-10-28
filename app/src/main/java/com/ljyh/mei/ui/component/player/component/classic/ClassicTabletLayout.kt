@@ -1,6 +1,5 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
-import android.widget.Toast
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -14,23 +13,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -42,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -57,7 +49,6 @@ import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.constants.TabletAnimationStyle
 import com.ljyh.mei.constants.TabletAnimationStyleKey
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.component.FluidProgressSlider
 import com.ljyh.mei.ui.component.player.component.PlayerControls
 import com.ljyh.mei.ui.component.player.component.LyricScreen
@@ -69,7 +60,6 @@ import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.component.sheet.PlaylistContent
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
-import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.utils.rememberEnumPreference
 
 @Composable
@@ -77,7 +67,6 @@ fun ClassicTabletLayout(
     stateContainer: PlayerStateContainer,
     overlayHandler: PlayerOverlayHandler
 ) {
-    val context = LocalContext.current
     var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var headerRowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val mediaMetadata by stateContainer.mediaMetadata
@@ -107,10 +96,6 @@ fun ClassicTabletLayout(
             if (layoutDirection == LayoutDirection.Ltr) paneCenterFraction else 1f - paneCenterFraction,
             0.5f,
         )
-        val navigationPadding = WindowInsets.navigationBars.asPaddingValues()
-        val safePadding = WindowInsets.navigationBars.union(WindowInsets.displayCutout).asPaddingValues()
-        val badgeBottomPadding = maxOf(16.dp, navigationPadding.calculateBottomPadding())
-        val badgeEndPadding = maxOf(badgeBottomPadding, safePadding.calculateEndPadding(layoutDirection))
 
         Row(
             modifier = Modifier
@@ -144,7 +129,7 @@ fun ClassicTabletLayout(
                 mediaMetadata?.let {
                     PlayerHeader(
                         mediaMetadata = it,
-                        needShadow = playerStyle != PlayerStyle.AppleMusic,
+                        applyStatusBarPadding = false,
                         appleMusicStyle = playerStyle == PlayerStyle.AppleMusic,
                         modifier = Modifier
                             .fillMaxWidth(0.7f)
@@ -232,7 +217,7 @@ fun ClassicTabletLayout(
                 val lyricContent = @Composable {
                     LyricScreen(
                         lyricData = lyricLine,
-                        showSourceBadge = playerStyle != PlayerStyle.AppleMusic,
+                        showSourceBadge = false,
                         topFadeHeight = if (playerStyle == PlayerStyle.AppleMusic) AppleMusicDimensions.lyricTopFade else 20.dp,
                         bottomFadeHeight = if (playerStyle == PlayerStyle.AppleMusic) AppleMusicDimensions.lyricBottomFade else 100.dp,
                         rendererVerticalPadding = if (playerStyle == PlayerStyle.AppleMusic) 0.dp else 8.dp,
@@ -243,26 +228,9 @@ fun ClassicTabletLayout(
                             top = if (playerStyle == PlayerStyle.AppleMusic) 0.dp else lyricVerticalPadding,
                             bottom = if (playerStyle == PlayerStyle.AppleMusic) 0.dp else lyricVerticalPadding,
                         ),
-                        sourceBadgeEndOffset = -badgeEndPadding,
-                        sourceBadgeBottomPadding = badgeBottomPadding,
                         modifier = Modifier.fillMaxSize(),
-                        onClick = {
-                            mediaMetadata?.let {
-                                if (overlayHandler.currentOverlayValue is OverlayState.None) {
-                                    stateContainer.playerViewModel.searchQQSong(it.title)
-                                    overlayHandler.showQQMusicSelection(
-                                        mediaMetadata = it
-                                    )
-                                }
-                            }
-                        },
-                        onLongClick = { source ->
-                            if (source == LyricSource.QQMusic && mediaMetadata != null) {
-                                stateContainer.playerViewModel.deleteSongById(id = mediaMetadata!!.id.toString())
-                                Toast.makeText(context, "已删除QQ音乐歌词", Toast.LENGTH_SHORT)
-                                    .show()
-                            }
-                        },
+                        onClick = {},
+                        onLongClick = {},
                         controlsVisible = stateContainer.controlsVisible,
                         onToggleControls = {},
                     )

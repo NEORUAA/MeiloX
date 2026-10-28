@@ -22,9 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +46,6 @@ fun PlayerHeader(
     onMoreClick: () -> Unit,
     onLikeClick: () -> Unit,
     iconColor: Color = Color.White,
-    needShadow: Boolean = true,
     appleMusicStyle: Boolean = false,
     applyStatusBarPadding: Boolean = true,
     onTextPositioned: (LayoutCoordinates) -> Unit = {},
@@ -64,11 +61,6 @@ fun PlayerHeader(
         )
     } else Modifier.clickable(onClick = onClick)
 
-    val shadowStyle = if (needShadow) Shadow(
-        color = Color.Black.copy(alpha = 0.5f),
-        offset = Offset(2f, 2f),
-        blurRadius = 8f
-    ) else null
 
     Row(
         modifier = modifier
@@ -94,7 +86,6 @@ fun PlayerHeader(
                 AppleMusicMarqueeText(
                     text = mediaMetadata.title,
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        shadow = shadowStyle,
                         fontWeight = FontWeight.Bold,
                     ),
                     color = Color.White,
@@ -108,7 +99,7 @@ fun PlayerHeader(
                 if (subTitle.isNotEmpty()) {
                     AppleMusicMarqueeText(
                         text = subTitle,
-                        style = MaterialTheme.typography.titleMedium.copy(shadow = shadowStyle),
+                        style = MaterialTheme.typography.titleMedium,
                         color = Color.White.copy(alpha = 0.7f),
                         edgeWidth = 22.5.dp,
                         enabled = marqueeEnabled,
@@ -118,7 +109,6 @@ fun PlayerHeader(
                 Text(
                     text = mediaMetadata.title,
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        shadow = shadowStyle,
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1,
@@ -132,7 +122,6 @@ fun PlayerHeader(
                         .basicMarquee(iterations = Int.MAX_VALUE)
                 ) {
                     val subTitleStyle = MaterialTheme.typography.titleMedium.copy(
-                        shadow = shadowStyle,
                         color = Color.White.copy(alpha = 0.7f)
                     )
 

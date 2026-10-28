@@ -77,14 +77,16 @@ fun ClassicImmersiveLayout(
         val coverSize = minOf(coverPaneWidth, (maxHeight - contentTop * 2).coerceAtLeast(0.dp))
         val contentEndInset = coverEnd - coverSize
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = topSafeInset + AppleMusicDimensions.handleTopInset)
-                .size(width = 58.dp, height = 4.dp)
-                .playerAdditiveBlend()
-                .background(Color.White.copy(alpha = 0.3f), Capsule()),
-        )
+        if (playerStyle == PlayerStyle.AppleMusic) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = topSafeInset + AppleMusicDimensions.handleTopInset)
+                    .size(width = 58.dp, height = 4.dp)
+                    .playerAdditiveBlend()
+                    .background(Color.White.copy(alpha = 0.3f), Capsule()),
+            )
+        }
 
         Row(
             modifier = Modifier
