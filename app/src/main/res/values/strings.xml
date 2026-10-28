@@ -832,4 +832,10 @@
 
 <string name="flyme_status_bar_lyrics">Flyme status bar lyrics</string>
 <string name="flyme_status_bar_lyrics_warning">检测到当前系统非Flyme，可能无法正确显示状态栏歌词。</string>
+
+<string name="private_fm_default_mode">Default</string>
+<string name="private_fm_explore_mode">Explore</string>
+<string name="private_fm_familiar_mode">Familiar</string>
+<string name="private_fm_scene_mode">Scenes</string>
+<string name="private_fm_no_scenes">No scenes available</string>
 </resources>

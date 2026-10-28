@@ -103,6 +103,7 @@ import com.ljyh.mei.ui.component.player.component.LyricScreen
 import com.ljyh.mei.ui.component.player.component.PlayerControlsSection
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
+import com.ljyh.mei.ui.component.player.component.PrivateFmModeSelector
 import com.ljyh.mei.ui.component.sheet.BottomSheet
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
@@ -172,6 +173,8 @@ fun AppleMusicPlayer(
     val isDragging by remember { derivedStateOf { stateContainer.isDragging } }
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
+    val isPrivateFm = stateContainer.isFMMode.value &&
+        stateContainer.playerConnection.service.queueManager.similarFmSourceIds == null
     val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
     val sheetContentVisible by remember(state) { derivedStateOf { state.isContentVisible } }
 
@@ -273,7 +276,8 @@ fun AppleMusicPlayer(
 
         val realAvailableHeight = (maxHeightPx - bottomControlsHeight - topSafeArea)
         val verticalBias = (realAvailableHeight - previousSize) / 2
-        val previousTop = topSafeArea + verticalBias.coerceAtLeast(with(density) { 12.dp.toPx() })
+        val fmTopInset = if (isPrivateFm && !showDetail) 72.dp else 12.dp
+        val previousTop = topSafeArea + verticalBias.coerceAtLeast(with(density) { fmTopInset.toPx() })
 
         val previousStart = (maxWidthPx - previousSize) / 2
         val normalBounds = appleMusicAlbumBounds(
@@ -281,7 +285,7 @@ fun AppleMusicPlayer(
             viewportWidth = maxWidthPx,
             // Flamingo uses 15.dp outer padding plus 9.dp inner padding while playing.
             horizontalInset = with(density) { AppleMusicDimensions.artworkInset.toPx() },
-            topLimit = topSafeArea + with(density) { 12.dp.toPx() },
+            topLimit = topSafeArea + with(density) { fmTopInset.toPx() },
             bottomLimit = if (showAlbumInfo) albumTop - minTopMargin
                 else maxHeightPx - measuredControlsHeight - minTopMargin,
         )
@@ -415,6 +419,18 @@ fun AppleMusicPlayer(
                             Capsule(),
                         ),
                 )
+
+                if (isPrivateFm && !showDetail && sheetExpanded) {
+                    PrivateFmModeSelector(
+                        connection = stateContainer.playerConnection,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = with(density) { topSafeArea.toDp() } + 28.dp)
+                            .padding(horizontal = 24.dp)
+                            .fillMaxWidth(),
+                        backdrop = playerBackgroundBackdrop,
+                    )
+                }
 
 
                 var progressTrackTopInRoot by remember(screenWidth, maxHeightPx) { mutableStateOf<Float?>(null) }

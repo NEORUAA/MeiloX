@@ -831,4 +831,10 @@
 
 <string name="flyme_status_bar_lyrics">魅族状态栏歌词</string>
 <string name="flyme_status_bar_lyrics_warning">检测到当前系统非Flyme，可能无法正确显示状态栏歌词。</string>
+
+<string name="private_fm_default_mode">默认模式</string>
+<string name="private_fm_explore_mode">探索模式</string>
+<string name="private_fm_familiar_mode">熟悉模式</string>
+<string name="private_fm_scene_mode">场景模式</string>
+<string name="private_fm_no_scenes">暂无可用场景</string>
 </resources>

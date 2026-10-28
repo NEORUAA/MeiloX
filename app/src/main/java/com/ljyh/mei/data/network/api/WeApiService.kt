@@ -10,6 +10,8 @@ import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.model.weapi.UserSubcount
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.Headers
+import com.google.gson.JsonObject
 
 interface WeApiService {
 
@@ -25,6 +27,14 @@ interface WeApiService {
 
     @POST("/weapi/v1/radio/get")
     suspend fun getRadio(@Body body: Map<String,String> = mapOf()): Radio
+
+    @Headers("X-Netease-Crypto: eapi", "X-Netease-Eapi-Profile: android")
+    @POST("https://interface3.music.163.com/eapi/v1/radio/get")
+    suspend fun getPersonalRadio(@Body body: Map<String, String>): Radio
+
+    @Headers("X-Netease-Crypto: eapi", "X-Netease-Eapi-Profile: android")
+    @POST("https://interface3.music.163.com/eapi/link/position/show/resource")
+    suspend fun getPrivateFmModes(@Body body: Map<String, String>): JsonObject
 
     @POST("/weapi/resource/comment/floor/get")
     suspend fun getFloorComment(@Body body: GetFloorComment): FloorComment

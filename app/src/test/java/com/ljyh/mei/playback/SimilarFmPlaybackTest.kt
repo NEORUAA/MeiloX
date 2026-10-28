@@ -70,6 +70,67 @@ class SimilarFmPlaybackTest {
     }
 
     @Test(timeout = 10_000)
+    fun personalModeSwitchReplacesAndStartsTheNewQueueAsSoonAsTheResponseArrives() = runTest(dispatcher) {
+        fixture.manager.startFmModeById(null)
+        runCurrent()
+        assertEquals(listOf("old"), fixture.ids())
+        fixture.requests.last().response.complete(radio(101, 102))
+        runCurrent()
+        assertEquals(listOf("101", "102"), fixture.ids())
+        fixture.manager.setPrivateFmMode(PrivateFmMode.EXPLORE)
+        runCurrent()
+        assertEquals(listOf("101", "102"), fixture.ids())
+        assertEquals("EXPLORE", fixture.requests.last().body["mode"])
+        fixture.requests.last().response.complete(radio(201, 202))
+        runCurrent()
+        assertEquals(listOf("201", "202"), fixture.ids())
+        assertTrue(fixture.played)
+        assertFalse(fixture.manager.privateFmBusy.value)
+        assertNull(fixture.manager.privateFmError.value)
+    }
+
+    @Test(timeout = 10_000)
+    fun aLateResponseFromThePreviousSceneCannotReplaceTheNewScene() = runTest(dispatcher) {
+        fixture.manager.restoreFmMode(true)
+        fixture.manager.setPrivateFmMode(PrivateFmMode.SCENE, PrivateFmScene("FOCUS", "Example focus"))
+        runCurrent()
+        val first = fixture.requests.last()
+        fixture.manager.setPrivateFmMode(PrivateFmMode.SCENE, PrivateFmScene("COMMUTE", "Example commute"))
+        runCurrent()
+        val second = fixture.requests.last()
+        assertEquals("FOCUS", first.body["subMode"])
+        assertEquals("COMMUTE", second.body["subMode"])
+        second.response.complete(radio(301, 302))
+        runCurrent()
+        first.response.complete(radio(201, 202))
+        runCurrent()
+        assertEquals(listOf("301", "302"), fixture.ids())
+        assertEquals("COMMUTE", fixture.manager.privateFmScene.value?.code)
+    }
+
+    @Test(timeout = 10_000)
+    fun failedPersonalRefreshKeepsThePlayingSongAndPublishesAnError() = runTest(dispatcher) {
+        fixture.manager.restoreFmMode(true)
+        fixture.manager.setPrivateFmMode(PrivateFmMode.FAMILIAR)
+        runCurrent()
+        fixture.requests.last().response.complete(radio(code = 405))
+        runCurrent()
+        assertEquals(listOf("old"), fixture.ids())
+        assertTrue(fixture.manager.privateFmError.value!!.contains("405"))
+        assertFalse(fixture.manager.privateFmBusy.value)
+    }
+
+    @Test(timeout = 10_000)
+    fun restoringASavedModeDoesNotRestartTheRestoredSong() = runTest(dispatcher) {
+        fixture.manager.restoreFmMode(true)
+        fixture.manager.setPrivateFmMode(PrivateFmMode.FAMILIAR, refreshActiveSession = false)
+        runCurrent()
+        assertEquals(PrivateFmMode.FAMILIAR, fixture.manager.privateFmMode.value)
+        assertTrue(fixture.requests.isEmpty())
+        assertEquals(listOf("old"), fixture.ids())
+    }
+
+    @Test(timeout = 10_000)
     fun startRequestsRecommendationsBeforeReplacingTheExistingQueue() = runTest(dispatcher) {
         val start = fixture.manager.startSimilarFmMode(listOf("42", "19", "7"))
         runCurrent()
@@ -190,14 +251,14 @@ class SimilarFmPlaybackTest {
 
         fixture.manager.startFmModeById(null)
         runCurrent()
-        assertTrue(fixture.requests.last().body.isEmpty())
+        assertEquals("DEFAULT", fixture.requests.last().body["mode"])
         assertNull(fixture.manager.similarFmSourceIds)
         fixture.requests.last().response.complete(radio(201))
         runCurrent()
         fixture.requests.first().response.complete(radio(101))
         runCurrent()
         oldRefill.join()
-        assertEquals(listOf("old", "201"), fixture.ids())
+        assertEquals(listOf("201"), fixture.ids())
 
         fixture.manager.restoreFmMode(true, listOf("broken"))
         assertFalse(fixture.manager.isFmMode)
@@ -358,7 +419,7 @@ class SimilarFmPlaybackTest {
             WeApiService::class.java.classLoader,
             arrayOf(WeApiService::class.java),
         ) { _, method, arguments ->
-            check(method.name == "getRadio")
+            check(method.name == "getRadio" || method.name == "getPersonalRadio")
             @Suppress("UNCHECKED_CAST")
             val request = PendingRadio(arguments!![0] as Map<String, String>)
             requests += request

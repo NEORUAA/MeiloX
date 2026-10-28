@@ -39,6 +39,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
+import com.kyant.backdrop.Backdrop
 import com.ljyh.mei.constants.PlayerHorizontalPadding
 import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
@@ -66,6 +67,7 @@ import kotlinx.coroutines.launch
 fun ClassicPhoneLayout(
     stateContainer: PlayerStateContainer,
     overlayHandler: PlayerOverlayHandler,
+    fmBackdrop: Backdrop,
 ) {
 
 
@@ -139,6 +141,14 @@ fun ClassicPhoneLayout(
                 onLikeClick = {
                     stateContainer.playerViewModel.like(it.id.toString())
                 }
+            )
+        }
+
+        if (pagerState.currentPage == 0) {
+            ClassicFmModeSelector(
+                stateContainer = stateContainer,
+                backdrop = fmBackdrop,
+                modifier = Modifier.padding(horizontal = PlayerHorizontalPadding, vertical = 8.dp),
             )
         }
 

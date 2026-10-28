@@ -253,3 +253,5 @@ enum class TabletAnimationStyle(val label: String) {
 }
 
 val FlymeStatusBarLyricsEnabledKey = booleanPreferencesKey("lyrics.flymeStatusBarEnabled")
+val PrivateFmModeKey = stringPreferencesKey("privateFm.mode")
+val PrivateFmSceneKey = stringPreferencesKey("privateFm.scene")

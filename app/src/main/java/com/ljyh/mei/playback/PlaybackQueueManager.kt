@@ -55,6 +55,17 @@ class PlaybackQueueManager(
     private var queueBuildGeneration = 0L
     private var activeFmGeneration: Long? = null
     private var similarFmRequest: SimilarFmRequest? = null
+    private val _privateFmMode = MutableStateFlow(PrivateFmMode.DEFAULT)
+    val privateFmMode = _privateFmMode.asStateFlow()
+    private val _privateFmScene = MutableStateFlow<PrivateFmScene?>(null)
+    val privateFmScene = _privateFmScene.asStateFlow()
+    private val _privateFmBusy = MutableStateFlow(false)
+    val privateFmBusy = _privateFmBusy.asStateFlow()
+    private val _privateFmError = MutableStateFlow<String?>(null)
+    val privateFmError = _privateFmError.asStateFlow()
+    private var fmModeRevision = 0L
+    private var pendingModeReplacementRevision: Long? = null
+    private val recentPersonalFmIds = LinkedHashSet<String>()
     val similarFmSourceIds: List<String>?
         get() = similarFmRequest?.sourceIds
     var playlistSource: PlaylistQueueSource? = null
@@ -66,8 +77,11 @@ class PlaybackQueueManager(
     private var queueSelectionJob: Job? = null
 
     private val _isShuffleModeEnabled = MutableStateFlow(false)
+    private val _fmModeActive = MutableStateFlow(false)
+    val fmModeActive = _fmModeActive.asStateFlow()
     var isFmMode = false
-    private var fetchingFmGeneration: Long? = null
+        set(value) { field = value; _fmModeActive.value = value }
+    private var fetchingFmRequest: Pair<Long, Long>? = null
     private val _queueAutoplayEnabled = MutableStateFlow(false)
     val queueAutoplayEnabled = _queueAutoplayEnabled.asStateFlow()
     private val _queueAutoplayStartEntryId = MutableStateFlow<String?>(null)
@@ -290,6 +304,33 @@ class PlaybackQueueManager(
         }
     }
 
+    fun setPrivateFmMode(mode: PrivateFmMode, scene: PrivateFmScene? = null, refreshActiveSession: Boolean = true) {
+        if (mode == PrivateFmMode.SCENE && scene == null) return
+        val selectedScene = scene.takeIf { mode == PrivateFmMode.SCENE }
+        if (_privateFmMode.value == mode && _privateFmScene.value == selectedScene) return
+        _privateFmMode.value = mode
+        _privateFmScene.value = selectedScene
+        fmModeRevision++
+        if (!refreshActiveSession) {
+            pendingModeReplacementRevision = null
+            _privateFmBusy.value = false
+            _privateFmError.value = null
+            return
+        }
+        if (!isFmMode || similarFmRequest != null) return
+        pendingModeReplacementRevision = fmModeRevision
+        _privateFmBusy.value = true
+        _privateFmError.value = null
+        scope.launch { fetchAndAppendFmRecommendations(player.currentMediaItem?.mediaId) }
+    }
+
+    suspend fun loadPrivateFmScenes(): List<PrivateFmScene> = withContext(Dispatchers.IO) {
+        parsePrivateFmScenes(weApiService.getPrivateFmModes(mapOf(
+            "positionCode" to "FMTopModeDialog",
+            "extJson" to """{"isHomePageNewFramework":true,"userSetFMMode":true,"enableAutoPlay":true}""",
+        )))
+    }
+
     fun startSimilarFmMode(
         songIds: List<String>,
         shouldPlay: () -> Boolean = { true },
@@ -378,6 +419,12 @@ class PlaybackQueueManager(
         isFmMode = enabled && (similarSourceIds == null || similarFmRequest != null) &&
             (!queueAutoplay || similarFmRequest != null)
         if (!isFmMode) similarFmRequest = null
+        if (isFmMode && similarFmRequest == null) {
+            recentPersonalFmIds.clear()
+            (0 until player.mediaItemCount).forEach {
+                rememberPersonalFmSong(player.getMediaItemAt(it).mediaId)
+            }
+        }
         activeFmGeneration = queueBuildGeneration.takeIf { isFmMode }
         _queueAutoplayEnabled.value = isFmMode && queueAutoplay
         _queueAutoplayStartEntryId.value = null
@@ -406,6 +453,10 @@ class PlaybackQueueManager(
 
         isFmMode = true
         similarFmRequest = null
+        pendingModeReplacementRevision = fmModeRevision.takeIf { seedItem == null }
+        _privateFmError.value = null
+        recentPersonalFmIds.clear()
+        seedItem?.mediaId?.let(::rememberPersonalFmSong)
         _queueAutoplayEnabled.value = false
         _queueAutoplayStartEntryId.value = null
         activeFmGeneration = generation
@@ -417,7 +468,7 @@ class PlaybackQueueManager(
             player.clearMediaItems()
             player.shuffleModeEnabled = false
             _isShuffleModeEnabled.value = false
-            player.repeatMode = Player.REPEAT_MODE_ALL
+            player.repeatMode = Player.REPEAT_MODE_OFF
 
             // 2. 立即添加种子歌曲并播放 (保证 UI 立即显示正确的封面和标题)
             player.addMediaItem(seedItem)
@@ -436,30 +487,57 @@ class PlaybackQueueManager(
         if (!isFmMode) return
         if (activeQueueBuildJob != null && activeFmGeneration != queueBuildGeneration) return
         val fmGeneration = queueBuildGeneration
-        if (fetchingFmGeneration == fmGeneration) return
+        val fetchKey = fmGeneration to fmModeRevision
+        if (fetchingFmRequest == fetchKey) return
         activeFmGeneration = fmGeneration
-        fetchingFmGeneration = fmGeneration
+        fetchingFmRequest = fetchKey
         val request = similarFmRequest
+        val mode = _privateFmMode.value
+        val scene = _privateFmScene.value
+        if (request == null) _privateFmBusy.value = true
         try {
-            val response = weApiService.getRadio(request?.body().orEmpty())
+            val response = if (request != null) weApiService.getRadio(request.body()) else {
+                val queuedIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                weApiService.getPersonalRadio(mode.requestBody(recentPersonalFmIds.toList() + queuedIds, scene))
+            }
+            check(response.code == 200) { "漫游推荐加载失败 (${response.code})" }
+            check(!response.data.isNullOrEmpty()) { "暂时没有新的推荐歌曲" }
             if (response.code == 200 && !response.data.isNullOrEmpty()) {
                 val items = response.data.filter { it.id > 0 }
                     .mapNotNull { runCatching { radioItemFactory(it) }.getOrNull() }
 
                 withContext(Dispatchers.Main) {
                     if (!isFmMode || fmGeneration != activeFmGeneration ||
-                        fmGeneration != queueBuildGeneration || request != similarFmRequest
+                        fmGeneration != queueBuildGeneration || request != similarFmRequest ||
+                        (request == null && fetchKey.second != fmModeRevision)
                     ) {
                         return@withContext
                     }
-                    val queuedIds = if (request == null) emptySet() else {
+                    val queuedIds = if (request == null) recentPersonalFmIds else {
                         (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
                     }
-                    val additions = items.filter { it.mediaId != currentId && it.mediaId !in queuedIds }
-                        .let { if (request == null) it else it.distinctBy(MediaItem::mediaId) }
+                    val replacing = request == null && pendingModeReplacementRevision == fmModeRevision
+                    val additions = items.filter { it.mediaId != currentId && (replacing || it.mediaId !in queuedIds) }
+                        .distinctBy(MediaItem::mediaId)
+                    check(additions.isNotEmpty()) { "暂时没有新的推荐歌曲" }
                     if (additions.isNotEmpty()) {
+                        if (replacing) {
+                            player.stop()
+                            player.shuffleModeEnabled = false
+                            _isShuffleModeEnabled.value = false
+                            player.repeatMode = Player.REPEAT_MODE_OFF
+                            player.setMediaItems(additions, 0, 0L)
+                            player.prepare()
+                            player.play()
+                            pendingModeReplacementRevision = null
+                        }
+                        if (request == null) additions.forEach { rememberPersonalFmSong(it.mediaId) }
                         val firstAdditionIndex = player.mediaItemCount
-                        player.addMediaItems(additions)
+                        if (!replacing) player.addMediaItems(additions)
+                        if (!replacing && firstAdditionIndex == 0) {
+                            player.prepare()
+                            player.play()
+                        }
                         if (_queueAutoplayEnabled.value && _queueAutoplayStartEntryId.value == null) {
                             restoreQueueAutoplayStartIndex(firstAdditionIndex)
                         }
@@ -470,6 +548,7 @@ class PlaybackQueueManager(
                         if (request == null) "私人 FM" else SIMILAR_FM_TITLE,
                         player.mediaItemCount,
                     )
+                    if (request == null) _privateFmError.value = null
 
                     // 触发占位符检查（如果你 FM 接口返回的是简略信息需要补全详情的话）
                     checkAndLoadMetadata()
@@ -478,9 +557,20 @@ class PlaybackQueueManager(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "FM Fetch Error", e)
+            if (request == null && fetchKey.second == fmModeRevision && fmGeneration == queueBuildGeneration) {
+                _privateFmError.value = e.message ?: "漫游推荐加载失败"
+            }
+            Timber.tag(TAG).w(e, "FM Fetch Error")
         } finally {
-            if (fetchingFmGeneration == fmGeneration) fetchingFmGeneration = null
+            if (fetchingFmRequest == fetchKey) fetchingFmRequest = null
+            if (request == null && fetchKey.second == fmModeRevision) _privateFmBusy.value = false
+        }
+    }
+
+    private fun rememberPersonalFmSong(id: String) {
+        recentPersonalFmIds.add(id)
+        while (recentPersonalFmIds.size > 200) {
+            recentPersonalFmIds.remove(recentPersonalFmIds.first())
         }
     }
 
@@ -490,6 +580,7 @@ class PlaybackQueueManager(
 
         val currentIndex = player.currentMediaItemIndex
         val currentId = player.currentMediaItem?.mediaId ?: return
+        rememberPersonalFmSong(currentId)
 
         scope.launch {
             try {

@@ -57,6 +57,7 @@ import kotlin.apply
 internal const val NETEASE_EAPI_PROFILE_HEADER = "X-Netease-Eapi-Profile"
 internal const val NETEASE_WEB_SESSION_HEADER = "X-Netease-Web-Session"
 internal const val PLAYBACK_HISTORY_PROFILE = "playback-history"
+internal const val OFFICIAL_ANDROID_PROFILE = "android"
 internal const val MAX_PLAYBACK_HISTORY_RESPONSE_BYTES = 16_384
 
 internal class PlaybackResponseBodyException(
@@ -217,7 +218,7 @@ class NeteaseInterceptor internal constructor(
         val storedMusicU = webSessionOverride ?: preferences[CookieKey].orEmpty()
         val hasMobileSession = webSessionOverride == null &&
             preferences.neteaseSessionType() == NeteaseSessionType.Mobile
-        val usesAndroidEapiIdentity = usesOfficialAndroidIdentity(
+        val usesAndroidEapiIdentity = (cryptoMode == "eapi" && eapiProfile == OFFICIAL_ANDROID_PROFILE) || usesOfficialAndroidIdentity(
             cryptoMode = cryptoMode,
             encodedPath = originalRequest.url.encodedPath,
             hasMobileSession = hasMobileSession,
