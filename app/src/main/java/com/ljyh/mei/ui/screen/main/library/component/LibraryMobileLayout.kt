@@ -457,6 +457,11 @@ fun LibraryMobileLayout(
                                     )
                                 }
                             }
+                            if (likedSongsError != null && likedSongs.isNotEmpty()) {
+                                item(key = "liked-continuation-error") {
+                                    CollectionFooter(false, true, onRetryLikedSongs)
+                                }
+                            }
                         }
 
                         LibraryPage.Playlists -> {

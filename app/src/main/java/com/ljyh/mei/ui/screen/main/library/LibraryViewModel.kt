@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Playlist
-import com.ljyh.mei.data.model.toMiniPlaylistDetail
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.repository.LibraryAccount
 import com.ljyh.mei.data.repository.LibraryCollectionPage
@@ -15,10 +14,14 @@ import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.ui.model.Album
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -45,6 +48,7 @@ class LibraryViewModel @Inject constructor(
     private var playlistJob: Job? = null
     private var albumJob: Job? = null
     private var likedSongsJob: Job? = null
+    private var likedSongsRevision = 0L
     private var likedPlaylistId: Long? = null
 
     init {
@@ -52,6 +56,7 @@ class LibraryViewModel @Inject constructor(
             collections.accounts.collect { account ->
                 playlistJob?.cancel()
                 albumJob?.cancel()
+                likedSongsRevision++
                 likedSongsJob?.cancel()
                 activeAccount = account
                 _accountId.value = account?.userId
@@ -124,6 +129,7 @@ class LibraryViewModel @Inject constructor(
                     LibraryCollectionPage(mapped, page.nextOffset, page.hasMore), Playlist::id,
                 )
                 if (likedId != null && (likedPlaylistId != likedId || reset)) {
+                    if (likedPlaylistId != likedId) _likedSongs.value = emptyList()
                     likedPlaylistId = likedId
                     loadLikedSongs(likedId)
                 } else if (!page.hasMore && likedPlaylistId == null) {
@@ -184,27 +190,37 @@ class LibraryViewModel @Inject constructor(
 
     private fun loadLikedSongs(playlistId: Long) {
         val account = activeAccount ?: return
+        val retainedTracks = _likedSongs.value.takeIf { likedPlaylistId == playlistId }.orEmpty()
+        val revision = ++likedSongsRevision
         likedSongsJob?.cancel()
+        fun isCurrent() = activeAccount == account && likedPlaylistId == playlistId && likedSongsRevision == revision
         likedSongsJob = viewModelScope.launch {
             _likedSongsLoading.value = true
             _likedSongsError.value = null
             try {
-                when (val result = playlistRepository.getPlaylistDetail(playlistId.toString())) {
+                when (val result = playlistRepository.getPlaylistDetail(playlistId.toString(), account.sessionFingerprint)) {
                     is Resource.Success -> {
-                        val tracks = try {
-                            playlistRepository.getCompletePlaylistTracks(result.data)
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (_: Exception) {
-                            result.data.toMiniPlaylistDetail().tracks
+                        playlistRepository.getCompletePlaylistTracks(
+                            result.data, account.sessionFingerprint, retainedTracks,
+                        ) { tracks ->
+                            withContext(Dispatchers.Main.immediate) {
+                                currentCoroutineContext().ensureActive()
+                                if (isCurrent()) {
+                                    _likedSongs.value = tracks
+                                    _likedSongsLoading.value = false
+                                }
+                            }
                         }
-                        if (activeAccount == account) _likedSongs.value = tracks
                     }
-                    is Resource.Error -> if (activeAccount == account) _likedSongsError.value = result.message
+                    is Resource.Error -> if (isCurrent()) _likedSongsError.value = result.message
                     Resource.Loading -> Unit
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (isCurrent()) _likedSongsError.value = error.message ?: "Unable to load songs"
             } finally {
-                if (activeAccount == account) _likedSongsLoading.value = false
+                if (isCurrent()) _likedSongsLoading.value = false
             }
         }
     }
