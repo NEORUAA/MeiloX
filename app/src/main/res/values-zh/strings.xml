@@ -836,6 +836,7 @@
 <string name="private_fm_explore_mode">探索模式</string>
 <string name="private_fm_familiar_mode">熟悉模式</string>
 <string name="private_fm_scene_mode">场景模式</string>
+<string name="private_fm_named_scene_mode">%1$s模式</string>
 <string name="private_fm_no_scenes">暂无可用场景</string>
 
 <string name="netease_musician">网易音乐人</string>

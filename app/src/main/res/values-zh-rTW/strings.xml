@@ -833,6 +833,7 @@
 <string name="private_fm_explore_mode">探索模式</string>
 <string name="private_fm_familiar_mode">熟悉模式</string>
 <string name="private_fm_scene_mode">場景模式</string>
+<string name="private_fm_named_scene_mode">%1$s模式</string>
 <string name="private_fm_no_scenes">暫無可用場景</string>
 
 <string name="netease_musician">網易音樂人</string>

@@ -24,6 +24,8 @@ import com.ljyh.mei.R
 import com.ljyh.mei.playback.SleepTimerState
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import com.ljyh.mei.ui.component.player.PlayerViewModel
+import com.ljyh.mei.ui.component.player.component.PrivateFmModeSelector
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
@@ -43,6 +45,7 @@ import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.ui.model.SortOrder
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun MoreActionsSheet(
     onDismissRequest: () -> Unit,
@@ -50,8 +53,10 @@ fun MoreActionsSheet(
     viewModel: PlayerViewModel,
     onFindLyrics: (() -> Unit)? = null,
     onFindLyricsLongClick: (() -> Unit)? = null,
+    onChoosePrivateFmScene: (() -> Unit)? = null,
 ) {
-    val sleepTimer = LocalPlayerConnection.current?.service?.sleepTimer
+    val connection = LocalPlayerConnection.current
+    val sleepTimer = connection?.service?.sleepTimer
     val sortOrder by viewModel.moreSortOrder.collectAsState()
     val moreActions by viewModel.sortedMoreActions.collectAsState()
     var showSortOptions by remember { mutableStateOf(false) }
@@ -162,6 +167,15 @@ fun MoreActionsSheet(
             ),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
+            if (draft == null && connection != null && onChoosePrivateFmScene != null) {
+                item(key = "private-fm-mode") {
+                    PrivateFmModeSelector(
+                        connection = connection,
+                        backdrop = LocalGlassBackdrop.current,
+                        onChooseScene = { dismissal.requestDismiss { onChoosePrivateFmScene() } },
+                    )
+                }
+            }
             item {
                 val editing = draft
                 if (editing != null) {

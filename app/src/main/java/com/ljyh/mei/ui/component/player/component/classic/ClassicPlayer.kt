@@ -6,17 +6,12 @@ import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.State
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.ui.component.player.MiniPlayer
@@ -28,7 +23,6 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.glass.trackBackdropPosition
-import com.ljyh.mei.ui.component.player.component.PrivateFmModeSelector
 import io.github.neoruaa.glasmio.glass.render.Backdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.LayerBackdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
@@ -107,38 +101,12 @@ fun ClassicPlayer(
 
 
             when (layoutMode) {
-                PlayerLayoutMode.PhonePortrait -> ClassicPhoneLayout(stateContainer, overlayHandler, playerBackgroundBackdrop)
+                PlayerLayoutMode.PhonePortrait -> ClassicPhoneLayout(stateContainer, overlayHandler)
                 PlayerLayoutMode.Tablet -> ClassicTabletLayout(stateContainer, overlayHandler)
                 PlayerLayoutMode.ImmersiveLandscape -> ClassicImmersiveLayout(stateContainer, overlayHandler)
-            }
-            if (layoutMode != PlayerLayoutMode.PhonePortrait && state.isExpanded) {
-                ClassicFmModeSelector(
-                    stateContainer = stateContainer,
-                    backdrop = playerBackgroundBackdrop,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 24.dp)
-                        .widthIn(min = 280.dp, max = 420.dp),
-                )
             }
         }
 
 
     }
-}
-
-@Composable
-internal fun ClassicFmModeSelector(
-    stateContainer: PlayerStateContainer,
-    backdrop: Backdrop,
-    modifier: Modifier = Modifier,
-) {
-    if (!stateContainer.isFMMode.value ||
-        stateContainer.playerConnection.service.queueManager.similarFmSourceIds != null
-    ) return
-    PrivateFmModeSelector(
-        connection = stateContainer.playerConnection,
-        modifier = modifier.fillMaxWidth(),
-        backdrop = backdrop,
-    )
 }

@@ -33,7 +33,9 @@ import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.player.LocalPlayerRoamingModeLabel
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerTitleWithMode
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 
@@ -50,6 +52,7 @@ fun PlayerHeader(
     applyStatusBarPadding: Boolean = true,
     onTextPositioned: (LayoutCoordinates) -> Unit = {},
     onRowPositioned: (LayoutCoordinates) -> Unit = {},
+    modeLabel: String? = LocalPlayerRoamingModeLabel.current,
 ) {
     val showLikeButton = !mediaMetadata.isLocal && !mediaMetadata.isPodcast
     val marqueeEnabled = LocalPlayerSheet.current?.state?.isExpanded != false
@@ -83,15 +86,20 @@ fun PlayerHeader(
         ) {
             // --- 标题部分 ---
             if (appleMusicStyle) {
-                AppleMusicMarqueeText(
-                    text = mediaMetadata.title,
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    color = Color.White,
-                    edgeWidth = 22.5.dp,
-                    enabled = marqueeEnabled,
-                )
+                PlayerTitleWithMode(
+                    modeLabel, MaterialTheme.typography.titleMedium, Color.White.copy(alpha = 0.7f),
+                ) { titleModifier ->
+                    AppleMusicMarqueeText(
+                        text = mediaMetadata.title,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = Color.White,
+                        edgeWidth = 22.5.dp,
+                        enabled = marqueeEnabled,
+                        modifier = titleModifier,
+                    )
+                }
                 val subTitle = listOf(
                     mediaMetadata.artists.joinToString(", ") { it.name },
                     mediaMetadata.album.title,
@@ -106,15 +114,20 @@ fun PlayerHeader(
                     )
                 }
             } else {
-                Text(
-                    text = mediaMetadata.title,
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    maxLines = 1,
-                    color = Color.White,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                PlayerTitleWithMode(
+                    modeLabel, MaterialTheme.typography.titleMedium, Color.White.copy(alpha = 0.7f),
+                ) { titleModifier ->
+                    Text(
+                        text = mediaMetadata.title,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        maxLines = 1,
+                        color = Color.White,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = titleModifier,
+                    )
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

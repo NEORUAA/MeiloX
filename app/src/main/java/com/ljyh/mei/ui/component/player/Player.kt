@@ -44,12 +44,18 @@ import coil3.size.Precision
 import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ljyh.mei.R
+import com.ljyh.mei.playback.PrivateFmMode
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCombinedBackdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
 
 internal val LocalPlayerArtwork = staticCompositionLocalOf<Pair<String, androidx.compose.ui.graphics.painter.Painter>?> { null }
+
+internal val LocalPlayerRoamingModeLabel = staticCompositionLocalOf<String?> { null }
 
 internal val LocalPlayerBackgroundReadyChanged = staticCompositionLocalOf<(Boolean) -> Unit> { {} }
 
@@ -94,6 +100,20 @@ fun BottomSheetPlayer(
         playerConnection = playerConnection,
         progressUpdatesEnabled = progressUpdatesEnabled,
     )
+    val roamingMode by playerConnection.privateFmMode.collectAsStateWithLifecycle()
+    val roamingScene by playerConnection.privateFmScene.collectAsStateWithLifecycle()
+    val roamingModeLabel = if (stateContainer.isFMMode.value &&
+        playerConnection.service.queueManager.similarFmSourceIds == null
+    ) {
+        when (roamingMode) {
+            PrivateFmMode.DEFAULT -> stringResource(R.string.private_fm_default_mode)
+            PrivateFmMode.FAMILIAR -> stringResource(R.string.private_fm_familiar_mode)
+            PrivateFmMode.EXPLORE -> stringResource(R.string.private_fm_explore_mode)
+            PrivateFmMode.SCENE -> roamingScene?.let {
+                stringResource(R.string.private_fm_named_scene_mode, it.title)
+            } ?: stringResource(R.string.private_fm_scene_mode)
+        }
+    } else null
 
     // 创建弹窗处理器
     val overlayHandler = rememberOverlayHandler(
@@ -121,6 +141,7 @@ fun BottomSheetPlayer(
     CompositionLocalProvider(
         LocalPlayerSheet provides sheetLayers,
         LocalPlayerArtwork provides artwork,
+        LocalPlayerRoamingModeLabel provides roamingModeLabel,
         LocalPlayerBackgroundReadyChanged provides onBackgroundReadyChanged,
         LocalGlassBackdrop provides playerBackdrop,
         LocalBlurBackdrop provides playerBackdrop,

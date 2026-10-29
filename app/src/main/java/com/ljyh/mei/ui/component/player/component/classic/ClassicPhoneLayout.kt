@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -37,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
-import io.github.neoruaa.glasmio.glass.render.Backdrop
 import com.ljyh.mei.constants.PlayerHorizontalPadding
 import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
@@ -63,7 +63,6 @@ import kotlinx.coroutines.launch
 fun ClassicPhoneLayout(
     stateContainer: PlayerStateContainer,
     overlayHandler: PlayerOverlayHandler,
-    fmBackdrop: Backdrop,
 ) {
 
 
@@ -139,18 +138,11 @@ fun ClassicPhoneLayout(
             )
         }
 
-        if (pagerState.currentPage == 0) {
-            ClassicFmModeSelector(
-                stateContainer = stateContainer,
-                backdrop = fmBackdrop,
-                modifier = Modifier.padding(horizontal = PlayerHorizontalPadding, vertical = 8.dp),
-            )
-        }
-
         // Keep the original cover and lyrics pages while adding the inline queue.
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
+                .swipeBackExcluded()
                 .fillMaxWidth()
                 .weight(1f),
             contentPadding = PaddingValues(horizontal = PlayerHorizontalPadding),

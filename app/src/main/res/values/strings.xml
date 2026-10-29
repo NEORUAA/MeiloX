@@ -837,6 +837,7 @@
 <string name="private_fm_explore_mode">Explore</string>
 <string name="private_fm_familiar_mode">Familiar</string>
 <string name="private_fm_scene_mode">Scenes</string>
+<string name="private_fm_named_scene_mode">%1$s Mode</string>
 <string name="private_fm_no_scenes">No scenes available</string>
 
 <string name="netease_musician">NetEase Musician</string>

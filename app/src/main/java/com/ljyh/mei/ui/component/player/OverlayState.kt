@@ -26,6 +26,7 @@ sealed interface OverlayState {
     ) : OverlayState
     data class SongInfo(val metadata: MediaMetadata): OverlayState
     data object MoreAction: OverlayState
+    data object PrivateFmScenes : OverlayState
     data class Share(val metadata: MediaMetadata): OverlayState
     data object BottomAction: OverlayState
 

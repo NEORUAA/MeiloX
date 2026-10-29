@@ -87,6 +87,10 @@ class PlayerOverlayHandler(
         _currentOverlay.value = OverlayState.MoreAction
     }
 
+    fun showPrivateFmScenes() {
+        _currentOverlay.value = OverlayState.PrivateFmScenes
+    }
+
     /**
      * 显示底部设置弹窗
      */

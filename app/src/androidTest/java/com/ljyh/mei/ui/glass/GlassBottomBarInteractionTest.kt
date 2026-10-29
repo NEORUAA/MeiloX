@@ -94,12 +94,17 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
@@ -114,6 +119,8 @@ import io.github.neoruaa.glasmio.glass.render.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
+import com.ljyh.mei.ui.component.player.LocalPlayerRoamingModeLabel
+import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import io.github.neoruaa.glasmio.scaffold.GlasmioFloatingSearchButton
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
@@ -154,6 +161,83 @@ class GlassBottomBarInteractionTest {
     private val barLayoutDirection = mutableStateOf(LayoutDirection.Ltr)
     private val selections = mutableListOf<String>()
     private var expansions = 0
+
+    @Test
+    fun roamingTitleLabelKeepsArtistStyleAndFollowsTheTitle() {
+        val title = mutableStateOf("Track")
+        val mode = mutableStateOf<String?>(null)
+        val containerWidth = mutableStateOf(320.dp)
+        val fontScale = mutableFloatStateOf(1f)
+        var density = 1f
+        compose.setContent {
+            density = LocalDensity.current.density
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalPlayerRoamingModeLabel provides mode.value,
+                    LocalDensity provides Density(density, fontScale.floatValue),
+                ) {
+                    Title(
+                        title = title.value, subTitle = "Artist", isLiked = false,
+                        onLikeClick = {}, onMoreClick = {}, onTitleClick = {},
+                        modifier = Modifier.width(containerWidth.value),
+                        textModifier = Modifier.testTag("roamingMetadata"),
+                        showLikeButton = false, marqueeEnabled = false,
+                    )
+                }
+            }
+        }
+        fun bounds(text: String) = compose.onNodeWithText(text, useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        fun textLayout(text: String) = ArrayList<TextLayoutResult>().also { results ->
+            compose.onNodeWithText(text, useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        }.single()
+        fun textStyle(text: String) = textLayout(text).layoutInput.style
+        val normalHeight = compose.onNodeWithTag("roamingMetadata", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.height
+        compose.runOnIdle { mode.value = "Explore Mode" }
+        val label = bounds("Explore Mode")
+        assertEquals("Short titles keep an 8dp gap before the mode label", 8f * density,
+            label.left - bounds("Track").right, density)
+        val artistStyle = textStyle("Artist")
+        val labelStyle = textStyle("Explore Mode")
+        assertEquals(artistStyle.fontSize, labelStyle.fontSize)
+        assertEquals(artistStyle.fontWeight, labelStyle.fontWeight)
+        assertEquals(artistStyle.color, labelStyle.color)
+        assertEquals(artistStyle.shadow, labelStyle.shadow)
+        assertEquals("The mode label does not add a metadata line", normalHeight,
+            compose.onNodeWithTag("roamingMetadata", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.height, density)
+        compose.runOnIdle { title.value = "A long track title that must keep its scrolling viewport" }
+        val metadata = compose.onNodeWithTag("roamingMetadata", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val longLabel = bounds("Explore Mode")
+        assertTrue("The mode remains visible beside a long title", longLabel.width > 0f && longLabel.right <= metadata.right + density)
+        assertTrue("The title viewport stays separate from the mode", bounds(title.value).right <= longLabel.left - 7f * density)
+        compose.runOnIdle { mode.value = null }
+        assertTrue("Ordinary playback hides the mode label", compose.onAllNodesWithText("Explore Mode", useUnmergedTree = true)
+            .fetchSemanticsNodes().isEmpty())
+        compose.runOnIdle {
+            containerWidth.value = 180.dp
+            fontScale.floatValue = 2f
+        }
+        val narrowNormalHeight = compose.onNodeWithTag("roamingMetadata", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.height
+        val longMode = "A very long scene name that must not replace the track title Mode"
+        compose.runOnIdle { mode.value = longMode }
+        val narrowMetadata = compose.onNodeWithTag("roamingMetadata", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val narrowTitle = bounds(title.value)
+        val narrowMode = bounds(longMode)
+        assertTrue("Large scene names leave a nonzero title viewport", narrowTitle.width > 0f)
+        assertTrue("A narrow title remains separate from the mode", narrowTitle.right <= narrowMode.left - 7f * density)
+        assertTrue("The mode uses at most 45 percent of the remaining metadata width",
+            narrowMode.width <= (narrowMetadata.width - 8f * density) * 0.45f + density)
+        assertTrue("A long mode label is ellipsized rather than hiding the title", textLayout(longMode).isLineEllipsized(0))
+        assertTrue("The capped mode stays within the metadata", narrowMode.right <= narrowMetadata.right + density)
+        assertEquals("Large mode text does not add a metadata line", narrowNormalHeight,
+            narrowMetadata.height, density)
+    }
 
     @Test
     fun searchInsetsUpdateScrollPaddingWithoutRebuildingListContent() {

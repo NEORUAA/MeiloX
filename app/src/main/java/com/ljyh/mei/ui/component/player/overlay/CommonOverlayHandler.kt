@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.overlay
 
+import android.widget.Toast
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
@@ -17,6 +18,7 @@ import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.player.component.localPlaybackQualityTitle
 import com.ljyh.mei.ui.component.player.component.PlayerNavigationMenu
+import com.ljyh.mei.ui.component.player.component.PrivateFmSceneSheet
 import com.ljyh.mei.ui.component.player.component.sheet.AlbumArtistBottomSheet
 import com.ljyh.mei.ui.component.player.component.sheet.MoreActionsSheet
 import com.ljyh.mei.ui.component.player.component.sheet.PlayerActionSettingsSheet
@@ -59,6 +61,19 @@ fun CommonOverlayHandler(
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerViewModel = stateContainer.playerViewModel
+    val currentMetadata = stateContainer.mediaMetadata.value
+    val privateFmError by stateContainer.playerConnection.service.queueManager.privateFmError.collectAsStateWithLifecycle()
+    val isPrivateFm = stateContainer.isFMMode.value &&
+        stateContainer.playerConnection.service.queueManager.similarFmSourceIds == null
+
+    LaunchedEffect(privateFmError, isPrivateFm) {
+        if (isPrivateFm) privateFmError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+    LaunchedEffect(isPrivateFm, overlayHandler.currentOverlayValue) {
+        if (!isPrivateFm && overlayHandler.currentOverlayValue == OverlayState.PrivateFmScenes) {
+            overlayHandler.dismiss()
+        }
+    }
 
     when (val overlay = overlayHandler.currentOverlayValue) {
         OverlayState.None -> {}
@@ -166,8 +181,9 @@ fun CommonOverlayHandler(
         OverlayState.MoreAction -> {
             // MoreActionsSheet queues this callback until its dismissal finishes. Capture
             // the displayed track now so an automatic advance cannot retarget that action.
-            val actionMetadata = stateContainer.mediaMetadata.value
+            val actionMetadata = currentMetadata
             MoreActionsSheet(
+                onChoosePrivateFmScene = if (isPrivateFm) overlayHandler::showPrivateFmScenes else null,
                 onDismissRequest = {
                     overlayHandler.dismiss()
                 },
@@ -200,6 +216,13 @@ fun CommonOverlayHandler(
                         android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 } else null,
+            )
+        }
+
+        OverlayState.PrivateFmScenes -> {
+            if (isPrivateFm) PrivateFmSceneSheet(
+                connection = stateContainer.playerConnection,
+                onDismissRequest = overlayHandler::dismiss,
             )
         }
 
