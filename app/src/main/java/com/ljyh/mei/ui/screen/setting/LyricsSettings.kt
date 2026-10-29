@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
@@ -37,15 +36,12 @@ import com.ljyh.mei.constants.LyricLiftEnabledKey
 import com.ljyh.mei.constants.LyricLongToneEnabledKey
 import com.ljyh.mei.constants.LyricRomanizationEnabledKey
 import com.ljyh.mei.constants.LyricTranslationEnabledKey
-import com.ljyh.mei.constants.LyricVisualStyle
-import com.ljyh.mei.constants.LyricVisualStyleKey
 import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsFontScaleKey
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
-import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -53,7 +49,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
-import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.FlymeSystem
 
@@ -61,7 +56,6 @@ import com.ljyh.mei.utils.FlymeSystem
 fun LyricsSettings() {
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-    val (style, onStyle) = rememberEnumPreference(LyricVisualStyleKey, LyricVisualStyle.AppleMusic)
     val (translation, onTranslation) = rememberPreference(LyricTranslationEnabledKey, true)
     val (romanization, onRomanization) = rememberPreference(LyricRomanizationEnabledKey, true)
     val (glow, onGlow) = rememberPreference(LyricGlowEnabledKey, true)
@@ -82,27 +76,6 @@ fun LyricsSettings() {
         onNavigateBack = navController::navigateUp,
         bottomPadding = insets.calculateBottomPadding(),
     ) {
-        item {
-            SettingsGroup(stringResource(R.string.lyrics_visual_style)) {
-                SettingsCard(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.lyrics_style_presentation),
-                            modifier = Modifier.weight(1f).padding(vertical = 12.dp),
-                        )
-                        GlasmioPopUpButton(
-                            selected = style,
-                            items = LyricVisualStyle.entries,
-                            onSelected = onStyle,
-                            label = { lyricStyleLabel(it) },
-                        )
-                    }
-                }
-            }
-        }
         item {
             SettingsGroup(stringResource(R.string.lyrics_content)) {
                 LyricsToggleRow(stringResource(R.string.lyrics_translation), translation, onTranslation)
@@ -209,16 +182,6 @@ internal fun FlymeStatusBarLyricsSetting(
         ),
     )
 }
-
-@Composable
-private fun lyricStyleLabel(style: LyricVisualStyle): String = stringResource(
-    when (style) {
-        LyricVisualStyle.AppleMusic -> R.string.lyrics_style_apple
-        LyricVisualStyle.EVA -> R.string.lyrics_style_eva
-        LyricVisualStyle.TextPV -> R.string.lyrics_style_textpv
-        LyricVisualStyle.Skyline -> R.string.lyrics_style_skyline
-    },
-)
 
 @Composable
 private fun LyricsToggleRow(
