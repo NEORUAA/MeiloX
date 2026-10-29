@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.home
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import android.os.Build
 import android.util.Log
@@ -606,6 +607,7 @@ private fun BlockWithTitle(
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             verticalAlignment = Alignment.Top,
             modifier = Modifier.fillMaxWidth()
+                .swipeBackExcluded()
                 .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
         ) {
             itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
@@ -686,7 +688,7 @@ fun TripleLaneSlider(
 
     HorizontalPager(
         state = pagerState,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
         pageSize = pageSize,
         contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
         pageSpacing = cardSpacing,

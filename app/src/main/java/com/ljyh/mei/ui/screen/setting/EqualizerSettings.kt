@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.setting
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
@@ -122,7 +123,10 @@ fun EqualizerSettings() {
             )
         }
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(
+                modifier = Modifier.swipeBackExcluded(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 items(EqualizerPreset.entries, key = EqualizerPreset::name) { item ->
                     GlasmioButton(
                         onClick = { applyPreset(item) },

@@ -86,6 +86,7 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
     val dark = LocalGlassColors.current.isDark
     var webView by remember(page) { mutableStateOf<WebView?>(null) }
     var canGoBack by remember(page) { mutableStateOf(false) }
+    var canPanHorizontally by remember(page) { mutableStateOf(false) }
     var progress by remember(page) { mutableIntStateOf(0) }
     var scrollEdge by remember(page) { mutableFloatStateOf(0f) }
     val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
@@ -140,6 +141,7 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                             setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                             setOnScrollChangeListener { _, _, scrollY, _, _ ->
                                 scrollEdge = (scrollY / scrollEdgeDistance.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                canPanHorizontally = canScrollHorizontally(-1) || canScrollHorizontally(1)
                             }
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
@@ -174,6 +176,10 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                                 setTitle = { title = it },
                             )
                             webViewClient = object : WebViewClient() {
+                                override fun onScaleChanged(view: WebView?, oldScale: Float, newScale: Float) {
+                                    canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
+                                        view?.canScrollHorizontally(1) == true
+                                }
                                 override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                                     canGoBack = view?.canGoBack() == true
                                 }
@@ -187,6 +193,8 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     canGoBack = view?.canGoBack() == true
+                                    canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
+                                        view?.canScrollHorizontally(1) == true
                                     view?.fitNeteaseViewport(url)
                                 }
 
@@ -251,11 +259,12 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                             webView = this
                         }
                     },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().swipeBackExcluded(canGoBack || canPanHorizontally),
                     onRelease = { view ->
                         if (webView === view) {
                             webView = null
                             canGoBack = false
+                            canPanHorizontally = false
                         }
                         view.stopLoading()
                         view.destroy()

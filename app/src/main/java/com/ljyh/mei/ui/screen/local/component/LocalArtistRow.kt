@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.local.component
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ fun isSoloArtist(artistList: List<String>): Boolean = artistList.size == 1
 @Composable
 internal fun ArtistRow(artists: List<String>, songs: List<Song>, onArtistClick: (String) -> Unit = {}) {
     LazyRow(
+        modifier = Modifier.swipeBackExcluded(),
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {

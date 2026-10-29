@@ -1,5 +1,25 @@
 package com.ljyh.mei.ui.navigation
 
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.Role
@@ -29,6 +49,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.navigation3.runtime.NavEntry
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -57,6 +80,9 @@ import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.screen.Index
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.dataStore
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
+import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavDisplay
+import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavHeaderMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -83,6 +109,100 @@ class MainNavigationInstrumentedTest {
         PodcastsEnabledKey, DownloadsEnabledKey, CloudMusicEnabledKey, ListeningHistoryEnabledKey,
     )
     private var avatarDescription = ""
+
+    @Test
+    fun centerSwipesCancelAndPopOnlyPushedPages() = withNavigationPreferences {
+        openTab(Index.Settings)
+        compose.onNodeWithText(text(R.string.general_settings)).performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitForIdle()
+        val page = compose.onNodeWithTag("MeiloXPage:${Screen.GeneralSettings.route}", useUnmergedTree = true)
+        val rtl = compose.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+        val startFraction = if (rtl) .68f else .32f
+        val middleFraction = if (rtl) .38f else .62f
+        val endFraction = if (rtl) .08f else .92f
+        page.assertIsDisplayed()
+        page.performTouchInput {
+            val start = Offset(width * startFraction, height * .26f)
+            val turnaround = Offset(width * middleFraction, start.y)
+            down(start)
+            repeat(10) { step ->
+                val fraction = (step + 1) / 10f
+                moveTo(Offset(start.x + (turnaround.x - start.x) * fraction, start.y), delayMillis = 20)
+            }
+            repeat(15) { step ->
+                val fraction = (step + 1) / 15f
+                moveTo(Offset(turnaround.x + (start.x - turnaround.x) * fraction, start.y), delayMillis = 20)
+            }
+            up()
+        }
+        compose.waitForIdle()
+        page.assertIsDisplayed()
+        val density = compose.activity.resources.displayMetrics.density
+        assertEquals("A cancelled drag returns the current page to its resting frame", 0f,
+            page.fetchSemanticsNode().boundsInRoot.left, density)
+        page.performTouchInput {
+            swipe(Offset(width * startFraction, height * .26f), Offset(width * endFraction, height * .26f), 600)
+        }
+        assertDestinationChrome(Index.Settings, topLevel = true)
+        compose.onNodeWithTag("MeiloXPage:${Index.Settings.route}", useUnmergedTree = true).performTouchInput {
+            swipe(Offset(width * startFraction, height * .26f), Offset(width * endFraction, height * .26f), 600)
+        }
+        assertDestinationChrome(Index.Settings, topLevel = true)
+    }
+
+    @Test
+    fun rtlCenterSwipeRespectsHorizontalExclusionsAtBothScrollBoundaries() {
+        val stack = mutableStateListOf("root", "detail")
+        val motion = GlasmioNavHeaderMotion("detail")
+        val scroll = ScrollState(0)
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                MaterialTheme {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                        GlasmioNavDisplay(
+                            backStack = stack,
+                            motion = motion,
+                            modifier = Modifier.fillMaxSize(),
+                            onBack = { stack.removeAt(stack.lastIndex) },
+                        ) { key ->
+                            NavEntry(key = key, contentKey = key) {
+                                Column(Modifier.fillMaxSize().background(Color.White).testTag("swipe:$key")) {
+                                    if (key == "detail") {
+                                        Row(Modifier.fillMaxWidth().height(96.dp)
+                                            .testTag("horizontal-swipe-content")
+                                            .swipeBackExcluded().horizontalScroll(scroll)) {
+                                            repeat(8) { Text("Item $it", Modifier.width(160.dp)) }
+                                        }
+                                    }
+                                    Box(Modifier.fillMaxWidth().weight(1f).testTag("plain-swipe-content")) {
+                                        Text(key)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertTrue("The fixture contains actual horizontal scroll range", scroll.maxValue > 0)
+        for (end in listOf(false, true)) {
+            compose.runOnIdle {
+                scroll.dispatchRawDelta(if (end) scroll.maxValue.toFloat() else -scroll.value.toFloat())
+            }
+            compose.onNodeWithTag("horizontal-swipe-content").performTouchInput {
+                swipe(Offset(width * .75f, center.y), Offset(width * .1f, center.y), 600)
+            }
+            compose.waitForIdle()
+            assertEquals("A horizontal surface keeps the page at either scroll boundary", listOf("root", "detail"), stack.toList())
+        }
+        compose.onNodeWithTag("plain-swipe-content").performTouchInput {
+            swipe(Offset(width * .75f, height * .35f), Offset(width * .1f, height * .35f), 600)
+        }
+        compose.waitForIdle()
+        assertEquals("RTL content returns with the logical back direction", listOf("root"), stack.toList())
+    }
 
     @Test
     fun reverseScrollingRevealsNavigationBeforeThePageReachesItsTop() = withNavigationPreferences {

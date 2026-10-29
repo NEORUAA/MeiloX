@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.home
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +79,7 @@ private fun RecommendRowShimmer(
     Column {
         TitleShimmer()
         LazyRow(
+            modifier = Modifier.swipeBackExcluded(),
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
         ) {
@@ -113,6 +115,7 @@ private fun PlaylistBlockShimmer(
         Column {
             TitleShimmer()
             LazyRow(
+                modifier = Modifier.swipeBackExcluded(),
                 horizontalArrangement = Arrangement.spacedBy(cardSpacing),
                 contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
             ) {

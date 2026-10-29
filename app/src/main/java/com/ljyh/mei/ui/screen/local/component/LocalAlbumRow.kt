@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.local.component
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import com.ljyh.mei.data.model.room.Song
 @Composable
 internal fun AlbumRow(albums: List<String>, songs: List<Song>, onAlbumClick: (String) -> Unit = {}) {
     LazyRow(
+        modifier = Modifier.swipeBackExcluded(),
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {

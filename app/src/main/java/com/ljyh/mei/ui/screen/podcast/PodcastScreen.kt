@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.podcast
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -257,7 +258,7 @@ private fun PodcastCategorySelector(
     onCategorySelected: (Long?) -> Unit,
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -317,6 +318,7 @@ private fun PodcastSection(
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         LazyRow(
+            modifier = Modifier.swipeBackExcluded(),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {

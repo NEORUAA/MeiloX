@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.findmusic
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -123,7 +124,7 @@ private fun CategorySelector(
     horizontalPadding: androidx.compose.ui.unit.Dp,
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
         contentPadding = PaddingValues(horizontal = horizontalPadding),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

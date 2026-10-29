@@ -123,6 +123,7 @@ import androidx.navigation3.scene.rememberNavigationEventState
 import androidx.navigation3.scene.rememberSceneState
 import androidx.navigationevent.compose.NavigationBackHandler
 import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavDisplay
+import io.github.neoruaa.glasmio.scaffold.navigation.IosNavigationTransitionEffects
 import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavHeaderMotion
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationOperation
@@ -1128,6 +1129,9 @@ class MainActivity : ComponentActivity() {
                                             motion = headerMotion,
                                             // NavDisplay retains this state in remembered gesture calculations.
                                             navigationEventState = navigationEventState,
+                                            // The scene-state overload needs this callback for in-content swipe back.
+                                            onBack = { navController.popBackStack() },
+                                            swipeBackEnabled = !active && !playerBottomSheetState.isContentVisible,
                                             modifier = Modifier.fillMaxSize(),
                                             transitionSpec = {
                                                 if (usesHomeAlphaTransition()) {
@@ -1155,11 +1159,7 @@ class MainActivity : ComponentActivity() {
                                                 navController.usesMiuixTransitionEffects,
                                             ) {
                                                 if (navController.usesMiuixTransitionEffects) {
-                                                    NavDisplayTransitionEffects(
-                                                        enableCornerClip = true,
-                                                        dimAmount = 0.5f,
-                                                        blockInputDuringTransition = false,
-                                                    )
+                                                    IosNavigationTransitionEffects
                                                 } else {
                                                     NavDisplayTransitionEffects(
                                                         enableCornerClip = false,

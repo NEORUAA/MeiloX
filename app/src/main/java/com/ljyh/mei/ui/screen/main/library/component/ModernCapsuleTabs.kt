@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,7 +27,7 @@ fun ModernCapsuleTabs(
     onTabClick: (Int) -> Unit
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
         contentPadding = PaddingValues(horizontal = 8.dp), // 容器内部的内边距
         horizontalArrangement = Arrangement.SpaceEvenly,   // 均匀分布，或者用 spacedBy
         verticalAlignment = Alignment.CenterVertically

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.search
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -211,6 +212,7 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
             state.discovery?.let { discovery ->
                 item(key = "recommendations") {
                     LazyRow(
+                        modifier = Modifier.swipeBackExcluded(),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {

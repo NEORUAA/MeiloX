@@ -79,6 +79,7 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderCollapseDefaults
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -172,6 +173,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
+    var canPanHorizontally by remember { mutableStateOf(false) }
     var scrollEdge by remember { mutableFloatStateOf(0f) }
     val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
     var detected by remember { mutableStateOf(false) }
@@ -228,6 +230,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                         setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                         setOnScrollChangeListener { _, _, scrollY, _, _ ->
                             scrollEdge = (scrollY / scrollEdgeDistance.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                            canPanHorizontally = canScrollHorizontally(-1) || canScrollHorizontally(1)
                         }
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -235,19 +238,26 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
                         webViewClient = object : WebViewClient() {
+                            override fun onScaleChanged(view: WebView?, oldScale: Float, newScale: Float) {
+                                canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
+                                    view?.canScrollHorizontally(1) == true
+                            }
                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                                 canGoBack = view?.canGoBack() == true
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 canGoBack = view?.canGoBack() == true
+                                canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
+                                    view?.canScrollHorizontally(1) == true
                             }
                         }
                         loadUrl("https://music.163.com/#/login")
                         webView = this
                     }
                 },
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding)
+                    .swipeBackExcluded(canGoBack || canPanHorizontally),
             )
         }
         if (!detected && !showCookieLoginSheet) {
@@ -298,6 +308,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             }
             webView = null
             canGoBack = false
+            canPanHorizontally = false
         }
     }
 }

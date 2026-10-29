@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.account
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -335,7 +336,7 @@ private fun ListeningDurationChart(bins: List<ListeningStatsBin>, period: Listen
                 }
             }
             Canvas(
-                Modifier.weight(1f).fillMaxSize()
+                Modifier.weight(1f).fillMaxSize().swipeBackExcluded()
                     .clearAndSetSemantics {
                         contentDescription = chartDescription
                         customActions = listOf(

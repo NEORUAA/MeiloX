@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.artist
 
+import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -364,6 +365,7 @@ fun ArtistScreen(
                                 val albums = albumsResource.data.hotAlbums.orEmpty()
                                 item {
                                     LazyRow(
+                                        modifier = Modifier.swipeBackExcluded(),
                                         contentPadding = PaddingValues(horizontal = DetailPageHorizontalPadding),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
@@ -380,6 +382,7 @@ fun ArtistScreen(
                             }
                             is Resource.Loading -> item {
                                 LazyRow(
+                                    modifier = Modifier.swipeBackExcluded(),
                                     contentPadding = PaddingValues(horizontal = DetailPageHorizontalPadding),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
