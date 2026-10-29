@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.kyant.backdrop.backdrops.emptyBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.SleepTimer

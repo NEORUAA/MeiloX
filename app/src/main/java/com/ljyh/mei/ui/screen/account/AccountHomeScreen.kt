@@ -221,7 +221,7 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                 }
             }
             item {
-                GlasmioGroupedList {
+                GlasmioGroupedList(Modifier.padding(top = 10.dp)) {
                     GlasmioListRow(
                         title = stringResource(R.string.netease_musician),
                         systemName = "mic",

@@ -1,6 +1,7 @@
 package com.ljyh.mei.constants
 
-import io.github.neoruaa.glasmio.ui.NavigationBarSurfaceHeight
+import io.github.neoruaa.glasmio.ui.NavigationBarSurfaceHeight as GlasmioNavigationBarSurfaceHeight
+import io.github.neoruaa.glasmio.ui.CompactBottomControlSize
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -42,12 +43,17 @@ fun homeCardSpacing(isLandscape: Boolean): Dp =
 fun homePlaylistCardSize(isLandscape: Boolean): Dp =
     if (isLandscape) LandscapePlaylistCardSize else PortraitPlaylistCardSize
 
-val NavigationBarHeight = 76.dp
-val NavigationBarSurfaceHeight = 60.dp
+val NavigationBarSurfaceHeight = GlasmioNavigationBarSurfaceHeight
 val NavigationBarBottomMargin = 8.dp
+val NavigationBarHeight = NavigationBarSurfaceHeight + NavigationBarBottomMargin * 2
 internal val BottomBarHorizontalPadding = 20.dp
 internal val DetailPageHorizontalPadding = 24.dp
-val MiniPlayerHeight = 44.dp
+val MiniPlayerHeight = 48.dp
+internal val MiniPlayerInlineHeight = CompactBottomControlSize
+internal val MiniPlayerInlineHorizontalPadding = BottomBarHorizontalPadding +
+    (NavigationBarSurfaceHeight + CompactBottomControlSize) / 2 + 14.dp
+internal val MiniPlayerInlineVerticalTravel = NavigationBarSurfaceHeight / 2 +
+    NavigationBarBottomMargin + MiniPlayerHeight / 2
 val QueuePeekHeight = 64.dp
 val AppBarHeight = 64.dp
 

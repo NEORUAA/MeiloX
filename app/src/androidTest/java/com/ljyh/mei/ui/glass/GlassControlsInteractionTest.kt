@@ -137,15 +137,18 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.SdkSuppress
-import com.kyant.backdrop.backdrops.emptyBackdrop
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
+import io.github.neoruaa.glasmio.glass.render.drawBackdrop
 import com.kyant.shapes.Capsule
 import io.github.neoruaa.glasmio.glass.PressHighlightRenderer
 import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import com.ljyh.mei.ui.screen.main.library.component.LibraryCollectionRefresh
+import com.ljyh.mei.ui.component.MeiloXSwitch
+import com.ljyh.mei.ui.screen.setting.SettingsCard
+import com.ljyh.mei.ui.screen.setting.SettingsGroupedList
 import com.ljyh.mei.ui.screen.social.privateConversationItems
 import com.ljyh.mei.data.model.melox.MessageContact
 import com.ljyh.mei.data.model.melox.PrivateConversation
@@ -175,6 +178,84 @@ class GlassControlsInteractionTest {
     private val calls = mutableListOf<Pair<Int, Boolean>>()
     private val listState = LazyListState()
     private var parentClicks = 0
+
+    @Test
+    fun appSwitchesFollowTheActiveAccentAndRetainExplicitTints() {
+        val accent = mutableStateOf(Color.Red)
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassColors provides defaultGlassColors(isDark = false, accent = accent.value),
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                ) {
+                    Column(Modifier.background(Color.White).padding(16.dp)) {
+                        MeiloXSwitch(true, {}, Modifier.testTag("accentSwitch"), backdrop = emptyBackdrop())
+                        Spacer(Modifier.height(16.dp))
+                        MeiloXSwitch(true, {}, Modifier.testTag("customSwitch"), backdrop = emptyBackdrop(), onTintColor = Color.Magenta)
+                    }
+                }
+            }
+        }
+        fun assertTrackColor(tag: String, expected: Color) {
+            val image = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
+            val actual = image[image.width / 8, image.height / 2]
+            assertEquals(expected.red, actual.red, 0.02f)
+            assertEquals(expected.green, actual.green, 0.02f)
+            assertEquals(expected.blue, actual.blue, 0.02f)
+        }
+        compose.waitForIdle()
+        assertTrackColor("accentSwitch", Color.Red)
+        assertTrackColor("customSwitch", Color.Magenta)
+        compose.runOnIdle { accent.value = Color.Blue }
+        compose.waitForIdle()
+        assertTrackColor("accentSwitch", Color.Blue)
+        assertTrackColor("customSwitch", Color.Magenta)
+    }
+
+    @Test
+    fun appSettingsGroupsSuppressFirstSeparatorsAndRetainInternalBoundaries() {
+        val showFirst = mutableStateOf(true)
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalGlassColors provides defaultGlassColors(isDark = false).copy(
+                        elevatedBackground = Color.White,
+                        separator = Color.Red,
+                    ),
+                ) {
+                    Column(Modifier.width(240.dp).background(Color.Black)) {
+                        SettingsGroupedList {
+                            if (showFirst.value) {
+                                SettingsCard(Modifier.fillMaxWidth().height(52.dp).testTag("settingsFirst")) {}
+                            }
+                            SettingsCard(Modifier.fillMaxWidth().height(52.dp).testTag("settingsSecond")) {}
+                        }
+                        Text("Footer", Modifier.testTag("settingsFooter"))
+                        SettingsGroupedList {
+                            SettingsCard(Modifier.fillMaxWidth().height(52.dp).testTag("nextGroupFirst")) {}
+                        }
+                    }
+                }
+            }
+        }
+        fun assertTopSeparator(tag: String, visible: Boolean) {
+            val image = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
+            val actual = image[image.width / 2, 0]
+            assertTrue("The $tag top edge retains its row background", actual.red > 0.95f)
+            val separatorVisible = actual.green < 0.95f && actual.blue < 0.95f
+            assertEquals("Only an internal row boundary has a separator: $tag", visible, separatorVisible)
+        }
+        compose.waitForIdle()
+        assertTopSeparator("settingsFirst", false)
+        assertTopSeparator("settingsSecond", true)
+        assertTopSeparator("nextGroupFirst", false)
+        compose.onNodeWithTag("settingsFooter").assertIsDisplayed()
+        compose.runOnIdle { showFirst.value = false }
+        compose.waitForIdle()
+        assertTopSeparator("settingsSecond", false)
+        assertTopSeparator("nextGroupFirst", false)
+        compose.onNodeWithTag("settingsFooter").assertIsDisplayed()
+    }
 
     @Test
     fun privateConversationsRemainTouchableAfterScrollingToOldMessages() {

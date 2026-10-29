@@ -14,10 +14,12 @@ import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -40,11 +42,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -70,6 +74,8 @@ import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderCollapseDefaults
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -165,12 +171,21 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
 fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var scrollEdge by remember { mutableFloatStateOf(0f) }
+    val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
     var detected by remember { mutableStateOf(false) }
     var verificationFailed by remember { mutableStateOf(false) }
     var showCookieLoginSheet by remember { mutableStateOf(false) }
     val cookieLogin = remember(viewModel) { WebCookieLoginPoller() }
     val cookieManager = remember { CookieManager.getInstance() }
-    val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
+    val bottomPadding = LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime)
+        .asPaddingValues().calculateBottomPadding()
+    val goBack = {
+        if (webView?.canGoBack() == true) webView?.goBack() else navController.navigateUp()
+        Unit
+    }
+    BackHandler(enabled = canGoBack) { goBack() }
 
     LaunchedEffect(webView, showCookieLoginSheet) {
         if (webView != null && !detected && !showCookieLoginSheet) {
@@ -186,43 +201,54 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        MeiloXPinnedListPage(
+        MeiloXPinnedPage(
             title = stringResource(R.string.netease_web_login),
             subtitle = stringResource(when {
                 detected -> R.string.netease_login_detected
                 verificationFailed -> R.string.netease_cookie_login_verification_failed
                 else -> R.string.netease_login_waiting
             }),
-            showsLargeTitle = false,
-            horizontalContentPadding = 0.dp,
+            topBarBlurProgress = scrollEdge,
             bottomPadding = bottomPadding,
-            onNavigateBack = navController::navigateUp,
+            onNavigateBack = goBack,
             actions = {
                 if (detected) listOf(meiloxHeaderAction(
                     "done", stringResource(R.string.done), navController::finishNeteaseLogin,
                 ) { Text(stringResource(R.string.done), color = LocalGlassColors.current.accent) })
                 else emptyList()
             },
-        ) {
-            item(key = "netease-login-webview") {
-                AndroidView(
-                    factory = { currentContext ->
-                        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-                        WebView(currentContext).apply {
-                            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.userAgentString += " Mei/1.0"
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, true)
-                            webViewClient = WebViewClient()
-                            loadUrl("https://music.163.com/#/login")
-                            webView = this
+        ) { pagePadding ->
+            val padding = PaddingValues(
+                top = pagePadding.calculateTopPadding(), bottom = pagePadding.calculateBottomPadding(),
+            )
+            AndroidView(
+                factory = { currentContext ->
+                    WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+                    WebView(currentContext).apply {
+                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                        setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                            scrollEdge = (scrollY / scrollEdgeDistance.coerceAtLeast(1f)).coerceIn(0f, 1f)
                         }
-                    },
-                    modifier = Modifier.fillParentMaxSize(),
-                )
-            }
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.userAgentString += " Mei/1.0"
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
+                        webViewClient = object : WebViewClient() {
+                            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                                canGoBack = view?.canGoBack() == true
+                            }
+
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                canGoBack = view?.canGoBack() == true
+                            }
+                        }
+                        loadUrl("https://music.163.com/#/login")
+                        webView = this
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(padding),
+            )
         }
         if (!detected && !showCookieLoginSheet) {
             GlasmioButton(
@@ -271,6 +297,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                 destroy()
             }
             webView = null
+            canGoBack = false
         }
     }
 }

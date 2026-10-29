@@ -273,7 +273,6 @@ dependencies {
     implementation(libs.zoomable)
     implementation(libs.timber)
     implementation(libs.compose.cloudy)
-    implementation(libs.backdrop)
     implementation(libs.shapes)
     implementation(libs.capsule)
 }

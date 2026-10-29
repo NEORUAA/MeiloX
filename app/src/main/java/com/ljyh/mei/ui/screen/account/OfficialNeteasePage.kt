@@ -5,11 +5,12 @@ import io.github.neoruaa.glasmio.glass.*
 import io.github.neoruaa.glasmio.icons.*
 import io.github.neoruaa.glasmio.ui.*
 import io.github.neoruaa.glasmio.scaffold.*
-import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.webkit.JsPromptResult
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
@@ -25,13 +26,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
@@ -39,11 +38,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,19 +50,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.network.NeteaseSessionType
-import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.dataStore
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -92,6 +87,10 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
     var webView by remember(page) { mutableStateOf<WebView?>(null) }
     var canGoBack by remember(page) { mutableStateOf(false) }
     var progress by remember(page) { mutableIntStateOf(0) }
+    var scrollEdge by remember(page) { mutableFloatStateOf(0f) }
+    val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
+    val bottomPadding = LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime)
+        .asPaddingValues().calculateBottomPadding()
     var pageError by remember(page) { mutableStateOf<String?>(null) }
     var loadedSession by remember(page) { mutableStateOf<Pair<WebView, String>?>(null) }
     val preferences by context.dataStore.data.collectAsStateWithLifecycle(initialValue = null)
@@ -107,9 +106,25 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
         if (webView?.canGoBack() == true) webView?.goBack() else navController.navigateUp()
         Unit
     }
-    BackHandler { goBack() }
+    BackHandler(enabled = canGoBack) { goBack() }
 
-    OfficialNeteaseWebWindow(title = title, onNavigateBack = goBack) { padding ->
+    MeiloXPinnedPage(
+        title = title,
+        onNavigateBack = goBack,
+        bottomPadding = bottomPadding,
+        topBarBlurProgress = scrollEdge,
+        actions = {
+            listOf(meiloxHeaderAction(
+                key = "refresh", contentDescription = stringResource(R.string.refresh),
+                enabled = webView != null && sessionType != NeteaseSessionType.None,
+                onClick = { pageError = null; webView?.reload() },
+            ) { SfIcon("arrow.clockwise", null) })
+        },
+    ) { pagePadding ->
+        // Embedded pages own their horizontal layout; the shared scaffold supplies chrome insets.
+        val padding = PaddingValues(
+            top = pagePadding.calculateTopPadding(), bottom = pagePadding.calculateBottomPadding(),
+        )
         if (sessionType == NeteaseSessionType.None) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 GlasmioButton(onClick = { Screen.NeteaseLogin.navigate(navController) }) {
@@ -121,6 +136,11 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                 AndroidView(
                     factory = { viewContext ->
                         WebView(viewContext).apply {
+                            // Chromium must render into the page's sampled Compose layer.
+                            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                            setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                                scrollEdge = (scrollY / scrollEdgeDistance.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                            }
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.useWideViewPort = true
@@ -154,6 +174,10 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                                 setTitle = { title = it },
                             )
                             webViewClient = object : WebViewClient() {
+                                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                                    canGoBack = view?.canGoBack() == true
+                                }
+
                                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                                     view?.fitNeteaseViewport(url)
                                     if (url?.substringBefore('?') == OfficialNeteasePage.Musician.url) {
@@ -228,7 +252,14 @@ fun OfficialNeteasePageScreen(page: OfficialNeteasePage) {
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
-                    onRelease = { view -> view.stopLoading(); view.destroy() },
+                    onRelease = { view ->
+                        if (webView === view) {
+                            webView = null
+                            canGoBack = false
+                        }
+                        view.stopLoading()
+                        view.destroy()
+                    },
                 )
                 if (progress in 1..99) {
                     CircularProgressIndicator(Modifier.align(Alignment.TopCenter))
@@ -291,41 +322,6 @@ private fun WebView.adaptMusicianNavigation() {
             }, true);
         })();
     """.trimIndent(), null)
-}
-
-@Composable
-private fun OfficialNeteaseWebWindow(
-    title: String,
-    onNavigateBack: () -> Unit,
-    content: @Composable BoxScope.(PaddingValues) -> Unit,
-) {
-    val background = LocalGlassColors.current.groupedBackground
-    // A separate window keeps Chromium's hardware drawing out of sampled backdrop layers.
-    Dialog(onDismissRequest = onNavigateBack, properties = DialogProperties(
-        usePlatformDefaultWidth = false, decorFitsSystemWindows = false,
-    )) {
-        val view = LocalView.current
-        val dark = LocalGlassColors.current.isDark
-        DisposableEffect(view, dark) {
-            (view.parent as? DialogWindowProvider)?.window?.let { window ->
-                WindowInsetsControllerCompat(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
-                }
-            }
-            onDispose { }
-        }
-        CompositionLocalProvider(LocalGlassBackdrop provides emptyBackdrop()) {
-            Column(Modifier.fillMaxSize().background(background).windowInsetsPadding(WindowInsets.safeDrawing)) {
-                GlasmioTopBar(title = title, navigation = {
-                    GlasmioIconButton(onNavigateBack) {
-                        SfIcon(SfSymbol.ChevronBack, stringResource(R.string.navigation_back), mirrored = true)
-                    }
-                })
-                Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues(0.dp)) }
-            }
-        }
-    }
 }
 
 private fun WebView.fitNeteaseViewport(url: String?) {

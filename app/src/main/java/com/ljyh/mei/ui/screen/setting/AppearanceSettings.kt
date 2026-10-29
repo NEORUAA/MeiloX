@@ -73,9 +73,8 @@ import com.ljyh.mei.constants.ProgressBarStyle
 import com.ljyh.mei.constants.ProgressBarStyleKey
 import com.ljyh.mei.constants.TabletAnimationStyle
 import com.ljyh.mei.constants.TabletAnimationStyleKey
-import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.ui.GlasmioColorPicker
@@ -343,7 +342,7 @@ private fun AppearanceLetterSpacing(savedSpacing: Float, setSpacing: (Float) -> 
     val title = stringResource(R.string.appearance_letter_spacing)
     val valueLabel = stringResource(R.string.appearance_letter_spacing_value, displayedSpacing)
 
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SfIcon("textformat.size", null)
@@ -377,7 +376,7 @@ private fun AppearanceBottomFloatingSpacing(savedSpacing: Int, setSpacing: (Int)
     val title = stringResource(R.string.appearance_bottom_floating_extra_spacing)
     val valueLabel = stringResource(R.string.appearance_bottom_floating_extra_spacing_value, displayedSpacing)
 
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SfIcon("arrow.up", null)
@@ -412,7 +411,7 @@ private fun AppearanceToggle(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlasmioCard(
+    SettingsCard(
         Modifier.fillMaxWidth().semantics { if (!enabled) disabled() },
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
     ) {
@@ -427,7 +426,7 @@ private fun AppearanceToggle(
                     Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            GlasmioSwitch(checked, onCheckedChange, enabled = enabled)
+            MeiloXSwitch(checked, onCheckedChange, enabled = enabled)
         }
     }
 }
@@ -442,7 +441,7 @@ private fun <T> AppearanceChoice(
     onSelected: (T) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 52.dp)
                 .alpha(if (enabled) 1f else 0.38f).padding(horizontal = 14.dp),

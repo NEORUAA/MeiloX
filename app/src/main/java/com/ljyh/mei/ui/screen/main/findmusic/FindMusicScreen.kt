@@ -55,6 +55,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.navigation.registerMeiloXNavigationViewport
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -77,6 +78,7 @@ fun FindMusicScreen(
     val playlistState by viewModel.highQualityPlaylist.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val listState = rememberLazyGridState()
+    registerMeiloXNavigationViewport(listState)
     val collapseProgress = rememberGlasmioGridCollapseProgress(listState)
     val title = titleOverride ?: stringResource(R.string.app_tab_explore)
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()

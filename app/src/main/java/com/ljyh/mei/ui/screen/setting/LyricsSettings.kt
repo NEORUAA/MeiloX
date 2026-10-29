@@ -42,8 +42,7 @@ import com.ljyh.mei.constants.LyricVisualStyleKey
 import com.ljyh.mei.constants.FloatingLyricsTranslationKey
 import com.ljyh.mei.constants.FloatingLyricsNextLineKey
 import com.ljyh.mei.constants.FloatingLyricsFontScaleKey
-import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
@@ -85,7 +84,7 @@ fun LyricsSettings() {
     ) {
         item {
             SettingsGroup(stringResource(R.string.lyrics_visual_style)) {
-                GlasmioCard(Modifier.fillMaxWidth()) {
+                SettingsCard(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -139,7 +138,7 @@ fun LyricsSettings() {
             SettingsGroup(stringResource(R.string.floating_lyrics_settings)) {
                 LyricsToggleRow(stringResource(R.string.floating_lyrics_translation), floatingTranslation, onFloatingTranslation)
                 LyricsToggleRow(stringResource(R.string.floating_lyrics_next_line), floatingNext, onFloatingNext)
-                GlasmioCard(Modifier.fillMaxWidth()) {
+                SettingsCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.floating_lyrics_size), modifier = Modifier.weight(1f))
@@ -155,7 +154,7 @@ fun LyricsSettings() {
                         )
                     }
                 }
-                GlasmioCard(Modifier.fillMaxWidth()) {
+                SettingsCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         SfIcon("pip", null, size = 24.dp)
                         Text(stringResource(R.string.floating_lyrics_usage), modifier = Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -228,13 +227,13 @@ private fun LyricsToggleRow(
     onCheckedChange: (Boolean) -> Unit,
     toggleModifier: Modifier = Modifier,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, modifier = Modifier.weight(1f))
-            GlasmioSwitch(checked, onCheckedChange, modifier = toggleModifier)
+            MeiloXSwitch(checked, onCheckedChange, modifier = toggleModifier)
         }
     }
 }

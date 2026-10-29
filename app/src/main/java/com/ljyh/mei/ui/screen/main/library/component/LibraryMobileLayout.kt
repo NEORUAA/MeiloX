@@ -81,6 +81,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.navigation.registerMeiloXNavigationViewport
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
@@ -215,6 +216,7 @@ fun LibraryMobileLayout(
         )
         return
     }
+    registerMeiloXNavigationViewport(listState)
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val focusManager = LocalFocusManager.current

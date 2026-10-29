@@ -3,6 +3,7 @@ package com.ljyh.mei.ui.navigation
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +30,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 /** A mounted entry publishes chrome; the navigation host owns only its button surfaces. */
 internal class MeiloXPageHeader {
     var spec by mutableStateOf(GlasmioHeaderSpec(""))
+    var viewport by mutableStateOf<BottomNavigationViewport?>(null)
     var mounted = 0
 }
 
@@ -45,6 +47,53 @@ internal class MeiloXPageHeaders {
 }
 
 private val LocalMeiloXPageHeader = staticCompositionLocalOf<MeiloXPageHeader?> { null }
+
+@Composable
+internal fun registerMeiloXNavigationViewport(listState: LazyListState) {
+    val viewport = remember(listState) {
+        object : BottomNavigationViewport {
+            override val rangePx: Float get() = listState.scrollIndicatorState?.let {
+                (it.contentSize - it.viewportSize).coerceAtLeast(0).toFloat()
+            } ?: 0f
+            override val distanceToStartPx: Float get() =
+                if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat()
+                else Float.POSITIVE_INFINITY
+            override val atStart: Boolean get() = !listState.canScrollBackward
+            override val atEnd: Boolean get() = !listState.canScrollForward
+            override val isScrolling: Boolean get() = listState.isScrollInProgress
+        }
+    }
+    registerMeiloXNavigationViewport(viewport)
+}
+
+@Composable
+internal fun registerMeiloXNavigationViewport(gridState: LazyGridState) {
+    val viewport = remember(gridState) {
+        object : BottomNavigationViewport {
+            override val rangePx: Float get() = gridState.scrollIndicatorState?.let {
+                (it.contentSize - it.viewportSize).coerceAtLeast(0).toFloat()
+            } ?: 0f
+            override val distanceToStartPx: Float get() =
+                if (gridState.firstVisibleItemIndex == 0) gridState.firstVisibleItemScrollOffset.toFloat()
+                else Float.POSITIVE_INFINITY
+            override val atStart: Boolean get() = !gridState.canScrollBackward
+            override val atEnd: Boolean get() = !gridState.canScrollForward
+            override val isScrolling: Boolean get() = gridState.isScrollInProgress
+        }
+    }
+    registerMeiloXNavigationViewport(viewport)
+}
+
+@Composable
+private fun registerMeiloXNavigationViewport(viewport: BottomNavigationViewport) {
+    val header = LocalMeiloXPageHeader.current
+    DisposableEffect(header, viewport) {
+        header?.viewport = viewport
+        onDispose {
+            if (header != null && header.viewport === viewport) header.viewport = null
+        }
+    }
+}
 
 @Composable
 internal fun MeiloXPageEntry(
@@ -208,6 +257,7 @@ fun MeiloXPinnedListPage(
     bottomPaddingValues: PaddingValues? = null,
     content: LazyListScope.() -> Unit,
 ) {
+    registerMeiloXNavigationViewport(listState)
     val animatedCollapse = rememberGlasmioHeaderCollapse(listState,
         collapseEnterBreakpoint, collapseExitBreakpoint, collapseAnimationSpec)
     val collapse = if (showsLargeTitle) animatedCollapse else 1f

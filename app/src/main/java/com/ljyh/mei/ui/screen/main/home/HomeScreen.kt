@@ -108,6 +108,7 @@ import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.navigation.registerMeiloXNavigationViewport
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -141,6 +142,7 @@ fun HomeScreen(
 
     // 替换为 LazyListState
     val listState = rememberLazyListState()
+    registerMeiloXNavigationViewport(listState)
 
     val homePageResourceShowPage1 by viewModel.homePageResourceShow.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()

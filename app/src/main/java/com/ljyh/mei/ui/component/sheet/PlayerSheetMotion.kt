@@ -3,15 +3,8 @@ package com.ljyh.mei.ui.component.sheet
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import io.github.neoruaa.glasmio.scaffold.dismissedAnchor
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Dp
@@ -28,20 +21,6 @@ internal fun playerSheetSpring() = spring<Dp>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PlayerSheetStiffness,
 )
-
-@Composable
-internal fun rememberMiniPlayerCompactProgress(compact: Boolean, sheet: GlasmioBottomSheetState): State<Float> {
-    val target = if (compact) 1f else 0f
-    val animation = remember { Animatable(target) }
-    val playerVisible by remember(sheet) { derivedStateOf { sheet.isContentVisible } }
-    LaunchedEffect(target, playerVisible) {
-        // The opening capture keeps its visible origin. Settle the hidden mini player
-        // at the navigation's destination before it becomes the return endpoint.
-        if (playerVisible) animation.snapTo(target)
-        else animation.animateTo(target, spring(stiffness = Spring.StiffnessMediumLow))
-    }
-    return animation.asState()
-}
 
 internal fun GlasmioBottomSheetState.syncPlaybackVisibility(hasCurrentMediaItem: Boolean) {
     // Restoration can finish before dismissal settles. Reverse its target instead

@@ -29,9 +29,9 @@ import io.github.neoruaa.glasmio.scaffold.HorizontalSwipeDirection
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import com.ljyh.mei.ui.component.player.component.PrivateFmModeSelector
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
+import io.github.neoruaa.glasmio.glass.render.Backdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.LayerBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
 
 
 @SuppressLint("ConfigurationScreenWidthHeight")

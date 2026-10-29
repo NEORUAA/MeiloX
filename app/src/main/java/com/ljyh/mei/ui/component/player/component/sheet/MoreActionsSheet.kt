@@ -211,7 +211,7 @@ fun MoreActionsSheet(
 private fun SortOptionMenuItem(
     title: String,
     selected: Boolean,
-    backdrop: com.kyant.backdrop.Backdrop,
+    backdrop: io.github.neoruaa.glasmio.glass.render.Backdrop,
     onClick: () -> Unit,
 ) {
     GlasmioMenuItem(

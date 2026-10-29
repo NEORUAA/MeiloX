@@ -30,8 +30,7 @@ import com.ljyh.mei.constants.ListeningHistoryTabEnabledKey
 import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.constants.PodcastsTabEnabledKey
-import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioReorderableGroup
 import io.github.neoruaa.glasmio.core.IosTypography
@@ -119,14 +118,14 @@ fun ContentsSetting(
             SettingsGroup(stringResource(R.string.content_modules)) {
                 contentFeatureSettings.forEach { setting ->
                     val enabled = enabledByFeature.getValue(setting.feature)
-                    GlasmioCard(Modifier.fillMaxWidth(), onClick = { setFeature(setting.feature, !enabled) }) {
+                    SettingsCard(Modifier.fillMaxWidth(), onClick = { setFeature(setting.feature, !enabled) }) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             SfIcon(setting.symbol, null)
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(setting.titleRes))
                                 Text(stringResource(setting.descriptionRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            GlasmioSwitch(enabled, onCheckedChange = { setFeature(setting.feature, it) })
+                            MeiloXSwitch(enabled, onCheckedChange = { setFeature(setting.feature, it) })
                         }
                     }
                 }
@@ -138,7 +137,7 @@ fun ContentsSetting(
                     Triple(Index.FindMusic, findMusicTab, setFindMusicTab),
                     Triple(Index.Library, libraryTab, setLibraryTab),
                 ).forEach { (item, enabled, setEnabled) ->
-                    GlasmioCard(
+                    SettingsCard(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { setEnabled(!enabled) },
                     ) {
@@ -149,7 +148,7 @@ fun ContentsSetting(
                         ) {
                             SfIcon(item.symbol, null)
                             Text(stringResource(item.labelRes), modifier = Modifier.weight(1f))
-                            GlasmioSwitch(checked = enabled, onCheckedChange = setEnabled)
+                            MeiloXSwitch(checked = enabled, onCheckedChange = setEnabled)
                         }
                     }
                 }
@@ -162,11 +161,11 @@ fun ContentsSetting(
                         ContentFeature.CloudMusic -> Index.Cloud
                         ContentFeature.ListeningHistory -> Index.History
                     }
-                    GlasmioCard(modifier = Modifier.fillMaxWidth(), onClick = if (moduleEnabled) ({ setTabEnabled(setting.feature, !enabled) }) else null) {
+                    SettingsCard(modifier = Modifier.fillMaxWidth(), onClick = if (moduleEnabled) ({ setTabEnabled(setting.feature, !enabled) }) else null) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             SfIcon(navigationItem.symbol, null)
                             Text(stringResource(setting.titleRes), modifier = Modifier.weight(1f))
-                            GlasmioSwitch(checked = enabled && moduleEnabled, onCheckedChange = { setTabEnabled(setting.feature, it) }, enabled = moduleEnabled)
+                            MeiloXSwitch(checked = enabled && moduleEnabled, onCheckedChange = { setTabEnabled(setting.feature, it) }, enabled = moduleEnabled)
                         }
                     }
                 }

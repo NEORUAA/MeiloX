@@ -98,6 +98,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
@@ -105,15 +106,15 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.lerp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kyant.backdrop.backdrops.emptyBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
+import io.github.neoruaa.glasmio.glass.render.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
-import com.ljyh.mei.AnimatedHomeSearchButton
+import io.github.neoruaa.glasmio.scaffold.GlasmioFloatingSearchButton
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
@@ -121,7 +122,8 @@ import com.ljyh.mei.ui.component.sheet.PlayerSheetLayers
 import io.github.neoruaa.glasmio.scaffold.collapsedAnchor
 import io.github.neoruaa.glasmio.scaffold.expandedAnchor
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
-import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
+import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerChromeMotion
+import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeMotion
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
 import com.ljyh.mei.ui.component.sheet.playerContainerRect
 import io.github.neoruaa.glasmio.glass.InteractiveHighlight
@@ -204,7 +206,7 @@ class GlassBottomBarInteractionTest {
     }
 
     @Test
-    fun homeSearchMorphKeepsExactLiveHitAndSymbolSizes() {
+    fun homeSearchMorphUsesNativeGlasmioHitAndSymbolSizes() {
         val progress = mutableFloatStateOf(0f)
         val description = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
             .targetContext.getString(com.ljyh.mei.R.string.app_tab_search)
@@ -219,13 +221,18 @@ class GlassBottomBarInteractionTest {
                     LocalGlassColors provides defaultGlassColors(isDark = false),
                 ) {
                     Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
-                        AnimatedHomeSearchButton(progress, backdrop) { clicks++ }
+                        GlasmioFloatingSearchButton(
+                            compactProgress = progress,
+                            backdrop = backdrop,
+                            contentDescription = description,
+                            onClick = { clicks++ },
+                        )
                     }
                 }
             }
         }
-        listOf(0f to (60f to 26f), 0.5f to (52f to 24f), 1f to (44f to 22f),
-            0.5f to (52f to 24f), 0f to (60f to 26f)).forEach { (value, sizes) ->
+        listOf(0f to (62f to 28f), 0.5f to (55f to 28f), 1f to (48f to 28f),
+            0.5f to (55f to 28f), 0f to (62f to 28f)).forEach { (value, sizes) ->
             compose.runOnIdle { progress.floatValue = value }
             compose.waitForIdle()
             val hitBounds = compose.onNodeWithContentDescription(description).fetchSemanticsNode().boundsInRoot
@@ -238,7 +245,7 @@ class GlassBottomBarInteractionTest {
             assertEquals("The search glyph stays centered during the morph", hitBounds.center.x, iconBounds.center.x, 1f)
             assertEquals("The search glyph stays centered during the morph", hitBounds.center.y, iconBounds.center.y, 1f)
         }
-        compose.onNodeWithContentDescription(description).performClick()
+        compose.onNodeWithContentDescription(description).performTouchInput { click() }
         compose.runOnIdle { assertEquals("The live search action remains clickable", 1, clicks) }
     }
 
@@ -1870,7 +1877,7 @@ class GlassBottomBarInteractionTest {
     fun openingPlayerSettlesInterruptedMiniNavigationWithoutResumingItAfterReturn() {
         val compact = mutableStateOf(false)
         lateinit var sheet: GlasmioBottomSheetState
-        lateinit var progress: State<Float>
+        lateinit var motion: MiniPlayerChromeMotion
         compose.mainClock.autoAdvance = false
         compose.setContent {
             sheet = rememberGlasmioBottomSheetState(
@@ -1879,24 +1886,28 @@ class GlassBottomBarInteractionTest {
                 expandedBound = 400.dp,
                 initialAnchor = collapsedAnchor,
             )
-            progress = rememberMiniPlayerCompactProgress(compact.value, sheet)
+            motion = rememberMiniPlayerChromeMotion(compact.value, sheet, 63.dp)
         }
         for (target in listOf(true, false)) {
             compose.runOnIdle { compact.value = target }
             compose.mainClock.advanceTimeBy(64)
             compose.runOnIdle {
-                assertTrue("Normal navigation still animates", progress.value > 0f && progress.value < 1f)
+                assertTrue("Normal accessory placement still animates", motion.contentProgress.value > 0f && motion.contentProgress.value < 1f)
                 sheet.expand(tween(400))
             }
             compose.mainClock.advanceTimeByFrame()
             compose.runOnIdle {
-                assertEquals("Opening settles the hidden mini player at its destination", if (target) 1f else 0f, progress.value, 0f)
+                for (progress in listOf(motion.horizontalProgress, motion.verticalProgress, motion.contentProgress)) {
+                    assertEquals("Opening settles every hidden accessory channel", if (target) 1f else 0f, progress.value, 0f)
+                }
                 sheet.collapse(tween(100))
             }
             compose.mainClock.advanceTimeBy(160)
             compose.runOnIdle {
                 assertTrue(sheet.isCollapsed)
-                assertEquals("Returning must not resume interrupted navigation", if (target) 1f else 0f, progress.value, 0f)
+                for (progress in listOf(motion.horizontalProgress, motion.verticalProgress, motion.contentProgress)) {
+                    assertEquals("Returning must not resume interrupted accessory placement", if (target) 1f else 0f, progress.value, 0f)
+                }
             }
         }
     }

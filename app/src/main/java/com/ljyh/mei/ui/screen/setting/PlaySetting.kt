@@ -1,7 +1,5 @@
 package com.ljyh.mei.ui.screen.setting
 
-import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -60,10 +58,9 @@ import com.ljyh.mei.playback.UsbAudioStatus
 import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import com.ljyh.mei.ui.component.player.isXiaomiFloatingLyricsPermissionRequired
 import com.ljyh.mei.ui.component.player.openFloatingLyricsPermissionSettings
-import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
@@ -143,7 +140,7 @@ fun PlaySetting(
     ) {
         item {
             SettingsGroup(stringResource(R.string.playback_behavior)) {
-                GlasmioCard(
+                SettingsCard(
                     modifier = Modifier.fillMaxWidth().alpha(if (usbBitPerfect) 0.38f else 1f),
                     onClick = if (usbBitPerfect) null else { { Screen.EqualizerSettings.navigate(navController) } },
                 ) {
@@ -231,7 +228,7 @@ fun PlaySetting(
                     )
                 }
                 if (notificationLeftAction == NotificationAction.FloatingLyrics || notificationRightAction == NotificationAction.FloatingLyrics) {
-                    GlasmioCard(
+                    SettingsCard(
                         Modifier.fillMaxWidth(),
                         onClick = { openFloatingLyricsPermissionSettings(context) },
                     ) {
@@ -267,7 +264,7 @@ fun PlaySetting(
         }
         if (autoMixEnabled && !usbBitPerfect) {
             item {
-                io.github.neoruaa.glasmio.ui.GlasmioGroupedList {
+                SettingsGroupedList {
                     GlasmioSegmentedControl(
                         items = listOf(AutoMixMode.Smart to stringResource(R.string.automix_smart), AutoMixMode.Fixed to stringResource(R.string.automix_fixed)),
                         selected = autoMixMode, onSelected = onAutoMixModeChange,
@@ -350,7 +347,7 @@ private fun ToggleRow(
     description: String? = null,
     enabled: Boolean = true,
 ) {
-    GlasmioCard(
+    SettingsCard(
         Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f),
         onClick = if (enabled) { { onCheckedChange(!checked) } } else null,
     ) {
@@ -366,14 +363,14 @@ private fun ToggleRow(
                     )
                 }
             }
-            GlasmioSwitch(checked, onCheckedChange, enabled = enabled)
+            MeiloXSwitch(checked, onCheckedChange, enabled = enabled)
         }
     }
 }
 
 @Composable
 private fun ValueRow(title: String, symbol: String, description: String? = null, value: @Composable () -> Unit) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = if (description == null) 0.dp else 14.dp)) {
             Row(
                 Modifier.heightIn(min = if (description == null) 52.dp else 0.dp),
@@ -423,7 +420,7 @@ private fun SliderRow(
     range: ClosedFloatingPointRange<Float>,
     onValueChangeFinished: () -> Unit,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Text(title)
             GlasmioSlider(

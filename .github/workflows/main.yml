@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: NEORUAA/Glasmio
-          ref: aad1605a2807cddaf5afacea131d528bc9452c9f
+          ref: bde07c4b4534565d6dc62243271592f5f9386cfe
           path: .glasmio-ci
           persist-credentials: false
 

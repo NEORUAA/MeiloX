@@ -44,9 +44,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -55,18 +55,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import com.kyant.backdrop.Backdrop
+import io.github.neoruaa.glasmio.glass.render.Backdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.BottomBarHorizontalPadding
 import com.ljyh.mei.constants.MiniPlayerHeight
-import com.ljyh.mei.constants.NavigationBarHeight
-import com.ljyh.mei.constants.NavigationBarBottomMargin
+import com.ljyh.mei.constants.MiniPlayerInlineHeight
+import com.ljyh.mei.constants.MiniPlayerInlineHorizontalPadding
+import com.ljyh.mei.constants.MiniPlayerInlineVerticalTravel
 import com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.extensions.togglePlayPause
@@ -83,6 +85,10 @@ import io.github.neoruaa.glasmio.core.defaultGlassColors
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.theme.LocalAccentSeedColor
 import com.ljyh.mei.ui.theme.MusicTheme
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeHint
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeMotion
+import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeHint
+import io.github.neoruaa.glasmio.scaffold.glasmioNavigationScrollHint
 import kotlin.math.roundToInt
 
 internal val LocalMiniPlayerAppearance = staticCompositionLocalOf<Boolean?> { null }
@@ -90,8 +96,9 @@ internal val LocalMiniPlayerAppearance = staticCompositionLocalOf<Boolean?> { nu
 private fun Modifier.compactMiniPlayerHorizontalPadding(
     compactProgress: State<Float>,
 ): Modifier = layout { measurable, constraints ->
-    val progress = compactProgress.value.coerceIn(0f, 1f)
-    val horizontalPadding = (BottomBarHorizontalPadding + 56.dp * progress).roundToPx()
+    val progress = compactProgress.value
+    val horizontalPadding = (BottomBarHorizontalPadding +
+        (MiniPlayerInlineHorizontalPadding - BottomBarHorizontalPadding) * progress).roundToPx()
     val totalPadding = horizontalPadding * 2
     val childConstraints = constraints.copy(
         minWidth = (constraints.minWidth - totalPadding).coerceAtLeast(0),
@@ -105,6 +112,24 @@ private fun Modifier.compactMiniPlayerHorizontalPadding(
         placeable.placeRelative(horizontalPadding, 0)
     }
 }
+
+private fun Modifier.compactMiniPlayerHeight(compactProgress: State<Float>): Modifier =
+    layout { measurable, constraints ->
+        val progress = compactProgress.value
+        val height = constraints.constrainHeight(
+            (MiniPlayerHeight + (MiniPlayerInlineHeight - MiniPlayerHeight) * progress).roundToPx(),
+        )
+        val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+        layout(placeable.width, height) { placeable.placeRelative(0, 0) }
+    }
+
+private fun Modifier.miniPlayerChromeHint(hint: MiniPlayerChromeHint?): Modifier =
+    if (hint == null) this else glasmioNavigationScrollHint(hint.progress) {
+        TransformOrigin(
+            0.5f,
+            if (size.height > 0f) hint.pivotFromTop().toPx() / size.height else 0.5f,
+        )
+    }
 
 private fun Modifier.compactNextButtonWidth(
     compactProgress: State<Float>,
@@ -158,6 +183,11 @@ private fun MiniPlayerContent(
     onCoverBoundsChanged: ((Rect) -> Unit)?,
 ) {
     val sheet = LocalPlayerSheet.current
+    val chromeMotion = LocalMiniPlayerChromeMotion.current
+    val horizontalProgress = chromeMotion?.horizontalProgress ?: compactProgress
+    val verticalProgress = chromeMotion?.verticalProgress ?: compactProgress
+    val contentProgress = chromeMotion?.contentProgress ?: compactProgress
+    val chromeHint = LocalMiniPlayerChromeHint.current
     val sheetTransitioning by remember(sheet) {
         derivedStateOf { sheet?.state?.isTransitioning == true }
     }
@@ -176,21 +206,25 @@ private fun MiniPlayerContent(
     GlassSurface(
         modifier = modifier
             .fillMaxWidth()
-            .height(MiniPlayerHeight)
-            .compactMiniPlayerHorizontalPadding(compactProgress)
+            .compactMiniPlayerHeight(verticalProgress)
+            .compactMiniPlayerHorizontalPadding(horizontalProgress)
+            .miniPlayerChromeHint(chromeHint)
             .testTag("MeiloXMiniPlayerSurface")
             .onGloballyPositioned {
                 // This modifier is outside GlassSurface's press layer. Avoid boundsInRoot,
                 // which can clip the hidden mini player against the moving sheet outline.
-                sheet?.miniBounds = Rect(it.localToRoot(Offset.Zero), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+                sheet?.miniBounds = Rect(
+                    it.localToRoot(Offset.Zero),
+                    it.localToRoot(Offset(it.size.width.toFloat(), it.size.height.toFloat())),
+                )
             },
         backdrop = backdrop,
         shape = Capsule(),
         onVisualBoundsChanged = { bounds, light -> sheet?.updateMiniPressHighlight(bounds, light) },
         cancelPressFeedback = sheetTransitioning,
         pressHighlight = remember(sheet) { { sheet?.collapsedPressHighlight } },
-        morphProgress = compactProgress,
-        morphVerticalTravel = NavigationBarHeight - NavigationBarBottomMargin,
+        morphProgress = contentProgress,
+        morphVerticalTravel = MiniPlayerInlineVerticalTravel,
         style = GlassSurfaceStyle.Navigation,
         onClick = {
             sheet?.prepareTransition()

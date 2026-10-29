@@ -29,8 +29,7 @@ import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
-import io.github.neoruaa.glasmio.ui.GlasmioCard
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
@@ -100,7 +99,7 @@ fun GeneralSettings() {
         }
         item {
             SettingsGroup(stringResource(R.string.settings_account)) {
-                GlasmioCard(
+                SettingsCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .alpha(if (cookie.isNotBlank()) 1f else 0.38f),
@@ -180,14 +179,14 @@ private fun GeneralToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth(), onClick = { onCheckedChange(!checked) }) {
+    SettingsCard(Modifier.fillMaxWidth(), onClick = { onCheckedChange(!checked) }) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null)
             Column(Modifier.weight(1f).padding(horizontal = 13.dp)) {
                 Text(stringResource(titleRes))
                 Text(stringResource(descriptionRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            GlasmioSwitch(checked, onCheckedChange)
+            MeiloXSwitch(checked, onCheckedChange)
         }
     }
 }
@@ -202,7 +201,7 @@ private fun <T> GeneralChoice(
     onSelected: (T) -> Unit,
     enabled: Boolean = true,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,

@@ -9,14 +9,93 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerSheetMotionTest {
     private val mini = Rect(12f, 700f, 388f, 748f)
     private val page = Rect(0f, 0f, 400f, 800f)
+
+    @Test fun accessoryMorphStagesWidthBeforeCollapseAndHeightBeforeExpansion() {
+        val collapse = miniPlayerChromeTransition(true, MiniPlayerChromeFrame(0f, 0f), 63.dp)
+        assertEquals(MiniPlayerChromeFrame(1f, 0f), collapse.intermediate)
+        assertEquals(MiniPlayerChromeSpring(0.72f, 0.36f), collapse.intermediateSpring)
+        assertEquals(MiniPlayerChromeSpring(0.76f, 0.42f), collapse.finalSpring)
+        assertEquals(50L, collapse.finalDelayMillis)
+
+        val expand = miniPlayerChromeTransition(false, MiniPlayerChromeFrame(1f, 1f), 63.dp)
+        assertEquals(MiniPlayerChromeFrame(1f, 0f), expand.intermediate)
+        assertEquals(MiniPlayerChromeSpring(0.72f, 0.30f), expand.intermediateSpring)
+        assertEquals(MiniPlayerChromeSpring(0.72f, 0.36f), expand.finalSpring)
+        assertEquals(50L, expand.finalDelayMillis)
+    }
+
+    @Test fun shortAccessoryTravelUsesTheModelFrameAndIncludesTheFifteenPointBoundary() {
+        for (compact in listOf(false, true)) {
+            val model = if (compact) MiniPlayerChromeFrame(0f, 0f) else MiniPlayerChromeFrame(1f, 1f)
+            val short = miniPlayerChromeTransition(compact, model, 15.dp)
+            val target = if (compact) 1f else 0f
+            assertEquals(MiniPlayerChromeFrame(target, target), short.intermediate)
+            assertEquals(MiniPlayerChromeSpring(1f, 0.3f), short.intermediateSpring)
+            assertEquals(0L, short.finalDelayMillis)
+            assertEquals(50L, miniPlayerChromeTransition(compact, model, 15.01.dp).finalDelayMillis)
+        }
+    }
+
+    @Test fun accessoryStagesOverlapAndInterruptedReturnSettlesItsHiddenEndpoint() = runTest {
+        val clock = BroadcastFrameClock()
+        val motion = MiniPlayerChromeMotion(compact = false)
+        var frame = 0L
+        suspend fun frames(count: Int) {
+            repeat(count) {
+                advanceTimeBy(16)
+                frame += 16_000_000L
+                clock.sendFrame(frame)
+                runCurrent()
+            }
+        }
+        val collapse = launch(clock) { motion.update(true, playerVisible = false, centerTravel = 63.dp) }
+        runCurrent()
+        frames(2)
+        assertTrue(motion.horizontalProgress.value > 0f)
+        assertEquals(0f, motion.verticalProgress.value, 0f)
+        assertTrue(motion.contentProgress.value > 0f)
+        val beforeReverse = listOf(motion.horizontalProgress.value, motion.verticalProgress.value, motion.contentProgress.value)
+        collapse.cancelAndJoin()
+        val expand = launch(clock) { motion.update(false, playerVisible = false, centerTravel = 63.dp) }
+        runCurrent()
+        assertEquals(beforeReverse, listOf(motion.horizontalProgress.value, motion.verticalProgress.value, motion.contentProgress.value))
+        frames(2)
+        // The final model was committed before its delayed vertical presentation.
+        // Expansion therefore retains the compact width in its first stage.
+        assertTrue(motion.horizontalProgress.value > beforeReverse[0])
+        assertEquals(0f, motion.verticalProgress.value, 0f)
+        frames(180)
+        expand.join()
+        assertEquals(0f, motion.horizontalProgress.value, 0f)
+        assertEquals(0f, motion.verticalProgress.value, 0f)
+        assertEquals(0f, motion.contentProgress.value, 0f)
+
+        val interrupted = launch(clock) { motion.update(true, playerVisible = false, centerTravel = 63.dp) }
+        runCurrent()
+        frames(6)
+        assertTrue(motion.horizontalProgress.value < 1f)
+        assertTrue(motion.verticalProgress.value > 0f)
+        interrupted.cancelAndJoin()
+        motion.update(true, playerVisible = true, centerTravel = 63.dp)
+        assertEquals(1f, motion.horizontalProgress.value, 0f)
+        assertEquals(1f, motion.verticalProgress.value, 0f)
+        assertEquals(1f, motion.contentProgress.value, 0f)
+    }
 
     @Test fun lyricHeaderArtworkKeepsExactEndpointsAndShrinksItsTopInsetOnCollapse() {
         val source = Rect(20f, 708f, 52f, 740f)

@@ -1,26 +1,37 @@
 package com.ljyh.mei.ui.screen.setting
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioCard
+import io.github.neoruaa.glasmio.ui.glasmioGroupedListSeparator
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassContentColor
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -28,6 +39,8 @@ import com.ljyh.mei.data.network.NeteaseSessionType
 import com.ljyh.mei.ui.screen.account.rememberNeteaseSessionType
 import androidx.compose.ui.draw.alpha
 import com.ljyh.mei.utils.rememberPreference
+
+private val LocalSettingsGroup = staticCompositionLocalOf { false }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,11 +132,54 @@ internal fun SettingsSectionTitle(title: String) {
 @Composable
 fun SettingsGroup(
     title: String,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsSectionTitle(title)
-        GlasmioGroupedList(content = content)
+        SettingsGroupedList(content = content)
+    }
+}
+
+@Composable
+internal fun SettingsGroupedList(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    GlasmioGroupedList(modifier) {
+        CompositionLocalProvider(LocalSettingsGroup provides true) { content() }
+    }
+}
+
+/** Custom settings rows use the same group-boundary separator rule as library list rows. */
+@Composable
+internal fun SettingsCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    if (!LocalSettingsGroup.current) {
+        GlasmioCard(modifier = modifier, onClick = onClick, content = content)
+        return
+    }
+    val colors = LocalGlassColors.current
+    Box(
+        modifier = modifier
+            .glasmioGroupedListSeparator(colors.separator, horizontalInset = 16.dp)
+            .then(
+                if (onClick != null) Modifier.clickable(
+                    interactionSource = null,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                ) else Modifier,
+            ),
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides colors.content,
+            LocalGlassContentColor provides colors.content,
+        ) {
+            content()
+        }
     }
 }
 

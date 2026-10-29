@@ -43,7 +43,7 @@ import com.ljyh.mei.constants.DevModeKey
 import com.ljyh.mei.constants.Github
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -169,7 +169,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                             stringResource(R.string.about_check_beta_updates),
                             modifier = Modifier.weight(1f).padding(horizontal = 13.dp),
                         )
-                        GlasmioSwitch(
+                        MeiloXSwitch(
                             checked = betaUpdatesEnabled,
                             onCheckedChange = ::setBetaUpdatesEnabled,
                             enabled = !isCheckingUpdate && !isSavingBetaPreference,

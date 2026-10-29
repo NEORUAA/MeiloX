@@ -27,11 +27,10 @@ import com.ljyh.mei.constants.AutoCacheQualityKey
 import com.ljyh.mei.constants.DownloadPathKey
 import com.ljyh.mei.constants.DownloadQuality
 import com.ljyh.mei.constants.DownloadQualityKey
-import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.glass.GlassSurface
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioStepper
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -95,14 +94,14 @@ fun DownloadSetting(
         }
         item {
             SettingsGroup(stringResource(R.string.automatic_cache)) {
-                GlasmioCard(Modifier.fillMaxWidth(), onClick = { onAutomaticCacheChange(!automaticCache) }) {
+                SettingsCard(Modifier.fillMaxWidth(), onClick = { onAutomaticCacheChange(!automaticCache) }) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         SfIcon("arrow.down.circle", null)
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.automatic_cache_by_play_count))
                             Text(stringResource(R.string.automatic_cache_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        GlasmioSwitch(automaticCache, onAutomaticCacheChange)
+                        MeiloXSwitch(automaticCache, onAutomaticCacheChange)
                     }
                 }
             }
@@ -110,7 +109,7 @@ fun DownloadSetting(
         if (automaticCache) {
             item {
                 SettingsGroup(stringResource(R.string.automatic_cache_threshold)) {
-                    GlasmioCard(Modifier.fillMaxWidth()) {
+                    SettingsCard(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.automatic_cache_count, threshold), modifier = Modifier.weight(1f))
                             GlasmioStepper(value = threshold, onValueChange = onThresholdChange, range = 1..100)
@@ -135,7 +134,7 @@ private fun DownloadQualityCard(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    GlasmioCard(
+    SettingsCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
     ) {

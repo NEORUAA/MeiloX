@@ -2,6 +2,7 @@ package com.ljyh.mei.ui.navigation
 
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -17,12 +18,17 @@ import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipe
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -77,6 +83,88 @@ class MainNavigationInstrumentedTest {
         PodcastsEnabledKey, DownloadsEnabledKey, CloudMusicEnabledKey, ListeningHistoryEnabledKey,
     )
     private var avatarDescription = ""
+
+    @Test
+    fun reverseScrollingRevealsNavigationBeforeThePageReachesItsTop() = withNavigationPreferences {
+        openTab(Index.Settings)
+        setPreference(KeepBottomBarExpandedKey, false)
+        compose.waitForIdle()
+        val pageTag = "MeiloXPage:${Index.Settings.route}"
+        val list = compose.onNode(hasScrollToNodeAction() and hasAnyAncestor(hasTestTag(pageTag)))
+        val homeTab = hasContentDescription(text(Index.Home.labelRes)) and
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        list.performTouchInput { swipeUp(durationMillis = 700L) }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(homeTab).fetchSemanticsNodes().isEmpty()
+        }
+        val range = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertTrue("The reverse gesture starts inside the page", range.value() > 0f)
+        list.performTouchInput {
+            swipe(start = center.copy(y = height * .35f), end = center.copy(y = height * .6f), durationMillis = 700L)
+        }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(homeTab).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue("Navigation must return before a top-boundary refresh", range.value() > 0f)
+    }
+
+    @Test
+    fun accountWebPagesUseTheSharedHeaderAndPlayerSafeArea() = withNavigationPreferences {
+        val preferences = runBlocking(Dispatchers.IO) { compose.activity.dataStore.data.first() }
+        org.junit.Assume.assumeTrue("Use the retained signed-in account", !preferences[CookieKey].isNullOrBlank())
+        compose.onNodeWithContentDescription(avatarDescription).performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(text(R.string.account_security)) and hasClickAction())
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        compose.onNode(hasText(text(R.string.account_security)) and hasClickAction())
+            .performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(text(R.string.account_login_protection)) and hasClickAction())
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        compose.onNode(hasText(text(R.string.account_login_protection)) and hasClickAction())
+            .performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        val page = "MeiloXPage:${Screen.AccountWeb.route}/LoginProtection"
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(page, useUnmergedTree = true)
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription(text(R.string.navigation_back)).assertCountEquals(1)
+        compose.onNodeWithContentDescription(text(R.string.refresh)).assertIsDisplayed()
+        val back = compose.onNodeWithContentDescription(text(R.string.navigation_back))
+        back.assert(!hasAnyAncestor(hasTestTag(page)))
+        val backBottom = back.fetchSemanticsNode().boundsInRoot.bottom
+        val mini = compose.onAllNodesWithTag("MeiloXMiniPlayerSurface", useUnmergedTree = true)
+            .fetchSemanticsNodes().firstOrNull()?.boundsInRoot
+        val density = compose.activity.resources.displayMetrics.density
+        fun findBrowser(view: android.view.View): android.webkit.WebView? {
+            if (view is android.webkit.WebView) return view
+            if (view is android.view.ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    findBrowser(view.getChildAt(index))?.let { return it }
+                }
+            }
+            return null
+        }
+        compose.waitUntil(10_000) {
+            var hosted = false
+            compose.runOnUiThread { hosted = findBrowser(compose.activity.window.decorView) != null }
+            hosted
+        }
+        compose.runOnIdle {
+            val browser = requireNotNull(findBrowser(compose.activity.window.decorView)) {
+                "The WebView must belong to the page host, not a separate dialog"
+            }
+            val location = IntArray(2)
+            browser.getLocationInWindow(location)
+            assertTrue("Web content starts below the shared header", location[1] >= backBottom - density)
+            mini?.let {
+                assertTrue("Web content stays above the mini player", location[1] + browser.height <= it.top + density)
+            }
+        }
+    }
 
     @Test
     fun concurrentPlaybackSettingPersistsAcrossRecreation() = withNavigationPreferences {

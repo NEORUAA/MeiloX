@@ -20,6 +20,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import io.github.neoruaa.glasmio.glass.render.configureGlassDynamicRange
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -67,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.State
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,6 +78,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -125,6 +128,14 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationOperation
 import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
 import com.ljyh.mei.ui.navigation.MeiloXPageEntry
+import com.ljyh.mei.ui.navigation.rememberMeiloXNavigationScrollState
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeMotion
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeHint
+import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeHint
+import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeMotion
+import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerChromeMotion
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationBarWithTrailingItem
+import io.github.neoruaa.glasmio.scaffold.glasmioNavigationScrollHint
 import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.navigation3.ui.defaultPopTransitionSpec
 import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
@@ -151,6 +162,7 @@ import com.ljyh.mei.constants.NavigationTabOrderKey
 import com.ljyh.mei.constants.KeepBottomBarExpandedKey
 import com.ljyh.mei.constants.BottomFloatingContentExtraSpacingKey
 import com.ljyh.mei.constants.BottomBarHorizontalPadding
+import com.ljyh.mei.constants.MiniPlayerInlineVerticalTravel
 import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
@@ -185,7 +197,6 @@ import com.ljyh.mei.playback.ENABLE_FLOATING_LYRICS
 import com.ljyh.mei.playback.DISABLE_FLOATING_LYRICS
 import androidx.lifecycle.Lifecycle
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
-import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerCompactProgress
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.syncPlaybackVisibility
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioAppBarScrollBehavior
@@ -239,10 +250,10 @@ import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.VersionUpdateChecker
 import com.ljyh.mei.utils.VersionUpdateResult
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
+import io.github.neoruaa.glasmio.glass.render.Backdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -277,6 +288,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pictureInPictureMode = isInPictureInPictureMode
         readFloatingLyricsIntent(intent)
+        configureGlassDynamicRange(window, hdrEnabled = true)
         enableEdgeToEdge()
         CrashHandler.init(this)
         if (BuildConfig.DEBUG) {
@@ -291,6 +303,7 @@ class MainActivity : ComponentActivity() {
             val context = this@MainActivity
             val lifecycleOwner = LocalLifecycleOwner.current
             val backStack = rememberNavBackStack(MeiRoute(Screen.Home.route))
+            val pageHeaders = remember { MeiloXPageHeaders() }
             val navController = remember(backStack) {
                 MeiNavigator(context = context, backStack = backStack)
             }
@@ -471,48 +484,17 @@ class MainActivity : ComponentActivity() {
                 }
 
             }
-            var navigationBarVisible by remember { mutableStateOf(true) }
-            val navigationBarExpanded = keepBottomBarExpanded || navigationBarVisible
-            val keepBottomBarExpandedState = rememberUpdatedState(keepBottomBarExpanded)
-            LaunchedEffect(keepBottomBarExpanded) {
-                if (keepBottomBarExpanded) navigationBarVisible = true
-            }
             val scrollPlayerSheet = remember { mutableStateOf<GlasmioBottomSheetState?>(null) }
-            val searchActiveState = rememberUpdatedState(active)
-            val nestedScrollConnection = remember {
-                object : NestedScrollConnection {
-
-                    override fun onPreScroll(
-                        available: Offset,
-                        source: NestedScrollSource
-                    ): Offset {
-                        if (keepBottomBarExpandedState.value) return Offset.Zero
-                        // Read the actual sheet state for every event. Page scrolling remains
-                        // unconsumed, but cannot move the mini player's return target mid-flight.
-                        val sheet = scrollPlayerSheet.value
-                        if (sheet != null && !sheet.isCollapsed && !sheet.isDismissed) {
-                            return Offset.Zero
-                        }
-                        val route = navController.currentRoute
-                        val handlesNavigationBar = !searchActiveState.value &&
-                            (route == null ||
-                                route in homeNavigationRoutes ||
-                                route == Screen.Search.route)
-                        if (!handlesNavigationBar) return Offset.Zero
-
-                        if (available.y < -10f) {
-                            // 向下滑
-                            navigationBarVisible = false
-                        }
-
-                        if (available.y > 10f) {
-                            // 向上滑
-                            navigationBarVisible = true
-                        }
-
-                        return Offset.Zero
-                    }
-                }
+            val navigationScrollAllowed = remember { mutableStateOf(false) }
+            val scrollSheet = scrollPlayerSheet.value
+            val navigationScroll = rememberMeiloXNavigationScrollState(
+                viewport = pageHeaders.entry(navController.currentRoute ?: Screen.Home.route).viewport,
+                enabled = navigationScrollAllowed.value && !active && !keepBottomBarExpanded &&
+                    (scrollSheet == null || scrollSheet.isCollapsed || scrollSheet.isDismissed),
+            )
+            val navigationBarExpanded = keepBottomBarExpanded || !navigationScroll.compactTarget
+            LaunchedEffect(keepBottomBarExpanded) {
+                if (keepBottomBarExpanded) navigationScroll.expand()
             }
 
 
@@ -590,7 +572,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
-                            .nestedScroll(nestedScrollConnection)
+                            .nestedScroll(navigationScroll.nestedScrollConnection)
                             .onSizeChanged {
                                 isMeasured = true
                             }
@@ -699,10 +681,10 @@ class MainActivity : ComponentActivity() {
                                 navigationItems.fastAny { it.route == currentRoute } ||
                                 currentRoute == Screen.Search.route) &&
                                 !active
+                    SideEffect { navigationScrollAllowed.value = shouldAllowNavigationBar }
                     // Route visibility must not reset the expanded/compact shape. This keeps a
                     // MiniNav compact while it fades out. The expanded preference overrides
                     // scrolling without changing which routes can display the navigation bar.
-                    val shouldCompactNavigationBar = !navigationBarExpanded
                     val shouldCompactMiniPlayer =
                         shouldAllowNavigationBar && !navigationBarExpanded
 
@@ -730,11 +712,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val compactNavigationProgress = animateFloatAsState(
-                        targetValue = if (shouldCompactNavigationBar) 1f else 0f,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        label = "CompactBottomNavigation",
-                    )
+                    val compactNavigationProgress = navigationScroll.compactProgress
                     val playerBottomSheetState = rememberGlasmioBottomSheetState(
                         dismissedBound = 0.dp,
                         collapsedBound = collapsedBound,
@@ -750,10 +728,41 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    val compactMiniPlayerProgress = rememberMiniPlayerCompactProgress(
+                    val miniPlayerCenterTravel = MiniPlayerInlineVerticalTravel
+                    val miniPlayerChromeMotion = rememberMiniPlayerChromeMotion(
                         compact = shouldCompactMiniPlayer,
                         sheet = playerBottomSheetState,
+                        centerTravel = miniPlayerCenterTravel,
                     )
+                    val chromeHintProgress = navigationScroll.scrollHintProgress
+                    // UIKit's hint wrapper retains the regular accessory reservation even
+                    // while the visible accessory is inline. Include the bottom allocation.
+                    val chromeReservation = remember(playerBottomSheetState, navigationBottomMargin) {
+                        {
+                            NavigationBarSurfaceHeight + navigationBottomMargin +
+                                if (playerBottomSheetState.isDismissed) 0.dp
+                                else NavigationBarBottomMargin + MiniPlayerHeight
+                        }
+                    }
+                    val navigationHint = remember(chromeHintProgress, chromeReservation, navigationBottomMargin) {
+                        MiniPlayerChromeHint(chromeHintProgress) {
+                            NavigationBarSurfaceHeight + navigationBottomMargin - chromeReservation() / 2
+                        }
+                    }
+                    val miniPlayerHint = remember(
+                        chromeHintProgress, chromeReservation, miniPlayerChromeMotion,
+                        playerBottomSheetState, miniPlayerCenterTravel, searchMiniPlayerOffset,
+                    ) {
+                        MiniPlayerChromeHint(chromeHintProgress) {
+                            val miniAnchor = if (playerBottomSheetState.progress == 0f &&
+                                !playerBottomSheetState.isDragging
+                            ) playerBottomSheetState.value else playerBottomSheetState.collapsedBound
+                            miniAnchor -
+                                miniPlayerCenterTravel * miniPlayerChromeMotion.verticalProgress.value -
+                                searchMiniPlayerOffset() -
+                                chromeReservation() / 2
+                        }
+                    }
                     val playerBackgroundReady = remember { mutableStateOf(false) }
                     val onPlayerBackgroundReadyChanged = remember {
                         { ready: Boolean -> playerBackgroundReady.value = ready }
@@ -988,7 +997,6 @@ class MainActivity : ComponentActivity() {
                                     val entryViewModelOwners = remember {
                                         mutableMapOf<String, MeiNavEntryViewModelStoreOwner>()
                                     }
-                                    val pageHeaders = remember { MeiloXPageHeaders() }
                                     val headerMotion = remember {
                                         GlasmioNavHeaderMotion((backStack.last() as MeiRoute).route) { from, to, pop ->
                                             if (from in homeNavigationRoutes && to in homeNavigationRoutes
@@ -1197,7 +1205,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         if (selectionToolbar.content.value == null) AnimatedMiniPlayerLayer(
-                            compactProgress = compactMiniPlayerProgress,
+                            motion = miniPlayerChromeMotion,
+                            hint = miniPlayerHint,
+                            centerTravel = miniPlayerCenterTravel,
                             searchVerticalOffset = searchMiniPlayerOffset,
                             state = playerBottomSheetState,
                             backdrop = bottomControlsBackdrop,
@@ -1252,9 +1262,10 @@ class MainActivity : ComponentActivity() {
                         ) {
                             AnimatedBottomNavigationRow(
                                 compactProgress = compactNavigationProgress,
+                                hint = navigationHint,
                                 items = navigationTabs,
                                 selectedKey = selectedIndex,
-                                onExpand = { navigationBarVisible = true },
+                                onExpand = navigationScroll::expand,
                                 onSelected = { screen ->
                                     setLastSelectedTab(screen.name)
                                     if (currentRoute == screen.route) {
@@ -1418,16 +1429,18 @@ private fun Scene<NavKey>.currentRoute(): String? =
 
 @Composable
 private fun BoxScope.AnimatedMiniPlayerLayer(
-    compactProgress: State<Float>,
+    motion: MiniPlayerChromeMotion,
+    hint: MiniPlayerChromeHint,
+    centerTravel: Dp,
     searchVerticalOffset: () -> Dp,
     state: GlasmioBottomSheetState,
     backdrop: Backdrop,
     pageDarkAppearance: Boolean?,
     onBackgroundReadyChanged: (Boolean) -> Unit,
 ) {
-    val miniPlayerVerticalOffset = remember(compactProgress, searchVerticalOffset) {
+    val miniPlayerVerticalOffset = remember(motion, centerTravel, searchVerticalOffset) {
         {
-            (NavigationBarHeight - NavigationBarBottomMargin) * compactProgress.value +
+            centerTravel * motion.verticalProgress.value +
                 searchVerticalOffset()
         }
     }
@@ -1441,11 +1454,13 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
             // sample layer while keeping page/player glass out of that source.
             LocalGlassBackdrop provides backdrop,
             LocalMiniPlayerAppearance provides pageDarkAppearance,
+            LocalMiniPlayerChromeMotion provides motion,
+            LocalMiniPlayerChromeHint provides hint,
         ) {
             BottomSheetPlayer(
                 state = state,
                 modifier = Modifier.fillMaxSize(),
-                compactMiniPlayerProgress = compactProgress,
+                compactMiniPlayerProgress = motion.contentProgress,
                 miniPlayerVerticalOffset = miniPlayerVerticalOffset,
                 onBackgroundReadyChanged = onBackgroundReadyChanged,
             )
@@ -1456,6 +1471,7 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
 @Composable
 private fun AnimatedBottomNavigationRow(
     compactProgress: State<Float>,
+    hint: MiniPlayerChromeHint,
     items: List<GlasmioTabItem<Index>>,
     selectedKey: Index,
     onExpand: () -> Unit,
@@ -1465,84 +1481,26 @@ private fun AnimatedBottomNavigationRow(
     playerBottomSheetState: GlasmioBottomSheetState,
     bottomMargin: Dp,
 ) {
-    BottomNavigationContact(
+    GlasmioNavigationBarWithTrailingItem(
+        items = items,
+        trailingItem = GlasmioTabItem(Index.Search, stringResource(R.string.app_tab_search), SfSymbol.Search),
+        selectedKey = selectedKey,
+        onExpand = onExpand,
+        onSelected = { item -> if (item == Index.Search) onSearchClick() else onSelected(item) },
+        compactProgress = compactProgress,
         backdrop = backdrop,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = bottomNavigationHorizontalMargin)
+            .glasmioNavigationScrollHint(hint.progress) {
+                TransformOrigin(.5f, hint.pivotFromTop().toPx() / size.height.coerceAtLeast(1f))
+            }
             .padding(bottom = bottomMargin)
             .offset {
                 val slideOffset = (bottomMargin + NavigationBarHeight) *
                     playerBottomSheetState.progress.coerceIn(0f, 1f)
-                // Compact controls shrink around the center of their expanded hosts.
-                val compactInset = (NavigationBarSurfaceHeight - MiniPlayerHeight) / 2 * compactProgress.value
-                IntOffset(x = 0, y = (slideOffset + compactInset).roundToPx())
+                IntOffset(x = 0, y = slideOffset.roundToPx())
             },
-    ) {
-        GlasmioNavigationBar(
-            items = items,
-            selectedKey = selectedKey,
-            onExpand = onExpand,
-            onSelected = onSelected,
-            backdrop = backdrop,
-            compactProgress = compactProgress,
-            compactSize = MiniPlayerHeight,
-            modifier = Modifier.weight(1f).zIndex(1f),
-        )
-        Spacer(Modifier.size(width = 8.dp, height = 1.dp))
-        val contact = LocalBottomControlContact.current
-        Box(
-            modifier = Modifier.size(NavigationBarSurfaceHeight)
-                .then(contact?.takeIf { it.capturesLensSource.value }
-                    ?.neighborRecordingModifier ?: Modifier),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            AnimatedHomeSearchButton(compactProgress, backdrop, onSearchClick)
-        }
-    }
-}
-
-@Composable
-internal fun AnimatedHomeSearchButton(
-    compactProgress: State<Float>,
-    backdrop: Backdrop,
-    onClick: () -> Unit,
-) {
-    val sizeModifier = remember(compactProgress) {
-        Modifier.layout { measurable, constraints ->
-            // The live surface size belongs to measurement; its material composition
-            // can stay unchanged through every frame of the shared navigation spring.
-            val diameter = (NavigationBarSurfaceHeight - 16.dp * compactProgress.value)
-                .roundToPx().coerceAtLeast(0)
-            val placeable = measurable.measure(Constraints.fixed(
-                constraints.constrainWidth(diameter), constraints.constrainHeight(diameter),
-            ))
-            layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
-        }
-    }
-    GlasmioIconButton(
-        onClick = onClick,
-        backdrop = backdrop,
-        style = GlassSurfaceStyle.Navigation,
-        modifier = sizeModifier,
-        morphProgress = compactProgress,
-        morphCaptureWidth = NavigationBarSurfaceHeight,
-    ) {
-        HomeSearchIcon(compactProgress)
-    }
-}
-
-@Composable
-private fun HomeSearchIcon(compactProgress: State<Float>) {
-    val progress = compactProgress.value
-    // Keep SF Symbols' exact live font size and ink bounds. Only this glyph needs
-    // recomposition as its size changes, without rebuilding the glass surface.
-    SfIcon(
-        SfSymbol.Search,
-        contentDescription = stringResource(R.string.app_tab_search),
-        tint = LocalGlassColors.current.content,
-        size = 26.dp + (CompactBottomControlIconSize - 26.dp) * progress,
-        weight = androidx.compose.ui.text.font.FontWeight.SemiBold,
     )
 }
 

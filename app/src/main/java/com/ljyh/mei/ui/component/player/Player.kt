@@ -46,8 +46,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCombinedBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
 
 internal val LocalPlayerArtwork = staticCompositionLocalOf<Pair<String, androidx.compose.ui.graphics.painter.Painter>?> { null }
 

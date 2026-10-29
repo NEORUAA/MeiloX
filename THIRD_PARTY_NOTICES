@@ -5,9 +5,12 @@ MeiloX is distributed under the GNU General Public License, version 3 (see
 LICENSE). The components below remain under their own terms. This file is a
 notice and does not replace any upstream license text.
 
-AndroidLiquidGlass / Backdrop
------------------------------
-The `io.github.kyant0:backdrop:2.0.0` dependency is from AndroidLiquidGlass:
+Glasmio / AndroidLiquidGlass capture infrastructure
+---------------------------------------------------
+Glasmio provides the owned material renderer and backdrop API:
+https://github.com/NEORUAA/Glasmio
+
+Its retained capture infrastructure is adapted from AndroidLiquidGlass:
 https://github.com/Kyant0/AndroidLiquidGlass
 
 Copyright (c) Kyant0 and contributors. It is licensed under the Apache

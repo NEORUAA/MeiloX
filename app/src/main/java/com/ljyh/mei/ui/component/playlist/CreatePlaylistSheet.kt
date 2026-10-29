@@ -39,7 +39,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
@@ -127,7 +127,7 @@ fun CreatePlaylistSheet(
                         systemName = if (isPrivate) "lock.iphone" else "globe",
                         showTopSeparator = false,
                         onClick = { isPrivate = !isPrivate },
-                        trailing = { GlasmioSwitch(checked = isPrivate, onCheckedChange = { isPrivate = it }) },
+                        trailing = { MeiloXSwitch(checked = isPrivate, onCheckedChange = { isPrivate = it }) },
                     )
                 }
 

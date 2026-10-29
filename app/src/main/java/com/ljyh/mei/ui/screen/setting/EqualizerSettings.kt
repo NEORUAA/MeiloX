@@ -32,12 +32,10 @@ import com.ljyh.mei.constants.EqualizerPresetKey
 import com.ljyh.mei.playback.EqualizerBand
 import com.ljyh.mei.playback.EqualizerPreset
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
-import io.github.neoruaa.glasmio.ui.GlasmioSwitch
+import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
-import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -100,7 +98,7 @@ fun EqualizerSettings() {
         },
     ) {
         item {
-            GlasmioCard(Modifier.fillMaxWidth(), onClick = { setEnabled(!enabled) }) {
+            SettingsCard(Modifier.fillMaxWidth(), onClick = { setEnabled(!enabled) }) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     SfIcon("slider.vertical.3", null)
                     Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
@@ -111,7 +109,7 @@ fun EqualizerSettings() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    GlasmioSwitch(enabled, setEnabled)
+                    MeiloXSwitch(enabled, setEnabled)
                 }
             }
         }
@@ -137,7 +135,7 @@ fun EqualizerSettings() {
             }
         }
         item(key = "equalizer-bands") {
-            GlasmioGroupedList {
+            SettingsGroupedList {
                 EqualizerSliderCard(
                     title = stringResource(R.string.equalizer_preamp), value = previewPreamp ?: preamp, enabled = enabled,
                     onValueChange = {
@@ -168,7 +166,7 @@ private fun EqualizerSliderCard(
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, modifier = Modifier.weight(1f))

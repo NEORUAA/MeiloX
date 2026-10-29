@@ -46,9 +46,12 @@ Use JDK 21 and Android SDK 37.0. Until the first Glasmio release is published, b
 
 ```sh
 git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-git -C ../Glasmio checkout aad1605a2807cddaf5afacea131d528bc9452c9f
+git -C ../Glasmio checkout bde07c4b4534565d6dc62243271592f5f9386cfe
 ./gradlew -Pglasmio.source=true :app:assembleDebug
 ```
+
+See [Glasmio integration](docs/glasmio-integration.md) for the owned renderer,
+navigation viewport binding, and native accessory motion used by the MiniPlayer.
 
 ## 歌词共享
 

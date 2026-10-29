@@ -73,7 +73,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.kyant.backdrop.backdrops.emptyBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.MediaMetadata

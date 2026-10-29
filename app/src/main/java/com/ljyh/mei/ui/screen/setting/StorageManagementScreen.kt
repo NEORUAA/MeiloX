@@ -45,7 +45,6 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.CacheManager
-import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
@@ -256,7 +255,7 @@ fun StorageManagementScreen(viewModel: StorageManagementViewModel = hiltViewMode
         },
     ) {
         item {
-            GlasmioCard(Modifier.fillMaxWidth()) {
+            SettingsCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     SfIcon("internaldrive.fill", null, size = 30.dp)
                     Text(stringResource(R.string.storage_managed_content), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -365,7 +364,7 @@ private fun StorageCacheLimitRow(
     enabled: Boolean,
     onSelected: (Int) -> Unit,
 ) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -388,7 +387,7 @@ private fun StorageCacheLimitRow(
 
 @Composable
 private fun StorageUsageRow(systemName: String, titleRes: Int, bytes: Long, context: Context) {
-    GlasmioCard(Modifier.fillMaxWidth()) {
+    SettingsCard(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null)
             Text(stringResource(titleRes), modifier = Modifier.weight(1f).padding(horizontal = 13.dp))
@@ -399,7 +398,7 @@ private fun StorageUsageRow(systemName: String, titleRes: Int, bytes: Long, cont
 
 @Composable
 private fun StorageActionRow(systemName: String, titleRes: Int, busy: Boolean, destructive: Boolean = false, onClick: () -> Unit) {
-    GlasmioCard(Modifier.fillMaxWidth(), onClick = if (busy) null else onClick) {
+    SettingsCard(Modifier.fillMaxWidth(), onClick = if (busy) null else onClick) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null)
             Text(

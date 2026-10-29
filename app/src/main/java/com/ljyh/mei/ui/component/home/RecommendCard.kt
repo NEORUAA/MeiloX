@@ -52,8 +52,8 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.backdrop.drawPlainBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
+import io.github.neoruaa.glasmio.glass.render.drawPlainBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.RecommendCardCornerRadius
 import com.ljyh.mei.constants.RecommendCardHeight
