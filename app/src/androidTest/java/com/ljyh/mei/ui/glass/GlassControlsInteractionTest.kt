@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -88,6 +89,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
@@ -102,6 +104,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -150,7 +154,16 @@ import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.screen.setting.SettingsCard
 import com.ljyh.mei.ui.screen.setting.SettingsGroupedList
 import com.ljyh.mei.ui.screen.social.privateConversationItems
+import com.ljyh.mei.ui.screen.social.IosMessageBubble
+import com.ljyh.mei.ui.screen.social.MessageResourceCard
+import com.ljyh.mei.data.model.melox.ShareResource
+import com.ljyh.mei.data.model.melox.ShareResourceKind
+import com.ljyh.mei.data.model.melox.AccountDevice
+import com.ljyh.mei.data.model.melox.AccountAuthorization
 import com.ljyh.mei.data.model.melox.MessageContact
+import com.ljyh.mei.ui.screen.account.accountDeviceRecordItems
+import com.ljyh.mei.ui.screen.account.AccountDevicesState
+import com.ljyh.mei.ui.screen.account.AccountDeviceTab
 import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.R
@@ -161,6 +174,7 @@ import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import com.ljyh.mei.ui.screen.comment.component.CommentSortAction
 import com.ljyh.mei.utils.color.ColorExtractionUtils
+import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -258,6 +272,84 @@ class GlassControlsInteractionTest {
     }
 
     @Test
+    fun accountDeviceGroupsKeepDestructiveActionsScopedAndBorderless() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val removeDescription = context.getString(R.string.account_remove_device)
+        val revokeDescription = context.getString(R.string.account_revoke_authorization)
+        val current = AccountDevice("current", "Current phone", "Singapore", 0, true, "Android")
+        val other = AccountDevice("other", "Other phone", "Tokyo", 0, false, "Android")
+        val replacement = other.copy(key = "replacement", name = "Replacement phone")
+        val application = AccountAuthorization("music-client", "Music client", "Account access")
+        val records = mutableStateOf(AccountDevicesState(devices = listOf(current, other)))
+        val actionsEnabled = mutableStateOf(true)
+        val removed = mutableListOf<String>()
+        val revoked = mutableListOf<String>()
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
+                LazyColumn(
+                    modifier = Modifier.width(360.dp).height(320.dp).testTag("accountRecords"),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(0.dp),
+                ) {
+                    accountDeviceRecordItems(
+                        state = records.value,
+                        enabled = actionsEnabled.value,
+                        onRemoveDevice = { removed += it.key },
+                        onRevokeAuthorization = { revoked += it.clientId },
+                    )
+                }
+            }
+        }
+        val firstTop = compose.onNodeWithText(current.name).getUnclippedBoundsInRoot().top.value
+        val secondTop = compose.onNodeWithText(other.name).getUnclippedBoundsInRoot().top.value
+        assertEquals("Grouped rows have no inter-card gap", 68f, secondTop - firstTop, .1f)
+        compose.onNodeWithText(context.getString(R.string.account_current_device)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(removeDescription)
+            .assertWidthIsEqualTo(44.dp).assertHeightIsEqualTo(44.dp).performClick()
+        assertEquals(listOf(other.key), removed)
+        compose.runOnIdle { actionsEnabled.value = false }
+        compose.onNodeWithContentDescription(removeDescription).assertIsNotEnabled()
+        compose.runOnIdle {
+            actionsEnabled.value = true
+            records.value = records.value.copy(devices = listOf(current, replacement))
+        }
+        compose.onNodeWithContentDescription(removeDescription).performClick()
+        assertEquals(listOf(other.key, replacement.key), removed)
+        compose.runOnIdle {
+            records.value = records.value.copy(
+                tab = AccountDeviceTab.Authorizations, applications = listOf(application),
+            )
+        }
+        compose.onAllNodes(hasContentDescription(removeDescription)).assertCountEquals(0)
+        compose.onNodeWithContentDescription(revokeDescription)
+            .assertWidthIsEqualTo(44.dp).assertHeightIsEqualTo(44.dp).performClick()
+        assertEquals(listOf(application.clientId), revoked)
+        compose.runOnIdle { actionsEnabled.value = false }
+        compose.onNodeWithContentDescription(revokeDescription).assertIsNotEnabled()
+        compose.runOnIdle { records.value = records.value.copy(tab = AccountDeviceTab.History) }
+        compose.onNodeWithText(application.name).assertIsDisplayed()
+        compose.onAllNodes(hasContentDescription(revokeDescription)).assertCountEquals(0)
+        assertEquals(listOf(application.clientId), revoked)
+
+        val paginated = List(90) { index ->
+            AccountAuthorization("client-$index", "Client $index", "Authorization $index")
+        }
+        compose.runOnIdle {
+            actionsEnabled.value = true
+            records.value = records.value.copy(tab = AccountDeviceTab.Authorizations, applications = paginated)
+        }
+        compose.onAllNodes(hasText(paginated.last().name)).assertCountEquals(0)
+        compose.onNodeWithTag("accountRecords").performScrollToNode(hasText(paginated.last().name))
+        compose.onNodeWithText(paginated.last().name).assertIsDisplayed()
+        compose.runOnIdle { records.value = records.value.copy(tab = AccountDeviceTab.History) }
+        compose.onNodeWithTag("accountRecords").performScrollToNode(hasText(paginated.first().name))
+        compose.onAllNodes(hasText(paginated.last().name)).assertCountEquals(0)
+        compose.onNodeWithTag("accountRecords").performScrollToNode(hasText(paginated.last().name))
+        compose.onNodeWithText(paginated.last().name).assertIsDisplayed()
+        compose.onAllNodes(hasContentDescription(revokeDescription)).assertCountEquals(0)
+        assertEquals(listOf(application.clientId), revoked)
+    }
+
+    @Test
     fun privateConversationsRemainTouchableAfterScrollingToOldMessages() {
         val currentUser = MessageContact(100, "Current user", null, null, null)
         val conversations = List(50) { index ->
@@ -292,6 +384,133 @@ class GlassControlsInteractionTest {
             compose.runOnIdle { assertEquals(1_000L + index, openedUsers.lastOrNull()) }
         }
         compose.runOnIdle { assertEquals(listOf(1_000L, 1_024L, 1_049L, 1_000L), openedUsers) }
+    }
+
+    @Test
+    fun messageContextMenuLiftsOnlyTheBubbleAboveAFullScreenScrim() {
+        val scenario = mutableStateOf(false to false)
+        val sourceOffset = mutableStateOf(0.dp)
+        val backdropColor = Color(0xFFFFC107)
+        var density = 1f
+        var copies = 0
+        var resourceClicks = 0
+        val resource = ShareResource(ShareResourceKind.Song, 1L, "Shared resource", "Fixture artist", null)
+        val copyTitle = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.message_copy_content)
+        compose.setContent {
+            val (outgoing, dark) = scenario.value
+            MusicTheme(seedColor = Color.Red, isDark = dark) {
+                density = LocalDensity.current.density
+                val backdrop = rememberCanvasBackdrop { drawRect(backdropColor) }
+                CompositionLocalProvider(
+                    LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                    LocalGlassBackdrop provides backdrop,
+                    LocalBlurBackdrop provides backdrop,
+                ) {
+                    Box(Modifier.fillMaxSize().background(backdropColor).testTag("messageContextScene")) {
+                        // These siblings represent the shared toolbar and player outside the page.
+                        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(64.dp).background(Color.Green))
+                        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(64.dp).background(Color.Cyan))
+                        key(outgoing, dark) {
+                            IosMessageBubble(
+                                outgoing = outgoing,
+                                modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 24.dp)
+                                    .offset(y = sourceOffset.value).testTag("messageContextSource"),
+                                onCopy = { copies++ },
+                            ) { openMenu ->
+                                Text("Retained message")
+                                Box(Modifier.size(20.dp).background(Color.Magenta))
+                                MessageResourceCard(resource, outgoing, onLongClick = openMenu) { resourceClicks++ }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val scenarios = listOf(false to false, true to false, false to true, true to true)
+        scenarios.forEachIndexed { index, state ->
+            compose.runOnIdle { scenario.value = state }
+            val scene = compose.onNodeWithTag("messageContextScene")
+            val sceneBounds = scene.fetchSemanticsNode().boundsInRoot
+            val message = compose.onNodeWithText("Shared resource")
+            val scrim = compose.onNodeWithTag("messageContextScrim")
+            // Capture while still held, when a default clickable indication would otherwise
+            // be retained as a rectangular patch in the lifted message display list.
+            message.performTouchInput {
+                down(center)
+                repeat(40) { moveTo(center, delayMillis = 16L) }
+            }
+            try {
+                compose.onNodeWithText(copyTitle).assertIsDisplayed()
+                val scrimBounds = scrim.fetchSemanticsNode().boundsInRoot
+                assertTrue("The modal scrim covers the shared toolbar and player", scrimBounds.width >= sceneBounds.width)
+                assertTrue("The modal scrim covers the full page", scrimBounds.height >= sceneBounds.height)
+                val previewNode = compose.onNodeWithTag("messageContextPreview")
+                val preview = previewNode.captureToImage().toPixelMap()
+                var retainedContentPixels = 0
+                for (y in 0 until preview.height) for (x in 0 until preview.width) {
+                    val color = preview[x, y]
+                    if (color.red > 0.95f && color.blue > 0.95f && color.green < 0.05f) retainedContentPixels++
+                }
+                val stateLabel = "outgoing=${state.first}, dark=${state.second}, preview=${preview.width}x${preview.height}"
+                assertTrue("The lifted bubble keeps its actual foreground above the scrim ($stateLabel)", retainedContentPixels > 100)
+                // Derive pixels from the actual drawing coordinates, including the outgoing
+                // right-edge scale pivot. A semantic crop need not start at that visual origin.
+                var tailPoint = Offset.Zero
+                var cornerPoint = Offset.Zero
+                val coordinates = previewNode.fetchSemanticsNode().layoutInfo.coordinates
+                compose.runOnIdle {
+                    tailPoint = coordinates.localToRoot(Offset(coordinates.size.width / 2f, coordinates.size.height - 7f * density))
+                    cornerPoint = coordinates.localToRoot(Offset(2f * density, 2f * density))
+                }
+                val popup = compose.onNode(isPopup())
+                val popupBounds = popup.fetchSemanticsNode().boundsInRoot
+                val popupImage = popup.captureToImage()
+                val popupPixels = popupImage.toPixelMap()
+                fun sample(point: Offset): Color {
+                    val x = (point.x - popupBounds.left).roundToInt()
+                    val y = (point.y - popupBounds.top).roundToInt()
+                    assertTrue("The bubble probe stays inside the popup: $point, $popupBounds",
+                        x in 0 until popupPixels.width && y in 0 until popupPixels.height)
+                    return popupPixels[x, y]
+                }
+                val tailGap = sample(tailPoint)
+                val corner = sample(cornerPoint)
+                val diagnostics = "$stateLabel, tail[$tailPoint]=${tailGap.toArgb().toUInt().toString(16)}, " +
+                    "corner[$cornerPoint]=${corner.toArgb().toUInt().toString(16)}, popup=$popupBounds"
+                fun showsAmberBackdrop(color: Color) = color.red > color.blue + 0.18f && color.green > color.blue + 0.08f
+                if (!showsAmberBackdrop(tailGap) || !showsAmberBackdrop(corner)) {
+                    val context = InstrumentationRegistry.getInstrumentation().targetContext
+                    java.io.File(context.getExternalFilesDir(null), "message-context-${state.first}-${state.second}.png")
+                        .outputStream().use { popupImage.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                }
+                assertTrue("The preview keeps its transparent tail surround ($diagnostics)", showsAmberBackdrop(tailGap))
+                assertTrue("The preview keeps its transparent rounded corner ($diagnostics)", showsAmberBackdrop(corner))
+            } finally {
+                message.performTouchInput { up() }
+            }
+            compose.runOnIdle { assertEquals("Long press must not open the shared resource", index, resourceClicks) }
+            if (index != scenarios.lastIndex) {
+                scrim.performTouchInput { click(Offset(8f, 8f)) }
+            } else {
+                compose.onNodeWithText(copyTitle).performClick()
+            }
+            compose.waitUntil { compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("Retained message").assertIsDisplayed()
+            compose.onNodeWithText("Shared resource").performClick()
+            compose.runOnIdle { assertEquals("A normal tap still opens the shared resource", index + 1, resourceClicks) }
+        }
+        // Match a conversation auto-scrolling when a new message arrives while the menu is open.
+        compose.onNodeWithText("Retained message").performTouchInput { longClick() }
+        compose.onNodeWithText(copyTitle).assertIsDisplayed()
+        compose.runOnIdle { sourceOffset.value = 32.dp }
+        compose.waitUntil { compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Retained message").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(1, copies)
+            assertEquals(scenarios.size, resourceClicks)
+        }
     }
 
     @Test

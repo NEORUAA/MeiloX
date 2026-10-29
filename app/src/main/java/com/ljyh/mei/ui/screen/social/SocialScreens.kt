@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,31 +50,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
@@ -115,6 +123,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun ConversationsScreen(
@@ -437,19 +446,6 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
             message to label
         }
     }
-    var contextMenuMessageId by remember { mutableStateOf<Long?>(null) }
-    var contextMenuBounds by remember { mutableStateOf<Rect?>(null) }
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (contextMenuMessageId == null) {
-            0f
-        } else if (LocalGlassColors.current.isDark) {
-            0.20f
-        } else {
-            0.08f
-        },
-        animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f),
-        label = "messageContextMenuScrim",
-    )
     LaunchedEffect(userId) { viewModel.load(userId) }
     val send = { viewModel.send(draft) { draft = "" } }
     val participantName = remember(state.messages, currentUser) {
@@ -529,22 +525,9 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                                 context.getString(R.string.message_copy_content),
                             )
                         },
-                        onContextMenuVisibilityChanged = { visible ->
-                            if (visible) {
-                                contextMenuMessageId = message.id
-                            } else if (contextMenuMessageId == message.id) {
-                                contextMenuMessageId = null
-                                contextMenuBounds = null
-                            }
-                        },
-                        onContextMenuBoundsChanged = { bounds ->
-                            if (contextMenuMessageId == message.id) {
-                                contextMenuBounds = bounds
-                            }
-                        },
-                    ) {
+                    ) { openMenu ->
                         message.payload.resource?.let { resource ->
-                            MessageResourceCard(resource, outgoing) {
+                            MessageResourceCard(resource, outgoing, onLongClick = openMenu) {
                                 when (resource.kind) {
                                     ShareResourceKind.Song -> {
                                         val item = resource.toMediaMetadata().toMediaItem()
@@ -630,39 +613,103 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                 Text(stringResource(R.string.send))
             }
         }
-        if (scrimAlpha > 0.001f) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(Color.Black.copy(alpha = scrimAlpha))
-                        contextMenuBounds?.let { bounds ->
-                            drawRoundRect(
-                                color = Color.Transparent,
-                                topLeft = Offset(bounds.left, bounds.top),
-                                size = Size(bounds.width, bounds.height),
-                                blendMode = BlendMode.Clear,
-                            )
-                        }
-                    },
-            )
-        }
     }
+}
+
+private data class MessageContextAnchor(
+    val windowBounds: Rect,
+    val screenBounds: Rect,
+    val viewportBounds: Rect,
+)
+
+/** The body fill and lifted shadow share one union, including the small tail. */
+private class MessageBubbleShape(private val outgoing: Boolean) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        with(density) {
+            // These coordinates mirror the 24 x 14 dp Figma tail assets. The tail is
+            // anchored below the body, rather than being folded into its side edge.
+            val tailWidth = 24.dp.toPx()
+            val tailHeight = 14.dp.toPx()
+            val bodyHeight = (size.height - tailHeight).coerceAtLeast(0f)
+            val originX = if (outgoing) size.width - tailWidth else 0f
+            val originY = (bodyHeight - 5.dp.toPx()).coerceAtLeast(0f)
+            val scale = tailWidth / 24f
+            val radius = 20.dp.toPx().coerceAtMost(bodyHeight / 2f)
+            val bodyOutline = ContinuousRoundedRectangle(radius).createOutline(
+                size = Size(size.width, bodyHeight),
+                layoutDirection = layoutDirection,
+                density = this,
+            )
+            val body = Path().apply {
+                when (bodyOutline) {
+                    is Outline.Rectangle -> addRect(bodyOutline.rect)
+                    is Outline.Rounded -> addRoundRect(bodyOutline.roundRect)
+                    is Outline.Generic -> addPath(bodyOutline.path)
+                }
+            }
+            val mapX: (Float) -> Float = if (outgoing) {
+                { value -> originX + (24f - value) * scale }
+            } else {
+                { value -> originX + value * scale }
+            }
+            val tail = Path().apply {
+                moveTo(mapX(23.1516f), originY + 5.94366f * scale)
+                cubicTo(
+                    mapX(17.9097f),
+                    originY + 10.1542f * scale,
+                    mapX(14.248f),
+                    originY + 11.6466f * scale,
+                    mapX(8.40167f),
+                    originY + 13.3277f * scale,
+                )
+                cubicTo(
+                    mapX(7.79598f),
+                    originY + 13.5019f * scale,
+                    mapX(7.34855f),
+                    originY + 12.7141f * scale,
+                    mapX(7.76663f),
+                    originY + 12.2425f * scale,
+                )
+                cubicTo(
+                    mapX(10.0935f),
+                    originY + 9.61793f * scale,
+                    mapX(10.809f),
+                    originY + 6.8757f * scale,
+                    mapX(8.26052f),
+                    originY + 1.29483f * scale,
+                )
+                cubicTo(
+                    mapX(8.03929f),
+                    originY + 0.810356f * scale,
+                    mapX(8.49546f),
+                    originY + 0.275628f * scale,
+                    mapX(9.0026f),
+                    originY + 0.438333f * scale,
+                )
+                lineTo(mapX(22.9593f), originY + 4.91612f * scale)
+                cubicTo(
+                    mapX(23.4101f),
+                    originY + 5.06075f * scale,
+                    mapX(23.5207f),
+                    originY + 5.64718f * scale,
+                    mapX(23.1516f),
+                    originY + 5.94366f * scale,
+                )
+                close()
+            }
+            Outline.Generic(Path.combine(PathOperation.Union, body, tail))
+        }
 }
 
 /** iMessage-style bubble with a small trailing tail kept inside its composable bounds. */
 @Composable
-private fun IosMessageBubble(
+internal fun IosMessageBubble(
     outgoing: Boolean,
     modifier: Modifier = Modifier,
     senderLabel: String? = null,
     timeLabel: String? = null,
     onCopy: (() -> Unit)? = null,
-    onContextMenuVisibilityChanged: (Boolean) -> Unit = {},
-    onContextMenuBoundsChanged: (Rect?) -> Unit = {},
-    content: @Composable () -> Unit,
+    content: @Composable (openMenu: (() -> Unit)?) -> Unit,
 ) {
     val colors = LocalGlassColors.current
     val bubbleColor = if (outgoing) {
@@ -673,16 +720,18 @@ private fun IosMessageBubble(
         Color(0xFFE2E2E3)
     }
     val contentColor = if (outgoing || colors.isDark && !outgoing) Color.White else Color.Black
+    val bubbleShape = remember(outgoing) { MessageBubbleShape(outgoing) }
     var contextMenuExpanded by remember { mutableStateOf(false) }
     val bubbleScale by animateFloatAsState(
         targetValue = if (contextMenuExpanded) 1.08f else 1f,
         animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f),
         label = "messageBubbleScale",
     )
-    LaunchedEffect(contextMenuExpanded) {
-        onContextMenuVisibilityChanged(contextMenuExpanded)
-        if (!contextMenuExpanded) onContextMenuBoundsChanged(null)
-    }
+    val bubbleLayer = rememberGraphicsLayer()
+    var bubbleAnchor by remember { mutableStateOf<MessageContextAnchor?>(null) }
+    var menuAnchor by remember { mutableStateOf<MessageContextAnchor?>(null) }
+    var previewPresented by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
     Column(
         modifier = modifier,
         horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
@@ -715,99 +764,41 @@ private fun IosMessageBubble(
             contentAlignment = if (outgoing) Alignment.TopEnd else Alignment.TopStart,
         ) {
             @Composable
-            fun BubbleBody(interactionModifier: Modifier = Modifier) {
+            fun BubbleBody(interactionModifier: Modifier = Modifier, openMenu: (() -> Unit)? = null) {
                 Box(
                     modifier = Modifier
-                        // Keep the scale layer outside the drawing and padding modifiers so the
-                        // continuous background and tail deform together with the text.
-                        .graphicsLayer {
-                            transformOrigin = TransformOrigin(if (outgoing) 1f else 0f, 0.5f)
-                            scaleX = bubbleScale
-                            scaleY = bubbleScale
-                        }
                         .widthIn(max = maxWidth * 0.80f)
-                        .drawBehind {
-                        // These coordinates mirror the 24 x 14 dp Figma tail assets. The tail is
-                        // anchored below the body, rather than being folded into its side edge.
-                        val tailWidth = 24.dp.toPx()
-                        val tailHeight = 14.dp.toPx()
-                        val bodyHeight = (size.height - tailHeight).coerceAtLeast(0f)
-                        val originX = if (outgoing) size.width - tailWidth else 0f
-                        val originY = (bodyHeight - 5.dp.toPx()).coerceAtLeast(0f)
-                        val scale = tailWidth / 24f
-                        val radius = 20.dp.toPx().coerceAtMost(bodyHeight / 2f)
-                        val bodyOutline = ContinuousRoundedRectangle(radius).createOutline(
-                            size = Size(size.width, bodyHeight),
-                            layoutDirection = layoutDirection,
-                            density = this,
-                        )
-                        drawContext.canvas.drawOutline(
-                            bodyOutline,
-                            Paint().apply { color = bubbleColor },
-                        )
-                        val mapX: (Float) -> Float = if (outgoing) {
-                            { value -> originX + (24f - value) * scale }
-                        } else {
-                            { value -> originX + value * scale }
-                        }
-                        val tail = Path().apply {
-                            moveTo(mapX(23.1516f), originY + 5.94366f * scale)
-                            cubicTo(
-                                mapX(17.9097f),
-                                originY + 10.1542f * scale,
-                                mapX(14.248f),
-                                originY + 11.6466f * scale,
-                                mapX(8.40167f),
-                                originY + 13.3277f * scale,
-                            )
-                            cubicTo(
-                                mapX(7.79598f),
-                                originY + 13.5019f * scale,
-                                mapX(7.34855f),
-                                originY + 12.7141f * scale,
-                                mapX(7.76663f),
-                                originY + 12.2425f * scale,
-                            )
-                            cubicTo(
-                                mapX(10.0935f),
-                                originY + 9.61793f * scale,
-                                mapX(10.809f),
-                                originY + 6.8757f * scale,
-                                mapX(8.26052f),
-                                originY + 1.29483f * scale,
-                            )
-                            cubicTo(
-                                mapX(8.03929f),
-                                originY + 0.810356f * scale,
-                                mapX(8.49546f),
-                                originY + 0.275628f * scale,
-                                mapX(9.0026f),
-                                originY + 0.438333f * scale,
-                            )
-                            lineTo(mapX(22.9593f), originY + 4.91612f * scale)
-                            cubicTo(
-                                mapX(23.4101f),
-                                originY + 5.06075f * scale,
-                                mapX(23.5207f),
-                                originY + 5.64718f * scale,
-                                mapX(23.1516f),
-                                originY + 5.94366f * scale,
-                            )
-                            close()
-                        }
-                        drawPath(tail, bubbleColor)
-                        }
-                        .padding(horizontal = 13.dp, vertical = 9.dp)
-                        .padding(bottom = 14.dp)
+                        .then(interactionModifier)
                         .onGloballyPositioned { coordinates ->
-                            if (contextMenuExpanded) {
-                                onContextMenuBoundsChanged(coordinates.boundsInRoot())
+                            val size = Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
+                            val root = coordinates.findRootCoordinates()
+                            val anchor = MessageContextAnchor(
+                                windowBounds = Rect(coordinates.localToWindow(Offset.Zero), size),
+                                screenBounds = Rect(coordinates.localToScreen(Offset.Zero), size),
+                                viewportBounds = Rect(
+                                    root.localToScreen(Offset.Zero),
+                                    Size(root.size.width.toFloat(), root.size.height.toFloat()),
+                                ),
+                            )
+                            bubbleAnchor = anchor
+                            // New messages can auto-scroll or resize this row while a menu is open.
+                            // Dismiss instead of separating its frozen preview and menu placement.
+                            if (contextMenuExpanded && menuAnchor != anchor) contextMenuExpanded = false
+                        }
+                        .drawWithContent {
+                            // Retain only the real bubble pixels. The popup replays this GPU layer,
+                            // preserving transparent corners and the tail without sampling the page.
+                            if (!previewPresented) {
+                                bubbleLayer.record { this@drawWithContent.drawContent() }
+                                drawLayer(bubbleLayer)
                             }
                         }
-                        .then(interactionModifier),
+                        .background(bubbleColor, bubbleShape)
+                        .padding(horizontal = 13.dp, vertical = 9.dp)
+                        .padding(bottom = 14.dp),
                 ) {
                     CompositionLocalProvider(LocalContentColor provides contentColor) {
-                        Column(content = { content() })
+                        Column(content = { content(openMenu) })
                     }
                 }
             }
@@ -816,16 +807,77 @@ private fun IosMessageBubble(
             } else {
                 GlasmioMenu(
                     expanded = contextMenuExpanded,
-                    onExpandedChange = { contextMenuExpanded = it },
+                    onExpandedChange = { expanded ->
+                        if (!expanded) {
+                            contextMenuExpanded = false
+                        } else {
+                            val anchor = bubbleAnchor
+                            // A reopening during collapse must retain the same source lease.
+                            if (anchor != null && (!previewPresented || menuAnchor == anchor)) {
+                                menuAnchor = anchor
+                                contextMenuExpanded = true
+                            }
+                        }
+                    },
                     itemCount = 1,
                     keepAnchorVisible = true,
                     forceBelowAnchor = true,
+                    fullScreen = true,
+                    morphFromAnchor = false,
+                    // A message is a lifted preview, not the source of the menu surface morph.
+                    externalAnchorBounds = menuAnchor?.windowBounds ?: bubbleAnchor?.windowBounds ?: Rect.Zero,
+                    overlayContent = { progress ->
+                        DisposableEffect(Unit) {
+                            previewPresented = true
+                            onDispose { previewPresented = false }
+                        }
+                        var popupScreenOrigin by remember { mutableStateOf(Offset.Zero) }
+                        Box(
+                            Modifier.fillMaxSize().zIndex(-2f)
+                                .testTag("messageContextScrim")
+                                .onGloballyPositioned { popupScreenOrigin = it.localToScreen(Offset.Zero) }
+                                .drawBehind {
+                                    drawRect(Color.Black.copy(alpha = (if (colors.isDark) 0.20f else 0.08f) * progress()))
+                                },
+                        )
+                        menuAnchor?.screenBounds?.let { bounds ->
+                            Box(
+                                Modifier.zIndex(-1f)
+                                    .absoluteOffset {
+                                        IntOffset(
+                                            (bounds.left - popupScreenOrigin.x).roundToInt(),
+                                            (bounds.top - popupScreenOrigin.y).roundToInt(),
+                                        )
+                                    }
+                                    .size(
+                                        width = with(density) { bounds.width.toDp() },
+                                        height = with(density) { bounds.height.toDp() },
+                                    )
+                                    .testTag("messageContextPreview")
+                                    .graphicsLayer {
+                                        transformOrigin = TransformOrigin(if (outgoing) 1f else 0f, 0.5f)
+                                        scaleX = bubbleScale
+                                        scaleY = bubbleScale
+                                    }
+                                    .dropShadow(bubbleShape) {
+                                        radius = 24.dp.toPx()
+                                        offset = Offset(0f, 8.dp.toPx())
+                                        color = Color.Black
+                                        alpha = (if (colors.isDark) 0.48f else 0.28f) * progress()
+                                    }
+                                    .drawWithContent { drawLayer(bubbleLayer) },
+                            )
+                        }
+                    },
                     anchor = { openMenu ->
                         BubbleBody(
                             Modifier.combinedClickable(
+                                interactionSource = null,
+                                indication = null,
                                 onClick = {},
                                 onLongClick = openMenu,
                             ),
+                            openMenu = openMenu,
                         )
                     },
                 ) { childBackdrop, close ->
@@ -854,9 +906,19 @@ private fun formatPrivateMessageTime(timestamp: Long): String {
 }
 
 @Composable
-private fun MessageResourceCard(resource: ShareResource, outgoing: Boolean, onClick: () -> Unit) {
+internal fun MessageResourceCard(
+    resource: ShareResource,
+    outgoing: Boolean,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            interactionSource = null,
+            indication = null,
+            onLongClick = onLongClick,
+            onClick = onClick,
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(

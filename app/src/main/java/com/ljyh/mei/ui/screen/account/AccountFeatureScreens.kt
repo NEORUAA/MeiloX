@@ -10,7 +10,9 @@ import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,10 +21,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.R
@@ -33,6 +42,7 @@ import com.ljyh.mei.data.repository.AccountFeatureException
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -187,55 +197,43 @@ fun AccountDevicesScreen(
         title = stringResource(R.string.account_device_management),
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
         onNavigateBack = nav::navigateUp,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = { listOf(meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh) {
             SfIcon("arrow.clockwise", null)
         }) },
     ) {
-        item {
-            GlasmioSegmentedControl(
-                items = listOf(AccountDeviceTab.Devices to stringResource(R.string.account_devices),
-                    AccountDeviceTab.Authorizations to stringResource(R.string.account_authorizations),
-                    AccountDeviceTab.History to stringResource(R.string.account_authorization_history)),
-                selected = state.tab, onSelected = viewModel::select, modifier = Modifier.fillMaxWidth(),
-            )
+        item(key = "account-device-tabs") {
+            Box(Modifier.padding(top = 10.dp)) {
+                GlasmioSegmentedControl(
+                    items = listOf(AccountDeviceTab.Devices to stringResource(R.string.account_devices),
+                        AccountDeviceTab.Authorizations to stringResource(R.string.account_authorizations),
+                        AccountDeviceTab.History to stringResource(R.string.account_authorization_history)),
+                    selected = state.tab, onSelected = viewModel::select, modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
-        if (state.loading) item { AccountFeatureLoading() }
-        state.error?.let { message -> item { AccountFeatureError(message, viewModel::refresh) } }
-        if (state.tab == AccountDeviceTab.Devices) {
-            state.devices.forEach { device -> item(key = "device:${device.key}") {
-                GlasmioGroupedList {
-                    val active = device.lastActiveTime.takeIf { it > 0 }?.let {
-                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                            .format(Date(if (it < 1_000_000_000_000L) it * 1000 else it))
-                    }
-                    GlasmioListRow(
-                        title = device.name.ifBlank { device.os },
-                        subtitle = listOfNotNull(device.region.takeIf(String::isNotBlank), active).joinToString(" · ").takeIf(String::isNotBlank),
-                        systemName = "iphone", showTopSeparator = false,
-                        trailing = {
-                            if (device.current) Text(stringResource(R.string.account_current_device), style = IosTypography.caption)
-                            else GlasmioButton({ pendingDevice = device }) { Text(stringResource(R.string.account_remove_device)) }
-                        },
-                    )
+        if (state.loading) item {
+            Box(Modifier.padding(top = 10.dp)) { AccountFeatureLoading() }
+        }
+        state.error?.let { message -> item {
+            Box(Modifier.padding(top = 10.dp)) { AccountFeatureError(message, viewModel::refresh) }
+        } }
+        accountDeviceRecordItems(
+            state = state,
+            enabled = !busy,
+            onRemoveDevice = { pendingDevice = it },
+            onRevokeAuthorization = { pendingApp = it },
+        )
+        if (state.tab != AccountDeviceTab.Devices && state.more) {
+            item(key = "account-load-more") {
+                Box(Modifier.padding(top = 10.dp)) {
+                    GlasmioButton(viewModel::loadMore) { Text(stringResource(R.string.account_load_more)) }
                 }
-            } }
-        } else {
-            state.applications.forEach { application -> item(key = "application:${application.clientId}") {
-                GlasmioGroupedList {
-                    GlasmioListRow(
-                        title = application.name.ifBlank { stringResource(R.string.account_authorized_app) },
-                        subtitle = application.description.takeIf(String::isNotBlank), showTopSeparator = false,
-                        trailing = { if (state.tab == AccountDeviceTab.Authorizations) GlasmioButton({ pendingApp = application }) {
-                            Text(stringResource(R.string.account_revoke_authorization))
-                        } },
-                    )
-                }
-            } }
-            if (state.more) item { GlasmioButton(viewModel::loadMore) { Text(stringResource(R.string.account_load_more)) } }
+            }
         }
         if (!state.loading && state.error == null &&
             (if (state.tab == AccountDeviceTab.Devices) state.devices.isEmpty() else state.applications.isEmpty())) {
-            item { Text(stringResource(R.string.account_no_records), Modifier.padding(24.dp)) }
+            item { Text(stringResource(R.string.account_no_records), Modifier.padding(top = 10.dp).padding(24.dp)) }
         }
     }
     if ((pendingDevice != null || pendingApp != null) && !showCaptcha) {
@@ -280,5 +278,86 @@ fun AccountDevicesScreen(
                 }
             }
         }
+    }
+}
+
+/** Keep accumulated authorization pages virtualized while sharing the standard grouped-row shell. */
+internal fun LazyListScope.accountDeviceRecordItems(
+    state: AccountDevicesState,
+    onRemoveDevice: (AccountDevice) -> Unit,
+    onRevokeAuthorization: (AccountAuthorization) -> Unit,
+    enabled: Boolean = true,
+    topPadding: Dp = 10.dp,
+) {
+    if (state.tab == AccountDeviceTab.Devices) {
+        groupedLazyItems(
+            items = state.devices,
+            key = { "device:${it.key}" },
+            contentType = "account-device",
+            firstItemTopPadding = topPadding,
+        ) { device, index ->
+            val active = device.lastActiveTime.takeIf { it > 0 }?.let {
+                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                    .format(Date(if (it < 1_000_000_000_000L) it * 1000 else it))
+            }
+            GlasmioListRow(
+                title = device.name.ifBlank { device.os },
+                subtitle = listOfNotNull(device.region.takeIf(String::isNotBlank), active)
+                    .joinToString(" · ").takeIf(String::isNotBlank),
+                systemName = "iphone",
+                showTopSeparator = index > 0,
+                trailing = {
+                    if (device.current) {
+                        Text(stringResource(R.string.account_current_device), style = IosTypography.caption)
+                    } else {
+                        AccountDestructiveIconAction(
+                            description = stringResource(R.string.account_remove_device),
+                            enabled = enabled,
+                            onClick = { onRemoveDevice(device) },
+                        )
+                    }
+                },
+            )
+        }
+    } else {
+        groupedLazyItems(
+            items = state.applications,
+            key = { "application:${state.tab}:${it.clientId}" },
+            contentType = "account-authorization",
+            firstItemTopPadding = topPadding,
+        ) { application, index ->
+            GlasmioListRow(
+                title = application.name.ifBlank { stringResource(R.string.account_authorized_app) },
+                subtitle = application.description.takeIf(String::isNotBlank),
+                showTopSeparator = index > 0,
+                trailing = if (state.tab == AccountDeviceTab.Authorizations) {
+                    {
+                        AccountDestructiveIconAction(
+                            description = stringResource(R.string.account_revoke_authorization),
+                            enabled = enabled,
+                            onClick = { onRevokeAuthorization(application) },
+                        )
+                    }
+                } else null,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccountDestructiveIconAction(description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp)
+            .alpha(if (enabled) 1f else .4f)
+            .clickable(enabled = enabled, role = Role.Button, interactionSource = null, indication = null, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Match the Demo's borderless grouped-row symbol accessory, with a full touch target.
+        SfIcon(
+            "trash", null, size = 22.dp, fontSize = 17.sp,
+            weight = FontWeight.Normal, tint = LocalGlassColors.current.destructive,
+            fontFeatureSettings = "'ss16' 1", fitGlyphToBounds = false,
+        )
     }
 }
