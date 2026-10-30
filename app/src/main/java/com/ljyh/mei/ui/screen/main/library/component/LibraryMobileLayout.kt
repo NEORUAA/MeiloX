@@ -36,6 +36,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -61,14 +62,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import com.ljyh.mei.ui.component.playlist.PlayingImageView
+import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
+import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.data.model.MediaMetadata
@@ -228,6 +235,7 @@ fun LibraryMobileLayout(
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val focusManager = LocalFocusManager.current
+    val landscapeSongs = rememberDeviceInfo().isLandscape && selectedPage == LibraryPage.Songs
     val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -273,7 +281,7 @@ fun LibraryMobileLayout(
     val likedTitle = stringResource(R.string.app_tab_library_songs)
     val usesGroupedLazyRows = selectedPage == LibraryPage.Cloud ||
         selectedPage == LibraryPage.History
-    val pageSpacing = if (usesGroupedLazyRows) 12.dp else 0.dp
+    val pageSpacing = if (usesGroupedLazyRows || landscapeSongs) 12.dp else 0.dp
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     var searchQuery by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue())
@@ -355,12 +363,12 @@ fun LibraryMobileLayout(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 16.dp,
+                        start = if (landscapeSongs) 32.dp else 16.dp,
                         top = contentPadding.calculateTopPadding(),
-                        end = 16.dp,
+                        end = if (landscapeSongs) 32.dp else 16.dp,
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
-                    verticalArrangement = if (usesGroupedLazyRows) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(12.dp),
+                    verticalArrangement = if (usesGroupedLazyRows || landscapeSongs) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(12.dp),
                 ) {
                     item(key = "ios-large-title:$title") {
                         Text(
@@ -423,7 +431,7 @@ fun LibraryMobileLayout(
                                 }
                             } else if (hasSongs) {
                                 item(key = "liked-actions") {
-                                    GlasmioGroupedList {
+                                    GlasmioGroupedList(modifier = Modifier.padding(bottom = if (landscapeSongs) 12.dp else 0.dp)) {
                                         GlasmioListRow(
                                             title = stringResource(R.string.library_play_all),
                                             systemName = "play.fill",
@@ -451,6 +459,8 @@ fun LibraryMobileLayout(
                                     val song = likedSongs[index]
                                     if (song != null) LibrarySongRow(
                                         song = song,
+                                        landscape = landscapeSongs,
+                                        showDivider = index < likedSongs.itemCount - 1,
                                         onClick = {
                                             playLikedSongs(song.id)
                                         },
@@ -675,12 +685,113 @@ private fun CollectionFooter(loading: Boolean, failed: Boolean, onClick: () -> U
     }
 }
 
+/** Columns follow the available list width, including sidebar and split-window resizing. */
+@Composable
+internal fun LibraryLandscapeSongRow(
+    song: MediaMetadata,
+    onClick: () -> Unit,
+    onMoreClick: (Rect) -> Unit,
+    showDivider: Boolean = true,
+) {
+    val colors = LocalGlassColors.current
+    var menuAnchor by remember(song.id) { mutableStateOf(Rect.Zero) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val showAlbum = maxWidth >= 1000.dp
+        Column {
+            Box {
+                FavoriteTrackStar(
+                    Modifier.align(Alignment.CenterStart).offset(x = (-18).dp),
+                    tint = colors.secondaryContent,
+                )
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlayingImageView(
+                        imageUrl = song.coverUrl,
+                        isPlaying = false,
+                        modifier = Modifier.size(54.dp).clip(ContinuousRoundedRectangle(6.dp)),
+                    )
+                    Text(
+                        song.title,
+                        modifier = Modifier.weight(if (showAlbum) 1f else 1.25f),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = colors.content,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        song.artists.joinToString(" / ") { it.name },
+                        modifier = Modifier.weight(if (showAlbum) 0.85f else 1f),
+                        fontSize = 17.sp,
+                        color = colors.secondaryContent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (showAlbum) {
+                        Text(
+                            song.album.title,
+                            modifier = Modifier.weight(1.35f),
+                            fontSize = 17.sp,
+                            color = colors.secondaryContent,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        formatDuration(song.duration),
+                        modifier = Modifier.width(60.dp),
+                        textAlign = TextAlign.End,
+                        fontSize = 17.sp,
+                        color = colors.secondaryContent,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    Box(
+                        Modifier.size(44.dp)
+                            .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
+                            .clip(ContinuousRoundedRectangle(22.dp))
+                            .clickable(
+                                interactionSource = null,
+                                indication = null,
+                                onClick = { onMoreClick(menuAnchor) },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SfIcon(
+                            "ellipsis",
+                            stringResource(R.string.more_actions_title),
+                            size = 18.dp,
+                            tint = colors.secondaryContent,
+                        )
+                    }
+                }
+            }
+            if (showDivider) {
+                HorizontalDivider(
+                    Modifier.padding(start = 66.dp),
+                    thickness = 0.5.dp,
+                    color = colors.separator,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun LibrarySongRow(
     song: MediaMetadata,
     onClick: () -> Unit,
     onMoreClick: (Rect) -> Unit,
+    landscape: Boolean = false,
+    showDivider: Boolean = true,
 ) {
+    if (landscape) {
+        LibraryLandscapeSongRow(song, onClick, onMoreClick, showDivider)
+        return
+    }
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     LibraryMediaRow(
         image = song.coverUrl,

@@ -11,7 +11,6 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import com.ljyh.mei.ui.screen.artist.ArtistPopularSongs
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.data.model.MediaMetadata
-
 import kotlin.math.abs
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderGroup
@@ -73,6 +72,7 @@ import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.ui.screen.main.library.component.DownloadLibraryEntry
 import com.ljyh.mei.ui.screen.main.library.component.DownloadLibraryRow
+import com.ljyh.mei.ui.screen.main.library.component.LibraryLandscapeSongRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -92,6 +92,41 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun landscapeLibrarySongColumnsAdaptWithoutChangingMenuActions() {
+        val width = mutableStateOf(800.dp)
+        var played = 0
+        var opened = 0
+        val song = MediaMetadata(
+            1L, "Library song", "", listOf(MediaMetadata.Artist(2L, "Library artist")),
+            259000L, MediaMetadata.Album(3L, "Library album"),
+        )
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Box(Modifier.requiredWidth(width.value)) {
+                        LibraryLandscapeSongRow(song, { played++ }, { opened++ })
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("Library album").assertDoesNotExist()
+        compose.onNodeWithText("4:19", useUnmergedTree = true).assertIsDisplayed()
+        val title = compose.onNodeWithText("Library song", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val artist = compose.onNodeWithText("Library artist", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(title.top.value, artist.top.value, 0.1f)
+        assertTrue(title.right < artist.left)
+        compose.runOnIdle { width.value = 1100.dp }
+        compose.onNodeWithText("Library album", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.more_actions_title),
+        ).performClick()
+        compose.runOnIdle {
+            assertEquals(1, opened)
+            assertEquals(0, played)
+        }
+    }
 
     @Test
     fun landscapePopularSongMoreTargetsLeaveTheFavoriteGutterClear() {
