@@ -388,6 +388,36 @@ class AppleMusicArtworkMotionTest {
         }
     }
 
+    @Test fun portraitControlGapsReachTheirMinimumBeforeArtworkShrinksBelowTheHandle() {
+        val artworkTop = 62f
+        val preferredSize = 348f
+        val preferredBounds = Rect(26f, artworkTop, 374f, artworkTop + preferredSize)
+        val cases = listOf(820f to 34f, 792f to 34f, 776f to 26f, 760f to 18f,
+            744f to 10f, 740f to 8f, 724f to 8f)
+        for ((height, expectedGap) in cases) {
+            // Reserve the measured footer, metadata, and cover-to-metadata gap.
+            val bottomBeforeCompression = height - 300f - 66f - 16f
+            val gap = appleMusicControlGap(preferredSize, artworkTop, bottomBeforeCompression, 34f, 8f)
+            assertEquals(expectedGap, gap, 0.001f)
+            val recoveredSpace = (34f - gap) * 2f
+            val bounds = appleMusicAlbumBounds(
+                preferredBounds, 400f, 26f, artworkTop,
+                bottomLimit = bottomBeforeCompression + recoveredSpace,
+            )
+            if (height >= 740f) assertEquals(preferredSize, bounds.width, 0.001f)
+            else {
+                assertEquals(8f, gap, 0f)
+                assertEquals(332f, bounds.width, 0.001f)
+            }
+            assertTrue(bounds.bottom <= bottomBeforeCompression + recoveredSpace + 0.001f)
+            for (scale in listOf(0.9f, 1f)) {
+                val visual = appleMusicArtworkFrame(bounds, header, 12f, 10f, 16f, scale, 0f)
+                assertTrue("Playing and paused covers must stay below the handle", visual.bounds.top >= artworkTop)
+            }
+        }
+        assertEquals(8f, appleMusicControlGap(preferredSize, artworkTop, 0f, 34f, 8f), 0f)
+    }
+
     @Test fun enlargedAlbumMatchesTheProgressWidthWithoutMovingItsBottom() {
         val previous = Rect(48f, 160f, 352f, 464f)
         val enlarged = appleMusicAlbumBounds(previous, 400f, 24f, 36f)

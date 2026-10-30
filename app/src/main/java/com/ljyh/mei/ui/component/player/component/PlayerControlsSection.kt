@@ -48,14 +48,17 @@ fun PlayerControlsSection(
     onDownloadClick: () -> Unit,
     onMoreClick: () -> Unit,
     isCompact: Boolean = false,
+    controlSpacing: Dp? = null,
     onProgressTrackTopChanged: ((Float) -> Unit)? = null,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
-    // 紧凑模式下间距减半
-    val spacerHeight = if (isCompact) 8.dp else 24.dp
-
     val isFM = playerConnection.isFMMode.collectAsStateWithLifecycle()
     val playerStyle = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic).value
+    val spacerHeight = controlSpacing ?: when {
+        isCompact -> 8.dp
+        playerStyle == PlayerStyle.AppleMusic -> AppleMusicDimensions.controlsGap
+        else -> 24.dp
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth()

@@ -87,6 +87,18 @@ internal data class AppleMusicArtworkFrame(
     val shadowElevation: Float,
 )
 
+/** Spend both control gaps equally before constraining the album artwork. */
+internal fun appleMusicControlGap(
+    preferredArtworkSize: Float,
+    artworkTopLimit: Float,
+    artworkBottomLimit: Float,
+    defaultGap: Float,
+    minimumGap: Float,
+): Float {
+    val deficit = (preferredArtworkSize - (artworkBottomLimit - artworkTopLimit)).coerceAtLeast(0f)
+    return (defaultGap - deficit / 2f).coerceIn(minimumGap, defaultGap)
+}
+
 /** Match Flamingo's playing artwork insets without moving the previous bottom edge. */
 internal fun appleMusicAlbumBounds(
     previous: Rect,

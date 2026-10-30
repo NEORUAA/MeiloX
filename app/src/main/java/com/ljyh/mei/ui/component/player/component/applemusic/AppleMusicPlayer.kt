@@ -245,12 +245,34 @@ fun AppleMusicPlayer(
 
         val bottomControlsHeightDp = if (isCompactHeight || isLandscape) 220.dp else 300.dp
         val bottomControlsHeight = with(density) { bottomControlsHeightDp.toPx() }
-        var controlsHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
+        var controlsBaselineHeightPx by remember(screenWidth, maxHeightPx) { mutableIntStateOf(0) }
         var albumRowSize by remember { mutableStateOf(IntSize.Zero) }
-        val measuredControlsHeight = controlsHeightPx.takeIf { it > 0 }?.toFloat() ?: bottomControlsHeight
+        val isCompactControls = isCompactHeight || isLandscape
+        val defaultControlGap = with(density) { AppleMusicDimensions.controlsGap.toPx() }
+        val minimumControlGap = with(density) { AppleMusicDimensions.minimumControlsGap.toPx() }
+        val baselineControlsHeight = controlsBaselineHeightPx.takeIf { it > 0 }?.toFloat() ?: bottomControlsHeight
         val albumInformationHeight = albumRowSize.height.takeIf { it > 0 }?.toFloat()
             ?: with(density) { 42.sp.toPx() }
         val showAlbumInfo = !isCompactHeight && !isLandscape
+        val minTopMargin = with(density) { 16.dp.toPx() }
+        val fmTopInset = 12.dp
+        val artworkTopLimit = topSafeArea + with(density) {
+            maxOf(fmTopInset, AppleMusicDimensions.handleTopInset +
+                AppleMusicDimensions.handleHeight + AppleMusicDimensions.artworkHandleGap).toPx()
+        }
+        val preferredArtworkSize = (maxWidthPx - with(density) {
+            AppleMusicDimensions.artworkInset.toPx() * 2f
+        }).coerceAtLeast(0f)
+        val metadataReservation = if (showAlbumInfo) albumInformationHeight + with(density) {
+            AppleMusicDimensions.albumInfoBottomGap.toPx()
+        } else 0f
+        val controlGap = if (isCompactControls) minimumControlGap else appleMusicControlGap(
+            preferredArtworkSize, artworkTopLimit,
+            maxHeightPx - baselineControlsHeight - metadataReservation - minTopMargin,
+            defaultControlGap, minimumControlGap,
+        )
+        val recoveredControlSpace = if (isCompactControls) 0f else (defaultControlGap - controlGap) * 2f
+        val measuredControlsHeight = baselineControlsHeight - recoveredControlSpace
         val albumTop = appleMusicAlbumInfoTop(
             maxHeightPx, measuredControlsHeight, albumInformationHeight,
             with(density) { AppleMusicDimensions.albumInfoBottomGap.toPx() }, topSafeArea,
@@ -266,23 +288,22 @@ fun AppleMusicPlayer(
         val normalPaddingH = with(density) { (PlayerHorizontalPadding + 24.dp).toPx() }
         val maxAvailableWidth = maxWidthPx - (normalPaddingH * 2)
 
-        val minTopMargin = with(density) { 16.dp.toPx() }
         val availableVerticalSpace = maxHeightPx - bottomControlsHeight - topSafeArea - minTopMargin
 
         val previousSize = min(maxAvailableWidth, availableVerticalSpace.coerceAtLeast(0f)).coerceAtLeast(1f)
 
         val realAvailableHeight = (maxHeightPx - bottomControlsHeight - topSafeArea)
         val verticalBias = (realAvailableHeight - previousSize) / 2
-        val artworkTopInset = with(density) { 12.dp.toPx() }
-        val previousTop = topSafeArea + verticalBias.coerceAtLeast(artworkTopInset)
+        val previousTop = topSafeArea + verticalBias.coerceAtLeast(with(density) { fmTopInset.toPx() })
 
         val previousStart = (maxWidthPx - previousSize) / 2
         val normalBounds = appleMusicAlbumBounds(
-            Rect(previousStart, previousTop, previousStart + previousSize, previousTop + previousSize),
+            Rect(previousStart, previousTop, previousStart + previousSize,
+                maxOf(previousTop + previousSize, artworkTopLimit + preferredArtworkSize)),
             viewportWidth = maxWidthPx,
             // Flamingo uses 15.dp outer padding plus 9.dp inner padding while playing.
             horizontalInset = with(density) { AppleMusicDimensions.artworkInset.toPx() },
-            topLimit = topSafeArea + artworkTopInset,
+            topLimit = artworkTopLimit,
             bottomLimit = if (showAlbumInfo) albumTop - minTopMargin
                 else maxHeightPx - measuredControlsHeight - minTopMargin,
         )
@@ -409,7 +430,7 @@ fun AppleMusicPlayer(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = with(density) { topSafeArea.toDp() } + AppleMusicDimensions.handleTopInset)
-                        .size(width = 58.dp, height = 4.dp)
+                        .size(width = 58.dp, height = AppleMusicDimensions.handleHeight)
                         .playerAdditiveBlend()
                         .background(
                             Color.White.copy(alpha = 0.3f),
@@ -450,7 +471,7 @@ fun AppleMusicPlayer(
                             queue = { active ->
                                 val queueBottom = progressTrackTopInRoot
                                     ?.minus(playerBoundsInRoot?.top ?: 0f)
-                                    ?: (maxHeightPx - controlsHeightPx)
+                                    ?: (maxHeightPx - measuredControlsHeight)
                                 Box(
                                     Modifier.fillMaxWidth()
                                         .absoluteOffset(y = with(density) { headerTop.toDp() })
@@ -562,7 +583,7 @@ fun AppleMusicPlayer(
                                         appleMusicLyricsControlsFadeRange(
                                             viewportHeight, controlsFadeShift.value, lyricEntryTranslationY(),
                                             controlsTop = (progressTrackTopInRoot?.minus(playerBoundsInRoot?.top ?: 0f)
-                                                ?: (maxHeightPx - controlsHeightPx)) - lyricViewportTop,
+                                                ?: (maxHeightPx - measuredControlsHeight)) - lyricViewportTop,
                                         )
                                     },
                                     playerConnection = stateContainer.playerConnection,
@@ -724,7 +745,7 @@ fun AppleMusicPlayer(
                             onDispose { progressTrackTopInRoot = null }
                         }
                         Box(Modifier.playerContentFade(controlsAlpha)
-                            .onSizeChanged { controlsHeightPx = it.height }) {
+                            .onSizeChanged { controlsBaselineHeightPx = (it.height + recoveredControlSpace).roundToInt() }) {
                             PlayerControlsSection(
                                 position = { stateContainer.sliderPosition.toLong() },
                                 duration = { stateContainer.duration },
@@ -748,7 +769,8 @@ fun AppleMusicPlayer(
                                     overlayHandler.handleMoreAction(com.ljyh.mei.ui.model.MoreAction.DOWNLOAD)
                                 },
                                 onMoreClick = { overlayHandler.showMoreAction() },
-                                isCompact = isCompactHeight || isLandscape,
+                                isCompact = isCompactControls,
+                                controlSpacing = with(density) { controlGap.toDp() },
                                 onProgressTrackTopChanged = { progressTrackTopInRoot = it },
                                 onQualityMenuVisibilityChanged = { stateContainer.qualityMenuVisible = it },
                             )

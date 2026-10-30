@@ -68,7 +68,7 @@ fun PlayerControls(
             horizontalArrangement = Arrangement.Start,
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (appleMusicStyle) Modifier.height(84.dp) else Modifier)
+                .then(if (appleMusicStyle) Modifier.height(playTargetSize) else Modifier)
         ) {
             if (appleMusicStyle) Spacer(Modifier.weight(0.4f))
 

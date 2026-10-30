@@ -15,6 +15,10 @@ internal object AppleMusicDimensions {
     val lyricTopFade = 100.dp
     val lyricBottomFade = 0.dp
     val headerTopInset = 42.dp
+    val controlsGap = 34.dp
+    val minimumControlsGap = 8.dp
+    val artworkHandleGap = 16.dp
+    val handleHeight = 4.dp
     val handleTopInset = 18.dp
     val headerSize = 68.dp
     val headerCorner = 10.dp
