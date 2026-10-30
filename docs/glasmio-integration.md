@@ -1,6 +1,6 @@
 # Glasmio integration
 
-MeiloX uses Glasmio `bbba63b2f2584c4819bd88043332e241820d1ca0` through the
+MeiloX uses Glasmio `864e958676e38c5416d573c6affeaf4b0279be98` through the
 sibling source build described in the README. Backdrop recording and effects use
 `io.github.neoruaa.glasmio.glass.render`; the old Kyant Backdrop artifact is not a
 second rendering backend. Retained third-party capture code keeps its attribution.
@@ -73,9 +73,12 @@ capture. While the full player is visible, the hidden MiniPlayer settles to its
 return endpoint. Playback restoration still reverses an in-flight dismissal.
 Route-specific MiniPlayer appearance remains independent of the root tab theme.
 
-The Activity selects supported HDR output before creating its Compose layers.
-Unsupported displays retain SDR output; this does not add a theme-level brightness
-boost or alter the user's transparency preferences.
+Glass HDR effects are opt-in and default to off. The Activity reads the persisted
+HDR, Liquid Glass and Reduce Transparency settings before creating Compose layers.
+HDR is requested only with Liquid Glass enabled and Reduce Transparency disabled;
+changing that effective policy recreates the Activity's material layers. Unsupported
+displays retain SDR output. Sheet content controls and their menus use a sheet-owned
+sampling source. Buttons retain the sheet toolbar's regular navigation material and interaction physics.
 
 Application switches use `MeiloXSwitch` to retain the current theme accent, with
 explicit tint overrides still supported. Settings' custom grouped rows use

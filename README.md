@@ -46,7 +46,7 @@ Use JDK 21 and Android SDK 37.0. Until the first Glasmio release is published, b
 
 ```sh
 git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-git -C ../Glasmio checkout bbba63b2f2584c4819bd88043332e241820d1ca0
+git -C ../Glasmio checkout 864e958676e38c5416d573c6affeaf4b0279be98
 ./gradlew -Pglasmio.source=true :app:assembleDebug
 ```
 
@@ -65,13 +65,12 @@ MeiloX 的界面、歌词和底层能力受以下项目启发或直接使用其�
 
 - [Mei](https://github.com/ljyh223/Mei)：上游 Android 项目与基础能力；
 - [MeloX](https://github.com/youshen2/MeloX)：iOS 版参考实现与产品方向；
-- [Glasmio](https://github.com/NEORUAA/Glasmio)：共享的 iOS 风格组件与液态玻璃界面库；
+- [Glasmio](https://github.com/NEORUAA/Glasmio)：高质量的 iOS 动画与界面库；
 - [amll-ttml-db](https://github.com/Steve-xmh/amll-ttml-db)：高质量逐字歌词数据；
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui)：歌词模型与渲染组件；
 - [Lyricon](https://github.com/tomakino/lyricon)：词幕 Provider SDK；
 - [SuperLyricApi](https://github.com/HChenX/SuperLyricApi)：歌词共享 SDK；
-- [ColorOS Live Lyrics Bridge](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)：ColorOS 锁屏歌词接口；
-- [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)：Compose Multiplatform 流体玻璃效果。
+- [ColorOS Live Lyrics Bridge](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)：ColorOS 锁屏歌词接口。
 
 ## 许可证与第三方声明
 

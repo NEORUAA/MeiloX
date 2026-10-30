@@ -27,6 +27,15 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: version
+    attributes:
+      label: MeiloX 完整版本号
+      description: 请填写「设置 → 关于」显示的完整版本号，包含括号内的 commit hash；构建号或链接不能替代版本号。
+      placeholder: 版本 1.55.1 (0070ef96)
+    validations:
+      required: true
+
   - type: textarea
     id: problem
     attributes:
@@ -57,6 +66,8 @@ body:
     attributes:
       label: 确认清单
       options:
+        - label: 我已安装并检查 [GitHub Actions 最新构建](https://github.com/NEORUAA/MeiloX/actions/workflows/main.yml)，确认该功能尚未实现
+          required: true
         - label: 我已检索过现有 Issues，确认此前没有提交过相同的建议
           required: true
         - label: 我理解 MeiloX 是个人维护的开源客户端，新功能会优先考虑与 iOS / Apple Music 风格的契合度及维护成本
