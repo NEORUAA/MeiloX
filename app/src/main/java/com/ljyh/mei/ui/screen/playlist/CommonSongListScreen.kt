@@ -1,100 +1,114 @@
 package com.ljyh.mei.ui.screen.playlist
 
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.runtime.mutableIntStateOf
-import io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
-import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
-import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
-import io.github.neoruaa.glasmio.ui.GlasmioIconButton
-
-import com.ljyh.mei.constants.MusicQuality
-
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.compose.LazyPagingItems
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.DetailPageHorizontalPadding
-import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
+import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
+import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Like
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
 import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
-import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.glass.GlassSurface
-import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
-import com.ljyh.mei.ui.navigation.meiloxHeaderAction
-import io.github.neoruaa.glasmio.core.IosTypography
-import io.github.neoruaa.glasmio.glass.glasmioMenuAnchor
-import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
-import io.github.neoruaa.glasmio.core.LocalGlassColors
-import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
-import io.github.neoruaa.glasmio.core.LocalGlassDimensions
-import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
-import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
-import io.github.neoruaa.glasmio.icons.SfIcon
-import io.github.neoruaa.glasmio.icons.SfSymbol
+import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.UiPlaylist
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistActionOverlay
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
+import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import com.ljyh.mei.ui.screen.playlist.component.playlistTrackItems
-import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
+import com.ljyh.mei.utils.rememberPreference
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.core.LocalGlassDimensions
+import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
+import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
+import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
+import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.snapshotFlow
+
+enum class SongListLandscapeLayout {
+    Stacked,
+    Split,
+}
 
 @Composable
 fun CommonSongListScreen(
@@ -121,28 +135,32 @@ fun CommonSongListScreen(
     selectionMode: Boolean = false,
     selectedTrackIds: Set<String> = emptySet(),
     onSelectionDone: () -> Unit = {},
-    detailMenuTitle: String = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_menu_title),
-    listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    detailMenuTitle: String =
+        androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.album_menu_title),
+    listState: androidx.compose.foundation.lazy.LazyListState =
+        androidx.compose.foundation.lazy.rememberLazyListState(),
     headerMetadata: String? = null,
     footer: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
     useCoverBackground: Boolean = false,
     showTrackArtwork: Boolean = true,
     hasLoadedContent: Boolean = true,
     trackNumbers: Map<Long, Int> = emptyMap(),
+    landscapeLayout: SongListLandscapeLayout = SongListLandscapeLayout.Stacked,
 ) {
     val playerConnection = LocalPlayerConnection.current
     val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.id?.toString()
     val isPlaying = playerConnection?.isPlaying?.collectAsState()?.value == true
-    val favoriteTrackIds = rememberFavoriteTrackIds(
-        tracks = pagingItems?.itemSnapshotList?.items ?: uiData.tracks,
-        enabled = useCoverBackground,
-    )
+    val favoriteTrackIds =
+        rememberFavoriteTrackIds(
+            tracks = pagingItems?.itemSnapshotList?.items ?: uiData.tracks,
+            enabled = useCoverBackground,
+        )
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuAnchor = rememberGlasmioMenuAnchorState()
     val device = rememberDeviceInfo()
-    val bottomPadding = LocalPlayerAwareWindowInsets.current
-        .asPaddingValues()
-        .calculateBottomPadding()
+    val adaptiveLandscape = device.isLandscape && landscapeLayout != SongListLandscapeLayout.Stacked
+    val bottomPadding =
+        LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val allMePlaylist by viewModel.playlist.collectAsState()
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
@@ -153,31 +171,38 @@ fun CommonSongListScreen(
     // Keep icon slots fixed while the liquid neck separates, then grow the input to the left.
     val searchSeparation = (searchProgress / 0.7f).coerceIn(0f, 1f)
     val searchExpansionStart = 0.7f * io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
-    val searchExpansion = ((searchProgress - searchExpansionStart) / (1f - searchExpansionStart)).coerceIn(0f, 1f)
-        .let { it * it * (3f - 2f * it) }
+    val searchExpansion =
+        ((searchProgress - searchExpansionStart) / (1f - searchExpansionStart))
+            .coerceIn(0f, 1f)
+            .let { it * it * (3f - 2f * it) }
     val focusManager = LocalFocusManager.current
     val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
-    val backgroundCover = if (useCoverBackground) {
-        when (coverStyle) {
-            PlaylistCoverStyle.FirstSongImage -> uiData.coverList.firstOrNull() ?: uiData.cover
-            else -> uiData.cover
-        }
-    } else ""
-    val coverBackground = rememberCoverBackground(
-        coverUrl = backgroundCover,
-        getCachedColor = viewModel::getCachedColor,
-        getOrExtractColor = viewModel::getOrExtractColor,
-        ownerKey = viewModel,
-    )
+    val backgroundCover =
+        if (useCoverBackground) {
+            when (coverStyle) {
+                PlaylistCoverStyle.FirstSongImage -> uiData.coverList.firstOrNull() ?: uiData.cover
+                else -> uiData.cover
+            }
+        } else ""
+    val coverBackground =
+        rememberCoverBackground(
+            coverUrl = backgroundCover,
+            getCachedColor = viewModel::getCachedColor,
+            getOrExtractColor = viewModel::getOrExtractColor,
+            ownerKey = viewModel,
+        )
     val headerBackdropBrush = rememberUpdatedState(coverBackground.brush)
-    val headerBackdrop = if (useCoverBackground) {
-        // Observe the animation during sampling so its changes invalidate the glass layer.
-        rememberCanvasBackdrop { drawRect(brush = headerBackdropBrush.value) }
-    } else null
-    val listBackgroundAlpha = if (useCoverBackground) {
-        SheetGroupedListBackgroundAlpha
-    } else LocalGroupedListBackgroundAlpha.current
-    val layoutState = rememberSongListLayoutState(listState, isContentReady = !isLoading && hasLoadedContent)
+    val headerBackdrop =
+        if (useCoverBackground) {
+            // Observe the animation during sampling so its changes invalidate the glass layer.
+            rememberCanvasBackdrop { drawRect(brush = headerBackdropBrush.value) }
+        } else null
+    val listBackgroundAlpha =
+        if (useCoverBackground) {
+            SheetGroupedListBackgroundAlpha
+        } else LocalGroupedListBackgroundAlpha.current
+    val layoutState =
+        rememberSongListLayoutState(listState, isContentReady = !isLoading && hasLoadedContent)
 
     LaunchedEffect(isPlaylistSearchActive, onPlaylistSearchQueryChange != null) {
         coroutineScope {
@@ -200,91 +225,134 @@ fun CommonSongListScreen(
         }
     }
 
-    CompositionLocalProvider(
-        LocalGroupedListBackgroundAlpha provides listBackgroundAlpha,
-    ) {
+    CompositionLocalProvider(LocalGroupedListBackgroundAlpha provides listBackgroundAlpha) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val buttonSize = LocalGlassDimensions.current.iconButtonSize
-            val searchEndInset = playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
+            val searchEndInset =
+                playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
             val expandedSearchWidth = (maxWidth - 68.dp - searchEndInset).coerceAtLeast(buttonSize)
-            val animatedSearchWidth = buttonSize + (expandedSearchWidth - buttonSize) * searchExpansion
+            val animatedSearchWidth =
+                buttonSize + (expandedSearchWidth - buttonSize) * searchExpansion
             val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
-            MeiloXPinnedListPage(
+            val hero: @Composable () -> Unit = {
+                val headerContent: @Composable () -> Unit = {
+                    PlaylistHeader(
+                        title = uiData.title,
+                        metadata = headerMetadata,
+                        cover = uiData.cover,
+                        coverList = uiData.coverList,
+                        creator = uiData.creatorName,
+                        onPlayAll = onPlayAll,
+                        onShufflePlay = onShufflePlay,
+                        onDownload = onDownload,
+                        actionIcon = headerActionIcon,
+                        actionLabel = headerActionLabel,
+                        count = uiData.count,
+                        playCount = uiData.playCount ?: -1L,
+                        subscribeCount = uiData.subscriberCount,
+                        isSubscribed = isSubscribed,
+                        isSubscriptionPending = headerActionPending,
+                        onSubscribed = { onHeaderAction() },
+                        detailAction = useCoverBackground,
+                    )
+                }
+                if (isLoading) {
+                    ShimmerHost { headerContent() }
+                } else if (headerBackdrop != null) {
+                    CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) {
+                        headerContent()
+                    }
+                } else {
+                    headerContent()
+                }
+            }
+            SongListDetailPage(
                 title = if (isPlaylistSearchActive || searchProgress > 0.05f) "" else uiData.title,
-                subtitle = uiData.creatorName.takeIf {
-                    !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
-                },
-                showsLargeTitle = false,
+                subtitle =
+                    uiData.creatorName.takeIf {
+                        !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
+                    },
                 listState = layoutState,
                 backgroundColor = coverBackground.color,
                 backgroundBrush = coverBackground.brush.takeIf { useCoverBackground },
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
-                horizontalContentPadding = if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
-                verticalArrangement = Arrangement.spacedBy(0.dp),
+                horizontalContentPadding =
+                    if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
+                splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
+                hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
                 actionsSeparationProgress = searchSeparation,
                 actions = {
-                    val searchAction = if (onPlaylistSearchQueryChange != null && searchProgress <= 0.001f) {
-                        listOf(meiloxHeaderAction("search", "搜索歌单", { onPlaylistSearchActiveChange(true) }) {
-                            SfIcon(SfSymbol.Search, null)
-                        })
-                    } else emptyList()
-                    val detailAction = when {
-                        selectionMode -> listOf(meiloxHeaderAction(
-                            "done", androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done), onSelectionDone,
-                        ) {
-                            Text(
-                                androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.done),
-                                modifier = Modifier.onSizeChanged { doneActionTextWidthPx = it.width },
-                                color = LocalGlassColors.current.accent,
+                    val searchAction =
+                        if (onPlaylistSearchQueryChange != null && searchProgress <= 0.001f) {
+                            listOf(
+                                meiloxHeaderAction(
+                                    "search",
+                                    "搜索歌单",
+                                    { onPlaylistSearchActiveChange(true) },
+                                ) {
+                                    SfIcon(SfSymbol.Search, null)
+                                }
                             )
-                        })
-                        detailMenu != null -> listOf(meiloxHeaderAction(
-                            "detail-menu", detailMenuTitle, { detailMenuOpen = true },
-                            enabled = !isLoading, menuAnchor = detailMenuAnchor,
-                        ) { SfIcon(SfSymbol.Ellipsis, null) })
-                        else -> emptyList()
-                    }
+                        } else emptyList()
+                    val detailAction =
+                        when {
+                            selectionMode ->
+                                listOf(
+                                    meiloxHeaderAction(
+                                        "done",
+                                        androidx.compose.ui.res.stringResource(
+                                            com.ljyh.mei.R.string.done
+                                        ),
+                                        onSelectionDone,
+                                    ) {
+                                        Text(
+                                            androidx.compose.ui.res.stringResource(
+                                                com.ljyh.mei.R.string.done
+                                            ),
+                                            modifier =
+                                                Modifier.onSizeChanged {
+                                                    doneActionTextWidthPx = it.width
+                                                },
+                                            color = LocalGlassColors.current.accent,
+                                        )
+                                    }
+                                )
+                            detailMenu != null ->
+                                listOf(
+                                    meiloxHeaderAction(
+                                        "detail-menu",
+                                        detailMenuTitle,
+                                        { detailMenuOpen = true },
+                                        enabled = !isLoading,
+                                        menuAnchor = detailMenuAnchor,
+                                    ) {
+                                        SfIcon(SfSymbol.Ellipsis, null)
+                                    }
+                                )
+                            else -> emptyList()
+                        }
                     searchAction + detailAction
                 },
             ) {
                 if (isLoading) {
-                    item(key = "playlist-loading") {
-                        Box(Modifier.fillMaxWidth().height(620.dp)) {
-                            PlaylistShimmer(flatDetailStyle = useCoverBackground)
-                        }
-                    }
-                } else {
-                    item(key = "playlist-hero") {
-                        val headerContent: @Composable () -> Unit = {
-                            PlaylistHeader(
-                                title = uiData.title,
-                                metadata = headerMetadata,
-                                cover = uiData.cover,
-                                coverList = uiData.coverList,
-                                creator = uiData.creatorName,
-                                onPlayAll = onPlayAll,
-                                onShufflePlay = onShufflePlay,
-                                onDownload = onDownload,
-                                actionIcon = headerActionIcon,
-                                actionLabel = headerActionLabel,
-                                count = uiData.count,
-                                playCount = uiData.playCount ?: -1L,
-                                subscribeCount = uiData.subscriberCount,
-                                isSubscribed = isSubscribed,
-                                isSubscriptionPending = headerActionPending,
-                                onSubscribed = { onHeaderAction() },
-                                detailAction = useCoverBackground,
-                            )
-                        }
-                        if (headerBackdrop != null) {
-                            CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) {
-                                headerContent()
+                    if (adaptiveLandscape) {
+                        items(10) {
+                            ShimmerHost {
+                                TrackItemShimmer(
+                                    isTablet = false,
+                                    flatDetailStyle = useCoverBackground,
+                                    showArtwork = showTrackArtwork,
+                                )
                             }
-                        } else {
-                            headerContent()
                         }
-                    }
+                    } else
+                        item(key = "playlist-loading") {
+                            Box(Modifier.fillMaxWidth().height(620.dp)) {
+                                PlaylistShimmer(flatDetailStyle = useCoverBackground)
+                            }
+                        }
+                } else {
                     playlistTrackItems(
                         pagingItems = pagingItems,
                         staticTracks = uiData.tracks,
@@ -299,9 +367,11 @@ fun CommonSongListScreen(
                         isPlaying = isPlaying,
                         favoriteTrackIds = favoriteTrackIds,
                         trackNumbers = trackNumbers,
-                        onMoreClick = { track, anchor -> currentOverlay = OverlayState.TrackActionMenu(track, anchor) },
-                        emptyMessage = playlistSearchQuery.takeIf { it.isNotBlank() }
-                            ?.let { "未找到匹配的歌曲" },
+                        onMoreClick = { track, anchor ->
+                            currentOverlay = OverlayState.TrackActionMenu(track, anchor)
+                        },
+                        emptyMessage =
+                            playlistSearchQuery.takeIf { it.isNotBlank() }?.let { "未找到匹配的歌曲" },
                     )
                 }
                 footer?.invoke(this)
@@ -320,23 +390,32 @@ fun CommonSongListScreen(
                     contentAlpha = searchContentAlpha,
                     expansion = searchExpansion,
                     focusRequester = searchFocusRequester,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                        .padding(
-                            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp,
-                            end = searchEndInset,
-                        )
-                        .width(animatedSearchWidth)
-                        .height(buttonSize),
+                    modifier =
+                        Modifier.align(Alignment.TopEnd)
+                            .padding(
+                                top =
+                                    WindowInsets.statusBars
+                                        .asPaddingValues()
+                                        .calculateTopPadding() + 9.dp,
+                                end = searchEndInset,
+                            )
+                            .width(animatedSearchWidth)
+                            .height(buttonSize),
                 )
             }
 
             if (detailMenuOpen && detailMenu != null) {
                 io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu(
-                    anchorBounds = detailMenuAnchor.bounds, items = detailMenu,
+                    anchorBounds = detailMenuAnchor.bounds,
+                    items = detailMenu,
                     menuAnchorState = detailMenuAnchor,
                     title = detailMenuTitle,
-                    expandedDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_expanded),
-                    collapsedDescription = androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_collapsed),
+                    expandedDescription =
+                        androidx.compose.ui.res.stringResource(com.ljyh.mei.R.string.menu_expanded),
+                    collapsedDescription =
+                        androidx.compose.ui.res.stringResource(
+                            com.ljyh.mei.R.string.menu_collapsed
+                        ),
                     onDismiss = { detailMenuOpen = false },
                 )
             }
@@ -418,7 +497,10 @@ internal fun PlaylistHeaderSearchEditor(
 }
 
 @Composable
-internal fun rememberSongListLayoutState(contentState: LazyListState, isContentReady: Boolean): LazyListState {
+internal fun rememberSongListLayoutState(
+    contentState: LazyListState,
+    isContentReady: Boolean,
+): LazyListState {
     // Measuring a single placeholder with restored content state would clamp its saved position.
     val loadingState = remember { LazyListState() }
     return if (isContentReady) contentState else loadingState
@@ -434,6 +516,95 @@ fun ActionButton(
 ) {
     GlasmioButton(onClick = onClick) {
         SfIcon(SfSymbol.Ellipsis, text, size = 18.dp, tint = color)
-        Text(text, style = IosTypography.caption, color = color, modifier = Modifier.padding(start = 6.dp))
+        Text(
+            text,
+            style = IosTypography.caption,
+            color = color,
+            modifier = Modifier.padding(start = 6.dp),
+        )
+    }
+}
+
+@Composable
+internal fun SongListDetailPage(
+    title: String,
+    subtitle: String?,
+    listState: LazyListState,
+    backgroundColor: Color,
+    backgroundBrush: Brush?,
+    bottomPadding: Dp,
+    horizontalContentPadding: Dp,
+    splitHeader: Boolean,
+    hero: (@Composable () -> Unit)?,
+    onNavigateBack: () -> Unit,
+    actionsSeparationProgress: Float,
+    actions: @Composable () -> List<GlasmioHeaderAction>,
+    content: LazyListScope.() -> Unit,
+) {
+    if (!splitHeader) {
+        MeiloXPinnedListPage(
+            title = title,
+            subtitle = subtitle,
+            listState = listState,
+            backgroundColor = backgroundColor,
+            backgroundBrush = backgroundBrush,
+            bottomPadding = bottomPadding,
+            horizontalContentPadding = horizontalContentPadding,
+            showsLargeTitle = false,
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+            onNavigateBack = onNavigateBack,
+            actionsSeparationProgress = actionsSeparationProgress,
+            actions = actions,
+        ) {
+            if (hero != null) item(key = "playlist-hero") { hero() }
+            content()
+        }
+        return
+    }
+    MeiloXPinnedPage(
+        title = title,
+        subtitle = subtitle,
+        backgroundColor = backgroundColor,
+        backgroundBrush = backgroundBrush,
+        bottomPadding = bottomPadding,
+        onNavigateBack = onNavigateBack,
+        actionsSeparationProgress = actionsSeparationProgress,
+        actions = actions,
+        topBarBlurProgress =
+            if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
+                1f
+            else 0f,
+    ) { padding ->
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(0.44f)
+                    .fillMaxHeight()
+                    .testTag("DetailHeroPane")
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = horizontalContentPadding,
+                        end = 24.dp,
+                        top = padding.calculateTopPadding(),
+                        bottom = padding.calculateBottomPadding(),
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                hero?.invoke()
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(0.56f).fillMaxHeight().testTag("DetailTrackPane"),
+                contentPadding =
+                    PaddingValues(
+                        top = padding.calculateTopPadding(),
+                        end = horizontalContentPadding,
+                        bottom = padding.calculateBottomPadding(),
+                    ),
+            ) {
+                // Preserve the hero slot so list indices survive orientation changes.
+                item(key = "playlist-hero") {}
+                content()
+            }
+        }
     }
 }

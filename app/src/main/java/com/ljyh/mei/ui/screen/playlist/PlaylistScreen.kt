@@ -379,6 +379,7 @@ fun PlaylistScreen(
     } else {
         CommonSongListScreen(
             useCoverBackground = true,
+            landscapeLayout = com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout.Split,
             uiData = uiData,
             pagingItems = lazyPagingItems,
             isLoading = playlistDetail is Resource.Loading,

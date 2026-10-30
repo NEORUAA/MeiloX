@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.platform.testTag
+
 import kotlin.math.abs
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderGroup
@@ -80,6 +85,53 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun splitPlaylistKeepsTheHeroStationaryWhileTheSongPaneScrolls() {
+        lateinit var state: LazyListState
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    state = rememberLazyListState()
+                    Box(Modifier.requiredWidth(900.dp).requiredHeight(500.dp)) {
+                        SongListDetailPage(
+                            title = "Playlist",
+                            subtitle = null,
+                            listState = state,
+                            backgroundColor = Color.Black,
+                            backgroundBrush = null,
+                            bottomPadding = 48.dp,
+                            horizontalContentPadding = 24.dp,
+                            splitHeader = true,
+                            hero = { Text("Playlist artwork", Modifier.testTag("PinnedHero")) },
+                            onNavigateBack = {},
+                            actionsSeparationProgress = 0f,
+                            actions = { emptyList() },
+                        ) {
+                            items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp)) }
+                        }
+                    }
+                }
+            }
+        }
+        val hero =
+            compose
+                .onNodeWithTag("PinnedHero", useUnmergedTree = true)
+                .fetchSemanticsNode()
+                .boundsInRoot
+        val left = compose.onNodeWithTag("DetailHeroPane").fetchSemanticsNode().boundsInRoot
+        val right = compose.onNodeWithTag("DetailTrackPane").fetchSemanticsNode().boundsInRoot
+        assertTrue(left.right <= right.left)
+        compose.onNodeWithTag("DetailTrackPane").performScrollToIndex(12)
+        assertEquals(
+            hero,
+            compose
+                .onNodeWithTag("PinnedHero", useUnmergedTree = true)
+                .fetchSemanticsNode()
+                .boundsInRoot,
+        )
+        compose.runOnIdle { assertTrue(state.firstVisibleItemIndex > 0) }
+    }
 
     @Test
     fun playlistSearchReservesTheRenderedDoneActionInBothDirectionsAndLargeType() {

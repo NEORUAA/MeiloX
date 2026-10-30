@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -170,11 +171,12 @@ private fun TabletShimmerContent() {
  * 单个歌曲行的骨架
  */
 @Composable
-private fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false) {
+internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false, showArtwork: Boolean = true) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
+            .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) 64.dp else 52.dp) else Modifier)
+            .padding(vertical = if (flatDetailStyle) 8.dp else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isTablet) {
@@ -191,7 +193,8 @@ private fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false
         ) {
             TextPlaceholder(
                 modifier = Modifier
-                    .size(if (isTablet) 40.dp else 50.dp)
+                    .then(if (!showArtwork) Modifier.size(width = 18.dp, height = 14.dp)
+                        else Modifier.size(if (flatDetailStyle) 48.dp else if (isTablet) 40.dp else 50.dp))
                     .clip(ContinuousRoundedRectangle(8.dp)),
                 verticalPadding = 0.dp,
             )
@@ -223,6 +226,6 @@ private fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false
         }
 
         Spacer(modifier = Modifier.width(16.dp))
-        ButtonPlaceholder(modifier = Modifier.size(24.dp))
+        ButtonPlaceholder(modifier = Modifier.size(if (flatDetailStyle) 44.dp else 24.dp))
     }
 }
