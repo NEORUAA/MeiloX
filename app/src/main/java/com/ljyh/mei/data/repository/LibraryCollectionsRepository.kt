@@ -54,6 +54,7 @@ class LibraryCollectionsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val profileMutex = Mutex()
+    private val likedPlaylists = LibraryLikedPlaylistCache()
     private val albumWriteMutex = Mutex()
     private val albumWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val accounts = context.dataStore.data.map { preferences ->
@@ -105,10 +106,10 @@ class LibraryCollectionsRepository @Inject constructor(
         )
     }
 
-    suspend fun playlists(account: LibraryAccount, offset: Int): LibraryCollectionPage<UserPlaylist.Playlist> {
+    suspend fun playlists(account: LibraryAccount, offset: Int, limit: Int = 100): LibraryCollectionPage<UserPlaylist.Playlist> {
         ensureAccount(account)
         val response = Gson().fromJson(
-            readRequest("/api/user/playlist", mapOf("uid" to account.userId, "limit" to 100, "offset" to offset)),
+            readRequest("/api/user/playlist", mapOf("uid" to account.userId, "limit" to limit, "offset" to offset)),
             UserPlaylist::class.java,
         )
         ensureAccount(account)
@@ -118,6 +119,14 @@ class LibraryCollectionsRepository @Inject constructor(
             nextOffset = offset + response.playlist.size,
             hasMore = response.more,
         )
+    }
+
+    /** Resolve songs independently of the library's playlist/database synchronization. */
+    suspend fun likedPlaylistId(account: LibraryAccount): Long? {
+        ensureAccount(account)
+        val id = likedPlaylists.resolve(account) { offset, limit -> playlists(account, offset, limit) }
+        ensureAccount(account)
+        return id
     }
 
     suspend fun allPlaylists(account: LibraryAccount): List<UserPlaylist.Playlist> =
@@ -159,6 +168,37 @@ class LibraryCollectionsRepository @Inject constructor(
         throw error
     } catch (_: Exception) {
         eapi.post(path.replaceFirst("/api/", "/eapi/"), body).also { it.requireSuccess() }
+    }
+}
+
+/** Retain one session's resolved ID, without retaining credentials for past accounts. */
+internal class LibraryLikedPlaylistCache {
+    private val mutex = Mutex()
+    private var cached: Pair<LibraryAccount, Long>? = null
+
+    suspend fun resolve(
+        account: LibraryAccount,
+        loadPage: suspend (offset: Int, limit: Int) -> LibraryCollectionPage<UserPlaylist.Playlist>,
+    ): Long? = mutex.withLock {
+        cached?.takeIf { it.first == account }?.let { return@withLock it.second }
+        cached = null
+        // The liked playlist is normally first; continue if the server orders it later.
+        var offset = 0
+        var page = loadPage(offset, 1)
+        val seen = mutableSetOf<Long>()
+        while (true) {
+            page.items.firstOrNull { it.specialType == 5 && it.creator.userId.toString() == account.userId }
+                ?.let { playlist ->
+                    cached = account to playlist.id
+                    return@withLock playlist.id
+                }
+            if (!page.hasMore) break
+            val added = page.items.count { seen.add(it.id) }
+            check(added > 0 && page.nextOffset > offset) { "NetEase playlist pagination did not advance" }
+            offset = page.nextOffset
+            page = loadPage(offset, 100)
+        }
+        null
     }
 }
 

@@ -64,6 +64,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
@@ -73,6 +76,7 @@ import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
@@ -190,7 +194,11 @@ fun LibraryMobileLayout(
     onLoadMorePlaylists: () -> Unit,
     onRefreshAlbums: () -> Unit,
     onLoadMoreAlbums: () -> Unit,
-    likedSongs: List<MediaMetadata>,
+    likedSongs: LazyPagingItems<MediaMetadata>,
+    likedSongIds: List<Long>,
+    likedPlaylistId: Long?,
+    likedSongSearchLoading: Boolean,
+    onLikedSongQueryChange: (String) -> Unit,
     likedSongsLoading: Boolean,
     likedSongsError: String?,
     onRetryLikedSongs: () -> Unit,
@@ -273,15 +281,23 @@ fun LibraryMobileLayout(
     var searchActive by rememberSaveable { mutableStateOf(false) }
     val query = searchQuery.text.trim()
     val isSearching = query.isNotEmpty()
-    val visibleLikedSongs = remember(likedSongs, query) {
-        likedSongs.filterIfSearching(query) { song ->
-            song.title.containsQuery(query) ||
-                song.album.title.containsQuery(query) ||
-                song.tns.containsQuery(query) ||
-                song.artists.any { artist ->
-                    artist.name.containsQuery(query) || artist.alias.orEmpty().any { it.containsQuery(query) }
-                }
-        }
+    LaunchedEffect(selectedPage, query, likedPlaylistId) {
+        onLikedSongQueryChange(if (selectedPage == LibraryPage.Songs) query else "")
+    }
+    fun playLikedSongs(startTrackId: Long? = null) {
+        val playlistId = likedPlaylistId ?: return
+        val loaded = likedSongs.itemSnapshotList.items.associateBy { it.id }
+        val ids = if (isSearching) likedSongs.itemSnapshotList.items.map { it.id } else likedSongIds
+        if (ids.isEmpty()) return
+        playerConnection?.playQueue(
+            ListQueue(
+                id = "library-liked",
+                title = likedTitle,
+                items = ids.map { it.toString() to loaded[it]?.toMediaItem() },
+                startIndex = startTrackId?.let(ids::indexOf)?.coerceAtLeast(0) ?: 0,
+                playlistSource = PlaylistQueueSource(playlistId),
+            ),
+        )
     }
     val visibleCreatedPlaylists = remember(createdPlaylists, query) {
         createdPlaylists.filterIfSearching(query) { it.matchesQuery(query) }
@@ -387,7 +403,10 @@ fun LibraryMobileLayout(
 
                     when (selectedPage) {
                         LibraryPage.Songs -> {
-                            if (likedSongs.isEmpty() && likedSongsLoading) {
+                            val refresh = likedSongs.loadState.refresh
+                            val append = likedSongs.loadState.append
+                            val hasSongs = likedPlaylistId != null && likedSongs.itemCount > 0
+                            if (!hasSongs && (likedSongsLoading || refresh is LoadState.Loading || likedSongSearchLoading)) {
                                 item(key = "liked-loading") {
                                     Box(
                                         Modifier.fillMaxWidth().height(120.dp),
@@ -396,51 +415,44 @@ fun LibraryMobileLayout(
                                         CircularProgressIndicator()
                                     }
                                 }
-                            } else if (likedSongsError != null && likedSongs.isEmpty()) {
-                                item(key = "liked-error") { CollectionFooter(false, true, onRetryLikedSongs) }
-                            } else if (visibleLikedSongs.isNotEmpty()) {
+                            } else if (!hasSongs && (likedSongsError != null || refresh is LoadState.Error)) {
+                                item(key = "liked-error") {
+                                    CollectionFooter(false, true) {
+                                        if (likedSongsError != null) onRetryLikedSongs() else likedSongs.retry()
+                                    }
+                                }
+                            } else if (hasSongs) {
                                 item(key = "liked-actions") {
                                     GlasmioGroupedList {
                                         GlasmioListRow(
                                             title = stringResource(R.string.library_play_all),
                                             systemName = "play.fill",
                                             showTopSeparator = false,
-                                            onClick = {
-                                                playerConnection?.playQueue(
-                                                    ListQueue(
-                                                        id = "library-liked",
-                                                        title = likedTitle,
-                                                        items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
-                                                    ),
-                                                )
-                                            },
+                                            enabled = !isSearching || (!likedSongSearchLoading && likedSongsError == null),
+                                            onClick = { playLikedSongs() },
                                         )
                                         GlasmioListRow(
                                             title = stringResource(R.string.library_heart_mode),
                                             systemName = "heart.circle.fill",
                                             onClick = {
-                                                playerConnection?.fmStart(visibleLikedSongs.randomOrNull()?.id?.toString())
+                                                val seeds = if (isSearching) {
+                                                    likedSongs.itemSnapshotList.items.map { it.id }
+                                                } else likedSongIds
+                                                playerConnection?.fmStart(seeds.randomOrNull()?.toString())
                                             },
                                         )
                                     }
                                 }
                                 items(
-                                    visibleLikedSongs,
-                                    key = { "liked-${it.id}" },
+                                    count = likedSongs.itemCount,
+                                    key = likedSongs.itemKey { "liked-${it.id}" },
                                     contentType = { "liked-song" },
-                                ) { song ->
-                                    LibrarySongRow(
+                                ) { index ->
+                                    val song = likedSongs[index]
+                                    if (song != null) LibrarySongRow(
                                         song = song,
                                         onClick = {
-                                            val index = visibleLikedSongs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
-                                            playerConnection?.playQueue(
-                                                ListQueue(
-                                                    id = "library-liked",
-                                                    title = likedTitle,
-                                                    items = visibleLikedSongs.map { it.id.toString() to it.toMediaItem() },
-                                                    startIndex = index,
-                                                ),
-                                            )
+                                            playLikedSongs(song.id)
                                         },
                                         onMoreClick = {
                                             currentOverlay = OverlayState.TrackActionMenu(song, it)
@@ -457,9 +469,15 @@ fun LibraryMobileLayout(
                                     )
                                 }
                             }
-                            if (likedSongsError != null && likedSongs.isNotEmpty()) {
+                            if (hasSongs && (likedSongsError != null || append is LoadState.Error ||
+                                    append is LoadState.Loading || likedSongSearchLoading)) {
                                 item(key = "liked-continuation-error") {
-                                    CollectionFooter(false, true, onRetryLikedSongs)
+                                    CollectionFooter(
+                                        loading = append is LoadState.Loading || likedSongSearchLoading,
+                                        failed = likedSongsError != null || append is LoadState.Error,
+                                    ) {
+                                        if (likedSongsError != null) onRetryLikedSongs() else likedSongs.retry()
+                                    }
                                 }
                             }
                         }

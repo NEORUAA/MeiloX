@@ -3,6 +3,7 @@ package com.ljyh.mei.data.repository
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.api.BaseResponse
+import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
@@ -37,6 +38,13 @@ import org.junit.Test
 class PlaylistSubscriptionLifecycleTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var fixture: Fixture
+
+    @Test
+    fun libraryRequestsOnlyTheFirstSixtyDetailsWhileNormalPlaylistRequestsKeepTheirLimit() = runTest(dispatcher) {
+        fixture.repository.getPlaylistDetail("42", trackLimit = 60)
+        fixture.repository.getPlaylistDetail("42")
+        assertEquals(listOf("60", "5000"), fixture.detailRequests.map { it.n })
+    }
 
     @Before
     fun setUp() {
@@ -239,6 +247,7 @@ class PlaylistSubscriptionLifecycleTest {
         var tokenGate: CompletableDeferred<Unit>? = null
         var tokenCalls = 0
         var detailCalls = 0
+        val detailRequests = mutableListOf<GetPlaylistDetail>()
         var serverSubscribed = false
         var cleanupGate: CompletableDeferred<Unit>? = null
         var cleanupFailure: Exception? = null
@@ -252,6 +261,7 @@ class PlaylistSubscriptionLifecycleTest {
         ) { _, method, arguments ->
             check(method.name == "getPlaylistDetail") { "Unexpected API request: ${method.name}" }
             detailCalls++
+            detailRequests += arguments!![0] as GetPlaylistDetail
             val response = detailResponses.removeFirstOrNull()
             if (response == null) {
                 detail(serverSubscribed)

@@ -128,7 +128,11 @@ class PlaylistRepository(
         val result: Deferred<Resource<BaseResponse>>,
     )
 
-    suspend fun getPlaylistDetail(id: String, expectedSession: String? = null): Resource<PlaylistDetail> {
+    suspend fun getPlaylistDetail(
+        id: String,
+        expectedSession: String? = null,
+        trackLimit: Int = 5_000,
+    ): Resource<PlaylistDetail> {
         val key = SubscriptionKey(subscriptionAccount(), id)
         if (expectedSession != null &&
             (key.account.isBlank() || neteaseSessionFingerprint(key.account) != expectedSession)
@@ -147,7 +151,7 @@ class PlaylistRepository(
                 }
                 val response = withContext(ioDispatcher) {
                     safeApiCall {
-                        apiService.getPlaylistDetail(GetPlaylistDetail(id = id), expectedSession)
+                        apiService.getPlaylistDetail(GetPlaylistDetail(id = id, n = trackLimit.toString()), expectedSession)
                     }
                 }
                 // A read started before a write must not publish its old subscription state.
@@ -166,6 +170,15 @@ class PlaylistRepository(
             }
         }
     }
+
+    suspend fun getPlaylistSongDetails(ids: List<String>, expectedSession: String): List<PlaylistDetail.Playlist.Track> =
+        withContext(ioDispatcher) {
+            requireOrderSession(expectedSession)
+            val response = apiService.getSongDetail(GetSongDetails(ids.joinToString(",")), expectedSession)
+            requireOrderSession(expectedSession)
+            check(response.code == 200) { "Unable to load songs (${response.code})" }
+            response.songs
+        }
 
     private fun removeIdleSubscription(key: SubscriptionKey, entry: SubscriptionEntry) {
         // Keep the revision alive while a reader can still return an older response.
