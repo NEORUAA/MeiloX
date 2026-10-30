@@ -84,6 +84,8 @@ import com.kyant.capsule.continuities.G1Continuity
 import io.github.neoruaa.glasmio.glass.GlassPressHighlight
 import io.github.neoruaa.glasmio.glass.clipGlassShape
 import io.github.neoruaa.glasmio.glass.rememberGlassMorphRenderer
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.component.player.LocalPlayerArtwork
 import kotlinx.coroutines.CoroutineScope
 import kotlin.math.roundToInt
@@ -549,11 +551,14 @@ fun BottomSheet(
     val transitionGeometryReady by remember(layers) {
         derivedStateOf { layers.hostBounds.isUsable() && layers.sourceContainer.isUsable() }
     }
+    val materialDark = LocalMiniPlayerAppearance.current ?: LocalGlassColors.current.isDark
     val transitionGlassRenderer = rememberGlassMorphRenderer(
         backdrop = transitionBackdrop,
         active = active && transitionGeometryReady,
         // Only the blurred page sample is reduced; all moving edges and content stay native.
         renderScale = 0.25f,
+        // Match the collapsed material recipe; draw(isDark) alone does not select it.
+        isDark = materialDark,
     )
     val expandedCornerRadius = rememberPlayerScreenCornerRadius(layers.hostBounds)
     SideEffect { layers.updateFrozenBounds() }
