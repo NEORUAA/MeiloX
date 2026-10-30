@@ -297,13 +297,15 @@ class LibraryViewModel @Inject constructor(
                         if (isCurrent()) {
                             check(result.data.code == 200) { "Unable to load songs (${result.data.code})" }
                             val playlist = result.data.playlist
-                            _likedSongs.value?.close()
+                            val previous = _likedSongs.value
+                            previous?.close()
                             _likedSongs.value = LibrarySongs(
                                 playlistId = playlistId,
                                 ids = playlist.trackIds.map { it.id }.distinct(),
                                 initialTracks = playlist.tracks,
                                 scope = viewModelScope,
                                 loadTracks = { ids -> playlistRepository.getPlaylistSongDetails(ids, account.sessionFingerprint) },
+                                previous = previous,
                             )
                             likedSongsDirty = false
                         }

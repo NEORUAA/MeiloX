@@ -160,13 +160,135 @@ class LibrarySongsTest {
         assertEquals((1L..80L).toList(), presenter.snapshot().items.map { it.id })
     }
 
+    @Test
+    fun refreshRetainsBrowseDepthAndDetailsInTheNewPlaylistOrder() = runTest {
+        val requests = mutableListOf<List<String>>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val ids = (1L..4_005L).toList()
+        val songs = LibrarySongs(
+            playlistId = 42, ids = ids, initialTracks = ids.take(60).map(::track),
+            scope = backgroundScope, ioDispatcher = dispatcher,
+            loadTracks = { requested -> requests += requested; requested.map { track(it.toLong()) } },
+        )
+        val browsing = presenter(dispatcher)
+        backgroundScope.launch { songs.pages.collectLatest(browsing::collectFrom) }
+        runCurrent()
+        repeat(7) {
+            browsing[browsing.snapshot().size - 1]
+            runCurrent()
+        }
+        assertEquals(200, browsing.snapshot().size)
+        songs.close()
+        requests.clear()
+
+        val refreshedIds = listOf(200L) + ids.filterNot { it == 100L || it == 200L }
+        val refreshed = LibrarySongs(
+            playlistId = 42, ids = refreshedIds,
+            initialTracks = refreshedIds.take(60).map { track(it, "Fresh $it") },
+            scope = backgroundScope, ioDispatcher = dispatcher, previous = songs,
+            loadTracks = { requested -> requests += requested; requested.map { track(it.toLong()) } },
+        )
+        val results = presenter(dispatcher)
+        backgroundScope.launch { refreshed.pages.collectLatest(results::collectFrom) }
+        runCurrent()
+        assertEquals(refreshedIds.take(200), results.snapshot().items.map { it.id })
+        assertEquals("Fresh 200", results.snapshot().items.first().title)
+        assertEquals("Song 199", results.snapshot().items.first { it.id == 199L }.title)
+        assertEquals(listOf(listOf("201")), requests)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(listOf(listOf("201")), requests)
+    }
+
+    @Test
+    fun refreshKeepsSearchCacheWithoutExpandingBrowseDepthOrSharingAnotherPlaylist() = runTest {
+        val requests = mutableListOf<List<String>>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val ids = (1L..4_005L).toList()
+        fun songs(playlistId: Long = 42, previous: LibrarySongs? = null) = LibrarySongs(
+            playlistId = playlistId, ids = ids, initialTracks = ids.take(60).map(::track),
+            scope = backgroundScope, ioDispatcher = dispatcher, previous = previous,
+            loadTracks = { requested -> requests += requested; requested.map { track(it.toLong()) } },
+        )
+        val original = songs()
+        val searchResults = presenter(dispatcher)
+        val search = backgroundScope.launch {
+            original.search("Song 4005").collectLatest(searchResults::collectFrom)
+        }
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(listOf(4_005L), searchResults.snapshot().items.map { it.id })
+        search.cancel()
+        val browsing = presenter(dispatcher)
+        backgroundScope.launch { original.pages.collectLatest(browsing::collectFrom) }
+        runCurrent()
+        browsing[59]
+        runCurrent()
+        assertEquals(80, browsing.snapshot().size)
+        original.close()
+        requests.clear()
+
+        val refreshed = songs(previous = original)
+        val results = presenter(dispatcher)
+        backgroundScope.launch { refreshed.pages.collectLatest(results::collectFrom) }
+        runCurrent()
+        assertEquals(ids.take(80), results.snapshot().items.map { it.id })
+        results[79]
+        runCurrent()
+        assertEquals(ids.take(100), results.snapshot().items.map { it.id })
+        assertTrue(requests.isEmpty())
+
+        val otherPlaylist = songs(playlistId = 43, previous = original)
+        val otherResults = presenter(dispatcher)
+        backgroundScope.launch { otherPlaylist.pages.collectLatest(otherResults::collectFrom) }
+        runCurrent()
+        assertEquals(ids.take(60), otherResults.snapshot().items.map { it.id })
+        otherResults[59]
+        runCurrent()
+        assertEquals(listOf((61L..80L).map(Long::toString)), requests)
+    }
+
+    @Test
+    fun refreshBatchesNewDetailsWhenRestoringADeeplyBrowsedPlaylist() = runTest {
+        val requests = mutableListOf<List<String>>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val songs = LibrarySongs(
+            playlistId = 42, ids = (1L..4_005L).toList(), initialTracks = (1L..60L).map(::track),
+            scope = backgroundScope, ioDispatcher = dispatcher,
+            loadTracks = { ids -> ids.map { track(it.toLong()) } },
+        )
+        val browsing = presenter(dispatcher)
+        backgroundScope.launch { songs.pages.collectLatest(browsing::collectFrom) }
+        runCurrent()
+        repeat(17) {
+            browsing[browsing.snapshot().size - 1]
+            runCurrent()
+        }
+        assertEquals(400, browsing.snapshot().size)
+        songs.close()
+
+        val newIds = (1_001L..5_005L).toList()
+        val refreshed = LibrarySongs(
+            playlistId = 42, ids = newIds, initialTracks = newIds.take(60).map(::track),
+            scope = backgroundScope, ioDispatcher = dispatcher, previous = songs,
+            loadTracks = { ids -> requests += ids; ids.map { track(it.toLong()) } },
+        )
+        val results = presenter(dispatcher)
+        backgroundScope.launch { refreshed.pages.collectLatest(results::collectFrom) }
+        runCurrent()
+        assertEquals(newIds.take(400), results.snapshot().items.map { it.id })
+        assertEquals(listOf(200, 140), requests.map { it.size })
+    }
+
     private fun presenter(dispatcher: TestDispatcher) =
         object : PagingDataPresenter<MediaMetadata>(dispatcher) {
             override suspend fun presentPagingDataEvent(event: PagingDataEvent<MediaMetadata>) = Unit
         }
 
-    private fun track(id: Long): PlaylistDetail.Playlist.Track = Gson().fromJson(
-        """{"id":$id,"name":"Song $id","dt":180000,"ar":[],"al":{"id":1,"name":"Album","picUrl":""}}""",
+    private fun track(id: Long) = track(id, "Song $id")
+
+    private fun track(id: Long, name: String): PlaylistDetail.Playlist.Track = Gson().fromJson(
+        """{"id":$id,"name":"$name","dt":180000,"ar":[],"al":{"id":1,"name":"Album","picUrl":""}}""",
         PlaylistDetail.Playlist.Track::class.java,
     )
 }

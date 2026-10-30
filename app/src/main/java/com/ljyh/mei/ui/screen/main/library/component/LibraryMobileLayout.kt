@@ -295,7 +295,7 @@ fun LibraryMobileLayout(
                 title = likedTitle,
                 items = ids.map { it.toString() to loaded[it]?.toMediaItem() },
                 startIndex = startTrackId?.let(ids::indexOf)?.coerceAtLeast(0) ?: 0,
-                playlistSource = PlaylistQueueSource(playlistId),
+                playlistSource = if (isSearching) null else PlaylistQueueSource(playlistId),
             ),
         )
     }
