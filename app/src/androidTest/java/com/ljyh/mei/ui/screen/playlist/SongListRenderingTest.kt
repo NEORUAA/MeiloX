@@ -2,8 +2,13 @@ package com.ljyh.mei.ui.screen.playlist
 
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.ui.test.performScrollToIndex
+import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import androidx.compose.ui.platform.testTag
+import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
+import com.ljyh.mei.data.model.MediaMetadata
 
 import kotlin.math.abs
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
@@ -85,6 +90,85 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun albumDurationIsShownOnlyWhenTheCallerRequestsIt() {
+        val durationVisible = mutableStateOf(false)
+        compose.setContent {
+            GlasmioTheme {
+                DetailTrackRow(
+                    track =
+                        MediaMetadata(
+                            1L,
+                            "Song",
+                            "",
+                            emptyList(),
+                            259000L,
+                            MediaMetadata.Album(1L, "Album"),
+                        ),
+                    trackNumber = 1,
+                    showArtwork = false,
+                    isCurrentTrack = false,
+                    isPlaying = false,
+                    isFavorite = false,
+                    onClick = {},
+                    selected = null,
+                    onMoreClick = {},
+                    showDuration = durationVisible.value,
+                )
+            }
+        }
+        compose.onNodeWithText("4:19").assertDoesNotExist()
+        compose.runOnIdle { durationVisible.value = true }
+        compose.onNodeWithText("4:19").assertIsDisplayed()
+    }
+
+    @Test
+    fun albumLandscapeHeaderKeepsArtworkAndActionGeometryWhileLoading() {
+        val loading = mutableStateOf(false)
+        val horizontal = mutableStateOf(true)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Box(Modifier.requiredWidth(900.dp)) {
+                        PlaylistHeader(
+                            title = "Album title",
+                            creator = "Artist",
+                            metadata = "2026 · 12 tracks",
+                            count = 12,
+                            playCount = 0,
+                            subscribeCount = 0,
+                            cover = "",
+                            coverList = emptyList(),
+                            isSubscribed = false,
+                            onPlayAll = {},
+                            onSubscribed = {},
+                            actionIcon = Icons.Default.FavoriteBorder,
+                            actionLabel = "Subscribe",
+                            detailAction = true,
+                            horizontal = horizontal.value,
+                            isLoading = loading.value,
+                        )
+                    }
+                }
+            }
+        }
+        fun bounds(tag: String) =
+            compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val cover = bounds("DetailHeaderCover")
+        val information = bounds("DetailHeaderInformation")
+        val actions = bounds("DetailHeaderActions")
+        assertEquals(cover.width, cover.height, 1f)
+        assertTrue(cover.right < information.left)
+        compose.runOnIdle { loading.value = true }
+        assertEquals(cover, bounds("DetailHeaderCover"))
+        assertEquals(actions, bounds("DetailHeaderActions"))
+        compose.runOnIdle {
+            loading.value = false
+            horizontal.value = false
+        }
+        assertTrue(bounds("DetailHeaderInformation").top >= bounds("DetailHeaderCover").bottom)
+    }
 
     @Test
     fun splitPlaylistKeepsTheHeroStationaryWhileTheSongPaneScrolls() {

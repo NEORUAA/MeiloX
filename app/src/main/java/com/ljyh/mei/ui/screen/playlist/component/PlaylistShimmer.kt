@@ -171,7 +171,7 @@ private fun TabletShimmerContent() {
  * 单个歌曲行的骨架
  */
 @Composable
-internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false, showArtwork: Boolean = true) {
+internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false, showArtwork: Boolean = true, showDuration: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -225,6 +225,9 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
                 .height(14.dp))
         }
 
+        if (showDuration) {
+            TextPlaceholder(Modifier.width(40.dp).height(16.dp), verticalPadding = 0.dp)
+        }
         Spacer(modifier = Modifier.width(16.dp))
         ButtonPlaceholder(modifier = Modifier.size(if (flatDetailStyle) 44.dp else 24.dp))
     }

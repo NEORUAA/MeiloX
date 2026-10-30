@@ -53,6 +53,7 @@ import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
+import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.utils.smallImage
 
 private val DetailTrackArtworkSize = 48.dp
@@ -72,11 +73,15 @@ internal fun DetailTrackRow(
     onClick: () -> Unit,
     selected: Boolean?,
     onMoreClick: ((Rect) -> Unit)?,
+    showDuration: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val numberWidth = if (showArtwork) 0.dp else albumTrackNumberWidth()
     val numberColumnWidth = maxOf(numberWidth, DetailTrackIndicatorWidth)
     val favoriteOffset = -(DetailPageHorizontalPadding + DetailTrackFavoriteSize) / 2
+    val moreButtonOffset =
+        if (showDuration) (DetailTrackMoreButtonSize - DetailTrackMoreIconSize) / 2 - 8.dp
+        else (DetailTrackMoreButtonSize - DetailTrackMoreIconSize) / 2
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     Box(Modifier.fillMaxWidth()) {
         if (isFavorite) {
@@ -179,6 +184,15 @@ internal fun DetailTrackRow(
                     )
                 }
             }
+            if (showDuration) {
+                Text(
+                    text = formatDuration(track.duration),
+                    modifier = Modifier.padding(start = 16.dp).detailInkBlend(),
+                    color = colors.secondaryContent,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                    maxLines = 1, softWrap = false,
+                )
+            }
             onMoreClick?.let { onMore ->
                 Spacer(Modifier.width(8.dp))
                 Box(
@@ -188,7 +202,7 @@ internal fun DetailTrackRow(
                     Box(
                         modifier = Modifier
                             .size(DetailTrackMoreButtonSize)
-                            .offset(x = (DetailTrackMoreButtonSize - DetailTrackMoreIconSize) / 2)
+                            .offset(x = moreButtonOffset)
                             .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
                             .clip(CircleShape)
                             .clickable(

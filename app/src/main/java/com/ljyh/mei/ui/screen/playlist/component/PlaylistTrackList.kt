@@ -183,6 +183,7 @@ fun LazyListScope.playlistTrackItems(
     selectedTrackIds: Set<String> = emptySet(),
     flatDetailStyle: Boolean = false,
     showArtwork: Boolean = true,
+    showDuration: Boolean = false,
     currentTrackId: String? = null,
     trackNumbers: Map<Long, Int> = emptyMap(),
     isPlaying: Boolean = false,
@@ -224,6 +225,7 @@ fun LazyListScope.playlistTrackItems(
                             track = track,
                             trackNumber = trackNumbers[track.id] ?: index + 1,
                             showArtwork = showArtwork,
+                            showDuration = showDuration,
                             isCurrentTrack = track.id.toString() == currentTrackId,
                             isPlaying = isPlaying,
                             isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&
@@ -293,6 +295,7 @@ fun LazyListScope.playlistTrackItems(
                         track = track,
                         trackNumber = trackNumbers[track.id] ?: index + 1,
                         showArtwork = showArtwork,
+                        showDuration = showDuration,
                         isCurrentTrack = track.id.toString() == currentTrackId,
                         isPlaying = isPlaying,
                         isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&

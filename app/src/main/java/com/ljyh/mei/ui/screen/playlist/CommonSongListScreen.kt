@@ -108,6 +108,7 @@ import kotlinx.coroutines.launch
 enum class SongListLandscapeLayout {
     Stacked,
     Split,
+    AlbumHeader,
 }
 
 @Composable
@@ -254,6 +255,11 @@ fun CommonSongListScreen(
                         isSubscriptionPending = headerActionPending,
                         onSubscribed = { onHeaderAction() },
                         detailAction = useCoverBackground,
+                        horizontal =
+                            adaptiveLandscape &&
+                                landscapeLayout == SongListLandscapeLayout.AlbumHeader,
+                        isLoading = isLoading,
+                        allowActionScroll = adaptiveLandscape,
                     )
                 }
                 if (isLoading) {
@@ -277,7 +283,8 @@ fun CommonSongListScreen(
                 backgroundBrush = coverBackground.brush.takeIf { useCoverBackground },
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 horizontalContentPadding =
-                    if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
+                    if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.AlbumHeader) 32.dp
+                    else if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
                 hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
@@ -343,6 +350,8 @@ fun CommonSongListScreen(
                                     isTablet = false,
                                     flatDetailStyle = useCoverBackground,
                                     showArtwork = showTrackArtwork,
+                                    showDuration = adaptiveLandscape &&
+                                        landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                                 )
                             }
                         }
@@ -363,6 +372,8 @@ fun CommonSongListScreen(
                         selectedTrackIds = selectedTrackIds,
                         flatDetailStyle = useCoverBackground,
                         showArtwork = showTrackArtwork,
+                        showDuration = adaptiveLandscape &&
+                            landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                         currentTrackId = currentTrackId,
                         isPlaying = isPlaying,
                         favoriteTrackIds = favoriteTrackIds,

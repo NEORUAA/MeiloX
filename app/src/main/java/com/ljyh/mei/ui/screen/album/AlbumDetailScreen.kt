@@ -341,6 +341,7 @@ fun AlbumDetailScreen(
     } else {
         CommonSongListScreen(
             useCoverBackground = true,
+            landscapeLayout = com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout.AlbumHeader,
             showTrackArtwork = false,
             trackNumbers = trackNumbers,
             uiData = displayedUiData,
