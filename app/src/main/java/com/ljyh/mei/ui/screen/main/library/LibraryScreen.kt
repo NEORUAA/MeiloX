@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.R
 import androidx.compose.ui.graphics.Color
@@ -108,7 +110,10 @@ fun LibraryScreen(
     val playlists by viewModel.playlists.collectAsState()
     val albums by viewModel.albums.collectAsState()
     val accountId by viewModel.accountId.collectAsState()
-    val likedSongs by viewModel.likedSongs.collectAsState()
+    val likedSongs = viewModel.likedSongPages.collectAsLazyPagingItems()
+    val likedSongIds by viewModel.likedSongIds.collectAsState()
+    val likedPlaylistId by viewModel.likedPlaylistId.collectAsState()
+    val likedSongSearchLoading by viewModel.likedSongSearchLoading.collectAsState()
     val likedSongsLoading by viewModel.likedSongsLoading.collectAsState()
     val likedSongsError by viewModel.likedSongsError.collectAsState()
     val userId = preferences[UserIdKey].orEmpty()
@@ -118,6 +123,12 @@ fun LibraryScreen(
         LibraryPage.Albums
     } else selectedPage
     val accountMatches = accountId == userId && cookie.isNotBlank()
+    LaunchedEffect(displayedPage, userId, cookie) {
+        viewModel.selectPage(displayedPage)
+    }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.leavePage() }
+    }
     val (createdPlaylists, collectedPlaylists) = remember(playlists.items, accountMatches, userId) {
         if (accountMatches) playlists.items.partition { it.author == userId }
         else emptyList<com.ljyh.mei.data.model.room.Playlist>() to emptyList()
@@ -142,7 +153,11 @@ fun LibraryScreen(
             onPlaylistClick = { id -> Screen.PlayList.navigate(navController) { addPath(id) } },
             onAlbumClick = { id -> Screen.Album.navigate(navController) { addPath(id) } },
             userId = if (accountMatches) userId else "",
-            likedSongs = if (accountMatches) likedSongs else emptyList(),
+            likedSongs = likedSongs,
+            likedSongIds = if (accountMatches) likedSongIds else emptyList(),
+            likedPlaylistId = if (accountMatches) likedPlaylistId else null,
+            likedSongSearchLoading = likedSongSearchLoading,
+            onLikedSongQueryChange = viewModel::setLikedSongQuery,
             likedSongsLoading = !accountMatches || likedSongsLoading,
             likedSongsError = if (accountMatches) likedSongsError else null,
             onRetryLikedSongs = viewModel::retryLikedSongs,

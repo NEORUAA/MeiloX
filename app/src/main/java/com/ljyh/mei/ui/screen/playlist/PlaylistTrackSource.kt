@@ -12,7 +12,8 @@ import kotlinx.coroutines.CancellationException
 class PlaylistTrackSource internal constructor(
     private val loadTracks: suspend (List<String>) -> List<PlaylistDetail.Playlist.Track>,
     firstData: List<PlaylistDetail.Playlist.Track>,
-    private val ids: List<String>
+    private val ids: List<String>,
+    private val onPageLoaded: (Int) -> Unit = {},
 ) : PagingSource<Int, MediaMetadata>() {
     constructor(
         apiService: ApiService,
@@ -43,6 +44,7 @@ class PlaylistTrackSource internal constructor(
             }
             // Missing or out-of-order responses must not shift the canonical playlist cursor.
             val mapped = pageIds.mapNotNull(tracksById::get).map { it.toMediaMetadata() }
+            onPageLoaded(end)
             LoadResult.Page(
                 data = mapped,
                 prevKey = null,
