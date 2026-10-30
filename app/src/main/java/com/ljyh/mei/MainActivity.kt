@@ -166,6 +166,7 @@ import com.ljyh.mei.constants.BottomBarHorizontalPadding
 import com.ljyh.mei.constants.MiniPlayerInlineVerticalTravel
 import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
+import com.ljyh.mei.constants.GlassHdrEffectsKey
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
 import com.ljyh.mei.constants.PredictiveBackAnimationEnabledKey
 import com.ljyh.mei.constants.ReduceTransparencyKey
@@ -289,7 +290,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pictureInPictureMode = isInPictureInPictureMode
         readFloatingLyricsIntent(intent)
-        configureGlassDynamicRange(window, hdrEnabled = true)
         enableEdgeToEdge()
         CrashHandler.init(this)
         if (BuildConfig.DEBUG) {
@@ -300,6 +300,18 @@ class MainActivity : ComponentActivity() {
             // Release 模式：主要是植入文件记录器
             Timber.plant(FileLoggingTree(this))
         }
+        lifecycleScope.launch {
+            val initialPreferences = dataStore.data.first()
+            configureGlassDynamicRange(window, hdrEnabled = initialPreferences.glassHdrOutputEnabled())
+            initializeContent(initialPreferences)
+        }
+    }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    @RequiresApi(Build.VERSION_CODES.S)
+    @OptIn(ExperimentalMaterial3Api::class)
+    private fun initializeContent(initialPreferences: Preferences) {
+        val initialHdrOutput = initialPreferences.glassHdrOutputEnabled()
         setContent {
             val context = this@MainActivity
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -329,7 +341,13 @@ class MainActivity : ComponentActivity() {
             val (lastSelectedTab, setLastSelectedTab) = rememberPreference(LastSelectedTabKey, Index.Home.name)
             val recognizeClipboardLinks by rememberPreference(RecognizeClipboardLinksKey, false)
             val navigationPreferences by context.dataStore.data
-                .collectAsState<Preferences, Preferences?>(initial = null)
+                .collectAsState<Preferences, Preferences?>(initial = initialPreferences)
+            LaunchedEffect(navigationPreferences?.glassHdrOutputEnabled()) {
+                if (navigationPreferences?.glassHdrOutputEnabled() != initialHdrOutput) {
+                    // Recreate material layers in the new window color space, as in the demo.
+                    recreate()
+                }
+            }
             val colorfulPageBackgrounds = navigationPreferences?.let {
                 it[com.ljyh.mei.constants.ColorfulDetailBackgroundsKey] ?: true
             } ?: false
@@ -1417,6 +1435,11 @@ class MainActivity : ComponentActivity() {
     }
 
 }
+
+private fun Preferences.glassHdrOutputEnabled(): Boolean =
+    (this[GlassHdrEffectsKey] ?: false) &&
+        (this[LiquidGlassEnabledKey] ?: true) &&
+        !(this[ReduceTransparencyKey] ?: false)
 
 private val homeNavigationRoutes = Screen.MainScreens.map { it.route }.toSet()
 private val bottomNavigationHorizontalMargin = BottomBarHorizontalPadding

@@ -5,6 +5,7 @@
     <string name="appearance_fixed_bottom_bar_description">捲動頁面時，底部分頁列保持展開。</string>
     <string name="appearance_liquid_glass">液態玻璃</string>
     <string name="appearance_liquid_glass_description">使用光線折射和流動玻璃效果，關閉後顯示一般毛玻璃。</string>
+    <string name="appearance_glass_hdr_effects">液態玻璃 HDR 效果（實驗性）</string>
     <string name="appearance_reduce_transparency">降低透明度</string>
     <string name="appearance_reduce_transparency_description">使用不透明背景，讓控制項和文字更清晰。</string>
     <string name="appearance_predictive_back">預見式返回動畫</string>

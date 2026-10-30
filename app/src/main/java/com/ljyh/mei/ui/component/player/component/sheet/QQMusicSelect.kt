@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,7 +52,6 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
@@ -137,7 +137,7 @@ internal fun LyricSelectionSheet(
         if (closeRequested) closeSheet()
     }
 
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         skipPartiallyExpanded = false,
         fitContent = false,

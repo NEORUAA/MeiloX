@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,7 +31,7 @@ fun PlayerActionSettingsSheet(onDismiss: () -> Unit) {
     val dismissal = rememberMeiloXSheetDismissal(onDismiss)
     val listState = rememberLazyListState()
     val title = stringResource(R.string.player_action_customize)
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

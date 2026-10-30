@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,6 @@ import com.ljyh.mei.playback.playbackOrderIndices
 import com.ljyh.mei.playback.queueEntryId
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
@@ -256,7 +256,7 @@ fun PlaylistBottomSheet(onDismiss: () -> Unit) {
     val dismissal = rememberMeiloXSheetDismissal(onDismiss)
     val listState = rememberLazyListState()
     var queueSize by remember(playerConnection) { mutableIntStateOf(playerConnection.player.mediaItemCount) }
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

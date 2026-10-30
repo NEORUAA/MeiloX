@@ -5,6 +5,7 @@
  */
 package com.ljyh.mei.ui.screen.account
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetScrollEdge
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
@@ -116,7 +117,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
@@ -554,7 +554,7 @@ internal fun NeteaseMobileLoginSheet(
         }
     }
 
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -39,7 +40,7 @@ fun SongInfoSheet(
     val dismissal = rememberMeiloXSheetDismissal(onDismissRequest)
     val listState = rememberLazyListState()
     val title = stringResource(R.string.more_action_song_info)
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +14,6 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
@@ -28,7 +28,7 @@ fun ArtistSelectionSheet(
 ) {
     val dismissal = rememberMeiloXSheetDismissal(onDismiss)
     val listState = rememberLazyListState()
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

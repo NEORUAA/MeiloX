@@ -1,6 +1,9 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,6 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
@@ -29,7 +34,6 @@ import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioMenu
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
@@ -65,7 +69,7 @@ fun MoreActionsSheet(
     val listState = rememberLazyListState()
     val dismissal = rememberMeiloXSheetDismissal(onDismissRequest)
 
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,
@@ -106,13 +110,14 @@ fun MoreActionsSheet(
                         expanded = showSortOptions,
                         onExpandedChange = { showSortOptions = it },
                         itemCount = 4,
+                        heightOverride = 208.dp,
                         keepAnchorVisible = false,
                         anchor = { openMenu ->
                             GlasmioSheetToolbarButton(
                                 onClick = openMenu,
                             ) {
                                 SfIcon(
-                                    SfSymbol.Settings,
+                                    "arrow.up.arrow.down",
                                     stringResource(R.string.more_actions_sort),
                                 )
                             }
@@ -145,6 +150,13 @@ fun MoreActionsSheet(
                                 close()
                             },
                         )
+                        Box(Modifier.fillMaxWidth().height(12.dp), contentAlignment = Alignment.Center) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.5.dp,
+                                color = LocalGlassColors.current.content.copy(alpha = 0.16f),
+                            )
+                        }
                         GlasmioMenuItem(
                             title = stringResource(R.string.more_actions_order_title),
                             systemName = "line.3.horizontal", backdrop = childBackdrop,

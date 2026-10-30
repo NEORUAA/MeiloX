@@ -286,7 +286,7 @@
     <string name="settings_downloads">Downloads</string>
     <string name="settings_about">About</string>
     <string name="about_logo">Mei logo</string>
-    <string name="about_version">Version %1$s</string>
+    <string name="about_version">Version %1$s (%2$s)</string>
     <string name="about_development">Development</string>
     <string name="about_github">GitHub Repository</string>
     <string name="about_feedback">Report an Issue</string>
@@ -308,9 +308,9 @@
     <string name="about_acknowledgements">Open Source Acknowledgements</string>
     <string name="about_upstream_description">Mei upstream repository</string>
     <string name="about_melox_description">iOS reference implementation</string>
+    <string name="about_glasmio_description">A high-quality iOS animation and UI library</string>
     <string name="about_amll_description">High-quality word-synced lyrics</string>
     <string name="about_lyrics_ui_description">Expressive lyric rendering components</string>
-    <string name="about_backdrop_description">Compose Multiplatform fluid glass effects</string>
     <string name="about_developer_debug">Developer Diagnostics</string>
     <string name="about_developer_enabled">Developer diagnostics enabled</string>
     <string name="about_delete_lyrics">Delete AI Lyric Data</string>

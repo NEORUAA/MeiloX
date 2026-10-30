@@ -57,6 +57,7 @@ import com.ljyh.mei.constants.KeepBottomBarExpandedKey
 import com.ljyh.mei.constants.BottomFloatingContentExtraSpacingKey
 import com.ljyh.mei.constants.DefaultBottomFloatingContentExtraSpacing
 import com.ljyh.mei.constants.MaxBottomFloatingContentExtraSpacing
+import com.ljyh.mei.constants.GlassHdrEffectsKey
 import com.ljyh.mei.constants.LiquidGlassEnabledKey
 import com.ljyh.mei.constants.ReduceTransparencyKey
 import com.ljyh.mei.constants.PredictiveBackAnimationEnabledKey
@@ -112,6 +113,7 @@ fun AppearanceSettings(
     val (bottomFloatingExtraSpacing, setBottomFloatingExtraSpacing) =
         rememberPreference(BottomFloatingContentExtraSpacingKey, DefaultBottomFloatingContentExtraSpacing)
     val (liquidGlassEnabled, setLiquidGlassEnabled) = rememberPreference(LiquidGlassEnabledKey, true)
+    val (glassHdrEffects, setGlassHdrEffects) = rememberPreference(GlassHdrEffectsKey, false)
     val (reduceTransparency, setReduceTransparency) = rememberPreference(ReduceTransparencyKey, false)
     val (predictiveBackAnimation, setPredictiveBackAnimation) =
         rememberPreference(PredictiveBackAnimationEnabledKey, true)
@@ -203,6 +205,14 @@ fun AppearanceSettings(
                     liquidGlassEnabled,
                     setLiquidGlassEnabled,
                     enabled = !reduceTransparency,
+                )
+                AppearanceToggle(
+                    R.string.appearance_glass_hdr_effects,
+                    null,
+                    "sun.max.fill",
+                    glassHdrEffects,
+                    setGlassHdrEffects,
+                    enabled = liquidGlassEnabled && !reduceTransparency,
                 )
                 AppearanceToggle(
                     R.string.appearance_reduce_transparency,

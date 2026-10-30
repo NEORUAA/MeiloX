@@ -5,6 +5,7 @@
     <string name="appearance_fixed_bottom_bar_description">滚动页面时，底部标签栏保持展开。</string>
     <string name="appearance_liquid_glass">液态玻璃</string>
     <string name="appearance_liquid_glass_description">使用光线折射和流动玻璃效果，关闭后显示普通毛玻璃。</string>
+    <string name="appearance_glass_hdr_effects">液态玻璃 HDR 效果（实验性）</string>
     <string name="appearance_reduce_transparency">降低透明度</string>
     <string name="appearance_reduce_transparency_description">使用不透明背景，让控件和文字更清晰。</string>
     <string name="appearance_predictive_back">预见式返回动画</string>

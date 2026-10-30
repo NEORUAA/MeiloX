@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +45,6 @@ import coil3.compose.AsyncImage
 import com.ljyh.mei.R
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetValue
@@ -90,7 +90,7 @@ fun PlaylistOrderSheet(
             .collect { if (currentVisible) loadVisible(it) }
     }
     val topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState)
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         visible = visible,
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,

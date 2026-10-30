@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.playlist
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetScrollEdge
@@ -41,7 +42,6 @@ import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.icons.SfIcon
 
@@ -74,7 +74,7 @@ fun CreatePlaylistSheet(
         runCatching { focusRequester.requestFocus() }
     }
 
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

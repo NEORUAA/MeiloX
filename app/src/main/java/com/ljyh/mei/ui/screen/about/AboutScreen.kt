@@ -140,7 +140,11 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                 )
                 Text("MeiloX", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
+                    stringResource(
+                        R.string.about_version,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.BUILD_COMMIT_SHA.take(8).ifBlank { "unknown" },
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -182,9 +186,9 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
             com.ljyh.mei.ui.screen.setting.SettingsGroup(stringResource(R.string.about_acknowledgements)) {
                 AboutEntry("chevron.left.forwardslash.chevron.right", "Mei", stringResource(R.string.about_upstream_description)) { openUrl(context, "https://github.com/ljyh223/Mei") }
                 AboutEntry("iphone", "MeloX", stringResource(R.string.about_melox_description)) { openUrl(context, "https://github.com/youshen2/MeloX") }
+                AboutEntry("square.stack.3d.up", "Glasmio", stringResource(R.string.about_glasmio_description)) { openUrl(context, "https://github.com/NEORUAA/Glasmio") }
                 AboutEntry("quote.bubble", "amll-ttml-db", stringResource(R.string.about_amll_description)) { openUrl(context, "https://github.com/Steve-xmh/amll-ttml-db") }
                 AboutEntry("music.note.list", "accompanist-lyrics-ui", stringResource(R.string.about_lyrics_ui_description)) { openUrl(context, "https://github.com/6xingyv/accompanist-lyrics-ui") }
-                AboutEntry("circle.lefthalf.filled", "Backdrop", stringResource(R.string.about_backdrop_description)) { openUrl(context, "https://github.com/Kyant0/AndroidLiquidGlass") }
             }
         }
         if (devMode) {

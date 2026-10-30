@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.sheet
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -39,7 +40,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.SleepTimer
@@ -50,7 +50,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
@@ -94,7 +93,7 @@ fun SleepTimerSheet(
         derivedStateOf { (scrollState.value / blurDistancePx).coerceIn(0f, 1f) }
     }
     val dismissal = rememberMeiloXSheetDismissal(onDismiss)
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,
@@ -113,7 +112,6 @@ fun SleepTimerSheet(
         },
     ) {
         val colors = LocalGlassColors.current
-        val buttonTint = colors.elevatedBackground
         val sheetPadding = LocalGlasmioSheetContentPadding.current
         Column(
             Modifier
@@ -142,8 +140,6 @@ fun SleepTimerSheet(
                             GlasmioButton(
                                 onClick = { selectedOption = minutes },
                                 modifier = Modifier.weight(1f).semantics { this.selected = selected },
-                                backdrop = emptyBackdrop(),
-                                navigationSurfaceColor = if (selected) colors.accent else buttonTint,
                                 emphasis = if (selected) GlassEmphasis.Prominent else GlassEmphasis.Regular,
                             ) {
                                 Text(
@@ -214,8 +210,6 @@ fun SleepTimerSheet(
                 enabled = !active || selectedOption != activeOption,
                 modifier = Modifier.fillMaxWidth(),
                 size = GlasmioButtonSize.Large,
-                backdrop = emptyBackdrop(),
-                navigationSurfaceColor = colors.accent,
                 emphasis = GlassEmphasis.Prominent,
             ) {
                 Text(
@@ -232,8 +226,6 @@ fun SleepTimerSheet(
                     onClick = timer::clear,
                     modifier = Modifier.fillMaxWidth(),
                     size = GlasmioButtonSize.Large,
-                    backdrop = emptyBackdrop(),
-                    navigationSurfaceColor = buttonTint,
                 ) {
                     Text(stringResource(R.string.sleep_timer_cancel), style = IosTypography.body)
                 }

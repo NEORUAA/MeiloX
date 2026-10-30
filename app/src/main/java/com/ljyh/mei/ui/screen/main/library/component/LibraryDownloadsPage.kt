@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import io.github.neoruaa.glasmio.ui.GlasmioSheetValue
@@ -18,7 +19,6 @@ import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
@@ -412,7 +412,7 @@ private fun LocalFileInfo(song: Song, onDismiss: () -> Unit) {
         stringResource(R.string.local_library_audio) to listOfNotNull(song.bitrate?.takeIf { it > 0 }?.let { "${it / 1000} kbps" }, song.sampleRate?.takeIf { it > 0 }?.let { "$it Hz" }).joinToString(" · ").ifBlank { "—" },
         stringResource(R.string.local_library_path) to song.path.orEmpty(),
     )
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,
@@ -470,7 +470,7 @@ private fun LocalMatchSheet(viewModel: LocalLibraryViewModel) {
         confirmValueChange = { !state.isApplying || it != GlasmioSheetValue.Hidden },
         visible = state.song != null,
     )
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         visible = state.song != null,
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,

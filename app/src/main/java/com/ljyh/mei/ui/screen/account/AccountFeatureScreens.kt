@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.account
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.core.*
 import io.github.neoruaa.glasmio.glass.*
 import io.github.neoruaa.glasmio.icons.*
@@ -249,7 +250,7 @@ fun AccountDevicesScreen(
     }
     if (showCaptcha && pendingDevice != null) {
         val title = stringResource(R.string.account_verification_code)
-        GlasmioBottomSheet(onDismissRequest = ::dismiss, title = title, fitContent = true,
+        MeiloXBottomSheet(onDismissRequest = ::dismiss, title = title, fitContent = true,
             dismissOnClickOutside = !busy, dismissOnBackPress = !busy,
             topBar = { GlasmioSheetTopToolbar(title) },
         ) {

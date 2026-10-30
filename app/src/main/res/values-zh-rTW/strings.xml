@@ -282,7 +282,7 @@
     <string name="settings_downloads">下載</string>
     <string name="settings_about">關於</string>
     <string name="about_logo">Mei 圖示</string>
-    <string name="about_version">版本 %1$s</string>
+    <string name="about_version">版本 %1$s (%2$s)</string>
     <string name="about_development">開發</string>
     <string name="about_github">GitHub 儲存庫</string>
     <string name="about_feedback">問題回報</string>
@@ -304,9 +304,9 @@
     <string name="about_acknowledgements">開源致謝</string>
     <string name="about_upstream_description">Mei 上游儲存庫</string>
     <string name="about_melox_description">iOS 版參考實作</string>
+    <string name="about_glasmio_description">高品質的 iOS 動畫與介面庫</string>
     <string name="about_amll_description">高品質逐字歌詞庫</string>
     <string name="about_lyrics_ui_description">靈動的歌詞渲染元件</string>
-    <string name="about_backdrop_description">Compose Multiplatform 流體玻璃效果</string>
     <string name="about_developer_debug">開發者除錯</string>
     <string name="about_developer_enabled">開發者除錯已開啟</string>
     <string name="about_delete_lyrics">刪除 AI 歌詞資料</string>

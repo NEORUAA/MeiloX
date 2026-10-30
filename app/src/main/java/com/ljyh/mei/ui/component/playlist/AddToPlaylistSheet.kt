@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.playlist
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -25,7 +26,6 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.room.Playlist
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -42,7 +42,7 @@ fun AddToPlaylistSheet(
     val dismissal = rememberMeiloXSheetDismissal(onDismiss)
     val listState = rememberLazyListState()
     val title = stringResource(R.string.add_to_playlist_title)
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

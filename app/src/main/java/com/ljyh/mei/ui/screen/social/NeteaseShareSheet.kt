@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.social
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import io.github.neoruaa.glasmio.ui.glasmioGroupedListBackground
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
@@ -53,7 +54,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetToolbarButton
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import io.github.neoruaa.glasmio.ui.LocalGlasmioSheetContentPadding
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -159,7 +159,7 @@ fun NeteaseShareSheet(
         NeteaseShareMode.Timeline -> R.string.netease_timeline_share
     })
     LaunchedEffect(mode) { listState.scrollToItem(0) }
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

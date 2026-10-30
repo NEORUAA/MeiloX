@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.account
 
+import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetScrollEdge
 import androidx.compose.foundation.verticalScroll
@@ -71,7 +72,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
-import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
@@ -364,7 +364,7 @@ private fun NeteaseCookieLoginSheet(
         }
     }
 
-    GlasmioBottomSheet(
+    MeiloXBottomSheet(
         onDismissRequest = dismissal::onDismissed,
         sheetState = dismissal.state,
         skipPartiallyExpanded = false,

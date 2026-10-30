@@ -5,6 +5,7 @@
     <string name="appearance_fixed_bottom_bar_description">Keep the bottom tabs expanded while scrolling.</string>
     <string name="appearance_liquid_glass">Liquid Glass</string>
     <string name="appearance_liquid_glass_description">Use light refraction and fluid glass effects. Turn off for frosted glass.</string>
+    <string name="appearance_glass_hdr_effects">Liquid Glass HDR effects (Experimental)</string>
     <string name="appearance_reduce_transparency">Reduce transparency</string>
     <string name="appearance_reduce_transparency_description">Use opaque backgrounds for clearer controls and text.</string>
     <string name="appearance_predictive_back">Predictive back animation</string>
