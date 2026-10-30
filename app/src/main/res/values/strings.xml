@@ -1,4 +1,5 @@
 <resources>
+    <string name="artist_latest_release">Latest Release</string>
     <string name="player_find_lyrics">Find lyrics</string>
     <string name="artist_info_title">Artist information</string>
     <string name="artist_play_hot_songs">Play popular songs</string>

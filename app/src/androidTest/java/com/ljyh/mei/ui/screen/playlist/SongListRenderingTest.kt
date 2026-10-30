@@ -7,6 +7,8 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.ui.test.performScrollToIndex
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import com.ljyh.mei.ui.screen.artist.ArtistPopularSongs
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.data.model.MediaMetadata
 
@@ -90,6 +92,40 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun landscapePopularSongMoreTargetsLeaveTheFavoriteGutterClear() {
+        val tracks =
+            (1L..6L).map { id ->
+                MediaMetadata(
+                    id,
+                    "Song $id",
+                    "",
+                    emptyList(),
+                    259000L,
+                    MediaMetadata.Album(1L, "Album"),
+                )
+            }
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Box(Modifier.requiredWidth(900.dp)) {
+                        ArtistPopularSongs(tracks, setOf("4"), null, false, {}, { _, _ -> })
+                    }
+                }
+            }
+        }
+        val more =
+            compose
+                .onNodeWithTag("ArtistSongMore:1", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+        val favorite =
+            compose
+                .onNodeWithTag("ArtistSongFavorite:4", useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+        assertTrue(more.right < favorite.left)
+        assertEquals(40f, (more.right - more.left).value, 0.1f)
+    }
 
     @Test
     fun albumDurationIsShownOnlyWhenTheCallerRequestsIt() {

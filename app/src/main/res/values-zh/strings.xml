@@ -1,4 +1,5 @@
 <resources>
+    <string name="artist_latest_release">最新发行</string>
     <string name="player_find_lyrics">寻找歌词</string>
     <string name="artist_info_title">歌手信息</string>
     <string name="artist_play_hot_songs">播放热门单曲</string>

@@ -76,6 +76,8 @@ import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.ui.component.item.HomeSongColumn
+import com.ljyh.mei.ui.component.item.HomeSongListRow
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.HomeSectionSpacing
 import com.ljyh.mei.constants.HomeCardSpacing
@@ -669,17 +671,18 @@ fun TripleLaneSlider(
     isTablet: Boolean = false,
     screenWidthDp: Int = 0,
     isLandscape: Boolean = false,
-    onClick: (List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>, Int) -> Unit
+    onClick: (List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>, Int) -> Unit,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val currentMetadata by playerConnection.mediaMetadata.collectAsState()
     val isPlaying by playerConnection.isPlaying.collectAsState()
 
-    val columns = when {
-        screenWidthDp >= 900 -> 3
-        isTablet -> 2
-        else -> 1
-    }
+    val columns =
+        when {
+            screenWidthDp >= 900 -> 3
+            isTablet -> 2
+            else -> 1
+        }
     val cardSpacing = homeCardSpacing(isLandscape)
     val columnWidth = homePlaylistCardSize(isLandscape) * 2 + cardSpacing
     val pageSize = PageSize.Fixed(columnWidth * columns + cardSpacing * (columns - 1))
@@ -702,29 +705,19 @@ fun TripleLaneSlider(
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
         ) {
             for (col in 0 until columns) {
-                Column(modifier = Modifier.width(columnWidth)) {
-                    val startIdx = col * itemsPerColumn
-                    val endIdx = minOf(startIdx + itemsPerColumn, items.size)
-                    for (i in startIdx until endIdx) {
-                        val song = items[i]
-                        val globalIndex = songsArray.take(page).sumOf { it.items.size } + i
-                        SongRow(
-                            song = song,
-                            currentMetadataId = currentMetadata?.id?.toString(),
-                            showPause = isPlaying,
-                            onClick = { onClick(songsArray, globalIndex) },
-                        )
-                        if (i < endIdx - 1) {
-                            Box(Modifier.fillMaxWidth().height(HomeSongRowSpacing)) {
-                                HorizontalDivider(
-                                    modifier = Modifier.align(Alignment.Center)
-                                        .padding(start = HomeSongCoverSize + 12.dp),
-                                    thickness = 0.5.dp,
-                                    color = LocalGlassColors.current.separator,
-                                )
-                            }
-                        }
-                    }
+                val startIdx = col * itemsPerColumn
+                val endIdx = minOf(startIdx + itemsPerColumn, items.size)
+                HomeSongColumn((endIdx - startIdx).coerceAtLeast(0), Modifier.width(columnWidth)) {
+                    row ->
+                    val i = startIdx + row
+                    val song = items[i]
+                    val globalIndex = songsArray.take(page).sumOf { it.items.size } + i
+                    SongRow(
+                        song,
+                        currentMetadata?.id?.toString(),
+                        isPlaying,
+                        onClick = { onClick(songsArray, globalIndex) },
+                    )
                 }
             }
         }
@@ -736,66 +729,26 @@ private fun SongRow(
     song: HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item.Item,
     currentMetadataId: String?,
     showPause: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     val isCurrentSong = currentMetadataId == song.resourceId && showPause
-    val viewConfiguration = LocalViewConfiguration.current
-    val actionViewConfiguration = remember(viewConfiguration) {
-        object : ViewConfiguration by viewConfiguration {
-            override val minimumTouchTargetSize = DpSize(HomeSongActionSize, HomeSongActionSize)
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(HomeSongCoverCornerRadius)),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    HomeSongListRow(
+        coverUrl = song.coverUrl,
+        title = song.title,
+        subtitle = song.artistName,
+        isPlaying = isCurrentSong,
     ) {
-        PlayingImageView(
-            imageUrl = song.coverUrl,
-            isPlaying = isCurrentSong,
-            modifier = Modifier
-                .size(HomeSongCoverSize)
-                .clip(ContinuousRoundedRectangle(HomeSongCoverCornerRadius))
-                .homeArtworkBorder(ContinuousRoundedRectangle(HomeSongCoverCornerRadius))
-        )
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = song.title,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Normal
-            )
-            Text(
-                text = song.artistName,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        CompositionLocalProvider(
-            LocalMinimumInteractiveComponentSize provides HomeSongActionSize,
-            LocalViewConfiguration provides actionViewConfiguration,
-        ) {
-            IconButton(onClick = onClick, modifier = Modifier.size(HomeSongActionSize)) {
-                SfIcon(
-                    symbol = if (isCurrentSong) SfSymbol.PauseFilled else SfSymbol.PlayFilled,
-                    contentDescription = stringResource(
-                        if (isCurrentSong) R.string.player_pause else R.string.player_play,
+        IconButton(onClick = onClick, modifier = Modifier.size(HomeSongActionSize)) {
+            SfIcon(
+                symbol = if (isCurrentSong) SfSymbol.PauseFilled else SfSymbol.PlayFilled,
+                contentDescription =
+                    stringResource(
+                        if (isCurrentSong) R.string.player_pause else R.string.player_play
                     ),
-                    tint = Color(0xFF8E8E93),
-                    size = if (isCurrentSong) 18.dp else 16.dp,
-                    modifier = if (isCurrentSong) Modifier else Modifier.offset(x = 1.dp),
-                )
-            }
+                tint = Color(0xFF8E8E93),
+                size = if (isCurrentSong) 18.dp else 16.dp,
+                modifier = if (isCurrentSong) Modifier else Modifier.offset(x = 1.dp),
+            )
         }
     }
 }
