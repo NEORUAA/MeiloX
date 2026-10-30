@@ -1,9 +1,9 @@
 # Glasmio integration
 
 MeiloX uses Glasmio `864e958676e38c5416d573c6affeaf4b0279be98` through the
-sibling source build described in the README. Backdrop recording and effects use
-`io.github.neoruaa.glasmio.glass.render`; the old Kyant Backdrop artifact is not a
-second rendering backend. Retained third-party capture code keeps its attribution.
+sibling source build described in the README. Recording, materials and effects use
+Glasmio's renderer and public API under `io.github.neoruaa.glasmio.glass.render`.
+Retained third-party code keeps its attribution.
 
 ## Navigation and scrolling
 

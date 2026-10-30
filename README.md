@@ -80,7 +80,7 @@ MeiloX 主体代码以 [GNU General Public License v3](LICENSE) 发布。MeiloX 
 
 - [Mei](https://github.com/ljyh223/Mei) 的上游代码遵循 Apache License 2.0；
 - [MeloX](https://github.com/youshen2/MeloX) 的相关参考代码遵循其项目的 GPLv3 条款；
-- [AndroidLiquidGlass / Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) 相关依赖遵循 Apache License 2.0；
+- [Glasmio](https://github.com/NEORUAA/Glasmio) 遵循 Apache License 2.0，其保留的第三方代码来源与署名见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES)；
 - [amll-ttml-db](https://github.com/Steve-xmh/amll-ttml-db) 与 [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) 遵循各自仓库公布的许可证和署名要求；
 - BeatNet 模型、音频指纹运行时、ONNX Runtime、PV Tool 衍生内容及其它随项目分发的组件，遵循其各自的许可证、版权声明和再分发限制。
 
