@@ -41,12 +41,11 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.BetaUpdatesEnabledKey
 import com.ljyh.mei.constants.DevModeKey
 import com.ljyh.mei.constants.Github
-import com.ljyh.mei.ui.screen.setting.SettingsCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
-import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -163,23 +162,19 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                     },
 //                    stringResource(R.string.about_check_updates_description),
                 ) { checkForUpdates() }
-                SettingsCard(
-                    Modifier.fillMaxWidth(),
-                    onClick = if (isCheckingUpdate || isSavingBetaPreference) null else ({ setBetaUpdatesEnabled(!betaUpdatesEnabled) }),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SfIcon("moon", null, size = 21.dp)
-                        Text(
-                            stringResource(R.string.about_check_beta_updates),
-                            modifier = Modifier.weight(1f).padding(horizontal = 13.dp),
-                        )
+                GlasmioListRow(
+                    title = stringResource(R.string.about_check_beta_updates),
+                    systemName = "moon",
+                    enabled = !isCheckingUpdate && !isSavingBetaPreference,
+                    onClick = { setBetaUpdatesEnabled(!betaUpdatesEnabled) },
+                    trailing = {
                         MeiloXSwitch(
                             checked = betaUpdatesEnabled,
                             onCheckedChange = ::setBetaUpdatesEnabled,
                             enabled = !isCheckingUpdate && !isSavingBetaPreference,
                         )
-                    }
-                }
+                    },
+                )
             }
         }
         item {
@@ -233,18 +228,12 @@ private fun AboutSectionTitle(title: String) {
 
 @Composable
 private fun AboutEntry(systemName: String, title: String, subtitle: String? = null, onClick: () -> Unit) {
-    SettingsCard(Modifier.fillMaxWidth(), onClick = onClick) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            SfIcon(systemName, null, size = 21.dp)
-            Column(Modifier.weight(1f).padding(horizontal = 13.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title)
-                subtitle?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            SfIcon("chevron.forward", null, size = 15.dp, tint = LocalGlassColors.current.separator)
-        }
-    }
+    GlasmioListRow(
+        title = title,
+        subtitle = subtitle,
+        systemName = systemName,
+        onClick = onClick,
+    )
 }
 
 private fun openUrl(context: Context, url: String) {

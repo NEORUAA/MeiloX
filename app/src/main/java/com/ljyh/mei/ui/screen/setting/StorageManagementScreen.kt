@@ -50,7 +50,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
-import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -398,17 +398,13 @@ private fun StorageUsageRow(systemName: String, titleRes: Int, bytes: Long, cont
 
 @Composable
 private fun StorageActionRow(systemName: String, titleRes: Int, busy: Boolean, destructive: Boolean = false, onClick: () -> Unit) {
-    SettingsCard(Modifier.fillMaxWidth(), onClick = if (busy) null else onClick) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            SfIcon(systemName, null)
-            Text(
-                stringResource(titleRes),
-                modifier = Modifier.weight(1f).padding(horizontal = 13.dp),
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            SfIcon("chevron.forward", null, size = 15.dp, tint = LocalGlassColors.current.separator)
-        }
-    }
+    GlasmioListRow(
+        title = stringResource(titleRes),
+        systemName = systemName,
+        enabled = !busy,
+        titleColor = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        onClick = onClick,
+    )
 }
 
 private val StorageAction.confirmationTitle: Int get() = when (this) {

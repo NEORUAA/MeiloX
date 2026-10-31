@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,6 +60,7 @@ import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.network.Resource
 import io.github.neoruaa.glasmio.ui.GlasmioButton
+import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
@@ -185,7 +185,11 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
                     item {
                         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(stringResource(R.string.load_failed), color = MaterialTheme.colorScheme.error)
-                            TextButton(onClick = pagingItems::retry) { Text(stringResource(R.string.comment_retry)) }
+                            GlasmioButton(
+                                onClick = pagingItems::retry,
+                                modifier = Modifier.padding(top = 8.dp),
+                                size = GlasmioButtonSize.Medium,
+                            ) { Text(stringResource(R.string.comment_retry)) }
                         }
                     }
                 } else if (pagingItems.loadState.refresh is LoadState.NotLoading && pagingItems.itemCount == 0) {

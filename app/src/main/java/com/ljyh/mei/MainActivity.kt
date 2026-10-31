@@ -85,6 +85,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
@@ -138,9 +139,9 @@ import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerChromeMotion
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationBarWithTrailingItem
 import io.github.neoruaa.glasmio.scaffold.glasmioNavigationScrollHint
 import androidx.navigation3.ui.NavDisplayTransitionEffects
-import androidx.navigation3.ui.defaultPopTransitionSpec
-import androidx.navigation3.ui.defaultPredictivePopTransitionSpec
-import androidx.navigation3.ui.defaultTransitionSpec
+import io.github.neoruaa.glasmio.scaffold.navigation.iosPopTransitionSpec
+import io.github.neoruaa.glasmio.scaffold.navigation.iosPredictivePopTransitionSpec
+import io.github.neoruaa.glasmio.scaffold.navigation.iosTransitionSpec
 import com.ljyh.mei.constants.AppBarHeight
 import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
@@ -599,6 +600,7 @@ class MainActivity : ComponentActivity() {
                     val focusManager = LocalFocusManager.current
                     val keyboardController = LocalSoftwareKeyboardController.current
                     val density = LocalDensity.current
+                    val navigationLayoutDirection = LocalLayoutDirection.current
                     val windowsInsets = WindowInsets.systemBars
                     val navigationInsets = WindowInsets.navigationBars
                     val currentRoute = navController.currentRoute
@@ -1155,21 +1157,21 @@ class MainActivity : ComponentActivity() {
                                                 if (usesHomeAlphaTransition()) {
                                                     homeAlphaTransition()
                                                 } else {
-                                                    defaultTransitionSpec<NavKey>().invoke(this)
+                                                    iosTransitionSpec<NavKey>(navigationLayoutDirection, density.density).invoke(this)
                                                 }
                                             },
                                             popTransitionSpec = {
                                                 if (usesHomeAlphaTransition()) {
                                                     homeAlphaTransition()
                                                 } else {
-                                                    defaultPopTransitionSpec<NavKey>().invoke(this)
+                                                    iosPopTransitionSpec<NavKey>(navigationLayoutDirection, density.density).invoke(this)
                                                 }
                                             },
                                             predictivePopTransitionSpec = { swipeEdge ->
                                                 if (usesHomeAlphaTransition()) {
                                                     homeAlphaTransition()
                                                 } else {
-                                                    defaultPredictivePopTransitionSpec<NavKey>()
+                                                    iosPredictivePopTransitionSpec<NavKey>(navigationLayoutDirection, density.density)
                                                         .invoke(this, swipeEdge)
                                                 }
                                             },
@@ -1327,48 +1329,46 @@ class MainActivity : ComponentActivity() {
                                 clipboardLink = text?.let(NeteaseMusicLinkParser::parse)
                             }
                         }
-                        clipboardLink?.let { detectedLink ->
-                            ClipboardLinkPrompt(
-                                link = detectedLink,
-                                onDismiss = { clipboardLink = null },
-                                onOpen = {
-                                    clipboardLink = null
-                                    when (detectedLink) {
-                                        is NeteaseMusicLink.ListenTogether -> {
-                                            navController.currentBackStackEntry?.savedStateHandle?.set(
-                                                "listen_invitation",
-                                                detectedLink.invitationText,
-                                            )
-                                            Screen.ListenTogether.navigate(navController)
-                                        }
-                                        is NeteaseMusicLink.Song -> {
-                                            lifecycleScope.launch {
-                                                runCatching {
-                                                    apiService.getSongDetail(GetSongDetails(detectedLink.id.toString()))
-                                                        .songs
-                                                        .firstOrNull()
-                                                        ?: error(getString(R.string.clipboard_song_not_found))
-                                                }.onSuccess { song ->
-                                                    playerConnection?.playQueue(
-                                                        ListQueue(
-                                                            id = "clipboard-${song.id}",
-                                                            title = song.name,
-                                                            items = listOf(song.id.toString() to song.toMediaItem()),
-                                                        ),
-                                                    )
-                                                }.onFailure { error ->
-                                                    Toast.makeText(
-                                                        this@MainActivity,
-                                                        getString(R.string.clipboard_open_failed, error.message.orEmpty()),
-                                                        Toast.LENGTH_LONG,
-                                                    ).show()
-                                                }
+                        ClipboardLinkPrompt(
+                            link = clipboardLink,
+                            onDismiss = { clipboardLink = null },
+                            onOpen = { detectedLink ->
+                                clipboardLink = null
+                                when (detectedLink) {
+                                    is NeteaseMusicLink.ListenTogether -> {
+                                        navController.currentBackStackEntry?.savedStateHandle?.set(
+                                            "listen_invitation",
+                                            detectedLink.invitationText,
+                                        )
+                                        Screen.ListenTogether.navigate(navController)
+                                    }
+                                    is NeteaseMusicLink.Song -> {
+                                        lifecycleScope.launch {
+                                            runCatching {
+                                                apiService.getSongDetail(GetSongDetails(detectedLink.id.toString()))
+                                                    .songs
+                                                    .firstOrNull()
+                                                    ?: error(getString(R.string.clipboard_song_not_found))
+                                            }.onSuccess { song ->
+                                                playerConnection?.playQueue(
+                                                    ListQueue(
+                                                        id = "clipboard-${song.id}",
+                                                        title = song.name,
+                                                        items = listOf(song.id.toString() to song.toMediaItem()),
+                                                    ),
+                                                )
+                                            }.onFailure { error ->
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    getString(R.string.clipboard_open_failed, error.message.orEmpty()),
+                                                    Toast.LENGTH_LONG,
+                                                ).show()
                                             }
                                         }
                                     }
-                                },
-                            )
-                        }
+                                }
+                            },
+                        )
                         if (!pictureInPictureMode) NeteaseLegacyWebSessionNotice()
                         VersionUpdateAlert(
                             result = startupUpdateResult,

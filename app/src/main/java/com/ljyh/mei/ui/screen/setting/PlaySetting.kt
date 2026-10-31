@@ -59,6 +59,7 @@ import com.ljyh.mei.ui.component.player.hasFloatingLyricsBackgroundPermission
 import com.ljyh.mei.ui.component.player.isXiaomiFloatingLyricsPermissionRequired
 import com.ljyh.mei.ui.component.player.openFloatingLyricsPermissionSettings
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
@@ -66,7 +67,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
-import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -140,16 +140,12 @@ fun PlaySetting(
     ) {
         item {
             SettingsGroup(stringResource(R.string.playback_behavior)) {
-                SettingsCard(
-                    modifier = Modifier.fillMaxWidth().alpha(if (usbBitPerfect) 0.38f else 1f),
-                    onClick = if (usbBitPerfect) null else { { Screen.EqualizerSettings.navigate(navController) } },
-                ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SfIcon("slider.vertical.3", contentDescription = null)
-                        Text(stringResource(R.string.equalizer), modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
-                        SfIcon("chevron.forward", contentDescription = null, tint = LocalGlassColors.current.separator, size = 16.dp)
-                    }
-                }
+                GlasmioListRow(
+                    title = stringResource(R.string.equalizer),
+                    systemName = "slider.vertical.3",
+                    enabled = !usbBitPerfect,
+                    onClick = { Screen.EqualizerSettings.navigate(navController) },
+                )
                 ToggleRow(stringResource(R.string.loop_playback), "arrow.trianglehead.2.clockwise.rotate.90", loopPlayback, onLoopPlaybackChange)
                 ToggleRow(
                     stringResource(R.string.allow_concurrent_playback), "waveform",

@@ -11,6 +11,9 @@ Retained third-party code keeps its attribution.
 interaction. Search retains its route and action independently of the main tabs.
 Its allocation is 62 dp, with a 48 dp compact material.
 
+Pushed pages use Glasmio's iOS push, pop and predictive-pop factories with the
+current layout direction and display density. Root tab changes retain their fade.
+
 `MeiloXNavigationScrollState` adapts Glasmio's scroll-away driver to the app's real
 list and grid viewports. Each mounted route publishes its viewport through its
 existing page header. The root retains one compact history across route changes.
@@ -84,6 +87,10 @@ Application switches use `MeiloXSwitch` to retain the current theme accent, with
 explicit tint overrides still supported. Settings' custom grouped rows use
 `SettingsGroupedList` and `SettingsCard`, which apply Glasmio's edge-aware separator
 modifier instead of treating a standalone card as a grouped row.
+Standard disclosure rows use `GlasmioListRow`; media rows retain their artwork layout
+and match the library's disclosure glyph metrics and RTL behavior. Alerts retain
+their payload while `visible` becomes false, and sheets use the shared dismissal
+controller so success and cancellation preserve the native exit animation.
 
 Local native decompilation, parameters and caller references are retained in
 [the ignored research folder](../.local-research/ios/applemusic-mini-player/FINDINGS.md).

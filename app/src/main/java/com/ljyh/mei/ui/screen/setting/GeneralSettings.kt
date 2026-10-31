@@ -20,7 +20,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,7 +35,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -99,35 +97,13 @@ fun GeneralSettings() {
         }
         item {
             SettingsGroup(stringResource(R.string.settings_account)) {
-                SettingsCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(if (cookie.isNotBlank()) 1f else 0.38f),
-                    onClick = if (cookie.isNotBlank()) {
-                        { setClipboard(context, cookie, "MUSIC_U") }
-                    } else {
-                        null
-                    },
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SfIcon("document.on.clipboard", null, size = 21.dp)
-                        Column(
-                            Modifier.weight(1f).padding(horizontal = 13.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(stringResource(R.string.general_export_music_u))
-                            Text(
-                                stringResource(R.string.general_export_music_u_description),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        SfIcon("chevron.forward", null, size = 15.dp, tint = LocalGlassColors.current.separator)
-                    }
-                }
+                GlasmioListRow(
+                    title = stringResource(R.string.general_export_music_u),
+                    subtitle = stringResource(R.string.general_export_music_u_description),
+                    systemName = "document.on.clipboard",
+                    enabled = cookie.isNotBlank(),
+                    onClick = { setClipboard(context, cookie, "MUSIC_U") },
+                )
                 if (sessionType != NeteaseSessionType.None) {
                     GlasmioListRow(
                         title = logoutTitle,

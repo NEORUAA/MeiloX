@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -868,7 +869,20 @@ private fun LibraryMediaRow(
             CompositionLocalProvider(LocalGroupedListIconColor provides colors.content) {
                 trailingContent()
             }
-        } ?: SfIcon("chevron.forward", null, size = 12.dp, tint = colors.separator)
+        } ?: Box(Modifier.size(width = 8.dp, height = 22.dp), contentAlignment = Alignment.Center) {
+            // GlasmioListRow does not expose its disclosure accessory independently.
+            SfIcon(
+                "chevron.forward", null,
+                modifier = Modifier.requiredSize(22.dp),
+                size = 22.dp,
+                fontSize = 17.sp,
+                weight = FontWeight(590),
+                mirrored = true,
+                tint = colors.tertiaryContent,
+                fontFeatureSettings = "'ss15' 1",
+                fitGlyphToBounds = false,
+            )
+        }
     }
 }
 

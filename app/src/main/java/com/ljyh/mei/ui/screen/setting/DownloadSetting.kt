@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AutoCacheEnabledKey
 import com.ljyh.mei.constants.AutoCachePlaybackThresholdKey
@@ -29,10 +27,11 @@ import com.ljyh.mei.constants.DownloadQuality
 import com.ljyh.mei.constants.DownloadQualityKey
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
-import io.github.neoruaa.glasmio.glass.GlassSurface
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioStepper
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
@@ -70,19 +69,14 @@ fun DownloadSetting(
     ) {
         item {
             SettingsGroup(stringResource(R.string.download_storage)) {
-                GlassSurface(Modifier.fillMaxWidth(), shape = ContinuousRoundedRectangle(20.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SfIcon("folder", null, size = 19.dp)
-                            Text(stringResource(R.string.download_save_location), modifier = Modifier.padding(start = 10.dp))
-                        }
-                        BasicTextField(
-                            value = downloadPath, onValueChange = onDownloadPathChange,
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        )
-                    }
-                }
+                GlasmioListRow(
+                    title = stringResource(R.string.download_save_location),
+                    systemName = "folder",
+                )
+                GlasmioTextField(
+                    value = downloadPath,
+                    onValueChange = onDownloadPathChange,
+                )
             }
         }
         item {

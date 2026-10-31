@@ -1,6 +1,8 @@
 package com.ljyh.mei.ui.screen.account
 
 import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
+import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
+import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import io.github.neoruaa.glasmio.core.*
 import io.github.neoruaa.glasmio.glass.*
 import io.github.neoruaa.glasmio.icons.*
@@ -121,7 +123,14 @@ fun MusicianAccountScreen(viewModel: MusicianAccountViewModel = hiltViewModel())
         }) },
     ) {
         if (session == NeteaseSessionType.None) {
-            item { GlasmioListRow(stringResource(R.string.netease_login), onClick = { Screen.NeteaseLogin.navigate(nav) }) }
+            item {
+                GlasmioGroupedList {
+                    GlasmioListRow(
+                        stringResource(R.string.netease_login),
+                        onClick = { Screen.NeteaseLogin.navigate(nav) },
+                    )
+                }
+            }
         } else {
             if (state.loading) item { AccountFeatureLoading() }
             state.data?.let { account ->
@@ -237,21 +246,38 @@ fun AccountDevicesScreen(
             item { Text(stringResource(R.string.account_no_records), Modifier.padding(top = 10.dp).padding(24.dp)) }
         }
     }
-    if ((pendingDevice != null || pendingApp != null) && !showCaptcha) {
+    val confirmationVisible = (pendingDevice != null || pendingApp != null) && !showCaptcha
+    val confirmation = rememberAlertContent((pendingDevice to pendingApp).takeIf { confirmationVisible })
+    confirmation?.let { (device, application) ->
         GlasmioAlertDialog(
+            visible = confirmationVisible,
             onDismissRequest = ::dismiss,
-            title = stringResource(if (pendingDevice != null) R.string.account_remove_device else R.string.account_revoke_authorization),
-            message = pendingDevice?.name ?: pendingApp?.name,
+            title = stringResource(if (device != null) R.string.account_remove_device else R.string.account_revoke_authorization),
+            message = device?.name ?: application?.name,
             buttons = listOf(
-                GlasmioAlertButtonSpec(stringResource(R.string.cancel), ::dismiss, GlasmioAlertButtonRole.Cancel, !busy),
-                GlasmioAlertButtonSpec(stringResource(R.string.confirm), ::performAction, GlasmioAlertButtonRole.Destructive, !busy),
+                GlasmioAlertButtonSpec(stringResource(R.string.cancel), ::dismiss, GlasmioAlertButtonRole.Cancel, !busy && confirmationVisible),
+                GlasmioAlertButtonSpec(stringResource(R.string.confirm), ::performAction, GlasmioAlertButtonRole.Destructive, !busy && confirmationVisible),
             ),
         )
     }
-    if (showCaptcha && pendingDevice != null) {
+    val captchaVisible = showCaptcha && pendingDevice != null
+    val captchaContent = rememberAlertContent((captcha to actionError).takeIf { captchaVisible })
+    val captchaDismissal = rememberMeiloXSheetDismissal(
+        onDismiss = ::dismiss,
+        skipPartiallyExpanded = true,
+        visible = captchaVisible,
+        confirmValueChange = { !busy || it != GlasmioSheetValue.Hidden },
+    )
+    if (captchaContent != null) {
         val title = stringResource(R.string.account_verification_code)
-        MeiloXBottomSheet(onDismissRequest = ::dismiss, title = title, fitContent = true,
-            dismissOnClickOutside = !busy, dismissOnBackPress = !busy,
+        MeiloXBottomSheet(
+            onDismissRequest = captchaDismissal::onDismissed,
+            visible = captchaVisible,
+            sheetState = captchaDismissal.state,
+            title = title,
+            fitContent = true,
+            dismissOnClickOutside = !busy,
+            dismissOnBackPress = !busy,
             topBar = { GlasmioSheetTopToolbar(title) },
         ) {
             val padding = LocalGlasmioSheetContentPadding.current
@@ -259,10 +285,10 @@ fun AccountDevicesScreen(
                 top = padding.calculateTopPadding() + 20.dp,
                 bottom = padding.calculateBottomPadding() + 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                GlasmioGroupedList { GlasmioTextField(captcha, { captcha = it.filter(Char::isDigit).take(8) },
-                    placeholder = stringResource(R.string.account_verification_code), enabled = !busy,
+                GlasmioGroupedList { GlasmioTextField(captchaContent.first, { captcha = it.filter(Char::isDigit).take(8) },
+                    placeholder = stringResource(R.string.account_verification_code), enabled = !busy && captchaVisible,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-                actionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                captchaContent.second?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GlasmioButton(onClick = {
                         scope.launch {
@@ -272,10 +298,10 @@ fun AccountDevicesScreen(
                             catch (failure: Exception) { actionError = failure.message }
                             finally { sending = false }
                         }
-                    }, enabled = !sending && smsWait == 0) {
+                    }, enabled = !busy && !sending && smsWait == 0 && captchaVisible) {
                         Text(if (smsWait > 0) "${smsWait}s" else stringResource(R.string.account_send_code))
                     }
-                    GlasmioButton(::performAction, enabled = !busy && captcha.isNotBlank()) { Text(stringResource(R.string.confirm)) }
+                    GlasmioButton(::performAction, enabled = !busy && captcha.isNotBlank() && captchaVisible) { Text(stringResource(R.string.confirm)) }
                 }
             }
         }
