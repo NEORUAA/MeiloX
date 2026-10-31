@@ -276,7 +276,7 @@ object VersionUpdateChecker {
         if (!expiration.isAfter(Instant.now())) return null
         val name = string("name") ?: return null
         val match = Regex("^MeiloX-(.+)-${run.build.number}(?:\\.([1-9][0-9]*))?$")
-            .matchEntire(name) ?: return null
+            .matchEntire(name.removeSuffix(".apk")) ?: return null
         if (parseVersion(match.groupValues[1]) == null) return null
         // A partial workflow rerun can retain an APK from an earlier build attempt.
         val attempt = match.groupValues[2].ifEmpty { "1" }.toIntOrNull() ?: return null

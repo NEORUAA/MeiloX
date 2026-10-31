@@ -32,6 +32,33 @@ class VersionUpdateCheckerTest {
     }
 
     @Test
+    fun directApkArtifactIsFoundBeforeFallingBackToTheInstalledRun() = runBlocking {
+        val requests = mutableListOf<String>()
+        val result = checkBeta(
+            number = 136,
+            runs = runs(run(137), run(136)),
+            artifacts = mapOf(137L to artifacts(artifact(137, name = "MeiloX-1.55.1-137.1.apk"))),
+            requests = requests,
+        ) as VersionUpdateResult.UpdateAvailable
+
+        assertEquals("beta #137.1", result.latestTag)
+        assertEquals("beta #136.1", result.currentBuildLabel)
+        assertEquals(2, requests.size)
+    }
+
+    @Test
+    fun artifactNamesRemainCompatibleWithArchivedAndDirectUploads() = runBlocking {
+        for (name in listOf("MeiloX-1.54.6-35", "MeiloX-1.54.6-35.1", "MeiloX-1.54.6-35.1.apk")) {
+            val result = checkBeta(
+                number = 34,
+                runs = runs(run(35)),
+                artifacts = mapOf(35L to artifacts(artifact(35, name = name))),
+            ) as VersionUpdateResult.UpdateAvailable
+            assertEquals(name, "beta #35.1", result.latestTag)
+        }
+    }
+
+    @Test
     fun equalAndNewerInstalledBuildsNeedNoArtifactRequest() = runBlocking {
         for ((number, attempt) in listOf(35L to 1, 35L to 2, 36L to 1)) {
             val requests = mutableListOf<String>()
@@ -162,6 +189,9 @@ class VersionUpdateCheckerTest {
             artifact(35, size = 0),
             artifact(35, attempt = 2),
             artifact(35, name = "MeiloX-not-a-version-35.1"),
+            artifact(35, name = "MeiloX-not-a-version-35.1.apk"),
+            artifact(35, name = "MeiloX-1.54.6-35.1.apk.zip"),
+            artifact(35, name = "MeiloX-1.54.6-35.1.apk.apk"),
         )
         for (artifact in invalidArtifacts) {
             assertEquals(
@@ -454,7 +484,7 @@ class VersionUpdateCheckerTest {
         number: Long,
         attempt: Int = 1,
         legacyName: Boolean = false,
-        name: String = "MeiloX-1.54.6-$number" + if (legacyName) "" else ".$attempt",
+        name: String = "MeiloX-1.54.6-$number" + if (legacyName) "" else ".$attempt.apk",
         expired: Boolean = false,
         expiresAt: String = "2099-01-01T00:00:00Z",
         runId: Long = 1000 + number,
