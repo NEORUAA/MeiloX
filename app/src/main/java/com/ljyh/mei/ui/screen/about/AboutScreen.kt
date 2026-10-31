@@ -41,7 +41,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.BetaUpdatesEnabledKey
 import com.ljyh.mei.constants.DevModeKey
 import com.ljyh.mei.constants.Github
-import io.github.neoruaa.glasmio.ui.GlasmioCard
+import com.ljyh.mei.ui.screen.setting.SettingsCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
@@ -163,7 +163,7 @@ fun AboutScreen(viewModel: AboutViewModel = hiltViewModel()) {
                     },
 //                    stringResource(R.string.about_check_updates_description),
                 ) { checkForUpdates() }
-                GlasmioCard(
+                SettingsCard(
                     Modifier.fillMaxWidth(),
                     onClick = if (isCheckingUpdate || isSavingBetaPreference) null else ({ setBetaUpdatesEnabled(!betaUpdatesEnabled) }),
                 ) {
@@ -233,7 +233,7 @@ private fun AboutSectionTitle(title: String) {
 
 @Composable
 private fun AboutEntry(systemName: String, title: String, subtitle: String? = null, onClick: () -> Unit) {
-    GlasmioCard(Modifier.fillMaxWidth(), onClick = onClick) {
+    SettingsCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             SfIcon(systemName, null, size = 21.dp)
             Column(Modifier.weight(1f).padding(horizontal = 13.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
