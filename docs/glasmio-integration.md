@@ -1,6 +1,6 @@
 # Glasmio integration
 
-MeiloX uses Glasmio `864e958676e38c5416d573c6affeaf4b0279be98` through the
+MeiloX uses Glasmio `1e8771e6b11d60ee0ce16ed552b2226ea765c194` through the
 sibling source build described in the README. Recording, materials and effects use
 Glasmio's renderer and public API under `io.github.neoruaa.glasmio.glass.render`.
 Retained third-party code keeps its attribution.

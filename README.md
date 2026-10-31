@@ -42,11 +42,11 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的第三方�
 
 ## Build from source
 
-Use JDK 21 and Android SDK 37.0. Until the first Glasmio release is published, build with the same source revision pinned in CI:
+Use JDK 21 and Android SDK 37.0. Build with the Glasmio development revision pinned in CI:
 
 ```sh
 git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-git -C ../Glasmio checkout 864e958676e38c5416d573c6affeaf4b0279be98
+git -C ../Glasmio checkout 1e8771e6b11d60ee0ce16ed552b2226ea765c194
 ./gradlew -Pglasmio.source=true :app:assembleDebug
 ```
 
