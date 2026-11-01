@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.item
 
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,8 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -68,13 +70,13 @@ internal fun HomeSongColumn(
         repeat(itemCount) { index ->
             itemContent(index)
             if (index < itemCount - 1) {
-                Box(Modifier.fillMaxWidth().height(if (rememberDeviceInfo().isLandscape) HomeSongRowSpacing else 6.dp)) {
+                Box(Modifier.fillMaxWidth().height(HomeSongRowSpacing)) {
                     HorizontalDivider(
                         modifier =
                             Modifier.align(Alignment.Center)
                                 .padding(start = coverSize + 12.dp),
                         thickness = 0.5.dp,
-                        color = LocalGlassColors.current.separator,
+                        color = songListDividerColor(),
                     )
                 }
             }
@@ -92,15 +94,17 @@ internal fun ThreeRowSongList(
     coverSize: Dp = songListCoverSize(rememberDeviceInfo().isLandscape),
     itemContent: @Composable (Int) -> Unit,
 ) {
-    LazyRow(
+    val pagerState = rememberPagerState(pageCount = { (itemCount + 2) / 3 })
+    HorizontalPager(
+        state = pagerState,
         modifier = modifier.fillMaxWidth(),
+        pageSize = PageSize.Fixed(columnWidth),
         contentPadding = contentPadding,
-        horizontalArrangement = Arrangement.spacedBy(columnSpacing),
-    ) {
-        items((itemCount + 2) / 3) { column ->
-            HomeSongColumn(minOf(3, itemCount - column * 3), Modifier.width(columnWidth), coverSize) { row ->
-                itemContent(column * 3 + row)
-            }
+        pageSpacing = columnSpacing,
+        verticalAlignment = Alignment.Top,
+    ) { column ->
+        HomeSongColumn(minOf(3, itemCount - column * 3), Modifier.width(columnWidth), coverSize) { row ->
+            itemContent(column * 3 + row)
         }
     }
 }

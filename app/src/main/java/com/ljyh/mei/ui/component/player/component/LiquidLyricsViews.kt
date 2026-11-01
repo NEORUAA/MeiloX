@@ -118,6 +118,7 @@ private fun AppleLiquidLyrics(
     autoFollow: Boolean,
     modifier: Modifier,
 ) {
+    val mainLyricSize = 26.sp
     val activeIndex = activeLineIndex(lines, position)
     val state = rememberLazyListState()
     LaunchedEffect(activeIndex, autoFollow) {
@@ -150,13 +151,13 @@ private fun AppleLiquidLyrics(
                         position = position,
                         active = active,
                         longTone = longTone,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, fontSize = 26.sp),
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, fontSize = mainLyricSize),
                     )
                 } else {
-                    Text(line.content(), fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 31.sp)
+                    Text(line.content(), fontWeight = FontWeight.Bold, fontSize = mainLyricSize, lineHeight = 31.sp)
                 }
                 if (showRomanization) line.phonetic()?.takeIf(String::isNotBlank)?.let {
-                    Text(it, color = Color.White.copy(alpha = 0.72f), fontSize = 14.sp)
+                    Text(it, color = Color.White.copy(alpha = 0.72f), fontSize = (mainLyricSize.value * 0.5f).coerceAtLeast(12f).sp)
                 }
                 if (showTranslation) line.translation()?.takeIf(String::isNotBlank)?.let {
                     Text(it, color = Color.White.copy(alpha = 0.72f), fontSize = 15.sp)
@@ -176,6 +177,7 @@ private fun EvaLiquidLyrics(
     showRomanization: Boolean,
     modifier: Modifier,
 ) {
+    val mainLyricSize = 34.sp
     val index = activeLineIndex(lines, position)
     val active = lines.getOrNull(index)
     val next = lines.getOrNull(index + 1)
@@ -196,8 +198,8 @@ private fun EvaLiquidLyrics(
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(line.content(), color = Color(0xFF8BFFB0), fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Black)
-                if (showRomanization) line.phonetic()?.let { Text(it.uppercase(), color = Color(0xFFFFB1D6), fontSize = 13.sp) }
+                Text(line.content(), color = Color(0xFF8BFFB0), fontSize = mainLyricSize, lineHeight = 39.sp, fontWeight = FontWeight.Black)
+                if (showRomanization) line.phonetic()?.let { Text(it.uppercase(), color = Color(0xFFFFB1D6), fontSize = (mainLyricSize.value * 0.5f).coerceAtLeast(12f).sp) }
                 if (showTranslation) line.translation()?.let { Text(it, color = Color.White.copy(.7f), fontSize = 15.sp) }
             }
         }
@@ -215,6 +217,7 @@ private fun TextPvLiquidLyrics(
     showRomanization: Boolean,
     modifier: Modifier,
 ) {
+    val mainLyricSize = 33.sp
     val index = activeLineIndex(lines, position)
     val line = lines.getOrNull(index)
     val phase = if (line == null || line.duration <= 0) 0f else ((position - line.start).toFloat() / line.duration).coerceIn(0f, 1f)
@@ -240,8 +243,8 @@ private fun TextPvLiquidLyrics(
                 shape = ContinuousRoundedRectangle(30.dp),
             ) {
                 Column(Modifier.padding(horizontal = 22.dp, vertical = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(it.content(), fontSize = 33.sp, lineHeight = 39.sp, fontWeight = FontWeight.Black)
-                    if (showRomanization) it.phonetic()?.let { text -> Text(text, color = Color(0xFFFFD4E2), fontSize = 14.sp) }
+                    Text(it.content(), fontSize = mainLyricSize, lineHeight = 39.sp, fontWeight = FontWeight.Black)
+                    if (showRomanization) it.phonetic()?.let { text -> Text(text, color = Color(0xFFFFD4E2), fontSize = (mainLyricSize.value * 0.5f).coerceAtLeast(12f).sp) }
                     if (showTranslation) it.translation()?.let { text -> Text(text, color = Color.White.copy(.72f), fontSize = 15.sp) }
                 }
             }
@@ -267,6 +270,7 @@ private fun SkylineLiquidLyrics(
     showRomanization: Boolean,
     modifier: Modifier,
 ) {
+    val mainLyricSize = 30.sp
     val index = activeLineIndex(lines, position)
     val active = lines.getOrNull(index)
     Box(modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF04111C), Color(0xFF0D2630), Color(0xFF171526))))) {
@@ -296,8 +300,8 @@ private fun SkylineLiquidLyrics(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(it.content(), textAlign = TextAlign.Center, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                if (showRomanization) it.phonetic()?.let { text -> Text(text, color = Color(0xFF87E8FF), fontSize = 14.sp, textAlign = TextAlign.Center) }
+                Text(it.content(), textAlign = TextAlign.Center, fontSize = mainLyricSize, lineHeight = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                if (showRomanization) it.phonetic()?.let { text -> Text(text, color = Color(0xFF87E8FF), fontSize = (mainLyricSize.value * 0.5f).coerceAtLeast(12f).sp, textAlign = TextAlign.Center) }
                 if (showTranslation) it.translation()?.let { text -> Text(text, color = Color.White.copy(.68f), fontSize = 15.sp, textAlign = TextAlign.Center) }
             }
         }

@@ -51,7 +51,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.player.OverlayState
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
-import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage

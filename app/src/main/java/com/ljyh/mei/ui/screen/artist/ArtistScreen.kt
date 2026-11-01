@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.artist
 
+import com.ljyh.mei.ui.component.item.FixedCardCaption
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.geometry.Rect
@@ -18,7 +19,6 @@ import com.ljyh.mei.data.model.api.ArtistAlbum
 import java.text.DateFormat
 import java.util.Date
 import androidx.annotation.OptIn
-import androidx.compose.foundation.border
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.platform.LocalContext
 import com.ljyh.mei.constants.CookieKey
@@ -29,6 +29,7 @@ import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider
 import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -240,7 +241,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                             val visibleSongs = songs.take(10)
                             visibleSongs.forEachIndexed { index, song ->
                                 val track = hotTracks[index]
-                                Column(Modifier.padding(horizontal = DetailPageHorizontalPadding)) {
+                                Column(Modifier.padding(horizontal = 20.dp)) {
                                     DetailTrackRow(
                                         track = track, trackNumber = index + 1, showArtwork = true,
                                         isCurrentTrack = track.id == currentTrackId,
@@ -264,7 +265,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                         }
                         is Resource.Loading -> repeat(5) {
                             ShimmerHost {
-                                Box(Modifier.padding(horizontal = DetailPageHorizontalPadding)) {
+                                Box(Modifier.padding(horizontal = 20.dp)) {
                                     TrackItemShimmer(isTablet = false, flatDetailStyle = true)
                                 }
                             }
@@ -291,7 +292,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                             LazyRow(
                                 modifier = Modifier.swipeBackExcluded(),
                                 contentPadding =
-                                    PaddingValues(horizontal = DetailPageHorizontalPadding),
+                                    PaddingValues(horizontal = if (landscape) DetailPageHorizontalPadding else 20.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 items(albums, key = { it.id }) { hotAlbum ->
@@ -309,7 +310,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                             LazyRow(
                                 modifier = Modifier.swipeBackExcluded(),
                                 contentPadding =
-                                    PaddingValues(horizontal = DetailPageHorizontalPadding),
+                                    PaddingValues(horizontal = if (landscape) DetailPageHorizontalPadding else 20.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 items(4) {
@@ -809,19 +810,9 @@ fun AlbumCard(album: Album, artworkSize: Dp = 116.dp, onClick: (Long) -> Unit) {
             contentScale = ContentScale.Crop,
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = album.title,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = "${album.size} 首",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
-            modifier = Modifier.padding(top = 2.dp),
+        FixedCardCaption(
+            title = album.title,
+            subtitle = "${album.size} 首",
         )
     }
 }
@@ -1035,11 +1026,11 @@ private fun ArtistFeaturedAlbumLayout(
     val shape = ContinuousRoundedRectangle(24.dp)
     val coverSize = if (landscape) artworkHeight else 88.dp
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = DetailPageHorizontalPadding)
+        Modifier.fillMaxWidth().padding(horizontal = if (landscape) DetailPageHorizontalPadding else 20.dp)
             .padding(top = if (landscape) 0.dp else 12.dp, bottom = if (landscape) 0.dp else 4.dp)
             .then(if (landscape) Modifier else Modifier.clip(shape)
                 .background(colors.content.copy(alpha = 0.10f))
-                .border(0.5.dp, colors.content.copy(alpha = 0.15f), shape))
+                .border(0.5.dp, Color.White.copy(alpha = 0.15f), shape))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .then(if (landscape) Modifier else Modifier.padding(12.dp)),
         horizontalArrangement = Arrangement.spacedBy(if (landscape) 16.dp else 12.dp),
@@ -1145,8 +1136,8 @@ fun SectionTitle(
         Modifier.fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(
-                start = DetailPageHorizontalPadding,
-                end = DetailPageHorizontalPadding,
+                start = if (landscape) DetailPageHorizontalPadding else 20.dp,
+                end = if (landscape) DetailPageHorizontalPadding else 20.dp,
                 top = topPadding,
                 bottom = bottomPadding,
             ),

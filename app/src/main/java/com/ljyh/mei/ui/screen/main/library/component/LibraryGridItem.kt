@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -27,6 +28,7 @@ fun LibraryGridItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     titleStyle: androidx.compose.ui.text.TextStyle = IosTypography.body,
+    captionSpacing: Dp = 12.dp,
 ) {
     Column(
         modifier = modifier
@@ -45,7 +47,7 @@ fun LibraryGridItem(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(captionSpacing))
 
         Text(
             text = title,

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.search
 
+import com.ljyh.mei.ui.component.item.FixedCardCaption
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import android.net.Uri
 import androidx.annotation.StringRes
@@ -340,26 +341,13 @@ private fun SearchRecommendationCard(
                 .clip(ContinuousRoundedRectangle(14.dp)),
             contentScale = ContentScale.Crop,
         )
-        Text(
-            text = playlist.name,
-            style = IosTypography.subheadline,
-            fontWeight = FontWeight.Medium,
-            color = LocalGlassColors.current.content,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
-        )
         val subtitle = playlist.copywriter?.takeIf(String::isNotBlank)
             ?: playlist.creatorNickname?.takeIf(String::isNotBlank)
-        subtitle?.let {
-            Text(
-                text = it,
-                style = IosTypography.caption,
-                color = LocalGlassColors.current.secondaryContent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        FixedCardCaption(
+            title = playlist.name,
+            subtitle = subtitle.orEmpty(),
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 

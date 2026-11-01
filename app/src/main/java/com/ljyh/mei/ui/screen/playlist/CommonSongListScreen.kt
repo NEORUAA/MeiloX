@@ -255,6 +255,7 @@ fun CommonSongListScreen(
             val hero: @Composable () -> Unit = {
                 val headerContent: @Composable () -> Unit = {
                     PlaylistHeader(
+                        modifier = Modifier.padding(horizontal = if (!device.isLandscape && usePlaylistTrackStyle) 4.dp else 0.dp),
                         title = uiData.title,
                         metadata = headerMetadata,
                         cover = uiData.cover,
@@ -302,7 +303,7 @@ fun CommonSongListScreen(
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 horizontalContentPadding =
                     if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.AlbumHeader) 32.dp
-                    else if (usePlaylistTrackStyle) DetailPageHorizontalPadding else 16.dp,
+                    else if (usePlaylistTrackStyle) { if (device.isLandscape) DetailPageHorizontalPadding else 20.dp } else 16.dp,
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
                 hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,

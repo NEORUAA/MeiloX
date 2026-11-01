@@ -120,7 +120,8 @@ internal fun PlayerLyricsView(
     textColor: Color = Color.White,
     breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
     phoneticTextStyle: TextStyle = normalLineTextStyle.copy(
-        fontSize = 13.sp,
+        fontSize = if (normalLineTextStyle.fontSize == androidx.compose.ui.unit.TextUnit.Unspecified) 13.sp
+            else (normalLineTextStyle.fontSize.value * 0.5f).coerceAtLeast(12f).sp,
         fontWeight = FontWeight.Normal,
     ),
     blendMode: BlendMode = BlendMode.Plus,

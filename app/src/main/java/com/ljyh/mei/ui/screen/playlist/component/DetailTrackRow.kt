@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.playlist.component
 
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.height
@@ -97,8 +98,9 @@ internal fun DetailTrackRow(
 
     val numberWidth = if (showArtwork) 0.dp else albumTrackNumberWidth()
     val numberColumnWidth = maxOf(numberWidth, DetailTrackIndicatorWidth)
-    val favoriteOffset = -(DetailPageHorizontalPadding + DetailTrackFavoriteSize) / 2
-    val moreButtonOffset = if (compactRows) -8.dp else 0.dp
+    val favoriteOffset = -(DetailPageHorizontalPadding + DetailTrackFavoriteSize) / 2 +
+        if (compactRows) 0.dp else 2.dp
+    val moreButtonOffset = if (compactRows) -8.dp else 8.dp
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     Box(Modifier.fillMaxWidth()) {
         if (isFavorite) {
@@ -110,12 +112,12 @@ internal fun DetailTrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = if (showArtwork) { if (compactRows) 56.dp else 50.dp } else 52.dp)
+                .heightIn(min = if (showArtwork) { 56.dp } else 52.dp)
                 .then(
                     if (selected == null) Modifier.clickable(onClick = onClick)
                     else Modifier.selectable(selected = selected, role = Role.Checkbox, onClick = onClick)
                 )
-                .padding(vertical = if (compactRows) 4.dp else 3.dp),
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (selected != null) {
@@ -249,7 +251,7 @@ internal fun DetailTrackDivider(
     selectionMode: Boolean = false,
     fullWidth: Boolean = false,
 ) {
-    val colors = LocalGlassColors.current
+    val dividerColor = songListDividerColor()
     val compactRows = rememberDeviceInfo().isLandscape
     val artworkSize = songListCoverSize(compactRows)
     val leadingInset = if (fullWidth) 0.dp else {
@@ -259,14 +261,14 @@ internal fun DetailTrackDivider(
     }
     if (!compactRows && !fullWidth) {
         Box(Modifier.fillMaxWidth().padding(start = leadingInset).height(0.dp).drawBehind {
-            drawLine(colors.separator, Offset.Zero, Offset(size.width, 0f), strokeWidth = 0.5.dp.toPx())
+            drawLine(dividerColor, Offset.Zero, Offset(size.width, 0f), strokeWidth = 0.5.dp.toPx())
         })
         return
     }
     HorizontalDivider(
         modifier = Modifier.padding(start = leadingInset),
         thickness = 0.5.dp,
-        color = colors.separator,
+        color = dividerColor,
     )
 }
 

@@ -26,7 +26,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.R
 import com.ljyh.mei.ui.component.item.LandscapeMediaRow
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
-import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -96,7 +96,7 @@ fun ArtistAlbumsScreen(
                 artist = album.artist.joinToString(" / ") { it.name },
                 detail = stringResource(R.string.playlist_song_count, album.size),
                 onClick = { navController.navigate("${Screen.Album.route}/${album.id}") },
-                modifier = Modifier.padding(horizontal = if (landscape) 32.dp else 24.dp),
+                modifier = Modifier.padding(horizontal = if (landscape) 32.dp else 20.dp),
                 showDivider = album.id != albums.lastOrNull()?.id,
             )
         }
