@@ -83,6 +83,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -340,6 +342,7 @@ class MainActivity : ComponentActivity() {
             val lifecycleOwner = LocalLifecycleOwner.current
             val backStack = rememberNavBackStack(MeiRoute(Screen.Home.route))
             val pageHeaders = remember { MeiloXPageHeaders() }
+            val landscapeNavigationBounds = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
             val navController = remember(backStack) {
                 MeiNavigator(context = context, backStack = backStack)
             }
@@ -974,6 +977,7 @@ class MainActivity : ComponentActivity() {
                     }
                     CompositionLocalProvider(
                         com.ljyh.mei.ui.local.LocalSelectionToolbar provides selectionToolbar,
+                        com.ljyh.mei.ui.navigation.LocalLandscapeNavigationBounds provides landscapeNavigationBounds,
                         LocalDatabase provides database,
                         LocalNavController provides navController,
                         LocalPlayerConnection provides playerConnection,
@@ -1135,7 +1139,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 CompositionLocalProvider(
                                                     com.ljyh.mei.ui.navigation.LocalMeiloXSearchTopPadding provides
-                                                        if (isLandscape && meiRoute.route == Screen.Search.route) 56.dp else 0.dp,
+                                                        if (isLandscape && meiRoute.route == Screen.Search.route) 56.dp + com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
                                                     LocalPlayerAwareWindowInsets provides
                                                         if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
                                                         else entryPlayerAwareWindowInsets,
@@ -1203,6 +1207,9 @@ class MainActivity : ComponentActivity() {
                                                         .padding(windowsInsets.only(WindowInsetsSides.Horizontal).asPaddingValues())
                                                         .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp),
                                                 ) {
+                                                    DisposableEffect(Unit) {
+                                                        onDispose { landscapeNavigationBounds.value = null }
+                                                    }
                                                     CompositionLocalProvider(
                                                         LocalGlassColors provides (header?.colors ?: glassColors),
                                                     ) {
@@ -1220,7 +1227,8 @@ class MainActivity : ComponentActivity() {
                                                                 focusSearchOnEntry = true
                                                                 if (currentRoute != Screen.Search.route) navController.navigate(Screen.Search.route)
                                                             },
-                                                            modifier = Modifier.widthIn(max = minOf(560.dp, (navigationViewportWidth - sideInset * 2).coerceAtLeast(44.dp))),
+                                                            modifier = Modifier.widthIn(max = minOf(560.dp, (navigationViewportWidth - sideInset * 2).coerceAtLeast(44.dp)))
+                                                                .onGloballyPositioned { landscapeNavigationBounds.value = it.boundsInWindow() },
                                                         )
                                                     }
                                                 }
@@ -1299,7 +1307,7 @@ class MainActivity : ComponentActivity() {
                                                     onDismiss = clearSearchInput,
                                                     modifier = Modifier
                                                         .fillMaxSize()
-                                                        .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) 128.dp else 0.dp)
+                                                        .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) com.ljyh.mei.constants.LandscapeSearchTopPadding + 56.dp else 0.dp)
                                                         .padding(searchResultsBottomPadding),
                                                 )
                                             }
@@ -1340,7 +1348,7 @@ class MainActivity : ComponentActivity() {
                                         .padding(horizontal = bottomNavigationHorizontalMargin)
                                         .then(if (isLandscape) Modifier
                                             .padding(windowsInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal).asPaddingValues())
-                                            .padding(top = 72.dp)
+                                            .padding(top = com.ljyh.mei.constants.LandscapeSearchTopPadding)
                                         else Modifier.padding(searchToolbarBottomPadding)
                                             .offset(y = searchToolbarVerticalOffset)),
                                 )

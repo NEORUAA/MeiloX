@@ -20,8 +20,15 @@ val RecommendCardCornerRadius = 12.dp
 
 val HomeSectionSpacing = 24.dp
 val HomeSectionTitlePadding = 12.dp
-val HomeSongCoverSize = 48.dp
-val HomeSongCoverCornerRadius = 6.dp
+val HomeSongCoverSize = 44.dp
+val HomeSongCoverCornerRadius = 4.dp
+val LandscapeSongCoverSize = 48.dp
+
+fun songListCoverCornerRadius(isLandscape: Boolean): Dp =
+    if (isLandscape) 5.dp else HomeSongCoverCornerRadius
+
+fun songListCoverSize(isLandscape: Boolean): Dp =
+    if (isLandscape) LandscapeSongCoverSize else HomeSongCoverSize
 val HomeSongActionSize = 40.dp
 val HomeSongRowSpacing = 8.dp
 val HomeSongNextPagePeek = 36.dp
@@ -81,3 +88,7 @@ const val AndroidUserAgent = "Mozilla/5.0 (Linux; Android 10; Mi A3 Build/QQ3A.2
 const val Github="https://github.com/NEORUAA/Mei_MeloX_Android"
 
 const val checkToken="9ca17ae2e6ffcda170e2e6ee8af14fbabdb988f225b3868eb2c15a879b9a83d274a790ac8ff54a97b889d5d42af0feaec3b92af58cff99c470a7eafd88f75e839a9ea7c14e909da883e83fb692a3abdb6b92adee9e"
+
+// A 44dp platter centered in the 62dp header ends at 53dp; leave 12dp to search.
+internal val LandscapeSearchTopPadding = 65.dp
+internal val LandscapeSearchTopAdjustment = LandscapeSearchTopPadding - 72.dp

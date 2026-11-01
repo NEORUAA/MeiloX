@@ -51,7 +51,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.player.OverlayState
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
-import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
@@ -104,6 +104,8 @@ fun SearchResultScreen(
             title = stringResource(R.string.search_details_title),
             bottomPadding = bottomPadding,
             listState = listState,
+            topContentPaddingAdjustment = if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape)
+                com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
             verticalArrangement = Arrangement.spacedBy(0.dp),
             onNavigateBack = navController::navigateUp,
         ) {
@@ -129,11 +131,11 @@ fun SearchResultScreen(
                             focusManager.clearFocus()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape) 0.dp else 10.dp),
                 )
             }
             item(key = "search-tabs") {
-                Box(Modifier.padding(top = 10.dp)) {
+                Box(Modifier.padding(top = if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape) 12.dp else 10.dp)) {
                     SearchTypeFilterRow(
                         selected = selectedType,
                         onSelect = viewModel::onTabChange,

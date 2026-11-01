@@ -49,6 +49,9 @@ internal class MeiloXPageHeaders {
 }
 
 internal val LocalMeiloXSearchTopPadding = compositionLocalOf { 0.dp }
+internal val LocalLandscapeNavigationBounds = staticCompositionLocalOf<State<androidx.compose.ui.geometry.Rect?>> {
+    mutableStateOf(null)
+}
 
 private val LocalMeiloXPageHeader = staticCompositionLocalOf<MeiloXPageHeader?> { null }
 
@@ -251,6 +254,7 @@ fun MeiloXPinnedListPage(
     title: String,
     bottomPadding: Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
     horizontalContentPadding: Dp = IosPageHorizontalPadding,
+    topContentPaddingAdjustment: Dp = 0.dp,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     listState: LazyListState = rememberLazyListState(),
@@ -282,8 +286,9 @@ fun MeiloXPinnedListPage(
         collapseProgress = collapse, topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState, collapseEnterBreakpoint),
         backgroundColor = backgroundColor, backgroundBrush = backgroundBrush,
     ) { padding ->
-        val listPadding = remember(padding, horizontalContentPadding, bottomPaddingValues) {
+        val listPadding = remember(padding, horizontalContentPadding, bottomPaddingValues, topContentPaddingAdjustment) {
             object : PaddingValues by padding {
+                override fun calculateTopPadding() = padding.calculateTopPadding() + topContentPaddingAdjustment
                 override fun calculateLeftPadding(layoutDirection: LayoutDirection) = horizontalContentPadding
                 override fun calculateRightPadding(layoutDirection: LayoutDirection) = horizontalContentPadding
                 override fun calculateBottomPadding() = padding.calculateBottomPadding() +
