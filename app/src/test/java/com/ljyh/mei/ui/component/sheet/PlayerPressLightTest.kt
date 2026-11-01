@@ -68,6 +68,30 @@ class PlayerPressLightTest {
         assertTrue(light.hasCapture)
     }
 
+    @Test fun takeoverPreservesTheActualGlowIndependentlyOfPressDeformation() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val light = PlayerPressLight(CoroutineScope(coroutineContext + clock))
+        try {
+            val captured = pressed.copy(progress = 0.35f, glowProgress = 0.9f, dissipationProgress = 0.2f)
+            light.capture(captured)
+            assertEquals(captured, light.current(0f))
+            val held = light.current(0.4f)
+            assertEquals(captured.glowProgress * playerPressHighlightAlpha(0.4f), held.glowProgress, 0f)
+            assertEquals(captured.copy(progress = 0f, glowProgress = 0f),
+                light.current(PlayerBackgroundHandoffEnd))
+            light.release(0.4f)
+            assertEquals(held, light.current(0f))
+            repeat(4) { yield(); clock.sendFrame(it * 16_666_667L); yield() }
+            val released = light.current(0f)
+            assertTrue(released.progress < held.progress)
+            assertTrue(released.glowProgress < held.glowProgress)
+            assertEquals(captured.glowProgress / captured.progress,
+                released.glowProgress / released.progress, 0.0001f)
+            assertEquals(captured.dissipationProgress, released.dissipationProgress, 0f)
+            assertEquals(released, light.current(1f))
+        } finally { light.clear() }
+    }
+
     @Test fun heldDragFadesUntilTheBackgroundOwnsTheSurface() = runBlocking {
         val light = PlayerPressLight(this)
         light.capture(pressed)

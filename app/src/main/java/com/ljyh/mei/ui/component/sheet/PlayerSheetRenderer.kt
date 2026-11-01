@@ -83,7 +83,6 @@ import com.kyant.capsule.Continuity
 import com.kyant.capsule.continuities.G1Continuity
 import io.github.neoruaa.glasmio.glass.GlassPressHighlight
 import io.github.neoruaa.glasmio.glass.clipGlassShape
-import io.github.neoruaa.glasmio.glass.rememberGlassMorphRenderer
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.component.player.LocalPlayerArtwork
@@ -134,6 +133,7 @@ internal class PlayerSheetLayers(
         pressHighlightSize,
         playerContainerRect(sourceContainer, hostBounds, state.progress),
     )
+    val transitionPressLayoutSize get() = (frozenContainer ?: sourceContainer).size
     val collapsedPressHighlight get() =
         if (state.isCollapsed && pressLight.hasCapture) transitionPressHighlight else null
 
@@ -312,10 +312,12 @@ internal fun Modifier.recordPlayerContent(
     layers: PlayerSheetLayers,
     layer: GraphicsLayer,
     warmWhileVisible: Boolean = false,
+    warmWhileHidden: Boolean = false,
     drawInPlace: () -> Boolean,
 ): Modifier = drawWithContent {
     val visible = drawInPlace()
-    if ((warmWhileVisible && visible) || layers.shouldCapture(layer)) {
+    if ((warmWhileVisible && visible) ||
+        (warmWhileHidden && !visible && !layers.isTransitioning) || layers.shouldCapture(layer)) {
         layer.record { this@drawWithContent.drawContent() }
         layers.markCaptured(layer)
     }
@@ -549,12 +551,9 @@ fun BottomSheet(
         derivedStateOf { layers.hostBounds.isUsable() && layers.sourceContainer.isUsable() }
     }
     val materialDark = LocalMiniPlayerAppearance.current ?: LocalGlassColors.current.isDark
-    val transitionGlassRenderer = rememberGlassMorphRenderer(
+    val transitionGlassRenderer = rememberPlayerTransitionGlassRenderer(
         backdrop = transitionBackdrop,
         active = active && transitionGeometryReady,
-        // Only the blurred page sample is reduced; all moving edges and content stay native.
-        renderScale = 0.25f,
-        // Match the collapsed material recipe; draw(isDark) alone does not select it.
         isDark = materialDark,
     )
     val expandedCornerRadius = rememberPlayerScreenCornerRadius(layers.hostBounds)
@@ -578,22 +577,20 @@ fun BottomSheet(
         }
         // Draw transition glass below the mesh background. The background's alpha reveals
         // this glass during motion without tinting the fully expanded player background.
-        if (active && transitionGeometryReady) {
+        if ((active || collapsed) && transitionGeometryReady) {
             PlayerTransitionGlass(
                 layers = layers,
                 renderer = transitionGlassRenderer,
                 expandedCornerRadius = expandedCornerRadius,
+                active = active,
             )
         }
-        // Prepare the Compose mesh before the first opening. Its unplaced host
-        // neither draws nor receives input, and FluidBackground stops hidden frames.
+        // Place both endpoints before takeover so the first drag does not own their
+        // initial layout and display-list preparation. Hidden mesh frames stay stopped.
         Box(
             Modifier.fillMaxSize()
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    layout(placeable.width, placeable.height) {
-                        if (active || expanded) placeable.place(0, 0)
-                    }
+                .graphicsLayer {
+                    alpha = if (active || expanded) 1f else 0f
                 }
                 .clipPlayerBackground(layers, expandedCornerRadius)
                 .clearAndSetSemantics { },
@@ -602,11 +599,13 @@ fun BottomSheet(
         }
         run {
             val visible = active || expanded
-            // Keep pager/lyrics composition, but unplace the hidden host so it has no hit targets.
-            Box(Modifier.fillMaxSize().layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                layout(placeable.width, placeable.height) {
-                    if (visible) placeable.place(0, 0)
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                alpha = if (visible) 1f else 0f
+                clip = !visible
+                if (!visible) {
+                    // Alpha alone leaves pointer targets active. An empty outline
+                    // excludes the placed endpoint from hit testing while warming it.
+                    shape = PlayerHitShape(Rect.Zero, 0f)
                 }
             }) {
                 BoxWithConstraints(
@@ -614,7 +613,7 @@ fun BottomSheet(
                         .clipPlayerRecordingHost(layers, expandedCornerRadius)
                         .sheetGestures(state, layers, onHorizontalSwipe)
                         .then(if (!expanded) Modifier.clearAndSetSemantics { } else Modifier)
-                        .recordPlayerContent(layers, layers.fullContent) { expanded },
+                        .recordPlayerContent(layers, layers.fullContent, warmWhileHidden = true) { expanded },
                     content = content,
                 )
             }

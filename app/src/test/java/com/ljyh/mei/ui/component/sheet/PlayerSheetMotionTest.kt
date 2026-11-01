@@ -25,6 +25,20 @@ class PlayerSheetMotionTest {
     private val mini = Rect(12f, 700f, 388f, 748f)
     private val page = Rect(0f, 0f, 400f, 800f)
 
+    @Test fun retainedMaterialBytecodeDoesNotReferenceCompilerPlaceholderTypes() {
+        for (name in listOf("PlayerSheetGlassMorphRenderer", "PlayerSheetGlassMorphRendererKt", "MorphNativeFilterScope")) {
+            val resource = "com/ljyh/mei/ui/component/sheet/$name.class"
+            val bytecode = checkNotNull(javaClass.classLoader?.getResourceAsStream(resource)) {
+                "Missing compiled renderer resource: $resource"
+            }.use { it.readBytes() }
+            val classFile = bytecode.toString(Charsets.ISO_8859_1)
+            assertFalse("$name must not contain an unresolved compiler type",
+                classFile.contains("error/NonExistentClass"))
+            assertFalse("$name must not erase material/filter objects to Void",
+                classFile.contains("java/lang/Void"))
+        }
+    }
+
     @Test fun accessoryMorphStagesWidthBeforeCollapseAndHeightBeforeExpansion() {
         val collapse = miniPlayerChromeTransition(true, MiniPlayerChromeFrame(0f, 0f), 63.dp)
         assertEquals(MiniPlayerChromeFrame(1f, 0f), collapse.intermediate)

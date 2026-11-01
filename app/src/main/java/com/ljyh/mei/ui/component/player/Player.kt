@@ -137,6 +137,7 @@ fun BottomSheetPlayer(
     }
     val sheetLayers = rememberPlayerSheetLayers(state)
 
+
     // 单入口、双实现 - 根据样式渲染不同的播放器
     CompositionLocalProvider(
         LocalPlayerSheet provides sheetLayers,
@@ -198,8 +199,8 @@ fun BottomSheetPlayer(
 
     // 公共的弹窗处理层
     CompositionLocalProvider(
-        LocalGlassBackdrop provides playerBackdrop,
-        LocalBlurBackdrop provides playerBackdrop,
+        LocalGlassBackdrop provides if (state.isCollapsed) collapsedBackdrop else playerBackdrop,
+        LocalBlurBackdrop provides if (state.isCollapsed) collapsedBackdrop else playerBackdrop,
         LocalGlasmioSheetGroupedListStyle provides GlasmioSheetGroupedListStyle.ToolbarTint,
     ) {
         CommonOverlayHandler(

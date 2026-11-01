@@ -42,9 +42,11 @@ internal class PlayerPressLight(private val scope: CoroutineScope) {
             Offset((pointer.x - sourceBounds.left) / sourceBounds.width,
                 (pointer.y - sourceBounds.top) / sourceBounds.height)
         } else highlight.position
+        val alpha = releaseAnimation?.value?.coerceIn(0f, 1f)
+            ?: playerPressHighlightAlpha(progress)
         return highlight.copy(
-            progress = releaseAnimation?.value?.coerceIn(0f, 1f)
-                ?: (highlight.progress * playerPressHighlightAlpha(progress)),
+            progress = highlight.progress * alpha,
+            glowProgress = highlight.glowProgress * alpha,
             position = position,
         )
     }
@@ -52,9 +54,9 @@ internal class PlayerPressLight(private val scope: CoroutineScope) {
     fun release(progress: Float, sourceBounds: Rect? = null) {
         if (releaseJob != null || captured == null) return
         val highlight = current(progress, sourceBounds)
-        captured = captured?.copy(position = highlight.position)
+        captured = highlight
         pointerPosition = null
-        val animation = Animatable(highlight.progress, 0.001f)
+        val animation = Animatable(1f, 0.001f)
         releaseAnimation = animation
         releaseJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             animation.animateTo(0f, pressHighlightSpring())
