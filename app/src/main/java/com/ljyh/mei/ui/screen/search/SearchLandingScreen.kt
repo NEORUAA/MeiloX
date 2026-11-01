@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -50,6 +52,9 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PodcastsEnabledKey
+import com.ljyh.mei.constants.HomeRowHorizontalPadding
+import com.ljyh.mei.constants.homeCardSpacing
+import com.ljyh.mei.constants.homePlaylistCardSize
 import com.ljyh.mei.data.model.melox.SearchDiscovery
 import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
 import com.ljyh.mei.data.repository.MeloXRepository
@@ -65,6 +70,7 @@ import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.utils.rememberPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,14 +149,20 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
     val history = remember(historyJson) { decodeSearchHistory(historyJson) }
     var showAllHistory by rememberSaveable { mutableStateOf(false) }
 
-    MeiloXPinnedListPage(
-        title = stringResource(R.string.app_tab_search),
-        bottomPadding = 0.dp,
-        bottomPaddingValues = bottomPaddingValues,
-        horizontalContentPadding = 0.dp,
-        largeTitleHorizontalPadding = 16.dp,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    val isLandscape = rememberDeviceInfo().isLandscape
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val categorySpacing = if (isLandscape) 16.dp else 12.dp
+        val categoryColumns = if (isLandscape) {
+            ((maxWidth - 32.dp + categorySpacing) / (164.dp + categorySpacing)).toInt().coerceIn(2, 5)
+        } else 2
+        MeiloXPinnedListPage(
+            title = stringResource(R.string.app_tab_search),
+            bottomPadding = 0.dp,
+            bottomPaddingValues = bottomPaddingValues,
+            horizontalContentPadding = 0.dp,
+            largeTitleHorizontalPadding = 16.dp,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             if (history.isNotEmpty()) {
                 item(key = "search-history") {
                     SearchHistorySection(
@@ -213,11 +225,11 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
                 item(key = "recommendations") {
                     LazyRow(
                         modifier = Modifier.swipeBackExcluded(),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+                        horizontalArrangement = Arrangement.spacedBy(homeCardSpacing(isLandscape)),
                     ) {
                         items(discovery.recommendations, key = SearchDiscoveryPlaylist::id) { playlist ->
-                            SearchRecommendationCard(playlist) {
+                            SearchRecommendationCard(playlist, cardSize = homePlaylistCardSize(isLandscape)) {
                                 Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
                             }
                         }
@@ -234,12 +246,12 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
                 )
             }
             items(
-                categories.chunked(2),
+                categories.chunked(categoryColumns),
                 key = { row -> row.joinToString("-") { it.titleRes.toString() } },
             ) { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(categorySpacing),
                 ) {
                     row.forEach { category ->
                         val title = stringResource(category.titleRes)
@@ -247,6 +259,7 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
                             category = category,
                             title = title,
                             modifier = Modifier.weight(1f),
+                            landscape = isLandscape,
                             onClick = {
                                 if (category.opensPodcasts) {
                                     Screen.Podcasts.navigate(navController)
@@ -259,9 +272,10 @@ fun SearchLandingScreen(viewModel: SearchDiscoveryViewModel = hiltViewModel()) {
                             },
                         )
                     }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                    repeat(categoryColumns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+        }
     }
 }
 
@@ -311,10 +325,11 @@ internal fun SearchHistorySection(
 @Composable
 private fun SearchRecommendationCard(
     playlist: SearchDiscoveryPlaylist,
+    cardSize: Dp,
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.width(172.dp).clickable(onClick = onClick),
+        modifier = Modifier.width(cardSize).clickable(onClick = onClick),
     ) {
         AsyncImage(
             model = playlist.artworkUrl,
@@ -353,11 +368,12 @@ private fun SearchCategoryCard(
     category: SearchCategory,
     title: String,
     modifier: Modifier,
+    landscape: Boolean = false,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier
-            .aspectRatio(1.55f)
+            .aspectRatio(if (landscape) 16f / 9f else 1.55f)
             .clip(ContinuousRoundedRectangle(14.dp))
             .background(Brush.linearGradient(listOf(category.startColor, category.endColor)))
             .clickable(onClick = onClick),
@@ -375,7 +391,7 @@ private fun SearchCategoryCard(
             style = IosTypography.headline,
             color = Color.White,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
+            maxLines = if (landscape) 2 else 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
         )

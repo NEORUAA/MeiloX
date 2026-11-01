@@ -158,7 +158,8 @@ private fun PlaylistGrid(
     onPlaylistClick: (Long) -> Unit,
 ) {
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
-    val isTablet = rememberDeviceInfo().isTablet
+    val device = rememberDeviceInfo()
+    val isTablet = device.isTablet
     val headerPadding = if (isTablet) 0.dp else 16.dp
     LazyVerticalGrid(
         columns = if (isTablet) GridCells.Adaptive(164.dp) else GridCells.Fixed(2),
@@ -172,7 +173,7 @@ private fun PlaylistGrid(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         state = listState,
     ) {
-        item(key = "discover-large-title", span = { GridItemSpan(maxLineSpan) }) {
+        if (!device.isLandscape) item(key = "discover-large-title", span = { GridItemSpan(maxLineSpan) }) {
             Text(
                 title,
                 style = IosTypography.largeTitle,
