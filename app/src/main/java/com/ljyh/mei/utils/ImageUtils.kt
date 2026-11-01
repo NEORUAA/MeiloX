@@ -24,6 +24,29 @@ fun String.smallImage(): String {
     return "$this?param=100y100"
 }
 
+/** Remove server-added playlist labels/logos while retaining the underlying artwork operations. */
+internal fun playlistCoverWithoutOverlays(cover: String): String {
+    var changed = false
+    val operations = cover.split(Regex("(?i)%7c|\\|"))
+    val artwork = operations.mapIndexedNotNull { index, operation ->
+        val queryStart = if (index == 0) operation.indexOf('?') else -1
+        val processor = if (index == 0) {
+            if (queryStart < 0) return@mapIndexedNotNull operation
+            operation.substring(queryStart + 1)
+        } else operation
+        val parameters = processor.split('&')
+        val watermark = parameters.indexOfFirst {
+            it.substringBefore('=').equals("watermark", ignoreCase = true)
+        }
+        if (watermark < 0) return@mapIndexedNotNull operation
+        changed = true
+        if (index > 0) return@mapIndexedNotNull null
+        val retained = parameters.take(watermark).joinToString("&")
+        operation.substring(0, queryStart) + if (retained.isEmpty()) "" else "?$retained"
+    }
+    return if (changed) artwork.joinToString("%7C") else cover
+}
+
 fun String.middleImage(): String {
     if (this.startsWith("/")) return this
     return "$this?param=300y300"

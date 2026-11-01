@@ -39,6 +39,32 @@ class HomeRepositoryTest {
     private val now = Instant.parse("2026-10-15T04:00:00Z").toEpochMilli()
 
     @Test
+    fun radarArtworkUsesOnlyTheCurrentOwnersDailyCacheWithoutFetching() = runBlocking {
+        val blocks = listOf(gson.fromJson(
+            """{"positionCode":"PAGE_RECOMMEND_RADAR","dslData":{"template":{"blockResource":{"resources":[
+                {"resourceId":"5300458264","coverImg":"https://p1.music.126.net/uUUN57qTiveMY442WVWK2g==/109951168539760536.jpg?imageView=1%7Cwatermark&type=1&image=caption%7Cwatermark&type=1&image=dim"},
+                {"resourceId":"5320167908","coverImg":"https://p1.music.126.net/2XJqd79V8LfCdW0TAGXhIQ==/109951164787608780.jpg"}
+            ]}}}}""", Block::class.java,
+        ))
+        var requests = 0
+        val fixture = Fixture { requests++; blocks }
+        assertEquals(null, fixture.repository.cachedRadarCover("5300458264"))
+        assertEquals(0, requests)
+        fixture.repository.getHomePageResourceShow()
+        assertEquals("https://p1.music.126.net/uUUN57qTiveMY442WVWK2g==/109951168539760536.jpg?imageView=1",
+            fixture.repository.cachedRadarCover("5300458264"))
+        assertEquals("https://p1.music.126.net/2XJqd79V8LfCdW0TAGXhIQ==/109951164787608780.jpg",
+            fixture.repository.cachedRadarCover("5320167908"))
+        assertEquals(null, fixture.repository.cachedRadarCover("8402996200"))
+        assertEquals(1, requests)
+        fixture.preferences.value = account("42")
+        assertEquals(null, fixture.repository.cachedRadarCover("5300458264"))
+        fixture.preferences.value = account()
+        val expired = HomeRepository(fixture.file, fixture.preferences, { error("Unexpected fetch") }, { now + 24 * 60 * 60 * 1000 })
+        assertEquals(null, expired.cachedRadarCover("5300458264"))
+    }
+
+    @Test
     fun completedFeedIsCachedForTheOwnerAndExplicitRefreshReplacesIt() = runBlocking {
         val refreshes = mutableListOf<Boolean>()
         val fixture = Fixture { refresh ->

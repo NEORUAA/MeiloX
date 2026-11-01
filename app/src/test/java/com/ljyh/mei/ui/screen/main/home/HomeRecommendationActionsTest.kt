@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.ljyh.mei.utils.playlistCoverWithoutOverlays
 
 class HomeRecommendationActionsTest {
     @Test
@@ -19,14 +20,14 @@ class HomeRecommendationActionsTest {
     }
 
     @Test
-    fun artistPlaylistCoverRemovesCaptionWatermarkButKeepsOtherImageOperations() {
+    fun recommendationCoversRemoveCaptionAndBrandScrimButKeepArtworkOperations() {
         val artwork = "https://p1.music.126.net/artwork.jpg?imageView=1&thumbnail=800y800&enlarge=1"
         val caption = "imageView=1&watermark&type=1&image=Y2FwdGlvbg==&dx=0&dy=0"
         val logo = "watermark&type=1&image=bG9nbw==&dx=0&dy=0"
-        val expected = "$artwork%7C$logo%7CimageView=1"
-        assertEquals(expected, homeArtistPlaylistCoverWithoutCaption("$artwork%7C$caption%7C$logo%7CimageView=1"))
-        assertEquals(expected, homeArtistPlaylistCoverWithoutCaption("$artwork|$caption|$logo|imageView=1"))
-        assertEquals(artwork, homeArtistPlaylistCoverWithoutCaption(artwork))
+        val expected = "$artwork%7CimageView=1"
+        assertEquals(expected, playlistCoverWithoutOverlays("$artwork%7C$caption%7C$logo%7CimageView=1"))
+        assertEquals(expected, playlistCoverWithoutOverlays("$artwork|$caption|$logo|imageView=1"))
+        assertEquals(artwork, playlistCoverWithoutOverlays(artwork))
     }
 
     @Test

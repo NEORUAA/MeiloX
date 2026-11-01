@@ -1,5 +1,10 @@
 package com.ljyh.mei.ui.screen.main.home
 
+import kotlinx.coroutines.Job
+import com.ljyh.mei.constants.HomeSongNextPagePeek
+import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
+import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
+import com.ljyh.mei.ui.component.player.OverlayState
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import android.os.Build
@@ -15,6 +20,7 @@ import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,11 +38,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PageSize
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +60,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -76,7 +79,11 @@ import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.kyant.capsule.ContinuousRoundedRectangle
-import com.ljyh.mei.ui.component.item.HomeSongColumn
+import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
+import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
+import com.ljyh.mei.constants.songListCoverSize
+import androidx.compose.ui.platform.testTag
+import com.ljyh.mei.ui.component.item.ThreeRowSongList
 import com.ljyh.mei.ui.component.item.HomeSongListRow
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.HomeSectionSpacing
@@ -107,7 +114,6 @@ import com.ljyh.mei.ui.component.home.PlaylistCard
 import com.ljyh.mei.ui.component.home.RecommendCard
 import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
@@ -123,10 +129,10 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.DateUtils.getGreeting
 import com.ljyh.mei.utils.positionComparator
 import java.util.UUID
-import kotlin.math.ceil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -252,7 +258,7 @@ fun HomeScreen(
                             ),
                             verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing)
                         ) {
-                            item(key = "ios-large-title") {
+                            if (!device.isLandscape) item(key = "ios-large-title") {
                                 Text(
                                     stringResource(R.string.app_tab_home),
                                     style = IosTypography.largeTitle,
@@ -361,7 +367,8 @@ private fun HomeBlockItem(
                 resources = resources,
                 rowHeight = recommendCardHeight,
                 cardSpacing = cardSpacing,
-            ) { resource ->
+                waitForVisibleCovers = true,
+            ) { resource, reveal, onCoverTerminal ->
                 val recommendationKey = "${resource.resourceType}:${resource.resourceId}:${resource.action}"
                 RecommendCard(
                     cover = resource.coverImg,
@@ -374,6 +381,8 @@ private fun HomeBlockItem(
                     cardWidth = recommendCardWidth,
                     cardHeight = recommendCardHeight,
                     isLoading = loadingRecommendationKey == recommendationKey,
+                    reveal = reveal,
+                    onCoverTerminal = onCoverTerminal,
                 ) {
                     if (loadingRecommendationKey == recommendationKey) return@RecommendCard
                     val requestGeneration = ++playbackRequestGeneration
@@ -494,7 +503,7 @@ private fun HomeBlockItem(
                 title = title,
                 resources = resources,
                 cardSpacing = cardSpacing,
-            ) { resource ->
+            ) { resource, _, _ ->
                 val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
                 val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
                     title?.contains("热门金曲") == true
@@ -503,8 +512,8 @@ private fun HomeBlockItem(
                 val coverCaption = coverText?.filter(String::isNotBlank)
                     ?.joinToString(if (isRadar) "" else " ")?.takeIf(String::isNotBlank)
                 val artistCoverCaption = if (isArtistPlaylist) homeArtistPlaylistCoverText(resource) else null
-                val coverImg = if (artistCoverCaption != null) {
-                    homeArtistPlaylistCoverWithoutCaption(resource.coverImg)
+                val coverImg = if (separateCaptions) {
+                    com.ljyh.mei.utils.playlistCoverWithoutOverlays(resource.coverImg)
                 } else resource.coverImg
                 PlaylistCard(
                     id = resource.resourceId,
@@ -543,15 +552,10 @@ private fun HomeBlockItem(
             title?.let { Title(it) }
             TripleLaneSlider(
                 songsArray = songsBlocks,
-                isTablet = device.isTablet,
-                screenWidthDp = device.screenWidthDp,
                 isLandscape = device.isLandscape,
             ) { songs, index ->
                 val flatSongs = songs.flatMap { it.items }.map { it.resourceId to null }
-                if (playerConnection.isPlaying(flatSongs[index].first)) {
-                    playerConnection.player.togglePlayPause()
-                } else {
-                    playerConnection.onTrackClicked(
+                playerConnection.onTrackClicked(
                         trackId = flatSongs[index].first,
                         buildQueue = {
                             ListQueue(
@@ -562,9 +566,6 @@ private fun HomeBlockItem(
                             )
                         }
                     )
-                }
-
-
             }
         }
     }
@@ -596,12 +597,26 @@ private fun BlockWithTitle(
     resources: List<HomeCardResource>,
     rowHeight: Dp? = null,
     cardSpacing: Dp = HomeCardSpacing,
-    content: @Composable (HomeCardResource) -> Unit
+    waitForVisibleCovers: Boolean = false,
+    content: @Composable (HomeCardResource, Boolean, () -> Unit) -> Unit,
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
+    var visibleResourceKeys by remember(resourceKeys) { mutableStateOf(emptySet<String>()) }
+    var terminalResourceKeys by remember(resourceKeys) { mutableStateOf(emptySet<String>()) }
+    val rowReady = !waitForVisibleCovers || (
+        visibleResourceKeys.isNotEmpty() &&
+            visibleResourceKeys.all { it in terminalResourceKeys }
+        )
     Column {
         title?.let { Title(it) }
         val listState = rememberLazyListState()
+        LaunchedEffect(listState, resourceKeys) {
+            snapshotFlow {
+                listState.layoutInfo.visibleItemsInfo
+                    .mapNotNull { resourceKeys.getOrNull(it.index) }
+                    .toSet()
+            }.distinctUntilChanged().collect { visibleResourceKeys = it }
+        }
         LazyRow(
             state = listState,
             flingBehavior = rememberHomeRowFlingBehavior(listState),
@@ -609,11 +624,15 @@ private fun BlockWithTitle(
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             verticalAlignment = Alignment.Top,
             modifier = Modifier.fillMaxWidth()
+                .alpha(if (rowReady) 1f else 0f)
                 .swipeBackExcluded()
                 .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
         ) {
-            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
-                content(resource)
+            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { index, resource ->
+                val key = resourceKeys[index]
+                content(resource, rowReady) {
+                    terminalResourceKeys = terminalResourceKeys + key
+                }
             }
         }
     }
@@ -668,87 +687,74 @@ fun Title(text: String) {
 @Composable
 fun TripleLaneSlider(
     songsArray: List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>,
-    isTablet: Boolean = false,
-    screenWidthDp: Int = 0,
     isLandscape: Boolean = false,
     onClick: (List<HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item>, Int) -> Unit,
 ) {
-    val playerConnection = LocalPlayerConnection.current ?: return
-    val currentMetadata by playerConnection.mediaMetadata.collectAsState()
-    val isPlaying by playerConnection.isPlaying.collectAsState()
+    val songs = remember(songsArray) { songsArray.flatMap { it.items } }
+    val coverSize = songListCoverSize(isLandscape)
+    val trackIds = remember(songs) {
+        songs.mapNotNull { it.resourceId.toLongOrNull()?.takeIf { id -> id > 0 } }.toSet()
+    }
+    val favoriteIds = rememberFavoriteTrackIds(trackIds)
+    val playlistViewModel: PlaylistViewModel = hiltViewModel()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var moreJob by remember { mutableStateOf<Job?>(null) }
+    var overlay by remember { mutableStateOf<OverlayState>(
+        OverlayState.None) }
 
-    val columns =
-        when {
-            screenWidthDp >= 900 -> 3
-            isTablet -> 2
-            else -> 1
-        }
-    val cardSpacing = homeCardSpacing(isLandscape)
-    val columnWidth = homePlaylistCardSize(isLandscape) * 2 + cardSpacing
-    val pageSize = PageSize.Fixed(columnWidth * columns + cardSpacing * (columns - 1))
-
-    val pagerState = rememberPagerState(pageCount = { songsArray.size })
-
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
-        pageSize = pageSize,
-        contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
-        pageSpacing = cardSpacing,
-        beyondViewportPageCount = 1,
-    ) { page ->
-        val items = songsArray[page].items
-
-        val itemsPerColumn = ceil(items.size.toFloat() / columns).toInt()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-        ) {
-            for (col in 0 until columns) {
-                val startIdx = col * itemsPerColumn
-                val endIdx = minOf(startIdx + itemsPerColumn, items.size)
-                HomeSongColumn((endIdx - startIdx).coerceAtLeast(0), Modifier.width(columnWidth)) {
-                    row ->
-                    val i = startIdx + row
-                    val song = items[i]
-                    val globalIndex = songsArray.take(page).sumOf { it.items.size } + i
-                    SongRow(
-                        song,
-                        currentMetadata?.id?.toString(),
-                        isPlaying,
-                        onClick = { onClick(songsArray, globalIndex) },
-                    )
-                }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val spacing = homeCardSpacing(isLandscape)
+        val requestedWidth = homePlaylistCardSize(isLandscape) * 2 + spacing
+        val columnWidth = if (isLandscape) minOf(requestedWidth,
+            (maxWidth - HomeRowHorizontalPadding * 2 - HomeSongNextPagePeek).coerceAtLeast(220.dp))
+            else requestedWidth
+        ThreeRowSongList(
+            itemCount = songs.size,
+            columnWidth = columnWidth,
+            columnSpacing = spacing,
+            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+            coverSize = coverSize,
+            modifier = Modifier.swipeBackExcluded(),
+        ) { index ->
+            val song = songs[index]
+            Box {
+                if (song.resourceId in favoriteIds) FavoriteTrackStar(
+                    Modifier.align(Alignment.CenterStart).offset(x = (-14).dp)
+                        .testTag("HomeSongFavorite:${song.resourceId}"),
+                    tint = LocalGlassColors.current.secondaryContent,
+                )
+                HomeSongListRow(
+                    coverUrl = song.coverUrl,
+                    title = song.title,
+                    subtitle = song.artistName,
+                    coverSize = coverSize,
+                    onClick = { onClick(songsArray, index) },
+                    moreModifier = Modifier.testTag("HomeSongMore:${song.resourceId}"),
+                    onMore = { anchor ->
+                        moreJob?.cancel()
+                        moreJob = scope.launch {
+                            try {
+                                val track = playlistViewModel.getSongDetails(listOf(song.resourceId))
+                                    .songs.firstOrNull { it.id.toString() == song.resourceId }
+                                    ?.toMediaMetadata() ?: error("Missing song details")
+                                overlay = OverlayState.TrackActionMenu(track, anchor)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                Timber.w(error, "Unable to load home song actions")
+                                Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                )
             }
         }
     }
-}
-
-@Composable
-private fun SongRow(
-    song: HomePageResourceShow.Data.Block.DslData.HomeCommon.Content.Item.Item,
-    currentMetadataId: String?,
-    showPause: Boolean,
-    onClick: () -> Unit,
-) {
-    val isCurrentSong = currentMetadataId == song.resourceId && showPause
-    HomeSongListRow(
-        coverUrl = song.coverUrl,
-        title = song.title,
-        subtitle = song.artistName,
-        isPlaying = isCurrentSong,
-    ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(HomeSongActionSize)) {
-            SfIcon(
-                symbol = if (isCurrentSong) SfSymbol.PauseFilled else SfSymbol.PlayFilled,
-                contentDescription =
-                    stringResource(
-                        if (isCurrentSong) R.string.player_pause else R.string.player_play
-                    ),
-                tint = Color(0xFF8E8E93),
-                size = if (isCurrentSong) 18.dp else 16.dp,
-                modifier = if (isCurrentSong) Modifier else Modifier.offset(x = 1.dp),
-            )
-        }
-    }
+    StandaloneTrackActionOverlay(
+        overlay = overlay,
+        onDismiss = { overlay = OverlayState.None },
+        onUpdateOverlay = { overlay = it },
+        playlistViewModel = playlistViewModel,
+    )
 }

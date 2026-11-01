@@ -66,6 +66,7 @@ internal fun Flow<PagingData<MediaMetadata>>.excludeRemovedPlaylistTracks(
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
+    private val homeRepository: com.ljyh.mei.data.repository.HomeRepository,
     private val likeRepository: LikeRepository,
     private val colorRepository: ColorRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
@@ -82,6 +83,8 @@ class PlaylistViewModel @Inject constructor(
     private val _playlistDetail = MutableStateFlow<Resource<PlaylistDetail>>(Resource.Loading)
     val playlistDetail: StateFlow<Resource<PlaylistDetail>> = _playlistDetail
     private var playlistDetailRequestGeneration = 0
+    private val _radarArtwork = MutableStateFlow<String?>(null)
+    val radarArtwork: StateFlow<String?> = _radarArtwork
     private var activePlaylistId: String? = null
     private val _trackOrder = MutableStateFlow<PlaylistOrderState?>(null)
     val trackOrder: StateFlow<PlaylistOrderState?> = _trackOrder
@@ -144,8 +147,12 @@ class PlaylistViewModel @Inject constructor(
         viewModelScope.launch {
             _removedTrackIds.value = emptySet()
             _playlistDetail.value = Resource.Loading
+            _radarArtwork.value = null
             val result = repository.getPlaylistDetail(id)
             if (generation != playlistDetailRequestGeneration) return@launch
+            val radarCover = if (result is Resource.Success) homeRepository.cachedRadarCover(id) else null
+            if (generation != playlistDetailRequestGeneration) return@launch
+            _radarArtwork.value = radarCover
             _playlistDetail.value = result
             if (result is Resource.Success) {
                 _confirmedSubscription.value = result.data.playlist.subscribed

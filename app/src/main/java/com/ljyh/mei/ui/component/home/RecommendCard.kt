@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -71,6 +73,8 @@ fun RecommendCard(
     isLoading: Boolean = false,
     cardWidth: Dp = RecommendCardWidth,
     cardHeight: Dp = RecommendCardHeight,
+    reveal: Boolean = true,
+    onCoverTerminal: (() -> Unit)? = null,
     onClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -95,6 +99,7 @@ fun RecommendCard(
             .clip(ContinuousRoundedRectangle(RecommendCardCornerRadius))
             .homeArtworkBorder(ContinuousRoundedRectangle(RecommendCardCornerRadius))
             .background(Color.DarkGray)
+            .alpha(if (reveal) 1f else 0f)
             .clickable(enabled = !isLoading, onClick = onClick),
     ) {
         HomeCoverImage(
@@ -106,12 +111,19 @@ fun RecommendCard(
             onSuccess = { state ->
                 if (currentCoverModel.value == coverModel) {
                     loadedBitmap = state.result.image.toBitmap()
+                    onCoverTerminal?.invoke()
                 }
             },
             onError = {
-                if (currentCoverModel.value == coverModel) loadedBitmap = null
+                if (currentCoverModel.value == coverModel) {
+                    loadedBitmap = null
+                    onCoverTerminal?.invoke()
+                }
             },
         )
+        LaunchedEffect(coverModel) {
+            if (coverModel == null) onCoverTerminal?.invoke()
+        }
         loadedBitmap?.let { bitmap ->
             RecommendationArtworkExtension(
                 bitmap,

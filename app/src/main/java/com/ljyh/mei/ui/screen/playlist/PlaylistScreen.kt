@@ -53,6 +53,15 @@ import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
+internal fun PlaylistDetail.Playlist.cleanDetailCover(homeRadarArtwork: String? = null): String {
+    // Radar covers can have labels baked into the bitmap; the background is the original artwork.
+    val radarArtwork = (backgroundCoverUrl as? String)?.trim()?.takeIf {
+        specialType == 100 && name.contains("雷达") &&
+            (it.startsWith("https://") || it.startsWith("http://"))
+    }
+    return com.ljyh.mei.utils.playlistCoverWithoutOverlays(homeRadarArtwork ?: radarArtwork ?: coverImgUrl)
+}
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +90,7 @@ fun PlaylistScreen(
     // 2. 状态收集
     val userId by rememberPreference(UserIdKey, "")
     val playlistDetail by viewModel.playlistDetail.collectAsState()
+    val radarArtwork by viewModel.radarArtwork.collectAsState()
     val removedTrackIds by viewModel.removedTrackIds.collectAsState()
     val subscriberState by viewModel.subscribePlaylist.collectAsState()
     val unSubscriberState by viewModel.unSubscribePlaylist.collectAsState()
@@ -147,7 +157,7 @@ fun PlaylistScreen(
     }
 
     // 5. 构建 UI 模型 (移除副作用和内部状态修改)
-    val uiData = remember(playlistDetail, userId, removedTrackIds) {
+    val uiData = remember(playlistDetail, userId, removedTrackIds, radarArtwork) {
         if (playlistDetail is Resource.Success) {
             val data = (playlistDetail as Resource.Success).data.playlist
             val visibleTrackCount = (data.trackCount - removedTrackIds.size).coerceAtLeast(0)
@@ -156,7 +166,7 @@ fun PlaylistScreen(
                 title = data.name,
                 count = visibleTrackCount,
                 subscriberCount = data.subscribedCount,
-                cover = data.coverImgUrl,
+                cover = data.cleanDetailCover(radarArtwork),
                 coverList = data.tracks.take(6).map { it.al.picUrl },
                 creatorName = data.creator.nickname,
                 isCreator = data.creator.userId.toString() == userId,
@@ -379,6 +389,7 @@ fun PlaylistScreen(
     } else {
         CommonSongListScreen(
             useCoverBackground = true,
+            usePlaylistPortraitHeader = true,
             landscapeLayout = com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout.Split,
             uiData = uiData,
             pagingItems = lazyPagingItems,

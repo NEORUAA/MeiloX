@@ -9,6 +9,7 @@ import androidx.paging.PagingSource
 import androidx.paging.cachedIn
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.utils.playlistCoverWithoutOverlays
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.PlaylistOrderChangedException
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -29,6 +30,56 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistContentTest {
+    @Test
+    fun memberRadarUsesOriginalBackgroundArtworkInsteadOfTheBakedLabelCover() {
+        val radar = Gson().fromJson(
+            """{
+                "name":"会员雷达", "specialType":100,
+                "coverImgUrl":"http://p1.music.126.net/q2jXNF7fIRXS72JBHb9zEw==/109951168636800773.jpg",
+                "backgroundCoverUrl":"https://p1.music.126.net/4BTe96FPQ_kW1pmNnlNvHg==/2536573326765583.jpg"
+            }""",
+            PlaylistDetail.Playlist::class.java,
+        )
+        fun changedCover(field: String, value: Any): String {
+            val json = Gson().toJsonTree(radar).asJsonObject
+            json.add(field, Gson().toJsonTree(value))
+            return Gson().fromJson(json, PlaylistDetail.Playlist::class.java).cleanDetailCover()
+        }
+        assertEquals(radar.backgroundCoverUrl, radar.cleanDetailCover())
+        val homeArtwork = "https://p1.music.126.net/home-original.jpg?imageView=1"
+        assertEquals(homeArtwork, radar.cleanDetailCover("$homeArtwork%7Cwatermark&type=1&image=dim"))
+        assertEquals(radar.coverImgUrl, changedCover("backgroundCoverUrl", ""))
+        assertEquals(radar.coverImgUrl, changedCover("backgroundCoverUrl", 0))
+        assertEquals(radar.coverImgUrl, changedCover("backgroundCoverUrl", "not a URL"))
+        assertEquals(radar.coverImgUrl, changedCover("name", "热门金曲"))
+        assertEquals(radar.coverImgUrl, changedCover("specialType", 0))
+    }
+
+    @Test
+    fun detailArtworkRemovesCaptionAndLogoButRetainsImageTransforms() {
+        val artwork = "https://p1.music.126.net/artwork.jpg?imageView=1&thumbnail=800y800"
+        val caption = "imageView=1&watermark&type=1&image=Y2FwdGlvbg=="
+        val logo = "watermark&type=1&image=bG9nbw=="
+        val expected = "$artwork%7CimageView=1&quality=90"
+        for (separator in listOf("%7C", "%7c", "|")) {
+            assertEquals(expected, playlistCoverWithoutOverlays(
+                listOf(artwork, caption, logo, "imageView=1&quality=90").joinToString(separator),
+            ))
+        }
+        assertEquals(artwork, playlistCoverWithoutOverlays("$artwork&watermark&type=1&image=bG9nbw=="))
+    }
+
+    @Test
+    fun plainDetailCoversRemainUnchangedAndCleaningIsIdempotent() {
+        for (cover in listOf("", "/music/artwork.jpg", "content://media/42",
+            "https://p1.music.126.net/artwork.jpg?param=500y500",
+            "https://p1.music.126.net/watermark.jpg?imageView=1|thumbnail=800y800")) {
+            assertEquals(cover, playlistCoverWithoutOverlays(cover))
+        }
+        val clean = "https://p1.music.126.net/artwork.jpg?imageView=1%7Cquality=90"
+        assertEquals(clean, playlistCoverWithoutOverlays(clean))
+    }
+
     @Test
     fun removingTracksRetainsLoadedPagesAndFiltersLaterAppendsWithoutRestartingThePager() = runTest {
         var sourceCount = 0

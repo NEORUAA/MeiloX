@@ -30,16 +30,6 @@ internal fun homeArtistPlaylistCoverText(resource: HomeCardResource): String? =
     resource.tags.orEmpty().filterIsInstance<String>().filter(String::isNotBlank)
         .joinToString("").takeIf(String::isNotBlank)
 
-/** Remove only the first caption watermark, retaining artwork, resizing and other overlays. */
-internal fun homeArtistPlaylistCoverWithoutCaption(coverImg: String): String {
-    val operations = coverImg.split(Regex("(?i)%7c|\\|"))
-    val captionIndex = operations.indexOfFirst {
-        it.startsWith("watermark&") || it.startsWith("imageView=1&watermark&")
-    }
-    if (captionIndex < 1) return coverImg
-    return operations.filterIndexed { index, _ -> index != captionIndex }.joinToString("%7C")
-}
-
 /** Non-rendering blocks must not create lazy items: even empty items reserve section spacing. */
 internal fun homeBlockData(block: HomePageResourceShow.Data.Block): JsonObject? {
     val data = block.dslData?.takeIf { it.isJsonObject }?.asJsonObject

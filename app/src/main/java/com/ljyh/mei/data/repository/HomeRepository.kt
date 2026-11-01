@@ -2,6 +2,7 @@ package com.ljyh.mei.data.repository
 
 import androidx.datastore.preferences.core.Preferences
 import com.google.gson.Gson
+import com.google.gson.JsonElement
 import com.google.gson.JsonParseException
 import com.google.gson.annotations.SerializedName
 import com.ljyh.mei.AppContext
@@ -89,6 +90,31 @@ class HomeRepository internal constructor(
             requireOwner(owner)
             blocks
         }
+    }
+
+    /** Read the same account/day artwork shown on Home without refreshing the feed. */
+    internal suspend fun cachedRadarCover(playlistId: String): String? = withContext(Dispatchers.IO) {
+        val owner = owners.first()
+        requireOwner(owner)
+        val blocks = cacheMutex.withLock { readCache(owner) }.orEmpty()
+        fun find(node: JsonElement?): String? {
+            if (node == null || node.isJsonNull) return null
+            if (node.isJsonArray) return node.asJsonArray.firstNotNullOfOrNull { find(it) }
+            if (!node.isJsonObject) return null
+            val objectNode = node.asJsonObject
+            val id = objectNode.get("resourceId")?.takeIf { it.isJsonPrimitive }?.asString
+            val cover = objectNode.get("coverImg")?.takeIf { it.isJsonPrimitive }
+                ?.asJsonPrimitive?.takeIf { it.isString }?.asString
+            if (id == playlistId && cover != null &&
+                (cover.startsWith("https://") || cover.startsWith("http://"))) {
+                return com.ljyh.mei.utils.playlistCoverWithoutOverlays(cover)
+            }
+            return objectNode.entrySet().firstNotNullOfOrNull { find(it.value) }
+        }
+        val artwork = blocks.asSequence().filter { it.positionCode == "PAGE_RECOMMEND_RADAR" }
+            .mapNotNull { find(it.dslData) }.firstOrNull()
+        requireOwner(owner)
+        artwork
     }
 
     private fun readCache(owner: HomePageOwner): List<Block>? = try {
