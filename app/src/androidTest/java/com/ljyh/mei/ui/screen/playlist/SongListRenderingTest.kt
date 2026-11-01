@@ -21,6 +21,7 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderMotion
 import io.github.neoruaa.glasmio.core.GlassAppearance
 import io.github.neoruaa.glasmio.core.GlasmioTheme
 import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.LayoutDirection
@@ -92,6 +93,98 @@ class SongListRenderingTest {
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun homeAndCatalogArtworkShareDimensionsAcrossRotation() {
+        val landscape = mutableStateOf(false)
+        var played = 0
+        var opened = 0
+        val song = MediaMetadata(1L, "Detail track", "", emptyList(), 259000L,
+            MediaMetadata.Album(3L, "Album"))
+        compose.setContent {
+            val configuration = android.content.res.Configuration(androidx.compose.ui.platform.LocalConfiguration.current).apply {
+                orientation = if (landscape.value) android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    else android.content.res.Configuration.ORIENTATION_PORTRAIT
+                screenWidthDp = if (landscape.value) 844 else 390
+                screenHeightDp = if (landscape.value) 390 else 844
+            }
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalConfiguration provides configuration,
+                LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Column(Modifier.requiredWidth(390.dp).padding(horizontal = 24.dp)) {
+                        com.ljyh.mei.ui.component.item.HomeSongListRow("", "Home track", "Artist",
+                            onClick = { played++ }, onMore = { opened++ },
+                            moreModifier = Modifier.testTag("HomeSongMore"))
+                        com.ljyh.mei.ui.component.item.LandscapeMediaRow("", "Catalog track", "Artist", "", {},
+                            landscape = landscape.value)
+                        DetailTrackRow(song, 1, true, false, false, false, {}, null, {})
+                    }
+                }
+            }
+        }
+        fun assertArtworkSize(expectedPx: Float) {
+            val covers = compose.onAllNodesWithContentDescription("Album Art", useUnmergedTree = true)
+                .fetchSemanticsNodes().map { it.boundsInRoot }
+            assertEquals(3, covers.size)
+            covers.forEach {
+                assertEquals(expectedPx, it.width, 0.1f)
+                assertEquals(expectedPx, it.height, 0.1f)
+            }
+        }
+        assertArtworkSize(22f)
+        compose.runOnIdle { landscape.value = true }
+        assertArtworkSize(24f)
+        compose.onNodeWithText("Home track").performClick()
+        compose.onNodeWithTag("HomeSongMore").performClick()
+        compose.runOnIdle {
+            assertEquals(1, played)
+            assertEquals(1, opened)
+        }
+    }
+
+    @Test
+    fun portraitCatalogRowsMatchPlaylistSpacingAndAlbumActionAlignment() {
+        var opened = 0
+        val song = MediaMetadata(1L, "Playlist track", "", emptyList(), 259000L,
+            MediaMetadata.Album(3L, "Album"))
+        compose.setContent {
+            val configuration = android.content.res.Configuration(androidx.compose.ui.platform.LocalConfiguration.current).apply {
+                orientation = android.content.res.Configuration.ORIENTATION_PORTRAIT
+                screenWidthDp = 390
+                screenHeightDp = 844
+            }
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalConfiguration provides configuration,
+                LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Column(Modifier.requiredWidth(390.dp).padding(horizontal = 24.dp)) {
+                        DetailTrackRow(song, 1, true, false, false, false, {}, null, { opened++ })
+                        com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider()
+                        com.ljyh.mei.ui.component.item.LandscapeMediaRow(
+                            image = "", title = "Catalog track", artist = "Artist", detail = "",
+                            onClick = {}, onMore = { opened++ }, landscape = false,
+                        )
+                        DetailTrackRow(song.copy(title = "Album track"), 1, false, false, false,
+                            false, {}, null, { opened++ })
+                    }
+                }
+            }
+        }
+        val covers = compose.onAllNodesWithContentDescription("Album Art", useUnmergedTree = true)
+            .fetchSemanticsNodes().map { it.boundsInRoot }
+        assertEquals(2, covers.size)
+        assertEquals(22f, covers[0].width, 0.1f)
+        assertEquals(3f, covers[1].top - covers[0].bottom, 0.1f)
+        val moreLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.more_actions_title)
+        val buttons = compose.onAllNodesWithContentDescription(moreLabel)
+        val bounds = buttons.fetchSemanticsNodes().map { it.boundsInRoot }
+        assertEquals(3, bounds.size)
+        bounds.forEach {
+            assertEquals(bounds.first().left, it.left, 0.1f)
+            assertEquals(22f, it.width, 0.1f)
+        }
+        for (index in 0..2) buttons[index].performClick()
+        compose.runOnIdle { assertEquals(3, opened) }
+    }
 
     @Test
     fun landscapeLibrarySongColumnsAdaptWithoutChangingMenuActions() {
@@ -441,6 +534,41 @@ class SongListRenderingTest {
             assertTrue(contentState.firstVisibleItemIndex < rowCount.intValue)
         }
         scrollContentTo(80, 13)
+    }
+
+    @Test
+    fun landscapeDownloadDurationPrecedesFormatWithMatchingTypography() {
+        val song = com.ljyh.mei.data.model.room.Song(
+            id = "42", title = "Offline song", artist = listOf("Offline artist"),
+            album = "Offline album", cover = "", duration = 259000L,
+            path = "/music/song.flac", fileFormat = "flac",
+        )
+        var played = 0
+        var opened = 0
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(0.5f, 1f)) {
+                GlasmioTheme {
+                    Box(Modifier.requiredWidth(800.dp)) {
+                        DownloadLibraryRow(
+                            DownloadLibraryEntry("42", song, null),
+                            onPlay = { played++ }, onMore = { opened++ }, landscape = true,
+                        )
+                    }
+                }
+            }
+        }
+        val duration = compose.onNodeWithText("4:19", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val format = compose.onNodeWithText("FLAC", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue(duration.right < format.left)
+        assertEquals(duration.top.value, format.top.value, 0.1f)
+        assertEquals((duration.bottom - duration.top).value, (format.bottom - format.top).value, 0.1f)
+        compose.onNodeWithContentDescription(
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.more_actions_title),
+        ).performClick()
+        compose.runOnIdle {
+            assertEquals(1, opened)
+            assertEquals(0, played)
+        }
     }
 
     @Test

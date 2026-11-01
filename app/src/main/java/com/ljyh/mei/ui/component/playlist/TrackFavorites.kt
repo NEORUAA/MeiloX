@@ -23,16 +23,25 @@ internal fun rememberFavoriteTrackIds(
     enabled: Boolean = true,
 ): Set<String> {
     if (!enabled) return emptySet()
-    val viewModel: PlayerViewModel = hiltViewModel()
-    val likes by viewModel.songLikes.collectAsStateWithLifecycle()
-    val account by viewModel.songLikeAccount.collectAsStateWithLifecycle()
-    val generation by viewModel.songLikeGeneration.collectAsStateWithLifecycle()
     val ids = remember(tracks) {
         tracks.asSequence()
             .filter { !it.isLocal && !it.isPodcast && it.id > 0 }
             .map { it.id }
             .toSet()
     }
+    return rememberFavoriteTrackIds(ids, enabled)
+}
+
+@Composable
+internal fun rememberFavoriteTrackIds(
+    ids: Set<Long>,
+    enabled: Boolean = true,
+): Set<String> {
+    if (!enabled) return emptySet()
+    val viewModel: PlayerViewModel = hiltViewModel()
+    val likes by viewModel.songLikes.collectAsStateWithLifecycle()
+    val account by viewModel.songLikeAccount.collectAsStateWithLifecycle()
+    val generation by viewModel.songLikeGeneration.collectAsStateWithLifecycle()
     LaunchedEffect(ids, account, generation) {
         val currentAccount = account ?: return@LaunchedEffect
         if (ids.isNotEmpty()) viewModel.ensureSongLikes(ids, currentAccount.sessionFingerprint)
@@ -56,6 +65,6 @@ internal fun FavoriteTrackStar(
             compositingStrategy = CompositingStrategy.Offscreen
         },
         tint = tint,
-        size = 12.dp,
+        size = 11.dp,
     )
 }

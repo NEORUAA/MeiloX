@@ -26,6 +26,7 @@ fun LibraryGridItem(
     cover: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    titleStyle: androidx.compose.ui.text.TextStyle = IosTypography.body,
 ) {
     Column(
         modifier = modifier
@@ -48,7 +49,7 @@ fun LibraryGridItem(
 
         Text(
             text = title,
-            style = IosTypography.body,
+            style = titleStyle,
             color = LocalGlassColors.current.content,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

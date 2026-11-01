@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import com.ljyh.mei.constants.songListCoverSize
+import com.ljyh.mei.constants.songListCoverCornerRadius
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -172,11 +174,12 @@ private fun TabletShimmerContent() {
  */
 @Composable
 internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = false, showArtwork: Boolean = true, showDuration: Boolean = false) {
+    val compactRows = flatDetailStyle && rememberDeviceInfo().isLandscape
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) 64.dp else 52.dp) else Modifier)
-            .padding(vertical = if (flatDetailStyle) 8.dp else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
+            .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) { if (compactRows) 56.dp else 50.dp } else 52.dp) else Modifier)
+            .padding(vertical = if (flatDetailStyle) { if (compactRows) 4.dp else 3.dp } else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isTablet) {
@@ -194,12 +197,12 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
             TextPlaceholder(
                 modifier = Modifier
                     .then(if (!showArtwork) Modifier.size(width = 18.dp, height = 14.dp)
-                        else Modifier.size(if (flatDetailStyle) 48.dp else if (isTablet) 40.dp else 50.dp))
-                    .clip(ContinuousRoundedRectangle(8.dp)),
+                        else Modifier.size(if (flatDetailStyle) songListCoverSize(compactRows) else if (isTablet) 40.dp else 50.dp))
+                    .clip(ContinuousRoundedRectangle(if (flatDetailStyle) songListCoverCornerRadius(compactRows) else 8.dp)),
                 verticalPadding = 0.dp,
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(if (flatDetailStyle) 12.dp else 16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 TextPlaceholder(modifier = Modifier
                     .height(16.dp)
@@ -228,7 +231,7 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
         if (showDuration) {
             TextPlaceholder(Modifier.width(40.dp).height(16.dp), verticalPadding = 0.dp)
         }
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(if (flatDetailStyle) 12.dp else 16.dp))
         ButtonPlaceholder(modifier = Modifier.size(if (flatDetailStyle) 44.dp else 24.dp))
     }
 }

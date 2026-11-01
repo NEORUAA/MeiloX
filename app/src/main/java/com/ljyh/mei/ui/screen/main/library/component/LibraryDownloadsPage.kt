@@ -25,7 +25,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 
 import android.app.Activity
@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.ui.component.item.LandscapeMediaRow
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.MediaMetadata
@@ -105,6 +107,7 @@ internal fun LibraryDownloadsPage(
     viewModel: LocalLibraryViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val landscape = rememberDeviceInfo().isLandscape
     val navController = LocalNavController.current
     val player = LocalPlayerConnection.current
     val colors = LocalGlassColors.current
@@ -172,8 +175,10 @@ internal fun LibraryDownloadsPage(
         title = pageTitle,
         listState = listState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+        horizontalContentPadding = if (landscape) 32.dp else 16.dp,
+        topContentPaddingAdjustment = if (landscape) com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
         largeTitleHorizontalPadding = 0.dp,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
         actions = {
             listOfNotNull(
@@ -197,7 +202,7 @@ internal fun LibraryDownloadsPage(
                 placeholder = stringResource(R.string.search_bar_search),
                 closeContentDescription = stringResource(R.string.cancel),
                 onSearch = { focus.clearFocus() },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = if (landscape) 0.dp else 12.dp, bottom = 12.dp),
             )
         }
         if (!isCategoryPage) item("library-pages") {
@@ -206,7 +211,7 @@ internal fun LibraryDownloadsPage(
                 selected = LibraryPage.Downloads,
                 onSelected = onPageSelect,
                 positionAnimation = tabPosition,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             )
         }
         item("download-filters") {
@@ -214,11 +219,11 @@ internal fun LibraryDownloadsPage(
                 items = DownloadLibraryFilter.entries.map { it to stringResource(it.labelRes()) },
                 selected = filter,
                 onSelected = { filter = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             )
         }
         item("local-scan") {
-            GlasmioGroupedList {
+            GlasmioGroupedList(modifier = Modifier.padding(bottom = 12.dp)) {
                 GlasmioListRow(
                     title = stringResource(R.string.local_library_scan),
                     subtitle = stringResource(if (permissionDenied) R.string.local_library_permission else R.string.local_library_scan_hint),
@@ -262,8 +267,14 @@ internal fun LibraryDownloadsPage(
                 if (search.text.isBlank()) Text(stringResource(R.string.local_library_empty_hint), style = IosTypography.subheadline, color = colors.secondaryContent)
             }
         }
+        if (entries.isNotEmpty()) item("offline-top-divider") {
+            androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(horizontal = if (landscape) 0.dp else 8.dp), thickness = 0.5.dp, color = colors.separator)
+        }
         items(entries, key = { it.key }, contentType = { "offline-song" }) { entry ->
-            DownloadLibraryRow(entry, onPlay = { play(entry) }, onMore = { selectedKey = entry.key; menuAnchor = it })
+            Box(Modifier.padding(horizontal = if (landscape) 0.dp else 8.dp)) {
+                DownloadLibraryRow(entry, onPlay = { play(entry) }, onMore = { selectedKey = entry.key; menuAnchor = it },
+                    showDivider = entry.key != entries.lastOrNull()?.key)
+            }
         }
     }
 
@@ -358,9 +369,8 @@ internal fun LibraryDownloadsPage(
 }
 
 @Composable
-internal fun DownloadLibraryRow(entry: DownloadLibraryEntry, onPlay: () -> Unit, onMore: (Rect) -> Unit) {
+internal fun DownloadLibraryRow(entry: DownloadLibraryEntry, onPlay: () -> Unit, onMore: (Rect) -> Unit, landscape: Boolean = rememberDeviceInfo().isLandscape, showDivider: Boolean = true) {
     val colors = LocalGlassColors.current
-    var anchor by remember { mutableStateOf(Rect.Zero) }
     val task = entry.task
     val detail = when (task?.status) {
         DownloadStatus.PENDING -> stringResource(R.string.download_waiting)
@@ -370,28 +380,26 @@ internal fun DownloadLibraryRow(entry: DownloadLibraryEntry, onPlay: () -> Unit,
         DownloadStatus.COMPLETED -> if (entry.canPlay) entry.song?.fileFormat?.uppercase().orEmpty().ifBlank { stringResource(R.string.local_library_downloaded) } else stringResource(R.string.download_file_unavailable)
         null -> entry.song?.fileFormat?.uppercase().orEmpty()
     }
-    Column {
-        Row(
-            Modifier.fillMaxWidth().clip(ContinuousRoundedRectangle(16.dp)).then(if (entry.canPlay) Modifier.clickable(onClick = onPlay) else Modifier).padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(56.dp).clip(ContinuousRoundedRectangle(12.dp)).background(colors.separator.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
-                SfIcon("music.note", null, size = 24.dp, tint = colors.secondaryContent)
-                AsyncImage(entry.cover.ifBlank { null }, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            }
-            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(entry.title, style = IosTypography.body, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(entry.artist.ifBlank { entry.album }, style = IosTypography.subheadline, color = colors.secondaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (detail.isNotBlank()) Text(detail, Modifier.padding(start = 8.dp).widthIn(max = 74.dp), style = IosTypography.caption, color = if (task?.status == DownloadStatus.FAILED) colors.destructive else colors.secondaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Box(Modifier.size(44.dp).onGloballyPositioned { anchor = it.boundsInWindow() }.clip(CircleShape).clickable(onClick = { onMore(anchor) }), contentAlignment = Alignment.Center) {
-                SfIcon("ellipsis", stringResource(R.string.more_actions_title), size = 20.dp)
-            }
-        }
-        if (task != null && task.status != DownloadStatus.COMPLETED && task.status != DownloadStatus.FAILED) {
-            Box(Modifier.padding(start = 68.dp, top = 4.dp, bottom = 4.dp)) { LocalLibraryProgress(task.progress / 100f) }
-        }
-    }
+    LandscapeMediaRow(
+            landscape = landscape,
+            image = entry.cover,
+            title = entry.title,
+            artist = entry.artist,
+            detail = if (landscape) entry.song?.duration?.let(::formatLocalDuration) ?: "—" else "",
+            album = entry.album,
+            suffix = detail,
+            suffixColor = if (task?.status == DownloadStatus.FAILED) colors.destructive else colors.secondaryContent,
+            onClick = if (entry.canPlay) onPlay else null,
+            onMore = onMore,
+            showDivider = showDivider,
+            footer = {
+                if (task != null && task.status != DownloadStatus.COMPLETED && task.status != DownloadStatus.FAILED) {
+                    Box(Modifier.padding(start = 66.dp, top = 4.dp, bottom = 4.dp)) {
+                        LocalLibraryProgress(task.progress / 100f)
+                    }
+                }
+            },
+        )
 }
 
 @Composable

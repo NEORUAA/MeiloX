@@ -517,6 +517,7 @@ fun PodcastDetailScreen(
     }
     com.ljyh.mei.ui.screen.playlist.CommonSongListScreen(
         useCoverBackground = true,
+        landscapeLayout = com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout.Split,
         uiData = com.ljyh.mei.ui.model.UiPlaylist(
             id = id, title = detail?.podcast?.name.orEmpty(), count = count,
             subscriberCount = detail?.podcast?.subscriberCount ?: 0,

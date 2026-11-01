@@ -48,6 +48,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -143,10 +148,12 @@ fun CommonSongListScreen(
     headerMetadata: String? = null,
     footer: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
     useCoverBackground: Boolean = false,
+    usePlaylistTrackStyle: Boolean = useCoverBackground,
     showTrackArtwork: Boolean = true,
     hasLoadedContent: Boolean = true,
     trackNumbers: Map<Long, Int> = emptyMap(),
     landscapeLayout: SongListLandscapeLayout = SongListLandscapeLayout.Stacked,
+    usePlaylistPortraitHeader: Boolean = false,
 ) {
     val playerConnection = LocalPlayerConnection.current
     val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.id?.toString()
@@ -154,7 +161,7 @@ fun CommonSongListScreen(
     val favoriteTrackIds =
         rememberFavoriteTrackIds(
             tracks = pagingItems?.itemSnapshotList?.items ?: uiData.tracks,
-            enabled = useCoverBackground,
+            enabled = usePlaylistTrackStyle,
         )
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuAnchor = rememberGlasmioMenuAnchorState()
@@ -227,11 +234,21 @@ fun CommonSongListScreen(
     }
 
     CompositionLocalProvider(LocalGroupedListBackgroundAlpha provides listBackgroundAlpha) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        var searchHostBounds by remember { mutableStateOf(Rect.Zero) }
+        val navigationBounds = com.ljyh.mei.ui.navigation.LocalLandscapeNavigationBounds.current.value
+        val layoutDirection = LocalLayoutDirection.current
+        BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { searchHostBounds = it.boundsInWindow() }) {
             val buttonSize = LocalGlassDimensions.current.iconButtonSize
             val searchEndInset =
                 playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
-            val expandedSearchWidth = (maxWidth - 68.dp - searchEndInset).coerceAtLeast(buttonSize)
+            val navigationStartInset = if (device.isLandscape && navigationBounds != null && searchHostBounds != Rect.Zero) {
+                with(LocalDensity.current) {
+                    (if (layoutDirection == LayoutDirection.Ltr) navigationBounds.right - searchHostBounds.left
+                        else searchHostBounds.right - navigationBounds.left).toDp() + 12.dp
+                }
+            } else 68.dp
+            val expandedSearchWidth = (maxWidth - maxOf(68.dp, navigationStartInset) - searchEndInset)
+                .coerceAtLeast(0.dp)
             val animatedSearchWidth =
                 buttonSize + (expandedSearchWidth - buttonSize) * searchExpansion
             val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
@@ -260,6 +277,7 @@ fun CommonSongListScreen(
                                 landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                         isLoading = isLoading,
                         allowActionScroll = adaptiveLandscape,
+                        playlistPortrait = usePlaylistPortraitHeader && !device.isLandscape,
                     )
                 }
                 if (isLoading) {
@@ -284,7 +302,7 @@ fun CommonSongListScreen(
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 horizontalContentPadding =
                     if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.AlbumHeader) 32.dp
-                    else if (useCoverBackground) DetailPageHorizontalPadding else 16.dp,
+                    else if (usePlaylistTrackStyle) DetailPageHorizontalPadding else 16.dp,
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
                 hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
@@ -348,7 +366,7 @@ fun CommonSongListScreen(
                             ShimmerHost {
                                 TrackItemShimmer(
                                     isTablet = false,
-                                    flatDetailStyle = useCoverBackground,
+                                    flatDetailStyle = usePlaylistTrackStyle,
                                     showArtwork = showTrackArtwork,
                                     showDuration = adaptiveLandscape &&
                                         landscapeLayout == SongListLandscapeLayout.AlbumHeader,
@@ -358,7 +376,7 @@ fun CommonSongListScreen(
                     } else
                         item(key = "playlist-loading") {
                             Box(Modifier.fillMaxWidth().height(620.dp)) {
-                                PlaylistShimmer(flatDetailStyle = useCoverBackground)
+                                PlaylistShimmer(flatDetailStyle = usePlaylistTrackStyle)
                             }
                         }
                 } else {
@@ -370,13 +388,14 @@ fun CommonSongListScreen(
                         onTrackClick = onTrackClick,
                         selectionMode = selectionMode,
                         selectedTrackIds = selectedTrackIds,
-                        flatDetailStyle = useCoverBackground,
+                        flatDetailStyle = usePlaylistTrackStyle,
                         showArtwork = showTrackArtwork,
                         showDuration = adaptiveLandscape &&
                             landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                         currentTrackId = currentTrackId,
                         isPlaying = isPlaying,
                         favoriteTrackIds = favoriteTrackIds,
+                        showLeadingDivider = useCoverBackground,
                         trackNumbers = trackNumbers,
                         onMoreClick = { track, anchor ->
                             currentOverlay = OverlayState.TrackActionMenu(track, anchor)

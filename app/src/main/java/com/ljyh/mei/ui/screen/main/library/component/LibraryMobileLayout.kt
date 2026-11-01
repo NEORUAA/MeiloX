@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -60,13 +59,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
@@ -74,9 +72,8 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
-import com.ljyh.mei.ui.component.playlist.PlayingImageView
-import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
 import com.ljyh.mei.utils.TimeUtils.formatDuration
+import com.ljyh.mei.ui.component.item.LandscapeMediaRow
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PodcastsEnabledKey
 import com.ljyh.mei.data.model.MediaMetadata
@@ -88,7 +85,7 @@ import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
@@ -236,7 +233,9 @@ fun LibraryMobileLayout(
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val focusManager = LocalFocusManager.current
-    val landscapeSongs = rememberDeviceInfo().isLandscape && selectedPage == LibraryPage.Songs
+    val isLandscape = rememberDeviceInfo().isLandscape
+    val landscapeSongs = isLandscape && selectedPage == LibraryPage.Songs
+    val catalogRows = selectedPage == LibraryPage.Songs || selectedPage == LibraryPage.Playlists
     val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
@@ -282,7 +281,7 @@ fun LibraryMobileLayout(
     val likedTitle = stringResource(R.string.app_tab_library_songs)
     val usesGroupedLazyRows = selectedPage == LibraryPage.Cloud ||
         selectedPage == LibraryPage.History
-    val pageSpacing = if (usesGroupedLazyRows || landscapeSongs) 12.dp else 0.dp
+    val pageSpacing = if (usesGroupedLazyRows || catalogRows) 12.dp else 0.dp
     var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     var searchQuery by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue())
@@ -364,14 +363,14 @@ fun LibraryMobileLayout(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = if (landscapeSongs) 32.dp else 16.dp,
-                        top = contentPadding.calculateTopPadding(),
-                        end = if (landscapeSongs) 32.dp else 16.dp,
+                        start = if (isLandscape) 32.dp else 16.dp,
+                        top = contentPadding.calculateTopPadding() + if (isLandscape) com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
+                        end = if (isLandscape) 32.dp else 16.dp,
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
-                    verticalArrangement = if (usesGroupedLazyRows || landscapeSongs) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(12.dp),
+                    verticalArrangement = if (usesGroupedLazyRows || catalogRows) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(12.dp),
                 ) {
-                    item(key = "ios-large-title:$title") {
+                    if (!isLandscape) item(key = "ios-large-title:$title") {
                         Text(
                             title,
                             style = IosTypography.largeTitle,
@@ -432,7 +431,7 @@ fun LibraryMobileLayout(
                                 }
                             } else if (hasSongs) {
                                 item(key = "liked-actions") {
-                                    GlasmioGroupedList(modifier = Modifier.padding(bottom = if (landscapeSongs) 12.dp else 0.dp)) {
+                                    GlasmioGroupedList(modifier = Modifier.padding(bottom = 12.dp)) {
                                         GlasmioListRow(
                                             title = stringResource(R.string.library_play_all),
                                             systemName = "play.fill",
@@ -452,6 +451,9 @@ fun LibraryMobileLayout(
                                         )
                                     }
                                 }
+                                item(key = "liked-top-divider") {
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 8.dp), thickness = 0.5.dp, color = LocalGlassColors.current.separator)
+                                }
                                 items(
                                     count = likedSongs.itemCount,
                                     key = likedSongs.itemKey { "liked-${it.id}" },
@@ -460,7 +462,6 @@ fun LibraryMobileLayout(
                                     val song = likedSongs[index]
                                     if (song != null) LibrarySongRow(
                                         song = song,
-                                        landscape = landscapeSongs,
                                         showDivider = index < likedSongs.itemCount - 1,
                                         onClick = {
                                             playLikedSongs(song.id)
@@ -503,12 +504,12 @@ fun LibraryMobileLayout(
                                     ),
                                     selected = playlistFilter,
                                     onSelected = { playlistFilter = it },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                                 )
                             }
                             if (!isSearching) {
                                 item(key = "playlist-rank") {
-                                    GlasmioGroupedList {
+                                    GlasmioGroupedList(modifier = Modifier.padding(bottom = 12.dp)) {
                                         GlasmioListRow(
                                             title = stringResource(R.string.account_listening_rank),
                                             systemName = "chart.bar.xaxis",
@@ -535,8 +536,19 @@ fun LibraryMobileLayout(
                                     )
                                 }
                             }
+                            if (visiblePlaylists.isNotEmpty()) item(key = "playlist-top-divider") {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 8.dp), thickness = 0.5.dp, color = LocalGlassColors.current.separator)
+                            }
                             items(visiblePlaylists, key = { "playlist-${it.id}" }, contentType = { "playlist" }) { playlist ->
-                                LibraryPlaylistRow(playlist) { onPlaylistClick(playlist.id) }
+                                if (isLandscape) LandscapeMediaRow(
+                                    image = playlist.cover,
+                                    title = playlist.title,
+                                    artist = playlist.authorName,
+                                    detail = stringResource(R.string.playlist_song_count, playlist.count),
+                                    onClick = { onPlaylistClick(playlist.id) },
+                                    showDivider = playlist.id != visiblePlaylists.lastOrNull()?.id,
+                                    navigationArrow = true,
+                                ) else LibraryPlaylistRow(playlist, playlist.id != visiblePlaylists.lastOrNull()?.id) { onPlaylistClick(playlist.id) }
                             }
                             if (playlistState.isLoading || playlistState.isLoadingMore || playlistState.error != null || playlistState.hasMore) {
                                 item(key = "playlist-pagination") {
@@ -569,6 +581,7 @@ fun LibraryMobileLayout(
                                         row.forEach { album ->
                                             LibraryGridItem(
                                                 title = album.title,
+                                                titleStyle = IosTypography.body.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
                                                 subtitle = album.artist.joinToString(" / ") { it.name },
                                                 cover = album.cover,
                                                 onClick = { onAlbumClick(album.id.toString()) },
@@ -694,91 +707,18 @@ internal fun LibraryLandscapeSongRow(
     onMoreClick: (Rect) -> Unit,
     showDivider: Boolean = true,
 ) {
-    val colors = LocalGlassColors.current
-    var menuAnchor by remember(song.id) { mutableStateOf(Rect.Zero) }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val showAlbum = maxWidth >= 1000.dp
-        Column {
-            Box {
-                FavoriteTrackStar(
-                    Modifier.align(Alignment.CenterStart).offset(x = (-18).dp),
-                    tint = colors.secondaryContent,
-                )
-                Row(
-                    Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlayingImageView(
-                        imageUrl = song.coverUrl,
-                        isPlaying = false,
-                        modifier = Modifier.size(54.dp).clip(ContinuousRoundedRectangle(6.dp)),
-                    )
-                    Text(
-                        song.title,
-                        modifier = Modifier.weight(if (showAlbum) 1f else 1.25f),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = colors.content,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        song.artists.joinToString(" / ") { it.name },
-                        modifier = Modifier.weight(if (showAlbum) 0.85f else 1f),
-                        fontSize = 17.sp,
-                        color = colors.secondaryContent,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (showAlbum) {
-                        Text(
-                            song.album.title,
-                            modifier = Modifier.weight(1.35f),
-                            fontSize = 17.sp,
-                            color = colors.secondaryContent,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text(
-                        formatDuration(song.duration),
-                        modifier = Modifier.width(60.dp),
-                        textAlign = TextAlign.End,
-                        fontSize = 17.sp,
-                        color = colors.secondaryContent,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                    Box(
-                        Modifier.size(44.dp)
-                            .onGloballyPositioned { menuAnchor = it.boundsInWindow() }
-                            .clip(ContinuousRoundedRectangle(22.dp))
-                            .clickable(
-                                interactionSource = null,
-                                indication = null,
-                                onClick = { onMoreClick(menuAnchor) },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        SfIcon(
-                            "ellipsis",
-                            stringResource(R.string.more_actions_title),
-                            size = 18.dp,
-                            tint = colors.secondaryContent,
-                        )
-                    }
-                }
-            }
-            if (showDivider) {
-                HorizontalDivider(
-                    Modifier.padding(start = 66.dp),
-                    thickness = 0.5.dp,
-                    color = colors.separator,
-                )
-            }
-        }
-    }
+    LandscapeMediaRow(
+        landscape = true,
+        image = song.coverUrl,
+        title = song.title,
+        artist = song.artists.joinToString(" / ") { it.name },
+        detail = formatDuration(song.duration),
+        onClick = onClick,
+        album = song.album.title,
+        favorite = true,
+        showDivider = showDivider,
+        onMore = onMoreClick,
+    )
 }
 
 @Composable
@@ -786,104 +726,34 @@ private fun LibrarySongRow(
     song: MediaMetadata,
     onClick: () -> Unit,
     onMoreClick: (Rect) -> Unit,
-    landscape: Boolean = false,
     showDivider: Boolean = true,
 ) {
-    if (landscape) {
-        LibraryLandscapeSongRow(song, onClick, onMoreClick, showDivider)
-        return
-    }
-    var menuAnchor by remember { mutableStateOf(Rect.Zero) }
-    LibraryMediaRow(
+    LandscapeMediaRow(
+        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 8.dp),
         image = song.coverUrl,
         title = song.title,
-        subtitle = song.artists.joinToString(" / ") { it.name },
+        artist = song.artists.joinToString(" / ") { it.name },
+        detail = if (rememberDeviceInfo().isLandscape) formatDuration(song.duration) else "",
         onClick = onClick,
-        trailing = {
-            Box(
-                Modifier.size(44.dp).onGloballyPositioned { menuAnchor = it.boundsInWindow() }
-                    .clip(ContinuousRoundedRectangle(22.dp)).clickable(
-                    interactionSource = null,
-                    indication = null,
-                    onClick = { onMoreClick(menuAnchor) },
-                ),
-                contentAlignment = Alignment.Center,
-            ) {
-                SfIcon(
-                    "ellipsis",
-                    stringResource(R.string.more_actions_title),
-                    size = 18.dp,
-                )
-            }
-        },
+        album = song.album.title,
+        favorite = true,
+        showDivider = showDivider,
+        onMore = onMoreClick,
     )
 }
 
 @Composable
-private fun LibraryPlaylistRow(playlist: Playlist, onClick: () -> Unit) {
-    LibraryMediaRow(
-        playlist.cover,
-        playlist.title,
-        stringResource(R.string.playlist_song_count, playlist.count),
-        onClick,
+private fun LibraryPlaylistRow(playlist: Playlist, showDivider: Boolean, onClick: () -> Unit) {
+    LandscapeMediaRow(
+        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 8.dp),
+        image = playlist.cover,
+        title = playlist.title,
+        artist = playlist.authorName,
+        detail = stringResource(R.string.playlist_song_count, playlist.count),
+        onClick = onClick,
+        navigationArrow = true,
+        showDivider = showDivider,
     )
-}
-
-@Composable
-private fun LibraryMediaRow(
-    image: String,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    val colors = LocalGlassColors.current
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(
-            image,
-            null,
-            Modifier.size(54.dp).clip(ContinuousRoundedRectangle(9.dp)),
-            contentScale = ContentScale.Crop,
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = IosTypography.body,
-                color = colors.content,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                style = IosTypography.caption,
-                color = colors.secondaryContent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        trailing?.let { trailingContent ->
-            CompositionLocalProvider(LocalGroupedListIconColor provides colors.content) {
-                trailingContent()
-            }
-        } ?: Box(Modifier.size(width = 8.dp, height = 22.dp), contentAlignment = Alignment.Center) {
-            // GlasmioListRow does not expose its disclosure accessory independently.
-            SfIcon(
-                "chevron.forward", null,
-                modifier = Modifier.requiredSize(22.dp),
-                size = 22.dp,
-                fontSize = 17.sp,
-                weight = FontWeight(590),
-                mirrored = true,
-                tint = colors.tertiaryContent,
-                fontFeatureSettings = "'ss15' 1",
-                fitGlyphToBounds = false,
-            )
-        }
-    }
 }
 
 private fun LazyListScope.libraryPodcastItems(

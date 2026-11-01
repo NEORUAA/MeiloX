@@ -94,6 +94,7 @@ fun PlaylistHeader(
     horizontal: Boolean = false,
     isLoading: Boolean = false,
     allowActionScroll: Boolean = false,
+    playlistPortrait: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     val actionHeight = if (horizontal) 54.dp else 44.dp
@@ -105,20 +106,28 @@ fun PlaylistHeader(
             useGroupedListButtonBackground && !detailAction
         }
     val playlistCoverStyle by
-        rememberEnumPreference(PlaylistCoverStyleKey, defaultValue = PlaylistCoverStyle.Cover)
+        rememberEnumPreference(PlaylistCoverStyleKey, defaultValue = PlaylistCoverStyle.Combination)
 
     BoxWithConstraints(
         Modifier.fillMaxWidth()
             .padding(horizontal = if (detailAction) 0.dp else 4.dp)
-            .padding(top = 16.dp, bottom = if (horizontal) 40.dp else 16.dp)
+            .padding(top = 16.dp, bottom = when {
+                horizontal -> 40.dp
+                playlistPortrait -> 24.dp
+                else -> 16.dp
+            })
     ) {
-        val coverSize = minOf(maxWidth * 0.28f, 340.dp)
+        val coverSize = minOf(maxWidth * 0.30f, 300.dp)
         val coverContent: @Composable () -> Unit = {
             PlaylistCover(
                 style = playlistCoverStyle,
                 cover = cover,
                 coverList = coverList,
-                size = if (horizontal) coverSize else null,
+                size = when {
+                    horizontal -> coverSize
+                    playlistPortrait -> minOf(maxWidth * 0.76f, 340.dp)
+                    else -> null
+                },
                 isLoading = isLoading,
             )
         }
@@ -139,7 +148,11 @@ fun PlaylistHeader(
                 ) {
                     Text(
                         text = if (isLoading) title.ifBlank { "MMMMMMMMMMMM" } else title,
-                        style = if (horizontal) IosTypography.title2.copy(fontSize = 24.sp, lineHeight = 29.sp) else IosTypography.title2,
+                        style = when {
+                            horizontal -> IosTypography.title2.copy(fontSize = 22.sp, lineHeight = 24.sp)
+                            playlistPortrait -> IosTypography.title2.copy(fontSize = 20.sp, lineHeight = 25.sp)
+                            else -> IosTypography.title2
+                        },
                         color = colors.content,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -154,14 +167,14 @@ fun PlaylistHeader(
                             text = if (isLoading) creator.ifBlank { "MMMMMMMM" } else creator,
                             style =
                                 IosTypography.title2.copy(
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = if (horizontal) 24.sp else IosTypography.subheadline.fontSize,
-                                    lineHeight = if (horizontal) 29.sp else IosTypography.subheadline.lineHeight,
+                                    fontWeight = if (horizontal) FontWeight.W300 else FontWeight.W400,
+                                    fontSize = if (horizontal) 22.sp else IosTypography.subheadline.fontSize,
+                                    lineHeight = if (horizontal) 24.sp else IosTypography.subheadline.lineHeight,
                                 ),
                             color = colors.content,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 7.dp).headerPlaceholder(isLoading),
+                            modifier = Modifier.padding(top = if (horizontal) 0.dp else 7.dp).headerPlaceholder(isLoading),
                         )
                     }
 
@@ -174,7 +187,7 @@ fun PlaylistHeader(
                         color = colors.secondaryContent,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 7.dp).headerPlaceholder(isLoading),
+                        modifier = Modifier.padding(top = if (horizontal) 0.dp else 7.dp).headerPlaceholder(isLoading),
                     )
                 }
 

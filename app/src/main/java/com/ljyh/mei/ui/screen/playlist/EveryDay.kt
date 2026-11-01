@@ -110,6 +110,9 @@ fun EveryDay(
     } else {
         CommonSongListScreen(
             uiData = displayedUiData,
+            useCoverBackground = true,
+            landscapeLayout = SongListLandscapeLayout.Split,
+            usePlaylistTrackStyle = true,
             pagingItems = null,
             isLoading = isLoading,
             onPlayAll = {
