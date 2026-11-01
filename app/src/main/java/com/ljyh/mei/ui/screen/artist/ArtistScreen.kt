@@ -18,6 +18,16 @@ import com.ljyh.mei.data.model.api.ArtistAlbum
 import java.text.DateFormat
 import java.util.Date
 import androidx.annotation.OptIn
+import androidx.compose.foundation.border
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.platform.LocalContext
+import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.screen.album.AlbumDetailViewModel
+import com.ljyh.mei.ui.screen.album.AlbumSubscriptionError
+import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
+import com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider
+import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -122,7 +132,6 @@ import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.theme.LocalAccentSeedColor
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.utils.color.ColorExtractionUtils
-import io.github.neoruaa.glasmio.core.IosPageHorizontalPadding
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.defaultGlassColors
@@ -130,11 +139,10 @@ import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
-private val ArtistSongCoverSize = 54.dp
+private val ArtistSongCoverSize = com.ljyh.mei.constants.LandscapeSongCoverSize
 private val ArtistPopularSongsHeight = ArtistSongCoverSize * 3 + HomeSongRowSpacing * 2
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
@@ -177,7 +185,6 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
         coverUrl = heroCover,
         viewModel = viewModel,
     ) { background ->
-        val separatorColor = LocalGlassColors.current.content.copy(alpha = 0.16f)
         val headerAccent =
             remember(background.seedColor, background.color, background.endColor) {
                 ColorExtractionUtils.detailAccentColor(
@@ -217,12 +224,15 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
             val latestArtworkHeight =
                 with(LocalDensity.current) { popularSongsHeightPx.toDp() }.takeIf { it > 0.dp }
                     ?: ArtistPopularSongsHeight
+            val latestTextWidth = with(LocalDensity.current) { 120.sp.toDp() }
+            val latestMinimumWidth =
+                latestArtworkHeight + DetailPageHorizontalPadding * 2 + 16.dp + latestTextWidth
             val latestPaneWidth =
-                maxWidth * 0.31f
+                maxOf(maxWidth * 0.31f, latestMinimumWidth.coerceAtMost(maxWidth * 0.55f))
             val songSection: @Composable () -> Unit = {
                 Column {
                     // --- 2. Hot Songs ---
-                    SectionTitle(stringResource(R.string.artist_hot_songs))
+                    SectionTitle(stringResource(R.string.artist_hot_songs), onClick = onAllSongsClick)
 
                     when (val songsResource = artistSongs) {
                         is Resource.Success -> {
@@ -230,136 +240,38 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                             val visibleSongs = songs.take(10)
                             visibleSongs.forEachIndexed { index, song ->
                                 val track = hotTracks[index]
-                                Column(
-                                    modifier =
-                                        Modifier.padding(
-                                            horizontal =
-                                                DetailPageHorizontalPadding -
-                                                    IosPageHorizontalPadding
-                                        )
-                                ) {
-                                    Box {
-                                        Track(
-                                            track = track,
-                                            detailInkBlend = true,
-                                            onClick = {
-                                                val allIds =
-                                                    songs.map {
-                                                        it.id.toString() to
-                                                            it.toMediaMetadata().toMediaItem()
-                                                    }
-                                                playerConnection?.onTrackClicked(
-                                                    trackId = song.id.toString(),
-                                                    buildQueue = {
-                                                        ListQueue(
-                                                            UUID.randomUUID().toString(),
-                                                            "Hot Songs",
-                                                            allIds,
-                                                            songs.indexOf(song),
-                                                        )
-                                                    },
-                                                )
-                                            },
-                                            onMoreClick = {
-                                                currentOverlay =
-                                                    OverlayState.TrackActionMenu(track, it)
-                                            },
-                                        )
-                                        if (
-                                            track.id > 0 &&
-                                                !track.isLocal &&
-                                                !track.isPodcast &&
-                                                track.id.toString() in favoriteTrackIds
-                                        ) {
-                                            FavoriteTrackStar(
-                                                modifier =
-                                                    Modifier.align(Alignment.CenterStart)
-                                                        .offset(
-                                                            x =
-                                                                IosPageHorizontalPadding -
-                                                                    DetailPageHorizontalPadding /
-                                                                        2f -
-                                                                    6.dp
-                                                        ),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Column(Modifier.padding(horizontal = DetailPageHorizontalPadding)) {
+                                    DetailTrackRow(
+                                        track = track, trackNumber = index + 1, showArtwork = true,
+                                        isCurrentTrack = track.id == currentTrackId,
+                                        isPlaying = currentlyPlaying,
+                                        isFavorite = track.id.toString() in favoriteTrackIds,
+                                        selected = null,
+                                        onClick = {
+                                            playerConnection?.onTrackClicked(
+                                                trackId = track.id.toString(),
+                                                buildQueue = {
+                                                    ListQueue(UUID.randomUUID().toString(), "Hot Songs",
+                                                        hotTracks.map { it.id.toString() to it.toMediaItem() }, index)
+                                                },
                                             )
-                                        }
-                                    }
-                                    if (index < visibleSongs.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier =
-                                                Modifier.padding(
-                                                        start = IosPageHorizontalPadding + 64.dp,
-                                                        end = IosPageHorizontalPadding,
-                                                    )
-                                                    .graphicsLayer {
-                                                        blendMode = BlendMode.Luminosity
-                                                        compositingStrategy =
-                                                            CompositingStrategy.Offscreen
-                                                    },
-                                            thickness = 0.5.dp,
-                                            color = separatorColor,
-                                        )
-                                    }
+                                        },
+                                        onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(track, it) },
+                                    )
+                                    if (index < visibleSongs.lastIndex) DetailTrackDivider()
                                 }
                             }
                         }
-                        is Resource.Loading ->
-                            repeat(5) {
-                                ShimmerHost {
-                                    ListItemPlaceHolder(
-                                        modifier =
-                                            Modifier.padding(
-                                                    horizontal = DetailPageHorizontalPadding - 12.dp
-                                                )
-                                                .then(
-                                                    if (landscape) Modifier.height(64.dp)
-                                                    else Modifier
-                                                )
-                                    )
+                        is Resource.Loading -> repeat(5) {
+                            ShimmerHost {
+                                Box(Modifier.padding(horizontal = DetailPageHorizontalPadding)) {
+                                    TrackItemShimmer(isTablet = false, flatDetailStyle = true)
                                 }
                             }
+                        }
                         is Resource.Error -> ErrorItem(songsResource.message)
                     }
 
-                    val songCount =
-                        artistData?.artist?.musicSize
-                            ?: (artistSongs as? Resource.Success)?.data?.artist?.musicSize
-                    if (songCount != null) {
-
-                        GlasmioListRow(
-                            title = stringResource(R.string.artist_all_songs_count, songCount),
-                            modifier =
-                                Modifier.padding(
-                                        horizontal =
-                                            DetailPageHorizontalPadding - IosPageHorizontalPadding
-                                    )
-                                    .drawBehind {
-                                        drawLine(
-                                            color = separatorColor,
-                                            start = Offset(IosPageHorizontalPadding.toPx(), 0f),
-                                            end =
-                                                Offset(
-                                                    size.width - IosPageHorizontalPadding.toPx(),
-                                                    0f,
-                                                ),
-                                            strokeWidth = 0.5.dp.toPx(),
-                                            blendMode = BlendMode.Luminosity,
-                                        )
-                                    },
-                            showTopSeparator = false,
-                            onClick = onAllSongsClick,
-                            trailing = {
-                                SfIcon(
-                                    "chevron.forward",
-                                    null,
-                                    modifier = Modifier.padding(start = 8.dp),
-                                    size = 12.dp,
-                                    tint = LocalGlassColors.current.secondaryContent,
-                                )
-                            },
-                        )
-                    }
                 }
             }
             val albumSection: @Composable () -> Unit = {
@@ -367,8 +279,9 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                     // --- 3. Albums ---
                     SectionTitle(
                         stringResource(R.string.artist_albums),
-                        onClick = onAllAlbumsClick.takeIf { landscape },
+                        onClick = onAllAlbumsClick,
                         landscape = landscape,
+                        topPadding = 16.dp,
                     )
 
                     when (val albumsResource = artistAlbums) {
@@ -384,8 +297,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                                 items(albums, key = { it.id }) { hotAlbum ->
                                     AlbumCard(
                                         album = hotAlbum.toAlbum(),
-                                        artworkSize =
-                                            if (landscape) homePlaylistCardSize(true) else 116.dp,
+                                        artworkSize = homePlaylistCardSize(landscape),
                                         onClick = {
                                             navController.navigate("${Screen.Album.route}/$it")
                                         },
@@ -403,9 +315,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                                 items(4) {
                                     ShimmerHost {
                                         AlbumCardShimmer(
-                                            artworkSize =
-                                                if (landscape) homePlaylistCardSize(true)
-                                                else 116.dp
+                                            artworkSize = homePlaylistCardSize(landscape),
                                         )
                                     }
                                 }
@@ -414,53 +324,14 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                         is Resource.Error -> ErrorItem(albumsResource.message)
                     }
 
-                    val albumCount =
-                        artistData?.artist?.albumSize
-                            ?: (artistAlbums as? Resource.Success)?.data?.artist?.albumSize
-                    if (albumCount != null && !landscape) {
-
-                        GlasmioListRow(
-                            title = stringResource(R.string.artist_all_albums_count, albumCount),
-                            modifier =
-                                Modifier.padding(
-                                        horizontal =
-                                            DetailPageHorizontalPadding - IosPageHorizontalPadding
-                                    )
-                                    .padding(top = 10.dp)
-                                    .drawBehind {
-                                        drawLine(
-                                            color = separatorColor,
-                                            start = Offset(IosPageHorizontalPadding.toPx(), 0f),
-                                            end =
-                                                Offset(
-                                                    size.width - IosPageHorizontalPadding.toPx(),
-                                                    0f,
-                                                ),
-                                            strokeWidth = 0.5.dp.toPx(),
-                                            blendMode = BlendMode.Luminosity,
-                                        )
-                                    },
-                            showTopSeparator = false,
-                            onClick = onAllAlbumsClick,
-                            trailing = {
-                                SfIcon(
-                                    "chevron.forward",
-                                    null,
-                                    modifier = Modifier.padding(start = 8.dp),
-                                    size = 12.dp,
-                                    tint = LocalGlassColors.current.secondaryContent,
-                                )
-                            },
-                        )
-                    }
                 }
             }
             val latestRelease: @Composable () -> Unit = {
                 Column {
-                    SectionTitle(
+                    if (landscape) SectionTitle(
                         stringResource(R.string.artist_latest_release),
                         bottomPadding = 12.dp,
-                        landscape = true,
+                        landscape = landscape,
                     )
                     when (val resource = artistAlbums) {
                         is Resource.Success -> {
@@ -471,6 +342,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                                     ArtistFeaturedAlbum(
                                         latest,
                                         artworkHeight = latestArtworkHeight,
+                                        landscape = landscape,
                                         onClick = {
                                             navController.navigate("${Screen.Album.route}/$it")
                                         },
@@ -478,7 +350,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                                 }
                         }
                         is Resource.Loading ->
-                            ShimmerHost { ArtistFeaturedAlbumPlaceholder(latestArtworkHeight) }
+                            ShimmerHost { ArtistFeaturedAlbumPlaceholder(latestArtworkHeight, landscape) }
                         is Resource.Error -> ErrorItem(resource.message)
                     }
                 }
@@ -631,9 +503,10 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                                 }
                             }
                             item(key = "artist-albums") {
-                                Column(Modifier.padding(top = 24.dp)) { albumSection() }
+                                Column(Modifier.padding(top = 16.dp)) { albumSection() }
                             }
                         } else {
+                            item(key = "artist-latest-release") { latestRelease() }
                             item(key = "artist-songs") { songSection() }
                             item(key = "artist-albums") { albumSection() }
                         }
@@ -808,7 +681,7 @@ private fun ArtistHeader(
             ) {
                 Text(
                     text = artist.name,
-                    style = if (landscape) IosTypography.title2.copy(fontSize = 36.sp, lineHeight = 43.sp) else IosTypography.title2,
+                    style = if (landscape) IosTypography.title2.copy(fontSize = 32.sp, lineHeight = 36.sp) else IosTypography.title2,
                     color = colors.content,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -827,12 +700,12 @@ private fun ArtistHeader(
                         overflow = TextOverflow.Ellipsis,
                         modifier =
                             Modifier.padding(horizontal = DetailPageHorizontalPadding)
-                                .padding(top = 7.dp),
+                                .padding(top = 4.dp),
                     )
                 }
 
                 Row(
-                    modifier = Modifier.padding(top = 18.dp, bottom = 16.dp),
+                    modifier = Modifier.padding(top = 18.dp, bottom = if (landscape) 8.dp else 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -902,7 +775,7 @@ private fun ArtistActionButton(
     val colors = LocalGlassColors.current
     Box(
         modifier = modifier
-            .size(if (landscape) { if (prominent) 80.dp else 54.dp } else { if (prominent) 64.dp else 44.dp })
+            .size(if (landscape) { if (prominent) 72.dp else 48.dp } else { if (prominent) 68.dp else 44.dp })
             .graphicsLayer {
                 blendMode = BlendMode.Luminosity
                 compositingStrategy = CompositingStrategy.Offscreen
@@ -994,14 +867,14 @@ fun ArtistHeaderShimmer(landscape: Boolean = false) {
                             .height(
                                 if (landscape)
                                     with(LocalDensity.current) {
-                                        43.sp.toDp()
+                                        36.sp.toDp()
                                     }
                                 else 22.dp
                             ),
                         verticalPadding = if (landscape) 0.dp else 4.dp,
                     )
                     TextPlaceholder(
-                        Modifier.padding(top = 7.dp)
+                        Modifier.padding(top = 4.dp)
                             .width(120.dp)
                             .height(
                                 if (landscape)
@@ -1013,11 +886,11 @@ fun ArtistHeaderShimmer(landscape: Boolean = false) {
                         verticalPadding = if (landscape) 0.dp else 4.dp,
                     )
                     Row(
-                        Modifier.padding(top = 18.dp, bottom = 16.dp),
+                        Modifier.padding(top = 18.dp, bottom = if (landscape) 8.dp else 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        (if (landscape) listOf(54.dp, 80.dp, 54.dp) else listOf(44.dp, 64.dp, 44.dp)).forEach { size ->
+                        (if (landscape) listOf(48.dp, 72.dp, 48.dp) else listOf(44.dp, 68.dp, 44.dp)).forEach { size ->
                             Spacer(
                                 Modifier.size(size)
                                     .clip(Capsule())
@@ -1038,10 +911,10 @@ private fun ArtistHeroLayout(
     information: @Composable () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val avatarSize = minOf(maxWidth * 0.17f, 216.dp)
+        val avatarSize = minOf(maxWidth * 0.20f, 200.dp)
         if (landscape) {
             Column(
-                Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 8.dp),
+                Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 image(
@@ -1056,7 +929,7 @@ private fun ArtistHeroLayout(
                         )
                         .clip(CircleShape)
                 )
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(24.dp))
                 information()
             }
         } else {
@@ -1069,69 +942,130 @@ private fun ArtistHeroLayout(
 }
 
 @Composable
-private fun ArtistFeaturedAlbum(
+internal fun ArtistFeaturedAlbum(
     album: ArtistAlbum.HotAlbum,
     artworkHeight: Dp = ArtistPopularSongsHeight,
+    landscape: Boolean = true,
     onClick: (Long) -> Unit,
 ) {
-    val releaseDate =
-        remember(album.publishTime) {
-            DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(album.publishTime))
+    val viewModel: AlbumDetailViewModel = hiltViewModel(key = "artist-featured-album:${album.id}")
+    val subscription by viewModel.subscription.collectAsState()
+    val cookie by rememberPreference(CookieKey, "")
+    val navController = LocalNavController.current
+    val context = LocalContext.current
+    val albumId = album.id.toLong()
+    LaunchedEffect(albumId) { viewModel.refreshSubscription(albumId) }
+    LaunchedEffect(subscription.error) {
+        if (subscription.error == AlbumSubscriptionError.Update) {
+            android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+    val subscribed = subscription.subscribed == true
+    val saveAction: @Composable () -> Unit = {
+        val label = stringResource(when {
+            subscription.isUpdating -> R.string.album_subscription_updating
+            subscription.error == AlbumSubscriptionError.Load -> R.string.retry
+            subscribed -> R.string.album_unsubscribe
+            else -> R.string.album_subscribe
+        })
+        Box(
+            Modifier.size(44.dp)
+                .clickable(
+                    enabled = cookie.isBlank() || (!subscription.isLoading && !subscription.isUpdating),
+                    role = Role.Button,
+                    onClickLabel = label,
+                ) {
+                    when {
+                        cookie.isBlank() -> Screen.NeteaseLogin.navigate(navController)
+                        subscription.error == AlbumSubscriptionError.Load -> viewModel.refreshSubscription(albumId)
+                        else -> viewModel.toggleSubscription(albumId)
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.size(if (landscape) 36.dp else 32.dp).clip(CircleShape)
+                    .background(LocalGlassColors.current.content.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (cookie.isNotBlank() && (subscription.isLoading || subscription.isUpdating)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
+                        color = LocalGlassColors.current.content)
+                } else SfIcon(if (subscribed) "checkmark" else "plus", label,
+                    size = if (landscape) 18.dp else 16.dp, weight = FontWeight.SemiBold,
+                    tint = LocalGlassColors.current.content)
+            }
+        }
+    }
+
+    ArtistFeaturedAlbumLayout(landscape, artworkHeight,
+        artwork = { modifier ->
+            AsyncImage(album.picUrl, album.name, modifier, contentScale = ContentScale.Crop)
+        },
+        information = {
+            val releaseDate = remember(album.publishTime, androidx.compose.ui.platform.LocalConfiguration.current) {
+                DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(album.publishTime))
+            }
+            val metadataStyle = if (landscape) IosTypography.subheadline
+                else IosTypography.subheadline.copy(fontSize = 13.sp, lineHeight = 18.sp)
+            Text(releaseDate, style = metadataStyle, color = LocalGlassColors.current.secondaryContent)
+            Text(album.name,
+                style = if (landscape) IosTypography.headline else IosTypography.headline.copy(
+                    fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+                maxLines = if (landscape) 3 else 2,
+                overflow = TextOverflow.Ellipsis, color = LocalGlassColors.current.content)
+            Text(stringResource(R.string.playlist_song_count, album.size),
+                style = metadataStyle, color = LocalGlassColors.current.secondaryContent)
+        },
+        action = saveAction,
+        onClick = { onClick(albumId) },
+    )
+}
+
+@Composable
+private fun ArtistFeaturedAlbumLayout(
+    landscape: Boolean,
+    artworkHeight: Dp,
+    artwork: @Composable (Modifier) -> Unit,
+    information: @Composable () -> Unit,
+    action: @Composable () -> Unit,
+    onClick: (() -> Unit)? = null,
+) {
+    val colors = LocalGlassColors.current
+    val shape = ContinuousRoundedRectangle(24.dp)
+    val coverSize = if (landscape) artworkHeight else 88.dp
     Row(
-        Modifier.fillMaxWidth()
-            .padding(horizontal = DetailPageHorizontalPadding)
-            .height(artworkHeight)
-            .clickable { onClick(album.id.toLong()) },
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxWidth().padding(horizontal = DetailPageHorizontalPadding)
+            .padding(top = if (landscape) 0.dp else 12.dp, bottom = if (landscape) 0.dp else 4.dp)
+            .then(if (landscape) Modifier else Modifier.clip(shape)
+                .background(colors.content.copy(alpha = 0.10f))
+                .border(0.5.dp, colors.content.copy(alpha = 0.15f), shape))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (landscape) Modifier else Modifier.padding(12.dp)),
+        horizontalArrangement = Arrangement.spacedBy(if (landscape) 16.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = album.picUrl,
-            contentDescription = album.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(artworkHeight).clip(ContinuousRoundedRectangle(8.dp)),
-        )
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                releaseDate,
-                style = IosTypography.caption,
-                color = LocalGlassColors.current.secondaryContent,
-            )
-            Text(
-                album.name,
-                style = IosTypography.headline,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                stringResource(R.string.playlist_song_count, album.size),
-                style = IosTypography.caption,
-                color = LocalGlassColors.current.secondaryContent,
-            )
+        artwork(Modifier.size(coverSize).clip(ContinuousRoundedRectangle(8.dp)))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 0.dp)) {
+            information()
+            if (landscape) Box(Modifier.padding(top = 4.dp)) { action() }
         }
+        if (!landscape) action()
     }
 }
 
 @Composable
-private fun ArtistFeaturedAlbumPlaceholder(artworkHeight: Dp = ArtistPopularSongsHeight) {
-    Row(
-        Modifier.fillMaxWidth()
-            .padding(horizontal = DetailPageHorizontalPadding)
-            .height(artworkHeight),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(
-            Modifier.size(artworkHeight)
-                .clip(ContinuousRoundedRectangle(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-        Column(Modifier.weight(1f)) {
-            TextPlaceholder()
-            TextPlaceholder()
-        }
-    }
+private fun ArtistFeaturedAlbumPlaceholder(artworkHeight: Dp = ArtistPopularSongsHeight, landscape: Boolean = true) {
+    ArtistFeaturedAlbumLayout(landscape, artworkHeight,
+        artwork = { Spacer(it.background(MaterialTheme.colorScheme.surfaceVariant)) },
+        information = { repeat(3) { TextPlaceholder() } },
+        action = {
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Spacer(Modifier.size(if (landscape) 36.dp else 32.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant))
+            }
+        },
+    )
 }
 
 @Composable
@@ -1173,7 +1107,6 @@ internal fun ArtistPopularSongs(
                 },
         ) { index ->
             val track = tracks[index]
-            var anchor by remember(track.id) { mutableStateOf(Rect.Zero) }
             Box {
                 if (track.id.toString() in favoriteIds) {
                     FavoriteTrackStar(
@@ -1187,26 +1120,12 @@ internal fun ArtistPopularSongs(
                     track.coverUrl,
                     track.title,
                     track.artists.joinToString(" / ") { it.name },
-                    isPlaying = playing && track.id == currentTrackId,
                     onClick = { onClick(index) },
+                    onMore = { anchor -> onMore(track, anchor) },
+                    moreModifier = Modifier.testTag("ArtistSongMore:${track.id}"),
                     coverSize = ArtistSongCoverSize,
-                ) {
-                    IconButton(
-                        onClick = { onMore(track, anchor) },
-                        modifier =
-                            Modifier.size(HomeSongActionSize)
-                                .offset(x = (-6).dp)
-                                .testTag("ArtistSongMore:${track.id}")
-                                .onGloballyPositioned { anchor = it.boundsInWindow() },
-                    ) {
-                        SfIcon(
-                            "ellipsis",
-                            stringResource(R.string.more_actions_title),
-                            size = 18.dp,
-                            tint = LocalGlassColors.current.secondaryContent,
-                        )
-                    }
-                }
+                )
+
             }
         }
     }
@@ -1220,6 +1139,7 @@ fun SectionTitle(
     onClick: (() -> Unit)? = null,
     bottomPadding: Dp = if (onClick != null) 12.dp else 4.dp,
     landscape: Boolean = false,
+    topPadding: Dp = 20.dp,
 ) {
     Row(
         Modifier.fillMaxWidth()
@@ -1227,7 +1147,7 @@ fun SectionTitle(
             .padding(
                 start = DetailPageHorizontalPadding,
                 end = DetailPageHorizontalPadding,
-                top = 20.dp,
+                top = topPadding,
                 bottom = bottomPadding,
             ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1236,14 +1156,15 @@ fun SectionTitle(
         Text(
             title,
             modifier = if (onClick != null) Modifier.weight(1f, fill = false) else Modifier,
-            style = if (landscape) MaterialTheme.typography.titleMedium.copy(fontSize = 22.sp, lineHeight = 28.sp) else MaterialTheme.typography.titleMedium,
+            style = if (landscape) MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, lineHeight = 24.sp) else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         if (onClick != null)
             SfIcon(
                 "chevron.forward",
                 null,
-                size = if (landscape) 16.dp else 12.dp,
+                size = if (landscape) 18.dp else 16.dp,
+                weight = FontWeight.SemiBold,
                 tint = LocalGlassColors.current.secondaryContent,
             )
     }

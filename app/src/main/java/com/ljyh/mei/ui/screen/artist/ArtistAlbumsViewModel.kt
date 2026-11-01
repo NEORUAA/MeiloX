@@ -1,5 +1,16 @@
 package com.ljyh.mei.ui.screen.artist
 
+import com.ljyh.mei.data.repository.LibraryCollectionsRepository
+import com.ljyh.mei.data.repository.collectLibraryPages
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.api.ArtistAlbum
@@ -32,10 +43,18 @@ data class ArtistAlbumsState(
 
 @HiltViewModel
 class ArtistAlbumsViewModel internal constructor(
+    favoriteAlbums: Flow<Set<Long>> = flowOf(emptySet()),
     private val fetchPage: suspend (String, Int) -> Resource<ArtistAlbum>,
 ) : ViewModel() {
     @Inject
-    constructor(repository: ArtistRepository) : this(repository::getArtistAlbums)
+    constructor(repository: ArtistRepository, collections: LibraryCollectionsRepository) :
+        this(observeFavoriteAlbums(collections), repository::getArtistAlbums)
+
+    internal constructor(repository: ArtistRepository) : this(fetchPage = repository::getArtistAlbums)
+
+    val favoriteAlbumIds = favoriteAlbums.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet(),
+    )
 
     private val _state = MutableStateFlow(ArtistAlbumsState())
     val state = _state.asStateFlow()
@@ -115,3 +134,21 @@ class ArtistAlbumsViewModel internal constructor(
         }
     }
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun observeFavoriteAlbums(collections: LibraryCollectionsRepository): Flow<Set<Long>> =
+    collections.accounts.flatMapLatest { account ->
+        if (account == null) flowOf(emptySet())
+        else collections.albumChanges.onStart { emit(Unit) }.transformLatest {
+            try {
+                val albums = collectLibraryPages(key = { album: Album -> album.id.toString() }) { offset ->
+                    collections.albums(account, offset)
+                }
+                emit(albums.map { it.id }.toSet())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Preserve the last confirmed set until a later collection refresh succeeds.
+            }
+        }.onStart { emit(emptySet()) }
+    }

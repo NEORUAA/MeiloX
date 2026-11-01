@@ -30,9 +30,12 @@ import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.item.Track
+import com.ljyh.mei.utils.TimeUtils.formatDuration
+import com.ljyh.mei.ui.component.item.LandscapeMediaRow
+import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.component.player.OverlayState
-import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -67,6 +70,8 @@ fun ArtistSongsScreen(
     val searchListState = rememberLazyListState()
     val isSearching = state.query.isNotEmpty()
     val songs = remember(state.songs, state.query) { state.visibleSongs }
+    val landscape = rememberDeviceInfo().isLandscape
+    val favorites = rememberFavoriteTrackIds(songs, enabled = true)
 
     LaunchedEffect(id, state.query) {
         if (isSearching) searchListState.scrollToItem(0)
@@ -78,6 +83,7 @@ fun ArtistSongsScreen(
             listState = if (isSearching) searchListState else catalogListState,
             bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
             horizontalContentPadding = 0.dp,
+            topContentPaddingAdjustment = if (landscape) com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
             largeTitleHorizontalPadding = 20.dp,
             verticalArrangement = Arrangement.spacedBy(0.dp),
             onNavigateBack = navController::popBackStack,
@@ -104,10 +110,9 @@ fun ArtistSongsScreen(
                     ArtistCatalogSearchStatus(state.songs.size, songs.size, state.isLoading, state.hasMore)
                 }
             }
+
             items(songs, key = { it.id }) { song ->
-                Track(
-                    track = song,
-                    onClick = {
+                val playSong: () -> Unit = {
                         playerConnection.onTrackClicked(
                             trackId = song.id.toString(),
                             buildQueue = {
@@ -119,8 +124,18 @@ fun ArtistSongsScreen(
                                 )
                             },
                         )
-                    },
-                    onMoreClick = { overlay = OverlayState.TrackActionMenu(song, it) },
+                }
+                LandscapeMediaRow(
+                    image = song.coverUrl,
+                    title = song.title,
+                    artist = song.artists.joinToString(" / ") { it.name },
+                    detail = if (landscape) formatDuration(song.duration) else "",
+                    onClick = playSong,
+                    modifier = Modifier.padding(horizontal = if (landscape) 32.dp else 24.dp),
+                    album = song.album.title,
+                    favorite = song.id.toString() in favorites,
+                    showDivider = song.id != songs.lastOrNull()?.id,
+                    onMore = { overlay = OverlayState.TrackActionMenu(song, it) },
                 )
             }
             if (state.error != null) {

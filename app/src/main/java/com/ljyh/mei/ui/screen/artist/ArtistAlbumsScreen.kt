@@ -24,8 +24,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.R
-import com.ljyh.mei.ui.component.item.AlbumItem
-import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
+import com.ljyh.mei.ui.component.item.LandscapeMediaRow
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -40,6 +41,7 @@ fun ArtistAlbumsScreen(
 ) {
     val navController = LocalNavController.current
     val state by viewModel.state.collectAsState()
+    val favoriteAlbumIds by viewModel.favoriteAlbumIds.collectAsState()
     var query by remember(id) { mutableStateOf(TextFieldValue(state.query)) }
     var searchActive by remember(id) { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -47,6 +49,7 @@ fun ArtistAlbumsScreen(
     val searchListState = rememberLazyListState()
     val isSearching = state.query.isNotEmpty()
     val albums = remember(state.albums, state.query) { state.visibleAlbums }
+    val landscape = rememberDeviceInfo().isLandscape
 
     LaunchedEffect(id, state.query) {
         if (isSearching) searchListState.scrollToItem(0)
@@ -57,6 +60,7 @@ fun ArtistAlbumsScreen(
         listState = if (isSearching) searchListState else catalogListState,
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
         horizontalContentPadding = 0.dp,
+            topContentPaddingAdjustment = if (landscape) com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
         largeTitleHorizontalPadding = 20.dp,
         verticalArrangement = Arrangement.spacedBy(0.dp),
         onNavigateBack = navController::popBackStack,
@@ -83,10 +87,18 @@ fun ArtistAlbumsScreen(
                 ArtistCatalogSearchStatus(state.albums.size, albums.size, state.isLoading, state.hasMore)
             }
         }
+
         items(albums, key = { it.id }) { album ->
-            AlbumItem(album) { albumId ->
-                navController.navigate("${Screen.Album.route}/$albumId")
-            }
+            LandscapeMediaRow(
+                favorite = album.id in favoriteAlbumIds,
+                image = album.cover,
+                title = album.title,
+                artist = album.artist.joinToString(" / ") { it.name },
+                detail = stringResource(R.string.playlist_song_count, album.size),
+                onClick = { navController.navigate("${Screen.Album.route}/${album.id}") },
+                modifier = Modifier.padding(horizontal = if (landscape) 32.dp else 24.dp),
+                showDivider = album.id != albums.lastOrNull()?.id,
+            )
         }
         if (state.error != null) {
             item(key = "retry") {

@@ -12,6 +12,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -55,6 +58,32 @@ class ArtistAlbumsViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun savedAlbumMarkersUpdateWithoutReloadingOrResettingTheArtistCatalog() = runTest(dispatcher) {
+        val savedIds = MutableStateFlow(setOf(1L))
+        var loads = 0
+        val catalog = ArtistAlbumsViewModel(
+            fetchPage = { _, _ -> loads++; Resource.Success(page(more = false, ids = listOf(1, 2))) },
+            favoriteAlbums = savedIds,
+        )
+        backgroundScope.launch { catalog.favoriteAlbumIds.collect() }
+        catalog.loadMore("42")
+        runCurrent()
+        assertEquals(setOf(1L), catalog.favoriteAlbumIds.value)
+        val loaded = catalog.state.value
+
+        savedIds.value = setOf(2L)
+        runCurrent()
+        assertEquals(setOf(2L), catalog.favoriteAlbumIds.value)
+        assertEquals(loaded, catalog.state.value)
+
+        savedIds.value = emptySet()
+        runCurrent()
+        assertTrue(catalog.favoriteAlbumIds.value.isEmpty())
+        assertEquals(loaded, catalog.state.value)
+        assertEquals(1, loads)
     }
 
     @Test
