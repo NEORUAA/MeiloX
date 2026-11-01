@@ -64,10 +64,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.window.DialogWindowProvider
@@ -123,6 +125,31 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlayerLyricsRenderingTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun primaryCenterMatchesWrappedTextWithoutIncludingTranslation() {
+        val line = SyncedLine("Primary lyric wrapping across several lines", "Translation\nSecond translation line", 1_000, 5_000)
+        var measuredCenter = 0f
+        compose.setContent {
+            MaterialTheme {
+                val density = LocalDensity.current
+                val measurer = rememberTextMeasurer()
+                val style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                measuredCenter = mainLyricCenterOffset(line, false, style, false,
+                    with(density) { 180.dp.roundToPx() }, measurer, density)
+                Box(Modifier.width(180.dp).testTag("CenteredLyricRow")) {
+                    com.mocharealm.accompanist.lyrics.ui.composable.lyrics.SyncedLineText(
+                        line = line, isLineRtl = false, textStyle = style.copy(lineHeight = 1.2.em),
+                        textColor = Color.White,
+                    )
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("CenteredLyricRow").fetchSemanticsNode().boundsInRoot
+        val primary = compose.onNodeWithText(line.content).fetchSemanticsNode().boundsInRoot
+        assertEquals(primary.center.y - row.top, measuredCenter, 1f)
+        assertTrue(primary.height < row.height)
+    }
     private val clickedLine = AtomicReference<ISyncedLine>()
 
     @Test

@@ -278,6 +278,7 @@ fun CommonSongListScreen(
                                 landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                         isLoading = isLoading,
                         allowActionScroll = adaptiveLandscape,
+                        topPadding = if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split) 0.dp else 16.dp,
                         playlistPortrait = usePlaylistPortraitHeader && !device.isLandscape,
                     )
                 }
@@ -608,13 +609,13 @@ internal fun SongListDetailPage(
     ) { padding ->
         Row(Modifier.fillMaxSize()) {
             Column(
-                Modifier.weight(0.44f)
+                Modifier.weight(1f)
                     .fillMaxHeight()
                     .testTag("DetailHeroPane")
                     .verticalScroll(rememberScrollState())
                     .padding(
                         start = horizontalContentPadding,
-                        end = 24.dp,
+                        end = horizontalContentPadding,
                         top = padding.calculateTopPadding(),
                         bottom = padding.calculateBottomPadding(),
                     ),
@@ -624,10 +625,11 @@ internal fun SongListDetailPage(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(0.56f).fillMaxHeight().testTag("DetailTrackPane"),
+                modifier = Modifier.weight(1f).fillMaxHeight().testTag("DetailTrackPane"),
                 contentPadding =
                     PaddingValues(
                         top = padding.calculateTopPadding(),
+                        start = horizontalContentPadding,
                         end = horizontalContentPadding,
                         bottom = padding.calculateBottomPadding(),
                     ),

@@ -78,7 +78,6 @@ fun Cover(
     modifier: Modifier,
     onDoubleClick: (Offset, Int) -> Unit = { _, _ ->}
 ) {
-    val isLandscape = com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape
     val context = LocalContext.current
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) {
@@ -131,7 +130,6 @@ fun Cover(
                 scaleY = coverScale.value
             }.playerArtwork(
                 circle = coverStyle == CoverStyle.Circle,
-                shared = !isLandscape,
                 shadowElevation = { 12.dp },
                 backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 playbackScale = { coverScale.value },

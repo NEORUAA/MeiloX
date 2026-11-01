@@ -51,17 +51,35 @@ internal fun playerContainerRect(source: Rect, target: Rect, progress: Float): R
     )
 }
 
-/** Keep the top inset fixed, optionally anchoring the measured content horizontally by center. */
+/** Preserve the measured leading and top insets as the container moves. */
 internal fun playerMiniContentOrigin(
     content: Rect,
     sourceContainer: Rect,
     container: Rect,
-    centerHorizontally: Boolean,
 ): Offset = Offset(
-    content.left + if (centerHorizontally) container.center.x - sourceContainer.center.x
-        else container.left - sourceContainer.left,
+    content.left + container.left - sourceContainer.left,
     content.top + container.top - sourceContainer.top,
 )
+
+internal fun playerMiniTrailingOrigin(
+    content: Rect,
+    sourceContainer: Rect,
+    container: Rect,
+    rightAnchored: Boolean,
+): Offset = Offset(
+    if (rightAnchored) container.right - (sourceContainer.right - content.left)
+        else container.left + content.left - sourceContainer.left,
+    container.top + content.top - sourceContainer.top,
+)
+
+internal class PlayerMiniTrailingAnchor {
+    private var opening: Boolean? = null
+
+    fun anchorsRight(startProgress: Float): Boolean =
+        opening ?: (startProgress < 0.5f).also { opening = it }
+
+    fun reset() { opening = null }
+}
 
 internal fun playerContainerCornerRadius(source: Float, target: Float, progress: Float): Float =
     if (progress >= 1f) 0f else mix(source, target, progress.coerceAtLeast(0f))

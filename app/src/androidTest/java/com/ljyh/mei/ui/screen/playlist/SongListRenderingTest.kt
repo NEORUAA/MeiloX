@@ -356,7 +356,7 @@ class SongListRenderingTest {
                             actionsSeparationProgress = 0f,
                             actions = { emptyList() },
                         ) {
-                            items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp)) }
+                            items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp).testTag("SplitSong:$it")) }
                         }
                     }
                 }
@@ -370,6 +370,13 @@ class SongListRenderingTest {
         val left = compose.onNodeWithTag("DetailHeroPane").fetchSemanticsNode().boundsInRoot
         val right = compose.onNodeWithTag("DetailTrackPane").fetchSemanticsNode().boundsInRoot
         assertTrue(left.right <= right.left)
+        assertEquals(left.width, right.width, 1f)
+        assertEquals(left.center.x, hero.center.x, 1f)
+        val firstSong = compose.onNodeWithTag("SplitSong:0", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(12f, firstSong.left - right.left, 1f)
+        assertEquals(12f, right.right - firstSong.right, 1f)
+        assertEquals(hero.top, firstSong.top, 1f)
         compose.onNodeWithTag("DetailTrackPane").performScrollToIndex(12)
         assertEquals(
             hero,

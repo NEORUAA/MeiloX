@@ -97,6 +97,7 @@ internal class PlayerSheetLayers(
     val state: GlasmioBottomSheetState,
     val miniHost: GraphicsLayer,
     val miniContent: GraphicsLayer,
+    val miniTrailingContent: GraphicsLayer,
     val fullContent: GraphicsLayer,
     scope: CoroutineScope,
 ) {
@@ -106,7 +107,9 @@ internal class PlayerSheetLayers(
         private set
     var miniBounds by mutableStateOf(Rect.Zero)
     var miniContentBounds by mutableStateOf(Rect.Zero)
+    var miniTrailingBounds by mutableStateOf(Rect.Zero)
     var miniArtworkBounds by mutableStateOf(Rect.Zero)
+    var miniArtworkCornerRadius by mutableStateOf(com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius)
     var fullArtworkBounds by mutableStateOf(Rect.Zero)
     var fullArtworkLayoutSize by mutableStateOf(IntSize.Zero)
     var fullArtworkGeometry by mutableStateOf<(() -> PlayerArtworkGeometry)?>(null)
@@ -149,6 +152,7 @@ internal class PlayerSheetLayers(
     }
 
     var miniContentCoordinates: LayoutCoordinates? = null
+    var miniTrailingCoordinates: LayoutCoordinates? = null
     var miniArtworkCoordinates: LayoutCoordinates? = null
     var fullArtworkCoordinates: LayoutCoordinates? = null
     val sourceMiniContent get() = openingBounds(
@@ -157,9 +161,19 @@ internal class PlayerSheetLayers(
     )
     val miniScaleX get() = sourceMiniContent.width / miniContent.size.width.coerceAtLeast(1)
     val miniScaleY get() = sourceMiniContent.height / miniContent.size.height.coerceAtLeast(1)
+    private var frozenMiniTrailing: Rect? = null
+    val sourceMiniTrailing get() = openingBounds(
+        frozenMiniTrailing,
+        miniLayoutBounds(miniTrailingCoordinates) ?: miniTrailingBounds,
+    )
+    val miniTrailingScaleX get() = sourceMiniTrailing.width / miniTrailingContent.size.width.coerceAtLeast(1)
+    val miniTrailingScaleY get() = sourceMiniTrailing.height / miniTrailingContent.size.height.coerceAtLeast(1)
     private var frozenTargetArtwork by mutableStateOf<PlayerArtworkGeometry?>(null)
     private val recordedTransitionLayers = PlayerSheetCaptures<GraphicsLayer>()
     private var transitionCaptureActive = false
+    private val trailingAnchor = PlayerMiniTrailingAnchor()
+
+    fun trailingAnchorsRight() = trailingAnchor.anchorsRight(state.progress)
 
     val sourceContainer get() = openingBounds(frozenContainer, miniBounds)
     val sourceArtwork get() = openingBounds(
@@ -221,6 +235,7 @@ internal class PlayerSheetLayers(
             miniBounds,
         )
         frozenMiniContent = miniLayoutBounds(miniContentCoordinates, rawContainer) ?: miniContentBounds
+        frozenMiniTrailing = miniLayoutBounds(miniTrailingCoordinates, rawContainer) ?: miniTrailingBounds
         frozenMiniArtwork = miniLayoutBounds(miniArtworkCoordinates, rawContainer) ?: miniArtworkBounds
         frozenContainer = rawContainer
         openingPressedContainer = if (miniPressedBounds.isUsable()) {
@@ -240,12 +255,14 @@ internal class PlayerSheetLayers(
         openingPressedContainer = null
         frozenTargetArtwork = null
         frozenMiniContent = null
+        frozenMiniTrailing = null
         frozenMiniArtwork = null
     }
 
     fun updateFrozenBounds() {
         if (!state.isTransitioning) {
             transitionCaptureActive = false
+            trailingAnchor.reset()
             recordedTransitionLayers.clear()
             if (state.isExpanded) {
                 pressLight.clear()
@@ -260,6 +277,7 @@ internal class PlayerSheetLayers(
                 frozenContainer = null
                 openingPressedContainer = null
                 frozenMiniContent = null
+                frozenMiniTrailing = null
                 frozenMiniArtwork = null
             }
             pressRelease.reset()
@@ -302,9 +320,10 @@ internal fun rememberPlayerSheetLayers(state: GlasmioBottomSheetState): PlayerSh
     val scope = rememberCoroutineScope()
     val miniHost = rememberGraphicsLayer()
     val mini = rememberGraphicsLayer()
+    val miniTrailing = rememberGraphicsLayer()
     val full = rememberGraphicsLayer()
-    return remember(state, miniHost, mini, full, scope) {
-        PlayerSheetLayers(state, miniHost, mini, full, scope)
+    return remember(state, miniHost, mini, miniTrailing, full, scope) {
+        PlayerSheetLayers(state, miniHost, mini, miniTrailing, full, scope)
     }
 }
 
@@ -625,6 +644,7 @@ fun BottomSheet(
                 Modifier.fillMaxSize(),
             ) {
                 val p = state.progress
+                val trailingAnchorsRight = if (landscape) layers.trailingAnchorsRight() else false
                 val globalBounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, p)
                 val bounds = globalBounds.translate(-layers.hostBounds.topLeft)
                 // This snapshot contains inset controls, not the visible shell. The shell
@@ -638,21 +658,29 @@ fun BottomSheet(
                         layers.miniContent.alpha = miniAlpha
                         val offset = playerMiniContentOrigin(
                             layers.sourceMiniContent, layers.sourceContainer,
-                            globalBounds, centerHorizontally = landscape,
+                            globalBounds,
                         ) - layers.hostBounds.topLeft
                         withTransform({
                             translate(offset.x, offset.y)
                             scale(layers.miniScaleX, layers.miniScaleY, Offset.Zero)
                         }) { drawLayer(layers.miniContent) }
                     }
+                    if (landscape && miniAlpha > 0f && layers.miniTrailingContent.size.width > 0) {
+                        layers.miniTrailingContent.alpha = miniAlpha
+                        val source = layers.sourceMiniTrailing
+                        val origin = playerMiniTrailingOrigin(
+                            source, layers.sourceContainer, globalBounds,
+                            rightAnchored = trailingAnchorsRight,
+                        ) - layers.hostBounds.topLeft
+                        withTransform({
+                            translate(origin.x, origin.y)
+                            scale(layers.miniTrailingScaleX, layers.miniTrailingScaleY, Offset.Zero)
+                        }) { drawLayer(layers.miniTrailingContent) }
+                    }
 
                     val fullAlpha = playerContentAlpha(p)
                     if (fullAlpha > 0f && layers.fullContent.size.width > 0) {
-                        // Landscape keeps artwork and native shadows in this page recording.
-                        // Fade their completed image together so elevation cannot appear first.
-                        layers.fullContent.compositingStrategy = if (landscape) {
-                            CompositingStrategy.Offscreen
-                        } else CompositingStrategy.ModulateAlpha
+                        layers.fullContent.compositingStrategy = CompositingStrategy.ModulateAlpha
                         layers.fullContent.alpha = fullAlpha
                         withTransform({
                             translate(bounds.left, bounds.top)
@@ -752,7 +780,7 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                     scaleY = bounds.height / size.height.coerceAtLeast(1f)
                     translationX = bounds.left
                     translationY = bounds.top
-                    val sourceRadius = com.ljyh.mei.constants.MiniPlayerArtworkCornerRadius.toPx()
+                    val sourceRadius = layers.miniArtworkCornerRadius.toPx()
                     val targetRadius = if (layers.circularArtwork) target.width / 2f else
                         layers.artworkCornerRadius().toPx() * target.width / logicalTargetWidth
                     val radius = mix(sourceRadius, targetRadius, progress) /

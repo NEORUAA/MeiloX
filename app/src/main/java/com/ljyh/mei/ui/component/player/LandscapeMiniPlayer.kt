@@ -10,10 +10,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -55,9 +57,11 @@ internal fun LandscapeMiniPlayer(
     onMoreClick: () -> Unit,
     onLyricsClick: () -> Unit,
     onQueueClick: () -> Unit,
+    onCoverBoundsChanged: ((Rect) -> Unit)? = null,
 ) {
     val connection = LocalPlayerConnection.current ?: return
     val sheet = LocalPlayerSheet.current
+    SideEffect { sheet?.miniArtworkCornerRadius = 6.dp }
     val colors = LocalGlassColors.current
     val metadata by connection.mediaMetadata.collectAsState()
     val playing by connection.isPlaying.collectAsState()
@@ -178,7 +182,16 @@ internal fun LandscapeMiniPlayer(
                         setLoopPlayback(nextMode != Player.REPEAT_MODE_OFF)
                     })
                 Spacer(Modifier.width(8.dp))
-                Box(Modifier.size(46.dp).clip(ContinuousRoundedRectangle(6.dp))
+                Box(Modifier.size(46.dp)
+                    .onGloballyPositioned { coordinates ->
+                        sheet?.miniArtworkCoordinates = coordinates
+                        sheet?.miniLayoutBounds(coordinates)?.let { bounds ->
+                            sheet.miniArtworkBounds = bounds
+                        }
+                        onCoverBoundsChanged?.invoke(coordinates.boundsInRoot())
+                    }
+                    .drawWithContent { if (sheet?.sharesArtwork != true) drawContent() }
+                    .clip(ContinuousRoundedRectangle(6.dp))
                     .background(colors.content.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
                     if (artwork != null) Image(artwork.second, null, contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize().testTag("LandscapeMiniArtwork"))
@@ -209,12 +222,22 @@ internal fun LandscapeMiniPlayer(
                     } else Text(stringResource(R.string.landscape_player_not_playing), style = IosTypography.body,
                         color = colors.secondaryContent, maxLines = 1)
                 }
-                LandscapePlayerButton("ellipsis", stringResource(R.string.more_actions_title),
-                    targetSize = 48.dp, iconSize = 24.dp, onClick = onMoreClick)
-                LandscapePlayerButton("quote.bubble", stringResource(R.string.player_action_lyrics),
-                    targetSize = 48.dp, iconSize = 24.dp, onClick = onLyricsClick)
-                LandscapePlayerButton("list.bullet", stringResource(R.string.player_action_queue),
-                    targetSize = 48.dp, iconSize = 24.dp, onClick = onQueueClick)
+                Row(Modifier
+                    .onGloballyPositioned { coordinates ->
+                        sheet?.miniTrailingCoordinates = coordinates
+                        sheet?.miniLayoutBounds(coordinates)?.let { sheet.miniTrailingBounds = it }
+                    }
+                    .then(if (sheet != null) Modifier.recordPlayerContent(
+                        sheet, sheet.miniTrailingContent, warmWhileVisible = true,
+                    ) { !sheet.isTransitioning } else Modifier),
+                ) {
+                    LandscapePlayerButton("ellipsis", stringResource(R.string.more_actions_title),
+                        targetSize = 48.dp, iconSize = 24.dp, onClick = onMoreClick)
+                    LandscapePlayerButton("quote.bubble", stringResource(R.string.player_action_lyrics),
+                        targetSize = 48.dp, iconSize = 24.dp, onClick = onLyricsClick)
+                    LandscapePlayerButton("list.bullet", stringResource(R.string.player_action_queue),
+                        targetSize = 48.dp, iconSize = 24.dp, onClick = onQueueClick)
+                }
             }
         }
     }
