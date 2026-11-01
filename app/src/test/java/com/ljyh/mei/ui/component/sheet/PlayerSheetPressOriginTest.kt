@@ -32,8 +32,8 @@ class PlayerSheetPressOriginTest {
         val raw = playerMiniLayoutRect(pressed, localPress, IntSize(400, 50), layout)
         val visualArtwork = playerUntransformRect(artwork, raw, pressed)
         assertBounds(Rect(17.2f, 703.3f, 52.4f, 738.5f), visualArtwork)
-        assertBounds(visualArtwork, playerTopAnchoredArtworkRect(visualArtwork, header, pressed, host, 0f))
-        assertBounds(header, playerTopAnchoredArtworkRect(visualArtwork, header, pressed, host, 1f))
+        assertBounds(visualArtwork, playerContainerAnchoredArtworkRect(visualArtwork, header, pressed, host, 0f))
+        assertBounds(header, playerContainerAnchoredArtworkRect(visualArtwork, header, pressed, host, 1f))
     }
 
     @Test fun reverseProgressReturnsToTheRawCoverRatherThanThePressedOffset() {

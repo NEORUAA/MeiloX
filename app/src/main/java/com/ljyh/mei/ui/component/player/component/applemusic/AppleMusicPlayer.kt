@@ -823,7 +823,6 @@ fun AppleMusicPlayer(
                                 val frame = artworkFrame()
                                 with(density) { (frame.shadowElevation * artworkLayoutSize / frame.bounds.width.coerceAtLeast(1f)).toDp() }
                             },
-                            trackContainerTop = { showDetail || lyricAnimFraction.value > 0f },
                         )
                         .playerArtworkAppearance(artworkFrame, artworkOpacity)
                         .then(

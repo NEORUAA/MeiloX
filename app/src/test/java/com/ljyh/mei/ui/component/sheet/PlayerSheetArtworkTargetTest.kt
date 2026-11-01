@@ -87,7 +87,7 @@ class PlayerSheetArtworkTargetTest {
                     PlayerArtworkGeometry(Rect(24f, 76f, 328f, 380f), layoutSize)
                 }
                 for (progress in (0..100).map { it / 100f } + (100 downTo 0).map { it / 100f }) {
-                    val bounds = playerTopAnchoredArtworkRect(mini, target.bounds, miniContainer, host, progress)
+                    val bounds = playerContainerAnchoredArtworkRect(mini, target.bounds, miniContainer, host, progress)
                     assertTrue(bounds.width >= 32f && bounds.width <= 46f)
                     if (progress == 1f) assertEquals(header, bounds)
                     if (progress == 0f) assertEquals(mini, bounds)
@@ -116,7 +116,7 @@ class PlayerSheetArtworkTargetTest {
         }
         assertEquals(visual.bounds, target.bounds)
         assertTrue(target.bounds.width > header.width && target.bounds.width < normal.width)
-        assertBounds(target.bounds, playerTopAnchoredArtworkRect(mini, target.bounds, miniContainer, host, 1f))
+        assertBounds(target.bounds, playerContainerAnchoredArtworkRect(mini, target.bounds, miniContainer, host, 1f))
     }
 
     @Test fun classicKeepsItsMeasuredRootBoundsAndLogicalSize() {

@@ -113,7 +113,6 @@ internal class PlayerSheetLayers(
     var artworkPlaybackScale by mutableStateOf<(() -> Float)?>(null)
     var artworkCornerRadius by mutableStateOf<() -> Dp>({ 12.dp })
     var artworkShadowElevation by mutableStateOf<() -> Dp>({ 16.dp })
-    var artworkTracksContainerTop by mutableStateOf<() -> Boolean>({ false })
     var artworkBackgroundColor by mutableStateOf(Color.Transparent)
     var artworkSourceAvailable by mutableStateOf(false)
     var sharedArtworkEnabled by mutableStateOf(true)
@@ -337,7 +336,6 @@ internal fun Modifier.playerArtwork(
     circle: Boolean = false,
     shared: Boolean = true,
     shadowElevation: () -> Dp = { 16.dp },
-    trackContainerTop: () -> Boolean = { false },
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceVariant,
     geometry: (() -> PlayerArtworkGeometry)? = null,
     playbackScale: (() -> Float)? = null,
@@ -348,7 +346,6 @@ internal fun Modifier.playerArtwork(
         layers.artworkCornerRadius = cornerRadius
         layers.circularArtwork = circle
         layers.artworkShadowElevation = shadowElevation
-        layers.artworkTracksContainerTop = trackContainerTop
         layers.artworkBackgroundColor = backgroundColor
         layers.fullArtworkGeometry = geometry
         layers.artworkPlaybackScale = playbackScale
@@ -739,12 +736,10 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                     val progress = layers.state.progress
                     alpha = playerArtworkOpacity(layers.targetArtworkOpacity, progress)
                     val target = layers.targetArtwork
-                    val artworkBounds = if (layers.artworkTracksContainerTop()) {
-                        playerTopAnchoredArtworkRect(
-                            layers.sourceArtwork, target,
-                            layers.sourceContainer, layers.hostBounds, progress,
-                        )
-                    } else playerArtworkRect(layers.sourceArtwork, target, progress)
+                    val artworkBounds = playerContainerAnchoredArtworkRect(
+                        layers.sourceArtwork, target,
+                        layers.sourceContainer, layers.hostBounds, progress,
+                    )
                     val bounds = artworkBounds.translate(-layers.hostBounds.topLeft)
                     val imageWidth = size.width.coerceAtLeast(1f)
                     val logicalTargetWidth = layers.targetArtworkLayoutSize.width.coerceAtLeast(1)

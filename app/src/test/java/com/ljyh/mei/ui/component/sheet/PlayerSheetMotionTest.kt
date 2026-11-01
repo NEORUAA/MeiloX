@@ -100,12 +100,12 @@ class PlayerSheetMotionTest {
     @Test fun lyricHeaderArtworkKeepsExactEndpointsAndShrinksItsTopInsetOnCollapse() {
         val source = Rect(20f, 708f, 52f, 740f)
         val header = Rect(24f, 76f, 70f, 122f)
-        assertEquals(source, playerTopAnchoredArtworkRect(source, header, mini, page, 0f))
-        assertEquals(header, playerTopAnchoredArtworkRect(source, header, mini, page, 1f))
+        assertEquals(source, playerContainerAnchoredArtworkRect(source, header, mini, page, 0f))
+        assertEquals(header, playerContainerAnchoredArtworkRect(source, header, mini, page, 1f))
         var previous = Float.POSITIVE_INFINITY
         for (step in 100 downTo 0) {
             val progress = step / 100f
-            val artwork = playerTopAnchoredArtworkRect(source, header, mini, page, progress)
+            val artwork = playerContainerAnchoredArtworkRect(source, header, mini, page, progress)
             val container = playerContainerRect(mini, page, progress)
             val inset = artwork.top - container.top
             assertTrue(inset <= previous + 0.001f)
@@ -117,9 +117,42 @@ class PlayerSheetMotionTest {
     @Test fun lyricHeaderTopInsetReversesWithoutASecondTrajectory() {
         val source = Rect(20f, 708f, 52f, 740f)
         val header = Rect(24f, 76f, 70f, 122f)
-        val opening = (0..100).map { playerTopAnchoredArtworkRect(source, header, mini, page, it / 100f) }
-        val closing = (100 downTo 0).map { playerTopAnchoredArtworkRect(source, header, mini, page, it / 100f) }
+        val opening = (0..100).map { playerContainerAnchoredArtworkRect(source, header, mini, page, it / 100f) }
+        val closing = (100 downTo 0).map { playerContainerAnchoredArtworkRect(source, header, mini, page, it / 100f) }
         assertEquals(opening, closing.reversed())
+    }
+
+    @Test fun containerAnchoredArtworkKeepsBothInsetsAndSizeThroughPortraitAndLandscapeReversals() {
+        val source = Rect(40f, 708f, 72f, 740f)
+        val portrait = Rect(16f, 24f, 416f, 824f)
+        val landscape = Rect(32f, 16f, 832f, 416f)
+        val targets = listOf(
+            portrait to Rect(56f, 124f, 376f, 444f),
+            portrait to Rect(40f, 100f, 86f, 146f),
+            landscape to Rect(100f, 60f, 400f, 360f),
+        )
+        for ((host, target) in targets) {
+            assertEquals(source, playerContainerAnchoredArtworkRect(source, target, mini, host, 0f))
+            assertEquals(target, playerContainerAnchoredArtworkRect(source, target, mini, host, 1f))
+            val opening = (0..100).map { step ->
+                val progress = step / 100f
+                val artwork = playerContainerAnchoredArtworkRect(source, target, mini, host, progress)
+                val container = playerContainerRect(mini, host, progress)
+                val expectedLeftInset = (source.left - mini.left) * (1f - progress) +
+                    (target.left - host.left) * progress
+                val expectedTopInset = (source.top - mini.top) * (1f - progress) +
+                    (target.top - host.top) * progress
+                assertEquals(expectedLeftInset, artwork.left - container.left, 0.001f)
+                assertEquals(expectedTopInset, artwork.top - container.top, 0.001f)
+                assertEquals(source.width * (1f - progress) + target.width * progress, artwork.width, 0.001f)
+                assertEquals(source.height * (1f - progress) + target.height * progress, artwork.height, 0.001f)
+                artwork
+            }
+            val closing = (100 downTo 0).map {
+                playerContainerAnchoredArtworkRect(source, target, mini, host, it / 100f)
+            }
+            assertEquals(opening, closing.reversed())
+        }
     }
 
     @Test fun pressedArtworkKeepsItsActualOriginAndReachesSquareTarget() {

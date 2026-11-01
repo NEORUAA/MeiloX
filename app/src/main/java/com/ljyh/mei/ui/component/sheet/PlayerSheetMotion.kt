@@ -63,7 +63,7 @@ internal fun playerArtworkRect(source: Rect, target: Rect, progress: Float): Rec
     return Rect(centerX - width / 2, centerY - height / 2, centerX + width / 2, centerY + height / 2)
 }
 
-internal fun playerTopAnchoredArtworkRect(
+internal fun playerContainerAnchoredArtworkRect(
     source: Rect,
     target: Rect,
     sourceContainer: Rect,
@@ -73,12 +73,17 @@ internal fun playerTopAnchoredArtworkRect(
     val p = progress.coerceIn(0f, 1f)
     val artwork = playerArtworkRect(source, target, p)
     val container = playerContainerRect(sourceContainer, targetContainer, p)
+    val left = container.left + mix(
+        source.left - sourceContainer.left,
+        target.left - targetContainer.left,
+        p,
+    )
     val top = container.top + mix(
         source.top - sourceContainer.top,
         target.top - targetContainer.top,
         p,
     )
-    return Rect(artwork.left, top, artwork.right, top + artwork.height)
+    return Rect(left, top, left + artwork.width, top + artwork.height)
 }
 
 internal fun playerDragOpens(velocityY: Float, lastDeltaY: Float, originOpen: Boolean): Boolean = when {
