@@ -155,10 +155,16 @@ fun MiniPlayer(
     compactProgress: State<Float>,
     onClick: () -> Unit,
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
+    onMoreClick: () -> Unit = {},
+    onLyricsClick: () -> Unit = onClick,
+    onQueueClick: () -> Unit = {},
 ) {
     val appearance = LocalMiniPlayerAppearance.current
     if (appearance == null) {
-        MiniPlayerContent(modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged)
+        MiniPlayerContent(
+            modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
+            onMoreClick, onLyricsClick, onQueueClick,
+        )
     } else {
         MusicTheme(
             seedColor = LocalAccentSeedColor.current ?: defaultGlassColors(appearance).accent,
@@ -167,7 +173,10 @@ fun MiniPlayer(
             CompositionLocalProvider(
                 LocalGlassColors provides defaultGlassColors(appearance, MaterialTheme.colorScheme.primary),
             ) {
-                MiniPlayerContent(modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged)
+                MiniPlayerContent(
+                    modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
+                    onMoreClick, onLyricsClick, onQueueClick,
+                )
             }
         }
     }
@@ -181,7 +190,14 @@ private fun MiniPlayerContent(
     compactProgress: State<Float>,
     onClick: () -> Unit,
     onCoverBoundsChanged: ((Rect) -> Unit)?,
+    onMoreClick: () -> Unit,
+    onLyricsClick: () -> Unit,
+    onQueueClick: () -> Unit,
 ) {
+    if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape) {
+        LandscapeMiniPlayer(modifier, backdrop, onClick, onMoreClick, onLyricsClick, onQueueClick)
+        return
+    }
     val sheet = LocalPlayerSheet.current
     val chromeMotion = LocalMiniPlayerChromeMotion.current
     val horizontalProgress = chromeMotion?.horizontalProgress ?: compactProgress

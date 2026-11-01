@@ -6,6 +6,7 @@ import io.github.neoruaa.glasmio.scaffold.dismissedAnchor
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
@@ -49,6 +50,18 @@ internal fun playerContainerRect(source: Rect, target: Rect, progress: Float): R
         mix(source.right, target.right, p), mix(source.bottom, target.bottom, p),
     )
 }
+
+/** Keep the top inset fixed, optionally anchoring the measured content horizontally by center. */
+internal fun playerMiniContentOrigin(
+    content: Rect,
+    sourceContainer: Rect,
+    container: Rect,
+    centerHorizontally: Boolean,
+): Offset = Offset(
+    content.left + if (centerHorizontally) container.center.x - sourceContainer.center.x
+        else container.left - sourceContainer.left,
+    content.top + container.top - sourceContainer.top,
+)
 
 internal fun playerContainerCornerRadius(source: Float, target: Float, progress: Float): Float =
     if (progress >= 1f) 0f else mix(source, target, progress.coerceAtLeast(0f))

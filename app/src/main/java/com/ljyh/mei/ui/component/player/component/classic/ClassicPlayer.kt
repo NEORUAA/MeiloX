@@ -52,7 +52,7 @@ fun ClassicPlayer(
         state = state,
         modifier = modifier,
         collapsedDragOffset = miniPlayerVerticalOffset,
-        collapsedDragHeight = MiniPlayerHeight,
+        collapsedDragHeight = if (device.isLandscape) com.ljyh.mei.constants.LandscapeMiniPlayerHeight else MiniPlayerHeight,
         transitionBackdrop = collapsedBackdrop,
         onDismiss = {
             stateContainer.playerConnection.player.stop()
@@ -81,6 +81,9 @@ fun ClassicPlayer(
                 backdrop = collapsedBackdrop,
                 compactProgress = compactMiniPlayerProgress,
                 onClick = state::expandSoft,
+                onMoreClick = overlayHandler::showMoreAction,
+                onLyricsClick = state::expandSoft,
+                onQueueClick = overlayHandler::showPlaylist,
             )
         }
     ) {

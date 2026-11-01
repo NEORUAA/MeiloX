@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -106,6 +107,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.Preferences
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -174,6 +177,10 @@ import com.ljyh.mei.constants.ReduceTransparencyKey
 import com.ljyh.mei.constants.LastSelectedTabKey
 import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
+import com.ljyh.mei.constants.LandscapeMiniPlayerHeight
+import com.ljyh.mei.ui.navigation.LandscapeNavigationBar
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import androidx.compose.foundation.layout.widthIn
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.NavigationBarHeight
 import com.ljyh.mei.constants.NavigationBarSurfaceHeight
@@ -292,6 +299,21 @@ class MainActivity : ComponentActivity() {
         pictureInPictureMode = isInPictureInPictureMode
         readFloatingLyricsIntent(intent)
         enableEdgeToEdge()
+        val contentRoot = findViewById<android.view.View>(android.R.id.content)
+        fun pageInsets(insets: WindowInsetsCompat) = retainLandscapeStatusBarSpace(
+            insets, resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        )
+        // Preserve the status bar's layout space in both final dispatch and animation
+        // frames. Its visibility flag still follows the immersive player.
+        ViewCompat.setOnApplyWindowInsetsListener(contentRoot) { _, insets -> pageInsets(insets) }
+        ViewCompat.setWindowInsetsAnimationCallback(contentRoot,
+            object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+                ): WindowInsetsCompat = pageInsets(insets)
+            },
+        )
         CrashHandler.init(this)
         if (BuildConfig.DEBUG) {
             // 开发模式：既输出到 Logcat，也输出到文件
@@ -375,6 +397,7 @@ class MainActivity : ComponentActivity() {
             val navigationTabOrder = navigationPreferences?.get(NavigationTabOrderKey)
                 ?: Index.DefaultOrder.joinToString(",", transform = Index::name)
             var playerConnection by remember { mutableStateOf<PlayerConnection?>(null) }
+            var playerVisibilitySynchronized by remember { mutableStateOf(false) }
             var clipboardLink by remember { mutableStateOf<NeteaseMusicLink?>(null) }
             var clipboardInspected by rememberSaveable { mutableStateOf(false) }
             var startupUpdateResult by remember { mutableStateOf<VersionUpdateResult?>(null) }
@@ -597,6 +620,9 @@ class MainActivity : ComponentActivity() {
                                 isMeasured = true
                             }
                     ) {
+                    val navigationViewportWidth = maxWidth
+                    val isLandscape = rememberDeviceInfo().isLandscape
+                    val miniPlayerHeight = if (isLandscape) LandscapeMiniPlayerHeight else MiniPlayerHeight
                     val focusManager = LocalFocusManager.current
                     val keyboardController = LocalSoftwareKeyboardController.current
                     val density = LocalDensity.current
@@ -702,12 +728,12 @@ class MainActivity : ComponentActivity() {
                                 navigationItems.fastAny { it.route == currentRoute } ||
                                 currentRoute == Screen.Search.route) &&
                                 !active
-                    SideEffect { navigationScrollAllowed.value = shouldAllowNavigationBar }
+                    SideEffect { navigationScrollAllowed.value = shouldAllowNavigationBar && !isLandscape }
                     // Route visibility must not reset the expanded/compact shape. This keeps a
                     // MiniNav compact while it fades out. The expanded preference overrides
                     // scrolling without changing which routes can display the navigation bar.
                     val shouldCompactMiniPlayer =
-                        shouldAllowNavigationBar && !navigationBarExpanded
+                        !isLandscape && shouldAllowNavigationBar && !navigationBarExpanded
 
 
 
@@ -715,19 +741,19 @@ class MainActivity : ComponentActivity() {
                     // Keep the anchor stable while the navigation morphs. The mini player
                     // moves inside the collapsed host with the same continuous spring.
                     val collapsedBottomReservation = when {
-                        active -> navigationBottomMargin + searchToolbarSurfaceHeight -
+                        active && !isLandscape -> navigationBottomMargin + searchToolbarSurfaceHeight -
                             searchToolbarVerticalOffset + searchControlSpacing
-                        shouldAllowNavigationBar ->
+                        shouldAllowNavigationBar && !isLandscape ->
                             navigationBottomMargin + NavigationBarHeight - NavigationBarBottomMargin
                         else -> navigationBottomMargin
                     }
-                    val collapsedBound = collapsedBottomReservation + MiniPlayerHeight
+                    val collapsedBound = collapsedBottomReservation + miniPlayerHeight
                     val searchMiniPlayerOffset = remember(
-                        active, searchToolbarBottomPadding, navigationBottomMargin,
+                        active, searchToolbarBottomPadding, navigationBottomMargin, isLandscape,
                     ) {
                         {
                             // Read IME padding during placement so both controls move together.
-                            if (active) -(searchToolbarBottomPadding.calculateBottomPadding() -
+                            if (active && !isLandscape) -(searchToolbarBottomPadding.calculateBottomPadding() -
                                 navigationBottomMargin).coerceAtLeast(0.dp)
                             else 0.dp
                         }
@@ -749,7 +775,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    val miniPlayerCenterTravel = MiniPlayerInlineVerticalTravel
+                    val miniPlayerCenterTravel = if (isLandscape) 0.dp else MiniPlayerInlineVerticalTravel
                     val miniPlayerChromeMotion = rememberMiniPlayerChromeMotion(
                         compact = shouldCompactMiniPlayer,
                         sheet = playerBottomSheetState,
@@ -808,10 +834,10 @@ class MainActivity : ComponentActivity() {
                     val playerDismissed by remember(playerBottomSheetState) {
                         derivedStateOf { playerBottomSheetState.isDismissed }
                     }
-                    val searchResultsBottomPadding = remember(searchBottomInsets, density, playerDismissed) {
+                    val searchResultsBottomPadding = remember(searchBottomInsets, density, playerDismissed, isLandscape) {
                         searchBottomInsets.add(
-                            WindowInsets(bottom = NavigationBarHeight - NavigationBarBottomMargin +
-                                if (playerDismissed) 0.dp else MiniPlayerHeight),
+                            WindowInsets(bottom = (if (isLandscape) 0.dp else NavigationBarHeight - NavigationBarBottomMargin) +
+                                if (playerDismissed) 0.dp else miniPlayerHeight),
                         ).asPaddingValues(density)
                     }
                     val pageDarkAppearance = currentRoute?.let { pageAppearanceOverrides[it]?.second }
@@ -853,7 +879,7 @@ class MainActivity : ComponentActivity() {
                         window.navigationBarDividerColor = transparent
                         onDispose { }
                     }
-                    val immersiveLandscapePlayer = isPlayerPage &&
+                    val immersiveLandscapePlayer = playerBottomSheetState.isContentVisible &&
                         windowConfiguration.orientation == Configuration.ORIENTATION_LANDSCAPE
                     DisposableEffect(windowInsetsController, immersiveLandscapePlayer) {
                         val previousBehavior = windowInsetsController.systemBarsBehavior
@@ -911,11 +937,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     DisposableEffect(playerConnection, playerBottomSheetState, isMeasured) {
+                        playerVisibilitySynchronized = false
                         val player =
                             playerConnection?.player ?: return@DisposableEffect onDispose { }
                         if (!isMeasured) return@DisposableEffect onDispose { }
                         fun syncPlayerVisibility() {
                             playerBottomSheetState.syncPlaybackVisibility(player.currentMediaItem != null)
+                            playerVisibilitySynchronized = true
                         }
                         val listener = object : Player.Listener {
                             override fun onEvents(player: Player, events: Player.Events) {
@@ -932,6 +960,7 @@ class MainActivity : ComponentActivity() {
                         syncPlayerVisibility()
                         onDispose {
                             player.removeListener(listener)
+                            playerVisibilitySynchronized = false
                         }
                     }
                     val selectionToolbar = remember { com.ljyh.mei.ui.local.SelectionToolbarState() }
@@ -1091,9 +1120,11 @@ class MainActivity : ComponentActivity() {
                                                     navigationBarExpanded,
                                                     playerDismissed,
                                                     windowsInsets,
+                                                    isLandscape,
                                                 ) {
                                                     playerAwareWindowInsetsForRoute(
                                                         route = meiRoute.route,
+                                                        isLandscape = isLandscape,
                                                         navigationItems = entryNavigationItems,
                                                         navigationBarVisible = navigationBarExpanded,
                                                         playerDismissed = playerDismissed,
@@ -1103,6 +1134,8 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 }
                                                 CompositionLocalProvider(
+                                                    com.ljyh.mei.ui.navigation.LocalMeiloXSearchTopPadding provides
+                                                        if (isLandscape && meiRoute.route == Screen.Search.route) 56.dp else 0.dp,
                                                     LocalPlayerAwareWindowInsets provides
                                                         if (meiRoute.route == Screen.Search.route) entryPlayerAwareWindowInsets.union(imeInsets)
                                                         else entryPlayerAwareWindowInsets,
@@ -1140,9 +1173,59 @@ class MainActivity : ComponentActivity() {
                                         isBackEnabled = !predictiveBackAnimationEnabled && canGoBack,
                                         onBackCompleted = { navController.popBackStack() },
                                     )
+                                    val selectedIndex = navigationItems.firstOrNull { it.route == currentRoute }
+                                        ?: navigationItems.firstOrNull { it.name == lastSelectedTab }
+                                        ?: Index.Home
+                                    val navigationTabs = navigationItems.map { item ->
+                                        GlasmioTabItem(
+                                            key = item,
+                                            label = stringResource(item.labelRes),
+                                            symbol = item.symbol,
+                                        )
+                                    }
                                     GlasmioNavigationScaffold(
                                         motion = headerMotion,
                                         header = { pageHeaders.entry(it).spec },
+                                        bottomBar = {
+                                            if (isLandscape) {
+                                                val header = currentRoute?.let { pageHeaders.entry(it).spec }
+                                                val sideActions = maxOf(
+                                                    header?.leading?.sumOf { it.actions.size } ?: 0,
+                                                    header?.trailing?.sumOf { it.actions.size } ?: 0,
+                                                )
+                                                val sideInset = 24.dp + 48.dp * sideActions.coerceAtLeast(1)
+                                                AnimatedVisibility(
+                                                    visible = navigationPreferences != null &&
+                                                        playerVisibilitySynchronized &&
+                                                        selectionToolbar.content.value == null,
+                                                    enter = fadeIn(), exit = fadeOut(),
+                                                    modifier = Modifier.align(Alignment.TopCenter)
+                                                        .padding(windowsInsets.only(WindowInsetsSides.Horizontal).asPaddingValues())
+                                                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp),
+                                                ) {
+                                                    CompositionLocalProvider(
+                                                        LocalGlassColors provides (header?.colors ?: glassColors),
+                                                    ) {
+                                                        LandscapeNavigationBar(
+                                                            items = navigationTabs,
+                                                            selectedKey = if (active) Index.Search else selectedIndex,
+                                                            searchKey = Index.Search,
+                                                            onSelected = { screen ->
+                                                                setLastSelectedTab(screen.name)
+                                                                if (currentRoute == screen.route) {
+                                                                    navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                                                                } else navController.navigateTopLevel(screen.route)
+                                                            },
+                                                            onSearchClick = {
+                                                                focusSearchOnEntry = true
+                                                                if (currentRoute != Screen.Search.route) navController.navigate(Screen.Search.route)
+                                                            },
+                                                            modifier = Modifier.widthIn(max = minOf(560.dp, (navigationViewportWidth - sideInset * 2).coerceAtLeast(44.dp))),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
                                     ) {
                                         GlasmioNavDisplay(
                                             sceneState = sceneState,
@@ -1216,7 +1299,7 @@ class MainActivity : ComponentActivity() {
                                                     onDismiss = clearSearchInput,
                                                     modifier = Modifier
                                                         .fillMaxSize()
-                                                        .padding(top = windowsInsets.asPaddingValues().calculateTopPadding())
+                                                        .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) 128.dp else 0.dp)
                                                         .padding(searchResultsBottomPadding),
                                                 )
                                             }
@@ -1238,7 +1321,7 @@ class MainActivity : ComponentActivity() {
                             visible = active,
                             enter = fadeIn(),
                             exit = fadeOut(),
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(if (isLandscape) Alignment.TopCenter else Alignment.BottomCenter),
                         ) {
                             CompositionLocalProvider(
                                 LocalGlassBackdrop provides bottomControlsBackdrop,
@@ -1255,8 +1338,11 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = bottomNavigationHorizontalMargin)
-                                        .padding(searchToolbarBottomPadding)
-                                        .offset(y = searchToolbarVerticalOffset),
+                                        .then(if (isLandscape) Modifier
+                                            .padding(windowsInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal).asPaddingValues())
+                                            .padding(top = 72.dp)
+                                        else Modifier.padding(searchToolbarBottomPadding)
+                                            .offset(y = searchToolbarVerticalOffset)),
                                 )
                             }
                         }
@@ -1272,7 +1358,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         AnimatedVisibility(
-                            visible = navigationPreferences != null && shouldAllowNavigationBar &&
+                            visible = !isLandscape && navigationPreferences != null && shouldAllowNavigationBar &&
                                 selectionToolbar.content.value == null,
                             enter = fadeIn(),
                             exit = fadeOut(),
@@ -1441,6 +1527,15 @@ private fun Preferences.glassHdrOutputEnabled(): Boolean =
         (this[LiquidGlassEnabledKey] ?: true) &&
         !(this[ReduceTransparencyKey] ?: false)
 
+/** Hide the system chrome without changing the retained landscape page viewport. */
+internal fun retainLandscapeStatusBarSpace(insets: WindowInsetsCompat, landscape: Boolean): WindowInsetsCompat {
+    if (!landscape) return insets
+    val type = WindowInsetsCompat.Type.statusBars()
+    return WindowInsetsCompat.Builder(insets)
+        .setInsets(type, insets.getInsetsIgnoringVisibility(type))
+        .build()
+}
+
 private val homeNavigationRoutes = Screen.MainScreens.map { it.route }.toSet()
 private val bottomNavigationHorizontalMargin = BottomBarHorizontalPadding
 private val searchToolbarSurfaceHeight = 48.dp
@@ -1529,6 +1624,7 @@ private fun AnimatedBottomNavigationRow(
 
 private fun playerAwareWindowInsetsForRoute(
     route: String,
+    isLandscape: Boolean,
     navigationItems: List<Index>,
     navigationBarVisible: Boolean,
     playerDismissed: Boolean,
@@ -1539,11 +1635,11 @@ private fun playerAwareWindowInsetsForRoute(
     val allowsNavigationBar =
         navigationItems.fastAny { it.route == route } || route == Screen.Search.route
     var bottom = if (allowsNavigationBar || !playerDismissed) navigationBottomMargin else bottomInset
-    if (allowsNavigationBar && (navigationBarVisible || route == Screen.Setting.route)) {
+    if (!isLandscape && allowsNavigationBar && (navigationBarVisible || route == Screen.Setting.route)) {
         bottom += NavigationBarHeight - NavigationBarBottomMargin
     }
     if (!playerDismissed || route == Screen.Setting.route) {
-        bottom += MiniPlayerHeight
+        bottom += if (isLandscape) LandscapeMiniPlayerHeight else MiniPlayerHeight
     }
     return windowsInsets
         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)

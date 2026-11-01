@@ -1,0 +1,241 @@
+package com.ljyh.mei.ui.component.player
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import com.kyant.capsule.ContinuousRoundedRectangle
+import com.kyant.shapes.Capsule
+import com.ljyh.mei.R
+import com.ljyh.mei.constants.LoopPlaybackKey
+import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.constants.LandscapeMiniPlayerHeight
+import com.ljyh.mei.extensions.togglePlayPause
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicSkipIcon
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseMotionContent
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
+import com.ljyh.mei.ui.component.sheet.recordPlayerContent
+import com.ljyh.mei.ui.local.LocalPlayerConnection
+import io.github.neoruaa.glasmio.core.IosTypography
+import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.glass.GlassSurface
+import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
+import io.github.neoruaa.glasmio.glass.render.Backdrop
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+internal fun LandscapeMiniPlayer(
+    modifier: Modifier,
+    backdrop: Backdrop,
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit,
+    onLyricsClick: () -> Unit,
+    onQueueClick: () -> Unit,
+) {
+    val connection = LocalPlayerConnection.current ?: return
+    val sheet = LocalPlayerSheet.current
+    val colors = LocalGlassColors.current
+    val metadata by connection.mediaMetadata.collectAsState()
+    val playing by connection.isPlaying.collectAsState()
+    val playbackState by connection.playbackState.collectAsState()
+    val error by connection.error.collectAsState()
+    val previous by connection.canSkipPrevious.collectAsState()
+    val next by connection.canSkipNext.collectAsState()
+    var previousClicks by remember(connection) { mutableIntStateOf(0) }
+    var nextClicks by remember(connection) { mutableIntStateOf(0) }
+    val shuffle by connection.shuffleModeEnabled.collectAsState()
+    val fmEnabled by connection.isFMMode.collectAsState()
+    val autoplayEnabled by connection.queueAutoplayEnabled.collectAsState()
+    val (_, setLoopPlayback) = rememberPreference(LoopPlaybackKey, true)
+    var repeat by remember(connection) { mutableIntStateOf(connection.player.repeatMode) }
+    DisposableEffect(connection) {
+        val listener = object : Player.Listener {
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                repeat = repeatMode
+            }
+        }
+        connection.player.addListener(listener)
+        onDispose { connection.player.removeListener(listener) }
+    }
+    val stringPrevious = stringResource(R.string.pip_previous)
+    val stringNext = stringResource(R.string.player_next)
+    val playPauseDescription = stringResource(if (playing) R.string.player_pause else R.string.player_play)
+    val artwork = LocalPlayerArtwork.current
+    val transitioning by remember(sheet) { derivedStateOf { sheet?.state?.isTransitioning == true } }
+    Box(
+        modifier.widthIn(max = 748.dp).fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlassSurface(
+            modifier = Modifier.widthIn(max = 700.dp).fillMaxWidth().height(LandscapeMiniPlayerHeight)
+                .testTag("MeiloXLandscapeMiniPlayer")
+                .onGloballyPositioned {
+                    sheet?.miniBounds = Rect(it.localToRoot(Offset.Zero),
+                        it.localToRoot(Offset(it.size.width.toFloat(), it.size.height.toFloat())))
+                },
+            backdrop = backdrop,
+            shape = Capsule(),
+            style = GlassSurfaceStyle.Navigation,
+            onVisualBoundsChanged = { bounds, light -> sheet?.updateMiniPressHighlight(bounds, light) },
+            cancelPressFeedback = transitioning,
+            pressHighlight = remember(sheet) { { sheet?.collapsedPressHighlight } },
+            onClick = {
+                sheet?.prepareTransition()
+                sheet?.releasePressHighlight()
+                onClick()
+            },
+        ) {
+            Row(
+                Modifier.fillMaxSize()
+                    .onGloballyPositioned { sheet?.miniLayoutCoordinates = it }
+                    .padding(start = 12.dp, end = 20.dp)
+                    .onGloballyPositioned {
+                        sheet?.miniContentCoordinates = it
+                        sheet?.miniLayoutBounds(it)?.let { bounds -> sheet.miniContentBounds = bounds }
+                    }
+                    .then(if (sheet != null) Modifier.recordPlayerContent(sheet, sheet.miniContent,
+                        warmWhileVisible = true) { !sheet.isTransitioning } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LandscapePlayerButton("shuffle", stringResource(R.string.notification_mode_shuffle),
+                    iconSize = 20.dp, selected = shuffle, enabled = !fmEnabled || autoplayEnabled,
+                    onClick = { connection.service.setShuffleModeEnabled(!shuffle) })
+                CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                    IconButton(
+                        onClick = { previousClicks++; connection.seekToPrevious() },
+                        enabled = previous,
+                        modifier = Modifier.size(44.dp).semantics {
+                            contentDescription = stringPrevious
+                        },
+                    ) {
+                        AppleMusicSkipIcon(forward = false, clickCount = previousClicks, size = 30.dp,
+                            tint = colors.content.copy(alpha = if (previous) 1f else .3f),
+                            weight = FontWeight.SemiBold)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (playbackState == Player.STATE_ENDED) {
+                                connection.player.seekTo(0, 0)
+                                connection.player.playWhenReady = true
+                            } else connection.player.togglePlayPause()
+                        },
+                        modifier = Modifier.size(44.dp).semantics {
+                            contentDescription = playPauseDescription
+                        },
+                    ) {
+                        AppleMusicPlayPauseMotionContent(if (playing) "pause.fill" else "play.fill",
+                            Modifier.size(32.dp)) { symbol ->
+                            SfIcon(symbol, null, tint = colors.content, size = 32.dp, weight = FontWeight.Bold)
+                        }
+                    }
+                    IconButton(
+                        onClick = { nextClicks++; connection.seekToNext() },
+                        enabled = next,
+                        modifier = Modifier.size(44.dp).semantics {
+                            contentDescription = stringNext
+                        },
+                    ) {
+                        AppleMusicSkipIcon(forward = true, clickCount = nextClicks, size = 30.dp,
+                            tint = colors.content.copy(alpha = if (next) 1f else .3f),
+                            weight = FontWeight.SemiBold)
+                    }
+                }
+                LandscapePlayerButton(if (repeat == Player.REPEAT_MODE_ONE) "repeat.1" else "repeat",
+                    stringResource(R.string.loop_playback), iconSize = 20.dp, selected = repeat != Player.REPEAT_MODE_OFF,
+                    onClick = {
+                        val nextMode = when (repeat) {
+                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                            else -> Player.REPEAT_MODE_OFF
+                        }
+                        connection.player.repeatMode = nextMode
+                        setLoopPlayback(nextMode != Player.REPEAT_MODE_OFF)
+                    })
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.size(46.dp).clip(ContinuousRoundedRectangle(6.dp))
+                    .background(colors.content.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
+                    if (artwork != null) Image(artwork.second, null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().testTag("LandscapeMiniArtwork"))
+                    else SfIcon("music.note", null, tint = colors.secondaryContent, size = 24.dp)
+                    if (error != null) Box(
+                        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SfIcon(SfSymbol.Warning, stringResource(R.string.player_playback_error),
+                            tint = androidx.compose.material3.MaterialTheme.colorScheme.error, size = 24.dp)
+                    }
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp),
+                    verticalArrangement = Arrangement.Center) {
+                    val track = metadata
+                    if (track != null) {
+                        AppleMusicMarqueeText(
+                            text = track.title, style = IosTypography.body,
+                            color = colors.content, edgeWidth = 8.dp,
+                            enabled = sheet?.state?.isCollapsed != false,
+                        )
+                        val artists = track.artists.joinToString { it.name }
+                        if (artists.isNotBlank()) AppleMusicMarqueeText(
+                            text = artists, style = IosTypography.caption,
+                            color = colors.secondaryContent, edgeWidth = 8.dp,
+                            enabled = sheet?.state?.isCollapsed != false,
+                        )
+                    } else Text(stringResource(R.string.landscape_player_not_playing), style = IosTypography.body,
+                        color = colors.secondaryContent, maxLines = 1)
+                }
+                LandscapePlayerButton("ellipsis", stringResource(R.string.more_actions_title),
+                    targetSize = 48.dp, iconSize = 24.dp, onClick = onMoreClick)
+                LandscapePlayerButton("quote.bubble", stringResource(R.string.player_action_lyrics),
+                    targetSize = 48.dp, iconSize = 24.dp, onClick = onLyricsClick)
+                LandscapePlayerButton("list.bullet", stringResource(R.string.player_action_queue),
+                    targetSize = 48.dp, iconSize = 24.dp, onClick = onQueueClick)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LandscapePlayerButton(
+    symbol: String,
+    description: String,
+    targetSize: Dp = 44.dp,
+    iconSize: Dp = 22.dp,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val colors = LocalGlassColors.current
+    IconButton(onClick, enabled = enabled, modifier = Modifier.size(targetSize).semantics {
+        contentDescription = description
+        this.selected = selected
+    }) {
+        SfIcon(symbol, null, tint = (if (selected) colors.accent else colors.content)
+            .copy(alpha = if (enabled) 1f else 0.3f), size = iconSize, weight = FontWeight.SemiBold)
+    }
+}

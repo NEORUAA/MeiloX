@@ -49,6 +49,7 @@ val NavigationBarHeight = NavigationBarSurfaceHeight + NavigationBarBottomMargin
 internal val BottomBarHorizontalPadding = 20.dp
 internal val DetailPageHorizontalPadding = 24.dp
 val MiniPlayerHeight = 48.dp
+val LandscapeMiniPlayerHeight = 64.dp
 internal val MiniPlayerInlineHeight = CompactBottomControlSize
 internal val MiniPlayerInlineHorizontalPadding = BottomBarHorizontalPadding +
     (NavigationBarSurfaceHeight + CompactBottomControlSize) / 2 + 14.dp

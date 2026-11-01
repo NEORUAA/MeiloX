@@ -257,6 +257,35 @@ class PlayerSheetMotionTest {
         assertEquals(outward, inward.reversed())
     }
 
+    @Test fun landscapeMiniContentKeepsHorizontalCenterAndTopInsetThroughReversal() {
+        val container = Rect(250f, 700f, 950f, 764f)
+        val content = Rect(262f, 700f, 930f, 764f)
+        val host = Rect(17f, 23f, 1217f, 823f)
+        val centerInset = content.center - container.center
+        val progress = listOf(0f, .2f, .5f, .8f, 1f, .8f, .5f, .2f, 0f)
+        val origins = progress.map { p ->
+            val moving = playerContainerRect(container, host, p)
+            val origin = playerMiniContentOrigin(content, container, moving, centerHorizontally = true)
+            val frame = Rect(origin, content.size)
+            assertEquals(content.size, frame.size)
+            assertEquals(centerInset.x, frame.center.x - moving.center.x, .001f)
+            assertEquals(content.top - container.top, frame.top - moving.top, .001f)
+            origin
+        }
+        assertEquals(content.topLeft, origins.first())
+        assertEquals(origins.take(4), origins.takeLast(4).reversed())
+    }
+
+    @Test fun portraitMiniContentRetainsItsMeasuredTopAndLeadingInset() {
+        val content = Rect(20f, 700f, 380f, 748f)
+        listOf(0f, .25f, .5f, .75f, 1f).forEach { p ->
+            val moving = playerContainerRect(mini, page, p)
+            val origin = playerMiniContentOrigin(content, mini, moving, centerHorizontally = false)
+            assertEquals(content.left - mini.left, origin.x - moving.left, .001f)
+            assertEquals(content.top - mini.top, origin.y - moving.top, .001f)
+        }
+    }
+
     @Test fun artworkUsesUniformScaleAndMeloxCenterPath() {
         val source = Rect(20f, 708f, 52f, 740f)
         val target = Rect(60f, 100f, 340f, 380f)

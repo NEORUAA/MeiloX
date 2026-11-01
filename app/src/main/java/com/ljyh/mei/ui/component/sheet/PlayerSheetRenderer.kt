@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -536,6 +537,7 @@ fun BottomSheet(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val layers = checkNotNull(LocalPlayerSheet.current)
+    val landscape = com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape
     val active by remember(state) { derivedStateOf { state.isTransitioning } }
     val expanded by remember(state) { derivedStateOf { state.isExpanded } }
     val collapsed by remember(state) { derivedStateOf { state.isCollapsed } }
@@ -563,7 +565,7 @@ fun BottomSheet(
     Box(modifier.fillMaxSize().onGloballyPositioned { layers.updateHost(it.boundsInRoot()) }) {
         if (!dismissed || onDismiss == null) {
             Box(
-                Modifier.fillMaxWidth()
+                Modifier.align(Alignment.TopCenter)
                     .height(if (collapsedDragHeight > 0.dp) collapsedDragHeight else state.collapsedBound)
                     .offset {
                         IntOffset(0, (state.expandedBound - miniAnchor + collapsedDragOffset()).roundToPx())
@@ -634,21 +636,23 @@ fun BottomSheet(
                     val miniAlpha = playerMiniContentAlpha(p)
                     if (miniAlpha > 0f && layers.miniContent.size.width > 0) {
                         layers.miniContent.alpha = miniAlpha
-                        val source = layers.sourceContainer
-                        val offset = Offset(
-                            layers.sourceMiniContent.left - layers.hostBounds.left,
-                            layers.sourceMiniContent.top - source.top + bounds.top,
-                        )
+                        val offset = playerMiniContentOrigin(
+                            layers.sourceMiniContent, layers.sourceContainer,
+                            globalBounds, centerHorizontally = landscape,
+                        ) - layers.hostBounds.topLeft
                         withTransform({
-                            translate(offset.x + globalBounds.left - source.left, offset.y)
+                            translate(offset.x, offset.y)
                             scale(layers.miniScaleX, layers.miniScaleY, Offset.Zero)
                         }) { drawLayer(layers.miniContent) }
                     }
 
                     val fullAlpha = playerContentAlpha(p)
                     if (fullAlpha > 0f && layers.fullContent.size.width > 0) {
-                        // Preserve descendant blend modes while the recorded controls fade.
-                        layers.fullContent.compositingStrategy = CompositingStrategy.ModulateAlpha
+                        // Landscape keeps artwork and native shadows in this page recording.
+                        // Fade their completed image together so elevation cannot appear first.
+                        layers.fullContent.compositingStrategy = if (landscape) {
+                            CompositingStrategy.Offscreen
+                        } else CompositingStrategy.ModulateAlpha
                         layers.fullContent.alpha = fullAlpha
                         withTransform({
                             translate(bounds.left, bounds.top)
