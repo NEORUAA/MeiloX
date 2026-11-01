@@ -55,6 +55,7 @@ fun PlayerControls(
     canSkipNext: Boolean,
     isPlaying: Boolean,
     playbackState: Int,
+    showSideSpacers: Boolean = true,
 ){
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
@@ -70,7 +71,7 @@ fun PlayerControls(
                 .fillMaxWidth()
                 .then(if (appleMusicStyle) Modifier.height(playTargetSize) else Modifier)
         ) {
-            if (appleMusicStyle) Spacer(Modifier.weight(0.4f))
+            if (appleMusicStyle && showSideSpacers) Spacer(Modifier.weight(0.4f))
 
             //previous
             Box(modifier = Modifier.weight(1f)) {
@@ -144,7 +145,7 @@ fun PlayerControls(
                 }
             }
 
-            if (appleMusicStyle) Spacer(Modifier.weight(0.4f))
+            if (appleMusicStyle && showSideSpacers) Spacer(Modifier.weight(0.4f))
         }
     }
 

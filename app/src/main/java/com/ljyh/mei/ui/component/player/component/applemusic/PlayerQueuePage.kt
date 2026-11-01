@@ -28,11 +28,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -108,6 +112,9 @@ import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AutoMixEnabledKey
 import com.ljyh.mei.constants.LoopPlaybackKey
+import com.ljyh.mei.constants.songListCoverCornerRadius
+import com.ljyh.mei.constants.songListCoverSize
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.playbackOrderIndices
@@ -585,6 +592,7 @@ fun PlayerQueuePage(
     playerConnection: PlayerConnection,
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = AppleMusicDimensions.lyricTextInset,
+    contentEndPadding: Dp = horizontalPadding,
     indication: Indication? = LocalIndication.current,
     controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
     active: Boolean = true,
@@ -594,15 +602,19 @@ fun PlayerQueuePage(
     currentHeaderTextTop: Float = 0f,
     onHeaderPositionChanged: (State<PlayerQueueHeaderPosition>) -> Unit = {},
     bottomContentPadding: Dp = 56.dp,
+    landscapeHeader: Boolean = false,
 ) {
     val selectionPadding = 5.dp
+    val listStartPadding = (horizontalPadding - selectionPadding).coerceAtLeast(0.dp)
+    val listEndPadding = (contentEndPadding - selectionPadding).coerceAtLeast(0.dp)
     val inlineCurrent = currentHeader != null
     val player = playerConnection.player
     val context = LocalContext.current
     val density = LocalDensity.current
     val coverHeightPx = with(density) { PlayerQueueCoverHeight.toPx() }
     val visualCoverHeightPx = with(density) { AppleMusicDimensions.headerSize.toPx() }
-    val historyGapPx = with(density) { PlayerQueueHistoryGap.toPx() }
+    val historyGap = if (landscapeHeader) 6.dp else PlayerQueueHistoryGap
+    val historyGapPx = with(density) { historyGap.toPx() }
     val rowHeightPx = with(density) { 56.dp.roundToPx().toFloat() }
     val snapDirectionThresholdPx = with(density) { 8.dp.toPx() }
     val reportHeaderPosition by rememberUpdatedState(onHeaderPositionChanged)
@@ -711,6 +723,9 @@ fun PlayerQueuePage(
     }
     val displayedEntryIndices = remember(displayedEntries) {
         displayedEntries.mapIndexed { index, entry -> entry.key to index }.toMap()
+    }
+    val historyEntryIndices = remember(historyEntries) {
+        historyEntries.mapIndexed { index, entry -> entry.key to index }.toMap()
     }
     val autoplaySectionIndex = if (autoplayEnabled) {
         playerQueueAutoplaySectionIndex(currentQueueIndex, autoplayQueueIndex, displayedEntries.size, inlineCurrent)
@@ -1041,17 +1056,18 @@ fun PlayerQueuePage(
     }
     val normalFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, redrawRows, controlsFadeRange = controlsFadeRange,
-        contentTop = viewportContentTop,
+        contentTop = viewportContentTop, topEdgeFade = !landscapeHeader,
     )
     val additiveFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, redrawRows, additive = true, controlsFadeRange = controlsFadeRange,
-        contentTop = viewportContentTop,
+        contentTop = viewportContentTop, topEdgeFade = !landscapeHeader,
     )
     val coverFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, {
             topPull.offset
             dragFrame
         }, additive = true, controlsFadeRange = controlsFadeRange,
+        topEdgeFade = !landscapeHeader,
         layerOutsets = LayerOutsets(
             left = AppleMusicDimensions.headerMarqueeEdgeWidth,
             right = AppleMusicDimensions.headerMarqueeEdgeWidth,
@@ -1171,6 +1187,28 @@ fun PlayerQueuePage(
             )
         }
     }
+    val landscapeHeading: @Composable (Modifier) -> Unit = { headingModifier ->
+        Row(
+            headingModifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            continueHeading(Modifier.weight(1f).playerAdditiveBlend())
+            QueueModeButton(
+                systemName = "infinity", label = stringResource(R.string.queue_autoplay),
+                selected = autoplayEnabled, modifier = Modifier.width(76.dp),
+                enabled = !fmEnabled || autoplayEnabled,
+                indication = indication,
+                onClick = { playerConnection.setQueueAutoplayEnabled(!autoplayEnabled) },
+            )
+            QueueModeButton(
+                systemName = "circlebadge.2", label = stringResource(R.string.automix_enabled),
+                selected = autoMixEnabled, modifier = Modifier.width(76.dp),
+                indication = indication,
+                onClick = { setAutoMixEnabled(!autoMixEnabled) },
+            )
+        }
+    }
 
     val historyHeading: @Composable (Modifier) -> Unit = { headingModifier ->
         Row(
@@ -1228,11 +1266,15 @@ fun PlayerQueuePage(
     }
     Column(modifier.testTag("player_queue_page")) {
         if (!inlineCurrent) {
-            modeControls(Modifier.padding(horizontal = horizontalPadding))
-            continueHeading(
-                Modifier.padding(horizontal = horizontalPadding)
-                    .padding(top = 18.dp, bottom = 10.dp).playerAdditiveBlend(),
-            )
+            if (landscapeHeader) {
+                landscapeHeading(Modifier.padding(start = horizontalPadding, end = contentEndPadding))
+            } else {
+                modeControls(Modifier.padding(horizontal = horizontalPadding))
+                continueHeading(
+                    Modifier.padding(horizontal = horizontalPadding)
+                        .padding(top = 18.dp, bottom = 10.dp).playerAdditiveBlend(),
+                )
+            }
         }
         Box(
             Modifier.fillMaxWidth().weight(1f).clipToBounds()
@@ -1256,8 +1298,10 @@ fun PlayerQueuePage(
                 state = listState,
                 overscrollEffect = null,
                 contentPadding = PaddingValues(
-                    horizontal = (horizontalPadding - selectionPadding).coerceAtLeast(0.dp),
-                    vertical = 0.dp,
+                    start = listStartPadding,
+                    end = listEndPadding,
+                    top = 0.dp,
+                    bottom = 0.dp,
                 ),
                 modifier = Modifier.fillMaxSize().graphicsLayer { translationY = topPull.offset }
                     .then(headerAnchor).onGloballyPositioned {
@@ -1283,6 +1327,8 @@ fun PlayerQueuePage(
                         val entry = historyEntries[index]
                         QueueSongRow(
                             entry = entry,
+                            landscapeSongListStyle = landscapeHeader,
+                            showDivider = index < historyEntries.lastIndex,
                             modifier = (if (rowsTransition == null) Modifier.animateItem() else Modifier).then(liveRows),
                             enabled = rowsTransition == null,
                             indication = indication,
@@ -1295,7 +1341,7 @@ fun PlayerQueuePage(
                 }
                 if (inlineCurrent) {
                     item(key = "queue_history_gap") {
-                        Spacer(Modifier.height(if (historyEntries.isEmpty()) 0.dp else PlayerQueueHistoryGap))
+                        Spacer(Modifier.height(if (historyEntries.isEmpty()) 0.dp else historyGap))
                     }
                     // End the history heading's sticky lifetime as soon as the cover reaches the top.
                     stickyHeader(key = "queue_current_boundary") {
@@ -1308,10 +1354,14 @@ fun PlayerQueuePage(
                                 Modifier.fillMaxWidth().onSizeChanged { measuredHeaderHeightPx = it.height }
                                     .padding(horizontal = selectionPadding),
                             ) {
-                                Box(Modifier.fillMaxWidth().height(AppleMusicDimensions.headerSize)) {
-                                    currentHeader?.invoke(coverFade)
+                                if (landscapeHeader) {
+                                    Spacer(Modifier.height(1.dp))
+                                } else {
+                                    Box(Modifier.fillMaxWidth().height(AppleMusicDimensions.headerSize)) {
+                                        currentHeader?.invoke(coverFade)
+                                    }
+                                    Spacer(Modifier.height(16.dp))
                                 }
-                                Spacer(Modifier.height(16.dp))
                             }
                         }
                     }
@@ -1321,9 +1371,13 @@ fun PlayerQueuePage(
                                 .pointerInput(Unit) { detectTapGestures {} }
                                 .padding(horizontal = selectionPadding),
                         ) {
-                            modeControls(Modifier)
-                            Spacer(Modifier.height(18.dp))
-                            continueHeading(Modifier.padding(bottom = 10.dp).playerAdditiveBlend())
+                            if (landscapeHeader) {
+                                landscapeHeading(Modifier)
+                            } else {
+                                modeControls(Modifier)
+                                Spacer(Modifier.height(18.dp))
+                                continueHeading(Modifier.padding(bottom = 10.dp).playerAdditiveBlend())
+                            }
                         }
                     }
                 }
@@ -1350,6 +1404,8 @@ fun PlayerQueuePage(
                         ) {
                             QueueSongRow(
                                 entry = entry,
+                                landscapeSongListStyle = landscapeHeader,
+                                showDivider = startIndex + index < endIndex - 1,
                                 modifier = liveRows,
                                 enabled = rowsTransition == null,
                                 indication = indication,
@@ -1387,7 +1443,7 @@ fun PlayerQueuePage(
                 val ids = (motion.before.keys - destination.keys) +
                     (destination.keys - motion.before.keys) + destination.keys.intersect(motion.before.keys)
                 Box(Modifier.matchParentSize().graphicsLayer { translationY = topPull.offset }.clearAndSetSemantics { }
-                    .padding(horizontal = (horizontalPadding - selectionPadding).coerceAtLeast(0.dp))) {
+                    .padding(start = listStartPadding, end = listEndPadding)) {
                     // These copies own drawing only. Lazy row identities, viewport size,
                     // sticky headings and the shared header artwork stay untouched.
                     for (id in ids) key(id) {
@@ -1418,6 +1474,14 @@ fun PlayerQueuePage(
                         } else {
                             QueueSongRow(
                                 entry = entry,
+                                landscapeSongListStyle = landscapeHeader,
+                                showDivider = if (visual.history) {
+                                    entry.key != historyEntries.lastOrNull()?.key
+                                } else {
+                                    val rowIndex = displayedEntryIndices[entry.key]
+                                    rowIndex != null && rowIndex != autoplaySectionIndex - 1 &&
+                                        rowIndex != displayedEntries.lastIndex
+                                },
                                 modifier = rowModifier,
                                 interactive = false,
                                 indication = indication,
@@ -1431,13 +1495,22 @@ fun PlayerQueuePage(
                     }
                 }
             }
+            val fullListScrollbar = landscapeHeader && inlineCurrent
+            val historyPaddingHeight = (emptyHistoryPaddingPx - historyHeadingHeightPx).coerceAtLeast(0f)
+            val historyListHeight = if (showHistorySection) {
+                historyHeadingHeightPx + historyPaddingHeight + historyEntries.size * rowHeightPx
+            } else 0f
+            val beforeUpcomingHeight = historyListHeight +
+                (if (historyEntries.isNotEmpty()) historyGapPx else 0f) +
+                inlineHeaderHeightPx + controlsHeadingHeightPx
             PlayerQueueScrollbar(
                 enabled = !initialScrollPending && !automaticScrollInProgress,
                 isScrolling = {
                     active && selected && listState.isScrollInProgress
                 },
                 viewportTop = {
-                    if (inlineCurrent) {
+                    if (fullListScrollbar) topPull.offset
+                    else if (inlineCurrent) {
                         listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "queue_upcoming_controls" }
                             ?.let { (it.offset + it.size).toFloat() + topPull.offset }
                     } else topPull.offset
@@ -1455,11 +1528,27 @@ fun PlayerQueuePage(
                             ?: items.firstOrNull { it.key == "queue_bottom_space" }
                                 ?.let { it.offset - displayedEntries.size * rowHeightPx - autoplayHeight }
                     }
-                    start?.plus(topPull.offset)
+                    if (fullListScrollbar) {
+                        val historyRow = items.firstOrNull { it.key in historyEntryIndices }
+                        val historyIndex = historyRow?.let { historyEntryIndices[it.key] }
+                        val fullStart = when {
+                            historyRow != null && historyIndex != null ->
+                                historyRow.offset - historyHeadingHeightPx - historyPaddingHeight -
+                                    historyIndex * rowHeightPx
+                            items.any { it.key == PlayerQueueCurrentHeaderKey } ->
+                                items.first { it.key == PlayerQueueCurrentHeaderKey }.offset -
+                                    historyListHeight - (if (historyEntries.isNotEmpty()) historyGapPx else 0f)
+                            start != null -> start - beforeUpcomingHeight
+                            else -> items.firstOrNull { it.key == "queue_upcoming_controls" }
+                                ?.let { it.offset - beforeUpcomingHeight + controlsHeadingHeightPx }
+                        }
+                        fullStart?.plus(topPull.offset)
+                    } else start?.plus(topPull.offset)
                 },
-                contentHeight = displayedEntries.size * rowHeightPx + tailHeightPx +
+                contentHeight = (if (fullListScrollbar) beforeUpcomingHeight else 0f) +
+                    displayedEntries.size * rowHeightPx + tailHeightPx +
                     if (autoplayEnabled) autoplayHeadingHeightPx.toFloat() else 0f,
-                initialViewportHeight = (viewportSize.height -
+                initialViewportHeight = (viewportSize.height - if (fullListScrollbar) 0f else
                     if (inlineCurrent) inlineHeaderHeightPx + controlsHeadingHeightPx else 0f).coerceAtLeast(0f),
                 modifier = Modifier.matchParentSize(),
             )
@@ -1584,6 +1673,8 @@ internal fun QueueSongRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     interactive: Boolean = true,
+    landscapeSongListStyle: Boolean = false,
+    showDivider: Boolean = true,
 ) {
     var entryCoordinates by remember(entry.key) { mutableStateOf<LayoutCoordinates?>(null) }
     val metadata = entry.mediaItem.metadata
@@ -1591,6 +1682,9 @@ internal fun QueueSongRow(
     val title = metadata?.title ?: display.title?.toString().orEmpty()
     val artist = metadata?.artists?.joinToString(", ") { it.name } ?: display.artist?.toString().orEmpty()
     val cover = metadata?.coverUrl ?: display.artworkUri?.toString().orEmpty()
+    val coverSize = if (landscapeSongListStyle) songListCoverSize(true) else 46.dp
+    val coverCorner = if (landscapeSongListStyle) songListCoverCornerRadius(true) else 5.dp
+    val dividerColor = if (landscapeSongListStyle) songListDividerColor() else Color.Transparent
     Box(modifier) {
         if (selected) {
             Box(
@@ -1600,7 +1694,8 @@ internal fun QueueSongRow(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().height(56.dp).padding(5.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+                .padding(horizontal = 5.dp, vertical = if (landscapeSongListStyle) 4.dp else 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -1621,23 +1716,27 @@ internal fun QueueSongRow(
                     model = cover.smallImage(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(46.dp).clip(ContinuousRoundedRectangle(5.dp)).then(normalFade),
+                    modifier = Modifier.size(coverSize).clip(ContinuousRoundedRectangle(coverCorner)).then(normalFade),
                 )
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp).then(additiveFade)) {
+                Column(Modifier.weight(1f)
+                    .padding(start = 12.dp, end = if (landscapeSongListStyle) 0.dp else 12.dp)
+                    .then(additiveFade)) {
                     Text(
                         title,
                         color = Color.White.copy(alpha = 0.92f),
+                        style = if (landscapeSongListStyle) MaterialTheme.typography.bodyLarge else LocalTextStyle.current,
                         fontSize = 16.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        lineHeight = 20.sp,
+                        lineHeight = if (landscapeSongListStyle) 22.sp else 20.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         artist,
                         color = Color.White.copy(alpha = 0.5f),
+                        style = if (landscapeSongListStyle) MaterialTheme.typography.bodyMedium else LocalTextStyle.current,
                         fontSize = 13.sp,
-                        lineHeight = 17.sp,
+                        lineHeight = if (landscapeSongListStyle) 18.sp else 17.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1656,6 +1755,15 @@ internal fun QueueSongRow(
                     )
                 }
             }
+        }
+        if (landscapeSongListStyle && showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(start = 5.dp + coverSize + 12.dp)
+                    .then(normalFade),
+                thickness = 0.5.dp,
+                color = dividerColor,
+            )
         }
     }
 }
@@ -1693,6 +1801,7 @@ internal fun Modifier.queueViewportFade(
     dragFrame: () -> Int,
     additive: Boolean = false,
     controlsFadeRange: (Float) -> ClosedFloatingPointRange<Float>? = { null },
+    topEdgeFade: Boolean = true,
     contentTop: () -> Float = { 0f },
     layerOutsets: LayerOutsets = LayerOutsets.Zero,
 ): Modifier = composed {
@@ -1712,7 +1821,7 @@ internal fun Modifier.queueViewportFade(
         .drawWithCache {
             val maskLeft = -layerOutsets.left.toPx()
             val maskSize = Size(size.width + layerOutsets.left.toPx() + layerOutsets.right.toPx(), size.height)
-            val topFadeHeight = 8.dp.toPx()
+            val topFadeHeight = if (topEdgeFade) 8.dp.toPx() else 0f
             val bottomFadeHeight = 60.dp.toPx()
             var viewportBrush: Brush? = null
             var cachedFadeTop = Float.NaN
