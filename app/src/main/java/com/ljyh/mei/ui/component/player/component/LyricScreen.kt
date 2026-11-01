@@ -417,7 +417,7 @@ fun LyricScreen(
                                     .padding(vertical = rendererVerticalPadding)
                                     .clipToBounds(),
                                 normalLineTextStyle = LocalTextStyle.current.copy(
-                                    fontSize = normalLyricTextSize.text.sp,
+                                    fontSize = normalLyricTextSize.text.coerceIn(16, 48).sp,
                                     fontWeight = if (normalLyricTextBold) FontWeight.Bold else FontWeight.Normal,
                                     textMotion = TextMotion.Animated,
                                 ),
@@ -427,7 +427,7 @@ fun LyricScreen(
                                     textMotion = TextMotion.Animated,
                                 ),
                                 translationLineTextStyle = LocalTextStyle.current.copy(
-                                    fontSize = translationLyricTextSize.text.sp,
+                                    fontSize = translationLyricTextSize.text.coerceIn(16, 36).sp,
                                     fontWeight = if (translationLyricTextBold) FontWeight.Bold else FontWeight.Normal,
                                     textMotion = TextMotion.Animated,
                                 ),

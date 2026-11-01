@@ -874,4 +874,5 @@
 <string name="musician_not_registered">Not registered</string>
 <string name="musician_podcaster">Podcast creator</string>
 <string name="musician_creator">Content creator</string>
+    <string name="landscape_player_not_playing">Not Playing</string>
 </resources>

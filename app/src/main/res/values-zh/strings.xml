@@ -873,4 +873,5 @@
 <string name="musician_not_registered">未入驻</string>
 <string name="musician_podcaster">播客创作者</string>
 <string name="musician_creator">内容创作者</string>
+    <string name="landscape_player_not_playing">未在播放</string>
 </resources>

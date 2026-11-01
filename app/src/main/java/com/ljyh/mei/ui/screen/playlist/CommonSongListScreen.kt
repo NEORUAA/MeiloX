@@ -184,7 +184,7 @@ fun CommonSongListScreen(
             .coerceIn(0f, 1f)
             .let { it * it * (3f - 2f * it) }
     val focusManager = LocalFocusManager.current
-    val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
+    val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Combination)
     val backgroundCover =
         if (useCoverBackground) {
             when (coverStyle) {

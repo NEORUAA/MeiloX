@@ -37,6 +37,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioNavigationBar
 import io.github.neoruaa.glasmio.ui.GlasmioTabItem
 
 import android.graphics.RenderNode
+import android.content.res.Configuration
 import android.graphics.Region
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -53,6 +54,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -81,6 +83,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -90,8 +93,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -119,6 +127,9 @@ import io.github.neoruaa.glasmio.glass.render.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
+import com.ljyh.mei.ui.navigation.LandscapeNavigationBar
+import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.R
 import com.ljyh.mei.ui.component.player.LocalPlayerRoamingModeLabel
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import io.github.neoruaa.glasmio.scaffold.GlasmioFloatingSearchButton
@@ -132,6 +143,7 @@ import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberMiniPlayerChromeMotion
 import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeMotion
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
+import com.ljyh.mei.ui.component.sheet.rememberPlayerTransitionGlassRenderer
 import com.ljyh.mei.ui.component.sheet.playerContainerRect
 import io.github.neoruaa.glasmio.glass.InteractiveHighlight
 import kotlin.math.abs
@@ -161,6 +173,120 @@ class GlassBottomBarInteractionTest {
     private val barLayoutDirection = mutableStateOf(LayoutDirection.Ltr)
     private val selections = mutableListOf<String>()
     private var expansions = 0
+
+    @Test
+    fun landscapeStatusBarSpaceStaysStableThroughHideAndShowFrames() {
+        val status = androidx.core.view.WindowInsetsCompat.Type.statusBars()
+        val navigation = androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+        val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
+        val reserved = androidx.core.graphics.Insets.of(0, 24, 0, 0)
+        val bottom = androidx.core.graphics.Insets.of(0, 0, 0, 16)
+        val keyboard = androidx.core.graphics.Insets.of(0, 0, 0, 280)
+        for (height in listOf(24, 12, 0, 8, 24)) {
+            val input = androidx.core.view.WindowInsetsCompat.Builder()
+                .setInsets(status, androidx.core.graphics.Insets.of(0, height, 0, 0))
+                .setInsetsIgnoringVisibility(status, reserved)
+                .setVisible(status, height == 24)
+                .setInsets(navigation, bottom)
+                .setInsets(ime, keyboard)
+                .build()
+            val output = com.ljyh.mei.retainLandscapeStatusBarSpace(input, landscape = true)
+            assertEquals(reserved, output.getInsets(status))
+            assertEquals(input.isVisible(status), output.isVisible(status))
+            assertEquals(bottom, output.getInsets(navigation))
+            assertEquals(keyboard, output.getInsets(ime))
+            assertSame(input, com.ljyh.mei.retainLandscapeStatusBarSpace(input, landscape = false))
+        }
+    }
+
+    @Test
+    fun landscapeTabsKeepSearchVisibleDuringTapAndDragSelection() {
+        glassAppearance.value = GlassAppearance(liquidGlassEnabled = true)
+        val tabs = (0..2).map { GlasmioTabItem("tab$it", if (it == 2) "Longer Tab 2" else "Tab $it", SfSymbol.House) }
+        val selection = mutableStateOf(tabs.first().key)
+        var searches = 0
+        var searchLabel = ""
+        compose.setContent {
+            searchLabel = androidx.compose.ui.res.stringResource(R.string.app_tab_search)
+            CompositionLocalProvider(
+                LocalGlassAppearance provides glassAppearance.value,
+                LocalGlassColors provides defaultGlassColors(false),
+            ) {
+                LandscapeNavigationBar(tabs, selection.value, { selection.value = it }, { searches++; selection.value = "search" }, "search",
+                    Modifier.widthIn(max = 400.dp).testTag("landscapeTabs"))
+            }
+        }
+        val restingBar = compose.onNodeWithTag("landscapeTabs").fetchSemanticsNode().boundsInRoot
+        val firstCell = compose.onNodeWithContentDescription("Tab 0").fetchSemanticsNode().boundsInRoot
+        val lastCell = compose.onNodeWithContentDescription("Longer Tab 2").fetchSemanticsNode().boundsInRoot
+        assertTrue("Labels determine cell widths", lastCell.width > firstCell.width)
+        val indicator = compose.onNodeWithTag("LandscapeNavigationIndicator", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val inset = firstCell.top - restingBar.top
+        assertEquals(inset, indicator.left - restingBar.left, 1f)
+        assertEquals(firstCell.width, indicator.width, 1f)
+        assertEquals(inset, restingBar.bottom - indicator.bottom, 1f)
+        val pressPoint = firstCell.center - restingBar.topLeft
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithTag("landscapeTabs").performTouchInput { down(pressPoint) }
+            compose.mainClock.advanceTimeBy(500L)
+            val pressedBar = compose.onNodeWithTag("landscapeTabs").fetchSemanticsNode().boundsInRoot
+            assertEquals("The layout stays fixed while the native platter expands", restingBar, pressedBar)
+            val lens = compose.onNodeWithTag("LandscapeNavigationLiftedLens", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue("The lifted lens can rise above the platter", lens.top < restingBar.top)
+            assertTrue("The lifted lens can extend below the platter", lens.bottom > restingBar.bottom)
+            compose.onNodeWithTag("landscapeTabs").performTouchInput { up() }
+            compose.mainClock.advanceTimeBy(1000L)
+            val releasedLens = compose.onNodeWithTag("LandscapeNavigationLiftedLens", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals(indicator.height, releasedLens.height, 1f)
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.onNodeWithContentDescription(searchLabel).assertIsDisplayed().performClick()
+        compose.runOnIdle { selection.value = tabs.last().key }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Longer Tab 2").assertIsDisplayed().performClick()
+        val bar = compose.onNodeWithTag("landscapeTabs").fetchSemanticsNode().boundsInRoot
+        val first = compose.onNodeWithContentDescription("Tab 0").fetchSemanticsNode().boundsInRoot.center - bar.topLeft
+        val last = compose.onNodeWithContentDescription("Longer Tab 2").fetchSemanticsNode().boundsInRoot.center - bar.topLeft
+        compose.onNodeWithTag("landscapeTabs").performTouchInput { swipe(last, first, 500) }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(tabs.first().key, selection.value) }
+        val search = compose.onNodeWithContentDescription(searchLabel).fetchSemanticsNode().boundsInRoot.center - bar.topLeft
+        compose.onNodeWithTag("landscapeTabs").performTouchInput { swipe(first, search, 500) }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals("search", selection.value)
+            assertEquals(2, searches)
+        }
+    }
+
+    @Test
+    fun landscapeHidesPageHeadingsAndPortraitRestoresThem() {
+        val landscape = mutableStateOf(true)
+        compose.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply {
+                screenWidthDp = if (landscape.value) 1000 else 600
+                screenHeightDp = if (landscape.value) 600 else 1000
+            }
+            CompositionLocalProvider(
+                LocalConfiguration provides configuration,
+                LocalGlassAppearance provides glassAppearance.value,
+                LocalGlassColors provides defaultGlassColors(false),
+            ) {
+                MeiloXPinnedListPage("Page heading", onNavigateBack = {}) {
+                    item { androidx.compose.material3.Text("Page content") }
+                }
+            }
+        }
+        compose.onNodeWithText("Page heading").assertDoesNotExist()
+        compose.onNodeWithText("Page content").assertIsDisplayed()
+        compose.runOnIdle { landscape.value = false }
+        compose.onNode(hasText("Page heading") and hasAnyAncestor(hasScrollToNodeAction())).assertIsDisplayed()
+    }
 
     @Test
     fun roamingTitleLabelKeepsArtistStyleAndFollowsTheTitle() {
@@ -1047,6 +1173,203 @@ class GlassBottomBarInteractionTest {
                 val x = pressed.width / 2
                 val y = pressed.height / 2
                 assertTrue("Clipping must preserve the interior press light", pressed[x, y].red > resting[x, y].red + 0.02f)
+            }
+        }
+    }
+
+    @Test
+    fun playerPressLightSoftensTheOldBarBoundaryAndFollowsThePointerOutsideIt() {
+        val position = mutableStateOf(Offset(0.25f, 0.5f))
+        val backing = Color(0xFF303030)
+        compose.setContent {
+            val renderer = rememberPlayerTransitionGlassRenderer(emptyBackdrop(), active = false, isDark = false)
+            Canvas(Modifier.size(300.dp, 240.dp).testTag("playerPressLight")) {
+                drawRect(backing)
+                renderer.drawWithPressLight(
+                    scope = this,
+                    highlight = GlassPressHighlight(1f, position.value),
+                    source = Rect(12.dp.toPx(), 60.dp.toPx(), 252.dp.toPx(), 108.dp.toPx()),
+                    bounds = Rect(Offset.Zero, size),
+                    radius = 32.dp.toPx(),
+                    shape = ContinuousRoundedRectangle(32.dp),
+                    isDark = false,
+                ) { drawRect(backing) }
+            }
+        }
+        val surface = compose.onNodeWithTag("playerPressLight")
+        val first = surface.captureToImage().toPixelMap()
+        val scale = first.width / 300f
+        fun sample(image: androidx.compose.ui.graphics.PixelMap, x: Float, y: Float) =
+            image[(x * scale).toInt(), (y * scale).toInt()].red
+        assertEquals("The old bar's lower edge must have no rectangular brightness step",
+            sample(first, 120f, 107f), sample(first, 120f, 109f), 0.02f)
+        assertEquals("Only the current capsule clips the light", backing.red,
+            sample(first, 1f, 1f), 1f / 255f)
+
+        compose.runOnIdle { position.value = Offset(0.75f, 2.75f) }
+        val moved = surface.captureToImage().toPixelMap()
+        assertTrue("A held pointer below the old bar still lights its current position",
+            sample(moved, 192f, 192f) > sample(first, 192f, 192f) + 0.005f)
+        assertTrue("The previous light center dims when the pointer moves",
+            sample(first, 72f, 84f) > sample(moved, 72f, 84f) + 0.005f)
+    }
+
+    @Test
+    fun playerTransitionRetainsTheNativeBarMaterialThroughoutExpansion() {
+        val scenario = mutableStateOf(false to 48.dp)
+        val transitioning = mutableStateOf(false)
+        val panelHeight = mutableStateOf(48.dp)
+        compose.setContent {
+            val (isDark, sourceHeight) = scenario.value
+            CompositionLocalProvider(
+                LocalGlassAppearance provides GlassAppearance(liquidGlassEnabled = true),
+                LocalGlassColors provides defaultGlassColors(isDark),
+            ) {
+                val backdrop = rememberCanvasBackdrop {
+                    drawRect(Color.Black)
+                    val stripeWidth = 16.dp.toPx()
+                    var x = 0f
+                    while (x < size.width) {
+                        drawRect(Color.White, Offset(x, 0f), Size(stripeWidth, size.height))
+                        x += stripeWidth * 2f
+                    }
+                }
+                val renderer = rememberPlayerTransitionGlassRenderer(backdrop,
+                    active = transitioning.value, isDark = isDark)
+                val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+                Box(Modifier.size(280.dp, 400.dp).testTag("retainedPlayerMaterial")) {
+                    if (!transitioning.value) {
+                        GlassSurface(
+                            modifier = Modifier.align(Alignment.Center).size(280.dp, sourceHeight),
+                            backdrop = backdrop,
+                            shape = Capsule(),
+                            style = GlassSurfaceStyle.Navigation,
+                        ) {}
+                    } else {
+                        Canvas(Modifier.size(280.dp, 400.dp)
+                            .onGloballyPositioned { coordinates.value = it }) {
+                            val canvasCoordinates = coordinates.value?.takeIf { it.isAttached } ?: return@Canvas
+                            val height = panelHeight.value.toPx()
+                            val bounds = Rect(0f, (size.height - height) / 2f,
+                                size.width, (size.height + height) / 2f)
+                            renderer.material.draw(
+                                scope = this,
+                                coordinates = canvasCoordinates,
+                                viewport = Rect(canvasCoordinates.positionInRoot(), size),
+                                origin = canvasCoordinates.positionInRoot(),
+                                bounds = bounds,
+                                radius = 24.dp.toPx(),
+                                shape = ContinuousRoundedRectangle(24.dp),
+                                tint = defaultGlassColors(isDark).container,
+                                navigationMaterial = true,
+                                isDark = isDark,
+                                highlightAlpha = 1f,
+                                dropShadowAlpha = 1f,
+                                materialReferenceSize = Size(size.width, sourceHeight.toPx()),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        fun tones(image: androidx.compose.ui.graphics.PixelMap) =
+            (image.width / 4 until image.width * 3 / 4).map { x ->
+                val color = image[x, image.height / 2]
+                (color.red + color.green + color.blue) / 3f
+            }
+        fun edgeTones(image: androidx.compose.ui.graphics.PixelMap, height: androidx.compose.ui.unit.Dp): List<Float> {
+            val scale = image.width / 280f
+            val top = (image.height - height.value * scale) / 2f
+            val bottom = top + height.value * scale
+            return listOf(top + 4f * scale, bottom - 4f * scale).flatMap { y ->
+                (image.width / 4 until image.width * 3 / 4).map { x ->
+                    val color = image[x, y.toInt()]
+                    (color.red + color.green + color.blue) / 3f
+                }
+            }
+        }
+        listOf(false to 48.dp, true to 48.dp, false to 64.dp, true to 64.dp).forEach { case ->
+            compose.runOnIdle { scenario.value = case; transitioning.value = false }
+            val referenceImage = compose.onNodeWithTag("retainedPlayerMaterial").captureToImage().toPixelMap()
+            val reference = tones(referenceImage)
+            val referenceEdges = edgeTones(referenceImage, case.second)
+            listOf(case.second, case.second + 1.dp, 160.dp, 360.dp).forEach { height ->
+                compose.runOnIdle { panelHeight.value = height; transitioning.value = true }
+                val actualImage = compose.onNodeWithTag("retainedPlayerMaterial").captureToImage().toPixelMap()
+                val actual = tones(actualImage)
+                val label = "$case at $height must retain the native bar's complete material"
+                assertEquals(label, reference.average(), actual.average(), 0.04)
+                assertEquals(label, reference.max() - reference.min(), actual.max() - actual.min(), 0.06f)
+                if (height <= case.second + 1.dp) {
+                    val actualEdges = edgeTones(actualImage, height)
+                    val error = referenceEdges.zip(actualEdges) { expected, value ->
+                        kotlin.math.abs(expected - value)
+                    }.average()
+                    assertTrue("Straight stripes must not shift sideways at takeover: $label, error=$error", error < 0.06)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun playerPressLightMatchesTheNativePressedBarBeforeAndAfterPressScaling() {
+        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT >= 36)
+        val scenario = mutableStateOf(false to false)
+        val press = GlassPressHighlight(0.35f, Offset(0.4f, 0.6f),
+            glowProgress = 0.9f, dissipationProgress = 0.15f)
+        compose.setContent {
+            val (isDark, scaled) = scenario.value
+            val backing = if (isDark) Color(0xFF304860) else Color(0xFF808080)
+            val native = remember { io.github.neoruaa.glasmio.glass.PressHighlightRenderer() }
+            val transition = rememberPlayerTransitionGlassRenderer(emptyBackdrop(), active = false, isDark = isDark)
+            Column {
+                Canvas(Modifier.size(336.dp, 112.dp).testTag("nativePlayerPress")) {
+                    drawRect(backing)
+                    val nominal = Size(280.dp.toPx(), 48.dp.toPx())
+                    val inset = 24.dp.toPx()
+                    withTransform({
+                        translate(inset, inset)
+                        scale(if (scaled) 1.05f else 1f, if (scaled) 1.33f else 1f, Offset.Zero)
+                    }) {
+                        native.draw(this, press.glowProgress,
+                            Offset(nominal.width * press.position.x, nominal.height * press.position.y),
+                            sourceBounds = Rect(Offset.Zero, nominal), isDark = isDark,
+                            dissipationProgress = press.dissipationProgress)
+                    }
+                }
+                Canvas(Modifier.size(336.dp, 112.dp).testTag("transitionPlayerPress")) {
+                    drawRect(backing)
+                    val nominal = Size(280.dp.toPx(), 48.dp.toPx())
+                    val visual = Size(nominal.width * if (scaled) 1.05f else 1f,
+                        nominal.height * if (scaled) 1.33f else 1f)
+                    val source = Rect(Offset(24.dp.toPx(), 24.dp.toPx()), visual)
+                    transition.drawWithPressLight(
+                        scope = this,
+                        highlight = press,
+                        source = source,
+                        sourceLayoutSize = nominal,
+                        bounds = source,
+                        radius = visual.height / 2f,
+                        shape = ContinuousRoundedRectangle((visual.height / 2f).toDp()),
+                        isDark = isDark,
+                    ) { drawRect(backing) }
+                }
+            }
+        }
+        listOf(false to false, false to true, true to false, true to true).forEach { case ->
+            compose.runOnIdle { scenario.value = case }
+            val native = compose.onNodeWithTag("nativePlayerPress").captureToImage().toPixelMap()
+            val transition = compose.onNodeWithTag("transitionPlayerPress").captureToImage().toPixelMap()
+            val scale = native.width / 336f
+            listOf(0.2f, 0.4f, 0.6f, 0.8f).forEach { fraction ->
+                val x = ((24f + 280f * fraction * if (case.second) 1.05f else 1f) * scale).toInt()
+                val y = ((24f + 24f * if (case.second) 1.33f else 1f) * scale).toInt()
+                val expected = native[x, y]
+                val actual = transition[x, y]
+                val label = "$case at $fraction must keep the native press brightness"
+                assertEquals(label, expected.red, actual.red, 2f / 255f)
+                assertEquals(label, expected.green, actual.green, 2f / 255f)
+                assertEquals(label, expected.blue, actual.blue, 2f / 255f)
             }
         }
     }

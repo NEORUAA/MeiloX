@@ -105,7 +105,7 @@ fun AppearanceSettings(
     val (letterSpacing, setLetterSpacing) = rememberPreference(InterfaceLetterSpacingKey, DefaultInterfaceLetterSpacing)
     val customAccent = accentColorArgb != DefaultAccentColorArgb
     var showColorPicker by remember { mutableStateOf(false) }
-    val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Cover)
+    val (playlistStyle, setPlaylistStyle) = rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Combination)
     val (playlistHeader, setPlaylistHeader) = rememberPreference(PlaylistTrackTableHeaderKey, false)
     val (libraryStyle, setLibraryStyle) = rememberEnumPreference(LibraryStyleKey, LibraryStyle.Default)
     val (libraryDefaultPage, setLibraryDefaultPage) = rememberPreference(LibraryDefaultPageKey, "")
@@ -314,9 +314,9 @@ fun AppearanceSettings(
         item {
             SettingsGroup(stringResource(R.string.appearance_lyrics)) {
                 AppearanceToggle(R.string.appearance_primary_bold, null, "bold", primaryBold, setPrimaryBold)
-                AppearanceChoice(R.string.appearance_primary_size, "textformat.size", primarySize, LyricTextSize.entries, { "${it.text} sp" }, setPrimarySize)
+                AppearanceLyricSize(R.string.appearance_primary_size, primarySize, 16..48, setPrimarySize)
                 AppearanceToggle(R.string.appearance_secondary_bold, null, "bold", secondaryBold, setSecondaryBold)
-                AppearanceChoice(R.string.appearance_secondary_size, "textformat.size", secondarySize, LyricTextSize.entries, { "${it.text} sp" }, setSecondarySize)
+                AppearanceLyricSize(R.string.appearance_secondary_size, secondarySize, 16..36, setSecondarySize)
             }
         }
         item {
@@ -340,6 +340,42 @@ fun AppearanceSettings(
             opacity = stringResource(R.string.color_picker_opacity),
         ),
     )
+}
+
+@Composable
+private fun AppearanceLyricSize(
+    titleRes: Int,
+    savedSize: LyricTextSize,
+    range: IntRange,
+    setSize: (LyricTextSize) -> Unit,
+) {
+    val size = savedSize.text.coerceIn(range)
+    var draftSize by remember { mutableStateOf<Int?>(null) }
+    val displayedSize = draftSize ?: size
+    val title = stringResource(titleRes)
+    val valueLabel = "$displayedSize sp"
+    SettingsCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SfIcon("textformat.size", null)
+                Text(title, Modifier.weight(1f).padding(horizontal = 13.dp))
+                Text(valueLabel, style = IosTypography.subheadline, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            GlasmioSlider(
+                value = displayedSize.toFloat(),
+                onValueChange = { draftSize = it.roundToInt().coerceIn(range) },
+                onValueChangeFinished = {
+                    val selectedSize = draftSize ?: size
+                    setSize(LyricTextSize.entries.first { it.text == selectedSize })
+                },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+                modifier = Modifier.padding(horizontal = 10.dp).semantics {
+                    contentDescription = title
+                    stateDescription = valueLabel
+                },
+            )
+        }
+    }
 }
 
 @Composable

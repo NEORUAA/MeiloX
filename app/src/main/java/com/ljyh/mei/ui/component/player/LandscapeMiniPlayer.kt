@@ -87,13 +87,13 @@ internal fun LandscapeMiniPlayer(
     val artwork = LocalPlayerArtwork.current
     val transitioning by remember(sheet) { derivedStateOf { sheet?.state?.isTransitioning == true } }
     Box(
-        modifier.widthIn(max = 748.dp).fillMaxWidth()
+        modifier.widthIn(max = 768.dp).fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,
     ) {
         GlassSurface(
-            modifier = Modifier.widthIn(max = 700.dp).fillMaxWidth().height(LandscapeMiniPlayerHeight)
+            modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().height(LandscapeMiniPlayerHeight)
                 .testTag("MeiloXLandscapeMiniPlayer")
                 .onGloballyPositioned {
                     sheet?.miniBounds = Rect(it.localToRoot(Offset.Zero),
