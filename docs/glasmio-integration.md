@@ -1,6 +1,6 @@
 # Glasmio integration
 
-MeiloX uses Glasmio `1e8771e6b11d60ee0ce16ed552b2226ea765c194` through the
+MeiloX uses Glasmio `c4c1b68efc4b94c3f4dcf04e9d01fca178480d57` through the
 sibling source build described in the README. Recording, materials and effects use
 Glasmio's renderer and public API under `io.github.neoruaa.glasmio.glass.render`.
 Retained third-party code keeps its attribution.
@@ -94,3 +94,13 @@ controller so success and cancellation preserve the native exit animation.
 
 Local native decompilation, parameters and caller references are retained in
 [the ignored research folder](../.local-research/ios/applemusic-mini-player/FINDINGS.md).
+
+## Private messages
+
+Private-message rows use `GlasmioMessageBubble` and `GlasmioMessageContextMenu`.
+The application owns sender/time labels, width limits, resource-card navigation,
+and the copy callback. Glasmio owns the balloon outline, retained preview, safe-area
+placement, and dismissal motion. Reactions remain disabled for the NetEase service.
+
+The bundled SF Pro 22 font covers Glasmio's complete SF Symbols catalog, including
+the message action symbols. The shared icon resolver handles missing host glyphs.

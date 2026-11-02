@@ -89,6 +89,9 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -386,9 +389,42 @@ class GlassControlsInteractionTest {
         compose.runOnIdle { assertEquals(listOf(1_000L, 1_024L, 1_049L, 1_000L), openedUsers) }
     }
 
+    @Test fun messageBubbleSurfaceInheritsHostContentColorsAndClipsArbitraryContent() {
+        var inherited = Color.Unspecified
+        var glassInherited: Color? = null
+        compose.setContent {
+            MusicTheme(seedColor = Color.Red, isDark = false) {
+                CompositionLocalProvider(LocalDensity provides Density(1f), LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    io.github.neoruaa.glasmio.ui.GlasmioMessageBubble(
+                        outgoing = true,
+                        color = Color.Blue,
+                        contentColor = Color.Yellow,
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.size(160.dp, 100.dp).testTag("balloon"),
+                    ) {
+                        inherited = androidx.compose.material3.LocalContentColor.current
+                        glassInherited = io.github.neoruaa.glasmio.core.LocalGlassContentColor.current
+                        Box(Modifier.size(160.dp, 100.dp).background(Color.Magenta))
+                    }
+                }
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(Color.Yellow, inherited)
+            assertEquals(Color.Yellow, glassInherited)
+        }
+        val image = compose.onNodeWithTag("balloon").captureToImage()
+        assertEquals(160, image.width)
+        assertEquals(100, image.height)
+        val pixels = image.toPixelMap()
+        assertEquals(Color.Magenta, pixels[80, 50])
+        assertTrue("A child cannot paint across the rounded outline", pixels[0, 0] != Color.Magenta)
+    }
+
+
     @Test
     fun messageContextMenuLiftsOnlyTheBubbleAboveAFullScreenScrim() {
-        val scenario = mutableStateOf(false to false)
+        val scenario = mutableStateOf(Triple(false, false, LayoutDirection.Ltr))
         val sourceOffset = mutableStateOf(0.dp)
         val backdropColor = Color(0xFFFFC107)
         var density = 1f
@@ -398,11 +434,12 @@ class GlassControlsInteractionTest {
         val copyTitle = InstrumentationRegistry.getInstrumentation().targetContext
             .getString(R.string.message_copy_content)
         compose.setContent {
-            val (outgoing, dark) = scenario.value
+            val (outgoing, dark, layoutDirection) = scenario.value
             MusicTheme(seedColor = Color.Red, isDark = dark) {
                 density = LocalDensity.current.density
                 val backdrop = rememberCanvasBackdrop { drawRect(backdropColor) }
                 CompositionLocalProvider(
+                    LocalLayoutDirection provides layoutDirection,
                     LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
                     LocalGlassBackdrop provides backdrop,
                     LocalBlurBackdrop provides backdrop,
@@ -411,7 +448,7 @@ class GlassControlsInteractionTest {
                         // These siblings represent the shared toolbar and player outside the page.
                         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(64.dp).background(Color.Green))
                         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(64.dp).background(Color.Cyan))
-                        key(outgoing, dark) {
+                        key(outgoing, dark, layoutDirection) {
                             IosMessageBubble(
                                 outgoing = outgoing,
                                 modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 24.dp)
@@ -419,7 +456,8 @@ class GlassControlsInteractionTest {
                                 onCopy = { copies++ },
                             ) { openMenu ->
                                 Text("Retained message")
-                                Box(Modifier.size(20.dp).background(Color.Magenta))
+                                // Resource artwork also owns a clipping RenderNode.
+                                Box(Modifier.size(20.dp).clip(CircleShape).background(Color.Magenta))
                                 MessageResourceCard(resource, outgoing, onLongClick = openMenu) { resourceClicks++ }
                             }
                         }
@@ -428,7 +466,9 @@ class GlassControlsInteractionTest {
             }
         }
 
-        val scenarios = listOf(false to false, true to false, false to true, true to true)
+        val scenarios = listOf(false to false, true to false, false to true, true to true).flatMap { (outgoing, dark) ->
+            listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).map { Triple(outgoing, dark, it) }
+        }
         scenarios.forEachIndexed { index, state ->
             compose.runOnIdle { scenario.value = state }
             val scene = compose.onNodeWithTag("messageContextScene")
@@ -453,15 +493,23 @@ class GlassControlsInteractionTest {
                     val color = preview[x, y]
                     if (color.red > 0.95f && color.blue > 0.95f && color.green < 0.05f) retainedContentPixels++
                 }
-                val stateLabel = "outgoing=${state.first}, dark=${state.second}, preview=${preview.width}x${preview.height}"
+                val stateLabel = "outgoing=${state.first}, dark=${state.second}, direction=${state.third}, preview=${preview.width}x${preview.height}"
                 assertTrue("The lifted bubble keeps its actual foreground above the scrim ($stateLabel)", retainedContentPixels > 100)
-                // Derive pixels from the actual drawing coordinates, including the outgoing
-                // right-edge scale pivot. A semantic crop need not start at that visual origin.
+                // Derive pixels from the actual drawing coordinates, including the logical
+                // start/end scale pivot. A semantic crop need not start at that visual origin.
                 var tailPoint = Offset.Zero
                 var cornerPoint = Offset.Zero
                 val coordinates = previewNode.fetchSemanticsNode().layoutInfo.coordinates
                 compose.runOnIdle {
-                    tailPoint = coordinates.localToRoot(Offset(coordinates.size.width / 2f, coordinates.size.height - 7f * density))
+                    // Native bubbles integrate the tail into the bottom edge. Probe the
+                    // opposite lower corner instead of assuming a blank strip below the body.
+                    val tailOnRight = state.first == (state.third == LayoutDirection.Ltr)
+                    tailPoint = coordinates.localToRoot(
+                        Offset(
+                            if (tailOnRight) 2f * density else coordinates.size.width - 2f * density,
+                            coordinates.size.height - 2f * density,
+                        ),
+                    )
                     cornerPoint = coordinates.localToRoot(Offset(2f * density, 2f * density))
                 }
                 val popup = compose.onNode(isPopup())
@@ -482,10 +530,10 @@ class GlassControlsInteractionTest {
                 fun showsAmberBackdrop(color: Color) = color.red > color.blue + 0.18f && color.green > color.blue + 0.08f
                 if (!showsAmberBackdrop(tailGap) || !showsAmberBackdrop(corner)) {
                     val context = InstrumentationRegistry.getInstrumentation().targetContext
-                    java.io.File(context.getExternalFilesDir(null), "message-context-${state.first}-${state.second}.png")
+                    java.io.File(context.getExternalFilesDir(null), "message-context-${state.first}-${state.second}-${state.third}.png")
                         .outputStream().use { popupImage.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
                 }
-                assertTrue("The preview keeps its transparent tail surround ($diagnostics)", showsAmberBackdrop(tailGap))
+                assertTrue("The preview keeps its transparent lower corner ($diagnostics)", showsAmberBackdrop(tailGap))
                 assertTrue("The preview keeps its transparent rounded corner ($diagnostics)", showsAmberBackdrop(corner))
             } finally {
                 message.performTouchInput { up() }
