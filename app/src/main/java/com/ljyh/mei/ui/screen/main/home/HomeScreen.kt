@@ -56,7 +56,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -132,7 +131,6 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -367,8 +365,7 @@ private fun HomeBlockItem(
                 resources = resources,
                 rowHeight = recommendCardHeight,
                 cardSpacing = cardSpacing,
-                waitForVisibleCovers = true,
-            ) { resource, reveal, onCoverTerminal ->
+            ) { resource ->
                 val recommendationKey = "${resource.resourceType}:${resource.resourceId}:${resource.action}"
                 RecommendCard(
                     cover = resource.coverImg,
@@ -381,8 +378,6 @@ private fun HomeBlockItem(
                     cardWidth = recommendCardWidth,
                     cardHeight = recommendCardHeight,
                     isLoading = loadingRecommendationKey == recommendationKey,
-                    reveal = reveal,
-                    onCoverTerminal = onCoverTerminal,
                 ) {
                     if (loadingRecommendationKey == recommendationKey) return@RecommendCard
                     val requestGeneration = ++playbackRequestGeneration
@@ -503,7 +498,7 @@ private fun HomeBlockItem(
                 title = title,
                 resources = resources,
                 cardSpacing = cardSpacing,
-            ) { resource, _, _ ->
+            ) { resource ->
                 val isRadar = block.positionCode == "PAGE_RECOMMEND_RADAR"
                 val isArtistPlaylist = block.positionCode == "PAGE_RECOMMEND_MIXED_ARTIST_PLAYLIST" ||
                     title?.contains("热门金曲") == true
@@ -597,26 +592,12 @@ private fun BlockWithTitle(
     resources: List<HomeCardResource>,
     rowHeight: Dp? = null,
     cardSpacing: Dp = HomeCardSpacing,
-    waitForVisibleCovers: Boolean = false,
-    content: @Composable (HomeCardResource, Boolean, () -> Unit) -> Unit,
+    content: @Composable (HomeCardResource) -> Unit,
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
-    var visibleResourceKeys by remember(resourceKeys) { mutableStateOf(emptySet<String>()) }
-    var terminalResourceKeys by remember(resourceKeys) { mutableStateOf(emptySet<String>()) }
-    val rowReady = !waitForVisibleCovers || (
-        visibleResourceKeys.isNotEmpty() &&
-            visibleResourceKeys.all { it in terminalResourceKeys }
-        )
     Column {
         title?.let { Title(it) }
         val listState = rememberLazyListState()
-        LaunchedEffect(listState, resourceKeys) {
-            snapshotFlow {
-                listState.layoutInfo.visibleItemsInfo
-                    .mapNotNull { resourceKeys.getOrNull(it.index) }
-                    .toSet()
-            }.distinctUntilChanged().collect { visibleResourceKeys = it }
-        }
         LazyRow(
             state = listState,
             flingBehavior = rememberHomeRowFlingBehavior(listState),
@@ -624,15 +605,11 @@ private fun BlockWithTitle(
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
             verticalAlignment = Alignment.Top,
             modifier = Modifier.fillMaxWidth()
-                .alpha(if (rowReady) 1f else 0f)
                 .swipeBackExcluded()
                 .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
         ) {
-            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { index, resource ->
-                val key = resourceKeys[index]
-                content(resource, rowReady) {
-                    terminalResourceKeys = terminalResourceKeys + key
-                }
+            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
+                content(resource)
             }
         }
     }
@@ -640,7 +617,22 @@ private fun BlockWithTitle(
 
 @Composable
 private fun rememberHomeRowFlingBehavior(listState: LazyListState): FlingBehavior {
-    val snapping = rememberSnapFlingBehavior(listState, SnapPosition.Start)
+    val snapPosition = remember(listState) {
+        object : SnapPosition {
+            override fun position(
+                layoutSize: Int,
+                itemSize: Int,
+                beforeContentPadding: Int,
+                afterContentPadding: Int,
+                itemIndex: Int,
+                itemCount: Int,
+            ): Int = homeRowSnapPosition(
+                layoutSize, itemSize, beforeContentPadding, afterContentPadding,
+                itemIndex, itemCount, listState.layoutInfo.mainAxisItemSpacing,
+            )
+        }
+    }
+    val snapping = rememberSnapFlingBehavior(listState, snapPosition)
     val freeFling = ScrollableDefaults.flingBehavior()
     val decay = rememberSplineBasedDecay<Float>()
     return remember(listState, snapping, freeFling, decay) {

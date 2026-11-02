@@ -338,7 +338,7 @@ private fun SearchRecommendationCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(ContinuousRoundedRectangle(14.dp)),
+                .clip(ContinuousRoundedRectangle(8.dp)),
             contentScale = ContentScale.Crop,
         )
         val subtitle = playlist.copywriter?.takeIf(String::isNotBlank)

@@ -11,6 +11,33 @@ import com.ljyh.mei.utils.playlistCoverWithoutOverlays
 
 class HomeRecommendationActionsTest {
     @Test
+    fun finalRecommendationSnapsToTheTrailingInsetOnDifferentViewportWidths() {
+        for ((viewport, lastOffset) in listOf(360 to 103, 393 to 136, 443 to 186)) {
+            assertEquals(lastOffset, homeRowSnapPosition(viewport, 225, 16, 16, 4, 5, 12))
+            assertEquals(viewport - 32, lastOffset + 225)
+            assertEquals(0, homeRowSnapPosition(viewport, 225, 16, 16, 0, 5, 12))
+            assertEquals(0, homeRowSnapPosition(viewport, 225, 16, 16, 2, 5, 12))
+        }
+    }
+
+    @Test
+    fun wideRowsIncludeTheNaturalEndForEveryCardPastTheLastStartAnchor() {
+        assertEquals(216, homeRowSnapPosition(1000, 240, 16, 16, 3, 6, 16))
+        assertEquals(472, homeRowSnapPosition(1000, 240, 16, 16, 4, 6, 16))
+        assertEquals(728, homeRowSnapPosition(1000, 240, 16, 16, 5, 6, 16))
+        assertEquals(0, homeRowSnapPosition(1000, 240, 16, 16, 2, 6, 16))
+        // Both visible tail candidates resolve to the same end position, never backward.
+        assertEquals(-10, 462 - homeRowSnapPosition(1000, 240, 16, 16, 4, 6, 16))
+        assertEquals(-10, 718 - homeRowSnapPosition(1000, 240, 16, 16, 5, 6, 16))
+    }
+
+    @Test
+    fun shortRecommendationRowsKeepTheirNaturalUnscrollablePositions() {
+        assertEquals(0, homeRowSnapPosition(1000, 240, 16, 16, 0, 2, 16))
+        assertEquals(256, homeRowSnapPosition(1000, 240, 16, 16, 1, 2, 16))
+    }
+
+    @Test
     fun artistPlaylistCaptionUsesOriginalTagsWhenCoverTextIsAbsent() {
         val card = resource(
             """{"title":"Artist playlist","tags":["泠鸢","yousa"],"resourceExtInfo":null}""",

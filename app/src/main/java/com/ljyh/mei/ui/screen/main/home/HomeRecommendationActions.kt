@@ -8,6 +8,22 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block.DslData.Bloc
 import java.net.URI
 import java.net.URLDecoder
 
+/** Clamp card-start snapping to the real scroll range, including the trailing content padding. */
+internal fun homeRowSnapPosition(
+    layoutSize: Int,
+    itemSize: Int,
+    beforeContentPadding: Int,
+    afterContentPadding: Int,
+    itemIndex: Int,
+    itemCount: Int,
+    itemSpacing: Int,
+): Int {
+    val stride = itemSize + itemSpacing
+    val contentSize = itemCount * stride - itemSpacing + beforeContentPadding + afterContentPadding
+    val maxScroll = (contentSize - layoutSize).coerceAtLeast(0)
+    return (itemIndex * stride - maxScroll).coerceAtLeast(0)
+}
+
 internal val HomePlaylistBlockCodes = setOf(
     "PAGE_RECOMMEND_RADAR",
     "PAGE_RECOMMEND_SPECIAL_CLOUD_VILLAGE_PLAYLIST",

@@ -50,11 +50,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.HomeRowHorizontalPadding
+import com.ljyh.mei.constants.homeCardSpacing
+import com.ljyh.mei.constants.homePlaylistCardSize
+import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.Podcast
@@ -310,6 +315,8 @@ private fun PodcastSection(
     onClick: (Long) -> Unit,
 ) {
     val colors = LocalGlassColors.current
+    val isLandscape = rememberDeviceInfo().isLandscape
+    val cardSize = homePlaylistCardSize(isLandscape)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = title,
@@ -320,11 +327,11 @@ private fun PodcastSection(
         )
         LazyRow(
             modifier = Modifier.swipeBackExcluded(),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(homeCardSpacing(isLandscape)),
         ) {
             items(podcasts, key = { it.id }) { podcast ->
-                PodcastRecommendationCard(podcast, onClick)
+                PodcastRecommendationCard(podcast, cardSize, onClick)
             }
         }
     }
@@ -333,10 +340,11 @@ private fun PodcastSection(
 @Composable
 private fun PodcastRecommendationCard(
     podcast: Podcast,
+    cardSize: Dp,
     onClick: (Long) -> Unit,
 ) {
     Column(
-        modifier = Modifier.width(172.dp).clickable { onClick(podcast.id) },
+        modifier = Modifier.width(cardSize).clickable { onClick(podcast.id) },
     ) {
         AsyncImage(
             model = podcast.picUrl,
@@ -345,7 +353,7 @@ private fun PodcastRecommendationCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(ContinuousRoundedRectangle(14.dp)),
+                .clip(ContinuousRoundedRectangle(8.dp)),
         )
         val subtitle = podcast.recommendation?.takeIf(String::isNotBlank)
             ?: podcast.host?.nickname?.takeIf(String::isNotBlank)
