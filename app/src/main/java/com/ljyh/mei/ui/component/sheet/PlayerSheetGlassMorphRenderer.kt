@@ -868,6 +868,7 @@ internal class PlayerSheetGlassMorphRenderer(
 
 /** Reuse the standard native material graph over a morph's viewport-coordinate source. */
 private class MorphNativeFilterScope : BackdropEffectScopeImpl() {
+    override val supportsNativeGlassHardwareLinearSampling: Boolean get() = true
     override var shape: Shape = RectangleShape
 
     fun configure(scope: DrawScope, shape: Shape, size: Size, density: Float) {
