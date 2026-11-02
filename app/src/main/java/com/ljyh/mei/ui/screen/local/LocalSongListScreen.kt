@@ -217,7 +217,8 @@ fun LocalSongListScreen(
                     onMoreClick = { track, anchor -> actionTrack = track; actionAnchor = anchor },
                     flatDetailStyle = device.isPortrait,
                     contentPadding = PaddingValues(
-                        start = 24.dp, end = 24.dp,
+                        start = if (device.isPortrait) 20.dp else 24.dp,
+                        end = if (device.isPortrait) 20.dp else 24.dp,
                         top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding(),
                     ),
                 )

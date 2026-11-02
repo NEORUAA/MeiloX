@@ -255,6 +255,7 @@ fun CommonSongListScreen(
             val hero: @Composable () -> Unit = {
                 val headerContent: @Composable () -> Unit = {
                     PlaylistHeader(
+                        modifier = Modifier.padding(horizontal = if (!device.isLandscape && usePlaylistTrackStyle) 4.dp else 0.dp),
                         title = uiData.title,
                         metadata = headerMetadata,
                         cover = uiData.cover,
@@ -277,6 +278,7 @@ fun CommonSongListScreen(
                                 landscapeLayout == SongListLandscapeLayout.AlbumHeader,
                         isLoading = isLoading,
                         allowActionScroll = adaptiveLandscape,
+                        topPadding = if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split) 0.dp else 16.dp,
                         playlistPortrait = usePlaylistPortraitHeader && !device.isLandscape,
                     )
                 }
@@ -302,7 +304,7 @@ fun CommonSongListScreen(
                 bottomPadding = if (selectionMode) 84.dp else bottomPadding,
                 horizontalContentPadding =
                     if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.AlbumHeader) 32.dp
-                    else if (usePlaylistTrackStyle) DetailPageHorizontalPadding else 16.dp,
+                    else if (usePlaylistTrackStyle) { if (device.isLandscape) DetailPageHorizontalPadding else 20.dp } else 16.dp,
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
                 hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
@@ -607,13 +609,13 @@ internal fun SongListDetailPage(
     ) { padding ->
         Row(Modifier.fillMaxSize()) {
             Column(
-                Modifier.weight(0.44f)
+                Modifier.weight(1f)
                     .fillMaxHeight()
                     .testTag("DetailHeroPane")
                     .verticalScroll(rememberScrollState())
                     .padding(
                         start = horizontalContentPadding,
-                        end = 24.dp,
+                        end = horizontalContentPadding,
                         top = padding.calculateTopPadding(),
                         bottom = padding.calculateBottomPadding(),
                     ),
@@ -623,10 +625,11 @@ internal fun SongListDetailPage(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(0.56f).fillMaxHeight().testTag("DetailTrackPane"),
+                modifier = Modifier.weight(1f).fillMaxHeight().testTag("DetailTrackPane"),
                 contentPadding =
                     PaddingValues(
                         top = padding.calculateTopPadding(),
+                        start = horizontalContentPadding,
                         end = horizontalContentPadding,
                         bottom = padding.calculateBottomPadding(),
                     ),

@@ -272,30 +272,34 @@ internal fun PlayerPageActionButton(
     iconSize: Dp = 24.dp,
     iconWeight: FontWeight = FontWeight.Medium,
     pressedAlpha: Float = 0.3f,
+    enabled: Boolean = true,
+    showSelectedBackground: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val selectedBackground = isSelected && showSelectedBackground
     ShadowedIconButton(
         modifier = modifier.semantics { selected = isSelected },
         onClick = onClick,
+        enabled = enabled,
         pressedAlpha = pressedAlpha,
-        dimOnPress = !isSelected,
+        dimOnPress = !selectedBackground,
     ) {
         Box(
             modifier = Modifier
                 .size(36.dp)
                 .then(
-                    if (isSelected) Modifier.graphicsLayer {
+                    if (selectedBackground) Modifier.graphicsLayer {
                         // Keep the glyph cutout inside the button background.
                         compositingStrategy = CompositingStrategy.Offscreen
                     } else Modifier
                 )
-                .background(if (isSelected) Color.White else Color.Transparent, CircleShape),
+                .background(if (selectedBackground) Color.White else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             SfIcon(
                 systemName = systemName,
                 contentDescription = contentDescription,
-                modifier = if (isSelected) Modifier.graphicsLayer {
+                modifier = if (selectedBackground) Modifier.graphicsLayer {
                     blendMode = BlendMode.DstOut
                     compositingStrategy = CompositingStrategy.Offscreen
                 } else Modifier,

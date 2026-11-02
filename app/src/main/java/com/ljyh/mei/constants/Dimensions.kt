@@ -20,7 +20,7 @@ val RecommendCardCornerRadius = 12.dp
 
 val HomeSectionSpacing = 24.dp
 val HomeSectionTitlePadding = 12.dp
-val HomeSongCoverSize = 44.dp
+val HomeSongCoverSize = 48.dp
 val HomeSongCoverCornerRadius = 4.dp
 val LandscapeSongCoverSize = 48.dp
 

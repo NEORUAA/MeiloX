@@ -456,8 +456,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // 启动并绑定服务
-                context.startService(intent)
+                // Binding creates the service; Media3 starts foreground service ownership for playback.
                 context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
                 onDispose {

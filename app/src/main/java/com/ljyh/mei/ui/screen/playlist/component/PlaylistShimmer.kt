@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -178,8 +179,8 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) { if (compactRows) 56.dp else 50.dp } else 52.dp) else Modifier)
-            .padding(vertical = if (flatDetailStyle) { if (compactRows) 4.dp else 3.dp } else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
+            .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) { 56.dp } else 52.dp) else Modifier)
+            .padding(vertical = if (flatDetailStyle) 4.dp else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isTablet) {
@@ -232,6 +233,7 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
             TextPlaceholder(Modifier.width(40.dp).height(16.dp), verticalPadding = 0.dp)
         }
         Spacer(modifier = Modifier.width(if (flatDetailStyle) 12.dp else 16.dp))
-        ButtonPlaceholder(modifier = Modifier.size(if (flatDetailStyle) 44.dp else 24.dp))
+        ButtonPlaceholder(modifier = Modifier.size(if (flatDetailStyle) 44.dp else 24.dp)
+            .then(if (flatDetailStyle && !compactRows) Modifier.offset(x = 8.dp) else Modifier))
     }
 }

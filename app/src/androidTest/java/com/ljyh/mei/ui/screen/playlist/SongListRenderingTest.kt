@@ -131,7 +131,7 @@ class SongListRenderingTest {
                 assertEquals(expectedPx, it.height, 0.1f)
             }
         }
-        assertArtworkSize(22f)
+        assertArtworkSize(24f)
         compose.runOnIdle { landscape.value = true }
         assertArtworkSize(24f)
         compose.onNodeWithText("Home track").performClick()
@@ -172,8 +172,8 @@ class SongListRenderingTest {
         val covers = compose.onAllNodesWithContentDescription("Album Art", useUnmergedTree = true)
             .fetchSemanticsNodes().map { it.boundsInRoot }
         assertEquals(2, covers.size)
-        assertEquals(22f, covers[0].width, 0.1f)
-        assertEquals(3f, covers[1].top - covers[0].bottom, 0.1f)
+        assertEquals(24f, covers[0].width, 0.1f)
+        assertEquals(4f, covers[1].top - covers[0].bottom, 0.1f)
         val moreLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.more_actions_title)
         val buttons = compose.onAllNodesWithContentDescription(moreLabel)
         val bounds = buttons.fetchSemanticsNodes().map { it.boundsInRoot }
@@ -356,7 +356,7 @@ class SongListRenderingTest {
                             actionsSeparationProgress = 0f,
                             actions = { emptyList() },
                         ) {
-                            items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp)) }
+                            items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp).testTag("SplitSong:$it")) }
                         }
                     }
                 }
@@ -370,6 +370,13 @@ class SongListRenderingTest {
         val left = compose.onNodeWithTag("DetailHeroPane").fetchSemanticsNode().boundsInRoot
         val right = compose.onNodeWithTag("DetailTrackPane").fetchSemanticsNode().boundsInRoot
         assertTrue(left.right <= right.left)
+        assertEquals(left.width, right.width, 1f)
+        assertEquals(left.center.x, hero.center.x, 1f)
+        val firstSong = compose.onNodeWithTag("SplitSong:0", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(12f, firstSong.left - right.left, 1f)
+        assertEquals(12f, right.right - firstSong.right, 1f)
+        assertEquals(hero.top, firstSong.top, 1f)
         compose.onNodeWithTag("DetailTrackPane").performScrollToIndex(12)
         assertEquals(
             hero,

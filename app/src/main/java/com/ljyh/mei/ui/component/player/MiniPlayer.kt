@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -195,7 +196,10 @@ private fun MiniPlayerContent(
     onQueueClick: () -> Unit,
 ) {
     if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape) {
-        LandscapeMiniPlayer(modifier, backdrop, onClick, onMoreClick, onLyricsClick, onQueueClick)
+        LandscapeMiniPlayer(
+            modifier, backdrop, onClick, onMoreClick, onLyricsClick, onQueueClick,
+            onCoverBoundsChanged,
+        )
         return
     }
     val sheet = LocalPlayerSheet.current
@@ -362,6 +366,7 @@ fun MiniMediaInfo(
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
 ) {
     val sheet = LocalPlayerSheet.current
+    SideEffect { sheet?.miniArtworkCornerRadius = MiniPlayerArtworkCornerRadius }
     val marqueeEnabled by remember(sheet) {
         derivedStateOf { sheet == null || sheet.state.isCollapsed }
     }

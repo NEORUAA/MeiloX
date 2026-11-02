@@ -26,6 +26,7 @@ import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import io.github.neoruaa.glasmio.glass.render.Backdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.LayerBackdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.layerBackdrop
+import io.github.neoruaa.glasmio.glass.rememberRasterizedBackdrop
 
 
 @SuppressLint("ConfigurationScreenWidthHeight")
@@ -44,6 +45,7 @@ fun ClassicPlayer(
 ) {
 
     val device = rememberDeviceInfo()
+    val queueBackdrop = rememberRasterizedBackdrop(playerBackgroundBackdrop)
 
     // --- 从状态容器获取数据 ---
     val mediaMetadata by stateContainer.mediaMetadata
@@ -105,7 +107,7 @@ fun ClassicPlayer(
 
             when (layoutMode) {
                 PlayerLayoutMode.PhonePortrait -> ClassicPhoneLayout(stateContainer, overlayHandler)
-                PlayerLayoutMode.Tablet -> ClassicTabletLayout(stateContainer, overlayHandler)
+                PlayerLayoutMode.Tablet -> ClassicTabletLayout(stateContainer, overlayHandler, queueBackdrop)
                 PlayerLayoutMode.ImmersiveLandscape -> ClassicImmersiveLayout(stateContainer, overlayHandler)
             }
         }

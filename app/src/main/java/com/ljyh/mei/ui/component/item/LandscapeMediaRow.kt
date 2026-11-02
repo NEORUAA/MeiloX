@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.item
 
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,7 +132,7 @@ internal fun LandscapeMediaRow(
                 }
             }
             footer?.invoke()
-            if (showDivider) HorizontalDivider(Modifier.padding(start = 60.dp), thickness = 0.5.dp, color = colors.separator)
+            if (showDivider) HorizontalDivider(Modifier.padding(start = 60.dp), thickness = 0.5.dp, color = songListDividerColor())
         }
     }
 }
@@ -159,13 +160,13 @@ internal fun PortraitMediaRow(
         Column {
             Box {
                 if (favorite) FavoriteTrackStar(
-                    Modifier.align(Alignment.CenterStart).offset(x = (-18).dp),
+                    Modifier.align(Alignment.CenterStart).offset(x = (-16).dp),
                     tint = colors.secondaryContent,
                 )
                 Row(
                     Modifier.fillMaxWidth()
                         .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                        .padding(vertical = 3.dp),
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -193,7 +194,7 @@ internal fun PortraitMediaRow(
                         )
                     }
                     if (onMore != null) Box(
-                        Modifier.size(44.dp)
+                        Modifier.size(44.dp).offset(x = 8.dp)
                             .onGloballyPositioned { anchor = it.boundsInWindow() }
                             .clip(ContinuousRoundedRectangle(22.dp))
                             .clickable(interactionSource = null, indication = null, onClick = { onMore(anchor) }),

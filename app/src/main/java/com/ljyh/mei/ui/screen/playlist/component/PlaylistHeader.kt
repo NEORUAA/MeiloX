@@ -95,6 +95,8 @@ fun PlaylistHeader(
     isLoading: Boolean = false,
     allowActionScroll: Boolean = false,
     playlistPortrait: Boolean = false,
+    topPadding: Dp = 16.dp,
+    modifier: Modifier = Modifier,
 ) {
     val colors = LocalGlassColors.current
     val actionHeight = if (horizontal) 54.dp else 44.dp
@@ -109,11 +111,11 @@ fun PlaylistHeader(
         rememberEnumPreference(PlaylistCoverStyleKey, defaultValue = PlaylistCoverStyle.Combination)
 
     BoxWithConstraints(
-        Modifier.fillMaxWidth()
+        modifier.fillMaxWidth()
             .padding(horizontal = if (detailAction) 0.dp else 4.dp)
-            .padding(top = 16.dp, bottom = when {
+            .padding(top = topPadding, bottom = when {
                 horizontal -> 40.dp
-                playlistPortrait -> 24.dp
+                playlistPortrait || (detailAction && !allowActionScroll) -> 24.dp
                 else -> 16.dp
             })
     ) {

@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -27,20 +28,29 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.render.Backdrop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -51,12 +61,15 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.PlayerHorizontalPadding
+import com.ljyh.mei.constants.LoopPlaybackKey
+import com.ljyh.mei.R
 import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.constants.ProgressBarStyle
@@ -68,10 +81,13 @@ import com.ljyh.mei.ui.component.player.component.FluidProgressSlider
 import com.ljyh.mei.ui.component.player.component.LyricScreen
 import com.ljyh.mei.ui.component.player.component.PlayerActionToolbar
 import com.ljyh.mei.ui.component.player.component.PlayerControls
+import com.ljyh.mei.ui.component.player.component.PlayerPageActionButton
 import com.ljyh.mei.ui.component.player.component.PlayerProgressSlider
 import com.ljyh.mei.ui.component.player.component.PlayerProgressSection
 import com.ljyh.mei.ui.component.player.component.PlayerTableControls
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueuePage
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import com.ljyh.mei.ui.component.player.component.applemusic.playerAdditiveBlend
 import com.ljyh.mei.ui.component.player.component.applemusic.playerMetadataAnchorBounds
@@ -82,11 +98,14 @@ import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.utils.rememberEnumPreference
+import com.ljyh.mei.utils.rememberPreference
+import androidx.media3.common.Player
 
 @Composable
 fun ClassicTabletLayout(
     stateContainer: PlayerStateContainer,
-    overlayHandler: PlayerOverlayHandler
+    overlayHandler: PlayerOverlayHandler,
+    queueBackdrop: Backdrop,
 ) {
     var controlPaneBounds by remember { mutableStateOf<Rect?>(null) }
     var headerTextCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -101,9 +120,25 @@ fun ClassicTabletLayout(
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
     var isShowingPlaylist by remember { mutableStateOf(false) }
+    var showAppleMusicDetail by remember { mutableStateOf(true) }
     var footerHeightPx by remember { mutableStateOf(0) }
     var albumActionsHeightPx by remember { mutableStateOf(0) }
     val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
+    val shuffleEnabled by stateContainer.playerConnection.shuffleModeEnabled.collectAsState()
+    val fmEnabled by stateContainer.playerConnection.isFMMode.collectAsState()
+    val autoplayEnabled by stateContainer.playerConnection.queueAutoplayEnabled.collectAsState()
+    val player = stateContainer.playerConnection.player
+    var repeatMode by remember(player) { mutableIntStateOf(player.repeatMode) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRepeatModeChanged(mode: Int) {
+                repeatMode = mode
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    val (_, setLoopPlayback) = rememberPreference(LoopPlaybackKey, true)
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) { derivedStateOf { sheet?.state?.isExpanded != false } }
 
@@ -127,9 +162,18 @@ fun ClassicTabletLayout(
             safePadding.calculateEndPadding(layoutDirection),
             lyricStart + footerHeight + 24.dp - maxHeight,
         ).coerceAtMost(lyricStart / 2)
+        val tabletHandleTopInset = AppleMusicDimensions.handleTopInset + 24.dp
         val paneWidth = if (appleMusicStyle) {
             (lyricStart - tabletMargin * 2).coerceAtLeast(0.dp)
         } else ((maxWidth - 96.dp) / 2).coerceAtLeast(0.dp)
+        val paneMotion = tween<androidx.compose.ui.unit.Dp>(300, easing = FastOutSlowInEasing)
+        val animatedPaneOffset by animateDpAsState(
+            targetValue = if (appleMusicStyle && !showAppleMusicDetail) {
+                (maxWidth - paneWidth) / 2 - tabletMargin
+            } else 0.dp,
+            animationSpec = paneMotion,
+            label = "tabletPlayerPaneOffset",
+        )
         val paneWidthPx = with(density) { paneWidth.roundToPx() }
         val lyricVerticalPadding = maxHeight * 0.025f
         val paneCenterFraction = paneWidth / (paneWidth + 32.dp) / 2f
@@ -141,7 +185,7 @@ fun ClassicTabletLayout(
         if (appleMusicStyle) {
             Box(
                 Modifier.align(Alignment.TopCenter)
-                    .padding(top = safePadding.calculateTopPadding() + AppleMusicDimensions.handleTopInset)
+                    .padding(top = safePadding.calculateTopPadding() + tabletHandleTopInset)
                     .size(width = 58.dp, height = 4.dp)
                     .playerAdditiveBlend()
                     .background(Color.White.copy(alpha = 0.3f), Capsule()),
@@ -158,6 +202,7 @@ fun ClassicTabletLayout(
                 modifier = Modifier
                     .width(paneWidth)
                     .fillMaxHeight()
+                    .offset(x = if (appleMusicStyle) animatedPaneOffset else 0.dp)
                     .onGloballyPositioned { controlPaneBounds = it.boundsInWindow() }
                     .padding(top = if (appleMusicStyle) tabletMargin else 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -301,18 +346,67 @@ fun ClassicTabletLayout(
                     Spacer(Modifier.height(16.dp))
 
 
-                    PlayerTableControls(
-                        playerConnection = stateContainer.playerConnection,
-                        canSkipPrevious = stateContainer.canSkipPrevious.value,
-                        canSkipNext = stateContainer.canSkipNext.value,
-                        isPlaying = isPlaying,
-                        playbackState = playbackState,
-                        modifier = Modifier.fillMaxWidth(if (appleMusicStyle) 1f else 0.7f),
-                        onPlaylistClick = {
-                            isShowingPlaylist = !isShowingPlaylist
-                        },
-                        queueVisible = isShowingPlaylist,
-                    )
+                    if (appleMusicStyle) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            PlayerPageActionButton(
+                                systemName = "shuffle",
+                                contentDescription = stringResource(R.string.notification_mode_shuffle),
+                                isSelected = shuffleEnabled,
+                                iconSize = 22.dp,
+                                pressedAlpha = 0.6f,
+                                enabled = !fmEnabled || autoplayEnabled,
+                                showSelectedBackground = false,
+                                modifier = Modifier.playerAdditiveBlend()
+                                    .alpha(when {
+                                        fmEnabled && !autoplayEnabled -> 0.1f
+                                        shuffleEnabled -> 0.5f
+                                        else -> 0.2f
+                                    }),
+                                onClick = {
+                                    stateContainer.playerConnection.service.setShuffleModeEnabled(!shuffleEnabled)
+                                },
+                            )
+                            PlayerControls(
+                                playerConnection = stateContainer.playerConnection,
+                                canSkipPrevious = stateContainer.canSkipPrevious.value,
+                                canSkipNext = stateContainer.canSkipNext.value,
+                                isPlaying = isPlaying,
+                                playbackState = playbackState,
+                                showSideSpacers = false,
+                                modifier = Modifier.weight(1f),
+                            )
+                            PlayerPageActionButton(
+                                systemName = if (repeatMode == Player.REPEAT_MODE_ONE) "repeat.1" else "repeat",
+                                contentDescription = stringResource(R.string.loop_playback),
+                                isSelected = repeatMode != Player.REPEAT_MODE_OFF,
+                                iconSize = 22.dp,
+                                pressedAlpha = 0.6f,
+                                showSelectedBackground = false,
+                                modifier = Modifier.playerAdditiveBlend()
+                                    .alpha(if (repeatMode == Player.REPEAT_MODE_OFF) 0.2f else 0.5f),
+                                onClick = {
+                                    val nextMode = when (player.repeatMode) {
+                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                        else -> Player.REPEAT_MODE_OFF
+                                    }
+                                    player.repeatMode = nextMode
+                                    setLoopPlayback(nextMode != Player.REPEAT_MODE_OFF)
+                                },
+                            )
+                        }
+                    } else {
+                        PlayerTableControls(
+                            playerConnection = stateContainer.playerConnection,
+                            canSkipPrevious = stateContainer.canSkipPrevious.value,
+                            canSkipNext = stateContainer.canSkipNext.value,
+                            isPlaying = isPlaying,
+                            playbackState = playbackState,
+                            modifier = Modifier.fillMaxWidth(0.7f),
+                            onPlaylistClick = { isShowingPlaylist = !isShowingPlaylist },
+                            queueVisible = isShowingPlaylist,
+                        )
+                    }
 
                 }
             }
@@ -337,6 +431,7 @@ fun ClassicTabletLayout(
                         bottomFadeHeight = if (playerStyle == PlayerStyle.AppleMusic) AppleMusicDimensions.lyricBottomFade else 100.dp,
                         rendererVerticalPadding = if (playerStyle == PlayerStyle.AppleMusic) 0.dp else 8.dp,
                         lyricOffset = if (appleMusicStyle) tabletMargin + paneWidth / 2 else 48.dp,
+                        centerMainLyric = appleMusicStyle,
                         playerConnection = stateContainer.playerConnection,
                         contentPadding = PaddingValues(
                             start = if (appleMusicStyle) 0.dp else PlayerHorizontalPadding,
@@ -352,13 +447,105 @@ fun ClassicTabletLayout(
                     )
                 }
 
+                if (appleMusicStyle) {
+                    val actionEnd = maxOf(40.dp, safePadding.calculateEndPadding(layoutDirection))
+                    val actionBottom = maxOf(24.dp, safePadding.calculateBottomPadding())
+                    val queueTop = safePadding.calculateTopPadding() +
+                        tabletHandleTopInset + AppleMusicDimensions.handleHeight + 24.dp
+                    val queueBottom = actionBottom + 42.dp
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showAppleMusicDetail,
+                        enter = scaleIn(initialScale = 0.92f, animationSpec = tween(250, delayMillis = 50)) +
+                            fadeIn(animationSpec = tween(250, delayMillis = 50)),
+                        exit = scaleOut(targetScale = 0.92f, animationSpec = tween(250)) +
+                            fadeOut(animationSpec = tween(250)),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        AppleMusicDetailPages(
+                            queueSelected = isShowingPlaylist,
+                            active = sheetExpanded && showAppleMusicDetail,
+                            animate = true,
+                            preloadQueue = sheetExpanded,
+                            modifier = Modifier.fillMaxSize(),
+                            lyrics = { lyricContent() },
+                            queue = { active ->
+                                CompositionLocalProvider(
+                                    LocalGlassBackdrop provides queueBackdrop,
+                                    LocalBlurBackdrop provides queueBackdrop,
+                                ) {
+                                    PlayerQueuePage(
+                                        playerConnection = stateContainer.playerConnection,
+                                        modifier = Modifier.fillMaxSize().padding(
+                                            start = AppleMusicDimensions.lyricRendererInset,
+                                            top = queueTop,
+                                            end = tabletMargin - 24.dp,
+                                            bottom = queueBottom,
+                                        ),
+                                        horizontalPadding = 24.dp,
+                                        contentEndPadding = 24.dp,
+                                        active = active,
+                                        selected = isShowingPlaylist,
+                                        landscapeHeader = true,
+                                        currentHeader = {},
+                                    )
+                                }
+                            },
+                        )
+                    }
+                    Row(
+                        Modifier.align(Alignment.BottomEnd)
+                            .padding(end = actionEnd, bottom = actionBottom)
+                            .playerAdditiveBlend().alpha(0.5f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlayerPageActionButton(
+                            systemName = if (showAppleMusicDetail && !isShowingPlaylist) "quote.bubble.fill" else "quote.bubble",
+                            contentDescription = stringResource(R.string.player_action_lyrics),
+                            isSelected = showAppleMusicDetail && !isShowingPlaylist,
+                            onClick = {
+                                if (showAppleMusicDetail && !isShowingPlaylist) {
+                                    showAppleMusicDetail = false
+                                } else {
+                                    isShowingPlaylist = false
+                                    showAppleMusicDetail = true
+                                }
+                            },
+                            iconSize = 22.dp,
+                            pressedAlpha = 0.6f,
+                        )
+                        PlayerPageActionButton(
+                            systemName = "list.bullet",
+                            contentDescription = stringResource(R.string.player_action_queue),
+                            isSelected = showAppleMusicDetail && isShowingPlaylist,
+                            onClick = {
+                                if (showAppleMusicDetail && isShowingPlaylist) {
+                                    showAppleMusicDetail = false
+                                } else {
+                                    isShowingPlaylist = true
+                                    showAppleMusicDetail = true
+                                }
+                            },
+                            iconSize = 22.dp,
+                            iconWeight = FontWeight.SemiBold,
+                            pressedAlpha = 0.6f,
+                        )
+                    }
+                }
+                if (!appleMusicStyle) {
                 val playlistContent = @Composable {
-                    PlaylistContent(
-                        onDismiss = { isShowingPlaylist = false },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = PlayerHorizontalPadding)
-                    )
+                    // This queue is inside the recorded foreground, so never sample that same layer.
+                    CompositionLocalProvider(
+                        LocalGlassBackdrop provides queueBackdrop,
+                        LocalBlurBackdrop provides queueBackdrop,
+                    ) {
+                        PlaylistContent(
+                            onDismiss = { isShowingPlaylist = false },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = PlayerHorizontalPadding)
+                        )
+                    }
                 }
 
                 val playlistModifier = Modifier
@@ -457,6 +644,7 @@ fun ClassicTabletLayout(
                             playlistContent()
                         }
                     }
+                }
                 }
             }
         }

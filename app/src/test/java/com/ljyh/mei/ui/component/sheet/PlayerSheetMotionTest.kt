@@ -257,18 +257,18 @@ class PlayerSheetMotionTest {
         assertEquals(outward, inward.reversed())
     }
 
-    @Test fun landscapeMiniContentKeepsHorizontalCenterAndTopInsetThroughReversal() {
+    @Test fun landscapeMiniContentKeepsLeadingAndTopInsetsThroughReversal() {
         val container = Rect(250f, 700f, 950f, 764f)
         val content = Rect(262f, 700f, 930f, 764f)
         val host = Rect(17f, 23f, 1217f, 823f)
-        val centerInset = content.center - container.center
+        val leadingInset = content.left - container.left
         val progress = listOf(0f, .2f, .5f, .8f, 1f, .8f, .5f, .2f, 0f)
         val origins = progress.map { p ->
             val moving = playerContainerRect(container, host, p)
-            val origin = playerMiniContentOrigin(content, container, moving, centerHorizontally = true)
+            val origin = playerMiniContentOrigin(content, container, moving)
             val frame = Rect(origin, content.size)
             assertEquals(content.size, frame.size)
-            assertEquals(centerInset.x, frame.center.x - moving.center.x, .001f)
+            assertEquals(leadingInset, frame.left - moving.left, .001f)
             assertEquals(content.top - container.top, frame.top - moving.top, .001f)
             origin
         }
@@ -280,9 +280,36 @@ class PlayerSheetMotionTest {
         val content = Rect(20f, 700f, 380f, 748f)
         listOf(0f, .25f, .5f, .75f, 1f).forEach { p ->
             val moving = playerContainerRect(mini, page, p)
-            val origin = playerMiniContentOrigin(content, mini, moving, centerHorizontally = false)
+            val origin = playerMiniContentOrigin(content, mini, moving)
             assertEquals(content.left - mini.left, origin.x - moving.left, .001f)
             assertEquals(content.top - mini.top, origin.y - moving.top, .001f)
+        }
+    }
+
+    @Test fun landscapeTrailingActionsAnchorRightOnOpenAndLeftOnClose() {
+        val mini = Rect(250f, 700f, 950f, 764f)
+        val actions = Rect(786f, 708f, 930f, 756f)
+        val host = Rect(17f, 23f, 1217f, 823f)
+        for (progress in listOf(0f, .25f, .5f, .75f, 1f)) {
+            val moving = playerContainerRect(mini, host, progress)
+            val opening = playerMiniTrailingOrigin(actions, mini, moving, rightAnchored = true)
+            val closing = playerMiniTrailingOrigin(actions, mini, moving, rightAnchored = false)
+            assertEquals(mini.right - actions.right, moving.right - (opening.x + actions.width), .001f)
+            assertEquals(actions.left - mini.left, closing.x - moving.left, .001f)
+            assertEquals(actions.top - mini.top, opening.y - moving.top, .001f)
+            assertEquals(actions.topLeft, playerMiniTrailingOrigin(actions, mini, mini, true))
+            assertEquals(actions.topLeft, playerMiniTrailingOrigin(actions, mini, mini, false))
+        }
+    }
+
+    @Test fun landscapeTrailingAnchorKeepsItsStartingSideAcrossDragReversals() {
+        val anchor = PlayerMiniTrailingAnchor()
+        for (progress in listOf(0f, .3f, .8f, .4f, 1f)) {
+            assertTrue(anchor.anchorsRight(progress))
+        }
+        anchor.reset()
+        for (progress in listOf(1f, .7f, .2f, .6f, 0f)) {
+            assertFalse(anchor.anchorsRight(progress))
         }
     }
 

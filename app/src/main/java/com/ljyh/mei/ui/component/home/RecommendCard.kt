@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.request.crossfade
 import coil3.toBitmap
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
 import io.github.neoruaa.glasmio.glass.render.drawPlainBackdrop
@@ -83,6 +84,8 @@ fun RecommendCard(
         coverModel?.let {
             ImageRequest.Builder(context)
                 .data(it)
+                // The extension uses the decoded bitmap directly; reveal both without a cover-only fade.
+                .crossfade(false)
                 .allowHardware(false)
                 .build()
         }

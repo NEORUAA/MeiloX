@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
@@ -85,7 +86,7 @@ import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
-import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
@@ -452,7 +453,7 @@ fun LibraryMobileLayout(
                                     }
                                 }
                                 item(key = "liked-top-divider") {
-                                    HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 8.dp), thickness = 0.5.dp, color = LocalGlassColors.current.separator)
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 4.dp), thickness = 0.5.dp, color = songListDividerColor())
                                 }
                                 items(
                                     count = likedSongs.itemCount,
@@ -537,7 +538,7 @@ fun LibraryMobileLayout(
                                 }
                             }
                             if (visiblePlaylists.isNotEmpty()) item(key = "playlist-top-divider") {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 8.dp), thickness = 0.5.dp, color = LocalGlassColors.current.separator)
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = if (isLandscape) 0.dp else 4.dp), thickness = 0.5.dp, color = songListDividerColor())
                             }
                             items(visiblePlaylists, key = { "playlist-${it.id}" }, contentType = { "playlist" }) { playlist ->
                                 if (isLandscape) LandscapeMediaRow(
@@ -581,6 +582,7 @@ fun LibraryMobileLayout(
                                         row.forEach { album ->
                                             LibraryGridItem(
                                                 title = album.title,
+                                                captionSpacing = 8.dp,
                                                 titleStyle = IosTypography.body.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
                                                 subtitle = album.artist.joinToString(" / ") { it.name },
                                                 cover = album.cover,
@@ -729,7 +731,7 @@ private fun LibrarySongRow(
     showDivider: Boolean = true,
 ) {
     LandscapeMediaRow(
-        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 8.dp),
+        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 4.dp),
         image = song.coverUrl,
         title = song.title,
         artist = song.artists.joinToString(" / ") { it.name },
@@ -745,7 +747,7 @@ private fun LibrarySongRow(
 @Composable
 private fun LibraryPlaylistRow(playlist: Playlist, showDivider: Boolean, onClick: () -> Unit) {
     LandscapeMediaRow(
-        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 8.dp),
+        modifier = Modifier.padding(horizontal = if (rememberDeviceInfo().isLandscape) 0.dp else 4.dp),
         image = playlist.cover,
         title = playlist.title,
         artist = playlist.authorName,

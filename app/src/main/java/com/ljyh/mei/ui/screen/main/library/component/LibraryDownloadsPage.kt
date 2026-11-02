@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library.component
 
+import com.ljyh.mei.ui.component.playlist.songListDividerColor
 import com.ljyh.mei.ui.component.sheet.MeiloXBottomSheet
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
@@ -25,7 +26,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
-import com.ljyh.mei.ui.component.search.MeiloXSearchBar as GlasmioSearchBar
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 
 import android.app.Activity
@@ -268,10 +269,10 @@ internal fun LibraryDownloadsPage(
             }
         }
         if (entries.isNotEmpty()) item("offline-top-divider") {
-            androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(horizontal = if (landscape) 0.dp else 8.dp), thickness = 0.5.dp, color = colors.separator)
+            androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(horizontal = if (landscape) 0.dp else 4.dp), thickness = 0.5.dp, color = songListDividerColor())
         }
         items(entries, key = { it.key }, contentType = { "offline-song" }) { entry ->
-            Box(Modifier.padding(horizontal = if (landscape) 0.dp else 8.dp)) {
+            Box(Modifier.padding(horizontal = if (landscape) 0.dp else 4.dp)) {
                 DownloadLibraryRow(entry, onPlay = { play(entry) }, onMore = { selectedKey = entry.key; menuAnchor = it },
                     showDivider = entry.key != entries.lastOrNull()?.key)
             }

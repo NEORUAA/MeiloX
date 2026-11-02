@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.screen.podcast
 
+import com.ljyh.mei.ui.component.item.FixedCardCaption
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import androidx.compose.foundation.background
@@ -346,26 +347,13 @@ private fun PodcastRecommendationCard(
                 .aspectRatio(1f)
                 .clip(ContinuousRoundedRectangle(14.dp)),
         )
-        Text(
-            text = podcast.name,
-            style = IosTypography.subheadline,
-            fontWeight = FontWeight.Medium,
-            color = LocalGlassColors.current.content,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
-        )
         val subtitle = podcast.recommendation?.takeIf(String::isNotBlank)
             ?: podcast.host?.nickname?.takeIf(String::isNotBlank)
-        subtitle?.let {
-            Text(
-                text = it,
-                style = IosTypography.caption,
-                color = LocalGlassColors.current.secondaryContent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        FixedCardCaption(
+            title = podcast.name,
+            subtitle = subtitle.orEmpty(),
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 
