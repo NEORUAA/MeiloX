@@ -13,6 +13,40 @@ import org.junit.Test
 class PlayerPressLightTest {
     private val pressed = GlassPressHighlight(0.8f, Offset(0.25f, 0.7f))
 
+    @Test fun combinedGlowPolynomialPreservesOriginalField() {
+        val points = floatArrayOf(.0198550718f, .1016667613f, .2372337950f, .4082826788f,
+            .5917173212f, .7627662050f, .8983332387f, .9801449282f)
+        val weights = floatArrayOf(.0506142681f, .1111905172f, .1568533229f, .1813418917f,
+            .1813418917f, .1568533229f, .1111905172f, .0506142681f)
+        val bessel = floatArrayOf(1f, 1f, .25f, .02777777778f, .001736111111f,
+            .00006944444444f, 1.929012346e-6f, 3.936759889e-8f, 6.151187327e-10f)
+        var maxError = 0f
+        var tail = 0f
+        for (sample in 0..100000) {
+            val x = sample * (5f / 100000f)
+            var reference = 0f
+            for (i in points.indices) {
+                val t = points[i]
+                val q = x * x * t * t * .25f
+                var value = bessel.last()
+                for (k in bessel.lastIndex - 1 downTo 0) value = value * q + bessel[k]
+                reference += weights[i] * t * kotlin.math.exp(-.5f * t * t) * value
+            }
+            val envelope = kotlin.math.exp(-.5f * x * x)
+            reference *= envelope
+            val c = PlayerPressGlowCoefficients
+            var combined = c.last()
+            for (k in c.lastIndex - 1 downTo 0) combined = combined * (x * x) + c[k]
+            combined *= envelope
+            val error = kotlin.math.abs(combined - reference)
+            maxError = maxOf(maxError, error)
+            assertTrue(error <= maxOf(0.0000000298023224f, reference / 4096f))
+            if (sample == 100000) tail = combined
+        }
+        assertTrue("Maximum field error: $maxError", maxError <= 0.0000002f)
+        assertTrue(tail > 0f)
+    }
+
     @Test fun heldPointerMovesIndependentlyOfTheFrozenMiniPlayerGeometry() = runBlocking {
         val light = PlayerPressLight(this)
         val source = Rect(16f, 700f, 388f, 750f)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -37,6 +38,11 @@ import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
 import com.ljyh.mei.ui.component.player.component.LyricScreen
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDetailPages
+import com.ljyh.mei.ui.component.player.component.applemusic.PlayerQueuePage
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.render.Backdrop
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import com.ljyh.mei.ui.component.player.component.applemusic.playerAdditiveBlend
 import com.ljyh.mei.ui.component.player.component.applemusic.playerMetadataAnchorBounds
@@ -50,7 +56,8 @@ import com.ljyh.mei.utils.rememberEnumPreference
 @Composable
 fun ClassicImmersiveLayout(
     stateContainer: PlayerStateContainer,
-    overlayHandler: PlayerOverlayHandler
+    overlayHandler: PlayerOverlayHandler,
+    queueBackdrop: Backdrop,
 ) {
     val mediaMetadata by stateContainer.mediaMetadata
     val isPlaying by stateContainer.isPlaying
@@ -59,6 +66,7 @@ fun ClassicImmersiveLayout(
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) { derivedStateOf { sheet?.state?.isExpanded != false } }
+    val sheetContentVisible by remember(sheet) { derivedStateOf { sheet?.state?.isContentVisible != false } }
     var textCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var rowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
@@ -188,21 +196,47 @@ fun ClassicImmersiveLayout(
                     }
                 }
 
-                LyricScreen(
-                    lyricData = lyricLine,
-                    playerConnection = stateContainer.playerConnection,
-                    contentPadding = PaddingValues(
-                        start = lyricInset,
-                        end = (contentEndInset - AppleMusicDimensions.lyricRendererInset).coerceAtLeast(0.dp),
-                    ),
-                    showSourceBadge = false,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    onClick = {},
-                    onLongClick = {},
-                    controlsVisible = stateContainer.controlsVisible,
-                    onToggleControls = {},
+                AppleMusicDetailPages(
+                    queueSelected = stateContainer.landscapeQueueSelected.value,
+                    active = sheetContentVisible,
+                    animate = sheetExpanded,
+                    preloadQueue = sheetExpanded,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    lyrics = { active ->
+                        LyricScreen(
+                            lyricData = lyricLine,
+                            active = active,
+                            synchronizeEntryWithParent = true,
+                            playerConnection = stateContainer.playerConnection,
+                            contentPadding = PaddingValues(
+                                start = lyricInset,
+                                end = (contentEndInset - AppleMusicDimensions.lyricRendererInset).coerceAtLeast(0.dp),
+                            ),
+                            showSourceBadge = false,
+                            modifier = Modifier.fillMaxSize(),
+                            onClick = {},
+                            onLongClick = {},
+                            controlsVisible = stateContainer.controlsVisible,
+                            onToggleControls = {},
+                        )
+                    },
+                    queue = { active ->
+                        CompositionLocalProvider(
+                            LocalGlassBackdrop provides queueBackdrop,
+                            LocalBlurBackdrop provides queueBackdrop,
+                        ) {
+                            PlayerQueuePage(
+                                playerConnection = stateContainer.playerConnection,
+                                active = active,
+                                selected = stateContainer.landscapeQueueSelected.value,
+                                landscapeHeader = true,
+                                currentHeader = {},
+                                horizontalPadding = metadataInset,
+                                contentEndPadding = contentEndInset,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    },
                 )
             }
         }

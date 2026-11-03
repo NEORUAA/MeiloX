@@ -833,6 +833,9 @@ class MainActivity : ComponentActivity() {
                                 playerBottomSheetState.progress >= 0.99f
                         }
                     }.value
+                    val playerContentVisible by remember(playerBottomSheetState) {
+                        derivedStateOf { playerBottomSheetState.isContentVisible }
+                    }
                     val playerDismissed by remember(playerBottomSheetState) {
                         derivedStateOf { playerBottomSheetState.isDismissed }
                     }
@@ -845,28 +848,25 @@ class MainActivity : ComponentActivity() {
                     val pageDarkAppearance = currentRoute?.let { pageAppearanceOverrides[it]?.second }
                     val statusBarDark = isPlayerPage || (pageDarkAppearance ?: effectiveDark)
                     val windowConfiguration = LocalConfiguration.current
-                    DisposableEffect(
-                        window, windowInsetsController, windowConfiguration,
-                        isPlayerPage, statusBarDark, effectiveDark, keepScreenOnInPlayer,
-                    ) {
+                    // Configure window layout only when its configuration or theme changes.
+                    // Player phase changes only update appearance below; repeating edge-to-edge
+                    // setup at 99% can dispatch a window traversal during the settling tail.
+                    DisposableEffect(window, windowInsetsController, windowConfiguration, effectiveDark) {
                         val transparent = android.graphics.Color.TRANSPARENT
                         enableEdgeToEdge(
-                            statusBarStyle = if (isPlayerPage) {
-                                // The expanded player renders artwork behind the status bar;
-                                // keep its foreground white regardless of the app theme.
-                                SystemBarStyle.dark(transparent)
-                            } else {
-                                SystemBarStyle.auto(transparent, transparent) { statusBarDark }
-                            },
-                            navigationBarStyle = SystemBarStyle.auto(transparent, transparent) {
-                                effectiveDark
-                            },
+                            statusBarStyle = SystemBarStyle.auto(transparent, transparent) { statusBarDark },
+                            navigationBarStyle = SystemBarStyle.auto(transparent, transparent) { effectiveDark },
                         )
-                        // Keep this explicit because the API 35+ edge-to-edge implementation can
-                        // retain the previous appearance while the bottom sheet settles.
-                        windowInsetsController.isAppearanceLightStatusBars =
-                            !statusBarDark
-                        // Even an unchanged flag dispatches window attributes and a traversal.
+                        window.navigationBarColor = transparent
+                        window.isNavigationBarContrastEnforced = false
+                        window.navigationBarDividerColor = transparent
+                        onDispose { }
+                    }
+                    DisposableEffect(windowInsetsController, statusBarDark) {
+                        windowInsetsController.isAppearanceLightStatusBars = !statusBarDark
+                        onDispose { }
+                    }
+                    DisposableEffect(window, isPlayerPage, keepScreenOnInPlayer) {
                         val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                         val wantsScreenOn = isPlayerPage && keepScreenOnInPlayer
                         val hasScreenOn = window.attributes.flags and keepScreenOnFlag != 0
@@ -874,14 +874,9 @@ class MainActivity : ComponentActivity() {
                             if (wantsScreenOn) window.addFlags(keepScreenOnFlag)
                             else window.clearFlags(keepScreenOnFlag)
                         }
-                        // Keep the navigation bar transparent instead of applying the platform
-                        // contrast scrim.
-                        window.navigationBarColor = transparent
-                        window.isNavigationBarContrastEnforced = false
-                        window.navigationBarDividerColor = transparent
                         onDispose { }
                     }
-                    val immersiveLandscapePlayer = playerBottomSheetState.isContentVisible &&
+                    val immersiveLandscapePlayer = playerContentVisible &&
                         windowConfiguration.orientation == Configuration.ORIENTATION_LANDSCAPE
                     DisposableEffect(windowInsetsController, immersiveLandscapePlayer) {
                         val previousBehavior = windowInsetsController.systemBarsBehavior
@@ -1241,7 +1236,7 @@ class MainActivity : ComponentActivity() {
                                             navigationEventState = navigationEventState,
                                             // The scene-state overload needs this callback for in-content swipe back.
                                             onBack = { navController.popBackStack() },
-                                            swipeBackEnabled = !active && !playerBottomSheetState.isContentVisible,
+                                            swipeBackEnabled = !active && !playerContentVisible,
                                             modifier = Modifier.fillMaxSize(),
                                             transitionSpec = {
                                                 if (usesHomeAlphaTransition()) {
@@ -1371,7 +1366,8 @@ class MainActivity : ComponentActivity() {
                             exit = fadeOut(),
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .zIndex(2f),
+                                // Keep expanded navigation and both compact controls below the mini-player.
+                                .zIndex(0.5f),
                         ) {
                             AnimatedBottomNavigationRow(
                                 compactProgress = compactNavigationProgress,

@@ -25,6 +25,262 @@ class PlayerSheetMotionTest {
     private val mini = Rect(12f, 700f, 388f, 748f)
     private val page = Rect(0f, 0f, 400f, 800f)
 
+    @Test fun landscapeContentKeepsItsFullSizeAndFollowsTheShellTopLeftThroughoutMotion() {
+        val host = Rect(20f, 30f, 820f, 430f)
+        val source = Rect(40f, 350f, 800f, 414f)
+        for (closing in listOf(false, true)) {
+            for (step in 0..100) {
+                val frame = playerCollapseFrame(step / 100f, host.height, 336f, closing)
+                val container = if (closing) playerClosingContainerRect(source, host, frame)
+                    else playerContainerRect(source, host, frame.morphProgress)
+                val content = playerFullContentRect(container, host)
+                assertEquals(host.width, content.width, 0.001f)
+                assertEquals(host.height, content.height, 0.001f)
+                assertEquals(container.topLeft, content.topLeft)
+                if (step == 100) assertEquals(host, content)
+            }
+        }
+    }
+
+    @Test fun portraitContentRetainsItsExistingUniformScaling() {
+        for (step in 0..100) {
+            val container = playerContainerRect(mini, page, step / 100f)
+            val content = playerFullContentRect(container, page)
+            assertEquals(container.topLeft, content.topLeft)
+            assertEquals(container.width, content.width, 0.001f)
+            assertEquals(page.height * container.width / page.width, content.height, 0.001f)
+        }
+    }
+
+    @Test fun collapseKeepsTheWholePageRigidUntilOneThirdScreenInBothOrientations() {
+        for (host in listOf(page, Rect(0f, 0f, 800f, 400f))) {
+            val travel = host.height - 64f
+            val threshold = 0.7f
+            for (raw in listOf(1f, (1f + threshold) / 2f, threshold)) {
+                val frame = playerCollapseFrame(raw, host.height, travel, closing = true)
+                val bounds = playerContainerRect(mini, host, frame.morphProgress)
+                    .translate(androidx.compose.ui.geometry.Offset(0f, frame.offsetY))
+                assertEquals(1f, frame.morphProgress, 0.00001f)
+                assertEquals(host.width, bounds.width, 0.001f)
+                assertEquals(host.height, bounds.height, 0.001f)
+                assertEquals((1f - raw) / 0.3f * host.height / 3f, bounds.top, 0.001f)
+                assertEquals(1f, playerContentAlpha(frame.morphProgress), 0f)
+                assertEquals(1f, playerBackgroundAlpha(frame.morphProgress), 0f)
+                assertEquals(0f, playerMiniContentAlpha(frame.morphProgress), 0f)
+                assertEquals(0f, playerContainerCornerRadius(24f, 0f, frame.morphProgress), 0.00001f)
+            }
+            val before = playerCollapseFrame(threshold + 0.000001f, host.height, travel, true)
+            val after = playerCollapseFrame(threshold - 0.000001f, host.height, travel, true)
+            assertEquals(before.offsetY, after.offsetY, 0.01f)
+            assertEquals(before.morphProgress, after.morphProgress, 0.00001f)
+            val morph = playerCollapseFrame(threshold / 2f, host.height, travel, true)
+            assertEquals(0.5f, morph.morphProgress, 0.00001f)
+            assertTrue(playerContentAlpha(morph.morphProgress) < 1f)
+            val settled = playerCollapseFrame(0f, host.height, travel, true)
+            assertEquals(mini, playerClosingContainerRect(mini, host, settled))
+        }
+    }
+
+    @Test fun openingRetainsItsExistingGeometryAndCollapseCanRetraceAfterReversal() {
+        val samples = (0..100).map { it / 100f }
+        for (p in samples) {
+            assertEquals(PlayerCollapseFrame(p, 0f), playerCollapseFrame(p, 800f, 736f, false))
+        }
+        val closing = samples.reversed().map { playerCollapseFrame(it, 800f, 736f, true) }
+        val reversing = samples.map { playerCollapseFrame(it, 800f, 736f, true) }
+        assertEquals(closing.reversed(), reversing)
+    }
+
+    @Test fun closingTopReboundsWithinTheSameProgressWhileOtherEdgesKeepTheirPath() {
+        for (host in listOf(page, Rect(0f, 0f, 800f, 400f))) {
+            val source = Rect(24f, host.height - 80f, host.width - 24f, host.height - 16f)
+            val travel = host.height - 64f
+            val bounds = (1000 downTo 0).map { step ->
+                val frame = playerCollapseFrame(step / 1000f, host.height, travel, true)
+                val linear = playerContainerRect(source, host, frame.morphProgress)
+                    .translate(androidx.compose.ui.geometry.Offset(0f, frame.offsetY))
+                playerClosingContainerRect(source, host, frame).also { actual ->
+                    assertEquals(linear.left, actual.left, 0f)
+                    assertEquals(linear.right, actual.right, 0f)
+                    assertEquals(linear.bottom, actual.bottom, 0f)
+                    assertTrue(actual.height > 0f)
+                    if (frame.morphProgress == 1f) assertEquals(linear, actual)
+                }
+            }
+            assertEquals(host, bounds.first())
+            assertEquals(source, bounds.last())
+            assertTrue(bounds.maxOf { it.top } > source.top)
+            assertTrue(bounds.maxOf { it.top } < source.top + source.height / 3f)
+            assertTrue(bounds[bounds.lastIndex - 1].top > bounds.last().top)
+        }
+    }
+
+    @Test fun closingCornersAdoptScreenRadiusBeforeMorphingToTheMiniPlayer() {
+        val travel = 736f
+        val threshold = 0.7f
+        for (p in listOf(1f, 0.9f, threshold)) {
+            val frame = playerCollapseFrame(p, 800f, travel, true)
+            assertEquals(36f, playerClosingCornerRadius(24f, 36f, frame.morphProgress), 0.00001f)
+        }
+        assertEquals(30f, playerClosingCornerRadius(24f, 36f, 0.5f), 0f)
+        assertEquals(24f, playerClosingCornerRadius(24f, 36f, 0f), 0f)
+    }
+
+    @Test fun closingTopPreservesTranslationVelocityAtTheMorphHandoff() {
+        for (host in listOf(page, Rect(0f, 0f, 800f, 400f))) {
+            val source = Rect(24f, host.height - 80f, host.width - 24f, host.height - 16f)
+            val travel = host.height - 64f
+            val threshold = 0.7f
+            fun topAt(raw: Float) = playerClosingContainerRect(
+                source, host, playerCollapseFrame(raw, host.height, travel, true),
+            ).top
+            val step = 0.0001f
+            val entry = (topAt(threshold) - topAt(threshold + step)) / step
+            val exit = (topAt(threshold - step) - topAt(threshold)) / step
+            assertEquals(host.height / (3f * 0.3f), entry, travel * 0.005f)
+            assertEquals(entry, exit, travel * 0.005f)
+        }
+    }
+
+    @Test fun closingTopTurnsSmoothlyDuringTheFinalProgressWhileTheOtherEdgesStillShrink() {
+        for (host in listOf(page, Rect(0f, 0f, 800f, 400f))) {
+            val source = Rect(24f, host.height - 80f, host.width - 24f, host.height - 16f)
+            val travel = host.height - 64f
+            fun boundsAt(raw: Float) = playerClosingContainerRect(
+                source, host, playerCollapseFrame(raw, host.height, travel, true),
+            )
+            val turnaround = 0.2f
+            val peak = boundsAt(turnaround)
+            val returning = boundsAt(turnaround / 2f)
+            assertEquals(0.8f, 1f - turnaround, 0.00001f)
+            val overshoot = source.height / if (host == page) 4f else 8f
+            assertEquals(source.top + overshoot, peak.top, 0.001f)
+            assertTrue(returning.top < peak.top && returning.top > source.top)
+            assertTrue(peak.left < returning.left && returning.left < source.left)
+            assertTrue(peak.right > returning.right && returning.right > source.right)
+            assertTrue(peak.bottom > returning.bottom && returning.bottom > source.bottom)
+            val step = 0.0001f
+            val entry = (peak.top - boundsAt(turnaround + step).top) / step
+            val exit = (boundsAt(turnaround - step).top - peak.top) / step
+            assertEquals(0f, entry, travel * 0.005f)
+            assertEquals(0f, exit, travel * 0.005f)
+        }
+    }
+
+    @Test fun collapseUsesThirtyFiftyTwentyProgressRegardlessOfOrientationAndAnchorTravel() {
+        for (host in listOf(page, Rect(0f, 0f, 800f, 400f))) {
+            val source = Rect(24f, host.height - 80f, host.width - 24f, host.height - 16f)
+            for (travel in listOf(host.height - 64f, host.height - 128f)) {
+                fun boundsAt(closing: Float) = playerClosingContainerRect(
+                    source, host, playerCollapseFrame(1f - closing, host.height, travel, true),
+                )
+                val translated = boundsAt(0.3f)
+                assertEquals(host.width, translated.width, 0.001f)
+                assertEquals(host.height, translated.height, 0.001f)
+                assertEquals(host.height / 3f, translated.top, 0.001f)
+                val peak = boundsAt(0.8f)
+                val overshoot = source.height / if (host == page) 4f else 8f
+                assertEquals(source.top + overshoot, peak.top, 0.001f)
+                assertTrue(peak.width > source.width)
+                assertTrue(peak.bottom > source.bottom)
+                val returning = boundsAt(0.9f)
+                assertEquals(source.top + overshoot / 2f, returning.top, 0.001f)
+                assertTrue(returning.width < peak.width && returning.width > source.width)
+                assertEquals(source, boundsAt(1f))
+            }
+        }
+    }
+
+    private fun reversalFrame(p: Float, closing: Boolean): PlayerSheetMotionFrame {
+        val frame = playerCollapseFrame(p, page.height, 736f, closing)
+        return PlayerSheetMotionFrame(
+            if (closing) playerClosingContainerRect(mini, page, frame)
+            else playerContainerRect(mini, page, frame.morphProgress),
+            frame.morphProgress,
+        )
+    }
+
+    private fun assertMotionFrame(expected: PlayerSheetMotionFrame, actual: PlayerSheetMotionFrame, tolerance: Float) {
+        assertEquals(expected.bounds.left, actual.bounds.left, tolerance)
+        assertEquals(expected.bounds.top, actual.bounds.top, tolerance)
+        assertEquals(expected.bounds.right, actual.bounds.right, tolerance)
+        assertEquals(expected.bounds.bottom, actual.bounds.bottom, tolerance)
+        assertEquals(expected.morphProgress, actual.morphProgress, tolerance)
+    }
+
+    @Test fun nearEndpointReversalUsesInclusiveFiveAndNinetyFivePercentThresholds() {
+        for (p in listOf(0.949f, 0.95f, 0.951f)) {
+            val path = PlayerSheetMotionPath(false)
+            path.frame(p, ::reversalFrame)
+            path.frame(p - 0.001f, ::reversalFrame)
+            assertEquals(p >= 0.95f, path.closing)
+        }
+        for (p in listOf(0.049f, 0.05f, 0.051f)) {
+            val path = PlayerSheetMotionPath(true)
+            path.frame(p, ::reversalFrame)
+            path.frame(p + 0.001f, ::reversalFrame)
+            assertEquals(p > 0.05f, path.closing)
+        }
+    }
+
+    @Test fun lateReversalPreservesPresentedGeometryOpacityAndProgressTangent() {
+        for ((closing, start) in listOf(false to 0.97f, true to 0.03f)) {
+            val path = PlayerSheetMotionPath(closing)
+            val captured = path.frame(start, ::reversalFrame)
+            val step = if (closing) 0.0001f else -0.0001f
+            val next = path.frame(start + step, ::reversalFrame)
+            assertEquals(!closing, path.closing)
+            val atCapture = path.frame(start, ::reversalFrame)
+            assertMotionFrame(captured, atCapture, 0.0001f)
+            assertEquals(playerMiniContentAlpha(captured.morphProgress), playerMiniContentAlpha(atCapture.morphProgress), 0.00001f)
+            assertEquals(playerContentAlpha(captured.morphProgress), playerContentAlpha(atCapture.morphProgress), 0.00001f)
+            assertEquals(playerBackgroundAlpha(captured.morphProgress), playerBackgroundAlpha(atCapture.morphProgress), 0.00001f)
+            val oldTangent = (reversalFrame(start + step, closing) - captured) * (1f / step)
+            val newTangent = (next - captured) * (1f / step)
+            assertMotionFrame(oldTangent, newTangent, 4f)
+            assertEquals(oldTangent.morphProgress, newTangent.morphProgress, 0.01f)
+            val endpoint = if (closing) 1f else 0f
+            for (stepIndex in 1..1000) {
+                val p = start + (endpoint - start) * (stepIndex / 1000f)
+                val frame = path.frame(p, ::reversalFrame)
+                assertTrue(frame.bounds.width > 0f && frame.bounds.height > 0f)
+                assertTrue(frame.morphProgress in 0f..1f)
+            }
+            assertMotionFrame(reversalFrame(endpoint, !closing), path.frame(endpoint, ::reversalFrame), 0.0001f)
+        }
+    }
+
+    @Test fun middleReversalRetracesTheOriginalPath() {
+        for (closing in listOf(false, true)) {
+            val path = PlayerSheetMotionPath(closing)
+            val samples = if (closing) listOf(1f, 0.5f, 0.6f, 0.8f, 1f)
+                else listOf(0f, 0.5f, 0.4f, 0.2f, 0f)
+            for (p in samples) {
+                assertMotionFrame(reversalFrame(p, closing), path.frame(p, ::reversalFrame), 0f)
+                assertEquals(closing, path.closing)
+            }
+        }
+    }
+
+    @Test fun rebasedPathsRemainContinuousThroughRepeatedReversalsAndReachBothEndpoints() {
+        val path = PlayerSheetMotionPath(false)
+        for (p in listOf(0f, 0.98f, 0.979f, 0.5f, 0.04f, 0.041f, 0.5f, 0.97f, 0.969f)) {
+            val frame = path.frame(p, ::reversalFrame)
+            assertTrue(frame.bounds.width > 0f && frame.bounds.height > 0f)
+            assertTrue(frame.morphProgress in 0f..1f)
+        }
+        assertTrue(path.closing)
+        assertMotionFrame(reversalFrame(0f, true), path.frame(0f, ::reversalFrame), 0.0001f)
+        for (step in 1..1000) {
+            val frame = path.frame(step / 1000f, ::reversalFrame)
+            assertTrue(frame.bounds.width > 0f && frame.bounds.height > 0f)
+        }
+        assertFalse(path.closing)
+        assertMotionFrame(reversalFrame(1f, false), path.frame(1f, ::reversalFrame), 0.0001f)
+        path.reset(true, 1f)
+        assertMotionFrame(reversalFrame(0.5f, true), path.frame(0.5f, ::reversalFrame), 0f)
+    }
+
     @Test fun retainedMaterialBytecodeDoesNotReferenceCompilerPlaceholderTypes() {
         for (name in listOf("PlayerSheetGlassMorphRenderer", "PlayerSheetGlassMorphRendererKt", "MorphNativeFilterScope")) {
             val resource = "com/ljyh/mei/ui/component/sheet/$name.class"

@@ -3,8 +3,6 @@ package com.ljyh.mei.ui.component.player
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.LocalRippleConfiguration
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,9 +20,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import com.kyant.capsule.ContinuousRoundedRectangle
@@ -37,6 +39,7 @@ import com.ljyh.mei.extensions.togglePlayPause
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicSkipIcon
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayPauseMotionContent
+import com.ljyh.mei.ui.component.player.component.PlayerTransportButton
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.recordPlayerContent
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -128,50 +131,52 @@ internal fun LandscapeMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LandscapePlayerButton("shuffle", stringResource(R.string.notification_mode_shuffle),
-                    iconSize = 20.dp, selected = shuffle, enabled = !fmEnabled || autoplayEnabled,
+                    iconSize = 20.dp, selected = shuffle, toggle = true, enabled = !fmEnabled || autoplayEnabled,
                     onClick = { connection.service.setShuffleModeEnabled(!shuffle) })
-                CompositionLocalProvider(LocalRippleConfiguration provides null) {
-                    IconButton(
-                        onClick = { previousClicks++; connection.seekToPrevious() },
-                        enabled = previous,
-                        modifier = Modifier.size(44.dp).semantics {
-                            contentDescription = stringPrevious
-                        },
-                    ) {
-                        AppleMusicSkipIcon(forward = false, clickCount = previousClicks, size = 30.dp,
-                            tint = colors.content.copy(alpha = if (previous) 1f else .3f),
-                            weight = FontWeight.SemiBold)
-                    }
-                    IconButton(
-                        onClick = {
-                            if (playbackState == Player.STATE_ENDED) {
-                                connection.player.seekTo(0, 0)
-                                connection.player.playWhenReady = true
-                            } else connection.player.togglePlayPause()
-                        },
-                        modifier = Modifier.size(44.dp).semantics {
-                            contentDescription = playPauseDescription
-                        },
-                    ) {
-                        AppleMusicPlayPauseMotionContent(if (playing) "pause.fill" else "play.fill",
-                            Modifier.size(32.dp)) { symbol ->
-                            SfIcon(symbol, null, tint = colors.content, size = 32.dp, weight = FontWeight.Bold)
-                        }
-                    }
-                    IconButton(
-                        onClick = { nextClicks++; connection.seekToNext() },
-                        enabled = next,
-                        modifier = Modifier.size(44.dp).semantics {
-                            contentDescription = stringNext
-                        },
-                    ) {
-                        AppleMusicSkipIcon(forward = true, clickCount = nextClicks, size = 30.dp,
-                            tint = colors.content.copy(alpha = if (next) 1f else .3f),
-                            weight = FontWeight.SemiBold)
+                PlayerTransportButton(
+                    appleMusicStyle = true,
+                    onClick = { previousClicks++; connection.seekToPrevious() },
+                    enabled = previous,
+                    modifier = Modifier.size(44.dp).semantics {
+                        contentDescription = stringPrevious
+                    },
+                ) {
+                    AppleMusicSkipIcon(forward = false, clickCount = previousClicks, size = 30.dp,
+                        tint = colors.content.copy(alpha = if (previous) 1f else .3f),
+                        weight = FontWeight.SemiBold)
+                }
+                PlayerTransportButton(
+                    appleMusicStyle = true,
+                    onClick = {
+                        if (playbackState == Player.STATE_ENDED) {
+                            connection.player.seekTo(0, 0)
+                            connection.player.playWhenReady = true
+                        } else connection.player.togglePlayPause()
+                    },
+                    modifier = Modifier.size(44.dp).semantics {
+                        contentDescription = playPauseDescription
+                    },
+                ) {
+                    AppleMusicPlayPauseMotionContent(if (playing) "pause.fill" else "play.fill",
+                        Modifier.size(32.dp)) { symbol ->
+                        SfIcon(symbol, null, tint = colors.content, size = 32.dp, weight = FontWeight.Bold,
+                            modifier = Modifier.absoluteOffset(x = if (symbol == "play.fill") 2.dp else 0.dp))
                     }
                 }
+                PlayerTransportButton(
+                    appleMusicStyle = true,
+                    onClick = { nextClicks++; connection.seekToNext() },
+                    enabled = next,
+                    modifier = Modifier.size(44.dp).semantics {
+                        contentDescription = stringNext
+                    },
+                ) {
+                    AppleMusicSkipIcon(forward = true, clickCount = nextClicks, size = 30.dp,
+                        tint = colors.content.copy(alpha = if (next) 1f else .3f),
+                        weight = FontWeight.SemiBold)
+                }
                 LandscapePlayerButton(if (repeat == Player.REPEAT_MODE_ONE) "repeat.1" else "repeat",
-                    stringResource(R.string.loop_playback), iconSize = 20.dp, selected = repeat != Player.REPEAT_MODE_OFF,
+                    stringResource(R.string.loop_playback), iconSize = 20.dp, selected = repeat != Player.REPEAT_MODE_OFF, toggle = true,
                     onClick = {
                         val nextMode = when (repeat) {
                             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
@@ -207,19 +212,27 @@ internal fun LandscapeMiniPlayer(
                 Column(Modifier.weight(1f).padding(horizontal = 8.dp),
                     verticalArrangement = Arrangement.Center) {
                     val track = metadata
+                    val titleFont = remember {
+                        FontFamily(Font(R.font.sf_pro, weight = FontWeight.Medium,
+                            variationSettings = FontVariation.Settings(FontVariation.weight(500))))
+                    }
+                    val titleStyle = IosTypography.body.copy(
+                        fontSize = 14.sp, fontWeight = FontWeight.Medium, fontFamily = titleFont,
+                    )
+                    val artistStyle = IosTypography.body.copy(fontSize = 14.sp, fontWeight = FontWeight.Normal)
                     if (track != null) {
                         AppleMusicMarqueeText(
-                            text = track.title, style = IosTypography.body,
+                            text = track.title, style = titleStyle,
                             color = colors.content, edgeWidth = 8.dp,
                             enabled = sheet?.state?.isCollapsed != false,
                         )
                         val artists = track.artists.joinToString { it.name }
                         if (artists.isNotBlank()) AppleMusicMarqueeText(
-                            text = artists, style = IosTypography.caption,
-                            color = colors.secondaryContent, edgeWidth = 8.dp,
+                            text = artists, style = artistStyle,
+                            color = colors.content, edgeWidth = 8.dp,
                             enabled = sheet?.state?.isCollapsed != false,
                         )
-                    } else Text(stringResource(R.string.landscape_player_not_playing), style = IosTypography.body,
+                    } else Text(stringResource(R.string.landscape_player_not_playing), style = titleStyle,
                         color = colors.secondaryContent, maxLines = 1)
                 }
                 Row(Modifier
@@ -251,14 +264,20 @@ private fun LandscapePlayerButton(
     iconSize: Dp = 22.dp,
     enabled: Boolean = true,
     selected: Boolean = false,
+    toggle: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = LocalGlassColors.current
-    IconButton(onClick, enabled = enabled, modifier = Modifier.size(targetSize).semantics {
+    PlayerTransportButton(appleMusicStyle = true, onClick = onClick, enabled = enabled,
+        modifier = Modifier.size(targetSize).semantics {
         contentDescription = description
         this.selected = selected
     }) {
-        SfIcon(symbol, null, tint = (if (selected) colors.accent else colors.content)
-            .copy(alpha = if (enabled) 1f else 0.3f), size = iconSize, weight = FontWeight.SemiBold)
+        SfIcon(symbol, null, tint = colors.content
+            .copy(alpha = when {
+                !enabled -> 0.3f
+                toggle && !selected -> 0.5f
+                else -> 1f
+            }), size = iconSize, weight = FontWeight.SemiBold)
     }
 }

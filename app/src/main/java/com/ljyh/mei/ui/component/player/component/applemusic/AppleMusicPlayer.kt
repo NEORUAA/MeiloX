@@ -910,14 +910,18 @@ internal fun AppleMusicDetailPages(
             incoming.snapTo(1f)
         }
     }
+    // Non-animated destinations must render the selected page in this composition,
+    // before the effect synchronizes the animation clocks for subsequent switches.
+    val selectedLyricOpacity = rememberUpdatedState(if (queueSelected) 0f else 1f)
+    val selectedQueueOpacity = rememberUpdatedState(if (queueSelected) 1f else 0f)
     Box(modifier) {
         val lyricsActive = active && !queueSelected
-        Box(Modifier.fillMaxSize().playerDetailPage(lyricOpacity.asState(), lyricsActive)) {
+        Box(Modifier.fillMaxSize().playerDetailPage(if (animate) lyricOpacity.asState() else selectedLyricOpacity, lyricsActive)) {
             lyrics(lyricsActive)
         }
         if (queuePrepared || queueSelected) {
             val queueActive = active && queueSelected
-            Box(Modifier.fillMaxSize().playerDetailPage(queueOpacity.asState(), queueActive)) {
+            Box(Modifier.fillMaxSize().playerDetailPage(if (animate) queueOpacity.asState() else selectedQueueOpacity, queueActive)) {
                 queue(queueActive)
             }
         }

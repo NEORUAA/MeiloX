@@ -29,6 +29,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
@@ -74,6 +75,10 @@ internal class PlayerTransitionGlassRenderer(
     private var preparedSourceSize = Size.Unspecified
     private var preparedDark: Boolean? = null
     private val path = Path()
+    private var pathBounds: Rect? = null
+    private var pathShape: Shape? = null
+    private var pathDensity = 0f
+    private var pathLayoutDirection: LayoutDirection? = null
     private val light = RuntimeShader(PlayerPressFieldShader + """
 half4 main(float2 p) { return half4(playerPressMask(p), 0.0, 1.0); }
 """)
@@ -89,6 +94,15 @@ half4 main(float2 p) {
     return half4(glassNativeGammaToWorkingPremul(float4(result)));
 }
 """) else null
+
+    init {
+        val c = PlayerPressGlowCoefficients
+        for (program in listOfNotNull(light, sampledLight)) {
+            program.setFloatUniform("pressPolynomialLow", c[0], c[1], c[2], c[3])
+            program.setFloatUniform("pressPolynomialHigh", c[4], c[5], c[6], c[7])
+            program.setFloatUniform("pressPolynomialLast", c[8])
+        }
+    }
 
     /** Build the retained CPU effect graph before opening without drawing its pixels. */
     fun prepare(
@@ -106,6 +120,24 @@ half4 main(float2 p) {
         preparedDark = isDark
     }
 
+    fun outline(scope: DrawScope, bounds: Rect, shape: Shape): Path {
+        if (pathBounds != bounds || pathShape != shape || pathDensity != scope.density ||
+            pathLayoutDirection != scope.layoutDirection) {
+            path.rewind()
+            when (val outline = shape.createOutline(bounds.size, scope.layoutDirection, scope)) {
+                is Outline.Rectangle -> path.addRect(outline.rect)
+                is Outline.Rounded -> path.addRoundRect(outline.roundRect)
+                is Outline.Generic -> path.addPath(outline.path)
+            }
+            path.translate(bounds.topLeft)
+            pathBounds = bounds
+            pathShape = shape
+            pathDensity = scope.density
+            pathLayoutDirection = scope.layoutDirection
+        }
+        return path
+    }
+
     fun drawWithPressLight(
         scope: DrawScope,
         highlight: GlassPressHighlight,
@@ -115,6 +147,7 @@ half4 main(float2 p) {
         radius: Float,
         shape: Shape,
         isDark: Boolean,
+        outlinePath: Path? = null,
         drawMaterial: DrawScope.() -> Unit,
     ) = with(scope) {
         if (highlight.glowProgress <= 0f || source.isEmpty || sourceLayoutSize.isEmpty()) {
@@ -137,13 +170,7 @@ half4 main(float2 p) {
         program.setFloatUniform("washRadius", source.size.minDimension * 1.5f)
         program.setFloatUniform("pressOpacity", opacity * (1f - flex),
             opacity * if (compact) 1f else 0.3f - 0.1f * flex)
-        path.rewind()
-        when (val outline = shape.createOutline(bounds.size, layoutDirection, this)) {
-            is Outline.Rectangle -> path.addRect(outline.rect)
-            is Outline.Rounded -> path.addRoundRect(outline.roundRect)
-            is Outline.Generic -> path.addPath(outline.path)
-        }
-        path.translate(bounds.topLeft)
+        val path = outlinePath ?: outline(this, bounds, shape)
         if (Build.VERSION.SDK_INT >= 36) {
             drawMaterial()
             if (!drawContext.canvas.nativeCanvas.isHardwareAccelerated) return@with
@@ -194,24 +221,24 @@ uniform float2 position;
 uniform float2 lightRadius;
 uniform float washRadius;
 uniform float2 pressOpacity;
+uniform float4 pressPolynomialLow;
+uniform float4 pressPolynomialHigh;
+uniform float pressPolynomialLast;
 float2 playerPressMask(float2 p) {
     float2 outside = max(max(sourceBounds.xy - p, p - sourceBounds.zw), 0.0);
     float wash = 1.0 - smoothstep(0.0, max(washRadius, 0.0001), length(outside));
     float x = min(length((p - position) / max(lightRadius, float2(0.0001))), 5.0);
-    float integral = 0.0;
-    for (int i = 0; i < 8; ++i) {
-        float t = i == 0 ? .0198550718 : i == 1 ? .1016667613 : i == 2 ? .2372337950
-            : i == 3 ? .4082826788 : i == 4 ? .5917173212 : i == 5 ? .7627662050
-            : i == 6 ? .8983332387 : .9801449282;
-        float w = i == 0 || i == 7 ? .0506142681 : i == 1 || i == 6 ? .1111905172
-            : i == 2 || i == 5 ? .1568533229 : .1813418917;
-        float q = x * x * t * t * 0.25;
-        float bessel = ((((((((6.151187327e-10 * q + 3.936759889e-8) * q + 1.929012346e-6)
-            * q + 0.00006944444444) * q + 0.001736111111) * q + 0.02777777778)
-            * q + 0.25) * q + 1.0) * q + 1.0);
-        integral += w * t * exp(-0.5 * t * t) * bessel;
-    }
-    return pressOpacity * float2(wash, clamp(exp(-0.5 * x * x) * integral, 0.0, 1.0));
+    float q = x * x;
+    float integral = pressPolynomialLast;
+    integral = integral * q + pressPolynomialHigh.w;
+    integral = integral * q + pressPolynomialHigh.z;
+    integral = integral * q + pressPolynomialHigh.y;
+    integral = integral * q + pressPolynomialHigh.x;
+    integral = integral * q + pressPolynomialLow.w;
+    integral = integral * q + pressPolynomialLow.z;
+    integral = integral * q + pressPolynomialLow.y;
+    integral = integral * q + pressPolynomialLow.x;
+    return pressOpacity * float2(wash, clamp(exp(-0.5 * q) * integral, 0.0, 1.0));
 }
 """
 
@@ -252,16 +279,15 @@ internal fun PlayerTransitionGlass(
     Canvas(Modifier.fillMaxSize().onGloballyPositioned { recording.coordinates = it }) {
         val coordinates = recording.coordinates ?: return@Canvas
         if (active) layers.updateTransitionFrame()
-        val p = if (active) layers.state.progress else 0f
+        val p = if (active) layers.motionProgress else 0f
         if (playerBackgroundAlpha(p) >= 1f) return@Canvas
-        val bounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, p)
+        val bounds = (if (active) layers.containerBounds else layers.sourceContainer)
             .translate(-layers.hostBounds.topLeft)
-        val radius = playerContainerCornerRadius(
-            layers.sourceContainer.height / 2f, expandedCornerRadius, p,
-        ).coerceIn(0f, bounds.size.minDimension / 2f)
+        val radius = layers.containerCornerRadius(expandedCornerRadius).coerceIn(0f, bounds.size.minDimension / 2f)
         // Exercise both material and press-effect setup during the invisible preparation.
         val pressHighlight = if (active) layers.transitionPressHighlight else GlassPressHighlight(1f)
         val shape = ContinuousRoundedRectangle(radius.toDp())
+        val outline = renderer.outline(this, bounds, shape)
         val viewport = Rect(coordinates.positionInRoot(), size)
         val sourceSize = layers.transitionPressLayoutSize
         val source = if (active)
@@ -276,6 +302,7 @@ internal fun PlayerTransitionGlass(
                 radius = radius,
                 shape = shape,
                 isDark = colors.isDark,
+                outlinePath = outline,
             ) {
                 renderer.material.draw(
                     scope = this,
@@ -285,6 +312,7 @@ internal fun PlayerTransitionGlass(
                     bounds = bounds,
                     radius = radius,
                     shape = shape,
+                    outlinePath = outline,
                     tint = colors.container,
                     navigationMaterial = true,
                     dropShadowAlpha = 1f - playerBackgroundAlpha(p),

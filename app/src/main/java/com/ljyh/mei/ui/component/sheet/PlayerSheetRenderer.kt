@@ -29,6 +29,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +38,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -101,6 +103,36 @@ internal class PlayerSheetLayers(
     val fullContent: GraphicsLayer,
     scope: CoroutineScope,
 ) {
+    private val motionPath = PlayerSheetMotionPath(state.isExpanded)
+    private var hostDensity by mutableStateOf(1f)
+    private fun baseMotionFrame(progress: Float, closing: Boolean): PlayerSheetMotionFrame {
+        val frame = playerCollapseFrame(progress, hostBounds.height,
+            (state.expandedBound.value - state.collapsedBound.value) * hostDensity, closing)
+        val bounds = if (closing) playerClosingContainerRect(sourceContainer, hostBounds, frame)
+            else playerContainerRect(sourceContainer, hostBounds, frame.morphProgress)
+        return PlayerSheetMotionFrame(bounds, frame.morphProgress)
+    }
+    private var motionGeometryVersion by mutableIntStateOf(0)
+    private val cachedMotionFrame = derivedStateOf(structuralEqualityPolicy()) {
+        motionGeometryVersion
+        motionPath.frame(state.progress, ::baseMotionFrame)
+    }
+    private val motionFrame get() = cachedMotionFrame.value
+    val fixedSizeContent get() = hostBounds.width > hostBounds.height
+    val backgroundOffset get() = if (fixedSizeContent) {
+        playerFullContentRect(containerBounds, hostBounds).topLeft - hostBounds.topLeft
+    } else motionOffset
+    val motionProgress get() = motionFrame.morphProgress
+    val containerBounds get() = motionFrame.bounds
+    val motionOffset get(): Offset {
+        val frame = motionFrame
+        val linear = playerContainerRect(sourceContainer, hostBounds, frame.morphProgress)
+        return Offset(0f, frame.bounds.top - linear.top)
+    }
+    fun containerCornerRadius(screenRadius: Float): Float = if (motionPath.closing && state.isTransitioning) {
+        playerClosingCornerRadius(sourceContainer.height / 2f, screenRadius, motionProgress)
+    } else playerContainerCornerRadius(sourceContainer.height / 2f, screenRadius, motionProgress)
+
     private val transitioning = derivedStateOf { state.isTransitioning }
     val isTransitioning get() = transitioning.value
     var hostBounds by mutableStateOf(Rect.Zero)
@@ -135,7 +167,7 @@ internal class PlayerSheetLayers(
     val transitionPressHighlight get() = pressLight.current(state.progress, transitionPressHighlightBounds)
     val transitionPressHighlightBounds get() = playerPressHighlightRect(
         pressHighlightSize,
-        playerContainerRect(sourceContainer, hostBounds, state.progress),
+        containerBounds,
     )
     val transitionPressLayoutSize get() = (frozenContainer ?: sourceContainer).size
     val collapsedPressHighlight get() =
@@ -244,11 +276,13 @@ internal class PlayerSheetLayers(
         pressRelease.reset()
         pressHighlightSize = (openingPressedContainer ?: rawContainer).size
         pressLight.capture(miniPressHighlight)
+        motionGeometryVersion++
     }
 
     fun releasePressHighlight() = pressLight.release(state.progress, transitionPressHighlightBounds)
 
-    fun updateHost(bounds: Rect) {
+    fun updateHost(bounds: Rect, density: Float = 1f) {
+        hostDensity = density
         if (bounds == hostBounds) return
         hostBounds = bounds
         frozenContainer = null
@@ -261,6 +295,8 @@ internal class PlayerSheetLayers(
 
     fun updateFrozenBounds() {
         if (!state.isTransitioning) {
+            motionPath.reset(state.isExpanded, state.progress)
+            if (transitionCaptureActive) motionGeometryVersion++
             transitionCaptureActive = false
             trailingAnchor.reset()
             recordedTransitionLayers.clear()
@@ -468,18 +504,28 @@ private fun Modifier.sheetGestures(
 private fun Modifier.clipPlayerRecordingHost(
     layers: PlayerSheetLayers,
     expandedCornerRadius: Float,
+    miniHost: Boolean = false,
 ): Modifier {
     val origin = remember { mutableStateOf(Offset.Zero) }
     return onGloballyPositioned { origin.value = it.positionInRoot() }
         .graphicsLayer {
-            clip = layers.state.isTransitioning
-            if (clip) {
-                val progress = layers.state.progress
-                val bounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, progress)
+            val transitioning = layers.state.isTransitioning
+            clip = transitioning || (miniHost && !layers.state.isExpanded && layers.miniBounds.isUsable())
+            if (clip && !transitioning) {
+                // The mini host spans the row for layout, but must not steal hits
+                // from compact navigation controls in its empty horizontal margins.
+                // Keep the full vertical extent and include live press enlargement.
+                val visual = layers.miniLayoutCoordinates.visualBounds()
+                val left = minOf(layers.miniBounds.left, visual?.left ?: layers.miniBounds.left) - origin.value.x
+                val right = maxOf(layers.miniBounds.right, visual?.right ?: layers.miniBounds.right) - origin.value.x
+                shape = object : Shape {
+                    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density) =
+                        Outline.Rectangle(Rect(left, 0f, right, size.height))
+                }
+            } else if (transitioning) {
+                val bounds = layers.containerBounds
                     .translate(-origin.value)
-                val radius = playerContainerCornerRadius(
-                    layers.sourceContainer.height / 2f, expandedCornerRadius, progress,
-                )
+                val radius = layers.containerCornerRadius(expandedCornerRadius)
                 // The visible shell keeps its continuous corners in the tiled Canvas.
                 // A native rounded outline avoids a full-screen path mask while keeping
                 // hidden controls from intercepting touches in the exposed page corners.
@@ -511,33 +557,37 @@ private class PlayerHitShape(private val bounds: Rect, private val radius: Float
 private fun Modifier.clipPlayerBackground(
     layers: PlayerSheetLayers,
     expandedCornerRadius: Float,
+    translateContent: Boolean = true,
 ): Modifier = graphicsLayer {
     // Bound the full-screen background layer to the visible shell during motion.
     // The tiled draw clip below keeps the exact corners without a full-screen path mask.
+    val offset = if (translateContent) layers.backgroundOffset else Offset.Zero
+    translationX = offset.x
+    translationY = offset.y
     clip = layers.state.isTransitioning
     if (clip) {
-        val bounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, layers.state.progress)
-            .translate(-layers.hostBounds.topLeft)
+        val bounds = layers.containerBounds
+            .translate(-layers.hostBounds.topLeft - offset)
         shape = object : Shape {
             override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density) =
                 Outline.Rectangle(bounds)
         }
     }
-}.drawWithContent {
+}.drawWithCache {
     if (!layers.state.isTransitioning) {
-        drawContent()
+        onDrawWithContent { drawContent() }
     } else {
-        val progress = layers.state.progress
-        val bounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, progress)
-            .translate(-layers.hostBounds.topLeft)
-        val radius = playerContainerCornerRadius(
-            layers.sourceContainer.height / 2f, expandedCornerRadius, progress,
-        )
+        val offset = if (translateContent) layers.backgroundOffset else Offset.Zero
+        val bounds = layers.containerBounds
+            .translate(-layers.hostBounds.topLeft - offset)
+        val radius = layers.containerCornerRadius(expandedCornerRadius)
         val shape = ContinuousRoundedRectangle(radius.toDp())
         val outline = PlayerHitShape(bounds, radius).createOutline(size, layoutDirection, this)
         val path = (outline as? Outline.Generic)?.path
-        if (path != null) {
-            clipGlassShape(bounds, radius, shape, path) { this@drawWithContent.drawContent() }
+        onDrawWithContent {
+            if (path != null) {
+                clipGlassShape(bounds, radius, shape, path) { this@onDrawWithContent.drawContent() }
+            }
         }
     }
 }
@@ -581,7 +631,8 @@ fun BottomSheet(
     SideEffect { layers.updateFrozenBounds() }
     BackHandler(enabled = !collapsed && !dismissed, onBack = state::collapseSoft)
 
-    Box(modifier.fillMaxSize().onGloballyPositioned { layers.updateHost(it.boundsInRoot()) }) {
+    val hostDensity = LocalDensity.current.density
+    Box(modifier.fillMaxSize().onGloballyPositioned { layers.updateHost(it.boundsInRoot(), hostDensity) }) {
         if (!dismissed || onDismiss == null) {
             Box(
                 Modifier.align(Alignment.TopCenter)
@@ -589,7 +640,7 @@ fun BottomSheet(
                     .offset {
                         IntOffset(0, (state.expandedBound - miniAnchor + collapsedDragOffset()).roundToPx())
                     }
-                    .clipPlayerRecordingHost(layers, expandedCornerRadius)
+                    .clipPlayerRecordingHost(layers, expandedCornerRadius, miniHost = true)
                     .sheetGestures(state, layers, onHorizontalSwipe)
                     .then(if (active || expanded) Modifier.clearAndSetSemantics { } else Modifier)
                     .recordPlayerContent(layers, layers.miniHost) { !active && !expanded },
@@ -641,18 +692,20 @@ fun BottomSheet(
         }
         if (active && transitionGeometryReady) {
             Canvas(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().then(
+                    if (landscape) Modifier.clipPlayerBackground(layers, expandedCornerRadius, translateContent = false)
+                    else Modifier,
+                ),
             ) {
-                val p = state.progress
+                val p = layers.motionProgress
                 val trailingAnchorsRight = if (landscape) layers.trailingAnchorsRight() else false
-                val globalBounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, p)
+                val globalBounds = layers.containerBounds
                 val bounds = globalBounds.translate(-layers.hostBounds.topLeft)
                 // This snapshot contains inset controls, not the visible shell. The shell
                 // and mesh background retain their continuous corner clip separately.
                 // Replaying the text/icon display lists in seven corner tiles multiplies
                 // command preparation even when a tile contains no visible controls.
                 clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) {
-                    val scale = bounds.width / size.width.coerceAtLeast(1f)
                     val miniAlpha = playerMiniContentAlpha(p)
                     if (miniAlpha > 0f && layers.miniContent.size.width > 0) {
                         layers.miniContent.alpha = miniAlpha
@@ -684,7 +737,10 @@ fun BottomSheet(
                         layers.fullContent.alpha = fullAlpha
                         withTransform({
                             translate(bounds.left, bounds.top)
-                            scale(scale, scale, Offset.Zero)
+                            val contentBounds = playerFullContentRect(globalBounds, layers.hostBounds)
+                            val contentScale = if (layers.fixedSizeContent) 1f
+                                else contentBounds.width / size.width.coerceAtLeast(1f)
+                            scale(contentScale, contentScale, Offset.Zero)
                         }) { drawLayer(layers.fullContent) }
                     }
                 }
@@ -695,7 +751,7 @@ fun BottomSheet(
             // follow the drawn shell; the full-sized snapshot/background hosts keep their dimensions.
             Box(Modifier
                 .layout { measurable, constraints ->
-                    val bounds = playerContainerRect(layers.sourceContainer, layers.hostBounds, state.progress)
+                    val bounds = layers.containerBounds
                         .translate(-layers.hostBounds.topLeft)
                     val placeable = measurable.measure(Constraints.fixed(
                         bounds.width.roundToInt().coerceAtLeast(0),
@@ -707,9 +763,7 @@ fun BottomSheet(
                 }
                 .graphicsLayer {
                     clip = true
-                    shape = ContinuousRoundedRectangle(playerContainerCornerRadius(
-                        layers.sourceContainer.height / 2f, expandedCornerRadius, state.progress,
-                    ).toDp())
+                    shape = ContinuousRoundedRectangle(layers.containerCornerRadius(expandedCornerRadius).toDp())
                 }
                 .sheetGestures(state, layers, null)
                 .clearAndSetSemantics { })
@@ -738,7 +792,8 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                 }
                 val targetClip = layers.targetArtworkClipBounds
                 if (targetClip != null) {
-                    val clip = playerArtworkClipRect(targetClip, layers.hostBounds, layers.state.progress)
+                    val clip = playerArtworkClipRect(targetClip, layers.hostBounds, layers.motionProgress)
+                        .translate(layers.motionOffset)
                     clipRect(clip.left, clip.top, clip.right, clip.bottom) {
                         this@drawWithContent.drawContent()
                     }
@@ -764,14 +819,14 @@ internal fun PlayerSheetArtworkOverlay(layers: PlayerSheetLayers) {
                         shadowElevation = 0f
                         return@graphicsLayer
                     }
-                    val progress = layers.state.progress
+                    val progress = layers.motionProgress
                     alpha = playerArtworkOpacity(layers.targetArtworkOpacity, progress)
                     val target = layers.targetArtwork
                     val artworkBounds = playerContainerAnchoredArtworkRect(
                         layers.sourceArtwork, target,
                         layers.sourceContainer, layers.hostBounds, progress,
                     )
-                    val bounds = artworkBounds.translate(-layers.hostBounds.topLeft)
+                    val bounds = artworkBounds.translate(-layers.hostBounds.topLeft + layers.motionOffset)
                     val imageWidth = size.width.coerceAtLeast(1f)
                     val logicalTargetWidth = layers.targetArtworkLayoutSize.width.coerceAtLeast(1)
                     val visualScaleX = bounds.width / imageWidth

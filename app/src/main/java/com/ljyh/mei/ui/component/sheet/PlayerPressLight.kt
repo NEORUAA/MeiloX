@@ -14,6 +14,21 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+// Collect the original eight quadrature polynomials by powers of radius squared:
+// coefficient[k] = bessel[k] * sum(w * t * exp(-t*t/2) * (t*t/4)^k).
+// All nine terms and the original nonzero far-field tail are retained.
+internal val PlayerPressGlowCoefficients = floatArrayOf(
+    0.39346933364868164f,
+    0.04510200396180153f,
+    0.0017984596779569983f,
+    3.6492136132437736e-5f,
+    4.482177473619231e-7f,
+    3.688785499278424e-9f,
+    2.1753028198179258e-11f,
+    9.641136359313934e-14f,
+    3.3283437037374605e-16f,
+)
+
 /** Captured press light survives cancellation of the live control's deformation. */
 internal class PlayerPressLight(private val scope: CoroutineScope) {
     private var captured by mutableStateOf<GlassPressHighlight?>(null)

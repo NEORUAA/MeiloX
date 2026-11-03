@@ -93,6 +93,9 @@ class PlayerStateContainer(
     lateinit var isFMMode: State<Boolean>
         internal set
 
+    internal val landscapeDetailVisible = mutableStateOf(true)
+    internal val landscapeQueueSelected = mutableStateOf(false)
+
     var controlsVisible by mutableStateOf(true)
         internal set
 

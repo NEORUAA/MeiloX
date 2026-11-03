@@ -3,6 +3,9 @@ package com.ljyh.mei.ui.component.player.component.classic
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -58,11 +62,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,8 +125,8 @@ fun ClassicTabletLayout(
     val isLiked by stateContainer.isLiked
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
-    var isShowingPlaylist by remember { mutableStateOf(false) }
-    var showAppleMusicDetail by remember { mutableStateOf(true) }
+    var isShowingPlaylist by stateContainer.landscapeQueueSelected
+    var showAppleMusicDetail by stateContainer.landscapeDetailVisible
     var footerHeightPx by remember { mutableStateOf(0) }
     var albumActionsHeightPx by remember { mutableStateOf(0) }
     val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
@@ -141,6 +147,7 @@ fun ClassicTabletLayout(
     val (_, setLoopPlayback) = rememberPreference(LoopPlaybackKey, true)
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) { derivedStateOf { sheet?.state?.isExpanded != false } }
+    val sheetContentVisible by remember(sheet) { derivedStateOf { sheet?.state?.isContentVisible != false } }
 
     val (progressBarStyle, _) = rememberEnumPreference(
         key = ProgressBarStyleKey,
@@ -167,11 +174,12 @@ fun ClassicTabletLayout(
             (lyricStart - tabletMargin * 2).coerceAtLeast(0.dp)
         } else ((maxWidth - 96.dp) / 2).coerceAtLeast(0.dp)
         val paneMotion = tween<androidx.compose.ui.unit.Dp>(300, easing = FastOutSlowInEasing)
-        val animatedPaneOffset by animateDpAsState(
-            targetValue = if (appleMusicStyle && !showAppleMusicDetail) {
-                (maxWidth - paneWidth) / 2 - tabletMargin
-            } else 0.dp,
-            animationSpec = paneMotion,
+        val paneOffsetTarget = if (appleMusicStyle && !showAppleMusicDetail) {
+            (maxWidth - paneWidth) / 2 - tabletMargin
+        } else 0.dp
+        val animatedPaneOffset = animateDpAsState(
+            targetValue = paneOffsetTarget,
+            animationSpec = if (sheetExpanded) paneMotion else snap(),
             label = "tabletPlayerPaneOffset",
         )
         val paneWidthPx = with(density) { paneWidth.roundToPx() }
@@ -202,7 +210,10 @@ fun ClassicTabletLayout(
                 modifier = Modifier
                     .width(paneWidth)
                     .fillMaxHeight()
-                    .offset(x = if (appleMusicStyle) animatedPaneOffset else 0.dp)
+                    .offset {
+                        val offset = if (sheetExpanded) animatedPaneOffset.value else paneOffsetTarget
+                        IntOffset(if (appleMusicStyle) offset.roundToPx() else 0, 0)
+                    }
                     .onGloballyPositioned { controlPaneBounds = it.boundsInWindow() }
                     .padding(top = if (appleMusicStyle) tabletMargin else 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -423,9 +434,11 @@ fun ClassicTabletLayout(
                     .weight(1f)
                     .fillMaxHeight()
             ) {
-                val lyricContent = @Composable {
+                val lyricContent = @Composable { active: Boolean ->
                     LyricScreen(
                         lyricData = lyricLine,
+                        active = active,
+                        synchronizeEntryWithParent = appleMusicStyle,
                         showSourceBadge = false,
                         topFadeHeight = if (playerStyle == PlayerStyle.AppleMusic) AppleMusicDimensions.lyricTopFade else 20.dp,
                         bottomFadeHeight = if (playerStyle == PlayerStyle.AppleMusic) AppleMusicDimensions.lyricBottomFade else 100.dp,
@@ -453,21 +466,41 @@ fun ClassicTabletLayout(
                     val queueTop = safePadding.calculateTopPadding() +
                         tabletHandleTopInset + AppleMusicDimensions.handleHeight + 24.dp
                     val queueBottom = actionBottom + 42.dp
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showAppleMusicDetail,
-                        enter = scaleIn(initialScale = 0.92f, animationSpec = tween(250, delayMillis = 50)) +
-                            fadeIn(animationSpec = tween(250, delayMillis = 50)),
-                        exit = scaleOut(targetScale = 0.92f, animationSpec = tween(250)) +
-                            fadeOut(animationSpec = tween(250)),
-                        modifier = Modifier.fillMaxSize(),
+                    // Retain measured pages across hide/show instead of rebuilding them on entry.
+                    val detailTransition = updateTransition(showAppleMusicDetail, label = "tabletDetailVisibility")
+                    val detailOpacity = detailTransition.animateFloat(
+                        transitionSpec = {
+                            if (!sheetExpanded) snap()
+                            else if (targetState) tween(250, delayMillis = 50) else tween(250)
+                        },
+                        label = "tabletDetailOpacity",
+                    ) { visible -> if (visible) 1f else 0f }
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                layout(placeable.width, placeable.height) {
+                                    if (detailOpacity.value > 0f || showAppleMusicDetail) {
+                                        placeable.place(0, 0)
+                                    }
+                                }
+                            }
+                            .graphicsLayer {
+                                // The sheet expands an already configured destination layout.
+                                alpha = if (sheetExpanded) detailOpacity.value
+                                else if (showAppleMusicDetail) 1f else 0f
+                                scaleX = 0.92f + 0.08f * alpha
+                                scaleY = scaleX
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                            },
                     ) {
                         AppleMusicDetailPages(
                             queueSelected = isShowingPlaylist,
-                            active = sheetExpanded && showAppleMusicDetail,
-                            animate = true,
+                            active = sheetContentVisible && showAppleMusicDetail,
+                            animate = sheetExpanded && detailTransition.currentState && detailTransition.targetState,
                             preloadQueue = sheetExpanded,
                             modifier = Modifier.fillMaxSize(),
-                            lyrics = { lyricContent() },
+                            lyrics = { active -> lyricContent(active) },
                             queue = { active ->
                                 CompositionLocalProvider(
                                     LocalGlassBackdrop provides queueBackdrop,
@@ -571,7 +604,7 @@ fun ClassicTabletLayout(
                                         cameraDistance = 12f * density.density
                                     }
                             ) {
-                                lyricContent()
+                                lyricContent(true)
                             }
                         }
 
@@ -595,7 +628,7 @@ fun ClassicTabletLayout(
                             exit = slideOutHorizontally { -paneWidthPx } + fadeOut(),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            lyricContent()
+                            lyricContent(true)
                         }
                         androidx.compose.animation.AnimatedVisibility(
                             visible = isShowingPlaylist,
@@ -614,7 +647,7 @@ fun ClassicTabletLayout(
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            lyricContent()
+                            lyricContent(true)
                         }
                         androidx.compose.animation.AnimatedVisibility(
                             visible = isShowingPlaylist,
@@ -633,7 +666,7 @@ fun ClassicTabletLayout(
                             exit = scaleOut(targetScale = 0.92f, transformOrigin = lyricTransformOrigin) + fadeOut(),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            lyricContent()
+                            lyricContent(true)
                         }
                         androidx.compose.animation.AnimatedVisibility(
                             visible = isShowingPlaylist,

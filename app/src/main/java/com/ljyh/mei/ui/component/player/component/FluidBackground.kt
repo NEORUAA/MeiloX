@@ -166,7 +166,7 @@ fun FluidBackground(
                 // The mesh renderer already flattens album crossfades into one texture.
                 compositingStrategy = CompositingStrategy.ModulateAlpha
                 this.alpha = alpha.coerceIn(0f, 1f) *
-                    (sheet?.state?.progress?.let(::playerBackgroundAlpha) ?: 1f)
+                    (sheet?.motionProgress?.let(::playerBackgroundAlpha) ?: 1f)
             },
     ) {
         Box(

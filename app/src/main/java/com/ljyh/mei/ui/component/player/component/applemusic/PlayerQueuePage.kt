@@ -1056,11 +1056,11 @@ fun PlayerQueuePage(
     }
     val normalFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, redrawRows, controlsFadeRange = controlsFadeRange,
-        contentTop = viewportContentTop, topEdgeFade = !landscapeHeader,
+        contentTop = viewportContentTop,
     )
     val additiveFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, redrawRows, additive = true, controlsFadeRange = controlsFadeRange,
-        contentTop = viewportContentTop, topEdgeFade = !landscapeHeader,
+        contentTop = viewportContentTop,
     )
     val coverFade = Modifier.queueViewportFade(
         viewportCoordinates, listState, {
