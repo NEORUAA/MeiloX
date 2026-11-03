@@ -33,13 +33,14 @@ import com.ljyh.mei.extensions.mediaItems
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.utils.dataStore
-import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.reportException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -106,6 +107,13 @@ class PlayerConnection(
     val isLoadingMusicQualities = service.isLoadingMusicQualities
 
     private var qualityChangeJob: Job? = null
+    private val previousPlayback = MutableStateFlow<Boolean?>(null)
+    private val previousPlaybackJob = scope.launch {
+        service.dataStore.data.map { it[PreviousPlaybackKey] ?: true }
+            .distinctUntilChanged()
+            .collect { previousPlayback.value = it }
+    }
+
 
     init {
         player.addListener(this)
@@ -288,17 +296,20 @@ class PlayerConnection(
     }
 
     fun seekToPrevious() {
-        if(service.dataStore[PreviousPlaybackKey] ?: true){
-            if (player.hasPreviousMediaItem()) {
-                player.seekToPreviousMediaItem()
+        scope.launch {
+            // Await a cold preference cache without blocking input or animation frames.
+            val alwaysPrevious = previousPlayback.filterNotNull().first()
+            if (alwaysPrevious) {
+                if (player.hasPreviousMediaItem()) {
+                    player.seekToPreviousMediaItem()
+                } else {
+                    player.seekTo(0)
+                }
             } else {
-                player.seekTo(0)
+                player.seekToPrevious()
             }
-        }else{
-            player.seekToPrevious()
+            if (!player.playWhenReady) player.playWhenReady = true
         }
-
-        if (!player.playWhenReady) player.playWhenReady = true
     }
 
     fun switchPlayMode() = service.switchPlayMode()
@@ -389,6 +400,7 @@ class PlayerConnection(
     }
 
     fun dispose() {
+        previousPlaybackJob.cancel()
         qualityChangeJob?.cancel()
         qualityChangeJob = null
         player.removeListener(this)

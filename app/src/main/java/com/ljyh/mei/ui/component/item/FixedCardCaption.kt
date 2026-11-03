@@ -1,7 +1,7 @@
 package com.ljyh.mei.ui.component.item
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.sp
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 
-/** Reserve the maximum caption height while keeping short titles beside their metadata. */
+/** Reserve three caption lines without constraining actual fallback-font metrics. */
 @Composable
 internal fun FixedCardCaption(title: String, subtitle: String, modifier: Modifier = Modifier) {
     val titleStyle = IosTypography.body.copy(
@@ -25,7 +25,7 @@ internal fun FixedCardCaption(title: String, subtitle: String, modifier: Modifie
     val measurer = rememberTextMeasurer()
     val heightPx = measurer.measure("\n", style = titleStyle).size.height +
         measurer.measure("", style = subtitleStyle).size.height
-    Column(modifier.height(with(LocalDensity.current) { heightPx.toDp() })) {
+    Column(modifier.heightIn(min = with(LocalDensity.current) { heightPx.toDp() })) {
         Text(
             text = title,
             style = titleStyle,

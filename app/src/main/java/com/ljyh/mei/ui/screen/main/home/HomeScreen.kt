@@ -13,6 +13,10 @@ import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.calculateTargetValue
 import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.ScrollableDefaults
@@ -47,6 +51,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -128,6 +133,8 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.DateUtils.getGreeting
 import com.ljyh.mei.utils.positionComparator
 import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.sign
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
@@ -364,6 +371,7 @@ private fun HomeBlockItem(
                 title = getGreeting(),
                 resources = resources,
                 rowHeight = recommendCardHeight,
+                eagerCardWidth = recommendCardWidth,
                 cardSpacing = cardSpacing,
             ) { resource ->
                 val recommendationKey = "${resource.resourceType}:${resource.resourceId}:${resource.action}"
@@ -591,25 +599,97 @@ private fun BlockWithTitle(
     title: String?,
     resources: List<HomeCardResource>,
     rowHeight: Dp? = null,
+    eagerCardWidth: Dp? = null,
     cardSpacing: Dp = HomeCardSpacing,
     content: @Composable (HomeCardResource) -> Unit,
 ) {
     val resourceKeys = remember(resources) { homeResourceKeys(resources) }
     Column {
         title?.let { Title(it) }
-        val listState = rememberLazyListState()
-        LazyRow(
-            state = listState,
-            flingBehavior = rememberHomeRowFlingBehavior(listState),
-            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
-            horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-            verticalAlignment = Alignment.Top,
-            modifier = Modifier.fillMaxWidth()
-                .swipeBackExcluded()
-                .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
-        ) {
-            itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
-                content(resource)
+        if (eagerCardWidth != null) {
+            val scrollState = rememberScrollState()
+            val flingBehavior = rememberHomeRowFlingBehavior(
+                scrollState, eagerCardWidth, cardSpacing, resources.size,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .swipeBackExcluded()
+                    .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier)
+                    .horizontalScroll(scrollState, flingBehavior = flingBehavior)
+                    .padding(horizontal = HomeRowHorizontalPadding),
+                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                verticalAlignment = Alignment.Top,
+            ) {
+                resources.forEachIndexed { index, resource ->
+                    key(resourceKeys[index]) { content(resource) }
+                }
+            }
+        } else {
+            val listState = rememberLazyListState()
+            LazyRow(
+                state = listState,
+                flingBehavior = rememberHomeRowFlingBehavior(listState),
+                contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.fillMaxWidth()
+                    .swipeBackExcluded()
+                    .then(if (rowHeight != null) Modifier.height(rowHeight) else Modifier),
+            ) {
+                itemsIndexed(resources, key = { index, _ -> resourceKeys[index] }) { _, resource ->
+                    content(resource)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberHomeRowFlingBehavior(
+    scrollState: ScrollState,
+    cardWidth: Dp,
+    cardSpacing: Dp,
+    cardCount: Int,
+): FlingBehavior {
+    val density = LocalDensity.current
+    val itemSize = with(density) { cardWidth.roundToPx() }
+    val stride = itemSize + with(density) { cardSpacing.roundToPx() }
+    val minimumSnapVelocity = with(density) { 400.dp.toPx() }
+    val provider = remember(scrollState, itemSize, stride, cardCount, minimumSnapVelocity) {
+        object : SnapLayoutInfoProvider {
+            override fun calculateApproachOffset(velocity: Float, decayOffset: Float): Float =
+                (abs(decayOffset) - itemSize).coerceAtLeast(0f) * sign(decayOffset)
+
+            override fun calculateSnapOffset(velocity: Float): Float {
+                var before = Float.NEGATIVE_INFINITY
+                var after = Float.POSITIVE_INFINITY
+                repeat(cardCount) { index ->
+                    val target = (index * stride).coerceAtMost(scrollState.maxValue)
+                    val offset = (target - scrollState.value).toFloat()
+                    if (offset <= 0f) before = maxOf(before, offset)
+                    if (offset >= 0f) after = minOf(after, offset)
+                }
+                val offset = when {
+                    abs(velocity) < minimumSnapVelocity -> if (abs(before) <= abs(after)) before else after
+                    velocity > 0f -> after
+                    else -> before
+                }
+                return if (offset.isFinite()) offset else 0f
+            }
+        }
+    }
+    val snapping = rememberSnapFlingBehavior(provider)
+    val freeFling = ScrollableDefaults.flingBehavior()
+    val decay = rememberSplineBasedDecay<Float>()
+    return remember(scrollState, snapping, freeFling, decay) {
+        object : FlingBehavior {
+            override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+                val target = decay.calculateTargetValue(0f, initialVelocity)
+                val reachesEdge = (initialVelocity < 0f && -target >= scrollState.value) ||
+                    (initialVelocity > 0f && target >= scrollState.maxValue - scrollState.value)
+                return with(if (reachesEdge) freeFling else snapping) {
+                    performFling(initialVelocity)
+                }
             }
         }
     }

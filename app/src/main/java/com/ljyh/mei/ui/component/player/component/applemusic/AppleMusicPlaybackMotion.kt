@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.lerp
+import kotlin.math.roundToInt
 import io.github.neoruaa.glasmio.icons.SfIcon
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -138,6 +138,7 @@ internal data class AppleMusicSkipFrame(
 
 // Positions use the resting triangle spacing: left = 0, right = 1.
 // Samples follow the first click in VID_20261023_021243.mp4, including its rebound.
+// Omit the repeated 120ms sample so motion continues from 100ms to 160ms.
 private val AppleMusicSkipSamples = listOf(
     0 to AppleMusicSkipFrame(
         AppleMusicSkipTriangle(-0.5f, 0f, 0f),
@@ -165,11 +166,6 @@ private val AppleMusicSkipSamples = listOf(
         AppleMusicSkipTriangle(1.326f, 0.125f, 0.14f),
     ),
     100 to AppleMusicSkipFrame(
-        AppleMusicSkipTriangle(-0.154f, 0.525f, 0.84f),
-        AppleMusicSkipTriangle(0.561f, 0.9f, 1f),
-        AppleMusicSkipTriangle(1.36f, 0f, 0f),
-    ),
-    120 to AppleMusicSkipFrame(
         AppleMusicSkipTriangle(-0.154f, 0.525f, 0.84f),
         AppleMusicSkipTriangle(0.561f, 0.9f, 1f),
         AppleMusicSkipTriangle(1.36f, 0f, 0f),
@@ -206,23 +202,72 @@ private val AppleMusicSkipSamples = listOf(
     ),
 )
 
+// Shape-preserving tangents smooth velocity across samples without adding extrema.
+private val AppleMusicSkipTangents = AppleMusicSkipSamples.indices.map { index ->
+    fun tangent(value: (AppleMusicSkipFrame) -> Float): Float {
+        if (index == 0 || index == AppleMusicSkipSamples.lastIndex) return 0f
+        val (previousTime, previous) = AppleMusicSkipSamples[index - 1]
+        val (time, current) = AppleMusicSkipSamples[index]
+        val (nextTime, next) = AppleMusicSkipSamples[index + 1]
+        val before = (time - previousTime).toFloat()
+        val after = (nextTime - time).toFloat()
+        val incoming = (value(current) - value(previous)) / before
+        val outgoing = (value(next) - value(current)) / after
+        if (incoming * outgoing <= 0f) return 0f
+        val firstWeight = 2f * after + before
+        val secondWeight = after + 2f * before
+        return (firstWeight + secondWeight) / (firstWeight / incoming + secondWeight / outgoing)
+    }
+    AppleMusicSkipFrame(
+        AppleMusicSkipTriangle(tangent { it.entering.position }, tangent { it.entering.scale }, tangent { it.entering.alpha }),
+        AppleMusicSkipTriangle(tangent { it.moving.position }, tangent { it.moving.scale }, tangent { it.moving.alpha }),
+        AppleMusicSkipTriangle(tangent { it.exiting.position }, tangent { it.exiting.scale }, tangent { it.exiting.alpha }),
+    )
+}
+
 internal fun appleMusicSkipFrame(fraction: Float): AppleMusicSkipFrame {
     val millis = fraction.coerceIn(0f, 1f) * AppleMusicSkipDurationMillis
     val next = AppleMusicSkipSamples.indexOfFirst { it.first >= millis }
     if (next == 0) return AppleMusicSkipSamples.first().second
     val (startTime, start) = AppleMusicSkipSamples[next - 1]
     val (endTime, end) = AppleMusicSkipSamples[next]
-    val progress = (millis - startTime) / (endTime - startTime)
-    fun interpolate(a: AppleMusicSkipTriangle, b: AppleMusicSkipTriangle) = AppleMusicSkipTriangle(
-        position = lerp(a.position, b.position, progress),
-        scale = lerp(a.scale, b.scale, progress),
-        alpha = lerp(a.alpha, b.alpha, progress),
+    val duration = (endTime - startTime).toFloat()
+    val t = (millis - startTime) / duration
+    val t2 = t * t
+    val t3 = t2 * t
+    fun value(a: Float, b: Float, startSlope: Float, endSlope: Float): Float = (
+        (2f * t3 - 3f * t2 + 1f) * a + (-2f * t3 + 3f * t2) * b +
+            (t3 - 2f * t2 + t) * duration * startSlope + (t3 - t2) * duration * endSlope
+        ).coerceIn(minOf(a, b), maxOf(a, b))
+    fun interpolate(
+        a: AppleMusicSkipTriangle,
+        b: AppleMusicSkipTriangle,
+        startSlope: AppleMusicSkipTriangle,
+        endSlope: AppleMusicSkipTriangle,
+    ) = AppleMusicSkipTriangle(
+        position = value(a.position, b.position, startSlope.position, endSlope.position),
+        scale = value(a.scale, b.scale, startSlope.scale, endSlope.scale),
+        alpha = value(a.alpha, b.alpha, startSlope.alpha, endSlope.alpha),
     )
+    val startSlope = AppleMusicSkipTangents[next - 1]
+    val endSlope = AppleMusicSkipTangents[next]
     return AppleMusicSkipFrame(
-        entering = interpolate(start.entering, end.entering),
-        moving = interpolate(start.moving, end.moving),
-        exiting = interpolate(start.exiting, end.exiting),
+        interpolate(start.entering, end.entering, startSlope.entering, endSlope.entering),
+        interpolate(start.moving, end.moving, startSlope.moving, endSlope.moving),
+        interpolate(start.exiting, end.exiting, startSlope.exiting, endSlope.exiting),
     )
+}
+
+internal class AppleMusicSkipMotion(initialClickCount: Int = 0) {
+    val travel = Animatable(initialClickCount.toFloat())
+
+    suspend fun animateTo(clickCount: Int) {
+        val remaining = clickCount.toFloat() - travel.value
+        if (remaining <= 0f) return
+        // Each exchange keeps the same speed when another click extends the target.
+        val duration = (remaining * AppleMusicSkipDurationMillis).roundToInt().coerceAtLeast(1)
+        travel.animateTo(clickCount.toFloat(), tween(duration, easing = LinearEasing))
+    }
 }
 
 @Composable
@@ -233,11 +278,9 @@ internal fun AppleMusicSkipIcon(
     tint: Color = Color.White,
     weight: FontWeight = FontWeight.Normal,
 ) {
-    val travel = remember { Animatable(clickCount.toFloat()) }
-    val frame = remember { derivedStateOf { appleMusicSkipFrame(travel.value % 1f) } }
-    LaunchedEffect(clickCount) {
-        travel.animateTo(clickCount.toFloat(), tween(AppleMusicSkipDurationMillis, easing = LinearEasing))
-    }
+    val motion = remember { AppleMusicSkipMotion(clickCount) }
+    val frame = remember { derivedStateOf { appleMusicSkipFrame(motion.travel.value % 1f) } }
+    LaunchedEffect(clickCount) { motion.animateTo(clickCount) }
     Box(Modifier.size(size).graphicsLayer { scaleX = if (forward) 1f else -1f }) {
         repeat(3) { triangle ->
             // Use whole SF triangles: clipping a double glyph cuts through its tips.
