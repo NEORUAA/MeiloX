@@ -1,6 +1,6 @@
 # Glasmio integration
 
-MeiloX uses Glasmio `700a611f9024c8f3bd9f0b8dd26d939a0dcbeb72` through the
+MeiloX uses Glasmio `395c890dc0b79533f2aaf3c8d93cf16f53f9dce6` through the
 sibling source build described in the README. Recording, materials and effects use
 Glasmio's renderer and public API under `io.github.neoruaa.glasmio.glass.render`.
 Retained third-party code keeps its attribution.
@@ -13,6 +13,26 @@ Its allocation is 62 dp, with a 48 dp compact material.
 
 Pushed pages use Glasmio's iOS push, pop and predictive-pop factories with the
 current layout direction and display density. Root tab changes retain their fade.
+
+Landscape navigation uses `GlasmioTabBar` in the measured shared top-bar slot.
+`GlasmioAdaptiveNavigationScaffold` owns the top-tabs/sidebar transition and
+preserves the chosen sidebar state through rotation. The sidebar provides the
+app's main destinations, search, and library routes; the local landscape tab-bar
+renderer has been removed. Its toolbar aligns with the shared page controls.
+The collapsible Library section reuses `LibraryPage` labels, symbols and category
+routes from the Apple Music-style library page, including its podcast visibility setting.
+The attached sidebar uses Glasmio's planar sidebar material and native toggle icon.
+Adjacent page content extends beneath it through a caller-owned content backdrop
+shared by the navigation and adaptive scaffolds. The source includes active search
+results and the opaque page base, while shared header controls and top tabs remain
+outside the mirror. Page backgrounds and foreground insets keep their existing ownership.
+
+Page backgrounds retain the full viewport beneath the sidebar material. Page
+content, titles, shared controls, floating search, composers and the collapsed
+MiniPlayer consume the sidebar foreground insets. Full-screen player content
+keeps its own layout. The shared mini/full player host uses the adaptive overlay
+slot, above both columns, so opening it preserves the sidebar and page width
+underneath. Page titles return when the sidebar replaces the top tabs.
 
 `MeiloXNavigationScrollState` adapts Glasmio's scroll-away driver to the app's real
 list and grid viewports. Each mounted route publishes its viewport through its

@@ -90,6 +90,7 @@ import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeHint
 import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeMotion
 import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeHint
 import io.github.neoruaa.glasmio.scaffold.glasmioNavigationScrollHint
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import kotlin.math.roundToInt
 
 internal val LocalMiniPlayerAppearance = staticCompositionLocalOf<Boolean?> { null }
@@ -161,9 +162,10 @@ fun MiniPlayer(
     onQueueClick: () -> Unit = {},
 ) {
     val appearance = LocalMiniPlayerAppearance.current
+    val contentModifier = modifier.glasmioAdaptiveContent()
     if (appearance == null) {
         MiniPlayerContent(
-            modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
+            contentModifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
             onMoreClick, onLyricsClick, onQueueClick,
         )
     } else {
@@ -175,7 +177,7 @@ fun MiniPlayer(
                 LocalGlassColors provides defaultGlassColors(appearance, MaterialTheme.colorScheme.primary),
             ) {
                 MiniPlayerContent(
-                    modifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
+                    contentModifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
                     onMoreClick, onLyricsClick, onQueueClick,
                 )
             }

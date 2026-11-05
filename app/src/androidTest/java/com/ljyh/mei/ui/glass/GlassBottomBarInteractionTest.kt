@@ -127,7 +127,7 @@ import io.github.neoruaa.glasmio.glass.render.drawBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.ui.component.sheet.BottomSheet
-import com.ljyh.mei.ui.navigation.LandscapeNavigationBar
+import io.github.neoruaa.glasmio.ui.GlasmioTabBar
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.R
 import com.ljyh.mei.ui.component.player.LocalPlayerRoamingModeLabel
@@ -212,8 +212,8 @@ class GlassBottomBarInteractionTest {
                 LocalGlassAppearance provides glassAppearance.value,
                 LocalGlassColors provides defaultGlassColors(false),
             ) {
-                LandscapeNavigationBar(tabs, selection.value, { selection.value = it }, { searches++; selection.value = "search" }, "search",
-                    Modifier.widthIn(max = 400.dp).testTag("landscapeTabs"))
+                GlasmioTabBar(tabs, selection.value, { selection.value = it }, { searches++; selection.value = "search" }, "search",
+                    Modifier.widthIn(max = 400.dp).testTag("landscapeTabs"), searchLabel = searchLabel)
             }
         }
         val restingBar = compose.onNodeWithTag("landscapeTabs").fetchSemanticsNode().boundsInRoot

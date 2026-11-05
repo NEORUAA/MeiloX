@@ -874,4 +874,6 @@
 <string name="musician_podcaster">播客创作者</string>
 <string name="musician_creator">内容创作者</string>
     <string name="landscape_player_not_playing">未在播放</string>
+    <string name="show_sidebar">显示侧边栏</string>
+    <string name="hide_sidebar">隐藏侧边栏</string>
 </resources>

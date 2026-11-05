@@ -90,5 +90,5 @@ const val Github="https://github.com/NEORUAA/Mei_MeloX_Android"
 const val checkToken="9ca17ae2e6ffcda170e2e6ee8af14fbabdb988f225b3868eb2c15a879b9a83d274a790ac8ff54a97b889d5d42af0feaec3b92af58cff99c470a7eafd88f75e839a9ea7c14e909da883e83fb692a3abdb6b92adee9e"
 
 // A 44dp platter centered in the 62dp header ends at 53dp; leave 12dp to search.
-internal val LandscapeSearchTopPadding = 65.dp
+internal val LandscapeSearchTopPadding = io.github.neoruaa.glasmio.scaffold.GlasmioAdaptiveNavigationDefaults.SearchTopPadding
 internal val LandscapeSearchTopAdjustment = LandscapeSearchTopPadding - 72.dp

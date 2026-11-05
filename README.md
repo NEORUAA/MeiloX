@@ -46,7 +46,7 @@ Use JDK 21 and Android SDK 37.0. Build with the Glasmio development revision pin
 
 ```sh
 git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-git -C ../Glasmio checkout 700a611f9024c8f3bd9f0b8dd26d939a0dcbeb72
+git -C ../Glasmio checkout 395c890dc0b79533f2aaf3c8d93cf16f53f9dce6
 ./gradlew -Pglasmio.source=true :app:assembleDebug
 ```
 

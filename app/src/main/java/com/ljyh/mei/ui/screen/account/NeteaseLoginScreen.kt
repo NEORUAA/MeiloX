@@ -75,6 +75,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderCollapseDefaults
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
@@ -268,6 +269,7 @@ fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .glasmioAdaptiveContent()
                     .padding(
                         start = 18.dp,
                         end = 18.dp,

@@ -49,10 +49,6 @@ internal class MeiloXPageHeaders {
 }
 
 internal val LocalMeiloXSearchTopPadding = compositionLocalOf { 0.dp }
-internal val LocalLandscapeNavigationBounds = staticCompositionLocalOf<State<androidx.compose.ui.geometry.Rect?>> {
-    mutableStateOf(null)
-}
-
 private val LocalMeiloXPageHeader = staticCompositionLocalOf<MeiloXPageHeader?> { null }
 
 @Composable
@@ -117,7 +113,7 @@ internal fun MeiloXPageEntry(
     CompositionLocalProvider(LocalMeiloXPageHeader provides header) {
         Box(Modifier.fillMaxSize().testTag("MeiloXPage:${key.route}")) {
             content()
-            if (!rememberDeviceInfo().isLandscape) {
+            if (!rememberDeviceInfo().isLandscape || LocalGlasmioSidebarExpanded.current) {
                 GlasmioPageTitle(key.route, Modifier.testTag("MeiloXPageTitle:${key.route}"))
             }
         }
@@ -182,11 +178,11 @@ fun MeiloXPinnedPage(
             onClick = navigateBack,
         ) { SfIcon(SfSymbol.ChevronBack, null, mirrored = true) })))
     }.orEmpty()
-    val isLandscape = rememberDeviceInfo().isLandscape
+    val hidesHeading = rememberDeviceInfo().isLandscape && !LocalGlasmioSidebarExpanded.current
     val trailingActions = actions()
     val spec = GlasmioHeaderSpec(
-        title = if (isLandscape) "" else title,
-        subtitle = subtitle.takeUnless { isLandscape },
+        title = if (hidesHeading) "" else title,
+        subtitle = subtitle.takeUnless { hidesHeading },
         leading = leading,
         trailing = if (trailingActions.isEmpty()) emptyList() else listOf(
             GlasmioHeaderGroup("actions", trailingActions, actionsStyle),
@@ -202,7 +198,7 @@ fun MeiloXPinnedPage(
     if (header == null) {
         // Standalone previews and isolated component tests keep a local toolbar.
         GlasmioPinnedPage(
-            title = if (isLandscape) "" else title, subtitle = subtitle.takeUnless { isLandscape }, bottomPadding = bottomPadding, modifier = modifier,
+            title = if (hidesHeading) "" else title, subtitle = subtitle.takeUnless { hidesHeading }, bottomPadding = bottomPadding, modifier = modifier,
             onNavigateBack = onNavigateBack, navigateBackContentDescription = navigateBackContentDescription,
             actions = {
                 trailingActions.forEach { action ->
@@ -277,7 +273,7 @@ fun MeiloXPinnedListPage(
     registerMeiloXNavigationViewport(listState)
     val animatedCollapse = rememberGlasmioHeaderCollapse(listState,
         collapseEnterBreakpoint, collapseExitBreakpoint, collapseAnimationSpec)
-    val showTitle = showsLargeTitle && !rememberDeviceInfo().isLandscape
+    val showTitle = showsLargeTitle && (!rememberDeviceInfo().isLandscape || LocalGlasmioSidebarExpanded.current)
     val collapse = if (showTitle) animatedCollapse else 1f
     MeiloXPinnedPage(
         title = title, subtitle = subtitle, bottomPadding = bottomPadding, modifier = modifier,

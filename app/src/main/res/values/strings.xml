@@ -875,4 +875,6 @@
 <string name="musician_podcaster">Podcast creator</string>
 <string name="musician_creator">Content creator</string>
     <string name="landscape_player_not_playing">Not Playing</string>
+    <string name="show_sidebar">Show Sidebar</string>
+    <string name="hide_sidebar">Hide Sidebar</string>
 </resources>

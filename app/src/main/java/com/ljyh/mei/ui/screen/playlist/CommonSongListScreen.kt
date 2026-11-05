@@ -49,12 +49,15 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import io.github.neoruaa.glasmio.scaffold.LocalGlasmioSidebarInsets
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -235,22 +238,14 @@ fun CommonSongListScreen(
 
     CompositionLocalProvider(LocalGroupedListBackgroundAlpha provides listBackgroundAlpha) {
         var searchHostBounds by remember { mutableStateOf(Rect.Zero) }
-        val navigationBounds = com.ljyh.mei.ui.navigation.LocalLandscapeNavigationBounds.current.value
+        val navigationBounds = io.github.neoruaa.glasmio.scaffold.LocalGlasmioTabBarBounds.current
         val layoutDirection = LocalLayoutDirection.current
+        val sidebarInsets = LocalGlasmioSidebarInsets.current
         BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { searchHostBounds = it.boundsInWindow() }) {
+            val hostWidth = maxWidth
             val buttonSize = LocalGlassDimensions.current.iconButtonSize
             val searchEndInset =
                 playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
-            val navigationStartInset = if (device.isLandscape && navigationBounds != null && searchHostBounds != Rect.Zero) {
-                with(LocalDensity.current) {
-                    (if (layoutDirection == LayoutDirection.Ltr) navigationBounds.right - searchHostBounds.left
-                        else searchHostBounds.right - navigationBounds.left).toDp() + 12.dp
-                }
-            } else 68.dp
-            val expandedSearchWidth = (maxWidth - maxOf(68.dp, navigationStartInset) - searchEndInset)
-                .coerceAtLeast(0.dp)
-            val animatedSearchWidth =
-                buttonSize + (expandedSearchWidth - buttonSize) * searchExpansion
             val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
             val hero: @Composable () -> Unit = {
                 val headerContent: @Composable () -> Unit = {
@@ -424,6 +419,7 @@ fun CommonSongListScreen(
                     focusRequester = searchFocusRequester,
                     modifier =
                         Modifier.align(Alignment.TopEnd)
+                            .glasmioAdaptiveContent()
                             .padding(
                                 top =
                                     WindowInsets.statusBars
@@ -431,7 +427,22 @@ fun CommonSongListScreen(
                                         .calculateTopPadding() + 9.dp,
                                 end = searchEndInset,
                             )
-                            .width(animatedSearchWidth)
+                            .layout { measurable, constraints ->
+                                // Sidebar travel affects measurement, not composition of the song list.
+                                val sidebarWidth = (sidebarInsets.getLeft(this, layoutDirection) +
+                                    sidebarInsets.getRight(this, layoutDirection)).toDp()
+                                val tabBounds = navigationBounds.value
+                                val navigationStartInset = if (device.isLandscape && tabBounds != null && searchHostBounds != Rect.Zero) {
+                                    (if (layoutDirection == LayoutDirection.Ltr) tabBounds.right - searchHostBounds.left
+                                        else searchHostBounds.right - tabBounds.left).toDp() - sidebarWidth + 12.dp
+                                } else 68.dp
+                                val expandedWidth = (hostWidth - sidebarWidth - maxOf(68.dp, navigationStartInset) - searchEndInset)
+                                    .coerceAtLeast(0.dp)
+                                val width = (buttonSize + (expandedWidth - buttonSize) * searchExpansion).roundToPx()
+                                    .coerceIn(constraints.minWidth, constraints.maxWidth)
+                                val child = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+                                layout(child.width, child.height) { child.placeRelative(0, 0) }
+                            }
                             .height(buttonSize),
                 )
             }

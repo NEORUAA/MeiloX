@@ -82,6 +82,7 @@ import io.github.neoruaa.glasmio.ui.MessageBubbleDefaults
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGlassDimensions
@@ -539,6 +540,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .glasmioAdaptiveContent()
                     .padding(bottom = bottomPadding + 64.dp),
             )
         }
@@ -546,6 +548,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .glasmioAdaptiveContent()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = bottomPadding + 8.dp)
                 .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },

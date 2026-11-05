@@ -32,10 +32,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -73,6 +78,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -132,6 +139,10 @@ import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavDisplay
 import io.github.neoruaa.glasmio.scaffold.navigation.IosNavigationTransitionEffects
 import io.github.neoruaa.glasmio.scaffold.navigation.GlasmioNavHeaderMotion
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
+import io.github.neoruaa.glasmio.scaffold.GlasmioAdaptiveNavigationScaffold
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationLayout
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioAdaptiveNavigationState
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationOperation
 import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
 import com.ljyh.mei.ui.navigation.MeiloXPageEntry
@@ -180,7 +191,6 @@ import com.ljyh.mei.constants.LastSelectedTabKey
 import com.ljyh.mei.constants.PlayerKeepScreenOnKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.constants.LandscapeMiniPlayerHeight
-import com.ljyh.mei.ui.navigation.LandscapeNavigationBar
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import androidx.compose.foundation.layout.widthIn
 import com.ljyh.mei.constants.MiniPlayerHeight
@@ -226,6 +236,14 @@ import io.github.neoruaa.glasmio.glass.BottomNavigationContact
 import io.github.neoruaa.glasmio.glass.LocalBottomControlContact
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioTabItem
+import io.github.neoruaa.glasmio.ui.GlasmioTabBar
+import io.github.neoruaa.glasmio.ui.GlasmioSidebarToolbar
+import io.github.neoruaa.glasmio.ui.GlasmioSidebarRow
+import io.github.neoruaa.glasmio.ui.GlasmioSidebarSectionHeader
+import io.github.neoruaa.glasmio.ui.GlasmioSidebarToggleIcon
+import io.github.neoruaa.glasmio.ui.GlasmioSidebarSearchField
+import com.ljyh.mei.ui.navigation.LibraryPage
+import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioSearchToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioTextSelectionHost
@@ -342,7 +360,9 @@ class MainActivity : ComponentActivity() {
             val lifecycleOwner = LocalLifecycleOwner.current
             val backStack = rememberNavBackStack(MeiRoute(Screen.Home.route))
             val pageHeaders = remember { MeiloXPageHeaders() }
-            val landscapeNavigationBounds = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+            val adaptiveNavigation = rememberGlasmioAdaptiveNavigationState()
+            var sidebarQuery by rememberSaveable { mutableStateOf("") }
+            var sidebarLibraryExpanded by rememberSaveable { mutableStateOf(true) }
             val navController = remember(backStack) {
                 MeiNavigator(context = context, backStack = backStack)
             }
@@ -588,6 +608,7 @@ class MainActivity : ComponentActivity() {
                 // bottom layer records the page after it has rendered. Controls
                 // then sample [bottomBackdrop] without sampling themselves.
                 val bottomBackdrop = rememberLayerBackdrop()
+                val pageContentBackdrop = rememberLayerBackdrop()
                 // Popups are hosted in a separate Android window. Wrap the recorded page layer
                 // before combining it so its sample coordinates use the popup's real screen
                 // position rather than the popup-local overshoot origin.
@@ -622,7 +643,6 @@ class MainActivity : ComponentActivity() {
                                 isMeasured = true
                             }
                     ) {
-                    val navigationViewportWidth = maxWidth
                     val isLandscape = rememberDeviceInfo().isLandscape
                     val miniPlayerHeight = if (isLandscape) LandscapeMiniPlayerHeight else MiniPlayerHeight
                     val focusManager = LocalFocusManager.current
@@ -969,13 +989,102 @@ class MainActivity : ComponentActivity() {
                     val pageCacheActive = remember(playerBottomSheetState) {
                         derivedStateOf { playerBottomSheetState.isTransitioning }
                     }
+                    val selectedNavigationItem = navigationItems.firstOrNull { it.route == currentRoute }
+                        ?: navigationItems.firstOrNull { it.name == lastSelectedTab }
+                        ?: Index.Home
+                    val sidebarLibraryPages = remember(podcastsEnabled) {
+                        LibraryPage.entries.filter { it != LibraryPage.Podcasts || podcastsEnabled }
+                    }
+                    val selectedLibraryPage = sidebarLibraryPages.firstOrNull {
+                        currentRoute == "${Screen.LibraryCategory.route}/${it.name}"
+                    }
+                    val selectNavigationItem: (Index) -> Unit = { screen ->
+                        setLastSelectedTab(screen.name)
+                        if (currentRoute == screen.route) {
+                            navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                        } else navController.navigateTopLevel(screen.route)
+                    }
                     CompositionLocalProvider(
                         com.ljyh.mei.ui.local.LocalSelectionToolbar provides selectionToolbar,
-                        com.ljyh.mei.ui.navigation.LocalLandscapeNavigationBounds provides landscapeNavigationBounds,
                         LocalDatabase provides database,
                         LocalNavController provides navController,
                         LocalPlayerConnection provides playerConnection,
                         LocalUserData provides userData,
+                    ) {
+                    GlasmioAdaptiveNavigationScaffold(
+                        state = adaptiveNavigation,
+                        layout = if (isLandscape) GlasmioNavigationLayout.TopTabs else GlasmioNavigationLayout.BottomBar,
+                        sidebarEnabled = !pictureInPictureMode && selectionToolbar.content.value == null,
+                        extendContentUnderSidebar = true,
+                        contentBackdrop = pageContentBackdrop,
+                        sidebar = {
+                            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+                                .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
+                                GlasmioSidebarToolbar(
+                                    leading = {
+                                        Text(stringResource(R.string.app_name), style = IosTypography.headline,
+                                            modifier = Modifier.padding(horizontal = 10.dp))
+                                    },
+                                    trailing = {
+                                        GlasmioIconButton(
+                                            onClick = { adaptiveNavigation.sidebarExpanded = false },
+                                            modifier = Modifier.semantics { contentDescription = getString(R.string.hide_sidebar) },
+                                        ) { GlasmioSidebarToggleIcon() }
+                                    },
+                                )
+                                GlasmioSidebarSearchField(
+                                    query = sidebarQuery,
+                                    onQueryChange = { sidebarQuery = it },
+                                    onSearch = {
+                                        onSearch(sidebarQuery)
+                                        adaptiveNavigation.sidebarExpanded = false
+                                    },
+                                    placeholder = stringResource(R.string.search_bar_search),
+                                )
+                                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                                    navigationItems.forEach { item ->
+                                        GlasmioSidebarRow(
+                                            title = stringResource(item.labelRes),
+                                            symbol = item.symbol,
+                                            selected = selectedLibraryPage == null && item == selectedNavigationItem,
+                                            onClick = { selectNavigationItem(item) },
+                                        )
+                                    }
+                                    GlasmioSidebarSectionHeader(
+                                        title = stringResource(R.string.app_tab_library),
+                                        expanded = sidebarLibraryExpanded,
+                                        onExpandedChange = { sidebarLibraryExpanded = it },
+                                    )
+                                    if (sidebarLibraryExpanded) sidebarLibraryPages.forEach { page ->
+                                        GlasmioSidebarRow(
+                                            title = stringResource(page.titleRes),
+                                            symbol = page.symbol,
+                                            selected = page == selectedLibraryPage,
+                                            onClick = {
+                                                if (page != selectedLibraryPage) {
+                                                    if (Index.Library in navigationItems) {
+                                                        setLastSelectedTab(Index.Library.name)
+                                                    }
+                                                    Screen.LibraryCategory.navigate(navController) { addPath(page.name) }
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        overlay = {
+                            if (selectionToolbar.content.value == null) AnimatedMiniPlayerLayer(
+                                motion = miniPlayerChromeMotion,
+                                hint = miniPlayerHint,
+                                centerTravel = miniPlayerCenterTravel,
+                                searchVerticalOffset = searchMiniPlayerOffset,
+                                state = playerBottomSheetState,
+                                backdrop = bottomControlsBackdrop,
+                                pageDarkAppearance = pageDarkAppearance,
+                                onBackgroundReadyChanged = onPlayerBackgroundReadyChanged,
+                            )
+                        },
                     ) {
                         if (pictureInPictureMode && playerConnection != null) {
                             Box(
@@ -1183,51 +1292,42 @@ class MainActivity : ComponentActivity() {
                                     }
                                     GlasmioNavigationScaffold(
                                         motion = headerMotion,
+                                        contentBackdrop = pageContentBackdrop,
                                         header = { pageHeaders.entry(it).spec },
-                                        bottomBar = {
-                                            if (isLandscape) {
-                                                val header = currentRoute?.let { pageHeaders.entry(it).spec }
-                                                val sideActions = maxOf(
-                                                    header?.leading?.sumOf { it.actions.size } ?: 0,
-                                                    header?.trailing?.sumOf { it.actions.size } ?: 0,
-                                                )
-                                                val sideInset = 24.dp + 48.dp * sideActions.coerceAtLeast(1)
-                                                AnimatedVisibility(
-                                                    visible = navigationPreferences != null &&
-                                                        playerVisibilitySynchronized &&
-                                                        selectionToolbar.content.value == null,
-                                                    enter = fadeIn(), exit = fadeOut(),
-                                                    modifier = Modifier.align(Alignment.TopCenter)
-                                                        .padding(windowsInsets.only(WindowInsetsSides.Horizontal).asPaddingValues())
-                                                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp),
+                                        topBar = if (isLandscape) ({ availableWidth ->
+                                            val header = currentRoute?.let { pageHeaders.entry(it).spec }
+                                            AnimatedVisibility(
+                                                visible = navigationPreferences != null &&
+                                                    playerVisibilitySynchronized &&
+                                                    selectionToolbar.content.value == null,
+                                                enter = fadeIn(), exit = fadeOut(),
+                                            ) {
+                                                DisposableEffect(Unit) {
+                                                    onDispose { adaptiveNavigation.tabBarBounds.value = null }
+                                                }
+                                                CompositionLocalProvider(
+                                                    LocalGlassColors provides (header?.colors ?: glassColors),
                                                 ) {
-                                                    DisposableEffect(Unit) {
-                                                        onDispose { landscapeNavigationBounds.value = null }
-                                                    }
-                                                    CompositionLocalProvider(
-                                                        LocalGlassColors provides (header?.colors ?: glassColors),
-                                                    ) {
-                                                        LandscapeNavigationBar(
-                                                            items = navigationTabs,
-                                                            selectedKey = if (active) Index.Search else selectedIndex,
-                                                            searchKey = Index.Search,
-                                                            onSelected = { screen ->
-                                                                setLastSelectedTab(screen.name)
-                                                                if (currentRoute == screen.route) {
-                                                                    navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                                                                } else navController.navigateTopLevel(screen.route)
-                                                            },
-                                                            onSearchClick = {
-                                                                focusSearchOnEntry = true
-                                                                if (currentRoute != Screen.Search.route) navController.navigate(Screen.Search.route)
-                                                            },
-                                                            modifier = Modifier.widthIn(max = minOf(560.dp, (navigationViewportWidth - sideInset * 2).coerceAtLeast(44.dp)))
-                                                                .onGloballyPositioned { landscapeNavigationBounds.value = it.boundsInWindow() },
-                                                        )
-                                                    }
+                                                    GlasmioTabBar(
+                                                        items = navigationTabs,
+                                                        selectedKey = if (active) Index.Search else selectedIndex,
+                                                        searchKey = Index.Search,
+                                                        searchLabel = stringResource(R.string.app_tab_search),
+                                                        onSelected = selectNavigationItem,
+                                                        onSearchClick = {
+                                                            focusSearchOnEntry = true
+                                                            if (currentRoute != Screen.Search.route) navController.navigate(Screen.Search.route)
+                                                        },
+                                                        onSidebarToggle = adaptiveNavigation::toggleSidebar,
+                                                        sidebarToggleLabel = stringResource(
+                                                            if (adaptiveNavigation.sidebarExpanded) R.string.hide_sidebar else R.string.show_sidebar,
+                                                        ),
+                                                        modifier = Modifier.widthIn(max = minOf(560.dp, availableWidth))
+                                                            .onGloballyPositioned { adaptiveNavigation.tabBarBounds.value = it.boundsInWindow() },
+                                                    )
                                                 }
                                             }
-                                        },
+                                        }) else null,
                                     ) {
                                         GlasmioNavDisplay(
                                             sceneState = sceneState,
@@ -1274,51 +1374,42 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                         )
-                                    }
-                                    AnimatedVisibility(
-                                        visible = active,
-                                        enter = fadeIn(),
-                                        exit = fadeOut(),
-                                    ) {
-                                        Box(
-                                            Modifier
-                                                .fillMaxSize()
-                                                .background(
-                                                    if (query.text.isEmpty()) Color.Transparent
-                                                    else MaterialTheme.colorScheme.background,
-                                                ),
+                                        AnimatedVisibility(
+                                            visible = active,
+                                            enter = fadeIn(),
+                                            exit = fadeOut(),
                                         ) {
-                                            if (query.text.isNotEmpty()) {
-                                                SearchScreen(
-                                                    query = query.text,
-                                                    onQueryChange = onQueryChange,
-                                                    onSearch = { query, type ->
-                                                        Screen.SearchResult.navigate(navController){
-                                                            addPath(Uri.encode(query))
-                                                            addPath(type.toString())
-                                                        }
-                                                    },
-                                                    onDismiss = clearSearchInput,
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) com.ljyh.mei.constants.LandscapeSearchTopPadding + 56.dp else 0.dp)
-                                                        .padding(searchResultsBottomPadding),
-                                                )
+                                            Box(
+                                                Modifier
+                                                    .fillMaxSize()
+                                                    .background(
+                                                        if (query.text.isEmpty()) Color.Transparent
+                                                        else MaterialTheme.colorScheme.background,
+                                                    ),
+                                            ) {
+                                                if (query.text.isNotEmpty()) {
+                                                    SearchScreen(
+                                                        query = query.text,
+                                                        onQueryChange = onQueryChange,
+                                                        onSearch = { query, type ->
+                                                            Screen.SearchResult.navigate(navController){
+                                                                addPath(Uri.encode(query))
+                                                                addPath(type.toString())
+                                                            }
+                                                        },
+                                                        onDismiss = clearSearchInput,
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .glasmioAdaptiveContent()
+                                                            .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) com.ljyh.mei.constants.LandscapeSearchTopPadding + 56.dp else 0.dp)
+                                                            .padding(searchResultsBottomPadding),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        if (selectionToolbar.content.value == null) AnimatedMiniPlayerLayer(
-                            motion = miniPlayerChromeMotion,
-                            hint = miniPlayerHint,
-                            centerTravel = miniPlayerCenterTravel,
-                            searchVerticalOffset = searchMiniPlayerOffset,
-                            state = playerBottomSheetState,
-                            backdrop = bottomControlsBackdrop,
-                            pageDarkAppearance = pageDarkAppearance,
-                            onBackgroundReadyChanged = onPlayerBackgroundReadyChanged,
-                        )
                         AnimatedVisibility(
                             visible = active,
                             enter = fadeIn(),
@@ -1339,6 +1430,7 @@ class MainActivity : ComponentActivity() {
                                     autoFocus = focusSearchOnEntry,
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .glasmioAdaptiveContent()
                                         .padding(horizontal = bottomNavigationHorizontalMargin)
                                         .then(if (isLandscape) Modifier
                                             .padding(windowsInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal).asPaddingValues())
@@ -1399,7 +1491,7 @@ class MainActivity : ComponentActivity() {
                         }
                         selectionToolbar.content.value?.let { toolbar ->
                             Box(Modifier.align(Alignment.BottomCenter).zIndex(3f)
-                                .fillMaxWidth().padding(horizontal = 16.dp)
+                                .fillMaxWidth().glasmioAdaptiveContent().padding(horizontal = 16.dp)
                                 .padding(bottom = bottomInset + NavigationBarBottomMargin)) {
                                 CompositionLocalProvider(LocalGlassBackdrop provides bottomControlsBackdrop) {
                                     toolbar()
@@ -1464,6 +1556,7 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { startupUpdateResult = null },
                         )
                         }
+                    }
                     }
                     }
                 }

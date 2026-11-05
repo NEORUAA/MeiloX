@@ -67,6 +67,7 @@ import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.glass.rememberSharedGlassBackdrop
 import io.github.neoruaa.glasmio.glass.trackBackdropPosition
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
+import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGlassDimensions
@@ -204,7 +205,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
             }
         }
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp)
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().glasmioAdaptiveContent().padding(horizontal = 20.dp)
                 .padding(bottom = bottomPadding + 8.dp)
                 .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -300,6 +301,6 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
                 Text(stringResource(R.string.comment_send_failed, message), color = MaterialTheme.colorScheme.error, style = IosTypography.caption, modifier = Modifier.padding(horizontal = 16.dp))
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomPadding + composerHeight + 16.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).glasmioAdaptiveContent().padding(bottom = bottomPadding + composerHeight + 16.dp))
     }
 }
