@@ -1,6 +1,5 @@
 package com.ljyh.mei.ui.component.player.component.applemusic
 
-import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -173,6 +172,7 @@ fun AppleMusicPlayer(
     val isDragging by remember { derivedStateOf { stateContainer.isDragging } }
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
+    val canLike by stateContainer.canLike
     val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
     val sheetContentVisible by remember(state) { derivedStateOf { state.isContentVisible } }
 
@@ -521,8 +521,8 @@ fun AppleMusicPlayer(
                                                                 title = metadata.title,
                                                                 subTitle = metadata.artists.joinToString { it.name },
                                                                 isLiked = isLiked,
-                                                                showLikeButton = metadata.supportsNeteaseSongActions,
-                                                                onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                                                                showLikeButton = canLike,
+                                                                onLikeClick = { stateContainer.playerViewModel.like(metadata) },
                                                                 onMoreClick = { overlayHandler.showMoreAction() },
                                                                 onTitleClick = {
                                                                     overlayHandler.showAlbumArtist(
@@ -635,8 +635,8 @@ fun AppleMusicPlayer(
                                 title = metadata.title,
                                 subTitle = metadata.artists.joinToString { it.name },
                                 isLiked = isLiked,
-                                showLikeButton = metadata.supportsNeteaseSongActions,
-                                onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                                showLikeButton = canLike,
+                                onLikeClick = { stateContainer.playerViewModel.like(metadata) },
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 onTitleClick = {
                                     overlayHandler.showAlbumArtist(
@@ -682,8 +682,8 @@ fun AppleMusicPlayer(
                             title = metadata.title,
                             subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
-                            showLikeButton = metadata.supportsNeteaseSongActions,
-                            onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                            showLikeButton = canLike,
+                            onLikeClick = { stateContainer.playerViewModel.like(metadata) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = {
                                 overlayHandler.showAlbumArtist(

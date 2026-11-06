@@ -49,6 +49,8 @@ fun SourceManagementScreen(
     val padding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::inspect) }
     val ready = providers.filter { it.status == SourceStatus.READY && SourceCapability.SEARCH in it.capabilities }
+    val browseReady = providers.filter { it.status == SourceStatus.READY &&
+        (SourceCapability.FEED in it.capabilities || SourceCapability.SEARCH in it.capabilities || SourceCapability.LIBRARY in it.capabilities) }
     val providersByInstance = providers.associateBy { it.instanceId.value }
     val availablePlugin = plugins.firstOrNull { it.manifest.id == pluginId }
     val plugin = editing?.takeIf { it.manifest.id == pluginId } ?: availablePlugin
@@ -125,7 +127,7 @@ fun SourceManagementScreen(
                 }
             } }
             item { GlasmioGroupedList {
-                ProviderSetting("默认浏览源", settings.preferredBrowseProvider, ready) { id -> viewModel.update { it.copy(preferredBrowseProvider = id) } }
+                ProviderSetting("默认浏览源", settings.preferredBrowseProvider, browseReady) { id -> viewModel.update { it.copy(preferredBrowseProvider = id) } }
                 ProviderSetting("默认搜索源", settings.preferredSearchProvider, ready) { id -> viewModel.update { it.copy(preferredSearchProvider = id) } }
             } }
             item { GlasmioGroupedList {
@@ -225,6 +227,18 @@ private fun statusLabel(status: SourceStatus): String = when (status) {
     SourceStatus.INCOMPATIBLE -> "版本不兼容"
     SourceStatus.FAILED -> "加载失败"
 }
-private fun capabilityLabel(capabilities: Set<String>): String = capabilities.mapNotNull {
-    when (it) { "catalog.search" -> "搜索"; "catalog.track" -> "歌曲"; "playback.resolve" -> "播放"; "lyrics.get" -> "歌词"; else -> null }
+private fun capabilityLabel(capabilities: Set<String>): String = buildSet {
+    if ("feed.home" in capabilities) add("首页")
+    if ("feed.discover" in capabilities) add("发现")
+    if ("catalog.search" in capabilities) add("搜索")
+    if ("catalog.track" in capabilities) add("歌曲")
+    if ("album.get" in capabilities) add("专辑")
+    if ("artist.get" in capabilities) add("歌手")
+    if ("playlist.get" in capabilities) add("歌单")
+    if ("account.get" in capabilities) add("账号")
+    if (capabilities.any { it.startsWith("library.") }) add("媒体库")
+    if ("track.like" in capabilities || "collection.save" in capabilities) add("收藏")
+    if (capabilities.any { it in PlaylistEditAction.entries.map(PlaylistEditAction::operation) }) add("歌单管理")
+    if ("playback.resolve" in capabilities) add("播放")
+    if ("lyrics.get" in capabilities) add("歌词")
 }.joinToString(" · ")

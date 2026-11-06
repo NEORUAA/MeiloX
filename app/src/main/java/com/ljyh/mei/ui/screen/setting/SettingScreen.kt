@@ -14,6 +14,12 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
+import android.net.Uri
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.ui.screen.source.SourceProfileViewModel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -48,47 +54,24 @@ fun SettingScreen(
     @Suppress("UNUSED_PARAMETER") scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val navController = LocalNavController.current
-    val sessionType = rememberNeteaseSessionType()
-    val (userNickname) = rememberPreference(UserNicknameKey, "")
+    val profileViewModel: SourceProfileViewModel = hiltViewModel()
+    val profile by profileViewModel.state.collectAsState()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     MeiloXPinnedListPage(
         title = stringResource(R.string.settings),
         bottomPadding = insets.calculateBottomPadding(),
         actions = { listOf(globalProfileHeaderAction()) },
     ) {
-        item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
-        item {
-            GlasmioGroupedList {
-                if (sessionType == NeteaseSessionType.None) {
-                    SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
-                        Screen.NeteaseLogin.navigate(navController)
-                    }
-                } else {
-                    SettingsEntry(
-                        userNickname.ifBlank { stringResource(R.string.account_home) },
-                        "person.crop.circle",
-                        false,
-                    ) {
-                        Screen.AccountHome.navigate(navController)
-                    }
-                    SettingsEntry(stringResource(R.string.netease_musician), "mic") {
-                        Screen.NeteaseMusician.navigate(navController)
-                    }
-                    SettingsEntry(stringResource(R.string.account_security), "shield") {
-                        Screen.AccountSecurity.navigate(navController)
-                    }
-                    val canAuthorize = sessionType == NeteaseSessionType.Mobile
-                    GlasmioListRow(
-                        title = stringResource(R.string.pc_qr_login),
-                        systemName = "viewfinder",
-                        subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
-                        modifier = Modifier.alpha(if (canAuthorize) 1f else 0.38f),
-                        onClick = if (canAuthorize) {
-                            { Screen.PcQrLogin.navigate(navController) }
-                        } else null,
-                    )
+        if (profile.providerId == ProviderIds.NETEASE) {
+            item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
+            item { NeteaseSettingsAccountGroup() }
+        } else if (profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL) {
+            item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
+            item { GlasmioGroupedList {
+                SettingsEntry(profile.account?.displayName ?: profile.providerName, "person.crop.circle", false) {
+                    Screen.SourceAccount.navigate(navController) { addPath(Uri.encode(profile.providerId)) }
                 }
-            }
+            } }
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_application)) }
         item {
@@ -102,12 +85,14 @@ fun SettingScreen(
                 SettingsEntry(stringResource(R.string.storage_management), "internaldrive.fill") { Screen.StorageManagement.navigate(navController) }
             }
         }
-        item { SettingsSectionTitle(stringResource(R.string.settings_extensions)) }
-        item {
-            GlasmioGroupedList {
-                SettingsEntry(stringResource(R.string.private_messages), "message", false) { Screen.PrivateMessages.navigate(navController) }
-                SettingsEntry(stringResource(R.string.listen_together), "person.2.wave.2") { Screen.ListenTogether.navigate(navController) }
-                SettingsEntry(stringResource(R.string.song_recognition), "waveform.badge.magnifyingglass") { Screen.SongRecognition.navigate(navController) }
+        if (profile.providerId == ProviderIds.NETEASE) {
+            item { SettingsSectionTitle(stringResource(R.string.settings_extensions)) }
+            item {
+                GlasmioGroupedList {
+                    SettingsEntry(stringResource(R.string.private_messages), "message", false) { Screen.PrivateMessages.navigate(navController) }
+                    SettingsEntry(stringResource(R.string.listen_together), "person.2.wave.2") { Screen.ListenTogether.navigate(navController) }
+                    SettingsEntry(stringResource(R.string.song_recognition), "waveform.badge.magnifyingglass") { Screen.SongRecognition.navigate(navController) }
+                }
             }
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_information)) }
@@ -115,6 +100,44 @@ fun SettingScreen(
             GlasmioGroupedList {
                 SettingsEntry(stringResource(R.string.settings_about), "info.circle", false) { Screen.About.navigate(navController) }
             }
+        }
+    }
+}
+
+@Composable
+private fun NeteaseSettingsAccountGroup() {
+    val navController = LocalNavController.current
+    val sessionType = rememberNeteaseSessionType()
+    val (userNickname) = rememberPreference(UserNicknameKey, "")
+    GlasmioGroupedList {
+        if (sessionType == NeteaseSessionType.None) {
+            SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
+                Screen.NeteaseLogin.navigate(navController)
+            }
+        } else {
+            SettingsEntry(
+                userNickname.ifBlank { stringResource(R.string.account_home) },
+                "person.crop.circle",
+                false,
+            ) {
+                Screen.AccountHome.navigate(navController)
+            }
+            SettingsEntry(stringResource(R.string.netease_musician), "mic") {
+                Screen.NeteaseMusician.navigate(navController)
+            }
+            SettingsEntry(stringResource(R.string.account_security), "shield") {
+                Screen.AccountSecurity.navigate(navController)
+            }
+            val canAuthorize = sessionType == NeteaseSessionType.Mobile
+            GlasmioListRow(
+                title = stringResource(R.string.pc_qr_login),
+                systemName = "viewfinder",
+                subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
+                modifier = Modifier.alpha(if (canAuthorize) 1f else 0.38f),
+                onClick = if (canAuthorize) {
+                    { Screen.PcQrLogin.navigate(navController) }
+                } else null,
+            )
         }
     }
 }

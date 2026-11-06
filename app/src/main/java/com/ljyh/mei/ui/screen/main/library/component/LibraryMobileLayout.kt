@@ -84,6 +84,7 @@ import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
@@ -213,6 +214,7 @@ fun LibraryMobileLayout(
     onAlbumClick: (String) -> Unit,
     isCategoryPage: Boolean = false,
     mergeAlbumPodcasts: Boolean = false,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     val pages = LibraryPage.entries.filter { !mergeAlbumPodcasts || it != LibraryPage.Podcasts }
     val listState = rememberLazyListState()
@@ -342,7 +344,7 @@ fun LibraryMobileLayout(
         collapseProgress = collapseProgress,
         topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
+        actions = { listOfNotNull(sourceAction?.invoke(), if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) { contentPadding ->
         LibraryCollectionRefresh(
             enabled = showsAlbums || showsPodcasts || selectedPage == LibraryPage.Playlists,

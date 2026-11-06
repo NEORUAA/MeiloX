@@ -4,7 +4,11 @@ import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +48,12 @@ import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.source.api.LibraryCollection
+import com.ljyh.mei.ui.screen.source.SourceLibraryScreen
+import com.ljyh.mei.ui.screen.search.SourceSearchViewModel
+import com.ljyh.mei.ui.screen.search.sourcePickerHeaderAction
+import com.ljyh.mei.ui.screen.setting.DownloadManageScreen
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.screen.main.library.component.LibraryMobileLayout
@@ -64,11 +74,68 @@ internal fun resolveLibraryDefaultPage(
     } else page
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
-    viewModel: LibraryViewModel = hiltViewModel(),
     isNavigationTab: Boolean = false,
     category: LibraryPage? = null,
+    sourceViewModel: SourceSearchViewModel = hiltViewModel(),
+    nativeViewModelKey: String? = null,
+    shareNativeViewModel: Boolean = false,
+) {
+    val settings by sourceViewModel.settings.collectAsState()
+    val providers by sourceViewModel.libraryChoices.collectAsState()
+    val nav = LocalNavController.current
+    LaunchedEffect(sourceViewModel) { sourceViewModel.useBrowsePreference() }
+    val providerId = settings?.preferredBrowseProvider
+    val route = if (category == null) Screen.Library.route else Screen.LibraryCategory.route
+    when {
+        providerId == null -> MeiloXLoadingPage(
+            title = stringResource(category?.titleRes ?: R.string.app_tab_library),
+            onNavigateBack = if (isNavigationTab) null else ({ nav.navigateUp() }),
+        )
+        sourceViewModel.supportsFeatureRoute(providerId, route) -> {
+            val nativeViewModel = if (shareNativeViewModel) hiltViewModel<LibraryViewModel>(
+                viewModelStoreOwner = LocalActivity.current as ComponentActivity, key = nativeViewModelKey,
+            ) else hiltViewModel<LibraryViewModel>(key = nativeViewModelKey)
+            NeteaseLibraryScreen(nativeViewModel, isNavigationTab, category,
+                sourceAction = if (category == null) ({
+                    sourcePickerHeaderAction(providers, providerId, sourceViewModel::selectProvider)
+                }) else null)
+        }
+        category == LibraryPage.Downloads -> DownloadManageScreen(
+            scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(), isNavigationTab = isNavigationTab,
+        )
+        category == null || category == LibraryPage.Songs || category == LibraryPage.Playlists || category == LibraryPage.Albums -> {
+            SourceLibraryScreen(isNavigationTab = isNavigationTab, initialCollection = when (category) {
+                LibraryPage.Songs -> LibraryCollection.LIKED_TRACKS
+                LibraryPage.Playlists -> LibraryCollection.SAVED_PLAYLISTS
+                LibraryPage.Albums -> LibraryCollection.SAVED_ALBUMS
+                else -> null
+            })
+        }
+        else -> MeiloXPinnedListPage(
+            title = stringResource(category?.titleRes ?: R.string.app_tab_library),
+            bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+            onNavigateBack = if (isNavigationTab) null else ({ nav.navigateUp() }),
+            actions = { listOfNotNull(
+                sourcePickerHeaderAction(providers, providerId, sourceViewModel::selectProvider),
+                if (isNavigationTab) globalProfileHeaderAction() else null,
+            ) },
+        ) {
+            item("source-library-unsupported") { GlasmioGroupedList {
+                GlasmioListRow(title = "此音源暂不支持这项功能", showTopSeparator = false, showDisclosure = false)
+            } }
+        }
+    }
+}
+
+@Composable
+private fun NeteaseLibraryScreen(
+    viewModel: LibraryViewModel,
+    isNavigationTab: Boolean = false,
+    category: LibraryPage? = null,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     val context = LocalContext.current
     val navController = LocalNavController.current
@@ -104,7 +171,7 @@ fun LibraryScreen(
         }
     }
     if (category == null && libraryStyle == LibraryStyle.AppleMusic) {
-        LibraryCategoryList(isNavigationTab, podcastsEnabled)
+        LibraryCategoryList(isNavigationTab, podcastsEnabled, sourceAction)
         return
     }
     val playlists by viewModel.playlists.collectAsState()
@@ -161,9 +228,10 @@ fun LibraryScreen(
             likedSongsLoading = !accountMatches || likedSongsLoading,
             likedSongsError = if (accountMatches) likedSongsError else null,
             onRetryLikedSongs = viewModel::retryLikedSongs,
+            sourceAction = sourceAction,
         )
     } else {
-        EmptyLoginState(navController, isNavigationTab, category)
+        EmptyLoginState(navController, isNavigationTab, category, sourceAction)
     }
 }
 
@@ -172,13 +240,14 @@ fun EmptyLoginState(
     navController: MeiNavigator,
     isNavigationTab: Boolean = false,
     category: LibraryPage? = null,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     MeiloXPinnedListPage(
         title = stringResource(category?.titleRes ?: R.string.app_tab_library),
         bottomPadding = insets.calculateBottomPadding(),
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
+        actions = { listOfNotNull(sourceAction?.invoke(), if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) {
         if (category == null) {
             item(key = "signed-out-downloads") {
@@ -220,7 +289,7 @@ fun EmptyLoginState(
 }
 
 @Composable
-private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boolean) {
+private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boolean, sourceAction: (@Composable () -> GlasmioHeaderAction)? = null) {
     val categories = LibraryPage.entries.filter { it != LibraryPage.Podcasts || podcastsEnabled }
     val navController = LocalNavController.current
     val colors = LocalGlassColors.current
@@ -233,7 +302,7 @@ private fun LibraryCategoryList(isNavigationTab: Boolean, podcastsEnabled: Boole
         verticalArrangement = Arrangement.spacedBy(0.dp),
         backgroundColor = if (colors.isDark) colors.groupedBackground else Color.White,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
+        actions = { listOfNotNull(sourceAction?.invoke(), if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) {
         categories.forEachIndexed { index, page ->
             item(key = "library-category:${page.name}") {

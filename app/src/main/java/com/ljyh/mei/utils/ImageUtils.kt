@@ -20,7 +20,7 @@ import okhttp3.ResponseBody
 import timber.log.Timber
 
 fun String.smallImage(): String {
-    if (this.startsWith("/")) return this
+    if (!isNeteaseArtwork()) return this
     return "$this?param=100y100"
 }
 
@@ -48,16 +48,17 @@ internal fun playlistCoverWithoutOverlays(cover: String): String {
 }
 
 fun String.middleImage(): String {
-    if (this.startsWith("/")) return this
+    if (!isNeteaseArtwork()) return this
     return "$this?param=300y300"
 }
 
 fun String.largeImage(): String {
-    if (this.startsWith("/")) return this
+    if (!isNeteaseArtwork()) return this
     return "$this?param=500y500"
 }
 
 fun String.size1600():String{
+    if (!isNeteaseArtwork()) return this
     return "$this?param=1600y1600"
 }
 
@@ -106,4 +107,10 @@ object ImageUtils {
         val size = source.buffer.size
         return if (size in 1..MAX_COVER_BYTES) source.buffer.readByteArray() else null
     }
+}
+
+/** Platform resize parameters must not alter plugin files or another provider's signed URL. */
+private fun String.isNeteaseArtwork(): Boolean {
+    val host = runCatching { java.net.URI(this).host }.getOrNull() ?: return false
+    return host.equals("music.126.net", ignoreCase = true) || host.endsWith(".music.126.net", ignoreCase = true)
 }

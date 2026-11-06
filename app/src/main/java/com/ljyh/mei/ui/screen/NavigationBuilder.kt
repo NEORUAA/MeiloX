@@ -1,5 +1,11 @@
 package com.ljyh.mei.ui.screen
 
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.ui.screen.source.SourceContentScreen
+import com.ljyh.mei.ui.screen.source.SourceAccountScreen
+import com.ljyh.mei.ui.screen.source.SourcePlaylistEditorScreen
+import com.ljyh.mei.ui.screen.source.SourcePlaylistPickerScreen
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -260,6 +266,27 @@ fun NavGraphBuilder.navigationBuilder(
         )
     }
 
+    composable("${Screen.SourceContent.route}/{providerId}/{kind}/{contentId}", arguments = listOf(
+        navArgument("providerId") { type = NavType.StringType }, navArgument("kind") { type = NavType.StringType },
+        navArgument("contentId") { type = NavType.StringType },
+    )) { entry ->
+        val ref = sourceContentRef(entry.arguments?.getString("providerId").orEmpty(), entry.arguments?.getString("kind").orEmpty(), entry.arguments?.getString("contentId").orEmpty())
+        if (ref != null) SourceContentScreen(ref) else MissingSourceContentPage()
+    }
+    composable("${Screen.SourceAccount.route}/{providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType })) {
+        SourceAccountScreen(it.arguments?.getString("providerId").orEmpty())
+    }
+    composable("${Screen.SourcePlaylistCreate.route}/{providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType })) {
+        SourcePlaylistEditorScreen(it.arguments?.getString("providerId").orEmpty())
+    }
+    composable("${Screen.SourcePlaylistEdit.route}/{providerId}/{playlistId}", arguments = listOf(
+        navArgument("providerId") { type = NavType.StringType }, navArgument("playlistId") { type = NavType.StringType },
+    )) { SourcePlaylistEditorScreen(it.arguments?.getString("providerId").orEmpty(), it.arguments?.getString("playlistId")) }
+    composable("${Screen.SourcePlaylistPicker.route}/{track}", arguments = listOf(navArgument("track") { type = NavType.StringType })) {
+        val ref = TrackRefCodec.decode(it.arguments?.getString("track").orEmpty())
+        if (ref != null) SourcePlaylistPickerScreen(ref) else MissingSourceContentPage()
+    }
+
     composable(Screen.DownloadManage.route) {
         DownloadManageScreen(scrollBehavior)
     }
@@ -426,10 +453,8 @@ fun navigationEntry(
     when {
         route == Screen.Home.route -> HomeHubScreen()
         route == Screen.Library.route -> LibraryScreen(
-            viewModel = hiltViewModel<LibraryViewModel>(
-                viewModelStoreOwner = LocalActivity.current as ComponentActivity,
-            ),
             isNavigationTab = isNavigationTab,
+            shareNativeViewModel = true,
         )
         route.startsWith("${Screen.LibraryCategory.route}/") -> {
             LibraryPage.entries.firstOrNull {
@@ -484,6 +509,21 @@ fun navigationEntry(
             com.ljyh.mei.ui.screen.source.SourceManagementScreen(
                 pluginId = android.net.Uri.decode(route.substringAfter("${Screen.SourcePluginSettings.route}/")),
             )
+        }
+        route.startsWith("${Screen.SourceContent.route}/") -> {
+            val parts = route.substringAfter("${Screen.SourceContent.route}/").split('/')
+            val ref = if (parts.size == 3) sourceContentRef(android.net.Uri.decode(parts[0]), parts[1], android.net.Uri.decode(parts[2])) else null
+            if (ref != null) SourceContentScreen(ref) else MissingSourceContentPage()
+        }
+        route.startsWith("${Screen.SourceAccount.route}/") -> SourceAccountScreen(android.net.Uri.decode(route.substringAfter("${Screen.SourceAccount.route}/")))
+        route.startsWith("${Screen.SourcePlaylistCreate.route}/") -> SourcePlaylistEditorScreen(android.net.Uri.decode(route.substringAfter("${Screen.SourcePlaylistCreate.route}/")))
+        route.startsWith("${Screen.SourcePlaylistEdit.route}/") -> {
+            val parts = route.substringAfter("${Screen.SourcePlaylistEdit.route}/").split('/')
+            if (parts.size == 2) SourcePlaylistEditorScreen(android.net.Uri.decode(parts[0]), android.net.Uri.decode(parts[1])) else MissingSourceContentPage()
+        }
+        route.startsWith("${Screen.SourcePlaylistPicker.route}/") -> {
+            val ref = TrackRefCodec.decode(android.net.Uri.decode(route.substringAfter("${Screen.SourcePlaylistPicker.route}/")))
+            if (ref != null) SourcePlaylistPickerScreen(ref) else MissingSourceContentPage()
         }
         route == Screen.DownloadManage.route -> DownloadManageScreen(
             scrollBehavior = scrollBehavior,
@@ -582,5 +622,25 @@ fun navigationEntry(
                 ?.let { SongWikiScreen(songId = it) }
         }
         else -> error("Unknown Mei navigation route: $route")
+    }
+}
+
+internal fun sourceContentRef(providerId: String, kind: String, id: String): ContentRef? = runCatching {
+    when (kind) {
+        "track" -> TrackRef(providerId, id)
+        "album" -> AlbumRef(providerId, id)
+        "artist" -> ArtistRef(providerId, id)
+        "playlist" -> PlaylistRef(providerId, id)
+        else -> null
+    }
+}.getOrNull()
+
+@Composable
+private fun MissingSourceContentPage() {
+    val nav = com.ljyh.mei.ui.local.LocalNavController.current
+    com.ljyh.mei.ui.navigation.MeiloXPinnedListPage("内容不可用", onNavigateBack = nav::navigateUp) {
+        item { io.github.neoruaa.glasmio.ui.GlasmioGroupedList {
+            io.github.neoruaa.glasmio.ui.GlasmioListRow("来源或内容不存在", showDisclosure = false)
+        } }
     }
 }

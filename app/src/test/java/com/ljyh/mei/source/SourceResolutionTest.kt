@@ -2,12 +2,170 @@ package com.ljyh.mei.source
 
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.*
+import com.ljyh.mei.ui.screen.source.mergeFallbackOrder
+import com.ljyh.mei.ui.screen.source.orderedPlayableInstances
+import com.ljyh.mei.ui.screen.search.SearchType
+import com.ljyh.mei.ui.screen.search.browsableProviders
+import com.ljyh.mei.ui.screen.search.libraryProviders
+import com.ljyh.mei.ui.screen.search.searchableProviders
+import com.ljyh.mei.ui.screen.search.supportedSourceSearchType
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
 class SourceResolutionTest {
+    @Test fun optionalSourceChoicesDoNotRequireTrackSearchOrInventLibrarySupport() {
+        val feed = object : MusicProvider, FeedCapability {
+            override val id = "feed-only"
+            override val displayName = "Feed"
+            override val capabilities = setOf(SourceCapability.FEED)
+            override var feedKinds = setOf(FeedKind.HOME)
+            override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest): SourceFeedPage =
+                error("Selecting a source must not fetch content")
+        }
+        val library = object : MusicProvider, LibraryCapability {
+            override val id = "library-only"
+            override val displayName = "Library"
+            override val capabilities = setOf(SourceCapability.LIBRARY)
+            override var collections = setOf(LibraryCollection.SAVED_ALBUMS)
+            override suspend fun library(collection: LibraryCollection, page: PageRequest): SourcePage<SourceItem> =
+                error("Selecting a source must not fetch content")
+        }
+        val albums = object : MusicProvider, TypedSearchCapability {
+            override val id = "album-search-only"
+            override val displayName = "Albums"
+            override val capabilities = setOf(SourceCapability.SEARCH)
+            override var searchTypes = setOf(ContentType.ALBUM)
+            override var status = SourceStatus.READY
+            override suspend fun search(query: String, type: ContentType, page: PageRequest): SourcePage<SourceItem> =
+                error("Selecting a source must not fetch content")
+        }
+        val declarationsOnly = object : MusicProvider {
+            override val id = "declarations-only"
+            override val displayName = "Declarations"
+            override val capabilities = setOf(SourceCapability.FEED, SourceCapability.LIBRARY, SourceCapability.SEARCH)
+        }
+        val providers = listOf(feed, library, albums, declarationsOnly)
+        assertEquals(listOf(feed, library, albums), browsableProviders(providers))
+        assertEquals(listOf(library), libraryProviders(providers))
+        assertEquals(listOf(albums), searchableProviders(providers))
+        feed.feedKinds = emptySet()
+        library.collections = emptySet()
+        albums.status = SourceStatus.DISABLED
+        assertTrue(browsableProviders(providers).isEmpty())
+        assertTrue(libraryProviders(providers).isEmpty())
+        assertTrue(searchableProviders(providers).isEmpty())
+        albums.status = SourceStatus.READY
+        albums.searchTypes = emptySet()
+        assertTrue(searchableProviders(providers).isEmpty())
+        assertTrue(browsableProviders(providers).isEmpty())
+    }
+
+    @Test fun albumOnlySearchFallsBackToItsSupportedTabAndEmptyCapabilitiesSelectNothing() {
+        val albumOnly = setOf(SearchType.Album)
+        assertEquals(SearchType.Album, supportedSourceSearchType(SearchType.Album.type, albumOnly))
+        assertEquals(SearchType.Album, supportedSourceSearchType(SearchType.Song.type, albumOnly))
+        assertEquals(SearchType.Album, supportedSourceSearchType(SearchType.Podcast.type, albumOnly))
+        assertEquals(SearchType.Album, supportedSourceSearchType(Int.MAX_VALUE, albumOnly))
+        assertNull(supportedSourceSearchType(SearchType.Song.type, emptySet()))
+    }
+
+    private class ContentProvider : MusicProvider, TypedSearchCapability, FeedCapability, LibraryCapability,
+        PlaylistCapability, LikeCapability, CollectionCapability, PlaylistEditCapability {
+        override val id = "content"
+        override val displayName = "Content"
+        override val capabilities = setOf(SourceCapability.SEARCH, SourceCapability.FEED, SourceCapability.LIBRARY,
+            SourceCapability.PLAYLIST, SourceCapability.LIKE, SourceCapability.COLLECTIONS, SourceCapability.PLAYLIST_EDIT)
+        override val searchTypes = setOf(ContentType.TRACK, ContentType.PLAYLIST)
+        override val feedKinds = setOf(FeedKind.HOME)
+        override val collections = setOf(LibraryCollection.LIKED_TRACKS, LibraryCollection.CREATED_PLAYLISTS)
+        override val collectionTypes = setOf(ContentType.PLAYLIST)
+        override val playlistEditActions = PlaylistEditAction.entries.toSet()
+        override var canWriteLikes = true
+        var rejectWrite = false
+        var foreignResult = false
+        val writes = mutableListOf<String>()
+        val track = Track(TrackRef(id, "track:雪/42"), "Song", listOf(SourceArtist("Artist")))
+        val playlist = SourcePlaylist(PlaylistRef(id, "playlist:雪/42"), "Playlist")
+        override suspend fun search(query: String, type: ContentType, page: PageRequest): SourcePage<SourceItem> =
+            SourcePage(listOf(if (type == ContentType.TRACK) SourceItem.TrackItem(track)
+                else SourceItem.PlaylistItem(playlist.copy(ref = if (foreignResult) PlaylistRef("foreign", "42") else playlist.ref))),
+                hasMore = true, nextCursor = "next:page")
+        override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest) = SourceFeedPage(
+            listOf(SourceFeedSection("home", "Home", SourceFeedLayout.PLAYLISTS, listOf(SourceItem.PlaylistItem(playlist)))))
+        override suspend fun library(collection: LibraryCollection, page: PageRequest): SourcePage<SourceItem> =
+            SourcePage(listOf(if (collection == LibraryCollection.LIKED_TRACKS) SourceItem.TrackItem(track) else SourceItem.PlaylistItem(playlist)))
+        override suspend fun playlist(ref: PlaylistRef) = playlist
+        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest) = SourcePage(listOf(track))
+        override suspend fun liked(ref: TrackRef) = false
+        override suspend fun setLiked(ref: TrackRef, liked: Boolean) {
+            if (rejectWrite) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+            writes += "like:${ref.trackId}"
+        }
+        override suspend fun saved(ref: ContentRef) = true
+        override suspend fun setSaved(ref: ContentRef, saved: Boolean) { writes += "save:${ref.contentId}" }
+        override suspend fun createPlaylist(title: String, description: String?): SourcePlaylist {
+            writes += "create"
+            return playlist.copy(title = title)
+        }
+        override suspend fun updatePlaylist(ref: PlaylistRef, title: String?, description: String?) { writes += "update" }
+        override suspend fun deletePlaylist(ref: PlaylistRef) { writes += "delete" }
+        override suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "add" }
+        override suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "remove" }
+        override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "reorder" }
+    }
+
+    @Test fun typedRouterKeepsContentKindsProviderRefsAndPageCursors() = runTest {
+        val provider = ContentProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(provider)))
+        assertEquals(provider.searchTypes, router.searchTypes(provider.id))
+        val found = router.search(provider.id, "query", ContentType.PLAYLIST, PageRequest(cursor = "before"))
+        assertEquals(provider.playlist.ref, found.items.single().ref)
+        assertEquals("next:page", found.nextCursor)
+        assertEquals(provider.playlist.ref, router.getFeed(provider.id, FeedKind.HOME).sections.single().items.single().ref)
+        assertEquals(provider.track.ref, router.library(provider.id, LibraryCollection.LIKED_TRACKS).items.single().ref)
+        assertEquals(provider.track.ref, router.playlistTracks(provider.playlist.ref).items.single().ref)
+        try { router.getFeed(provider.id, FeedKind.DISCOVER); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
+        try { router.library(provider.id, LibraryCollection.SAVED_ALBUMS); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
+        provider.foreignResult = true
+        try { router.search(provider.id, "query", ContentType.PLAYLIST); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+    }
+
+    @Test fun contentRevisionOnlyChangesAfterSuccessfulPermittedMutations() = runTest {
+        val provider = ContentProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(provider)))
+        val ref = provider.playlist.ref
+        val tracks = listOf(provider.track.ref)
+        router.setLiked(provider.track.ref, true)
+        router.setSaved(ref, true)
+        router.createPlaylist(provider.id, "New")
+        router.updatePlaylist(ref, "Renamed")
+        router.addTracks(ref, tracks)
+        router.removeTracks(ref, tracks)
+        router.reorderTracks(ref, tracks)
+        router.deletePlaylist(ref)
+        assertEquals(8L, router.contentRevision.value)
+        provider.canWriteLikes = false
+        try { router.setLiked(provider.track.ref, false); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
+        provider.canWriteLikes = true
+        provider.rejectWrite = true
+        try { router.setLiked(provider.track.ref, false); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.AUTH_EXPIRED, error.code) }
+        try { router.addTracks(ref, listOf(TrackRef("foreign", "42"))); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
+        assertEquals(8, provider.writes.size)
+        assertEquals(8L, router.contentRevision.value)
+    }
+
+    @Test fun reorderedFallbackListKeepsDisabledInstancesAndRestoresCompletePlayableOrder() {
+        val saved = listOf("netease", "disabled-instance", "a", "missing-instance", "b", "a")
+        val reordered = listOf("b", "netease", "a")
+        val stored = mergeFallbackOrder(saved, reordered)
+        assertEquals(listOf("b", "disabled-instance", "netease", "missing-instance", "a"), stored)
+        assertEquals(reordered, orderedPlayableInstances(stored, listOf("netease", "a", "b")))
+        assertEquals(listOf("b", "netease", "a", "new-instance"),
+            orderedPlayableInstances(stored, listOf("netease", "a", "b", "new-instance")))
+        assertEquals(listOf("a", "b"), mergeFallbackOrder(emptyList(), listOf("a", "b", "a")))
+    }
     private val original = track("original")
     private fun track(provider: String, title: String = "Song", duration: Long = 200_000) = Track(TrackRef(provider, "same:id/雪"), title, listOf(SourceArtist("Artist")), SourceAlbum("Album"), duration)
     private class Provider(override val id: String, val candidate: Track, val failure: SourceErrorCode? = null) : MusicProvider, CatalogCapability, PlaybackCapability {

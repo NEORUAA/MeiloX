@@ -113,8 +113,9 @@ disable/remove leaves library records and independent downloads intact.
 The portable offline SDK fixture passed its Node runner. Both real-sandbox AVD tests
 passed: import/search/detail/fallback/audio/disable/reload, and runaway termination,
 network denial and healthy recovery. The example provides an authored test tone;
-no real QQ/Kugou playback service is claimed. API 1 advertises only search, track,
-playback and lyrics; native advanced Netease features retain their existing pages.
+no real QQ/Kugou playback service is claimed by this offline fixture. API 1 remains
+compatible; API 2 adds optional typed catalog, feeds, account, library and write
+capabilities. Native advanced Netease features retain their existing pages.
 
 ### P5
 
@@ -144,3 +145,36 @@ preserved all existing primary keys/counts and offline file facts. Debug/test an
 optimized Release builds passed. Full debug lint retains 37 pre-existing errors;
 the validation report identifies their baseline comparison and practical hardware
 or live-account coverage limits.
+
+## Complete provider content (API 2)
+
+`source/api/SourceContent.kt` defines optional typed search, home/discovery feeds,
+album/artist/playlist details, account, library, likes, collections and individual
+playlist editing operations. `SourceRouter` checks provider-scoped references,
+capabilities and account/session revisions. Successful writes invalidate content
+views without invalidating otherwise healthy playback resources.
+
+The built-in `NeteaseContentAdapter` maps these operations to existing native
+repositories. Native feature contributions retain their original screens. External
+providers use the same grouped rows, cards, top-bar dropdowns and player overlays;
+their account and library never read the native account preferences. Browse and
+search defaults remain independent. Unsupported optional actions are omitted.
+
+`SourceContentQueue` starts from the loaded prefix and fetches more near the tail.
+Provider/account changes stop further fetches without deleting queued tracks.
+Snapshot v3 optionally stores a non-secret content locator and loaded-prefix facts.
+After restart, queued items restore immediately; bounded background replay recovers
+an in-memory cursor only when provider, account and prefix still match. Duplicate
+playlist entries retain their positions. No database change beyond Room 19 is needed.
+
+The isolated SDK supplies fresh secure random bytes per evaluation and an explicitly
+requested bounded base64 response mode. This supports provider-owned binary/crypto
+protocols without exposing a JavaScript network or Android bridge. Revoked invocations
+are checked before each HTTP hop and at result/storage/audio boundaries. Optional
+artwork transport failures leave placeholders; permission and cancellation failures
+still propagate.
+
+The QQ adapter is maintained in the independent
+[MeiloX-QQMusic-Source repository](https://github.com/NEORUAA/MeiloX-QQMusic-Source).
+The host contains only a pinned instrumentation fixture, not QQ service code.
+Its declared capabilities and live acceptance are recorded in the validation report.

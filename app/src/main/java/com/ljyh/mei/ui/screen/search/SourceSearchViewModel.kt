@@ -2,6 +2,11 @@ package com.ljyh.mei.ui.screen.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ljyh.mei.source.api.TypedSearchCapability
+import com.ljyh.mei.source.api.LibraryCapability
+import com.ljyh.mei.source.api.FeedCapability
+import com.ljyh.mei.source.api.ContentType
+import com.ljyh.mei.source.api.SourceItem
 import com.ljyh.mei.source.api.CatalogCapability
 import com.ljyh.mei.source.api.MusicProvider
 import com.ljyh.mei.source.api.PageRequest
@@ -36,11 +41,31 @@ data class SourceSearchState(
     val loading: Boolean = false,
     val hasMore: Boolean = false,
     val error: SourceErrorCode? = null,
+    val items: List<SourceItem> = emptyList(),
+    val nextCursor: String? = null,
 )
 
 internal fun searchableProviders(providers: List<MusicProvider>): List<MusicProvider> = providers.filter {
-    it.status == SourceStatus.READY && SourceCapability.SEARCH in it.capabilities && it is CatalogCapability
+    it.status == SourceStatus.READY && SourceCapability.SEARCH in it.capabilities &&
+        (it is CatalogCapability || it is TypedSearchCapability && it.searchTypes.isNotEmpty())
 }
+
+internal fun browsableProviders(providers: List<MusicProvider>): List<MusicProvider> = providers.filter {
+    it.status == SourceStatus.READY && (
+        SourceCapability.FEED in it.capabilities && it is FeedCapability && it.feedKinds.isNotEmpty() ||
+        SourceCapability.LIBRARY in it.capabilities && it is LibraryCapability && it.collections.isNotEmpty() ||
+        it in searchableProviders(listOf(it)))
+}
+
+internal fun libraryProviders(providers: List<MusicProvider>): List<MusicProvider> = providers.filter {
+    it.status == SourceStatus.READY && SourceCapability.LIBRARY in it.capabilities &&
+        it is LibraryCapability && it.collections.isNotEmpty()
+}
+
+internal fun supportedSourceSearchType(requested: Int, supported: Set<SearchType>): SearchType? =
+    SearchType.entries.firstOrNull { it.type == requested && it in supported }
+        ?: SearchType.entries.firstOrNull { it in supported }
+
 
 @HiltViewModel
 class SourceSearchViewModel @Inject constructor(
@@ -50,6 +75,10 @@ class SourceSearchViewModel @Inject constructor(
 ) : ViewModel() {
     val providers = registry.providers
     val sourceChoices = combine(providers, registry.revision) { providers, _ -> searchableProviders(providers) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val browseChoices = combine(providers, registry.revision) { providers, _ -> browsableProviders(providers) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val libraryChoices = combine(providers, registry.revision) { providers, _ -> libraryProviders(providers) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val settings = preferences.settings.map<SourceSettings, SourceSettings?> { it }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -62,11 +91,12 @@ class SourceSearchViewModel @Inject constructor(
     private var request: Job? = null
     private var generation = 0L
     private var offset = 0
+    private var contentType = ContentType.TRACK
 
     init {
         viewModelScope.launch {
             combine(selectedProviderId, providers, registry.revision) { id, providers, revision -> Triple(id, providers, revision) }
-                .distinctUntilChanged().collect { search(mutableState.value.query, force = true) }
+                .distinctUntilChanged().collect { search(mutableState.value.query, force = true, type = contentType) }
         }
     }
 
@@ -76,14 +106,17 @@ class SourceSearchViewModel @Inject constructor(
         router.registry.supportsFeatureRoute(providerId, route)
 
     fun supportedSearchTypes(providerId: String): Set<SearchType> {
-        val provider = router.registry.provider(providerId) ?: return setOf(SearchType.Song)
-        val nativeTypes = mapOf(
-            SearchType.Album to (SourceCapability.ALBUM to Screen.Album.route),
-            SearchType.Artist to (SourceCapability.ARTIST to Screen.Artist.route),
-            SearchType.Playlist to (SourceCapability.PLAYLIST to Screen.PlayList.route),
-            SearchType.Podcast to (SourceCapability.PODCAST to Screen.PodcastDetail.route),
-        ).filterValues { (capability, route) -> capability in provider.capabilities && supportsFeatureRoute(providerId, route) }.keys
-        return nativeTypes + SearchType.Song
+        val provider = router.registry.provider(providerId) ?: return emptySet()
+        val types = router.searchTypes(providerId).mapNotNull {
+            when (it) {
+                ContentType.TRACK -> SearchType.Song
+                ContentType.ALBUM -> SearchType.Album
+                ContentType.ARTIST -> SearchType.Artist
+                ContentType.PLAYLIST -> SearchType.Playlist
+            }
+        }.toSet()
+        return types + if (SourceCapability.PODCAST in provider.capabilities && supportsFeatureRoute(providerId, Screen.PodcastDetail.route))
+            setOf(SearchType.Podcast) else emptySet()
     }
 
     fun selectProvider(providerId: String) {
@@ -97,12 +130,13 @@ class SourceSearchViewModel @Inject constructor(
         }
     }
 
-    fun search(query: String, force: Boolean = false) {
+    fun search(query: String, force: Boolean = false, type: ContentType = ContentType.TRACK) {
         val query = query.trim()
-        if (!force && mutableState.value.query == query && (mutableState.value.loading || mutableState.value.tracks.isNotEmpty())) return
+        if (!force && contentType == type && mutableState.value.query == query && (mutableState.value.loading || mutableState.value.tracks.isNotEmpty())) return
         request?.cancel()
         generation++
         offset = 0
+        contentType = type
         mutableState.value = SourceSearchState(query = query)
         if (query.isNotEmpty() && currentProviderId().isNotEmpty()) loadPage(append = false)
     }
@@ -115,21 +149,26 @@ class SourceSearchViewModel @Inject constructor(
         val query = mutableState.value.query
         val providerId = currentProviderId()
         val requestGeneration = generation
+        val oldItems = if (append) mutableState.value.items else emptyList()
         val oldTracks = if (append) mutableState.value.tracks else emptyList()
+        val nextCursor = if (append) mutableState.value.nextCursor else null
+        val requestedType = contentType
         mutableState.value = mutableState.value.copy(loading = true, error = null)
         request = viewModelScope.launch {
             try {
-                val page = router.search(providerId, query, PageRequest(offset, 30))
+                val page = router.search(providerId, query, requestedType, PageRequest(offset, 30, nextCursor))
                 if (requestGeneration != generation || providerId != currentProviderId()) return@launch
                 offset += page.items.size
+                val items = (oldItems + page.items).distinctBy { it.ref }
                 mutableState.value = SourceSearchState(query,
-                    tracks = (oldTracks + page.items).distinctBy { it.ref },
-                    hasMore = page.hasMore && page.items.isNotEmpty())
+                    tracks = items.filterIsInstance<SourceItem.TrackItem>().map { it.track }, items = items,
+                    nextCursor = page.nextCursor, hasMore = page.hasMore && page.items.isNotEmpty() &&
+                        (!append || items.size > oldItems.size || page.nextCursor != null && page.nextCursor != nextCursor))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 if (requestGeneration != generation || providerId != currentProviderId()) return@launch
-                mutableState.value = SourceSearchState(query, tracks = oldTracks,
+                mutableState.value = SourceSearchState(query, tracks = oldTracks, items = oldItems, nextCursor = nextCursor,
                     error = (error as? SourceException)?.code ?: SourceErrorCode.NETWORK)
             }
         }

@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.screen.search
 
+import android.net.Uri
+import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.local.LocalNavController
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,7 +69,7 @@ fun sourcePickerHeaderAction(
     var expanded by remember { mutableStateOf(false) }
     var pendingSelection by remember { mutableStateOf<String?>(null) }
     val anchor = rememberGlasmioMenuAnchorState()
-    val choices = searchableProviders(providers).distinctBy { it.id }
+    val choices = providers.filter { it.status == com.ljyh.mei.source.api.SourceStatus.READY }.distinctBy { it.id }
     GlasmioMenu(
         expanded = expanded,
         onExpandedChange = { expanded = it },
@@ -113,6 +116,7 @@ fun SourceCatalogScreen(title: String, viewModel: SourceSearchViewModel, showPro
     val providers by viewModel.providers.collectAsState()
     val choices by viewModel.sourceChoices.collectAsState()
     val player = LocalPlayerConnection.current
+    val nav = LocalNavController.current
     val focus = LocalFocusManager.current
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.query)) }
@@ -126,7 +130,11 @@ fun SourceCatalogScreen(title: String, viewModel: SourceSearchViewModel, showPro
         item("source-query") {
             GlasmioSearchBar(query, { query = it }, active, { active = it },
                 onClose = { active = false; focus.clearFocus() }, placeholder = "搜索歌曲", closeContentDescription = "取消",
-                onSearch = { viewModel.search(it); active = false; focus.clearFocus() },
+                onSearch = { value ->
+                    val keyword = value.trim()
+                    if (keyword.isNotEmpty()) Screen.SearchResult.navigate(nav) { addPath(Uri.encode(keyword)); addPath(SearchType.Song.type.toString()) }
+                    active = false; focus.clearFocus()
+                },
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
         }
         SourceTrackResults(state, providers,
@@ -164,7 +172,7 @@ fun LazyListScope.SourceTrackResults(
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(sourceName, style = MaterialTheme.typography.labelSmall, color = LocalGlassColors.current.secondaryContent)
-                    if (onSongMore != null && track.ref.providerId == ProviderIds.NETEASE) {
+                    if (onSongMore != null) {
                         var anchor by remember { mutableStateOf(Rect.Zero) }
                         Box(Modifier.size(40.dp).onGloballyPositioned { anchor = it.boundsInWindow() }
                             .clickable(interactionSource = null, indication = null) { onSongMore(track.toMediaMetadata(), anchor) },

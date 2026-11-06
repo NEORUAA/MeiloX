@@ -35,6 +35,13 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.availableFor
 import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.data.model.toSourceTrack
+import com.ljyh.mei.ui.screen.source.SourceContentViewModel
+import com.ljyh.mei.ui.screen.source.SourceTrackActions
+import com.ljyh.mei.ui.screen.source.SourceTrackActionMessage
+import com.ljyh.mei.ui.screen.source.navigateSourceContent
+import com.ljyh.mei.ui.screen.source.sourceContentSupported
+import com.ljyh.mei.ui.screen.source.sourceTrackActionItems
 import com.ljyh.mei.utils.lyric.lyricStorageKey
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.ui.screen.Screen
@@ -64,6 +71,8 @@ fun CommonOverlayHandler(
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerViewModel = stateContainer.playerViewModel
+    val sourceViewModel: SourceContentViewModel = hiltViewModel()
+    val sourceProviders by sourceViewModel.providers.collectAsStateWithLifecycle()
     val currentMetadata = stateContainer.mediaMetadata.value
     val privateFmError by stateContainer.playerConnection.service.queueManager.privateFmError.collectAsStateWithLifecycle()
     val isPrivateFm = stateContainer.isFMMode.value &&
@@ -116,6 +125,11 @@ fun CommonOverlayHandler(
                         }
                     },
                     onDismiss = overlayHandler::dismiss,
+                    canOpenSourceContent = { it.providerId != ProviderIds.NETEASE && sourceContentSupported(it, sourceProviders) },
+                    onSourceContentClick = {
+                        navigateSourceContent(navController, it)
+                        sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                    },
                 )
             } else {
                 AlbumArtistBottomSheet(
@@ -125,6 +139,11 @@ fun CommonOverlayHandler(
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
                     onDismissRequest = overlayHandler::dismiss,
+                    canOpenSourceContent = { it.providerId != ProviderIds.NETEASE && sourceContentSupported(it, sourceProviders) },
+                    onSourceContentClick = {
+                        navigateSourceContent(navController, it)
+                        sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                    },
                 )
             }
         }
@@ -187,6 +206,9 @@ fun CommonOverlayHandler(
             val actionMetadata = currentMetadata
             MoreActionsSheet(
                 metadata = actionMetadata,
+                additionalTrackActions = if (actionMetadata?.trackRef?.providerId != ProviderIds.NETEASE) {
+                    sourceTrackActionItems(actionMetadata?.toSourceTrack(), sourceViewModel, includeQueue = false)
+                } else emptyList(),
                 onChoosePrivateFmScene = if (isPrivateFm) overlayHandler::showPrivateFmScenes else null,
                 onDismissRequest = {
                     overlayHandler.dismiss()
@@ -239,7 +261,15 @@ fun CommonOverlayHandler(
         is OverlayState.MusicQualitySelection -> Unit
 
         is OverlayState.TrackActionMenu -> {
-            TrackActionMenu(
+            if (overlay.track.trackRef.providerId != ProviderIds.NETEASE) SourceTrackActions(
+                metadata = overlay.track,
+                anchorBounds = overlay.anchorBounds,
+                onDismiss = overlayHandler::dismiss,
+                viewModel = sourceViewModel,
+                playerViewModel = playerViewModel,
+                onSongInfo = { overlayHandler.showSongInfo(overlay.track) },
+                onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
+            ) else TrackActionMenu(
                 targetTrack = overlay.track,
                 anchorBounds = overlay.anchorBounds,
                 onShare = { overlayHandler.showShare(overlay.track) },
@@ -251,6 +281,7 @@ fun CommonOverlayHandler(
             )
         }
     }
+    SourceTrackActionMessage(sourceViewModel)
     val qualityDialogVisible = overlayHandler.currentOverlayValue is OverlayState.MusicQualitySelection
     GlasmioAlertDialog(
         visible = qualityDialogVisible,
@@ -264,7 +295,7 @@ fun CommonOverlayHandler(
         val localPlaybackInfo = playerConnection?.localPlaybackInfo?.collectAsStateWithLifecycle()?.value
         val isPlayingLocalSource = playerConnection?.isPlayingLocalSource?.collectAsStateWithLifecycle()?.value ?: false
         val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
-        LaunchedEffect(qualityDialogVisible, playerConnection, mediaMetadata?.id) {
+        LaunchedEffect(qualityDialogVisible, playerConnection, mediaMetadata?.trackRef) {
             if (qualityDialogVisible) playerConnection?.refreshAvailableMusicQualities()
         }
         GlasmioGroupedList {

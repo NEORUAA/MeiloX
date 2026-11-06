@@ -78,6 +78,9 @@ class PlayerStateContainer(
     lateinit var isLiked: State<Boolean>
         internal set
 
+    lateinit var canLike: State<Boolean>
+        internal set
+
     lateinit var allPlaylist: State<List<Playlist>>
         internal set
 
@@ -157,6 +160,7 @@ fun rememberPlayerStateContainer(
     container.lyricResult = playerViewModel.lyric.collectAsStateWithLifecycle()
     container.qqLyricSearch = playerViewModel.searchResult.collectAsStateWithLifecycle()
     container.checkSongLike = playerViewModel.like.collectAsStateWithLifecycle()
+    container.canLike = playerViewModel.canLike.collectAsStateWithLifecycle()
     container.allPlaylist = playerViewModel.localPlaylists.collectAsStateWithLifecycle()
     container.myPlaylist = playerViewModel.myPlaylists.collectAsStateWithLifecycle()
 
@@ -204,15 +208,11 @@ fun rememberPlayerStateContainer(
     }
 
     LaunchedEffect(container.mediaMetadata.value) {
-        container.mediaMetadata.value?.let { meta ->
-            playerViewModel.mediaMetadata = meta
-        }
+        playerViewModel.mediaMetadata = container.mediaMetadata.value
     }
 
     LaunchedEffect(container.mediaMetadata.value?.trackRef) {
-        container.mediaMetadata.value?.let { meta ->
-            playerViewModel.getLike(meta)
-        }
+        playerViewModel.getLike(container.mediaMetadata.value)
     }
 
     // Refresh as soon as sheet motion begins, before the full foreground fades in.

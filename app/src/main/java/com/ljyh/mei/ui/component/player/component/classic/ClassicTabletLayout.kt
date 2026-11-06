@@ -1,6 +1,5 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
-import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -124,6 +123,7 @@ fun ClassicTabletLayout(
     val duration by remember { derivedStateOf { stateContainer.duration } }
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
+    val canLike by stateContainer.canLike
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
 
     var isShowingPlaylist by stateContainer.landscapeQueueSelected
@@ -266,8 +266,8 @@ fun ClassicTabletLayout(
                                     title = it.title,
                                     subTitle = it.artists.joinToString { artist -> artist.name },
                                     isLiked = isLiked,
-                                    showLikeButton = it.supportsNeteaseSongActions,
-                                    onLikeClick = { stateContainer.playerViewModel.like(it.id.toString()) },
+                                    showLikeButton = canLike,
+                                    onLikeClick = { stateContainer.playerViewModel.like(it) },
                                     onMoreClick = { overlayHandler.showMoreAction() },
                                     onTitleClick = {
                                         overlayHandler.showAlbumArtist(
@@ -289,6 +289,7 @@ fun ClassicTabletLayout(
                             }
                         } else {
                             PlayerHeader(
+                                showLikeButton = canLike,
                                 mediaMetadata = it,
                                 applyStatusBarPadding = false,
                                 modifier = Modifier
@@ -310,7 +311,7 @@ fun ClassicTabletLayout(
                                 },
                                 isLiked = isLiked,
                                 onLikeClick = {
-                                    stateContainer.playerViewModel.like(it.id.toString())
+                                    stateContainer.playerViewModel.like(it)
                                 }
                             )
                         }

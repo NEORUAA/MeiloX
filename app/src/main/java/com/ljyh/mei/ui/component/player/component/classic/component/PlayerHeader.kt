@@ -1,5 +1,7 @@
 package com.ljyh.mei.ui.component.player.component.classic.component
 
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
+
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,7 +33,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.player.LocalPlayerRoamingModeLabel
@@ -45,6 +46,7 @@ fun PlayerHeader(
     modifier: Modifier,
     mediaMetadata: MediaMetadata,
     isLiked: Boolean,
+    showLikeButton: Boolean = mediaMetadata.supportsNeteaseSongActions,
     onClick: () -> Unit,
     onMoreClick: () -> Unit,
     onLikeClick: () -> Unit,
@@ -55,7 +57,6 @@ fun PlayerHeader(
     onRowPositioned: (LayoutCoordinates) -> Unit = {},
     modeLabel: String? = LocalPlayerRoamingModeLabel.current,
 ) {
-    val showLikeButton = mediaMetadata.supportsNeteaseSongActions
     val marqueeEnabled = LocalPlayerSheet.current?.state?.isExpanded != false
     val metadataClick = if (appleMusicStyle) {
         Modifier.clickable(

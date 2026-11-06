@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -35,6 +36,9 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.screen.source.*
 import com.ljyh.mei.utils.rememberPreference
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
@@ -61,7 +65,7 @@ fun SearchResultScreen(
     var submittedQuery by rememberSaveable(query, type) { mutableStateOf(query) }
     var submittedType by rememberSaveable(query, type) { mutableIntStateOf(type) }
     val supportedTypes = viewModel.supportedSearchTypes(providerId)
-    val selectedType = SearchType.entries.find { it.type == submittedType && it in supportedTypes } ?: SearchType.Song
+    val selectedType = supportedSourceSearchType(submittedType, supportedTypes)
     var searchQuery by rememberSaveable(query, type, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(query)) }
     var searchActive by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
@@ -72,14 +76,32 @@ fun SearchResultScreen(
             startIndex = index, position = 0,
         ))
     }
-    val nativeContent = if (selectedType != SearchType.Song && selectedType in supportedTypes)
+    val nativeRoute = when (selectedType) {
+        SearchType.Album -> Screen.Album.route
+        SearchType.Artist -> Screen.Artist.route
+        SearchType.Playlist -> Screen.PlayList.route
+        SearchType.Podcast -> Screen.PodcastDetail.route
+        else -> null
+    }
+    val usesNativeContent = nativeRoute != null && viewModel.supportsFeatureRoute(providerId, nativeRoute)
+    val contentType = when (selectedType) {
+        SearchType.Album -> ContentType.ALBUM
+        SearchType.Artist -> ContentType.ARTIST
+        SearchType.Playlist -> ContentType.PLAYLIST
+        else -> ContentType.TRACK
+    }
+    val onTrackMore: (MediaMetadata, Rect) -> Unit = { metadata, anchor ->
+        overlay = OverlayState.TrackActionMenu(metadata, anchor)
+    }
+    val nativeContent = if (usesNativeContent && selectedType != null)
         rememberNeteaseSearchResults(submittedQuery, selectedType,
             onSongMore = { track, anchor -> overlay = OverlayState.TrackActionMenu(track, anchor) },
             onSongClick = playTracks)
         else null
 
     LaunchedEffect(submittedQuery, providerId, selectedType) {
-        if (selectedType == SearchType.Song) viewModel.search(submittedQuery)
+        if (!usesNativeContent && selectedType != null) viewModel.search(submittedQuery, type = contentType)
+        else if (selectedType == null) viewModel.search("", force = true)
     }
     LaunchedEffect(submittedQuery) { context.recordSearchHistory(submittedQuery) }
     LaunchedEffect(submittedQuery, selectedType, providerId) { listState.scrollToItem(0) }
@@ -109,7 +131,7 @@ fun SearchResultScreen(
                     }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 )
             }
-            if (supportedTypes.size > 1) item("search-tabs") {
+            if (supportedTypes.size > 1 && selectedType != null) item("search-tabs") {
                 SearchTypeFilterRow(
                     selectedType,
                     onSelect = { submittedType = it.type },
@@ -117,11 +139,24 @@ fun SearchResultScreen(
                     modifier = Modifier.padding(top = 10.dp),
                 )
             }
-            if (nativeContent != null) nativeContent()
-            else SourceTrackResults(state, providers,
+            if (selectedType == null) item("source-search-unsupported") {
+                if (providerId.isBlank()) LoadingView() else GlasmioGroupedList(Modifier.padding(top = 10.dp)) {
+                    GlasmioListRow("此音源不支持搜索", showTopSeparator = false, showDisclosure = false)
+                }
+            }
+            else if (nativeContent != null) nativeContent()
+            else if (selectedType == SearchType.Song) SourceTrackResults(state, providers,
                 onPlay = { tracks, index -> playTracks(tracks.map { it.toMediaMetadata() }, index) },
                 onLoadMore = viewModel::loadMore, onRetry = { viewModel.search(submittedQuery, force = true) },
-                onSongMore = { track, anchor -> overlay = OverlayState.TrackActionMenu(track, anchor) })
+                onSongMore = onTrackMore)
+            else {
+                sourceContentItems(state.items, providers, { navigateSourceContent(navController, it) },
+                    { tracks, index -> playTracks(tracks.map { it.toMediaMetadata() }, index) },
+                    { track, anchor -> overlay = OverlayState.TrackActionMenu(track.toMediaMetadata(), anchor) }, "typed-search")
+                sourceContentStatus(SourceContentState(providerId = providerId, items = state.items,
+                    loading = state.loading, hasMore = state.hasMore, nextCursor = state.nextCursor, error = state.error),
+                    { viewModel.search(submittedQuery, force = true, type = contentType) }, viewModel::loadMore)
+            }
         }
         StandaloneTrackActionOverlay(overlay, onDismiss = { overlay = OverlayState.None }, onUpdateOverlay = { overlay = it })
     }

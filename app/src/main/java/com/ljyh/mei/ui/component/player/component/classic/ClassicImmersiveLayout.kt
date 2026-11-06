@@ -1,6 +1,5 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
-import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -64,6 +63,7 @@ fun ClassicImmersiveLayout(
     val isPlaying by stateContainer.isPlaying
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
+    val canLike by stateContainer.canLike
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val sheet = LocalPlayerSheet.current
     val sheetExpanded by remember(sheet) { derivedStateOf { sheet?.state?.isExpanded != false } }
@@ -164,8 +164,8 @@ fun ClassicImmersiveLayout(
                             title = metadata.title,
                             subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
-                            showLikeButton = metadata.supportsNeteaseSongActions,
-                            onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                            showLikeButton = canLike,
+                            onLikeClick = { stateContainer.playerViewModel.like(metadata) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = onTitleClick,
                             titleStyle = MaterialTheme.typography.titleMedium.copy(
@@ -184,13 +184,14 @@ fun ClassicImmersiveLayout(
                         )
                     } else {
                         PlayerHeader(
+                            showLikeButton = canLike,
                             modifier = headerModifier,
                             mediaMetadata = metadata,
                             applyStatusBarPadding = false,
                             isLiked = isLiked,
                             onClick = onTitleClick,
                             onMoreClick = { overlayHandler.showMoreAction() },
-                            onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
+                            onLikeClick = { stateContainer.playerViewModel.like(metadata) },
                             onTextPositioned = { textCoordinates = it },
                             onRowPositioned = { rowCoordinates = it },
                         )

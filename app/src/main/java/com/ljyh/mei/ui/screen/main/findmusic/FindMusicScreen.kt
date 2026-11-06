@@ -64,16 +64,50 @@ import io.github.neoruaa.glasmio.scaffold.rememberGlasmioGridCollapseProgress
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.source.api.FeedKind
+import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
+import com.ljyh.mei.ui.screen.source.SourceFeedScreen
+import com.ljyh.mei.ui.screen.search.SourceSearchViewModel
+import com.ljyh.mei.ui.screen.search.sourcePickerHeaderAction
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import java.util.Locale
 
-/** Discovery retains phone artwork geometry and adapts the playlist grid on tablets. */
+/** Native discovery is mounted only when the selected provider contributes its route. */
 @Composable
 fun FindMusicScreen(
-    viewModel: FindMusicViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
     initialCategory: String? = null,
     titleOverride: String? = null,
     isNavigationTab: Boolean = false,
+    sourceViewModel: SourceSearchViewModel = hiltViewModel(),
+    nativeViewModelKey: String? = null,
+) {
+    val settings by sourceViewModel.settings.collectAsState()
+    val providers by sourceViewModel.browseChoices.collectAsState()
+    LaunchedEffect(sourceViewModel) { sourceViewModel.useBrowsePreference() }
+    val providerId = settings?.preferredBrowseProvider
+    when {
+        providerId == null -> MeiloXLoadingPage(titleOverride ?: stringResource(R.string.app_tab_explore))
+        sourceViewModel.supportsFeatureRoute(providerId, Screen.FindMusic.route) -> NeteaseFindMusicScreen(
+            viewModel = hiltViewModel(key = nativeViewModelKey), modifier = modifier,
+            initialCategory = initialCategory, titleOverride = titleOverride, isNavigationTab = isNavigationTab,
+            sourceAction = if (initialCategory == null) ({
+                sourcePickerHeaderAction(providers, providerId, sourceViewModel::selectProvider)
+            }) else null,
+        )
+        else -> Box(modifier) { SourceFeedScreen(titleOverride ?: stringResource(R.string.app_tab_explore), FeedKind.DISCOVER) }
+    }
+}
+
+/** Discovery retains phone artwork geometry and adapts the playlist grid on tablets. */
+@Composable
+private fun NeteaseFindMusicScreen(
+    viewModel: FindMusicViewModel,
+    modifier: Modifier = Modifier,
+    initialCategory: String? = null,
+    titleOverride: String? = null,
+    isNavigationTab: Boolean = false,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     val navController = LocalNavController.current
     val playlistState by viewModel.highQualityPlaylist.collectAsState()
@@ -98,7 +132,7 @@ fun FindMusicScreen(
         topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
         onNavigateBack = if (isNavigationTab) null else ({ navController.navigateUp() }),
-        actions = { listOfNotNull(if (isNavigationTab) globalProfileHeaderAction() else null) },
+        actions = { listOfNotNull(sourceAction?.invoke(), if (isNavigationTab) globalProfileHeaderAction() else null) },
     ) { contentPadding ->
         BoxWithConstraints(Modifier.fillMaxSize()) {
             PlaylistGrid(

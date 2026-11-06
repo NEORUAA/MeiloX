@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.source.api.ContentRef
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 
@@ -21,13 +22,20 @@ fun PlayerNavigationMenu(
     onPlaylistClick: () -> Unit,
     onDismiss: () -> Unit,
     viewportBounds: Rect? = null,
+    canOpenSourceContent: (ContentRef) -> Boolean = { false },
+    onSourceContentClick: ((ContentRef) -> Unit)? = null,
 ) {
-    val navigableArtists = artists.filter { it.id > 0 }.distinctBy { it.id }
+    val navigableArtists = artists.filter { it.id > 0 || it.ref?.let(canOpenSourceContent) == true }
+        .distinctBy { it.ref ?: it.id }
+    fun openArtist(artist: MediaMetadata.Artist) {
+        val ref = artist.ref?.takeIf(canOpenSourceContent)
+        if (ref != null && onSourceContentClick != null) onSourceContentClick(ref) else onArtistClick(artist.id)
+    }
     val artistItems = if (navigableArtists.size > 1) {
         navigableArtists.map { artist ->
             GlasmioCascadingMenuItem(
                 title = artist.name,
-                onClick = { onArtistClick(artist.id) },
+                onClick = { openArtist(artist) },
             )
         }
     } else emptyList()
@@ -50,14 +58,17 @@ fun PlayerNavigationMenu(
                 systemName = "microphone.dynamic.on.stand",
                 enabled = navigableArtists.isNotEmpty(),
                 children = artistItems,
-                onClick = { navigableArtists.singleOrNull()?.let { onArtistClick(it.id) } },
+                onClick = { navigableArtists.singleOrNull()?.let(::openArtist) },
             ),
             GlasmioCascadingMenuItem(
                 title = stringResource(R.string.player_navigation_album),
                 subtitle = album.title.ifBlank { "—" },
                 systemName = "rectangle.stack",
-                enabled = album.id > 0,
-                onClick = { onAlbumClick(album.id) },
+                enabled = album.id > 0 || album.ref?.let(canOpenSourceContent) == true,
+                onClick = {
+                    val ref = album.ref?.takeIf(canOpenSourceContent)
+                    if (ref != null && onSourceContentClick != null) onSourceContentClick(ref) else onAlbumClick(album.id)
+                },
             ),
             GlasmioCascadingMenuItem(
                 title = stringResource(R.string.player_navigation_playlist),

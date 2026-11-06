@@ -20,6 +20,7 @@ import coil3.request.crossfade
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.source.api.ContentRef
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import com.ljyh.mei.utils.smallImage
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -40,9 +41,12 @@ fun AlbumArtistBottomSheet(
     onArtistClick: (Long) -> Unit,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    canOpenSourceContent: (ContentRef) -> Boolean = { false },
+    onSourceContentClick: ((ContentRef) -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val navigableArtists = artistList.filter { it.id > 0 }
+    val navigableArtists = artistList.filter { it.id > 0 || it.ref?.let(canOpenSourceContent) == true }
+        .distinctBy { it.ref ?: it.id }
     val dismissal = rememberMeiloXSheetDismissal(onDismissRequest)
     val listState = rememberLazyListState()
     MeiloXBottomSheet(
@@ -59,7 +63,7 @@ fun AlbumArtistBottomSheet(
                 actions = {
                     GlasmioSheetToolbarButton(
                         onClick = { dismissal.requestDismiss() },
-                        enabled = !dismissal.isDismissing,
+                        enabled = !dismissal.isDismissing && (albumInfo.id > 0 || albumInfo.ref?.let(canOpenSourceContent) == true),
                     ) { SfIcon("xmark", stringResource(R.string.cancel)) }
                 },
             )
@@ -96,7 +100,10 @@ fun AlbumArtistBottomSheet(
                                 modifier = Modifier.size(56.dp).clip(ContinuousRoundedRectangle(12.dp)),
                             )
                         },
-                        onClick = { dismissal.requestDismiss { onAlbumClick(albumInfo.id) } },
+                        onClick = { dismissal.requestDismiss {
+                            val ref = albumInfo.ref?.takeIf(canOpenSourceContent)
+                            if (ref != null && onSourceContentClick != null) onSourceContentClick(ref) else onAlbumClick(albumInfo.id)
+                        } },
                     )
                 }
             }
@@ -110,7 +117,10 @@ fun AlbumArtistBottomSheet(
                                 systemName = "person.fill",
                                 showTopSeparator = index > 0,
                                 enabled = !dismissal.isDismissing,
-                                onClick = { dismissal.requestDismiss { onArtistClick(artist.id) } },
+                                onClick = { dismissal.requestDismiss {
+                                    val ref = artist.ref?.takeIf(canOpenSourceContent)
+                                    if (ref != null && onSourceContentClick != null) onSourceContentClick(ref) else onArtistClick(artist.id)
+                                } },
                             )
                         }
                     }

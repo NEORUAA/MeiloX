@@ -158,7 +158,24 @@ class LibraryViewModel @Inject constructor(
 
     fun leavePage() {
         selectedPage = null
+        // Retain collection contents, but resume any interrupted request on the next visit.
+        if (playlistJob?.isActive == true) playlistsDirty = true
+        if (albumJob?.isActive == true) albumsDirty = true
+        if (likedSongsJob?.isActive == true || _likedSongs.value != null) likedSongsDirty = true
+        playlistJob?.cancel()
+        albumJob?.cancel()
+        likedSongsRevision++
+        likedSongsJob?.cancel()
+        playlistJob = null
+        albumJob = null
+        likedSongsJob = null
+        // Closing the pager cancels detail fetches while preserving its retained track cache.
+        _likedSongs.value?.close()
         setLikedSongQuery("")
+        _playlists.value = _playlists.value.copy(isLoading = false, isLoadingMore = false)
+        _albums.value = _albums.value.copy(isLoading = false, isLoadingMore = false)
+        _likedSongsLoading.value = false
+        _likedSongSearchLoading.value = false
     }
 
     private fun loadSelectedPage() {

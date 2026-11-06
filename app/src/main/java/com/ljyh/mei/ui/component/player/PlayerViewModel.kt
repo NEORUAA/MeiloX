@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.component.player
 
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.ui.graphics.Color
 import androidx.datastore.dataStore
 import androidx.datastore.preferences.core.edit
@@ -19,6 +20,14 @@ import com.ljyh.mei.data.model.toSourceTrack
 import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.source.api.CachePolicy
+import com.ljyh.mei.source.api.LikeCapability
+import com.ljyh.mei.source.api.MusicProvider
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.SourceCapability
+import com.ljyh.mei.source.api.SourceErrorCode
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.core.SourceRouter
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.UserPlaylist
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
@@ -61,6 +70,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -83,6 +93,7 @@ class PlayerViewModel @Inject constructor(
     val lyricManager: LyricManager,
     private val mediaUriProvider: MediaUriProvider,
     private val collections: LibraryCollectionsRepository,
+    private val sourceRouter: SourceRouter,
 ) : ViewModel() {
     val searchResult: StateFlow<Resource<SearchResult>> = lyricManager.qqSearchResult
     val lyric: StateFlow<LyricData> = lyricManager.lyricData
@@ -101,14 +112,33 @@ class PlayerViewModel @Inject constructor(
 
     private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
     val like: StateFlow<Resource<Boolean>> = _like
-    private var selectedLikeId: String? = null
+    private val _canLike = MutableStateFlow(false)
+    val canLike: StateFlow<Boolean> = _canLike.asStateFlow()
+    private var selectedLikeRef: TrackRef? = null
+    private var selectedLikeProvider: MusicProvider? = null
+    private var selectedLikeProviderVersion: String? = null
     private var likeSelectionGeneration = 0L
     private var likeStatusJob: Job? = null
+    private var sourceLikeWriteJob: Job? = null
 
     init {
         viewModelScope.launch {
             repository.songLikes.collect { likes ->
-                _like.value = likes[selectedLikeId]?.let { Resource.Success(it) } ?: Resource.Loading
+                selectedLikeRef?.takeIf { it.providerId == ProviderIds.NETEASE }?.let { ref ->
+                    _like.value = likes[ref.trackId]?.let { Resource.Success(it) } ?: Resource.Loading
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(sourceRouter.registry.revision, sourceRouter.contentRevision) { _, _ -> Unit }
+                .collect {
+                    selectedLikeRef?.takeIf { it.providerId != ProviderIds.NETEASE }?.let(::getSourceLike)
+                }
+        }
+        viewModelScope.launch {
+            collections.accounts.collect {
+                selectedLikeRef?.takeIf { ref -> ref.providerId == ProviderIds.NETEASE }
+                    ?.trackId?.toLongOrNull()?.let(::getLike)
             }
         }
     }
@@ -160,31 +190,102 @@ class PlayerViewModel @Inject constructor(
     fun getLike(id: Long) {
         if (id <= 0L) { clearLikeSelection(); return }
         val expectedSession = neteaseSessionFingerprint(AppContext.instance.dataStore[CookieKey].orEmpty())
-        val key = id.toString()
-        selectedLikeId = key
+        val ref = TrackRef(ProviderIds.NETEASE, id.toString())
+        if (selectedLikeRef != ref) sourceLikeWriteJob?.cancel()
+        selectedLikeRef = ref
+        selectedLikeProvider = null
+        selectedLikeProviderVersion = null
+        _canLike.value = true
         val generation = ++likeSelectionGeneration
-        _like.value = repository.songLikes.value[key]?.let { Resource.Success(it) } ?: Resource.Loading
+        _like.value = repository.songLikes.value[ref.trackId]?.let { Resource.Success(it) } ?: Resource.Loading
         likeStatusJob?.cancel()
         likeStatusJob = viewModelScope.launch {
             val result = repository.checkSongLike(id, expectedSession)
-            if (selectedLikeId == key && likeSelectionGeneration == generation) {
-                _like.value = repository.songLikes.value[key]?.let { Resource.Success(it) } ?: result
+            if (selectedLikeRef == ref && likeSelectionGeneration == generation) {
+                _like.value = repository.songLikes.value[ref.trackId]?.let { Resource.Success(it) } ?: result
             }
         }
     }
 
-    fun getLike(metadata: MediaMetadata) {
-        if (!metadata.supportsNeteaseSongActions) { clearLikeSelection(); return }
-        getLike(metadata.trackRef.trackId.toLong())
+    fun getLike(metadata: MediaMetadata?) {
+        if (metadata == null || metadata.isLocal || metadata.isPodcast) { clearLikeSelection(); return }
+        if (metadata.supportsNeteaseSongActions) getLike(metadata.trackRef.trackId.toLong())
+        else getSourceLike(metadata.trackRef)
     }
 
+    private fun getSourceLike(ref: TrackRef) {
+        val provider = sourceLikeProvider(ref)
+        val selectionChanged = selectedLikeRef != ref
+        val providerChanged = selectedLikeProvider !== provider || selectedLikeProviderVersion != provider?.version
+        val ownerChanged = selectedLikeRef == ref && providerChanged
+        if (selectionChanged || providerChanged) sourceLikeWriteJob?.cancel()
+        selectedLikeRef = ref
+        selectedLikeProvider = provider
+        selectedLikeProviderVersion = provider?.version
+        val generation = ++likeSelectionGeneration
+        likeStatusJob?.cancel()
+        _canLike.value = provider != null
+        if (provider == null) { _like.value = Resource.Success(false); return }
+        // A replacement account must not inherit the previous account's selected star.
+        if (ownerChanged) _like.value = Resource.Success(false)
+        else if (selectionChanged || _like.value is Resource.Error) _like.value = Resource.Loading
+        likeStatusJob = viewModelScope.launch {
+            try {
+                val liked = sourceRouter.liked(ref)
+                if (currentSourceLike(ref, generation, provider)) _like.value = Resource.Success(liked)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (currentSourceLike(ref, generation, provider)) _like.value = Resource.Error(sourceLikeError(error))
+            }
+        }
+    }
+
+    private fun sourceLikeProvider(ref: TrackRef): MusicProvider? = sourceRouter.registry.provider(ref.providerId)?.takeIf {
+        SourceCapability.LIKE in it.capabilities && it is LikeCapability && it.canReadLikes && it.canWriteLikes
+    }
+
+    private fun currentSourceLike(ref: TrackRef, generation: Long, provider: MusicProvider): Boolean =
+        selectedLikeRef == ref && likeSelectionGeneration == generation && sourceLikeProvider(ref) === provider &&
+            selectedLikeProviderVersion == provider.version
+
     private fun clearLikeSelection() {
-        selectedLikeId = null
+        selectedLikeRef = null
+        selectedLikeProvider = null
+        selectedLikeProviderVersion = null
         likeSelectionGeneration++
         likeStatusJob?.cancel()
+        sourceLikeWriteJob?.cancel()
+        _canLike.value = false
         _like.value = Resource.Success(false)
     }
 
+    fun like(metadata: MediaMetadata) {
+        if (metadata.trackRef != mediaMetadata?.trackRef || metadata.isLocal || metadata.isPodcast) return
+        if (metadata.supportsNeteaseSongActions) { like(metadata.trackRef.trackId); return }
+        val ref = metadata.trackRef
+        val provider = sourceLikeProvider(ref) ?: return
+        if (sourceLikeWriteJob?.isActive == true) return
+        val generation = likeSelectionGeneration
+        if (!currentSourceLike(ref, generation, provider)) return
+        sourceLikeWriteJob = viewModelScope.launch {
+            try {
+                val current = (_like.value as? Resource.Success<Boolean>)?.data ?: sourceRouter.liked(ref)
+                currentCoroutineContext().ensureActive()
+                if (!currentSourceLike(ref, generation, provider)) return@launch
+                sourceRouter.setLiked(ref, !current)
+                if (currentSourceLike(ref, generation, provider)) _like.value = Resource.Success(!current)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (currentSourceLike(ref, generation, provider)) {
+                    val message = sourceLikeError(error)
+                    _like.value = Resource.Error(message)
+                    Toast.makeText(AppContext.instance, message, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    /** Preserve the native batch-like cache and its expected-session transport. */
     fun like(id: String) {
         val metadata = mediaMetadata ?: return
         if (!metadata.supportsNeteaseSongActions || metadata.trackRef.trackId != id) return
@@ -195,6 +296,14 @@ class PlayerViewModel @Inject constructor(
                 Timber.tag("PlayerViewModel").w("Unable to toggle song like: %s", result.message)
             }
         }
+    }
+
+    private fun sourceLikeError(error: Exception): String = when ((error as? SourceException)?.code) {
+        SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED -> "请在音源管理中更新登录状态"
+        SourceErrorCode.MISSING_PROVIDER -> "来源未安装或已停用"
+        SourceErrorCode.UNSUPPORTED -> "此音源不支持收藏歌曲"
+        SourceErrorCode.TIMEOUT -> "收藏请求超时"
+        else -> "无法更新歌曲收藏状态"
     }
 
 

@@ -98,6 +98,7 @@ fun ClassicPhoneLayout(
     val duration by remember { derivedStateOf { stateContainer.duration } }
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
+    val canLike by stateContainer.canLike
 
     val progressBarStyle = rememberEnumPreference(
         key = ProgressBarStyleKey,
@@ -114,6 +115,7 @@ fun ClassicPhoneLayout(
         // Header
         mediaMetadata?.let { it ->
             PlayerHeader(
+                showLikeButton = canLike,
                 mediaMetadata = it,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -133,7 +135,7 @@ fun ClassicPhoneLayout(
                 },
                 isLiked = isLiked,
                 onLikeClick = {
-                    stateContainer.playerViewModel.like(it.id.toString())
+                    stateContainer.playerViewModel.like(it)
                 }
             )
         }
