@@ -27,6 +27,7 @@ import okio.buffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
@@ -36,6 +37,54 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
+    @Test
+    fun concurrentOperationsReadStorageOnlyAfterThePreviousCommit() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.storage-test","name":"Storage fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"storage":true}}""")
+        val directory = File(context.cacheDir, "source-storage-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val state = java.util.concurrent.atomic.AtomicReference<Map<String, String>>(emptyMap())
+        val firstCommit = java.util.concurrent.atomic.AtomicBoolean(true)
+        val commitEntered = CompletableDeferred<Unit>()
+        val releaseCommit = java.util.concurrent.CountDownLatch(1)
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {'catalog.track':function(params, context) {
+                return {result:{trackId:params.trackId,title:'Storage fixture'},
+                    storage:{counter:String(Number(context.storage.counter || '0') + 1)}};
+            }};""".trimIndent())
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), enabled = true,
+                configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { state.get() },
+                saveStorage = { values ->
+                    if (firstCommit.compareAndSet(true, false)) {
+                        commitEntered.complete(Unit)
+                        check(releaseCommit.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    }
+                    state.set(values.toMap())
+                }, onFailure = { fail("Valid storage updates must not fail") }, configurationVersion = 0)
+            withTimeout(30_000) {
+                val first = async { provider.getTrack(TrackRef(manifest.providerId, "first")) }
+                try {
+                    commitEntered.await()
+                    // Start inside the provider's dispatcher so this call reaches its first suspension
+                    // before the earlier commit is released, without timing a JavaScript busy loop.
+                    val second = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                        provider.getTrack(TrackRef(manifest.providerId, "second"))
+                    }
+                    try {
+                        releaseCommit.countDown()
+                        assertEquals("first", first.await()?.ref?.trackId)
+                        assertEquals("second", second.await()?.ref?.trackId)
+                        assertEquals("2", state.get()["counter"])
+                    } finally { second.cancelAndJoin() }
+                } finally {
+                    releaseCommit.countDown()
+                    first.cancelAndJoin()
+                }
+            }
+        } finally { releaseCommit.countDown(); directory.deleteRecursively() }
+    }
+
     @Test
     fun revokedInvocationsCannotSendAnotherRequestOrStartAfterWaitingForTheSandbox() = runBlocking {
         assumeTrue(JavaScriptSandbox.isSupported())

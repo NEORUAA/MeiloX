@@ -6,6 +6,8 @@ import com.ljyh.mei.source.api.*
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Only capability adapters and JSON values cross the isolated runtime boundary. */
@@ -48,6 +50,7 @@ internal class ScriptMusicProvider(
         else -> SourceStatus.READY
     }
     private val network = ScriptNetworkPolicy(manifest.permissions.network)
+    private val operations = Mutex()
     private val gson = Gson()
     private val parser = ScriptContentParser(id, manifest.apiVersion, playlistEditActions) { network.artwork(it, directory, ::ensureCurrent) }
 
@@ -212,7 +215,7 @@ internal class ScriptMusicProvider(
         invalid()
     }
 
-    private suspend fun invoke(operation: String, params: JsonObject): com.google.gson.JsonElement = withContext(Dispatchers.IO) {
+    private suspend fun invoke(operation: String, params: JsonObject): com.google.gson.JsonElement = withContext(Dispatchers.IO) { operations.withLock {
         ensureCurrent()
         if (operation !in manifest.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
         if (status != SourceStatus.READY) throw SourceException(when (status) {
@@ -241,7 +244,7 @@ internal class ScriptMusicProvider(
             onFailure(SourceErrorCode.PLUGIN)
             throw SourceException(SourceErrorCode.PLUGIN, "Source execution failed")
         }
-    }
+    } }
 
     private fun ensureCurrent() {
         if (!isCurrent()) throw CancellationException("Source revision changed")
