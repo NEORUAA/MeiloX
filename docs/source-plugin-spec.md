@@ -96,6 +96,12 @@ A fresh sandbox/isolate is created for every operation. Heap is capped at 16 MiB
 
 When `permissions.storage` is enabled, a final envelope can return `{result: value, storage: {key: 'value'}}` to replace this plugin's storage map. Storage is limited to 64 keys and 64 KiB. It becomes the next invocation's `context.storage`. Without permission, storage writes fail. There is no raw file access. Configuration changes clear plugin-owned session storage and increment the resolution revision, preventing a previous account's tokens or mappings from being reused. Re-importing the same ID preserves configuration and user music data. Uninstalling clears plugin code/configuration, while Room playlist items, downloaded audio and independent player caches remain.
 
+Every update, configuration, enable/disable and uninstall transition replaces a
+per-source revision token. Reads and state commits validate that token atomically:
+an older invocation cannot read a replacement account's configuration or restore
+its old storage/diagnostics after the transition. Already-open audio handles follow
+the current-playback policy below.
+
 ## Installation and updates
 
 The manager first extracts and validates a staged package. The settings screen shows its identity, version and requested network/storage permissions. Installation requires explicit approval of this inspected package. A SHA-256 digest binds review to the staged bytes. Updates use the same import/review path; there are no silent remote updates or permission expansion. Replacement is transactional, retaining the previous package on failure. Users can disable, re-enable or uninstall broken plugins.

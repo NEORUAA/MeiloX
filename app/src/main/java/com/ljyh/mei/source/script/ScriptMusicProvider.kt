@@ -14,6 +14,8 @@ internal class ScriptMusicProvider(
     private val directory: File,
     private val runtime: ScriptRuntime,
     enabled: Boolean,
+    private val configurationSnapshot: Map<String, String>,
+    private val isCurrent: () -> Boolean,
     private val config: () -> Map<String, String>,
     private val storage: () -> Map<String, String>,
     private val saveStorage: (Map<String, String>) -> Unit,
@@ -28,10 +30,10 @@ internal class ScriptMusicProvider(
     @Volatile var enabled = enabled
     @Volatile var failed = false
     override val status: SourceStatus get() = when {
-        !enabled -> SourceStatus.DISABLED
+        !enabled || !isCurrent() -> SourceStatus.DISABLED
         !manifest.supported || !runtime.supported -> SourceStatus.INCOMPATIBLE
         failed -> SourceStatus.FAILED
-        manifest.config.any { it.required && config()[it.key].isNullOrBlank() } -> SourceStatus.NEEDS_CONFIGURATION
+        manifest.config.any { it.required && configurationSnapshot[it.key].isNullOrBlank() } -> SourceStatus.NEEDS_CONFIGURATION
         else -> SourceStatus.READY
     }
     private val network = ScriptNetworkPolicy(manifest.permissions.network)

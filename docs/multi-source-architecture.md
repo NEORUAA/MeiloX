@@ -96,7 +96,7 @@ provenance without persisting headers. Platform history excludes cross-source au
 including downloaded copies. Native-only UI actions and lyric cache keys now respect
 the content provider. Negative podcast transports cannot collide with local songs.
 
-The shared build passed 911 JVM tests. Thirty-one AVD migration, snapshot, real
+The final shared build passed 913 JVM tests. Thirty-one AVD migration, snapshot, real
 ExoPlayer, quality, native-before-external rejection, download-generation, live-native
 catalog and queue tests passed. Isolated service-recovery tests require a dedicated
 opt-in package and are not counted as successful recovery coverage.
@@ -128,5 +128,19 @@ actions, and exposes per-song fallback permission and manual-match review.
 The isolated real-DataStore search AVD test passed, including cancellation, paging,
 typed errors, independent defaults and failed-provider propagation. Main package
 startup, retained account/home/queue and the management settings entry were checked
-on the AVD. The corrected native smoke then passed actual search→detail→full audio
+on the AVD. The native smoke passed actual search→detail→full audio
 resolution with the account unchanged, along with both migration/snapshot tests.
+
+### P6
+
+Added revision-gated script configuration/storage commits so account replacement or
+uninstall cannot receive stale invocation state. Room schema 19 is exported under
+`app/schemas`; the v18 fixture remains alongside migration instrumentation. User
+instructions, SDK/security boundaries, third-party notices and the detailed
+[validation matrix](source-validation.md) are included.
+
+The final combined AVD suite passed 45 tests. The real v18→v19 database comparison
+preserved all existing primary keys/counts and offline file facts. Debug/test and
+optimized Release builds passed. Full debug lint retains 37 pre-existing errors;
+the validation report identifies their baseline comparison and practical hardware
+or live-account coverage limits.

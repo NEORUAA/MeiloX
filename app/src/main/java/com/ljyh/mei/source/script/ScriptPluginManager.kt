@@ -39,6 +39,7 @@ class ScriptPluginManager @Inject constructor(
     private val root = File(context.filesDir, "music-sources").apply { mkdirs() }
     private val secrets = PluginSecretStore(context)
     private val mutex = Mutex()
+    private val revisions = java.util.concurrent.ConcurrentHashMap<String, PluginRevisionGate>()
     private val providers = java.util.concurrent.ConcurrentHashMap<String, ScriptMusicProvider>()
     private val configurations = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
     private val stores = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
@@ -54,17 +55,21 @@ class ScriptPluginManager @Inject constructor(
                 val manifest = PluginManifest.parse(File(directory, "manifest.json").readText())
                 check(manifest.id == directory.name && File(directory, manifest.entry).isFile)
                 val state = readState(directory)
-                configurations[manifest.id] = secrets.read(manifest.id, "config")
-                stores[manifest.id] = secrets.read(manifest.id, "storage")
-                register(manifest, directory, state)
+                changeSource(manifest.id) { gate, revision ->
+                    configurations[manifest.id] = secrets.read(manifest.id, "config")
+                    stores[manifest.id] = secrets.read(manifest.id, "storage")
+                    register(manifest, directory, state, gate, revision)
+                }
             } catch (_: Exception) {
                 // A damaged installation is retained for removal/re-import. No unrelated state is changed.
                 runCatching {
                     val manifest = PluginManifest.parse(File(directory, "manifest.json").readText())
-                    configurations[manifest.id] = emptyMap()
-                    stores[manifest.id] = emptyMap()
-                    diagnostics[manifest.id] = "Source configuration could not be restored"
-                    register(manifest, directory, PluginInstallState(enabled = false))
+                    changeSource(manifest.id) { gate, revision ->
+                        configurations[manifest.id] = emptyMap()
+                        stores[manifest.id] = emptyMap()
+                        diagnostics[manifest.id] = "Source configuration could not be restored"
+                        register(manifest, directory, PluginInstallState(enabled = false), gate, revision)
+                    }
                 }
             }
         }
@@ -125,92 +130,129 @@ class ScriptPluginManager @Inject constructor(
         val previous = providers[manifest.id]
         if (previous != null && previous.id != manifest.providerId) invalid("Updates cannot change provider identity")
         val previousState = if (destination.exists()) readState(destination) else PluginInstallState()
+        val hadDestination = destination.exists()
         val backup = File(root, ".${manifest.id}-${UUID.randomUUID()}")
-        if (destination.exists() && !destination.renameTo(backup)) invalid("Unable to update installed source")
-        try {
-            if (!prepared.directory.renameTo(destination)) {
-                prepared.directory.copyRecursively(destination, overwrite = false)
-                prepared.directory.deleteRecursively()
+        changeSource(manifest.id) { gate, revision ->
+            var movedPrevious = false
+            try {
+                if (hadDestination) {
+                    if (!destination.renameTo(backup)) invalid("Unable to update installed source")
+                    movedPrevious = true
+                }
+                if (!prepared.directory.renameTo(destination)) {
+                    prepared.directory.copyRecursively(destination, overwrite = false)
+                    prepared.directory.deleteRecursively()
+                }
+                val state = previousState.copy(revision = previousState.revision + 1)
+                writeState(destination, state)
+                configurations[manifest.id] = configurations[manifest.id] ?: secrets.read(manifest.id, "config")
+                stores[manifest.id] = stores[manifest.id] ?: secrets.read(manifest.id, "storage")
+                diagnostics.remove(manifest.id)
+                register(manifest, destination, state, gate, revision)
+                backup.deleteRecursively()
+                publish()
+                mutableInstalled.value.first { it.manifest.id == manifest.id }
+            } catch (error: Exception) {
+                if (!hadDestination || movedPrevious) destination.deleteRecursively()
+                if (movedPrevious) backup.renameTo(destination)
+                if (previous != null) register(previous.manifest, destination, previousState, gate, revision)
+                publish()
+                if (error is SourceException || error is kotlinx.coroutines.CancellationException) throw error
+                invalid("Unable to install source")
             }
-            val state = previousState.copy(revision = previousState.revision + 1)
-            writeState(destination, state)
-            configurations[manifest.id] = configurations[manifest.id] ?: secrets.read(manifest.id, "config")
-            stores[manifest.id] = stores[manifest.id] ?: secrets.read(manifest.id, "storage")
-            diagnostics.remove(manifest.id)
-            register(manifest, destination, state)
-            backup.deleteRecursively()
-            publish()
-            mutableInstalled.value.first { it.manifest.id == manifest.id }
-        } catch (error: Exception) {
-            destination.deleteRecursively()
-            if (backup.exists()) backup.renameTo(destination)
-            if (previous != null) {
-                providers[manifest.id] = previous
-                registry.register(previous)
-            }
-            if (error is SourceException || error is kotlinx.coroutines.CancellationException) throw error
-            invalid("Unable to install source")
         }
     } }
 
     suspend fun setEnabled(id: String, enabled: Boolean) = withContext(Dispatchers.IO) { mutex.withLock {
         val provider = providers[id] ?: invalid("Source is not installed")
-        diagnostics.remove(id)
         val directory = File(root, id)
-        val state = readState(directory).let { it.copy(enabled = enabled, revision = it.revision + 1) }
-        writeState(directory, state)
-        register(provider.manifest, directory, state)
-        publish()
+        val previousState = readState(directory)
+        val state = previousState.copy(enabled = enabled, revision = previousState.revision + 1)
+        changeSource(id) { gate, revision ->
+            diagnostics.remove(id)
+            try {
+                writeState(directory, state)
+                register(provider.manifest, directory, state, gate, revision)
+            } catch (error: Exception) {
+                register(provider.manifest, directory, previousState, gate, revision)
+                throw error
+            } finally { publish() }
+        }
     } }
 
     suspend fun configure(id: String, values: Map<String, String>) = withContext(Dispatchers.IO) { mutex.withLock {
         val previous = providers[id] ?: invalid("Source is not installed")
         val keys = previous.manifest.config.map { it.key }.toSet()
         if (values.keys.any { it !in keys } || values.values.any { it.length > 8192 }) invalid("Invalid source configuration")
-        secrets.write(id, "config", values)
-        configurations[id] = values.toMap()
-        // Configuration can select another account; do not carry old session state across it.
-        secrets.write(id, "storage", emptyMap())
-        stores[id] = emptyMap()
         val directory = File(root, id)
         val state = readState(directory).let { it.copy(revision = it.revision + 1) }
-        writeState(directory, state)
-        register(previous.manifest, directory, state)
-        diagnostics.remove(id)
-        publish()
+        changeSource(id) { gate, revision ->
+            try {
+                // Clear prior account state before changing credentials, even if a later write fails.
+                secrets.write(id, "storage", emptyMap())
+                stores[id] = emptyMap()
+                secrets.write(id, "config", values)
+                configurations[id] = values.toMap()
+                writeState(directory, state)
+                register(previous.manifest, directory, state, gate, revision)
+                diagnostics.remove(id)
+            } catch (error: Exception) {
+                // Reactivate only the current snapshots under a new token; old requests stay revoked.
+                register(previous.manifest, directory, state, gate, revision)
+                throw error
+            } finally { publish() }
+        }
     } }
 
     fun configuration(id: String): Map<String, String> = configurations[id].orEmpty().toMap()
 
     suspend fun uninstall(id: String) = withContext(Dispatchers.IO) { mutex.withLock {
-        val provider = providers.remove(id) ?: invalid("Source is not installed")
-        registry.unregister(provider.instanceId)
-        File(root, id).deleteRecursively()
-        configurations.remove(id)
-        stores.remove(id)
-        diagnostics.remove(id)
-        secrets.delete(id)
-        // Room, playlists, cached audio and downloaded files are intentionally independent.
-        publish()
+        val provider = providers[id] ?: invalid("Source is not installed")
+        changeSource(id) { _, _ ->
+            try {
+                providers.remove(id)
+                registry.unregister(provider.instanceId)
+                File(root, id).deleteRecursively()
+                configurations.remove(id)
+                stores.remove(id)
+                diagnostics.remove(id)
+                secrets.delete(id)
+                // Room, playlists, cached audio and downloaded files are intentionally independent.
+            } finally { publish() }
+        }
     } }
 
-    private fun register(manifest: PluginManifest, directory: File, state: PluginInstallState) {
+    private fun register(manifest: PluginManifest, directory: File, state: PluginInstallState, gate: PluginRevisionGate, revision: PluginRevisionGate.Revision) {
         val provider = ScriptMusicProvider(manifest, directory, runtime, state.enabled,
-            config = { configurations[manifest.id].orEmpty() },
-            storage = { stores[manifest.id].orEmpty() },
-            saveStorage = { values -> secrets.write(manifest.id, "storage", values); stores[manifest.id] = values },
-            onFailure = { code ->
-                diagnostics[manifest.id] = when (code) {
-                    SourceErrorCode.INVALID_RESPONSE -> "Source returned invalid data"
-                    else -> "Source execution failed; disable or re-enable it to recover"
+            configurationSnapshot = configurations[manifest.id].orEmpty().toMap(),
+            isCurrent = { gate.isCurrent(revision) },
+            config = { gate.read(revision) { configurations[manifest.id].orEmpty().toMap() } },
+            storage = { gate.read(revision) { stores[manifest.id].orEmpty().toMap() } },
+            saveStorage = { values ->
+                gate.commit(revision) {
+                    secrets.write(manifest.id, "storage", values)
+                    stores[manifest.id] = values.toMap()
                 }
-                registry.refresh()
-                publish()
+            },
+            onFailure = { code ->
+                gate.commit(revision) {
+                    diagnostics[manifest.id] = when (code) {
+                        SourceErrorCode.INVALID_RESPONSE -> "Source returned invalid data"
+                        else -> "Source execution failed; disable or re-enable it to recover"
+                    }
+                    registry.refresh()
+                    publish()
+                }
             },
             configurationVersion = state.revision,
         )
-        registry.register(provider)
         providers[manifest.id] = provider
+        registry.register(provider)
+    }
+
+    private fun <T> changeSource(id: String, action: (PluginRevisionGate, PluginRevisionGate.Revision) -> T): T {
+        val gate = revisions.getOrPut(id) { PluginRevisionGate() }
+        return gate.change { revision -> action(gate, revision) }
     }
 
     @Synchronized private fun publish() {

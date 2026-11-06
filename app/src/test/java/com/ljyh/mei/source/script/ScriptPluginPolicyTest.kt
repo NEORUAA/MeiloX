@@ -2,6 +2,7 @@ package com.ljyh.mei.source.script
 
 import com.ljyh.mei.source.api.SourceException
 import java.net.InetAddress
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -54,6 +55,55 @@ class ScriptPluginPolicyTest {
         blocked.forEach { assertFalse(it, ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName(it))) }
         assertTrue(ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName("8.8.8.8")))
         assertTrue(ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName("2606:4700:4700::1111")))
+    }
+
+    @Test
+    fun accountReplacementRejectsStaleReadsStorageAndDiagnosticsIncludingReinstall() {
+        val gate = PluginRevisionGate()
+        var account = "first"
+        var storage = "first-account-token"
+        var diagnostic = ""
+        val old = gate.change { it }
+        assertEquals("first", gate.read(old) { account })
+        val replacement = gate.change { revision -> account = "second"; storage = ""; revision }
+        assertFalse(gate.commit(old) { storage = "stale-token"; diagnostic = "stale-error" })
+        try { gate.read(old) { account }; fail("Expected stale account read to cancel") } catch (_: CancellationException) { }
+        assertTrue(gate.commit(replacement) { storage = "second-account-token" })
+        assertEquals("second-account-token", storage)
+        assertEquals("", diagnostic)
+        gate.change { storage = "" }
+        val reinstalled = gate.change { it }
+        assertFalse(gate.commit(replacement) { storage = "removed-account-token" })
+        assertTrue(gate.isCurrent(reinstalled))
+        assertEquals("", storage)
+    }
+
+    @Test
+    fun accountChangeIsAtomicWithAStorageCommitAlreadyInProgress() {
+        val gate = PluginRevisionGate()
+        val old = gate.change { it }
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        var storage = ""
+        try {
+            val writer = executor.submit<Boolean> {
+                gate.commit(old) {
+                    entered.countDown()
+                    check(release.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                    storage = "old-token"
+                }
+            }
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            val replacement = executor.submit<PluginRevisionGate.Revision> {
+                gate.change { revision -> storage = "new-account"; revision }
+            }
+            release.countDown()
+            assertTrue(writer.get(2, java.util.concurrent.TimeUnit.SECONDS))
+            val current = replacement.get(2, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals("new-account", gate.read(current) { storage })
+            assertFalse(gate.commit(old) { storage = "late-old-token" })
+        } finally { release.countDown(); executor.shutdownNow() }
     }
 
     private fun rejects(block: () -> Unit) {
