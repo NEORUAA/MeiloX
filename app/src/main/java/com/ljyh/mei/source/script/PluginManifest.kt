@@ -30,6 +30,7 @@ data class PluginManifest(
     val capabilities: Set<String>,
     val permissions: PluginPermissions = PluginPermissions(),
     val config: List<PluginConfigField> = emptyList(),
+    val description: String? = null,
 ) {
     val supported: Boolean get() = apiVersion == 1
     val sourceCapabilities: Set<SourceCapability> get() = capabilities.mapNotNull(CAPABILITIES::get).toSet()
@@ -61,6 +62,7 @@ data class PluginManifest(
                 require(manifest.name.isNotBlank() && manifest.name.length <= 100)
                 require(manifest.author.isNotBlank() && manifest.author.length <= 100)
                 require(manifest.version.isNotBlank() && manifest.version.length <= 50)
+                require(manifest.description == null || manifest.description.length <= 2000)
                 require(manifest.apiVersion > 0 && manifest.entry == "index.js")
                 require(manifest.capabilities.isNotEmpty() && manifest.capabilities.all(CAPABILITIES::containsKey))
                 require(manifest.permissions.network.size <= 20)

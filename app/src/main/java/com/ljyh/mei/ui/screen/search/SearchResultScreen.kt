@@ -89,9 +89,9 @@ fun SearchResultScreen(
             title = stringResource(R.string.search_details_title), bottomPadding = bottom, listState = listState,
             topContentPaddingAdjustment = if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape)
                 com.ljyh.mei.constants.LandscapeSearchTopAdjustment else 0.dp,
-            verticalArrangement = Arrangement.spacedBy(10.dp), onNavigateBack = navController::navigateUp,
+            verticalArrangement = Arrangement.spacedBy(0.dp), onNavigateBack = navController::navigateUp,
+            actions = { listOf(sourcePickerHeaderAction(choices, providerId, viewModel::selectProvider)) },
         ) {
-            item("search-source") { SourcePicker(choices, providerId, viewModel::selectProvider) }
             item("search-query") {
                 GlasmioSearchBar(
                     query = searchQuery, onQueryChange = { searchQuery = it }, active = searchActive,
@@ -106,11 +106,16 @@ fun SearchResultScreen(
                             searchActive = false
                             focus.clearFocus()
                         }
-                    }, modifier = Modifier.fillMaxWidth(),
+                    }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 )
             }
             if (supportedTypes.size > 1) item("search-tabs") {
-                SearchTypeFilterRow(selectedType, onSelect = { submittedType = it.type }, availableTypes = supportedTypes)
+                SearchTypeFilterRow(
+                    selectedType,
+                    onSelect = { submittedType = it.type },
+                    availableTypes = supportedTypes,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
             }
             if (nativeContent != null) nativeContent()
             else SourceTrackResults(state, providers,
@@ -127,6 +132,7 @@ fun SearchTypeFilterRow(
     selected: SearchType,
     onSelect: (SearchType) -> Unit,
     availableTypes: Set<SearchType> = SearchType.entries.toSet(),
+    modifier: Modifier = Modifier,
 ) {
     val podcastsEnabled by rememberPreference(PodcastsEnabledKey, true)
     val tabItems = SearchType.entries
@@ -137,7 +143,7 @@ fun SearchTypeFilterRow(
         items = tabItems,
         selected = selected,
         onSelected = onSelect,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 

@@ -8,9 +8,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.source.netease.ui.NeteaseHomeScreen
 import com.ljyh.mei.ui.navigation.MeiloXLoadingPage
 import com.ljyh.mei.ui.screen.search.SourceCatalogScreen
-import com.ljyh.mei.ui.screen.search.SourcePicker
+import com.ljyh.mei.ui.screen.search.sourcePickerHeaderAction
 import com.ljyh.mei.ui.screen.search.SourceSearchViewModel
-import com.ljyh.mei.ui.screen.search.searchableProviders
 import com.ljyh.mei.ui.screen.Screen
 
 @Composable
@@ -21,9 +20,9 @@ fun HomeScreen(sourceViewModel: SourceSearchViewModel = hiltViewModel()) {
     val providerId = settings?.preferredBrowseProvider
     when {
         providerId == null -> MeiloXLoadingPage("首页")
-        sourceViewModel.supportsFeatureRoute(providerId, Screen.Home.route) -> NeteaseHomeScreen(sourcePicker = if (searchableProviders(providers).size > 1) {
-            { SourcePicker(providers, providerId, sourceViewModel::selectProvider) }
-        } else null)
-        else -> SourceCatalogScreen("首页", sourceViewModel)
+        sourceViewModel.supportsFeatureRoute(providerId, Screen.Home.route) -> NeteaseHomeScreen(sourceAction = {
+            sourcePickerHeaderAction(providers, providerId, sourceViewModel::selectProvider)
+        })
+        else -> SourceCatalogScreen("首页", sourceViewModel, showProfileAction = true)
     }
 }

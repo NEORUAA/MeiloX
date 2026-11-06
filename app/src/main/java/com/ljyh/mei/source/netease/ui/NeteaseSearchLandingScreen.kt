@@ -66,6 +66,7 @@ import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -141,7 +142,7 @@ private val searchCategories = listOf(
 @Composable
 fun NeteaseSearchLandingScreen(
     viewModel: SearchDiscoveryViewModel = hiltViewModel(),
-    sourcePicker: (@Composable () -> Unit)? = null,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
@@ -168,10 +169,8 @@ fun NeteaseSearchLandingScreen(
             horizontalContentPadding = 0.dp,
             largeTitleHorizontalPadding = 16.dp,
             verticalArrangement = Arrangement.spacedBy(16.dp),
+            actions = { listOfNotNull(sourceAction?.invoke()) },
         ) {
-            if (sourcePicker != null) item(key = "search-source") {
-                Box(Modifier.padding(horizontal = 16.dp)) { sourcePicker() }
-            }
             if (history.isNotEmpty()) {
                 item(key = "search-history") {
                     SearchHistorySection(

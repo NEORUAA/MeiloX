@@ -9,6 +9,7 @@ import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.ljyh.mei.ui.component.player.OverlayState
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderScrollEdge
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
@@ -150,7 +151,7 @@ import timber.log.Timber
 fun NeteaseHomeScreen(
     viewModel: NeteaseHomeViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel = hiltViewModel(),
-    sourcePicker: (@Composable () -> Unit)? = null,
+    sourceAction: (@Composable () -> GlasmioHeaderAction)? = null,
 ) {
     DisposableEffect(viewModel) {
         viewModel.resumeRequests()
@@ -245,7 +246,7 @@ fun NeteaseHomeScreen(
         collapseProgress = collapseProgress,
         topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState),
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
-        actions = { listOf(globalProfileHeaderAction()) },
+        actions = { listOfNotNull(sourceAction?.invoke(), globalProfileHeaderAction()) },
     ) { pinnedPadding ->
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -279,9 +280,6 @@ fun NeteaseHomeScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )
                             }
-                            if (sourcePicker != null) item(key = "browse-source") {
-                                Box(Modifier.padding(horizontal = 16.dp)) { sourcePicker() }
-                            }
                             items(
                                 items = sortedBlocks,
                                 key = { it.positionCode }
@@ -298,7 +296,6 @@ fun NeteaseHomeScreen(
                     }
 
                     is Resource.Error -> {
-                        if (sourcePicker != null) Box(Modifier.padding(pinnedPadding).padding(horizontal = 16.dp)) { sourcePicker() }
                     }
 
                     Resource.Loading -> {

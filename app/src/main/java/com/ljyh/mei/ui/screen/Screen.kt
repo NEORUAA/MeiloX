@@ -37,6 +37,7 @@ sealed class Screen(val route:String) {
     data object DownloadSettings:Screen("setting/download")
     data object StorageManagement:Screen("setting/storage")
     data object SourceManagement:Screen("setting/sources")
+    data object SourcePluginSettings:Screen("setting/sources/plugin")
     data object DownloadManage:Screen("download_manage")
     data object LocalMusic:Screen("local_music")
     data object LocalSongList:Screen("local_songs")

@@ -3,7 +3,6 @@ package com.ljyh.mei.ui.screen.search
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,50 +43,71 @@ import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
+import com.ljyh.mei.ui.navigation.meiloxHeaderAction
+import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.utils.smallImage
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioMenu
+import io.github.neoruaa.glasmio.ui.GlasmioMenuItem
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 
 @Composable
-fun SourcePicker(
+fun sourcePickerHeaderAction(
     providers: List<MusicProvider>,
     selectedId: String,
     onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+): GlasmioHeaderAction {
     var expanded by remember { mutableStateOf(false) }
-    val choices = searchableProviders(providers)
-    val selected = providers.firstOrNull { it.id == selectedId }
-    Column(modifier) {
-        GlasmioGroupedList {
-            GlasmioListRow(
-                title = selected?.displayName ?: "来源不可用",
-                showTopSeparator = false,
-                trailing = { SfIcon("chevron.down", "选择音源", size = 14.dp) },
-                onClick = { expanded = !expanded },
+    var pendingSelection by remember { mutableStateOf<String?>(null) }
+    val anchor = rememberGlasmioMenuAnchorState()
+    val choices = searchableProviders(providers).distinctBy { it.id }
+    GlasmioMenu(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        itemCount = choices.size.coerceAtLeast(1),
+        menuAnchorState = anchor,
+        externalAnchorBounds = anchor.liveBounds,
+        onClosed = {
+            val selected = pendingSelection
+            pendingSelection = null
+            selected?.let(onSelect)
+        },
+        anchor = {},
+    ) { childBackdrop, close ->
+        choices.forEach { provider ->
+            GlasmioMenuItem(
+                title = provider.displayName,
+                systemName = if (provider.id == selectedId) "checkmark" else null,
+                backdrop = childBackdrop,
+                onClick = {
+                    pendingSelection = provider.id.takeUnless { it == selectedId }
+                    close()
+                },
             )
         }
-        if (expanded) {
-            GlasmioGroupedList(Modifier.padding(top = 8.dp)) {
-                choices.forEachIndexed { index, provider ->
-                    GlasmioListRow(title = provider.displayName, showTopSeparator = index > 0,
-                        trailing = { if (provider.id == selectedId) SfIcon("checkmark", null, size = 16.dp) },
-                        onClick = { expanded = false; onSelect(provider.id) })
-                }
-                if (choices.isEmpty()) GlasmioListRow(title = "没有可搜索的音源", showTopSeparator = false)
-            }
+        if (choices.isEmpty()) {
+            GlasmioMenuItem("没有可用的音源", onClick = {}, enabled = false, backdrop = childBackdrop)
         }
     }
+    return meiloxHeaderAction(
+        key = "source-picker",
+        contentDescription = "切换音源",
+        onClick = { expanded = true },
+        menuAnchor = anchor,
+        enabled = choices.isNotEmpty(),
+    ) { SfIcon("music.note.list", null, size = 22.dp) }
 }
 
 /** Generic catalog surface used when a source does not contribute a native home page. */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun SourceCatalogScreen(title: String, viewModel: SourceSearchViewModel) {
+fun SourceCatalogScreen(title: String, viewModel: SourceSearchViewModel, showProfileAction: Boolean = false) {
     val state by viewModel.state.collectAsState()
     val selectedId by viewModel.selectedProviderId.collectAsState()
     val providers by viewModel.providers.collectAsState()
@@ -97,12 +117,17 @@ fun SourceCatalogScreen(title: String, viewModel: SourceSearchViewModel) {
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.query)) }
     var active by remember { mutableStateOf(false) }
-    MeiloXPinnedListPage(title, bottomPadding = bottom) {
-        item("source-selector") { SourcePicker(choices, selectedId, viewModel::selectProvider) }
+    MeiloXPinnedListPage(title, bottomPadding = bottom, verticalArrangement = Arrangement.spacedBy(0.dp), actions = {
+        listOfNotNull(
+            sourcePickerHeaderAction(choices, selectedId, viewModel::selectProvider),
+            if (showProfileAction) globalProfileHeaderAction() else null,
+        )
+    }) {
         item("source-query") {
             GlasmioSearchBar(query, { query = it }, active, { active = it },
                 onClose = { active = false; focus.clearFocus() }, placeholder = "搜索歌曲", closeContentDescription = "取消",
-                onSearch = { viewModel.search(it); active = false; focus.clearFocus() }, modifier = Modifier.fillMaxWidth())
+                onSearch = { viewModel.search(it); active = false; focus.clearFocus() },
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
         }
         SourceTrackResults(state, providers,
             onPlay = { tracks, index ->
@@ -121,7 +146,12 @@ fun LazyListScope.SourceTrackResults(
     onRetry: () -> Unit,
     onSongMore: ((MediaMetadata, Rect) -> Unit)? = null,
 ) {
-    groupedLazyItems(state.tracks, key = { "source-track-${TrackRefCodec.encode(it.ref)}" }, contentType = "source-track") { track, index ->
+    groupedLazyItems(
+        state.tracks,
+        key = { "source-track-${TrackRefCodec.encode(it.ref)}" },
+        contentType = "source-track",
+        firstItemTopPadding = 10.dp,
+    ) { track, index ->
         val sourceName = providers.firstOrNull { it.id == track.ref.providerId }?.displayName ?: track.ref.providerId
         GlasmioListRow(
             title = track.title,
@@ -146,14 +176,16 @@ fun LazyListScope.SourceTrackResults(
         )
     }
     if (state.error != null) item("source-error") {
-        GlasmioGroupedList { GlasmioListRow(title = sourceSearchErrorText(state.error), trailing = { Text("重试") }, onClick = onRetry) }
+        GlasmioGroupedList(Modifier.padding(top = 10.dp)) {
+            GlasmioListRow(title = sourceSearchErrorText(state.error), trailing = { Text("重试") }, onClick = onRetry)
+        }
     }
     if (state.loading) item("source-loading") { LoadingView() }
     if (state.query.isNotEmpty() && !state.loading && state.error == null && state.tracks.isEmpty()) {
-        item("source-empty") { GlasmioGroupedList { EmptyView() } }
+        item("source-empty") { GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() } }
     }
     if (state.hasMore && !state.loading) item("source-next") {
-        GlasmioGroupedList { GlasmioListRow(title = "加载更多", onClick = onLoadMore) }
+        GlasmioGroupedList(Modifier.padding(top = 10.dp)) { GlasmioListRow(title = "加载更多", onClick = onLoadMore) }
     }
 }
 

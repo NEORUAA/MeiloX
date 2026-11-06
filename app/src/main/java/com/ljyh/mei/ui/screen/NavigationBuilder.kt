@@ -251,6 +251,14 @@ fun NavGraphBuilder.navigationBuilder(
     composable(Screen.SourceManagement.route) {
         com.ljyh.mei.ui.screen.source.SourceManagementScreen()
     }
+    composable(
+        route = "${Screen.SourcePluginSettings.route}/{pluginId}",
+        arguments = listOf(navArgument("pluginId") { type = NavType.StringType }),
+    ) { entry ->
+        com.ljyh.mei.ui.screen.source.SourceManagementScreen(
+            pluginId = entry.arguments?.getString("pluginId").orEmpty(),
+        )
+    }
 
     composable(Screen.DownloadManage.route) {
         DownloadManageScreen(scrollBehavior)
@@ -472,6 +480,11 @@ fun navigationEntry(
         route == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
         route == Screen.StorageManagement.route -> StorageManagementScreen()
         route == Screen.SourceManagement.route -> com.ljyh.mei.ui.screen.source.SourceManagementScreen()
+        route.startsWith("${Screen.SourcePluginSettings.route}/") -> {
+            com.ljyh.mei.ui.screen.source.SourceManagementScreen(
+                pluginId = android.net.Uri.decode(route.substringAfter("${Screen.SourcePluginSettings.route}/")),
+            )
+        }
         route == Screen.DownloadManage.route -> DownloadManageScreen(
             scrollBehavior = scrollBehavior,
             isNavigationTab = isNavigationTab,

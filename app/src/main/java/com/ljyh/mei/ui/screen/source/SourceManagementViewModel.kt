@@ -10,8 +10,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @HiltViewModel
@@ -29,8 +34,28 @@ class SourceManagementViewModel @Inject constructor(
     val busy = MutableStateFlow(false)
     val editing = MutableStateFlow<InstalledPlugin?>(null)
     val configuration = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val mutableFallbackOrder = MutableStateFlow<List<String>?>(null)
+    val fallbackOrder = mutableFallbackOrder.asStateFlow()
+    private var savedFallbackOrder = emptyList<String>()
+    private var pendingFallbackOrder: List<String>? = null
+    private var pendingPersistedOrder: List<String>? = null
+    private var fallbackOrderVersion = 0L
+    private val fallbackOrderMutex = Mutex()
 
-    init { action { manager.loadInstalled() } }
+    init {
+        viewModelScope.launch {
+            combine(preferences.settings, registry.revision) { settings, _ -> settings.fallbackOrder }
+                .collect { order ->
+                    savedFallbackOrder = order
+                    if (pendingPersistedOrder == order) {
+                        pendingFallbackOrder = null
+                        pendingPersistedOrder = null
+                    }
+                    refreshFallbackOrder()
+                }
+        }
+        action { manager.loadInstalled() }
+    }
     private fun action(block: suspend () -> Unit) { viewModelScope.launch {
         busy.value = true
         try { block() } catch (cancelled: CancellationException) { throw cancelled }
@@ -58,34 +83,87 @@ class SourceManagementViewModel @Inject constructor(
         }
         resolver.invalidate()
     }
-    fun uninstall(plugin: InstalledPlugin) = action {
+    fun uninstall(plugin: InstalledPlugin, onRemoved: () -> Unit = {}) = action {
         manager.uninstall(plugin.manifest.id)
-        editing.value = null
         resolver.invalidate()
+        onRemoved()
     }
     fun edit(plugin: InstalledPlugin) = action {
         configuration.value = manager.configuration(plugin.manifest.id)
         editing.value = plugin
     }
-    fun saveConfiguration() = action {
+    fun saveConfiguration(onSaved: () -> Unit = {}) = action {
         val plugin = editing.value ?: return@action
         manager.configure(plugin.manifest.id, configuration.value)
-        editing.value = null
         resolver.invalidate()
+        onSaved()
     }
     fun update(transform: (SourceSettings) -> SourceSettings) = action { preferences.update(transform) }
-    fun move(instance: String, delta: Int, displayedOrder: List<String>) = update { settings ->
-        val order = displayedOrder.toMutableList()
-        val index = order.indexOf(instance)
-        val target = index + delta
-        if (index >= 0 && target in order.indices) java.util.Collections.swap(order, index, target)
-        settings.copy(fallbackOrder = order)
+    /** Glasmio calls this once a drag settles, with every visible instance in its new position. */
+    fun reorderFallbackOrder(instanceIds: List<String>) {
+        val reordered = orderedPlayableInstances(instanceIds, registry.playable().map { it.instanceId.value })
+        if (reordered == mutableFallbackOrder.value) return
+        pendingFallbackOrder = reordered
+        pendingPersistedOrder = null
+        mutableFallbackOrder.value = reordered
+        val version = ++fallbackOrderVersion
+        viewModelScope.launch {
+            var stored: List<String>? = null
+            var changed = false
+            var committed = false
+            try {
+                fallbackOrderMutex.withLock {
+                    if (version != fallbackOrderVersion) return@withLock
+                    preferences.update { settings ->
+                        val completeOrder = mergeFallbackOrder(settings.fallbackOrder, reordered)
+                        stored = completeOrder
+                        changed = completeOrder != settings.fallbackOrder
+                        if (version == fallbackOrderVersion) pendingPersistedOrder = completeOrder
+                        settings.copy(fallbackOrder = completeOrder)
+                    }
+                    committed = true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (version == fallbackOrderVersion) message.value = sourceErrorMessage((error as? SourceException)?.code)
+            } finally {
+                if (version == fallbackOrderVersion) {
+                    if (committed) stored?.let { savedFallbackOrder = it }
+                    if (!committed || !changed) {
+                        pendingFallbackOrder = null
+                        pendingPersistedOrder = null
+                    }
+                    refreshFallbackOrder()
+                }
+            }
+        }
+    }
+
+    private fun refreshFallbackOrder() {
+        mutableFallbackOrder.value = orderedPlayableInstances(
+            pendingFallbackOrder ?: savedFallbackOrder,
+            registry.playable().map { it.instanceId.value },
+        )
     }
     fun chooseMatch(pending: PendingSourceMatch, candidate: MatchCandidate) = action {
         preferences.bind(pending.origin, candidate.track.ref)
         resolver.invalidate()
         message.value = "已保存匹配，下次播放时生效"
     }
+}
+
+internal fun orderedPlayableInstances(order: List<String>, playable: List<String>): List<String> {
+    val available = playable.toSet()
+    return (order.filter { it in available } + playable).distinct()
+}
+
+/** Preserve unavailable instances so disabling or reinstalling a source does not discard its slot. */
+internal fun mergeFallbackOrder(saved: List<String>, reordered: List<String>): List<String> {
+    val visible = reordered.distinct()
+    val visibleIds = visible.toSet()
+    var next = 0
+    return (saved.distinct().map { id -> if (id in visibleIds) visible[next++] else id } + visible.drop(next)).distinct()
 }
 
 internal fun sourceErrorMessage(code: SourceErrorCode?): String = when (code) {

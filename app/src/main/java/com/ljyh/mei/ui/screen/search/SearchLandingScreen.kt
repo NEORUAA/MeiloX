@@ -18,9 +18,9 @@ fun SearchLandingScreen(sourceViewModel: SourceSearchViewModel = hiltViewModel()
     val providerId = settings?.preferredSearchProvider
     when (providerId) {
         null -> MeiloXLoadingPage("搜索")
-        ProviderIds.NETEASE -> NeteaseSearchLandingScreen(sourcePicker = if (searchableProviders(providers).size > 1) {
-            { SourcePicker(providers, providerId, sourceViewModel::selectProvider) }
-        } else null)
+        ProviderIds.NETEASE -> NeteaseSearchLandingScreen(sourceAction = {
+            sourcePickerHeaderAction(providers, providerId, sourceViewModel::selectProvider)
+        })
         else -> SourceCatalogScreen("搜索", sourceViewModel)
     }
 }

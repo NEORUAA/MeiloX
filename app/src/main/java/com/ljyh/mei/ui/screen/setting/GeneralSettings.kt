@@ -29,6 +29,7 @@ import com.ljyh.mei.constants.AppAppearanceKey
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.ui.component.MeiloXSwitch
+import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
@@ -87,6 +88,15 @@ fun GeneralSettings() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(14.dp),
+                )
+            }
+        }
+        item {
+            SettingsGroup(stringResource(R.string.settings_application)) {
+                GlasmioListRow(
+                    title = "音源管理",
+                    systemName = "music.note.list",
+                    onClick = { Screen.SourceManagement.navigate(navController) },
                 )
             }
         }
