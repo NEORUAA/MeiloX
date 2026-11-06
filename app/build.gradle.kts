@@ -170,7 +170,12 @@ kotlin {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", layout.projectDirectory.dir("schemas").asFile.path)
+}
+
 dependencies {
+    implementation("androidx.javascriptengine:javascriptengine:1.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
 

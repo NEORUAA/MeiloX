@@ -18,12 +18,21 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import com.ljyh.mei.source.script.ScriptPluginManager
 
 @HiltAndroidApp
 class AppContext : Application(), SingletonImageLoader.Factory {
+    @Inject lateinit var sourcePlugins: ScriptPluginManager
+    private val sourceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {
         super.onCreate()
         instance = this
+        sourceScope.launch { sourcePlugins.loadInstalled() }
     }
 
     companion object {

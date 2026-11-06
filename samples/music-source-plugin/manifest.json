@@ -1,0 +1,12 @@
+{
+  "id": "org.meilox.mock",
+  "providerId": "org.meilox.mock",
+  "name": "MeiloX Offline Mock",
+  "author": "MeiloX contributors",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["catalog.search", "catalog.track", "playback.resolve", "lyrics.get"],
+  "permissions": { "network": [], "storage": true },
+  "config": []
+}

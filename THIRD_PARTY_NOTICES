@@ -34,6 +34,14 @@ Version 2.0:
 https://github.com/tomakino/lyricon
 License: https://www.apache.org/licenses/LICENSE-2.0
 
+AndroidX JavaScriptEngine
+------------------------
+`androidx.javascriptengine:javascriptengine:1.1.1` provides the isolated script
+runtime used by imported music sources. Copyright The Android Open Source Project.
+Licensed under the Apache License, Version 2.0:
+https://android.googlesource.com/platform/frameworks/support/+/androidx-main/javascriptengine/
+License: https://www.apache.org/licenses/LICENSE-2.0
+
 The media metadata output follows this public player integration contract:
 https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/blob/main/docs/PLAYER_INTEGRATION.md
 

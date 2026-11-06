@@ -104,3 +104,18 @@ The new live-native smoke initially exposed a test-only Hilt entry-point wiring
 mistake; its adapter was corrected for the final regression run. Earlier isolated
 service-recovery tests require a dedicated opt-in package and were skipped, not
 counted as successful recovery coverage.
+
+### P4
+
+Imported JavaScript runs in AndroidX's isolated V8 service, with fresh bounded
+isolates and no Android bridge or host account access. Host-mediated HTTPS validates
+declared hosts, DNS, redirects, headers and size limits. Audio uses opaque registered
+handles and the same restricted transport. Configuration and namespaced storage use
+Keystore encryption. Installation/update binds approval to inspected package bytes;
+disable/remove leaves library records and independent downloads intact.
+
+The portable offline SDK fixture passed its Node runner. Both real-sandbox AVD tests
+passed: import/search/detail/fallback/audio/disable/reload, and runaway termination,
+network denial and healthy recovery. The example provides an authored test tone;
+no real QQ/Kugou playback service is claimed. API 1 advertises only search, track,
+playback and lyrics; native advanced Netease features retain their existing pages.
