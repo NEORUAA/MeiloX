@@ -20,10 +20,17 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.createPlaceholder
+import com.ljyh.mei.data.model.toMediaItem
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
+import com.ljyh.mei.playback.queue.SourceContentQueue
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.ProviderRegistry
+import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.source.netease.NeteaseQueueTransport
 import java.io.File
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
@@ -33,11 +40,15 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -270,7 +281,134 @@ class PlaybackQueueIntegrationTest {
         }
     }
 
-    private class Fixture(placeholders: Boolean = false) : AutoCloseable {
+    @Test
+    fun sourceContentQueueAppendsOnePageNearTheTailAndStopsOnAccountChange() {
+        Fixture().use { fixture ->
+            val requests = CopyOnWriteArrayList<PageRequest>()
+            val secondStarted = CompletableDeferred<Unit>()
+            val secondResponse = CompletableDeferred<Unit>()
+            val secondFinished = CompletableDeferred<Unit>()
+            val sessionRevision = MutableStateFlow("account-a")
+            fun track(index: Int) = Track(TrackRef("queue.external", "track-$index"), "Track $index", emptyList())
+            val provider = object : MusicProvider, PlaylistCapability, AccountRevisionCapability {
+                override val id = "queue.external"
+                override val displayName = "Queue external"
+                override val capabilities = setOf(SourceCapability.PLAYLIST)
+                override val accountRevision = sessionRevision
+                override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(ref, "Source playlist", trackCount = 633)
+                override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
+                    check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+                    requests += page
+                    if (page.offset == 60) {
+                        withContext(NonCancellable) {
+                            secondStarted.complete(Unit)
+                            secondResponse.await()
+                            secondFinished.complete(Unit)
+                        }
+                    }
+                    return SourcePage((page.offset until page.offset + page.limit).map(::track), true,
+                        (page.offset + page.limit).toString())
+                }
+            }
+            val queue = SourceContentQueue(SourceRouter(ProviderRegistry(listOf(provider))),
+                PlaylistRef(provider.id, "playlist"), "Source playlist", (0 until 30).map(::track),
+                nextCursor = "30", knownTotalCount = 633, initialAccountRevision = "account-a",
+                mediaItemFactory = fixture::sourceItem)
+            fun await(matches: () -> Boolean) = runBlocking {
+                withTimeout(5_000) { while (!onMain(matches)) delay(10) }
+            }
+            try {
+                onMain { fixture.manager.playQueue(queue, playWhenReady = false) }
+                await { fixture.player.mediaItemCount == 30 }
+                assertTrue(requests.isEmpty())
+                onMain { fixture.player.seekToDefaultPosition(27) }
+                await { fixture.player.mediaItemCount == 60 }
+                assertEquals(listOf(PageRequest(30, 30, "30")), requests.toList())
+                onMain {
+                    assertEquals(TrackRef(provider.id, "track-27"), fixture.player.currentMediaItem?.let {
+                        TrackRefCodec.decode(it.mediaId)
+                    })
+                    assertFalse(fixture.player.playWhenReady)
+                    fixture.player.seekToDefaultPosition(57)
+                }
+                runBlocking { withTimeout(5_000) { secondStarted.await() } }
+                sessionRevision.value = "account-b"
+                secondResponse.complete(Unit)
+                runBlocking { withTimeout(5_000) { secondFinished.await() } }
+                await { !queue.hasNextPage() }
+                onMain {
+                    assertEquals(60, fixture.player.mediaItemCount)
+                    assertEquals(57, fixture.player.currentMediaItemIndex)
+                    assertFalse(fixture.player.playWhenReady)
+                }
+                assertTrue(fixture.requests.isEmpty())
+            } finally {
+                secondResponse.complete(Unit)
+            }
+        }
+    }
+
+    @Test
+    fun restoredSourceQueueWaitsForItsPluginAndContinuesWithoutReplacingRestoredPlayback() {
+        val registry = ProviderRegistry(emptyList())
+        val router = SourceRouter(registry)
+        Fixture(sourceRouter = router).use { fixture ->
+            val requests = CopyOnWriteArrayList<PageRequest>()
+            fun track(index: Int) = Track(TrackRef("restore.external", "track-$index"), "Track $index", emptyList())
+            fun provider() = object : MusicProvider, PlaylistCapability, AccountRevisionCapability {
+                override val id = "restore.external"
+                override val displayName = "Restore external"
+                override val capabilities = setOf(SourceCapability.PLAYLIST)
+                override val accountRevision = MutableStateFlow("account-a")
+                override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(ref, "Restored", trackCount = 9)
+                override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
+                    check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+                    requests += page
+                    val end = page.offset + page.limit
+                    return SourcePage((page.offset until end).map(::track), end < 9,
+                        if (end < 9) "private-cursor-$end" else null)
+                }
+            }
+            val originalProvider = provider()
+            registry.register(originalProvider)
+            val initial = (0 until 6).map(::track)
+            val queue = SourceContentQueue(router, PlaylistRef(originalProvider.id, "playlist"), "Restored", initial,
+                pageSize = 3, nextCursor = "private-cursor-6", knownTotalCount = 9, mediaItemFactory = fixture::sourceItem)
+            runBlocking { queue.getInitialStatus() }
+            val context = requireNotNull(queue.snapshotContext(initial.map { it.ref }))
+            queue.release()
+            registry.unregister(originalProvider.instanceId)
+            onMain {
+                fixture.player.withInternalQueueUpdate {
+                    fixture.player.shuffleModeEnabled = false
+                    fixture.player.setMediaItems(initial.map(fixture::sourceItem), 4, 300L)
+                    fixture.player.repeatMode = Player.REPEAT_MODE_OFF
+                    fixture.player.playWhenReady = false
+                    fixture.player.prepare()
+                }
+                fixture.manager.restoreSourceContentQueue(context, "Restored")
+                assertEquals(context, fixture.manager.captureSourceContentContext())
+                assertEquals(6, fixture.player.mediaItemCount)
+            }
+            assertTrue(requests.isEmpty())
+            registry.register(provider())
+            runBlocking {
+                withTimeout(5_000) { while (onMain { fixture.player.mediaItemCount != 9 }) delay(10) }
+            }
+            assertEquals(listOf(PageRequest(0, 3), PageRequest(3, 3, "private-cursor-3"),
+                PageRequest(6, 3, "private-cursor-6")), requests.toList())
+            onMain {
+                assertEquals(4, fixture.player.currentMediaItemIndex)
+                assertEquals(300L, fixture.player.currentPosition)
+                assertFalse(fixture.player.playWhenReady)
+                assertEquals(Player.REPEAT_MODE_OFF, fixture.player.repeatMode)
+                assertEquals(initial[4].ref, fixture.player.currentMediaItem?.let { TrackRefCodec.decode(it.mediaId) })
+            }
+            assertTrue(fixture.requests.isEmpty())
+        }
+    }
+
+    private class Fixture(placeholders: Boolean = false, sourceRouter: SourceRouter? = null) : AutoCloseable {
         private val context = InstrumentationRegistry.getInstrumentation().targetContext
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private val silence = File.createTempFile("queue-regression-", ".wav", context.cacheDir).apply {
@@ -290,7 +428,9 @@ class PlaybackQueueIntegrationTest {
                     .setMediaSourceFactory(object : MediaSource.Factory by sourceFactory {
                         override fun createMediaSource(mediaItem: MediaItem): MediaSource {
                             sourceCreations += mediaItem.mediaId
-                            return sourceFactory.createMediaSource(mediaItem)
+                            val playable = if (sourceRouter != null) mediaItem.buildUpon()
+                                .setUri(silence.toURI().toString()).build() else mediaItem
+                            return sourceFactory.createMediaSource(playable)
                         }
                     }).build(),
                 ExoPlayer.Builder(context).build(),
@@ -322,10 +462,13 @@ class PlaybackQueueIntegrationTest {
             val weApi = Proxy.newProxyInstance(WeApiService::class.java.classLoader, arrayOf(WeApiService::class.java)) { _, method, _ ->
                 error("Unexpected WeAPI call: ${method.name}")
             } as WeApiService
-            PlaybackQueueManager(player, api, weApi, scope, serverShuffleAllowed = { false })
+            PlaybackQueueManager(player, NeteaseQueueTransport(api, weApi), scope,
+                sourceRouter = sourceRouter, serverShuffleAllowed = { false })
         }
 
         fun item(id: String): MediaItem = MediaItem.Builder().setMediaId(id).setUri(silence.toURI().toString()).build()
+        fun sourceItem(track: Track): MediaItem = track.toMediaMetadata().toMediaItem().buildUpon()
+            .setUri(silence.toURI().toString()).build()
         fun items(): List<MediaItem> = (0 until player.mediaItemCount).map(player::getMediaItemAt)
 
         override fun close() {

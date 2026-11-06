@@ -565,6 +565,7 @@ class MusicService : MediaLibraryService(),
                     queueManager.restorePlaylistSource(snapshot.playlistSource)
                     player.playWhenReady = snapshot.playWhenReady
                     player.prepare()
+                    queueManager.restoreSourceContentQueue(snapshot.sourceContentContext, snapshot.queueTitle)
                     Timber.tag("MusicService").d(
                         "Restored playback snapshot -> items: ${restoredItems.size}, " +
                             "index: $restoredIndex, position: ${snapshot.positionMs}, " +
@@ -615,6 +616,7 @@ class MusicService : MediaLibraryService(),
             similarFmSourceIds = queueManager.similarFmSourceIds,
             queueAutoplayEnabled = queueManager.queueAutoplayEnabled.value,
             queueAutoplayStartEntryId = queueManager.queueAutoplayStartEntryId.value,
+            sourceContentContext = queueManager.captureSourceContentContext(),
         )
         withContext(NonCancellable) {
             runCatching { playbackPersistence.save(snapshot) }
@@ -628,6 +630,7 @@ class MusicService : MediaLibraryService(),
             player, queueTitle, queueManager.isFmMode, queueManager.playlistSource,
             queueManager.similarFmSourceIds,
             queueManager.queueAutoplayEnabled.value, queueManager.queueAutoplayStartEntryId.value,
+            queueManager.captureSourceContentContext(),
         )
         runCatching {
             runBlocking(Dispatchers.IO) { playbackPersistence.save(snapshot) }

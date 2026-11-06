@@ -217,7 +217,7 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: ListQueue, shuffle: Boolean? = null, repeatMode: Int = REPEAT_MODE_ALL) {
+    fun playQueue(queue: Queue, shuffle: Boolean? = null, repeatMode: Int = REPEAT_MODE_ALL) {
         // 判断当前 UI 上的模式是否是随机模式
         val startInShuffle = shuffle ?: (this.repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         service.queueTitle = queue.title

@@ -47,6 +47,27 @@ class PlaybackShuffleSnapshotTest {
         assertNull(restored.playlistSource)
         assertFalse(restored.queueAutoplayEnabled)
         assertNull(restored.queueAutoplayStartIndex)
+        assertNull(restored.sourceContentContext)
+    }
+
+    @Test
+    fun versionThreeSourceContinuationRoundTripStoresOnlySafeLocationAndFingerprint() {
+        val context = SourceContentQueueSnapshot(providerId = "external", instanceId = "script:example:default",
+            providerVersion = "1.0+2", contentType = "playlist", contentId = "playlist-id", loadedCount = 30,
+            nextOffset = 30, hasMore = true, knownTotalCount = 633, accountFingerprint = "a".repeat(64))
+        val snapshot = PlaybackSnapshot(items = listOf(PlaybackItemSnapshot("external-track")),
+            sourceContentContext = context, playlistSource = PlaylistQueueSource(123))
+        val encoded = gson.toJson(snapshot)
+        val restored = gson.fromJson(encoded, PlaybackSnapshot::class.java)
+        assertEquals(snapshot, restored)
+        assertEquals(3, restored.schemaVersion)
+        assertFalse(encoded.contains("cursor", ignoreCase = true))
+        assertFalse(encoded.contains("session", ignoreCase = true))
+        listOf(1, 2, 3).forEach { version ->
+            val old = gson.fromJson("""{"schemaVersion":$version,"items":[{"mediaId":"11"}]}""", PlaybackSnapshot::class.java)
+            assertEquals("11", old.items.single().mediaId)
+            assertNull(old.sourceContentContext)
+        }
     }
 
     @Test

@@ -14,13 +14,18 @@ import com.ljyh.mei.data.model.api.GetRandomPlaylist
 import com.ljyh.mei.data.model.api.RandomPlaylistData
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.data.model.toSourceTrack
 import com.ljyh.mei.source.netease.NeteaseQueueTransport
 import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.Track
+import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.api.ProviderInstanceId
 import com.ljyh.mei.source.core.SourceRouter
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
+import com.ljyh.mei.playback.queue.SourceContentQueue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -32,6 +37,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,6 +94,12 @@ class PlaybackQueueManager(
     private var serverShuffleRequested = false
     private var cloudShuffleEnabled: Boolean? = null
     private var queueSelectionJob: Job? = null
+    private var sourceContentQueue: SourceContentQueue? = null
+    private var sourceContentPageJob: Job? = null
+    private var sourceContentWatchJob: Job? = null
+    private var sourceContentRestoreJob: Job? = null
+    private var pendingSourceContentContext: SourceContentQueueSnapshot? = null
+    private var pendingSourceContentRefs: List<TrackRef>? = null
 
     private val _isShuffleModeEnabled = MutableStateFlow(false)
     private val _fmModeActive = MutableStateFlow(false)
@@ -107,6 +119,7 @@ class PlaybackQueueManager(
         (player as? StableDeckPlayer)?.onQueueEdited = { replaced ->
             cancelServerShuffle()
             queueSelectionJob?.cancel()
+            cancelSourceContentQueue()
             if (replaced) {
                 playlistSource = null
                 _queueAutoplayStartEntryId.value = null
@@ -624,6 +637,7 @@ class PlaybackQueueManager(
         repeatMode: Int = Player.REPEAT_MODE_ALL,
     ) {
         cancelServerShuffle()
+        cancelSourceContentQueue()
         queueSelectionJob?.cancel()
         activeQueueBuildJob?.cancel()
         pendingSimilarGeneration = null
@@ -683,6 +697,7 @@ class PlaybackQueueManager(
                 // 设置列表并直接跳转 此时 shuffle 是 false，所以 status.mediaItemIndex 绝对对应 list 里的第 N 个
                 player.setMediaItems(mediaItems, startIndex, status.position.toLong())
                 playlistSource = queue.playlistSource
+                (queue as? SourceContentQueue)?.let(::attachSourceContentQueue)
                 serverShuffleRequested = false
 
                 player.repeatMode = repeatMode
@@ -705,6 +720,7 @@ class PlaybackQueueManager(
                 // 6. 触发懒加载
                 // 因为当前歌曲已经是 RealItem 了，这个方法会自动跳过当前歌曲，去加载下一首
                 checkAndLoadMetadata()
+                loadSourceContentPageIfNeeded()
 
             } catch (e: CancellationException) {
                 throw e
@@ -713,6 +729,7 @@ class PlaybackQueueManager(
                 Log.e(TAG, "playQueue Error", e)
                 _queueState.value = QueueState.Error(e.message ?: "播放错误")
             } finally {
+                if (queue is SourceContentQueue && sourceContentQueue !== queue) queue.release()
                 if (generation == queueBuildGeneration) {
                     activeQueueBuildJob = null
                 }
@@ -724,6 +741,7 @@ class PlaybackQueueManager(
         if (playbackState == Player.STATE_IDLE && player.playerError != null) {
             _queueState.value = QueueState.Error(player.playerError?.message ?: "播放错误")
         }
+        if (playbackState == Player.STATE_ENDED) loadSourceContentPageIfNeeded()
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -731,6 +749,7 @@ class PlaybackQueueManager(
 
         // 基础元数据加载逻辑
         checkAndLoadMetadata()
+        loadSourceContentPageIfNeeded()
 
         // --- 新增 FM 边界检查 ---
         if (isFmMode) {
@@ -772,6 +791,141 @@ class PlaybackQueueManager(
             _isShuffleModeEnabled.value = enabled
             player.shuffleModeEnabled = enabled
         }
+    }
+
+    /** A remote content queue advances at playback boundaries, one bounded page at a time. */
+    private fun loadSourceContentPageIfNeeded() {
+        val queue = sourceContentQueue ?: return
+        if (released || isFmMode || sourceContentPageJob?.isActive == true || !queue.hasNextPage()) return
+        val order = player.playbackOrderIndices()
+        val current = order.indexOf(player.currentMediaItemIndex)
+        if (current < 0 || order.size - current > 3) return
+        val generation = queueBuildGeneration
+        sourceContentPageJob = scope.launch(Dispatchers.Main, start = CoroutineStart.LAZY) {
+            var appended = false
+            try {
+                val firstNewIndex = queue.loadedCount
+                val result = queue.nextPage()
+                currentCoroutineContext().ensureActive()
+                if (generation != queueBuildGeneration || sourceContentQueue !== queue || isFmMode) return@launch
+                if (result !is Queue.Result.Success || result.data.isEmpty()) return@launch
+                val additions = result.data.indices.mapNotNull { offset ->
+                    (queue.getItemAt(firstNewIndex + offset) as? Queue.Result.Success)?.data?.let { item ->
+                        item.second ?: createPlaceholder(item.first)
+                    }
+                }
+                if (!queue.isSourceCurrent()) {
+                    cancelSourceContentQueue()
+                    return@launch
+                }
+                currentCoroutineContext().ensureActive()
+                if (generation != queueBuildGeneration || sourceContentQueue !== queue || isFmMode || additions.isEmpty()) return@launch
+                val firstAddition = player.mediaItemCount
+                val resumeAtAddition = player.playbackState == Player.STATE_ENDED &&
+                    player.currentMediaItemIndex == firstAddition - 1 && player.playWhenReady
+                val append = {
+                    player.addMediaItems(additions)
+                    if (resumeAtAddition) {
+                        player.seekToDefaultPosition(firstAddition)
+                        player.prepare()
+                    }
+                }
+                val stablePlayer = player as? StableDeckPlayer
+                if (stablePlayer != null) stablePlayer.withInternalQueueUpdate(append) else append()
+                _queueState.value = QueueState.Playing(queue.title ?: "播放列表", player.mediaItemCount)
+                appended = true
+                checkAndLoadMetadata()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Keep queued audio available; a later playback boundary may retry the page.
+                Timber.tag(TAG).w("Source content page unavailable")
+            } finally {
+                if (generation == queueBuildGeneration && sourceContentQueue === queue) {
+                    sourceContentPageJob = null
+                    if (appended) loadSourceContentPageIfNeeded()
+                }
+            }
+        }
+        sourceContentPageJob?.start()
+    }
+
+    private fun cancelSourceContentQueue() {
+        sourceContentPageJob?.cancel()
+        sourceContentPageJob = null
+        sourceContentWatchJob?.cancel()
+        sourceContentWatchJob = null
+        sourceContentRestoreJob?.cancel()
+        sourceContentRestoreJob = null
+        pendingSourceContentContext = null
+        pendingSourceContentRefs = null
+        sourceContentQueue?.release()
+        sourceContentQueue = null
+    }
+
+    private fun attachSourceContentQueue(queue: SourceContentQueue) {
+        sourceContentQueue = queue
+        if (queue.hasNextPage()) {
+            sourceContentWatchJob = scope.launch {
+                queue.awaitInvalidation()
+                if (sourceContentQueue === queue) cancelSourceContentQueue()
+            }
+        }
+    }
+
+    /** Restored audio is already usable while its plugin and safe continuation are validated. */
+    fun restoreSourceContentQueue(context: SourceContentQueueSnapshot?, title: String?) {
+        cancelSourceContentQueue()
+        val router = sourceRouter ?: return
+        if (context == null || isFmMode || !context.hasMore || context.loadedCount != player.mediaItemCount ||
+            context.loadedCount <= 0 || context.nextOffset != context.loadedCount ||
+            context.pageSize !in 1..100 || context.providerId.isNullOrBlank() || context.instanceId.isNullOrBlank() ||
+            context.providerVersion.isNullOrBlank() || !context.accountFingerprint.orEmpty().matches(Regex("[0-9a-f]{64}"))) return
+        val tracks = currentSourceTracks() ?: return
+        val refs = tracks.map { it.ref }
+        if (refs.any { it.providerId != context.providerId }) return
+        pendingSourceContentContext = context
+        pendingSourceContentRefs = refs
+        val generation = queueBuildGeneration
+        val job = scope.launch(Dispatchers.Main, start = CoroutineStart.LAZY) {
+            try {
+                // Application plugin loading runs independently from playback restoration.
+                val instanceId = ProviderInstanceId(context.instanceId)
+                router.registry.revision.first { router.registry.instance(instanceId) != null }
+                currentCoroutineContext().ensureActive()
+                if (released || generation != queueBuildGeneration || isFmMode || currentSourceTracks()?.map { it.ref } != refs) return@launch
+                val queue = SourceContentQueue.restore(router, context, title, tracks) ?: return@launch
+                attachSourceContentQueue(queue)
+                loadSourceContentPageIfNeeded()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // A missing or changed source leaves the restored audio queue intact.
+            } finally {
+                if (sourceContentRestoreJob === currentCoroutineContext()[Job]) {
+                    sourceContentRestoreJob = null
+                    pendingSourceContentContext = null
+                    pendingSourceContentRefs = null
+                }
+            }
+        }
+        sourceContentRestoreJob = job
+        job.start()
+    }
+
+    fun captureSourceContentContext(): SourceContentQueueSnapshot? {
+        if (sourceContentQueue == null && pendingSourceContentContext == null) return null
+        val refs = currentSourceTracks()?.map { it.ref } ?: return null
+        return sourceContentQueue?.snapshotContext(refs) ?: pendingSourceContentContext?.takeIf {
+            pendingSourceContentRefs == refs
+        }
+    }
+
+    private fun currentSourceTracks(): List<Track>? = (0 until player.mediaItemCount).map { index ->
+        val item = player.getMediaItemAt(index)
+        item.metadata?.toSourceTrack() ?: TrackRefCodec.decode(item.mediaId)?.let { ref ->
+            Track(ref, item.mediaMetadata.title?.toString().orEmpty(), emptyList())
+        } ?: return null
     }
 
 
@@ -955,6 +1109,7 @@ class PlaybackQueueManager(
 
     private fun cancelActiveQueueBuild(clearPlaylistSource: Boolean = true) {
         cancelServerShuffle()
+        cancelSourceContentQueue()
         queueSelectionJob?.cancel()
         if (clearPlaylistSource) playlistSource = null
         activeQueueBuildJob?.cancel()

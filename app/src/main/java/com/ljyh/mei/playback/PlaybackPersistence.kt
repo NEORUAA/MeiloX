@@ -91,6 +91,7 @@ data class PlaybackSnapshot(
     val similarFmSourceIds: List<String>? = null,
     val queueAutoplayEnabled: Boolean = false,
     val queueAutoplayStartIndex: Int? = null,
+    val sourceContentContext: SourceContentQueueSnapshot? = null,
 ) {
     val isFmMode: Boolean
         get() = sourceType == SOURCE_PERSONAL_FM || queueAutoplayEnabled
@@ -100,6 +101,22 @@ data class PlaybackSnapshot(
         const val SOURCE_PERSONAL_FM = "personal_fm"
     }
 }
+
+/** Safe continuation locator. Opaque cursors and account/session values never reach disk. */
+data class SourceContentQueueSnapshot(
+    @field:SerializedName("providerId") val providerId: String = "",
+    @field:SerializedName("instanceId") val instanceId: String = "",
+    @field:SerializedName("providerVersion") val providerVersion: String = "",
+    @field:SerializedName("contentType") val contentType: String? = null,
+    @field:SerializedName("contentId") val contentId: String? = null,
+    @field:SerializedName("libraryCollection") val libraryCollection: String? = null,
+    @field:SerializedName("loadedCount") val loadedCount: Int = 0,
+    @field:SerializedName("nextOffset") val nextOffset: Int = 0,
+    @field:SerializedName("pageSize") val pageSize: Int = 30,
+    @field:SerializedName("hasMore") val hasMore: Boolean = false,
+    @field:SerializedName("knownTotalCount") val knownTotalCount: Int? = null,
+    @field:SerializedName("accountFingerprint") val accountFingerprint: String = "",
+)
 
 data class PlaybackItemSnapshot(
     val mediaId: String = "",
@@ -150,6 +167,7 @@ class PlaybackPersistence(
         similarFmSourceIds: List<String>? = null,
         queueAutoplayEnabled: Boolean = false,
         queueAutoplayStartEntryId: String? = null,
+        sourceContentContext: SourceContentQueueSnapshot? = null,
     ): PlaybackSnapshot {
         val items = cachedItems ?: buildList(player.mediaItemCount) {
             repeat(player.mediaItemCount) { index ->
@@ -170,6 +188,7 @@ class PlaybackPersistence(
             queueTitle = queueTitle,
             shuffleOrder = cachedOrder ?: player.playbackOrderIndices(true).also { cachedOrder = it },
             playlistSource = if (!isFmMode || preserveQueueAutoplay) playlistSource else null,
+            sourceContentContext = sourceContentContext?.takeUnless { isFmMode },
             similarFmSourceIds = if (isFmMode) similarFmSourceIds else null,
             queueAutoplayEnabled = preserveQueueAutoplay,
             queueAutoplayStartIndex = queueAutoplayStartEntryId?.takeIf { preserveQueueAutoplay }?.let { id ->
@@ -192,7 +211,8 @@ class PlaybackPersistence(
                     previous.sourceType == snapshot.sourceType && previous.playlistSource == snapshot.playlistSource &&
                     previous.similarFmSourceIds == snapshot.similarFmSourceIds &&
                     previous.queueAutoplayEnabled == snapshot.queueAutoplayEnabled &&
-                    previous.queueAutoplayStartIndex == snapshot.queueAutoplayStartIndex
+                    previous.queueAutoplayStartIndex == snapshot.queueAutoplayStartIndex &&
+                    previous.sourceContentContext == snapshot.sourceContentContext
                 if (!sameQueue) {
                     val queue = snapshot.copy(savedAtEpochMs = maxOf(snapshot.savedAtEpochMs, (previous?.savedAtEpochMs ?: 0L) + 1))
                     val encoded = gson.toJson(queue)
