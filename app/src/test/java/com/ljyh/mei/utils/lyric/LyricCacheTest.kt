@@ -3,6 +3,7 @@ package com.ljyh.mei.utils.lyric
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.toSourceTrack
 import com.ljyh.mei.data.model.qq.u.emptyData
 import com.ljyh.mei.data.model.room.CachedLyric
 import com.ljyh.mei.ui.model.LyricData
@@ -36,6 +37,49 @@ class LyricCacheTest {
         val stored = CachedLyric(external.lyricStorageKey(), lrc, translation, false, false,
             LyricSource.Provider.name, "LRC", 1L)
         assertEquals(lyrics, stored.toLyricData())
+    }
+
+    @Test
+    fun everyProviderRetainsAllLoadedLyricVersionsAndItsOwnFallback() {
+        val metadata = MediaMetadata(0, "Song", "", emptyList(), 180000, MediaMetadata.Album(0, "Album"),
+            trackRef = TrackRef("qq.example", "same:id/曲"))
+        val sources = listOf(
+            LyricSourceData.NetEase(Gson().fromJson("""{"code":200,"lrc":{"lyric":"[00:01.00]NetEase line"},
+                "yrc":{"lyric":"[1000,1000](1000,1000,0)NetEase words"},"tlyric":{"lyric":"[00:01.00]Translation"}}""", Lyric::class.java)),
+            LyricSourceData.QQMusic(emptyData.copy(lyric = qrc, trans = translation, qrcT = 1), lrcContent = lrc),
+            LyricSourceData.AM("""<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">Apple</span></p></div></body></tt>"""),
+            LyricSourceData.Provider(SourceLyrics("[00:01.00]Origin", "[00:01.00]Origin translation")),
+        )
+        val variants = buildLyricVariants(sources)
+        assertEquals(LyricVariant.entries.toSet(), variants.mapNotNull(::lyricVariantOf).toSet())
+        val candidates = loadedLyricCandidates(metadata, variants)
+        assertEquals(LyricVariant.entries.toSet(), candidates.mapNotNull { it.variant }.toSet())
+        assertTrue(candidates.all { it.key.contains(metadata.lyricStorageKey()) })
+        assertEquals(LyricSource.AM, mergeLyrics(sources).source)
+        val own = mergeLyrics(selectLyricSources(sources, LyricSource.Provider))
+        assertEquals(LyricSource.Provider, own.source)
+        assertEquals(LyricVariant.ProviderLrc, lyricVariantOf(own))
+        val info = buildCacheInfo(sources, own)
+        assertEquals("[00:01.00]Origin", info.first)
+        assertEquals("[00:01.00]Origin translation", info.second)
+    }
+
+    @Test
+    fun lyricCatalogMatchingUsesRecordingEvidenceInsteadOfForeignNumericIds() {
+        val metadata = MediaMetadata(0, "Song", "", listOf(MediaMetadata.Artist(0, "Artist")), 180000,
+            MediaMetadata.Album(0, "Album"), trackRef = TrackRef("qq.example", "42"))
+        assertNull(com.ljyh.mei.source.lyrics.nativeLyricIdentity(metadata))
+        assertEquals("42", com.ljyh.mei.source.lyrics.nativeLyricIdentity(metadata.copy(trackRef = TrackRef("netease", "42"))))
+        val parsed = com.ljyh.mei.source.lyrics.parseLyricMatches("""{"code":200,"result":{"songs":[
+            {"id":99,"name":"Song","duration":180000,"artists":[{"name":"Artist"}],"album":{"name":"Album"}},
+            {"id":42,"name":"Song (Live)","duration":180000,"artists":[{"name":"Artist"}],"album":{"name":"Album"}}
+        ]}}""")
+        val origin = metadata.toSourceTrack()
+        assertEquals("99", com.ljyh.mei.source.lyrics.matchingLyricIdentity(origin, parsed))
+        assertNull(com.ljyh.mei.source.lyrics.matchingLyricIdentity(origin, parsed + parsed.first().copy(ref = TrackRef("netease", "100"))))
+        assertNull(com.ljyh.mei.source.lyrics.matchingLyricIdentity(origin, parsed.map { it.copy(durationMs = 200000) }))
+        assertNull(com.ljyh.mei.source.lyrics.matchingLyricIdentity(origin, parsed.map { it.copy(artists = listOf(com.ljyh.mei.source.api.SourceArtist("Cover artist"))) }))
+        assertTrue(com.ljyh.mei.source.lyrics.parseLyricMatches("""{"code":401}""").isEmpty())
     }
 
     @Test

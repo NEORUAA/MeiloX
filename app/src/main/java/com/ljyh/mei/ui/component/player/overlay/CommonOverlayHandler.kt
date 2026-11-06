@@ -230,7 +230,7 @@ fun CommonOverlayHandler(
 
                 },
                 viewModel = playerViewModel,
-                onFindLyrics = if (actionMetadata?.trackRef?.providerId in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) {
+                onFindLyrics = if (actionMetadata != null) {
                     {
                         actionMetadata?.let { playerViewModel.searchQQSong(it.title); overlayHandler.showQQMusicSelection(it) }
                     }

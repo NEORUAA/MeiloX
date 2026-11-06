@@ -30,12 +30,13 @@ import dagger.hilt.components.SingletonComponent
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.utils.ImageUtils
 import com.ljyh.mei.utils.AudioFileFormat
 import com.ljyh.mei.utils.detectAudioFileFormat
 import com.ljyh.mei.utils.localAudioPublicationMutex
-import com.ljyh.mei.utils.LyricFetcher
+import com.ljyh.mei.utils.lyric.LyricPreloader
 import com.ljyh.mei.utils.SongMate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.supervisorScope
@@ -69,6 +70,7 @@ internal interface DownloadSourceEntryPoint {
     fun mediaUriProvider(): MediaUriProvider
     fun sourceRouter(): com.ljyh.mei.source.core.SourceRouter
     fun sourcePlugins(): ScriptPluginManager
+    fun lyricPreloader(): LyricPreloader
 }
 
 class DownloadWorker(
@@ -230,7 +232,7 @@ class DownloadWorker(
                     val tags = SongMate.checkTags(existingPath)
                     if (tags != null && (!tags.isBasicComplete || !tags.hasLyric)) {
                         try {
-                            val lyric = if (!tags.hasLyric) downloadLyric(task, songId) else null
+                            val lyric = if (!tags.hasLyric) downloadLyric(task, songId, existingSong?.duration ?: 0L) else null
                             currentCoroutineContext().ensureActive()
                             SongMate.writeTags(task.songTitle, task.songArtist, task.songAlbum,
                                 task.songCover, existingPath, lyric)
@@ -299,7 +301,9 @@ class DownloadWorker(
                 "Unsupported or malformed downloaded audio"
             }
             val fileName = "${DownloadFileNames.songBaseName(task.songTitle, task.songArtist)}.${format.extension}"
-            val lyric = async { downloadLyric(task, songId) }
+            val duration = runCatching { AudioFileIO.readAs(tempFile, format.extension).audioHeader.trackLength.toLong() * 1_000L }
+                .getOrDefault(0L)
+            val lyric = async { downloadLyric(task, songId, duration) }
             val cover = async { if (task.songCover.isNotBlank()) ImageUtils.downloadImageBytes(task.songCover) else null }
             try {
                 SongMate.writeTagsWithCoverBytes(task.songTitle, task.songArtist, task.songAlbum,
@@ -311,8 +315,6 @@ class DownloadWorker(
             }
             currentCoroutineContext().ensureActive()
             check(detectAudioFileFormat(tempFile) == format) { "Audio container changed while writing tags" }
-            val duration = runCatching { AudioFileIO.readAs(tempFile, format.extension).audioHeader.trackLength.toLong() * 1_000L }
-                .getOrDefault(0L)
             localAudioPublicationMutex.withLock {
                 var published: Uri? = null
                 try {
@@ -344,12 +346,14 @@ class DownloadWorker(
         }
     }
 
-    private suspend fun downloadLyric(task: com.ljyh.mei.data.model.room.DownloadTask, songId: String): String? {
+    private suspend fun downloadLyric(task: com.ljyh.mei.data.model.room.DownloadTask, songId: String, durationMs: Long): String? {
         val ref = task.originTrackRef?.let(TrackRefCodec::decode) ?: TrackRefCodec.decode(songId)
-        if (ref == null || ref.providerId == ProviderIds.NETEASE) return LyricFetcher.fetchBestLyric(ref?.trackId ?: songId)
+            ?: return null
         return try {
             EntryPointAccessors.fromApplication(applicationContext, DownloadSourceEntryPoint::class.java)
-                .sourceRouter().lyrics(ref)?.text
+                .lyricPreloader().downloadLyrics(Track(ref, task.songTitle,
+                    task.songArtist.split('/').map(String::trim).filter(String::isNotBlank).map { SourceArtist(it) },
+                    SourceAlbum(task.songAlbum), durationMs = durationMs, artworkUrl = task.songCover).toMediaMetadata())
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { null }
     }

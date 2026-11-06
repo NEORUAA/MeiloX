@@ -36,6 +36,7 @@ enum class LyricVariant(val source: LyricSource) {
     NeteaseLrc(LyricSource.NetEaseCloudMusic),
     QqQrc(LyricSource.QQMusic),
     QqLrc(LyricSource.QQMusic),
+    ProviderLrc(LyricSource.Provider),
 }
 
 sealed class LyricSourceData(val source: LyricSource, val priority: Int) {
@@ -47,6 +48,7 @@ sealed class LyricSourceData(val source: LyricSource, val priority: Int) {
     ) : LyricSourceData(LyricSource.QQMusic, 1)
 
     data class AM(val lyric: String) : LyricSourceData(LyricSource.AM, 3)
+    data class Provider(val lyric: com.ljyh.mei.source.api.SourceLyrics) : LyricSourceData(LyricSource.Provider, 0)
 }
 
 enum class LyricSource {

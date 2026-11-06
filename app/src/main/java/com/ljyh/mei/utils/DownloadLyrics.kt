@@ -37,7 +37,7 @@ internal object DownloadLyrics {
         return runCatching { encode(YRCParser.parse(yrc, translation)) }.getOrNull()
     }
 
-    private fun encode(lyrics: SyncedLyrics): String? = lyrics.lines
+    fun encode(lyrics: SyncedLyrics): String? = lyrics.lines
         .flatMap(::records)
         .sortedBy(Record::time)
         .joinToString("\n") { "[${timestamp(it.time)}]${it.text}" }

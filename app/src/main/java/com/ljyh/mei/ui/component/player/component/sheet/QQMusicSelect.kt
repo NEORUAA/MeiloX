@@ -328,7 +328,7 @@ private fun LyricCandidateItem(
         stringResource(when (variant) {
             LyricVariant.AppleMusic -> R.string.lyric_version_ttml
             LyricVariant.NeteaseYrc, LyricVariant.QqQrc -> R.string.lyric_version_word
-            LyricVariant.NeteaseLrc, LyricVariant.QqLrc -> R.string.lyric_version_line
+            LyricVariant.NeteaseLrc, LyricVariant.QqLrc, LyricVariant.ProviderLrc -> R.string.lyric_version_line
         })
     }
 

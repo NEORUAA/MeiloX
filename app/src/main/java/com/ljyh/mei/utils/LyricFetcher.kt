@@ -2,7 +2,6 @@ package com.ljyh.mei.utils
 
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.Lyric
-import com.ljyh.mei.di.NeteaseInterceptor
 import com.ljyh.mei.playback.DownloadWorker
 import com.ljyh.mei.playback.readDownloadResponse
 import kotlinx.coroutines.CancellationException
@@ -21,7 +20,6 @@ object LyricFetcher {
     private val neteaseClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .addInterceptor(NeteaseInterceptor())
         .build()
 
     private val amllClient = DownloadWorker.getDownloadClient().newBuilder()

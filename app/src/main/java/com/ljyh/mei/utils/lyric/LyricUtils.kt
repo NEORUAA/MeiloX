@@ -67,10 +67,10 @@ internal fun selectLyricSources(
 private fun LyricData.displayPriority(): Int {
     if (lyricLine.lines.isEmpty()) return 0
     return when (source) {
-        LyricSource.AM -> 5
-        LyricSource.NetEaseCloudMusic -> if (isVerbatim) 4 else 2
-        LyricSource.QQMusic -> if (isVerbatim) 3 else 1
-        LyricSource.Provider -> 2
+        LyricSource.AM -> 6
+        LyricSource.NetEaseCloudMusic -> if (isVerbatim) 5 else 3
+        LyricSource.QQMusic -> if (isVerbatim) 4 else 2
+        LyricSource.Provider -> 1
         LyricSource.Empty, LyricSource.Loading -> 0
     }
 }
@@ -157,6 +157,11 @@ fun mergeLyrics(sources: List<LyricSourceData>, isPureMusic: Boolean = false): L
                 lyricLine = attachPhonetics(LRCParser.parse(lrcText, q.trans), q.roma)
             )
         }
+    }
+
+    sources.filterIsInstance<LyricSourceData.Provider>().firstOrNull()?.lyric?.let { lyric ->
+        val parsed = LRCParser.parse(lyric.text, lyric.translation)
+        if (parsed.lines.isNotEmpty()) return LyricData(source = LyricSource.Provider, lyricLine = parsed)
     }
 
     // 都没有，返回默认
