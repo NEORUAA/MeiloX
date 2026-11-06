@@ -26,7 +26,7 @@ fun audioResourceIdentity(instanceId: ProviderInstanceId, ref: TrackRef, resourc
 }
 fun audioResourceIdentity(resolution: PlaybackResolution): String = audioResourceIdentity(resolution.instanceId, resolution.resolvedTrackRef, resolution.resource)
 
-data class PendingSourceMatch(val origin: TrackRef, val instanceId: ProviderInstanceId, val candidates: List<MatchCandidate>)
+data class PendingSourceMatch(val origin: TrackRef, val instanceId: ProviderInstanceId, val candidates: List<MatchCandidate>, val originTitle: String = "")
 class PlaybackResolutionException(val attempts: List<ResolutionAttempt>) : SourceException(attempts.lastOrNull()?.error ?: SourceErrorCode.UNAVAILABLE)
 
 @Singleton
@@ -153,7 +153,7 @@ class PlaybackResolver(
         val match = matcher.automatic(ranked)?.track
         synchronized(publicationLock) {
             ensureCurrent(version)
-            if (match == null && ranked.isNotEmpty()) mutablePending.value = PendingSourceMatch(origin.ref, provider.instanceId, ranked.take(5))
+            if (match == null && ranked.isNotEmpty()) mutablePending.value = PendingSourceMatch(origin.ref, provider.instanceId, ranked.take(5), origin.title)
             mappings[key] = Mapping(now + if (match == null) 120_000 else 3_600_000, match)
             if (mappings.size > 256) mappings.entries.sortedBy { it.value.expires }.take(mappings.size - 256).forEach { mappings.remove(it.key, it.value) }
         }

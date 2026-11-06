@@ -45,6 +45,8 @@ class ProviderRegistry(providers: List<MusicProvider>) {
     fun instance(id: ProviderInstanceId): MusicProvider? = entries[id.value]
     fun provider(id: String): MusicProvider? = providers.value.firstOrNull { it.id == id && it.status == SourceStatus.READY }
     fun requireProvider(id: String): MusicProvider = provider(id) ?: throw SourceException(SourceErrorCode.MISSING_PROVIDER)
+    fun supportsFeatureRoute(providerId: String, route: String): Boolean =
+        (provider(providerId) as? FeatureContribution)?.featureRoutes?.contains(route) == true
     fun playable(): List<MusicProvider> = providers.value.filter { it.status == SourceStatus.READY && SourceCapability.PLAYBACK in it.capabilities && it is PlaybackCapability }
 }
 

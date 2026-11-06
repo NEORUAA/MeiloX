@@ -65,9 +65,7 @@ delete related playback history. External IDs never become hashed numeric IDs.
 The shared integration build passed 895 JVM tests and built both APKs. On AVD,
 `SourceCompatibilityInstrumentedTest` passed both tests: a complete SQLite v18 fixture
 upgraded through Room v19 validation while preserving all seeded associations and
-files; legacy and external snapshots restored through real Media3 items. One existing
-quality test in the concurrently integrated P3 path exposed an exception-adapter
-regression, tracked for correction in P3.
+files; legacy and external snapshots restored through real Media3 items.
 
 ### P2
 
@@ -98,12 +96,10 @@ provenance without persisting headers. Platform history excludes cross-source au
 including downloaded copies. Native-only UI actions and lyric cache keys now respect
 the content provider. Negative podcast transports cannot collide with local songs.
 
-The shared build passed 910 JVM tests. Thirty AVD migration, snapshot, real ExoPlayer,
-quality, native-before-external rejection, download-generation and queue tests passed.
-The new live-native smoke initially exposed a test-only Hilt entry-point wiring
-mistake; its adapter was corrected for the final regression run. Earlier isolated
-service-recovery tests require a dedicated opt-in package and were skipped, not
-counted as successful recovery coverage.
+The shared build passed 911 JVM tests. Thirty-one AVD migration, snapshot, real
+ExoPlayer, quality, native-before-external rejection, download-generation, live-native
+catalog and queue tests passed. Isolated service-recovery tests require a dedicated
+opt-in package and are not counted as successful recovery coverage.
 
 ### P4
 
@@ -119,3 +115,18 @@ passed: import/search/detail/fallback/audio/disable/reload, and runaway terminat
 network denial and healthy recovery. The example provides an authored test tone;
 no real QQ/Kugou playback service is claimed. API 1 advertises only search, track,
 playback and lyrics; native advanced Netease features retain their existing pages.
+
+### P5
+
+Settings provide package import/permission review, source status/configuration,
+enable/remove/update, independent browse/search defaults and persisted fallback
+ordering. Generic track search routes every source through the same catalog API;
+native extra search categories and the native home remain provider contributions.
+Song information displays the actual audio source/quality without changing content
+actions, and exposes per-song fallback permission and manual-match review.
+
+The isolated real-DataStore search AVD test passed, including cancellation, paging,
+typed errors, independent defaults and failed-provider propagation. Main package
+startup, retained account/home/queue and the management settings entry were checked
+on the AVD. The corrected native smoke then passed actual search→detail→full audio
+resolution with the account unchanged, along with both migration/snapshot tests.

@@ -248,6 +248,9 @@ fun NavGraphBuilder.navigationBuilder(
     composable(Screen.StorageManagement.route) {
         StorageManagementScreen()
     }
+    composable(Screen.SourceManagement.route) {
+        com.ljyh.mei.ui.screen.source.SourceManagementScreen()
+    }
 
     composable(Screen.DownloadManage.route) {
         DownloadManageScreen(scrollBehavior)
@@ -468,6 +471,7 @@ fun navigationEntry(
         route == Screen.EqualizerSettings.route -> EqualizerSettings()
         route == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
         route == Screen.StorageManagement.route -> StorageManagementScreen()
+        route == Screen.SourceManagement.route -> com.ljyh.mei.ui.screen.source.SourceManagementScreen()
         route == Screen.DownloadManage.route -> DownloadManageScreen(
             scrollBehavior = scrollBehavior,
             isNavigationTab = isNavigationTab,

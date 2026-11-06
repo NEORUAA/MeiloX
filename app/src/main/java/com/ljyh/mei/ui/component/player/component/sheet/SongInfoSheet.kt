@@ -6,6 +6,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,6 +21,11 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.ui.local.LocalPlayerConnection
+import com.ljyh.mei.ui.local.LocalNavController
+import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.ui.screen.source.SourceManagementViewModel
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import com.ljyh.mei.utils.TimeUtils
 import com.ljyh.mei.utils.image.saveImageToGallery
@@ -36,6 +44,13 @@ fun SongInfoSheet(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val sourceViewModel: SourceManagementViewModel = hiltViewModel()
+    val sourceSettings by sourceViewModel.settings.collectAsState()
+    val providers by sourceViewModel.providers.collectAsState()
+    val connection = LocalPlayerConnection.current
+    val resolution = connection?.currentPlaybackResolution?.collectAsState()?.value
+        ?.takeIf { it.originTrackRef == metadata.trackRef }
+    val nav = LocalNavController.current
     val scope = rememberCoroutineScope()
     val dismissal = rememberMeiloXSheetDismissal(onDismissRequest)
     val listState = rememberLazyListState()
@@ -80,17 +95,45 @@ fun SongInfoSheet(
             }
             item("basic") {
                 InfoSection("基本信息", buildList {
-                    add("歌曲 ID" to metadata.id.toString())
+                    add("音源" to (providers.find { it.id == metadata.trackRef.providerId }?.displayName ?: metadata.trackRef.providerId))
+                    add("歌曲 ID" to metadata.trackRef.trackId)
                     add("歌曲名称" to metadata.title)
                     metadata.tns?.let { add("译名" to it) }
                 })
             }
+            item("playback-source") {
+                InfoSection("播放音源", buildList {
+                    resolution?.let { actual ->
+                        add("实际音源" to (providers.find { it.id == actual.actualAudioProviderId }?.displayName ?: actual.actualAudioProviderId))
+                        add("实际音质" to actual.resource.quality)
+                        if (actual.resolvedTrackRef != actual.originTrackRef) add("状态" to "已自动切换音源")
+                    }
+                })
+                val key = TrackRefCodec.encode(metadata.trackRef)
+                GlasmioGroupedList {
+                    GlasmioListRow(title = "允许此歌曲自动切换音源", showDisclosure = false, trailing = {
+                        com.ljyh.mei.ui.component.MeiloXSwitch(key !in sourceSettings.disabledTrackFallbacks, { allowed ->
+                            sourceViewModel.update { it.copy(disabledTrackFallbacks = if (allowed) it.disabledTrackFallbacks - key else it.disabledTrackFallbacks + key) }
+                        })
+                    })
+                    GlasmioListRow(title = "音源与歌曲匹配", onClick = {
+                        dismissal.requestDismiss()
+                        Screen.SourceManagement.navigate(nav)
+                    })
+                }
+            }
             if (qqSongId != null) item("qq") { InfoSection("QQ 音乐", listOf("QQ 歌曲 ID" to qqSongId)) }
             item("artists") {
-                InfoSection("歌手", metadata.artists.flatMap { listOf("歌手" to it.name, "歌手 ID" to it.id.toString()) })
+                InfoSection("歌手", metadata.artists.flatMap { artist -> buildList {
+                    add("歌手" to artist.name)
+                    (artist.ref?.artistId ?: artist.id.takeIf { it != 0L }?.toString())?.let { add("歌手 ID" to it) }
+                } })
             }
             item("album") {
-                InfoSection("专辑", listOf("专辑名称" to metadata.album.title, "专辑 ID" to metadata.album.id.toString()))
+                InfoSection("专辑", buildList {
+                    add("专辑名称" to metadata.album.title)
+                    (metadata.album.ref?.albumId ?: metadata.album.id.takeIf { it != 0L }?.toString())?.let { add("专辑 ID" to it) }
+                })
             }
             item("other") {
                 InfoSection("其他", listOf("时长" to TimeUtils.formatDuration(metadata.duration),

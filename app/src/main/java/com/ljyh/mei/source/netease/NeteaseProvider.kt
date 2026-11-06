@@ -65,6 +65,7 @@ class NeteaseProvider @Inject constructor(
         "account/connections", "account/listening_rank", "account/listening_stats",
         "private_messages", "official_messages", "private_message", "message_contacts",
         "listen_together", "song_recognition", "comment", "song_wiki",
+        "album", "artist", "artist-info", "artist-songs", "artist-albums", "playlist",
     )
 
     override suspend fun search(query: String, page: PageRequest): SourcePage<Track> = nativeCall {

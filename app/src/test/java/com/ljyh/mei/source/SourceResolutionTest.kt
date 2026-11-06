@@ -198,4 +198,23 @@ class SourceResolutionTest {
         assertTrue(matcher.rank(identified, listOf(track("a", duration = 300_000).copy(isrc = identified.isrc))).isEmpty())
         assertNotNull(matcher.automatic(matcher.rank(identified, listOf(track("a").copy(isrc = "US-ABC-26-00001")))))
     }
+
+    @Test fun nativeFeatureRoutesRequireAnEnabledProviderContribution() {
+        val native = object : MusicProvider, FeatureContribution {
+            override val id = "native-feature-fixture"
+            override val displayName = "Native fixture"
+            override val capabilities = setOf(SourceCapability.RECOMMENDATIONS)
+            override val featureRoutes = setOf("home", "account/login")
+            var enabled = true
+            override val status get() = if (enabled) SourceStatus.READY else SourceStatus.DISABLED
+        }
+        val registry = ProviderRegistry(listOf(native, Provider("catalog", track("catalog"))))
+        assertTrue(registry.supportsFeatureRoute(native.id, "home"))
+        assertTrue(registry.supportsFeatureRoute(native.id, "account/login"))
+        assertFalse(registry.supportsFeatureRoute(native.id, "undeclared"))
+        assertFalse(registry.supportsFeatureRoute("catalog", "home"))
+        native.enabled = false
+        registry.refresh()
+        assertFalse(registry.supportsFeatureRoute(native.id, "home"))
+    }
 }
