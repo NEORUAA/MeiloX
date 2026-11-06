@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Upsert
 import com.ljyh.mei.data.model.room.AlbumArtistCrossRef
 import com.ljyh.mei.data.model.room.AlbumEntity
 import com.ljyh.mei.data.model.room.AlbumWithArtists
@@ -47,7 +48,7 @@ interface LikeDao {
 
 @Dao
 interface HistoryDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertOrUpdateSong(song: Song)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

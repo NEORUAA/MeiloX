@@ -40,6 +40,8 @@ Baseline command:
 Result: 873 JVM tests passed; application and instrumentation APKs built. An existing
 HyperOS AVD (`emulator-5580`) is available. Its original app data was backed up locally
 before installation testing; backups contain credentials and are Git-ignored.
+The original package was updated with `adb install -r`. Existing quality and queue
+instrumentation passed all 23 tests on that AVD.
 
 ## Stage record
 
@@ -52,3 +54,17 @@ before installation testing; backups contain credentials and are Git-ignored.
 - P6: regression checks and user/developer documentation.
 
 Stage validation and remaining limitations are recorded as the implementation proceeds.
+
+### P1
+
+Added versioned UTF-8 source identities and generic models, additive Room 18→19
+identity/provenance columns, and queue snapshot v3 with v1/v2 readers. Legacy primary
+keys and file paths are retained. Song upserts no longer replace parent rows and
+delete related playback history. External IDs never become hashed numeric IDs.
+
+The shared integration build passed 895 JVM tests and built both APKs. On AVD,
+`SourceCompatibilityInstrumentedTest` passed both tests: a complete SQLite v18 fixture
+upgraded through Room v19 validation while preserving all seeded associations and
+files; legacy and external snapshots restored through real Media3 items. One existing
+quality test in the concurrently integrated P3 path exposed an exception-adapter
+regression, tracked for correction in P3.

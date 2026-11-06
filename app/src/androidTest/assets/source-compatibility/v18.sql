@@ -1,0 +1,21 @@
+-- Room v18 schema from baseline 5632235085006d01cc2ba589e6c9354033152802.
+CREATE TABLE IF NOT EXISTS `color` (`url` TEXT NOT NULL, `color` INTEGER NOT NULL, PRIMARY KEY(`url`));
+CREATE TABLE IF NOT EXISTS `song` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT NOT NULL, `cover` TEXT NOT NULL, `duration` INTEGER NOT NULL, `path` TEXT, `sourceType` TEXT NOT NULL, `fileHash` TEXT, `fileSize` INTEGER NOT NULL, `fileFormat` TEXT, `bitrate` INTEGER, `sampleRate` INTEGER, `folderPath` TEXT, `addedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`));
+CREATE TABLE IF NOT EXISTS `like` (`id` TEXT NOT NULL, PRIMARY KEY(`id`));
+CREATE TABLE IF NOT EXISTS `qqSong` (`id` TEXT NOT NULL, `qid` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT NOT NULL, `duration` INTEGER NOT NULL, PRIMARY KEY(`id`));
+CREATE TABLE IF NOT EXISTS `playlist` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `cover` TEXT NOT NULL, `author` TEXT NOT NULL, `authorName` TEXT NOT NULL, `authorAvatar` TEXT NOT NULL, `count` INTEGER NOT NULL, `type` TEXT NOT NULL, `description` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayTime` INTEGER NOT NULL, `localPlayCount` INTEGER NOT NULL, PRIMARY KEY(`id`));
+CREATE TABLE IF NOT EXISTS `playback_history` (`historyId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `songId` TEXT NOT NULL, `playedAt` INTEGER NOT NULL, FOREIGN KEY(`songId`) REFERENCES `song`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE );
+CREATE INDEX IF NOT EXISTS `index_playback_history_songId` ON `playback_history` (`songId`);
+CREATE TABLE IF NOT EXISTS `albums` (`albumId` INTEGER NOT NULL, `name` TEXT NOT NULL, `cover` TEXT NOT NULL, `publishTime` INTEGER NOT NULL, `songCount` INTEGER NOT NULL, PRIMARY KEY(`albumId`));
+CREATE TABLE IF NOT EXISTS `artists` (`artistId` INTEGER NOT NULL, `name` TEXT NOT NULL, `avatarUrl` TEXT, PRIMARY KEY(`artistId`));
+CREATE TABLE IF NOT EXISTS `album_artist_cross_ref` (`albumId` INTEGER NOT NULL, `artistId` INTEGER NOT NULL, PRIMARY KEY(`albumId`, `artistId`));
+CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_albumId` ON `album_artist_cross_ref` (`albumId`);
+CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_artistId` ON `album_artist_cross_ref` (`artistId`);
+CREATE TABLE IF NOT EXISTS `cached_lyric` (`songId` TEXT NOT NULL, `content` TEXT NOT NULL, `translation` TEXT, `isVerbatim` INTEGER NOT NULL, `isPureMusic` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `parserType` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`));
+CREATE TABLE IF NOT EXISTS `download_task` (`songId` TEXT NOT NULL, `url` TEXT NOT NULL, `fileName` TEXT NOT NULL, `fileType` TEXT NOT NULL, `status` TEXT NOT NULL, `progress` INTEGER NOT NULL, `songTitle` TEXT NOT NULL, `songArtist` TEXT NOT NULL, `songAlbum` TEXT NOT NULL, `songCover` TEXT NOT NULL, `quality` TEXT NOT NULL, `requestId` TEXT NOT NULL DEFAULT '', `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`));
+CREATE TABLE IF NOT EXISTS `playlist_song_cross_ref` (`playlistId` TEXT NOT NULL, `songId` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, PRIMARY KEY(`playlistId`, `songId`));
+CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_playlistId` ON `playlist_song_cross_ref` (`playlistId`);
+CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`);
+CREATE TABLE IF NOT EXISTS `playback_count` (`songId` TEXT NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`));
+CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT);
+INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1820e6686468dbb03846336c8aca64fb');

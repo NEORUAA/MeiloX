@@ -37,7 +37,7 @@ import com.ljyh.mei.di.dao.SongDao
         PlaybackHistory::class, AlbumEntity::class, ArtistEntity::class, AlbumArtistCrossRef::class,
         CachedLyric::class, DownloadTask::class, PlaylistSongCrossRef::class, PlaybackCount::class
     ],
-    version = 18
+    version = 19
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -177,13 +177,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Add provenance without changing any key, association or offline file path. */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE song ADD COLUMN providerId TEXT NOT NULL DEFAULT 'netease'")
+                db.execSQL("ALTER TABLE song ADD COLUMN providerTrackId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE song SET providerId = 'local' WHERE sourceType = 'LOCAL' OR id GLOB 'local_*'")
+                db.execSQL("UPDATE song SET providerTrackId = CASE WHEN providerId = 'local' AND id GLOB '-[0-9]*' AND substr(id, 2) NOT GLOB '*[^0-9]*' THEN 'local_' || substr(id, 2) ELSE id END")
+                db.execSQL("ALTER TABLE playlist ADD COLUMN providerId TEXT NOT NULL DEFAULT 'netease'")
+                db.execSQL("ALTER TABLE playlist ADD COLUMN providerPlaylistId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE playlist SET providerId = 'local' WHERE type != 'NETEAST'")
+                db.execSQL("UPDATE playlist SET providerPlaylistId = id")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN originTrackRef TEXT")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN resolvedTrackRef TEXT")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN actualAudioProviderId TEXT NOT NULL DEFAULT 'netease'")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN actualProviderInstanceId TEXT NOT NULL DEFAULT 'netease'")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN actualQuality TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "app_database"
-                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                ).addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                     .build()
                     .also { INSTANCE = it }
             }

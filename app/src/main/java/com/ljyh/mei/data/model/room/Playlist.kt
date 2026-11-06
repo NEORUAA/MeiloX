@@ -2,6 +2,8 @@ package com.ljyh.mei.data.model.room
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
+import com.ljyh.mei.source.api.ProviderIds
 import kotlin.math.exp
 
 @Entity(tableName = "playlist")
@@ -19,7 +21,10 @@ data class Playlist(
     val updatedAt: Long = System.currentTimeMillis(),
     val playCount: Long = 0L,
     val lastPlayTime: Long = 0L,
-    val localPlayCount: Int = 0
+    val localPlayCount: Int = 0,
+    @ColumnInfo(defaultValue = "'netease'")
+    val providerId: String = if (type == PlaylistType.NETEAST) ProviderIds.NETEASE else ProviderIds.LOCAL,
+    @ColumnInfo(defaultValue = "''") val providerPlaylistId: String = id,
 ) {
     fun sortScore(
         maxLocalPlayCount: Int = 1,

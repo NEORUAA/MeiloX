@@ -22,6 +22,11 @@ import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
+import com.ljyh.mei.source.api.AlbumRef
+import com.ljyh.mei.source.api.ArtistRef
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.api.TrackRefCodec
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -71,7 +76,7 @@ internal fun PlaybackSnapshot.withRestorePreferences(preferences: Preferences): 
 )
 
 data class PlaybackSnapshot(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val savedAtEpochMs: Long = System.currentTimeMillis(),
     val items: List<PlaybackItemSnapshot> = emptyList(),
     val currentIndex: Int = 0,
@@ -97,7 +102,7 @@ data class PlaybackSnapshot(
 }
 
 data class PlaybackItemSnapshot(
-    val mediaId: String,
+    val mediaId: String = "",
     val title: String = "",
     val artists: List<PlaybackArtistSnapshot> = emptyList(),
     val albumTitle: String = "",
@@ -109,11 +114,14 @@ data class PlaybackItemSnapshot(
     val isPodcast: Boolean = false,
     val isLocal: Boolean = false,
     val isPlaceholder: Boolean = false,
+    val trackRef: String? = null,
+    val albumRef: AlbumRef? = null,
 )
 
 data class PlaybackArtistSnapshot(
     val id: Long = 0L,
-    val name: String,
+    val name: String = "",
+    val ref: ArtistRef? = null,
 )
 
 @UnstableApi
@@ -213,7 +221,7 @@ class PlaybackPersistence(
         val encoded = context.dataStore.data.first()[PlaybackSnapshotKey] ?: return null
         return runCatching {
             gson.fromJson(encoded, PlaybackSnapshot::class.java)
-                ?.takeIf { it.schemaVersion in 1..2 }
+                ?.takeIf { it.schemaVersion in 1..3 }
                 ?.let { snapshot ->
                     val checkpoint = runCatching {
                         context.playbackProgressStore.data.first()[ProgressKey]
@@ -234,7 +242,7 @@ class PlaybackPersistence(
         val displayMetadata = mediaMetadata
         val placeholder = localConfiguration?.uri?.toString() == PLACEHOLDER_URI
         val artistNames = domainMetadata?.artists?.map {
-            PlaybackArtistSnapshot(id = it.id, name = it.name)
+            PlaybackArtistSnapshot(id = it.id, name = it.name, ref = it.ref)
         }.orEmpty().ifEmpty {
             displayMetadata.extras?.getStringArrayList("artist_list")
                 ?.filter { it.isNotBlank() }
@@ -263,6 +271,8 @@ class PlaybackPersistence(
             isPodcast = domainMetadata?.isPodcast ?: false,
             isLocal = domainMetadata?.isLocal ?: false,
             isPlaceholder = placeholder,
+            trackRef = domainMetadata?.trackRef?.let(TrackRefCodec::encode),
+            albumRef = domainMetadata?.album?.ref,
         )
     }
 
@@ -272,25 +282,39 @@ class PlaybackPersistence(
         val resolvedArtists = artists
             .filter { it.name.isNotBlank() }
             .ifEmpty { listOf(PlaybackArtistSnapshot(name = UNKNOWN_ARTIST)) }
+        val ref = trackRef?.let { TrackRefCodec.decode(it) }
+            ?: TrackRefCodec.decode(mediaId, isLocal, isPodcast)
+            ?: TrackRef(ProviderIds.NETEASE, mediaId.ifEmpty { "0" })
+        val legacyId = when (ref.providerId) {
+            ProviderIds.NETEASE -> ref.trackId.toLongOrNull() ?: 0L
+            ProviderIds.LOCAL -> ref.trackId.removePrefix("local_").toLongOrNull()
+                ?.takeIf { it > 0L }?.let { -it } ?: 0L
+            else -> 0L
+        }
         val domainMetadata = MediaMetadata(
-            id = stableId(mediaId),
+            id = legacyId,
             title = title.ifBlank { UNKNOWN_TITLE },
             coverUrl = artworkUri,
             artists = resolvedArtists.map { artist ->
                 MediaMetadata.Artist(
-                    id = artist.id.takeIf { it != 0L } ?: stableId(artist.name),
+                    id = artist.id.takeIf { it != 0L }
+                        ?: if (ref.providerId == ProviderIds.NETEASE || ref.providerId == ProviderIds.LOCAL) stableId(artist.name) else 0L,
                     name = artist.name,
+                    ref = artist.ref,
                 )
             },
             duration = durationMs,
             album = MediaMetadata.Album(
-                id = albumId.takeIf { it != 0L } ?: stableId(albumTitle),
+                id = albumId.takeIf { it != 0L }
+                    ?: if (ref.providerId == ProviderIds.NETEASE || ref.providerId == ProviderIds.LOCAL) stableId(albumTitle) else 0L,
                 title = albumTitle,
+                ref = albumRef,
             ),
             explicit = explicit,
             tns = translatedName,
             isPodcast = isPodcast,
             isLocal = isLocal,
+            trackRef = ref,
         )
         val displayMetadata = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(domainMetadata.title)
