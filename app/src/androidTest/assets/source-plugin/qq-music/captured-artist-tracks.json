@@ -1,0 +1,279 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "artistTracks": {
+        "module": "musichall.song_list_server",
+        "method": "GetSingerSongList",
+        "param": {
+          "singerMid": "0025NhlN2yWrP4",
+          "order": 1,
+          "begin": 0,
+          "num": 3
+        }
+      }
+    }
+  },
+  "code": 0,
+  "artistTracks": {
+    "code": 0,
+    "data": {
+      "singerMid": "0025NhlN2yWrP4",
+      "totalNum": 1013,
+      "songList": [
+        {
+          "songInfo": {
+            "id": 97773,
+            "mid": "0039MnYb0qxYhV",
+            "name": "晴天",
+            "title": "晴天",
+            "subtitle": "",
+            "interval": 269,
+            "type": 0,
+            "singer": [
+              {
+                "id": 4558,
+                "mid": "0025NhlN2yWrP4",
+                "name": "周杰伦",
+                "title": "周杰伦",
+                "type": 0,
+                "uin": 0,
+                "pmid": ""
+              }
+            ],
+            "album": {
+              "id": 8220,
+              "mid": "000MkMni19ClKG",
+              "name": "叶惠美",
+              "title": "叶惠美",
+              "subtitle": "",
+              "time_public": "2003-07-31",
+              "pmid": "000MkMni19ClKG_5"
+            },
+            "file": {
+              "media_mid": "003Qui1q2u1Zho",
+              "size_24aac": 0,
+              "size_48aac": 1642440,
+              "size_96aac": 3283546,
+              "size_192ogg": 5860576,
+              "size_192aac": 6519764,
+              "size_128mp3": 4317292,
+              "size_320mp3": 10792943,
+              "size_ape": 0,
+              "size_flac": 55397039,
+              "size_dts": 0,
+              "size_try": 960887,
+              "try_begin": 84346,
+              "try_end": 142843,
+              "url": "",
+              "size_hires": 0,
+              "hires_sample": 0,
+              "hires_bitdepth": 0,
+              "b_30s": 0,
+              "e_30s": 60000,
+              "size_96ogg": 2927865,
+              "size_360ra": [],
+              "size_dolby": 0,
+              "size_new": [
+                186980254,
+                31168013,
+                80437198,
+                10331568,
+                0,
+                23183008,
+                36638639,
+                2563200,
+                58805051,
+                0,
+                0,
+                0,
+                28055659,
+                0,
+                0,
+                0
+              ]
+            },
+            "pay": {
+              "pay_month": 1,
+              "price_track": 200,
+              "price_album": 0,
+              "pay_play": 1,
+              "pay_down": 1,
+              "pay_status": 0,
+              "time_free": 0
+            }
+          }
+        },
+        {
+          "songInfo": {
+            "id": 718475,
+            "mid": "0027oMO61wWi55",
+            "name": "发如雪",
+            "title": "发如雪",
+            "subtitle": "",
+            "interval": 299,
+            "type": 0,
+            "singer": [
+              {
+                "id": 4558,
+                "mid": "0025NhlN2yWrP4",
+                "name": "周杰伦",
+                "title": "周杰伦",
+                "type": 0,
+                "uin": 0,
+                "pmid": ""
+              }
+            ],
+            "album": {
+              "id": 60671,
+              "mid": "0024bjiL2aocxT",
+              "name": "十一月的萧邦",
+              "title": "十一月的萧邦",
+              "subtitle": "",
+              "time_public": "2005-11-01",
+              "pmid": "0024bjiL2aocxT_5"
+            },
+            "file": {
+              "media_mid": "002A6j2q1tdUUP",
+              "size_24aac": 0,
+              "size_48aac": 1824590,
+              "size_96aac": 3649075,
+              "size_192ogg": 7284915,
+              "size_192aac": 7253887,
+              "size_128mp3": 4789176,
+              "size_320mp3": 11972641,
+              "size_ape": 0,
+              "size_flac": 36226753,
+              "size_dts": 0,
+              "size_try": 960887,
+              "try_begin": 69867,
+              "try_end": 106784,
+              "url": "",
+              "size_hires": 0,
+              "hires_sample": 0,
+              "hires_bitdepth": 0,
+              "b_30s": 69000,
+              "e_30s": 129000,
+              "size_96ogg": 3557435,
+              "size_360ra": [],
+              "size_dolby": 0,
+              "size_new": [
+                206119416,
+                34964054,
+                89453315,
+                12824366,
+                0,
+                26444853,
+                39850957,
+                2843676,
+                34382640,
+                8430862,
+                0,
+                0,
+                31118129,
+                0,
+                0,
+                0
+              ]
+            },
+            "pay": {
+              "pay_month": 1,
+              "price_track": 200,
+              "price_album": 0,
+              "pay_play": 1,
+              "pay_down": 1,
+              "pay_status": 0,
+              "time_free": 0
+            }
+          }
+        },
+        {
+          "songInfo": {
+            "id": 718477,
+            "mid": "001zMQr71F1Qo8",
+            "name": "夜曲",
+            "title": "夜曲",
+            "subtitle": "",
+            "interval": 226,
+            "type": 0,
+            "singer": [
+              {
+                "id": 4558,
+                "mid": "0025NhlN2yWrP4",
+                "name": "周杰伦",
+                "title": "周杰伦",
+                "type": 0,
+                "uin": 0,
+                "pmid": ""
+              }
+            ],
+            "album": {
+              "id": 60671,
+              "mid": "0024bjiL2aocxT",
+              "name": "十一月的萧邦",
+              "title": "十一月的萧邦",
+              "subtitle": "",
+              "time_public": "2005-11-01",
+              "pmid": "0024bjiL2aocxT_5"
+            },
+            "file": {
+              "media_mid": "0024jrso28p8VA",
+              "size_24aac": 0,
+              "size_48aac": 1381318,
+              "size_96aac": 2768003,
+              "size_192ogg": 5600056,
+              "size_192aac": 5499068,
+              "size_128mp3": 3630591,
+              "size_320mp3": 9075745,
+              "size_ape": 0,
+              "size_flac": 26691277,
+              "size_dts": 0,
+              "size_try": 960887,
+              "try_begin": 68816,
+              "try_end": 112473,
+              "url": "",
+              "size_hires": 0,
+              "hires_sample": 0,
+              "hires_bitdepth": 0,
+              "b_30s": 68816,
+              "e_30s": 128816,
+              "size_96ogg": 2830091,
+              "size_360ra": [],
+              "size_dolby": 0,
+              "size_new": [
+                155620200,
+                26097982,
+                66514259,
+                9759467,
+                0,
+                20339817,
+                31076916,
+                2155716,
+                48823546,
+                6390622,
+                0,
+                0,
+                23593234,
+                0,
+                0,
+                0
+              ]
+            },
+            "pay": {
+              "pay_month": 1,
+              "price_track": 200,
+              "price_album": 0,
+              "pay_play": 1,
+              "pay_down": 1,
+              "pay_status": 0,
+              "time_free": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

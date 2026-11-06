@@ -1,0 +1,37 @@
+{
+  "_capture": {
+    "capturedAt": "2026-11-06T08:59:20.307312+00:00",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "authentication": "anonymous; no Cookie header",
+    "request": {
+      "module": "music.musichallSong.PlayLyricInfo",
+      "method": "GetPlayLyricInfo",
+      "param": {
+        "songMID": "0039MnYb0qxYhV",
+        "songID": 97773,
+        "qrc": 0,
+        "qrc_t": 0,
+        "trans": 1,
+        "roma": 0,
+        "crypt": 0
+      }
+    },
+    "projection": "Copyrighted lyric lines omitted. The lyric field is a Base64 metadata-only excerpt; no sung lyrics are included.",
+    "originalLyricBase64Length": 3400
+  },
+  "code": 0,
+  "lyric": {
+    "code": 0,
+    "data": {
+      "songID": 97773,
+      "songType": 0,
+      "qrc": 0,
+      "crypt": 0,
+      "lrc_t": 1761231326,
+      "qrc_t": 0,
+      "trans_t": 1761231326,
+      "roma_t": 0,
+      "lyric": "W3RpOuaZtOWkqV0KW2FyOuWRqOadsOS8pl0KW2FsOuWPtuaDoOe+jl0K"
+    }
+  }
+}

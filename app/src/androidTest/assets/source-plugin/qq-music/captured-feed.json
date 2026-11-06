@@ -1,0 +1,787 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "recommend": {
+        "module": "music.playlist.PlaylistSquare",
+        "method": "GetRecommendFeed",
+        "param": {
+          "From": 0,
+          "Size": 3
+        }
+      },
+      "songs": {
+        "module": "newsong.NewSongServer",
+        "method": "get_new_song_info",
+        "param": {
+          "type": 5
+        }
+      },
+      "albums": {
+        "module": "newalbum.NewAlbumServer",
+        "method": "get_new_album_info",
+        "param": {
+          "area": 1,
+          "sin": 0,
+          "num": 3
+        }
+      },
+      "charts": {
+        "module": "musicToplist.ToplistInfoServer",
+        "method": "GetAll",
+        "param": {}
+      },
+      "categories": {
+        "module": "music.web_category_svr",
+        "method": "get_hot_category",
+        "param": {
+          "location": 0
+        }
+      }
+    }
+  },
+  "code": 0,
+  "recommend": {
+    "code": 0,
+    "data": {
+      "List": [
+        {
+          "Playlist": {
+            "basic": {
+              "tid": 8044204090,
+              "title": "抖音最火BGM热歌｜100w+人都在听",
+              "song_cnt": 633,
+              "creator": {
+                "uin": "1683977787",
+                "encrypt_uin": "oKCFoiEl7iSF7z**",
+                "nick": "反派大魔王",
+                "avatar": "https://pic6.y.qq.com/qqmusic/avatar/6f4b43466f69456c37695346377a2a2a-1627921763",
+                "identity": 2,
+                "icon": "https://y.qq.com/music/common/upload/t_cm3_photo_publish/2312597.png",
+                "v_type": [],
+                "follow": 0
+              },
+              "cover": {
+                "id": 0,
+                "mid": "",
+                "small_url": "https://music-file.y.qq.com/songlist/u/oKCFoiEl7iSF7z/1f055/1a5126af5ddb5ee7f4efce016f894d88e266f326_123d80.jpg?imageView2/4/w/300/h/300",
+                "medium_url": "https://music-file.y.qq.com/songlist/u/oKCFoiEl7iSF7z/1f055/1a5126af5ddb5ee7f4efce016f894d88e266f326_123d80.jpg?imageView2/4/w/600/h/600",
+                "big_url": "https://music-file.y.qq.com/songlist/u/oKCFoiEl7iSF7z/1f055/1a5126af5ddb5ee7f4efce016f894d88e266f326_123d80.jpg?imageView2/4/w/600/h/600",
+                "default_url": "https://music-file.y.qq.com/songlist/u/oKCFoiEl7iSF7z/1f055/1a5126af5ddb5ee7f4efce016f894d88e266f326_123d80.jpg?imageView2/4/w/300/h/300",
+                "pic_url2": "",
+                "layerUrl": "",
+                "ext1": "",
+                "ext2": "",
+                "bHitDiyAbt": false
+              }
+            }
+          }
+        },
+        {
+          "Playlist": {
+            "basic": {
+              "tid": 8870221359,
+              "title": "500首抖音热歌：收割爆款就现在",
+              "song_cnt": 554,
+              "creator": {
+                "uin": "2634375294",
+                "encrypt_uin": "owCi7eol7K-q7n**",
+                "nick": "清绾✨",
+                "avatar": "https://pic6.y.qq.com/qqmusic/avatar/6f77436937656f6c374b2d71376e2a2a-1658580438/140",
+                "identity": 2,
+                "icon": "https://y.qq.com/music/common/upload/t_cm3_photo_publish/2312597.png",
+                "v_type": [],
+                "follow": 0
+              },
+              "cover": {
+                "id": 0,
+                "mid": "",
+                "small_url": "https://music-file.y.qq.com/songlist/u/owCi7eol7K-q7n/16d41/1617fbbc940220a54e838d18bf6400d44c71565e_7e14a.jpg?imageView2/4/w/300/h/300",
+                "medium_url": "https://music-file.y.qq.com/songlist/u/owCi7eol7K-q7n/16d41/1617fbbc940220a54e838d18bf6400d44c71565e_7e14a.jpg?imageView2/4/w/600/h/600",
+                "big_url": "https://music-file.y.qq.com/songlist/u/owCi7eol7K-q7n/16d41/1617fbbc940220a54e838d18bf6400d44c71565e_7e14a.jpg?imageView2/4/w/600/h/600",
+                "default_url": "https://music-file.y.qq.com/songlist/u/owCi7eol7K-q7n/16d41/1617fbbc940220a54e838d18bf6400d44c71565e_7e14a.jpg?imageView2/4/w/300/h/300",
+                "pic_url2": "",
+                "layerUrl": "",
+                "ext1": "",
+                "ext2": "",
+                "bHitDiyAbt": false
+              }
+            }
+          }
+        },
+        {
+          "Playlist": {
+            "basic": {
+              "tid": 9795916402,
+              "title": "全修歌单｜twins相伴绽放的友情乐章",
+              "song_cnt": 0,
+              "creator": {
+                "uin": "1152921505383241319",
+                "encrypt_uin": "oK6kowEAoK4z7KoFoi-PoKo5Nv**",
+                "nick": "雅诗兰黛",
+                "avatar": "http://y.gtimg.cn/music/common/upload/t_celebrity_certification/12917153.jpg",
+                "identity": 1,
+                "icon": "https://y.qq.com/music/common/upload/t_cm3_photo_publish/2312624.png",
+                "v_type": [],
+                "follow": 0
+              },
+              "cover": {
+                "id": 0,
+                "mid": "",
+                "small_url": "https://music-file.y.qq.com/songlist/u/oK6kowEAoK4z7KoFoi-PoKo5Nv/23fb7/b5cf3c14805ad47d749d2c5ffdf553a4db5ac93e_7250e.jpg?imageView2/4/w/300/h/300",
+                "medium_url": "https://music-file.y.qq.com/songlist/u/oK6kowEAoK4z7KoFoi-PoKo5Nv/23fb7/b5cf3c14805ad47d749d2c5ffdf553a4db5ac93e_7250e.jpg?imageView2/4/w/600/h/600",
+                "big_url": "https://music-file.y.qq.com/songlist/u/oK6kowEAoK4z7KoFoi-PoKo5Nv/23fb7/b5cf3c14805ad47d749d2c5ffdf553a4db5ac93e_7250e.jpg?imageView2/4/w/600/h/600",
+                "default_url": "https://music-file.y.qq.com/songlist/u/oK6kowEAoK4z7KoFoi-PoKo5Nv/23fb7/b5cf3c14805ad47d749d2c5ffdf553a4db5ac93e_7250e.jpg?imageView2/4/w/300/h/300",
+                "pic_url2": "",
+                "layerUrl": "",
+                "ext1": "",
+                "ext2": "",
+                "bHitDiyAbt": false
+              }
+            }
+          }
+        }
+      ],
+      "HasMore": true,
+      "FromLimit": 400
+    }
+  },
+  "songs": {
+    "code": 0,
+    "data": {
+      "songlist": [
+        {
+          "id": 738258294,
+          "mid": "004bcSjG0udnPa",
+          "name": "后会友期",
+          "title": "后会友期",
+          "subtitle": "综艺《后会友期》片尾曲",
+          "interval": 217,
+          "type": 0,
+          "singer": [
+            {
+              "id": 5556,
+              "mid": "000ohzzi3esYiQ",
+              "name": "许飞",
+              "title": "许飞",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 106210795,
+            "mid": "002qopT13t057Y",
+            "name": "综艺 后会友期 主题曲",
+            "title": "综艺 后会友期 主题曲",
+            "subtitle": "综艺《后会友期》片尾曲",
+            "time_public": "2026-11-05",
+            "pmid": "002qopT13t057Y_1"
+          },
+          "file": {
+            "media_mid": "004bcSjG0udnPa",
+            "size_24aac": 0,
+            "size_48aac": 1322629,
+            "size_96aac": 2647553,
+            "size_192ogg": 5065007,
+            "size_192aac": 5268526,
+            "size_128mp3": 3480974,
+            "size_320mp3": 8701604,
+            "size_ape": 0,
+            "size_flac": 24144220,
+            "size_dts": 0,
+            "size_try": 960887,
+            "try_begin": 56452,
+            "try_end": 87705,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2570850,
+            "size_360ra": [],
+            "size_dolby": 0,
+            "size_new": [
+              144949609,
+              23290124,
+              60095327,
+              8568329,
+              0,
+              17398825,
+              28682155,
+              2067515,
+              46327148,
+              6128133,
+              0,
+              0,
+              22616870,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 738258246,
+          "mid": "004HLkC42e527w",
+          "name": "后会友期",
+          "title": "后会友期",
+          "subtitle": "综艺《后会友期》主题曲",
+          "interval": 214,
+          "type": 0,
+          "singer": [
+            {
+              "id": 952459,
+              "mid": "0039iS0o0ItreJ",
+              "name": "张萌",
+              "title": "张萌",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 6950,
+              "mid": "000FF56x1ZCWkB",
+              "name": "马天宇",
+              "title": "马天宇",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 5555,
+              "mid": "004TyZNx4EGSnO",
+              "name": "厉娜",
+              "title": "厉娜",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 5556,
+              "mid": "000ohzzi3esYiQ",
+              "name": "许飞",
+              "title": "许飞",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 13361675,
+              "mid": "003AgbgL3t5eBQ",
+              "name": "文吉儿",
+              "title": "文吉儿",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 17629542,
+              "mid": "0003oyD80OJlea",
+              "name": "王子璇",
+              "title": "王子璇",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 24881252,
+              "mid": "001TJwZM3Jdtul",
+              "name": "青稚",
+              "title": "青稚",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            },
+            {
+              "id": 24881275,
+              "mid": "002n9q8o4GSXgN",
+              "name": "白小纯",
+              "title": "白小纯",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 106210795,
+            "mid": "002qopT13t057Y",
+            "name": "综艺 后会友期 主题曲",
+            "title": "综艺 后会友期 主题曲",
+            "subtitle": "综艺《后会友期》主题曲",
+            "time_public": "2026-11-05",
+            "pmid": "002qopT13t057Y_1"
+          },
+          "file": {
+            "media_mid": "004HLkC42e527w",
+            "size_24aac": 0,
+            "size_48aac": 1307632,
+            "size_96aac": 2614092,
+            "size_192ogg": 4145913,
+            "size_192aac": 5188336,
+            "size_128mp3": 3425435,
+            "size_320mp3": 8563198,
+            "size_ape": 0,
+            "size_flac": 18382598,
+            "size_dts": 0,
+            "size_try": 960887,
+            "try_begin": 112732,
+            "try_end": 204845,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2180077,
+            "size_360ra": [],
+            "size_dolby": 0,
+            "size_new": [
+              127322854,
+              18244942,
+              48804333,
+              7261444,
+              0,
+              15963981,
+              27503137,
+              2033999,
+              18244942,
+              6030150,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 739112483,
+          "mid": "0035Dx112rWUzS",
+          "name": "AUTOMATIC",
+          "title": "AUTOMATIC",
+          "subtitle": "",
+          "interval": 199,
+          "type": 0,
+          "singer": [
+            {
+              "id": 1528323,
+              "mid": "001KtqxJ2R7xqH",
+              "name": "DINO",
+              "title": "DINO (디노)",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 106464263,
+            "mid": "000v872529a2dH",
+            "name": "AUTOMATIC",
+            "title": "AUTOMATIC",
+            "subtitle": "",
+            "time_public": "2026-11-03",
+            "pmid": "000v872529a2dH_1"
+          },
+          "file": {
+            "media_mid": "0035Dx112rWUzS",
+            "size_24aac": 0,
+            "size_48aac": 1213235,
+            "size_96aac": 2424902,
+            "size_192ogg": 4716608,
+            "size_192aac": 4823267,
+            "size_128mp3": 3185065,
+            "size_320mp3": 7962338,
+            "size_ape": 0,
+            "size_flac": 45925366,
+            "size_dts": 0,
+            "size_try": 960887,
+            "try_begin": 42055,
+            "try_end": 76932,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2322887,
+            "size_360ra": [],
+            "size_dolby": 11151801,
+            "size_new": [
+              146108523,
+              0,
+              0,
+              8498069,
+              0,
+              17969888,
+              0,
+              1891115,
+              0,
+              0,
+              11178568,
+              37363550,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 1,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        }
+      ]
+    }
+  },
+  "albums": {
+    "code": 0,
+    "data": {
+      "albums": [
+        {
+          "id": 106384690,
+          "mid": "000LFWfZ3G7QtG",
+          "name": "Under the same star",
+          "singers": [
+            {
+              "id": 2645630,
+              "mid": "003kWI8G153dTx",
+              "name": "徐艺洋",
+              "foreign_name": "",
+              "type": 0,
+              "genre": 0,
+              "area": 0,
+              "company": {
+                "id": 0,
+                "name": "",
+                "ex": {
+                  "desc": "",
+                  "company_photo": 0
+                }
+              },
+              "grade": 0,
+              "origin": 0,
+              "enter": 0,
+              "country": 0,
+              "identity": 0,
+              "birthday": "",
+              "instrument": 0,
+              "ex": {
+                "desc": "",
+                "wiki": "",
+                "tag": "",
+                "ex_status": 0,
+                "ex_identity": 0,
+                "info_name": "",
+                "name_spell": "",
+                "band": "",
+                "dieDate": "",
+                "force_show": 0,
+                "auth_status": 0,
+                "control": 0
+              },
+              "photo": {
+                "has_photo": 0,
+                "photo_cnt": 0,
+                "big_photo_flag": "",
+                "magic_rgb": 0,
+                "pic1_flag": 0,
+                "pic2_flag": 0,
+                "pic_mid": ""
+              },
+              "opt_grade": 0,
+              "status": 0,
+              "opt_grade_new": 0,
+              "vertical_type": "",
+              "singer_wiki": "",
+              "index": "",
+              "is_classical": 0
+            }
+          ],
+          "photo": {
+            "gaus_pic": "",
+            "has_photo": 0,
+            "pic_mid": "000LFWfZ3G7QtG_1",
+            "vip_flag": 0,
+            "pay_flag": 0,
+            "version": 0,
+            "primecolor": 0,
+            "magic_class": 0,
+            "magic_color": 0,
+            "src_w": 0,
+            "src_h": 0
+          }
+        },
+        {
+          "id": 106589464,
+          "mid": "001hyyCU1zDd92",
+          "name": "莲花",
+          "singers": [
+            {
+              "id": 69205,
+              "mid": "003ZQQb64D5317",
+              "name": "南征北战NZBZ",
+              "foreign_name": "",
+              "type": 0,
+              "genre": 0,
+              "area": 0,
+              "company": {
+                "id": 0,
+                "name": "",
+                "ex": {
+                  "desc": "",
+                  "company_photo": 0
+                }
+              },
+              "grade": 0,
+              "origin": 0,
+              "enter": 0,
+              "country": 0,
+              "identity": 0,
+              "birthday": "",
+              "instrument": 0,
+              "ex": {
+                "desc": "",
+                "wiki": "",
+                "tag": "",
+                "ex_status": 0,
+                "ex_identity": 0,
+                "info_name": "",
+                "name_spell": "",
+                "band": "",
+                "dieDate": "",
+                "force_show": 0,
+                "auth_status": 0,
+                "control": 0
+              },
+              "photo": {
+                "has_photo": 0,
+                "photo_cnt": 0,
+                "big_photo_flag": "",
+                "magic_rgb": 0,
+                "pic1_flag": 0,
+                "pic2_flag": 0,
+                "pic_mid": ""
+              },
+              "opt_grade": 0,
+              "status": 0,
+              "opt_grade_new": 0,
+              "vertical_type": "",
+              "singer_wiki": "",
+              "index": "",
+              "is_classical": 0
+            }
+          ],
+          "photo": {
+            "gaus_pic": "",
+            "has_photo": 0,
+            "pic_mid": "001hyyCU1zDd92_1",
+            "vip_flag": 0,
+            "pay_flag": 0,
+            "version": 0,
+            "primecolor": 0,
+            "magic_class": 0,
+            "magic_color": 0,
+            "src_w": 0,
+            "src_h": 0
+          }
+        },
+        {
+          "id": 106199496,
+          "mid": "001iYBiu1xhbHZ",
+          "name": "小小神经质",
+          "singers": [
+            {
+              "id": 15549481,
+              "mid": "000CJhKA19KqYZ",
+              "name": "黄婷婷",
+              "foreign_name": "",
+              "type": 0,
+              "genre": 0,
+              "area": 0,
+              "company": {
+                "id": 0,
+                "name": "",
+                "ex": {
+                  "desc": "",
+                  "company_photo": 0
+                }
+              },
+              "grade": 0,
+              "origin": 0,
+              "enter": 0,
+              "country": 0,
+              "identity": 0,
+              "birthday": "",
+              "instrument": 0,
+              "ex": {
+                "desc": "",
+                "wiki": "",
+                "tag": "",
+                "ex_status": 0,
+                "ex_identity": 0,
+                "info_name": "",
+                "name_spell": "",
+                "band": "",
+                "dieDate": "",
+                "force_show": 0,
+                "auth_status": 0,
+                "control": 0
+              },
+              "photo": {
+                "has_photo": 0,
+                "photo_cnt": 0,
+                "big_photo_flag": "",
+                "magic_rgb": 0,
+                "pic1_flag": 0,
+                "pic2_flag": 0,
+                "pic_mid": ""
+              },
+              "opt_grade": 0,
+              "status": 0,
+              "opt_grade_new": 0,
+              "vertical_type": "",
+              "singer_wiki": "",
+              "index": "",
+              "is_classical": 0
+            }
+          ],
+          "photo": {
+            "gaus_pic": "",
+            "has_photo": 0,
+            "pic_mid": "001iYBiu1xhbHZ_1",
+            "vip_flag": 0,
+            "pay_flag": 0,
+            "version": 0,
+            "primecolor": 0,
+            "magic_class": 0,
+            "magic_color": 0,
+            "src_w": 0,
+            "src_h": 0
+          }
+        }
+      ],
+      "total": 4235
+    }
+  },
+  "charts": {
+    "code": 0,
+    "data": {
+      "group": [
+        {
+          "groupName": "巅峰榜",
+          "toplist": [
+            {
+              "topId": 62,
+              "title": "飙升榜",
+              "totalNum": 100,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000002qopT13t057Y_1.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M0000047JkS81g8Vgz.jpg",
+              "period": "2026-11-06"
+            },
+            {
+              "topId": 26,
+              "title": "热歌榜",
+              "totalNum": 299,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000003h24VO1pTh6K_4.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M000004M7nwL2oP6hR.jpg",
+              "period": "2026-11-06"
+            },
+            {
+              "topId": 27,
+              "title": "新歌榜",
+              "totalNum": 100,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000003h24VO1pTh6K_4.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M000003dcrQL2im2I3.jpg",
+              "period": "2026-11-06"
+            }
+          ]
+        },
+        {
+          "groupName": "地区榜",
+          "toplist": [
+            {
+              "topId": 5,
+              "title": "内地榜",
+              "totalNum": 100,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000001zUnnV4T1qwb_2.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M000002wVky12uQS8B.jpg",
+              "period": "2026_45"
+            },
+            {
+              "topId": 59,
+              "title": "香港地区榜",
+              "totalNum": 100,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000002Cy8kL400ft2_3.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M0000002prZp4C0zsn.jpg",
+              "period": "2026_45"
+            },
+            {
+              "topId": 61,
+              "title": "台湾地区榜",
+              "totalNum": 100,
+              "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M0000018CRqi0xIzCf_1.jpg",
+              "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M000002ALynY3gZmwc.jpg",
+              "period": "2026_45"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "categories": {
+    "code": 0,
+    "data": {
+      "category": [
+        {
+          "items": [
+            {
+              "item_id": 59,
+              "item_name": "经典"
+            },
+            {
+              "item_id": 3056,
+              "item_name": "网络歌曲"
+            },
+            {
+              "item_id": 3,
+              "item_name": "英语"
+            },
+            {
+              "item_id": 3317,
+              "item_name": "官方歌单"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

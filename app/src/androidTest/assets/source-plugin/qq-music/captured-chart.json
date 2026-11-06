@@ -1,0 +1,284 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "chart": {
+        "module": "musicToplist.ToplistInfoServer",
+        "method": "GetDetail",
+        "param": {
+          "topid": 62,
+          "offset": 0,
+          "num": 3
+        }
+      }
+    }
+  },
+  "code": 0,
+  "chart": {
+    "code": 0,
+    "data": {
+      "data": {
+        "topId": 62,
+        "title": "飙升榜",
+        "totalNum": 100,
+        "musichallPicUrl": "https://y.gtimg.cn/music/photo_new/T002R300x300M000002qopT13t057Y_1.jpg",
+        "frontPicUrl": "http://y.gtimg.cn/music/photo_new/T003R300x300M0000047JkS81g8Vgz.jpg",
+        "period": "2026-11-06"
+      },
+      "songInfoList": [
+        {
+          "id": 738258294,
+          "mid": "004bcSjG0udnPa",
+          "name": "后会友期",
+          "title": "后会友期",
+          "subtitle": "综艺《后会友期》片尾曲",
+          "interval": 217,
+          "type": 0,
+          "singer": [
+            {
+              "id": 5556,
+              "mid": "000ohzzi3esYiQ",
+              "name": "许飞",
+              "title": "许飞",
+              "type": 1,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 106210795,
+            "mid": "002qopT13t057Y",
+            "name": "综艺 后会友期 主题曲",
+            "title": "综艺 后会友期 主题曲",
+            "subtitle": "综艺《后会友期》片尾曲",
+            "time_public": "2026-11-05",
+            "pmid": "002qopT13t057Y_1"
+          },
+          "file": {
+            "media_mid": "004bcSjG0udnPa",
+            "size_24aac": 0,
+            "size_48aac": 1322629,
+            "size_96aac": 2647553,
+            "size_192ogg": 5065007,
+            "size_192aac": 5268526,
+            "size_128mp3": 3480974,
+            "size_320mp3": 8701604,
+            "size_ape": 0,
+            "size_flac": 24144220,
+            "size_dts": 0,
+            "size_try": 960887,
+            "try_begin": 56452,
+            "try_end": 87705,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2570850,
+            "size_360ra": [],
+            "size_dolby": 0,
+            "size_new": [
+              144949609,
+              23290124,
+              60095327,
+              8568329,
+              0,
+              17398825,
+              28682155,
+              2067515,
+              46327148,
+              6128133,
+              0,
+              0,
+              22616870,
+              0,
+              0,
+              0
+            ],
+            "vm": [],
+            "df": []
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 737510311,
+          "mid": "003heQpc3Lve9E",
+          "name": "慢倍速",
+          "title": "慢倍速",
+          "subtitle": "",
+          "interval": 202,
+          "type": 0,
+          "singer": [
+            {
+              "id": 23464198,
+              "mid": "002g2pCn3xaGm4",
+              "name": "方了个木",
+              "title": "方了个木",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 105998419,
+            "mid": "004b3M1x1MpQdc",
+            "name": "慢倍速",
+            "title": "慢倍速",
+            "subtitle": "",
+            "time_public": "2026-10-28",
+            "pmid": "004b3M1x1MpQdc_2"
+          },
+          "file": {
+            "media_mid": "003heQpc3Lve9E",
+            "size_24aac": 0,
+            "size_48aac": 1246288,
+            "size_96aac": 2491255,
+            "size_192ogg": 4136513,
+            "size_192aac": 4907184,
+            "size_128mp3": 3246485,
+            "size_320mp3": 8115918,
+            "size_ape": 0,
+            "size_flac": 18995705,
+            "size_dts": 0,
+            "size_try": 0,
+            "try_begin": 55390,
+            "try_end": 87734,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 0,
+            "size_96ogg": 2176839,
+            "size_360ra": [],
+            "size_dolby": 11365185,
+            "size_new": [
+              124021430,
+              19081844,
+              49196174,
+              6966018,
+              0,
+              15371974,
+              25903027,
+              1928159,
+              19081844,
+              5714165,
+              11391735,
+              38076066,
+              0,
+              0,
+              0,
+              0
+            ],
+            "vm": [],
+            "df": []
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 615409845,
+          "mid": "002hrDj92lCDMQ",
+          "name": "平庸",
+          "title": "平庸 (Live)",
+          "subtitle": "",
+          "interval": 246,
+          "type": 0,
+          "singer": [
+            {
+              "id": 5062,
+              "mid": "002J4UUk29y8BY",
+              "name": "薛之谦",
+              "title": "薛之谦",
+              "type": 0,
+              "uin": 0,
+              "pmid": ""
+            }
+          ],
+          "album": {
+            "id": 77852145,
+            "mid": "001uoJm63VjE3c",
+            "name": "音乐缘计划2 第3期",
+            "title": "音乐缘计划2 第3期",
+            "subtitle": "",
+            "time_public": "2025-11-07",
+            "pmid": "001uoJm63VjE3c_2"
+          },
+          "file": {
+            "media_mid": "002hrDj92lCDMQ",
+            "size_24aac": 0,
+            "size_48aac": 1496937,
+            "size_96aac": 3007882,
+            "size_192ogg": 5251961,
+            "size_192aac": 5949013,
+            "size_128mp3": 3944068,
+            "size_320mp3": 9859863,
+            "size_ape": 0,
+            "size_flac": 50030635,
+            "size_dts": 0,
+            "size_try": 960887,
+            "try_begin": 67279,
+            "try_end": 102724,
+            "url": "",
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2731303,
+            "size_360ra": [],
+            "size_dolby": 13809157,
+            "size_new": [
+              159425236,
+              24836919,
+              64894589,
+              9177575,
+              0,
+              19366640,
+              30805488,
+              2342700,
+              49324979,
+              6943855,
+              13839522,
+              46257954,
+              25628065,
+              0,
+              0,
+              0
+            ],
+            "vm": [],
+            "df": []
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 1,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        }
+      ]
+    }
+  }
+}

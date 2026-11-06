@@ -1,0 +1,39 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "artist": {
+        "module": "music.musichallSinger.SingerInfoInter",
+        "method": "GetSingerDetail",
+        "param": {
+          "singer_mids": [
+            "0025NhlN2yWrP4"
+          ],
+          "ex_singer": 1,
+          "wiki_singer": 1,
+          "group_singer": 0,
+          "pic": 1,
+          "photos": 0
+        }
+      }
+    }
+  },
+  "code": 0,
+  "artist": {
+    "code": 0,
+    "data": {
+      "singer_list": [
+        {
+          "basic_info": {
+            "singer_mid": "0025NhlN2yWrP4",
+            "name": "周杰伦",
+            "singer_pmid": "0025NhlN2yWrP4_11"
+          }
+        }
+      ]
+    }
+  }
+}

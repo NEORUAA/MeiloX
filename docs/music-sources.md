@@ -1,7 +1,7 @@
 # 音源使用
 
-QQ 音乐插件在独立仓库 [MeiloX-QQMusic-Source](https://github.com/NEORUAA/MeiloX-QQMusic-Source) 维护。搜索、详情和歌词可匿名访问；
-播放需在插件设置中填写本人 QQ 音乐网页 Cookie，仍以平台授予的权限为准。
+QQ 音乐插件在独立仓库 [MeiloX-QQMusic-Source](https://github.com/NEORUAA/MeiloX-QQMusic-Source) 维护。单曲搜索、歌曲详情和歌词可匿名访问；
+完整搜索、个人媒体库和播放需在插件设置中填写本人 QQ 音乐网页 Cookie，播放音质按账号授权提供。
 凭据只保存在插件配置中，不需要发到聊天或问题报告里。
 
 网易云音乐默认内置。登录、歌单、FM、云盘、播客、消息和一起听仍使用原来的入口。

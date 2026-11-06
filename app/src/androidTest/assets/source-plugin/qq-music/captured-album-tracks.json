@@ -1,0 +1,197 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "albumTracks": {
+        "module": "music.musichallAlbum.AlbumSongList",
+        "method": "GetAlbumSongList",
+        "param": {
+          "albumid": 0,
+          "albumMid": "000LFWfZ3G7QtG",
+          "begin": 0,
+          "num": 3,
+          "order": 2
+        }
+      }
+    }
+  },
+  "code": 0,
+  "albumTracks": {
+    "code": 0,
+    "data": {
+      "albumMid": "000LFWfZ3G7QtG",
+      "totalNum": 2,
+      "songList": [
+        {
+          "songInfo": {
+            "id": 738803209,
+            "mid": "002yzUSg0wRYao",
+            "name": "Under the Same Star",
+            "title": "Under the Same Star",
+            "subtitle": "",
+            "interval": 216,
+            "type": 0,
+            "singer": [
+              {
+                "id": 2645630,
+                "mid": "003kWI8G153dTx",
+                "name": "徐艺洋",
+                "title": "徐艺洋",
+                "type": 1,
+                "uin": 0,
+                "pmid": ""
+              }
+            ],
+            "album": {
+              "id": 106384690,
+              "mid": "000LFWfZ3G7QtG",
+              "name": "Under the same star",
+              "title": "Under the same star",
+              "subtitle": "",
+              "time_public": "2026-11-06",
+              "pmid": "000LFWfZ3G7QtG_1"
+            },
+            "file": {
+              "media_mid": "002yzUSg0wRYao",
+              "size_24aac": 0,
+              "size_48aac": 1321403,
+              "size_96aac": 2646935,
+              "size_192ogg": 5232244,
+              "size_192aac": 5248816,
+              "size_128mp3": 3471409,
+              "size_320mp3": 8678135,
+              "size_ape": 0,
+              "size_flac": 47828092,
+              "size_dts": 0,
+              "size_try": 0,
+              "try_begin": 0,
+              "try_end": 0,
+              "url": "",
+              "size_hires": 0,
+              "hires_sample": 0,
+              "hires_bitdepth": 0,
+              "b_30s": 0,
+              "e_30s": 0,
+              "size_96ogg": 2566602,
+              "size_360ra": [],
+              "size_dolby": 0,
+              "size_new": [
+                0,
+                0,
+                0,
+                9044737,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "pay": {
+              "pay_month": 1,
+              "price_track": 200,
+              "price_album": 0,
+              "pay_play": 0,
+              "pay_down": 1,
+              "pay_status": 0,
+              "time_free": 0
+            }
+          }
+        },
+        {
+          "songInfo": {
+            "id": 738803187,
+            "mid": "0007lHm30Ecm0B",
+            "name": "Under the Same Star",
+            "title": "Under the Same Star (伴奏)",
+            "subtitle": "",
+            "interval": 216,
+            "type": 0,
+            "singer": [
+              {
+                "id": 2645630,
+                "mid": "003kWI8G153dTx",
+                "name": "徐艺洋",
+                "title": "徐艺洋",
+                "type": 1,
+                "uin": 0,
+                "pmid": ""
+              }
+            ],
+            "album": {
+              "id": 106384690,
+              "mid": "000LFWfZ3G7QtG",
+              "name": "Under the same star",
+              "title": "Under the same star",
+              "subtitle": "",
+              "time_public": "2026-11-06",
+              "pmid": "000LFWfZ3G7QtG_1"
+            },
+            "file": {
+              "media_mid": "0007lHm30Ecm0B",
+              "size_24aac": 0,
+              "size_48aac": 1321444,
+              "size_96aac": 2645227,
+              "size_192ogg": 5695891,
+              "size_192aac": 5245186,
+              "size_128mp3": 3472662,
+              "size_320mp3": 8681270,
+              "size_ape": 0,
+              "size_flac": 0,
+              "size_dts": 0,
+              "size_try": 0,
+              "try_begin": 0,
+              "try_end": 0,
+              "url": "",
+              "size_hires": 0,
+              "hires_sample": 0,
+              "hires_bitdepth": 0,
+              "b_30s": 0,
+              "e_30s": 0,
+              "size_96ogg": 2735301,
+              "size_360ra": [],
+              "size_dolby": 0,
+              "size_new": [
+                0,
+                0,
+                0,
+                9163702,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "pay": {
+              "pay_month": 1,
+              "price_track": 200,
+              "price_album": 0,
+              "pay_play": 0,
+              "pay_down": 1,
+              "pay_status": 0,
+              "time_free": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

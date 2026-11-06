@@ -1,0 +1,78 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "category": {
+        "module": "playlist.PlayListPlazaServer",
+        "method": "get_playlist_by_category",
+        "param": {
+          "id": 3056,
+          "curPage": 1,
+          "size": 3,
+          "order": 5,
+          "titleid": 3056
+        }
+      }
+    }
+  },
+  "code": 0,
+  "category": {
+    "code": 0,
+    "data": {
+      "v_playlist": [
+        {
+          "tid": 2041213723,
+          "title": "吐糟网络节奏：停不下的嗨嗨嗨",
+          "creator_info": {
+            "avatar": "",
+            "is_dj": 0,
+            "nick": "Closer",
+            "taoge_avatar": "",
+            "taoge_nick": "",
+            "uin": 3053959174,
+            "vip_type": 2
+          },
+          "cover_url_small": "http://p.qpic.cn/music_cover/sTxe2icW7YBoyg5F5IJPdFlxEwsVwzWWry57HbpfYTLXicoRCZNUiandQ/600?n=1",
+          "cover_url_medium": "http://p.qpic.cn/music_cover/sTxe2icW7YBoyg5F5IJPdFlxEwsVwzWWry57HbpfYTLXicoRCZNUiandQ/600?n=1",
+          "cover_url_big": "http://p.qpic.cn/music_cover/sTxe2icW7YBoyg5F5IJPdFlxEwsVwzWWry57HbpfYTLXicoRCZNUiandQ/600?n=1"
+        },
+        {
+          "tid": 1135983683,
+          "title": "网络歌曲·还记得那些最后吗",
+          "creator_info": {
+            "avatar": "",
+            "is_dj": 0,
+            "nick": "古耐moon",
+            "taoge_avatar": "",
+            "taoge_nick": "",
+            "uin": 3050361411,
+            "vip_type": 2
+          },
+          "cover_url_small": "http://p.qpic.cn/music_cover/A5fBXjEaHjkk8wvaDYiaGMveYujgkqFA2Km6EG7Z8mmKhhaC3ibORC0Q/600?n=1",
+          "cover_url_medium": "http://p.qpic.cn/music_cover/A5fBXjEaHjkk8wvaDYiaGMveYujgkqFA2Km6EG7Z8mmKhhaC3ibORC0Q/600?n=1",
+          "cover_url_big": "http://p.qpic.cn/music_cover/A5fBXjEaHjkk8wvaDYiaGMveYujgkqFA2Km6EG7Z8mmKhhaC3ibORC0Q/600?n=1"
+        },
+        {
+          "tid": 3561751804,
+          "title": "「网络歌曲」探索当中的秘密花园",
+          "creator_info": {
+            "avatar": "",
+            "is_dj": 0,
+            "nick": "最佳听众！",
+            "taoge_avatar": "",
+            "taoge_nick": "",
+            "uin": 3554222829,
+            "vip_type": 2
+          },
+          "cover_url_small": "http://p.qpic.cn/music_cover/yWicYdkdxPeO3w3OouW8FqBuApdcRibEia0lSfyGCriaAjpQMqMgYT5ictw/600?n=1",
+          "cover_url_medium": "http://p.qpic.cn/music_cover/yWicYdkdxPeO3w3OouW8FqBuApdcRibEia0lSfyGCriaAjpQMqMgYT5ictw/600?n=1",
+          "cover_url_big": "http://p.qpic.cn/music_cover/yWicYdkdxPeO3w3OouW8FqBuApdcRibEia0lSfyGCriaAjpQMqMgYT5ictw/600?n=1"
+        }
+      ],
+      "total": 244
+    }
+  }
+}

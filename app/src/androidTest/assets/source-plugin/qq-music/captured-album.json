@@ -1,0 +1,45 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "album": {
+        "module": "music.musichallAlbum.AlbumInfoServer",
+        "method": "GetAlbumDetail",
+        "param": {
+          "albumMid": "000LFWfZ3G7QtG"
+        }
+      }
+    }
+  },
+  "code": 0,
+  "album": {
+    "code": 0,
+    "data": {
+      "basicInfo": {
+        "albumMid": "000LFWfZ3G7QtG",
+        "albumName": "Under the same star",
+        "albumID": 106384690,
+        "pmid": "000LFWfZ3G7QtG_1"
+      },
+      "singer": {
+        "singerList": [
+          {
+            "mid": "003kWI8G153dTx",
+            "name": "徐艺洋",
+            "transName": "",
+            "role": "singer",
+            "instrument": "无乐器",
+            "singerID": 2645630,
+            "type": 1,
+            "singerType": 0,
+            "pmid": "003kWI8G153dTx_4",
+            "indentity": 0
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "search_type": 2,
+    "projection": "Metadata only; long descriptions removed."
+  },
+  "code": 0,
+  "request": {
+    "code": 0,
+    "data": {
+      "body": {
+        "item_album": [
+          {
+            "albummid": "0041WVfh2vtlJE",
+            "name": "太阳之子",
+            "pic": "http://y.gtimg.cn/music/photo_new/T002R180x180M0000041WVfh2vtlJE_1.jpg",
+            "singer": "周杰伦",
+            "song_num": 0
+          },
+          {
+            "albummid": "0024bjiL2aocxT",
+            "name": "十一月的萧邦",
+            "pic": "http://y.gtimg.cn/music/photo_new/T002R180x180M0000024bjiL2aocxT_5.jpg",
+            "singer": "周杰伦",
+            "song_num": 0
+          }
+        ]
+      },
+      "meta": {
+        "sum": 838,
+        "nextpage": 2
+      }
+    }
+  }
+}

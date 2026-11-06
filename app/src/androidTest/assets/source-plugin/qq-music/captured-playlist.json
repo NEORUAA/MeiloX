@@ -1,0 +1,282 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "playlist": {
+        "module": "music.srfDissInfo.aiDissInfo",
+        "method": "uniform_get_Dissinfo",
+        "param": {
+          "disstid": 8044204090,
+          "userinfo": 1,
+          "tag": 1,
+          "orderlist": 1,
+          "song_begin": 0,
+          "song_num": 3,
+          "onlysonglist": 0,
+          "enc_host_uin": ""
+        }
+      }
+    }
+  },
+  "code": 0,
+  "playlist": {
+    "code": 0,
+    "data": {
+      "dirinfo": {
+        "id": 8044204090,
+        "dirid": 336,
+        "title": "抖音最火BGM热歌｜100w+人都在听",
+        "picurl": "https://music-file.y.qq.com/songlist/u/oKCFoiEl7iSF7z/1f055/1a5126af5ddb5ee7f4efce016f894d88e266f326_123d80.jpg?imageView2/4/w/600/h/600",
+        "host_nick": "反派大魔王",
+        "songnum": 633,
+        "owndir": 0,
+        "show": 1,
+        "vec_tagid": [
+          6,
+          199,
+          85
+        ]
+      },
+      "songlist": [
+        {
+          "id": 214920523,
+          "mid": "002eDlpu4U223F",
+          "name": "溯 (Reverse)feat. 马吟吟",
+          "title": "溯 (Reverse)feat. 马吟吟",
+          "subtitle": "",
+          "interval": 192,
+          "type": 0,
+          "songtype": 13,
+          "singer": [
+            {
+              "id": 197898,
+              "mid": "004569pS4AaBj8",
+              "name": "CORSAK胡梦周",
+              "title": "CORSAK胡梦周"
+            },
+            {
+              "id": 19862,
+              "mid": "002NHuMa1tZ0FE",
+              "name": "马吟吟",
+              "title": "马吟吟"
+            }
+          ],
+          "album": {
+            "id": 4217864,
+            "mid": "002yOiJ347ly2o",
+            "name": "溯 (Reverse) feat. 马吟吟",
+            "title": "溯 (Reverse) feat. 马吟吟",
+            "pmid": "002yOiJ347ly2o_1"
+          },
+          "file": {
+            "media_mid": "000SO5aG37KuhP",
+            "size_try": 960887,
+            "try_begin": 34659,
+            "try_end": 76328,
+            "size_24aac": 0,
+            "size_48aac": 1166163,
+            "size_96aac": 2349842,
+            "size_128mp3": 3073951,
+            "size_192ogg": 4505136,
+            "size_192aac": 4619855,
+            "size_320mp3": 7684455,
+            "size_flac": 23859965,
+            "size_ape": 0,
+            "size_dts": 0,
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2255087,
+            "size_360ra": [],
+            "size_dolby": 10760917,
+            "size_new": [
+              139185146,
+              0,
+              0,
+              7853086,
+              0,
+              16170777,
+              0,
+              1825847,
+              23083731,
+              0,
+              10785778,
+              36050610,
+              19970449,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 374082792,
+          "mid": "002s9SBv2k2QSG",
+          "name": "星月落",
+          "title": "星月落",
+          "subtitle": "",
+          "interval": 198,
+          "type": 0,
+          "songtype": 13,
+          "singer": [
+            {
+              "id": 1334083,
+              "mid": "0017w5a52Uxzy8",
+              "name": "浮生梦",
+              "title": "浮生梦"
+            }
+          ],
+          "album": {
+            "id": 30355603,
+            "mid": "001AaGiL2LiGMx",
+            "name": "星月落",
+            "title": "星月落",
+            "pmid": "001AaGiL2LiGMx_2"
+          },
+          "file": {
+            "media_mid": "002s9SBv2k2QSG",
+            "size_try": 960887,
+            "try_begin": 64205,
+            "try_end": 90218,
+            "size_24aac": 0,
+            "size_48aac": 1216214,
+            "size_96aac": 2430390,
+            "size_128mp3": 3177519,
+            "size_192ogg": 4872004,
+            "size_192aac": 4812317,
+            "size_320mp3": 7943508,
+            "size_flac": 23458857,
+            "size_ape": 0,
+            "size_dts": 0,
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 60000,
+            "size_96ogg": 2377748,
+            "size_360ra": [],
+            "size_dolby": 11124889,
+            "size_new": [
+              136506974,
+              22769521,
+              58794067,
+              8343281,
+              0,
+              17389449,
+              27467712,
+              1887587,
+              43275402,
+              5593849,
+              11149828,
+              37267482,
+              20646390,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 1,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        },
+        {
+          "id": 729336707,
+          "mid": "002WXLRi4Dm8Oh",
+          "name": "小人物",
+          "title": "小人物",
+          "subtitle": "",
+          "interval": 333,
+          "type": 0,
+          "songtype": 13,
+          "singer": [
+            {
+              "id": 23540581,
+              "mid": "003vNovy3j5MwL",
+              "name": "法拉薇",
+              "title": "法拉薇"
+            }
+          ],
+          "album": {
+            "id": 103532388,
+            "mid": "0016n1UH0nLAGN",
+            "name": "小人物",
+            "title": "小人物",
+            "pmid": "0016n1UH0nLAGN_5"
+          },
+          "file": {
+            "media_mid": "000x5TIr0b6465",
+            "size_try": 0,
+            "try_begin": 65275,
+            "try_end": 95978,
+            "size_24aac": 0,
+            "size_48aac": 2035069,
+            "size_96aac": 4067585,
+            "size_128mp3": 5338252,
+            "size_192ogg": 7029306,
+            "size_192aac": 8080043,
+            "size_320mp3": 13345238,
+            "size_flac": 36157857,
+            "size_ape": 0,
+            "size_dts": 0,
+            "size_hires": 0,
+            "hires_sample": 0,
+            "hires_bitdepth": 0,
+            "b_30s": 0,
+            "e_30s": 0,
+            "size_96ogg": 3825752,
+            "size_360ra": [],
+            "size_dolby": 0,
+            "size_new": [
+              249274902,
+              37199249,
+              94775787,
+              11266461,
+              0,
+              24394344,
+              43383159,
+              3170016,
+              37199249,
+              9398630,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "pay": {
+            "pay_month": 1,
+            "price_track": 200,
+            "price_album": 0,
+            "pay_play": 0,
+            "pay_down": 1,
+            "pay_status": 0,
+            "time_free": 0
+          }
+        }
+      ],
+      "total_song_num": 633
+    }
+  }
+}

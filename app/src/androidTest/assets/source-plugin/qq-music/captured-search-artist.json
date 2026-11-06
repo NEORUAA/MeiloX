@@ -1,0 +1,33 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "search_type": 1,
+    "projection": "Metadata only; long descriptions removed."
+  },
+  "code": 0,
+  "request": {
+    "code": 0,
+    "data": {
+      "body": {
+        "singer": [
+          {
+            "singerMID": "0025NhlN2yWrP4",
+            "singerName": "周杰伦",
+            "singerPic": "http://y.gtimg.cn/music/photo_new/T001R150x150M0000025NhlN2yWrP4_11.jpg"
+          },
+          {
+            "singerMID": "00489l610k75Z2",
+            "singerName": "Lara梁心颐",
+            "singerPic": "http://y.gtimg.cn/music/photo_new/T001R150x150M00000489l610k75Z2_4.jpg"
+          }
+        ]
+      },
+      "meta": {
+        "sum": 7,
+        "nextpage": 2
+      }
+    }
+  }
+}

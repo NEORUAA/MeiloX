@@ -1,0 +1,77 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "projection": "Only metadata fields consumed by the adapter. No Cookie, credentials, playback URLs or lyrics.",
+    "requests": {
+      "artistAlbums": {
+        "module": "music.musichallAlbum.AlbumListServer",
+        "method": "GetAlbumList",
+        "param": {
+          "singerMid": "0025NhlN2yWrP4",
+          "order": 0,
+          "begin": 0,
+          "num": 3,
+          "songNumTag": 0,
+          "singerID": 0
+        }
+      }
+    }
+  },
+  "code": 0,
+  "artistAlbums": {
+    "code": 0,
+    "data": {
+      "singerMid": "0025NhlN2yWrP4",
+      "total": 43,
+      "albumList": [
+        {
+          "albumMid": "0041WVfh2vtlJE",
+          "albumName": "太阳之子",
+          "albumTranName": "",
+          "publishDate": "2026-03-25",
+          "totalNum": 0,
+          "albumType": "录音室专辑",
+          "pmid": "0041WVfh2vtlJE_1",
+          "albumID": 87495226,
+          "singerName": "周杰伦",
+          "tags": null,
+          "specIcon": "",
+          "pubText": "",
+          "trace": ""
+        },
+        {
+          "albumMid": "004Bux530GytNj",
+          "albumName": "恒星不忘 Forever Forever",
+          "albumTranName": "",
+          "publishDate": "2025-12-05",
+          "totalNum": 0,
+          "albumType": "Single",
+          "pmid": "004Bux530GytNj_2",
+          "albumID": 79852715,
+          "singerName": "周杰伦/言承旭/吴建豪/周渝民/五月天 阿信",
+          "tags": null,
+          "specIcon": "",
+          "pubText": "",
+          "trace": ""
+        },
+        {
+          "albumMid": "001uKKpF1RuJSd",
+          "albumName": "即兴曲",
+          "albumTranName": "",
+          "publishDate": "2025-06-06",
+          "totalNum": 0,
+          "albumType": "Single",
+          "pmid": "001uKKpF1RuJSd_1",
+          "albumID": 68589582,
+          "singerName": "周杰伦",
+          "tags": null,
+          "specIcon": "",
+          "pubText": "",
+          "trace": ""
+        }
+      ]
+    }
+  }
+}

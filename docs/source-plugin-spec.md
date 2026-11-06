@@ -84,7 +84,7 @@ globalThis.sourcePlugin = {
 
 A track contains a string `trackId`, `title`, artist names, album title, `durationMs`, optional `version`, `explicit`, `isrc`, and `artworkUrl`. IDs may contain Unicode, punctuation and slashes. The host constructs provider-scoped identities; plugins do not invent numerical surrogate IDs. Artwork URLs use the same domain restrictions and are fetched to a bounded private cache before native image loading.
 
-An audio resource contains `uri`, `quality`, optional `headers`, `expiresAtMs`, `contentLength`, `contentId`, `mimeType`, and `cachePolicy: 'ALLOW' | 'NO_STORE'`. URL expiry does not invalidate already downloaded audio. An opaque host handle replaces URLs and headers before they enter Media3, cache metadata or download provenance. Audio range requests use the plugin-specific restricted client. Packaged audio can use `asset://tone.wav`; the host resolves it only inside the installed package's canonical `assets` directory. Artwork caches are limited to 64 files and 16 MiB per plugin.
+An audio resource contains `uri`, `quality`, optional `headers`, `expiresAtMs`, `contentLength`, `contentId`, `mimeType`, and `cachePolicy: 'ALLOW' | 'NO_STORE'`. URL expiry does not invalidate already downloaded audio. An opaque host handle replaces URLs and headers before they enter Media3, cache metadata or download provenance. Audio range requests use the plugin-specific restricted client. Packaged audio can use `asset://tone.wav`; the host resolves it only inside the installed package's canonical `assets` directory. Artwork caches are limited to 256 files and 16 MiB per plugin; cache hits refresh their LRU access time.
 
 ## Host network protocol
 
@@ -146,7 +146,7 @@ python3 samples/music-source-plugin/package.py
 
 Import `offline-mock.meisource` from **Settings → General → Audio Sources**. Select **MeiloX Offline Mock** for search and search for **Mock Recording**. It returns the SDK fixture and resolves the packaged test tone. The Android instrumentation test exercises import, real isolated JavaScript, search, detail, ordered fallback, an opaque audio read, disable/re-enable, and reload. The Node runner verifies the portable operation contract; it does not substitute for Android sandbox tests.
 
-The experimental [QQ Music website adapter](https://github.com/NEORUAA/MeiloX-QQMusic-Source) demonstrates public catalog/lyrics and personal-session playback resolution. Anonymous catalog requests are verified; live playback requires the user's privately configured session and separate validation. It is separate from the existing QQ lyrics extension and from QQ's partner OpenAPI. Declare exact API/CDN hosts, retain string track IDs, and report actual audio quality and expiry. The SDK contains no bundled account, platform secrets, or third-party parsing service.
+The [QQ Music website adapter](https://github.com/NEORUAA/MeiloX-QQMusic-Source) supports anonymous track search, track details and lyrics. Complete search, personal libraries and playback use the user's privately configured session. Its pinned 0.3 package passed authenticated catalog/library and full-resource playback checks on Android; see [validation scope and results](source-validation.md). It is separate from the existing QQ lyrics extension and from QQ's partner OpenAPI. Declare exact API/CDN hosts, retain string track IDs, and report actual audio quality and expiry. The SDK contains no bundled account, platform secrets, or third-party parsing service.
 
 ## Distribution boundary
 

@@ -1,0 +1,71 @@
+{
+  "_capture": {
+    "capturedAt": "2026-11-06T08:59:20.307312+00:00",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "authentication": "anonymous; no Cookie header",
+    "request": {
+      "module": "music.pf_song_detail_svr",
+      "method": "get_song_detail_yqq",
+      "param": {
+        "song_mid": "0039MnYb0qxYhV"
+      }
+    },
+    "projection": "Track metadata retained; commentary and unrelated sections omitted."
+  },
+  "code": 0,
+  "detail": {
+    "code": 0,
+    "data": {
+      "track_info": {
+        "id": 97773,
+        "mid": "0039MnYb0qxYhV",
+        "name": "晴天",
+        "title": "晴天",
+        "subtitle": "",
+        "type": 0,
+        "interval": 269,
+        "version": 0,
+        "singer": [
+          {
+            "id": 4558,
+            "mid": "0025NhlN2yWrP4",
+            "name": "周杰伦",
+            "title": "周杰伦"
+          }
+        ],
+        "album": {
+          "id": 8220,
+          "mid": "000MkMni19ClKG",
+          "name": "叶惠美",
+          "title": "叶惠美",
+          "subtitle": "",
+          "time_public": "2003-07-31",
+          "pmid": "000MkMni19ClKG_5"
+        },
+        "file": {
+          "media_mid": "003Qui1q2u1Zho",
+          "size_48aac": 1642440,
+          "size_96aac": 3283546,
+          "size_128mp3": 4317292,
+          "size_320mp3": 0,
+          "size_flac": 0,
+          "size_try": 960887,
+          "try_begin": 84346,
+          "try_end": 142843,
+          "size_hires": 0,
+          "b_30s": 0,
+          "e_30s": 60000
+        },
+        "pay": {
+          "pay_month": 1,
+          "price_track": 200,
+          "price_album": 0,
+          "pay_play": 1,
+          "pay_down": 1,
+          "pay_status": 0,
+          "time_free": 0
+        }
+      }
+    }
+  }
+}

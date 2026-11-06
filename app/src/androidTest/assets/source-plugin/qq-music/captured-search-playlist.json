@@ -1,0 +1,37 @@
+{
+  "_capture": {
+    "date": "2026-11-06",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "anonymous": true,
+    "search_type": 3,
+    "projection": "Metadata only; long descriptions removed."
+  },
+  "code": 0,
+  "request": {
+    "code": 0,
+    "data": {
+      "body": {
+        "item_songlist": [
+          {
+            "dissid": "7039749142",
+            "dissname": "百听不厌的周杰伦",
+            "logo": "http://qpic.y.qq.com/music_cover/0cthhV0GM91gWJWQ95ibGRGtXgKTNzsA9WnIZvH915S1UKmUibiattibew/300?n=1",
+            "nickname": "今晚月色很美",
+            "songnum": 99
+          },
+          {
+            "dissid": "2308475533",
+            "dissname": "我落泪情绪零碎，周杰伦",
+            "logo": "http://qpic.y.qq.com/music_cover/xy585mIRLoGjBb9SibEqA5ng8ENKCAWEheDKGyPor1PV2NSIPNTicDwQ/300?n=1",
+            "nickname": "1946 。",
+            "songnum": 34
+          }
+        ]
+      },
+      "meta": {
+        "sum": 300,
+        "nextpage": 2
+      }
+    }
+  }
+}

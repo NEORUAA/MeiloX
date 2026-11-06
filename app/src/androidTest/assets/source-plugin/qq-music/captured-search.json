@@ -1,0 +1,163 @@
+{
+  "_capture": {
+    "capturedAt": "2026-11-06T08:59:20.307312+00:00",
+    "endpoint": "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    "authentication": "anonymous; no Cookie header",
+    "request": {
+      "module": "music.search.SearchCgiService",
+      "method": "DoSearchForQQMusicLite",
+      "param": {
+        "query": "晴天",
+        "search_type": 0,
+        "page_num": 1,
+        "num_per_page": 2,
+        "highlight": 0,
+        "nqc_flag": 0,
+        "page_id": 1,
+        "grp": 1
+      }
+    },
+    "projection": "Metadata fields retained; unrelated UI/network fields omitted."
+  },
+  "code": 0,
+  "request": {
+    "code": 0,
+    "data": {
+      "code": 0,
+      "body": {
+        "item_song": [
+          {
+            "id": 97773,
+            "mid": "0039MnYb0qxYhV",
+            "name": "晴天",
+            "title": "晴天",
+            "subtitle": "",
+            "type": 1,
+            "interval": 269,
+            "version": 0,
+            "singer": [
+              {
+                "id": 4558,
+                "mid": "0025NhlN2yWrP4",
+                "name": "周杰伦",
+                "title": "周杰伦"
+              }
+            ],
+            "album": {
+              "id": 8220,
+              "mid": "000MkMni19ClKG",
+              "name": "叶惠美",
+              "pmid": "000MkMni19ClKG_5",
+              "subtitle": "",
+              "time_public": "",
+              "title": "叶惠美"
+            },
+            "file": {
+              "b_30s": 0,
+              "e_30s": 60000,
+              "media_mid": "003Qui1q2u1Zho",
+              "size_128mp3": 4317292,
+              "size_320mp3": 10792943,
+              "size_48aac": 1642440,
+              "size_96aac": 3283546,
+              "size_flac": 55397039,
+              "size_hires": 0,
+              "size_try": 960887,
+              "try_begin": 84346,
+              "try_end": 142843
+            },
+            "pay": {
+              "pay_down": 1,
+              "pay_month": 1,
+              "pay_play": 1,
+              "pay_status": 0,
+              "price_album": 0,
+              "price_track": 200,
+              "time_free": 0
+            }
+          },
+          {
+            "id": 332999022,
+            "mid": "001LcPEv1TEenh",
+            "name": "晴天",
+            "title": "晴天 (女声独唱版)",
+            "subtitle": "",
+            "type": 1,
+            "interval": 268,
+            "version": 52,
+            "singer": [
+              {
+                "id": 7631792,
+                "mid": "002hLUw333ynOa",
+                "name": "梅菜扣肉肉",
+                "title": "梅菜扣肉肉"
+              }
+            ],
+            "album": {
+              "id": 23491221,
+              "mid": "000rusYr0tlsP1",
+              "name": "晴天 (独唱版)",
+              "pmid": "000rusYr0tlsP1_5",
+              "subtitle": "",
+              "time_public": "",
+              "title": "晴天 (独唱版)"
+            },
+            "file": {
+              "b_30s": 0,
+              "e_30s": 60000,
+              "media_mid": "001LcPEv1TEenh",
+              "size_128mp3": 4294730,
+              "size_320mp3": 10735884,
+              "size_48aac": 1635148,
+              "size_96aac": 3269230,
+              "size_flac": 34271159,
+              "size_hires": 0,
+              "size_try": 960887,
+              "try_begin": 84332,
+              "try_end": 142311
+            },
+            "pay": {
+              "pay_down": 1,
+              "pay_month": 1,
+              "pay_play": 0,
+              "pay_status": 0,
+              "price_album": 0,
+              "price_track": 200,
+              "time_free": 0
+            }
+          }
+        ]
+      },
+      "meta": {
+        "cid": "",
+        "curpage": 1,
+        "dir": "L",
+        "display_order": [],
+        "ein": 2,
+        "estimate_sum": 127395,
+        "expid": ",,,",
+        "feedbackPlaceId": "",
+        "is_filter": 0,
+        "next_page_start": {},
+        "nextpage": 2,
+        "perpage": 2,
+        "query": "晴天",
+        "report_info": {
+          "items": {}
+        },
+        "result_trustworthy": 1,
+        "ret": 0,
+        "safetyType": 0,
+        "safetyUrl": "",
+        "searchid": "",
+        "sid": "",
+        "sin": 0,
+        "step_rela_syntax_tree": {},
+        "sum": 1003,
+        "tab_list": [],
+        "uid": "",
+        "v": 1003006
+      }
+    }
+  }
+}
