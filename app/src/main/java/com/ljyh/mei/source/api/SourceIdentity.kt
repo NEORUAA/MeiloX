@@ -11,30 +11,34 @@ object ProviderIds {
 }
 
 data class TrackRef(
-    @field:SerializedName("providerId") val providerId: String,
+    @field:SerializedName("providerId") override val providerId: String,
     @field:SerializedName("trackId") val trackId: String,
-) {
+) : ContentRef {
+    override val contentId: String get() = trackId
     init { require(providerId.isNotBlank() && trackId.isNotEmpty()) }
 }
 
 data class AlbumRef(
-    @field:SerializedName("providerId") val providerId: String,
+    @field:SerializedName("providerId") override val providerId: String,
     @field:SerializedName("albumId") val albumId: String,
-) {
+) : ContentRef {
+    override val contentId: String get() = albumId
     init { require(providerId.isNotBlank() && albumId.isNotEmpty()) }
 }
 
 data class ArtistRef(
-    @field:SerializedName("providerId") val providerId: String,
+    @field:SerializedName("providerId") override val providerId: String,
     @field:SerializedName("artistId") val artistId: String,
-) {
+) : ContentRef {
+    override val contentId: String get() = artistId
     init { require(providerId.isNotBlank() && artistId.isNotEmpty()) }
 }
 
 data class PlaylistRef(
-    @field:SerializedName("providerId") val providerId: String,
+    @field:SerializedName("providerId") override val providerId: String,
     @field:SerializedName("playlistId") val playlistId: String,
-) {
+) : ContentRef {
+    override val contentId: String get() = playlistId
     init { require(providerId.isNotBlank() && playlistId.isNotEmpty()) }
 }
 

@@ -5,8 +5,11 @@ import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
 import java.net.IDN
 import java.net.InetAddress
+import java.io.InterruptedIOException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -59,14 +62,21 @@ class ScriptNetworkPolicy(private val domains: List<String>) {
         }
     }
 
-    suspend fun artwork(url: String, directory: java.io.File): String = concurrency.withPermit {
+    suspend fun artwork(url: String, directory: java.io.File, ensureCurrent: () -> Unit = {}): String = concurrency.withPermit {
+        ensureCurrent()
         val checked = validateUrl(url)
         val key = java.security.MessageDigest.getInstance("SHA-256").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
         val file = java.io.File(directory, "artwork/$key")
         if (file.isFile) return@withPermit android.net.Uri.fromFile(file).toString()
         withContext(Dispatchers.IO) {
-            client.newCall(Request.Builder().url(checked).build()).execute().use { response ->
-                if (!response.isSuccessful || response.code in 300..399) denied()
+            transport {
+                ensureCurrent()
+                client.newCall(Request.Builder().url(checked).build()).execute().use { response ->
+                ensureCurrent()
+                if (response.code in 300..399) denied()
+                if (!response.isSuccessful) throw SourceException(
+                    if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
+                )
                 val body = response.body ?: denied()
                 if (body.contentLength() > MAX_RESPONSE_BYTES) denied()
                 val source = body.source()
@@ -83,12 +93,16 @@ class ScriptNetworkPolicy(private val domains: List<String>) {
                         if (old.delete()) { bytesRemaining -= size; countRemaining-- }
                     }
                 }
+                ensureCurrent()
                 android.net.Uri.fromFile(file).toString()
+                }
             }
         }
     }
 
-    suspend fun request(request: JsonObject): JsonObject = concurrency.withPermit {
+    suspend fun request(request: JsonObject, ensureCurrent: () -> Unit = {}): JsonObject = concurrency.withPermit {
+        ensureCurrent()
+        val responseEncoding = responseEncoding(request)
         val url = validateUrl(request.get("url")?.asString ?: denied())
         val method = request.get("method")?.asString?.uppercase() ?: "GET"
         if (method !in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")) denied()
@@ -104,29 +118,50 @@ class ScriptNetworkPolicy(private val domains: List<String>) {
         val response = suspendCancellableCoroutine<Response> { continuation ->
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(SourceException(SourceErrorCode.NETWORK)) }
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(networkFailure(e))
+                }
                 override fun onResponse(call: Call, response: Response) {
                     continuation.resume(response) { _, value, _ -> value.close() }
                 }
             })
         }
-        withContext(Dispatchers.IO) {
-            response.use {
-                if (it.code in 300..399) denied()
-                val responseBody = it.body
-                if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) denied()
-                val source = responseBody?.source()
-                if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) denied()
-                val text = source?.readUtf8().orEmpty()
-                JsonObject().apply {
-                    addProperty("status", it.code)
-                    // Cookies from one response are not installed in a shared cookie jar.
-                    add("headers", JsonObject().apply { it.headers.names().forEach { name -> addProperty(name, it.header(name)) } })
-                    addProperty("body", text)
-                }
-            }
+        val payload = withContext(Dispatchers.IO) {
+            transport { response.use { ensureCurrent(); responsePayload(it, responseEncoding) } }
+        }
+        ensureCurrent()
+        payload
+    }
+
+    internal fun responseEncoding(request: JsonObject): String {
+        val value = request.get("responseEncoding") ?: return "utf8"
+        if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString || value.asString !in setOf("utf8", "base64")) denied()
+        return value.asString
+    }
+
+    internal fun responsePayload(response: Response, encoding: String): JsonObject = transport {
+        if (encoding !in setOf("utf8", "base64") || response.code in 300..399) denied()
+        val responseBody = response.body
+        if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) denied()
+        val source = responseBody?.source()
+        if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) denied()
+        val bytes = source?.readByteArray() ?: byteArrayOf()
+        JsonObject().apply {
+            addProperty("status", response.code)
+            // Cookies from one response are not installed in a shared cookie jar.
+            add("headers", JsonObject().apply { response.headers.names().forEach { name -> addProperty(name, response.header(name)) } })
+            addProperty("body", if (encoding == "utf8") bytes.toString(Charsets.UTF_8) else "")
+            if (encoding == "base64") addProperty("bodyBase64", Base64.getEncoder().encodeToString(bytes))
         }
     }
+
+    private inline fun <T> transport(block: () -> T): T = try { block()
+    } catch (cancelled: CancellationException) { throw cancelled
+    } catch (error: SourceException) { throw error
+    } catch (error: IOException) { throw networkFailure(error) }
+
+    private fun networkFailure(error: IOException) = if (error is SourceException) error else
+        SourceException(if (error is InterruptedIOException) SourceErrorCode.TIMEOUT else SourceErrorCode.NETWORK)
 
     private fun validateHost(host: String) {
         if (domains.none { it.equals(host, ignoreCase = true) }) denied()

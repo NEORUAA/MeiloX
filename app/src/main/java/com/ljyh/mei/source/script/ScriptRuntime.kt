@@ -12,6 +12,8 @@ import com.ljyh.mei.source.api.SourceException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.security.SecureRandom
+import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -41,7 +43,21 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         configuration: Map<String, String>,
         storage: Map<String, String>,
         network: ScriptNetworkPolicy,
+        ensureCurrent: () -> Unit = {},
+    ): ScriptInvocation = invoke(script, manifest, operation, params, configuration, storage,
+        request = { network.request(it, ensureCurrent) }, ensureCurrent = ensureCurrent)
+
+    internal suspend fun invoke(
+        script: String,
+        manifest: PluginManifest,
+        operation: String,
+        params: JsonObject,
+        configuration: Map<String, String>,
+        storage: Map<String, String>,
+        request: suspend (JsonObject) -> JsonObject,
+        ensureCurrent: () -> Unit = {},
     ): ScriptInvocation = execution.withLock {
+        ensureCurrent()
         if (!supported) throw SourceException(SourceErrorCode.UNSUPPORTED, "Update Android System WebView to run sources")
         try {
             withTimeout(20_000) {
@@ -57,16 +73,15 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                     }
                     val isolate = sandbox.createIsolate(settings)
                     try {
+                        ensureCurrent()
                         withTimeout(3_000) { isolate.evaluateJavaScriptAsync(script + "\n;'loaded';").await() }
                         val gson = Gson()
-                        val pluginContext = JsonObject().apply {
-                            addProperty("apiVersion", 1)
-                            add("config", gson.toJsonTree(configuration))
-                            add("storage", gson.toJsonTree(storage.takeIf { manifest.permissions.storage }.orEmpty()))
-                        }
+                        val entropy = SecureRandom()
                         var response: JsonObject? = null
                         var state: JsonElement? = null
                         repeat(5) { hop ->
+                            ensureCurrent()
+                            val pluginContext = newContext(manifest, configuration, storage, entropy)
                             val expression = if (response == null) {
                                 "__p[${gson.toJson(operation)}](${params},${pluginContext})"
                             } else {
@@ -80,13 +95,17 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                 if (__r && typeof __r.then === "function") throw new Error("Use the host request protocol");
                                 return JSON.stringify(__r === undefined ? null : __r);
                             })()""".trimIndent()
+                            ensureCurrent()
                             val raw = withTimeout(3_000) { isolate.evaluateJavaScriptAsync(invocation).await() }
+                            ensureCurrent()
                             if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) throw SourceException(SourceErrorCode.PLUGIN)
                             val result = JsonParser.parseString(raw)
                             val envelope = result.takeIf(JsonElement::isJsonObject)?.asJsonObject
                             if (envelope?.has("request") == true) {
                                 if (hop == 4) throw SourceException(SourceErrorCode.PLUGIN, "Source request limit exceeded")
-                                response = network.request(envelope.getAsJsonObject("request"))
+                                ensureCurrent()
+                                response = request(envelope.getAsJsonObject("request"))
+                                ensureCurrent()
                                 state = envelope.get("state")
                             } else {
                                 if (envelope?.has("error") == true) {
@@ -99,6 +118,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                     }
                                     values.entrySet().associate { it.key to it.value.asString }
                                 }
+                                ensureCurrent()
                                 return@withTimeout ScriptInvocation(envelope?.get("result") ?: result, updated)
                             }
                         }
@@ -107,10 +127,12 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                 } finally { sandbox.close() }
             }
         } catch (_: TimeoutCancellationException) {
+            ensureCurrent()
             throw SourceException(SourceErrorCode.TIMEOUT)
         } catch (cancelled: CancellationException) { throw cancelled
-        } catch (error: SourceException) { throw error
+        } catch (error: SourceException) { ensureCurrent(); throw error
         } catch (_: Exception) {
+            ensureCurrent()
             // Evaluation errors can contain plugin-generated credential strings.
             throw SourceException(SourceErrorCode.PLUGIN, "Source execution failed")
         }
@@ -132,6 +154,21 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
 
     companion object {
         const val MAX_RESULT_BYTES = 256 * 1024
+        const val SECURE_RANDOM_BYTES = 256
         private val execution = Mutex()
+
+        internal fun newContext(
+            manifest: PluginManifest,
+            configuration: Map<String, String>,
+            storage: Map<String, String>,
+            entropy: SecureRandom = SecureRandom(),
+        ): JsonObject = JsonObject().apply {
+            val gson = Gson()
+            addProperty("apiVersion", manifest.apiVersion)
+            add("config", gson.toJsonTree(configuration))
+            add("storage", gson.toJsonTree(storage.takeIf { manifest.permissions.storage }.orEmpty()))
+            addProperty("secureRandomBase64", Base64.getEncoder().encodeToString(
+                ByteArray(SECURE_RANDOM_BYTES).also(entropy::nextBytes)))
+        }
     }
 }

@@ -8,6 +8,7 @@ import com.ljyh.mei.data.model.api.BaseResponse
 import com.ljyh.mei.data.model.api.GetPlaylistDetail
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.network.Resource
+import com.ljyh.mei.data.network.neteaseSessionFingerprint
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.EApiService
 import com.ljyh.mei.data.network.api.WeApiService
@@ -208,6 +209,34 @@ class PlaylistSubscriptionLifecycleTest {
     }
 
     @Test(timeout = 10_000)
+    fun staleExplicitSessionRejectsAllCommonPlaylistWritesBeforeTransport() = runTest(dispatcher) {
+        val stale = neteaseSessionFingerprint(fixture.account)
+        fixture.account = "replacement-session"
+        val results = listOf(
+            fixture.repository.subscribePlaylist("42", stale),
+            fixture.repository.unSubscribePlaylist("42", stale),
+            fixture.repository.createPlaylist("Playlist", privacy = false, expectedSession = stale),
+            fixture.repository.deletePlaylist("42", stale),
+            fixture.repository.manipulateTrack("add", "42", "7", expectedSession = stale),
+        )
+        assertTrue(results.all { it is Resource.Error })
+        assertEquals(0, fixture.tokenCalls)
+        assertEquals(0, fixture.detailCalls)
+        assertTrue(fixture.writes.isEmpty())
+    }
+
+    @Test(timeout = 10_000)
+    fun acceptedSubscriptionCarriesItsAccountFingerprintToTheTransport() = runTest(dispatcher) {
+        val expected = neteaseSessionFingerprint(fixture.account)
+        val write = async { fixture.repository.subscribePlaylist("42", expected) }
+        runCurrent()
+        assertEquals(expected, fixture.writes.single().expectedSession)
+        fixture.writes.single().response.complete(200)
+        runCurrent()
+        assertEquals(200, write.await().code())
+    }
+
+    @Test(timeout = 10_000)
     fun successfulUnsubscribeCleansLocalPlaylistAfterCallerCancellation() = runTest(dispatcher) {
         fixture.serverSubscribed = true
         fixture.tokenGate = CompletableDeferred()
@@ -282,6 +311,7 @@ class PlaylistSubscriptionLifecycleTest {
             val write = PendingWrite(
                 subscribed = method.name == "subscribePlaylist",
                 body = arguments!![0] as EApiSubscribePlaylist,
+                expectedSession = arguments[2] as String?,
             )
             writes += write
             suspendResponse(arguments.last()) {
@@ -316,7 +346,7 @@ class PlaylistSubscriptionLifecycleTest {
         )
     }
 
-    private class PendingWrite(val subscribed: Boolean, val body: EApiSubscribePlaylist) {
+    private class PendingWrite(val subscribed: Boolean, val body: EApiSubscribePlaylist, val expectedSession: String?) {
         val response = CompletableDeferred<Int>()
     }
 

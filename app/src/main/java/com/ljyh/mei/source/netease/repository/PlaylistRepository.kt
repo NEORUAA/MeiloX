@@ -187,9 +187,12 @@ class PlaylistRepository(
         }
     }
 
-    private suspend fun changePlaylistSubscription(id: String, subscribed: Boolean): Resource<BaseResponse> {
+    private suspend fun changePlaylistSubscription(id: String, subscribed: Boolean, expectedSession: String? = null): Resource<BaseResponse> {
         val key = SubscriptionKey(subscriptionAccount(), id)
         if (key.account.isBlank()) return Resource.Error("NetEase account is not signed in")
+        if (expectedSession != null && neteaseSessionFingerprint(key.account) != expectedSession) {
+            return Resource.Error("NetEase account changed before playlist subscription")
+        }
         val operation = synchronized(subscriptionLock) {
             val entry = subscriptions.getOrPut(key, ::SubscriptionEntry)
             val previous = entry.pending
@@ -208,6 +211,7 @@ class PlaylistRepository(
                             eApiService.subscribePlaylist(
                                 EApiSubscribePlaylist(id = id.toLong(), checkToken = bodyToken),
                                 antiCheatToken = headerToken,
+                                expectedSession = neteaseSessionFingerprint(key.account),
                             )
                         } else {
                             val headerToken = freshCheckToken()
@@ -215,6 +219,7 @@ class PlaylistRepository(
                             val response = eApiService.unSubscribePlaylist(
                                 EApiSubscribePlaylist(id = id.toLong()),
                                 antiCheatToken = headerToken,
+                                expectedSession = neteaseSessionFingerprint(key.account),
                             )
                             if (response.code == 200) {
                                 try {
@@ -351,11 +356,15 @@ class PlaylistRepository(
         op: String,
         pid: String,
         trackIds: String,
-        imme: Boolean = true
+        imme: Boolean = true,
+        expectedSession: String? = null,
     ): Resource<ManipulateTrackResult> {
         val account = subscriptionAccount()
         if (account.isBlank()) return Resource.Error("An authenticated session is required")
-        val expectedSession = neteaseSessionFingerprint(account)
+        val sessionFingerprint = neteaseSessionFingerprint(account)
+        if (expectedSession != null && expectedSession != sessionFingerprint) {
+            return Resource.Error("NetEase account changed before playlist update")
+        }
         return withContext(ioDispatcher) {
             val result = safeApiCall {
                 check(subscriptionAccount() == account) { "NetEase account changed during playlist update" }
@@ -366,7 +375,7 @@ class PlaylistRepository(
                         trackIds = trackIds,
                         imme = imme
                     ),
-                    expectedSession,
+                    sessionFingerprint,
                 )
                 check(subscriptionAccount() == account) { "NetEase account changed during playlist update" }
                 response
@@ -378,7 +387,7 @@ class PlaylistRepository(
                 if (ids.isNotEmpty()) {
                     try {
                         // Finish syncing an accepted write even if its screen has closed.
-                        withContext(NonCancellable) { onTracksChanged(ids, expectedSession) }
+                        withContext(NonCancellable) { onTracksChanged(ids, sessionFingerprint) }
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Exception) {
@@ -405,28 +414,36 @@ class PlaylistRepository(
     suspend fun createPlaylist(
         name: String,
         privacy: Boolean, // 0 普通歌单, 10 隐私歌单
-        type: String = "NORMAL" // 默认 NORMAL, VIDEO 视频歌单, SHARED 共享歌单
+        type: String = "NORMAL", // 默认 NORMAL, VIDEO 视频歌单, SHARED 共享歌单
+        expectedSession: String? = null,
     ): Resource<CreatePlaylistResult> {
         return withContext(Dispatchers.IO) {
             safeApiCall {
+                expectedSession?.let(::requireOrderSession)
                 apiService.createPlaylist(
                     CreatePlaylist(
                         name = name,
                         privacy = if (privacy) "10" else "0",
                         type = type
-                    )
-                ).also { if (it.code == 200) _collectionChanges.emit(Unit) }
+                    ),
+                    expectedSession,
+                ).also {
+                    expectedSession?.let(::requireOrderSession)
+                    if (it.code == 200) _collectionChanges.emit(Unit)
+                }
             }
         }
     }
 
     suspend fun subscribePlaylist(
-        id: String
-    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = true)
+        id: String,
+        expectedSession: String? = null,
+    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = true, expectedSession = expectedSession)
 
     suspend fun unSubscribePlaylist(
-        id: String
-    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = false)
+        id: String,
+        expectedSession: String? = null,
+    ): Resource<BaseResponse> = changePlaylistSubscription(id, subscribed = false, expectedSession = expectedSession)
 
 
     suspend fun subscribeAlbum(id: String): Resource<BaseResponse> {
@@ -455,16 +472,20 @@ class PlaylistRepository(
     }
 
     suspend fun deletePlaylist(
-        id: String
+        id: String,
+        expectedSession: String? = null,
     ): Resource<BaseMessageResponse> {
         val account = subscriptionAccount()
         return withContext(ioDispatcher) {
             safeApiCall {
+                expectedSession?.let(::requireOrderSession)
                 apiService.deletePlaylist(
                     DeletePlaylist(
                         ids = "[$id]"
-                    )
+                    ),
+                    expectedSession,
                 ).also {
+                    expectedSession?.let(::requireOrderSession)
                     if (it.code == 200 && account.isNotBlank() && subscriptionAccount() == account) {
                         _collectionChanges.emit(Unit)
                     }
@@ -472,6 +493,8 @@ class PlaylistRepository(
             }
         }
     }
+
+    internal suspend fun notifyCollectionChanged() { _collectionChanges.emit(Unit) }
 
 
     suspend fun getAlbumDetail(id: String): Resource<AlbumDetail> {

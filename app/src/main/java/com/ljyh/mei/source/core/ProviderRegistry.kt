@@ -49,37 +49,3 @@ class ProviderRegistry(providers: List<MusicProvider>) {
         (provider(providerId) as? FeatureContribution)?.featureRoutes?.contains(route) == true
     fun playable(): List<MusicProvider> = providers.value.filter { it.status == SourceStatus.READY && SourceCapability.PLAYBACK in it.capabilities && it is PlaybackCapability }
 }
-
-@Singleton
-class SourceRouter @Inject constructor(val registry: ProviderRegistry) {
-    suspend fun search(providerId: String, query: String, page: PageRequest = PageRequest()): SourcePage<Track> {
-        val provider = registry.requireProvider(providerId)
-        if (SourceCapability.SEARCH !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
-        return (provider as? CatalogCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).search(query, page)
-    }
-    suspend fun getTrack(ref: TrackRef): Track? {
-        val provider = registry.requireProvider(ref.providerId)
-        if (SourceCapability.TRACK !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
-        return (provider as? CatalogCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).getTrack(ref)
-            ?.also { if (it.ref != ref) throw SourceException(SourceErrorCode.INVALID_RESPONSE) }
-    }
-    suspend fun getTracks(refs: List<TrackRef>): List<Track> {
-        val requested = refs.toSet()
-        val tracks = refs.groupBy { it.providerId }.flatMap { (id, group) ->
-            val provider = registry.requireProvider(id)
-            if (SourceCapability.TRACK !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
-            if (provider is BatchCatalogCapability) provider.getTracks(group)
-            else group.distinct().mapNotNull { getTrack(it) }
-        }
-        if (tracks.any { it.ref !in requested }) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-        val indexed = tracks.associateBy { it.ref }
-        return refs.mapNotNull(indexed::get)
-    }
-    suspend fun availableQualities(ref: TrackRef): List<String> =
-        (registry.requireProvider(ref.providerId) as? QualityCapability)?.availableQualities(ref).orEmpty()
-    suspend fun lyrics(ref: TrackRef): SourceLyrics? {
-        val provider = registry.requireProvider(ref.providerId)
-        if (SourceCapability.LYRICS !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
-        return (provider as? LyricsCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).getLyrics(ref)
-    }
-}

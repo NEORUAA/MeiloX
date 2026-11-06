@@ -1,4 +1,4 @@
-# Source plugin API 1
+# Source plugin APIs 1 and 2
 
 MeiloX runs imported JavaScript with AndroidX JavaScriptEngine 1.1.1 in an isolated V8 process. Plugins do not receive an Android object, WebView bridge, filesystem API, Room handle, NetEase session, or another plugin's configuration. A compatible Android System WebView is required. If the device lacks enforced heap/result limits, script execution returns `UNSUPPORTED` instead of switching to an unrestricted interpreter.
 
@@ -14,7 +14,7 @@ index.js
 assets/tone.wav       # Optional packaged audio fixture
 ```
 
-Only the two root files and audio files immediately under `assets/` are accepted. Absolute paths, parent traversal, duplicate paths, directories, undeclared entry scripts, and arbitrary executable files are rejected. The host limits each script to 256 KiB, the manifest to 64 KiB, each asset to 4 MiB, the extracted package to 8 MiB, and the entry count to 64.
+The two required root files, optional UTF-8 `LICENSE` / `NOTICE` (64 KiB each), and audio files immediately under `assets/` are accepted. Absolute paths, parent traversal, duplicate paths, directories, undeclared entry scripts, and arbitrary executable files are rejected. The host limits each script to 256 KiB, the manifest to 64 KiB, each asset to 4 MiB, the extracted package to 8 MiB, and the entry count to 64.
 
 ```json
 {
@@ -31,9 +31,32 @@ Only the two root files and audio files immediately under `assets/` are accepted
 }
 ```
 
-IDs are case-sensitive lowercase identifiers, 3–80 characters, using letters, digits, `.`, `_`, and `-`. `netease` and `local` are reserved. The package `id` identifies installed code. `providerId` identifies catalog content, defaults to `id`, and cannot change on update. The current instance ID is `script:<id>:default`. It is separate from track IDs and plugin-owned account identifiers. API 1 is the supported host contract; packages declaring another positive API version remain installable for inspection/removal but are incompatible for execution.
+IDs are case-sensitive lowercase identifiers, 3–80 characters, using letters, digits, `.`, `_`, and `-`. `netease` and `local` are reserved. The package `id` identifies installed code. `providerId` identifies catalog content, defaults to `id`, and cannot change on update. The current instance ID is `script:<id>:default`. It is separate from track IDs and plugin-owned account identifiers. APIs 1 and 2 are supported; packages declaring another positive API version remain installable for inspection/removal but are incompatible for execution.
 
-API 1 supports four optional capabilities. A lyrics-only plugin does not enter audio fallback. Album, artist, playlist, account and recommendation operations can be added in a future negotiated API; they are not advertised by this runtime.
+API 1 retains its four optional capabilities and bare-track search format. A lyrics-only plugin does not enter audio fallback. API 2 adds optional typed content, feeds, accounts and libraries. Existing API 1 packages do not need changes.
+
+## API 2 content
+
+Declare only the operations implemented by the plugin. `searchTypes` and `collectionTypes` use `track`, `album`, `artist`, `playlist`. The SDK type declarations are the complete field contract.
+
+| Operations | Results |
+| --- | --- |
+| `catalog.search` with `type`, `offset`, `limit`, optional `cursor` | `{items: SourceItem[], hasMore, nextCursor?}` |
+| `feed.home`, `feed.discover` | Sections with stable IDs, titles, layouts and typed items; optional categories and pagination |
+| `album.get`, `album.tracks` | Album metadata and paginated tracks |
+| `artist.get`, `artist.tracks`, `artist.albums` | Artist metadata, tracks and paginated albums |
+| `playlist.get`, `playlist.tracks` | Playlist metadata, permitted edit actions and ordered tracks |
+| `account.get` | This instance's own account, display name, avatar and opaque session revision |
+| `library.likedTracks`, `library.createdPlaylists`, `library.savedPlaylists`, `library.savedAlbums`, `library.followedArtists` | Paginated typed items owned by the current session |
+| `track.liked`, `track.like` | Like status and explicit state changes |
+| `collection.saved`, `collection.save` | Collection status and explicit state changes |
+| `playlist.create`, `playlist.update`, `playlist.delete`, `playlist.addTracks`, `playlist.removeTracks`, `playlist.reorderTracks` | Optional individual edit capabilities |
+
+A typed item is `{type: 'track', track: {...}}`, `{type: 'album', album: {...}}`, `{type: 'artist', artist: {...}}` or `{type: 'playlist', playlist: {...}}`. API 2 tracks use artist credits `{name, artistId?}` and an album credit `{title, albumId?}`. IDs remain strings and the host supplies the provider namespace. No script-supplied UI, route or numerical surrogate ID is accepted.
+
+The host checks returned content types, identities, page limits, cursor progress, account-instance identity and edit permissions. Successful writes notify content views without invalidating current audio. Playlist ordering preserves repeated tracks. Paged queues load near the tail, and snapshots retain safe typed locators plus account/version fingerprints. Opaque cursors remain in memory; restoration verifies the saved prefix before resuming remote pagination.
+
+Feed layouts select existing host components (`hero`, `playlists`, `tracks`, `albums`, `artists`, `grid`), rather than executable UI. Missing operations remain unsupported; they do not redirect to Netease.
 
 ## JavaScript contract
 
@@ -84,13 +107,19 @@ onResponse(operation, response, state, context) {
 }
 ```
 
-`onResponse` receives `(operation, {status, headers, body}, state, context)` in the same isolate. It may return another request, with at most four requests per operation, or a final result. State is transient JSON. The host has no shared cookie jar and does not log request URLs, headers or response bodies. Plugins must use only their own supplied credentials.
+`onResponse` receives `(operation, {status, headers, body, bodyBase64?}, state, context)` in the same isolate. It may return another request, with at most four requests per operation, or a final result. State is transient JSON. Requests may specify `responseEncoding: 'base64'` for a binary response. The host applies the same raw byte limit before encoding, returns an empty `body` and the original bytes in `bodyBase64`; the default remains UTF-8 text. Invalid encodings fail before any request.
+
+Each operation callback receives fresh `context.secureRandomBase64`, containing 256 bytes from the host CSPRNG. It is bounded data, not an Android or cryptography bridge. Plugins can use it for protocol nonces, must track consumption within a callback, and must fail rather than substitute `Math.random` when they need more entropy. All cryptographic implementation code remains inside the isolated script.
+
+The host has no shared cookie jar and does not log request URLs, headers or response bodies. Plugins must use only their own supplied credentials.
 
 Network permissions are **exact hostname** grants: no wildcards, non-HTTPS URLs, alternate ports, userinfo, fragments, direct IP domains, or local names. DNS results are checked at connection time. Loopback, private, link-local, shared IPv4, multicast, mapped IPv6 and transition addresses are rejected. Redirects are rejected. Requests are limited to 256 KiB, responses and artwork to 1 MiB. Header injection and connection/proxy/host header overrides are rejected. Each plugin client allows two host requests concurrently, with 8-second connection, 10-second read/write, and 15-second whole-call limits. The runtime serializes sandbox invocations because Android permits one sandbox process.
 
 A fresh sandbox/isolate is created for every operation. Heap is capped at 16 MiB, result/error strings at 256 KiB, each evaluation at three seconds, and a whole operation at 20 seconds. Closing the sandbox terminates its isolated process on timeout/cancellation. There is no runtime fallback to WebView or arbitrary DEX/JAR loading. A plugin crash or denied request produces a typed error; it does not clear host accounts or user data.
 
 ## Configuration and storage
+
+An optional plain-text `description` (up to 2,000 characters) appears beside configuration in the plugin detail page. Use it to explain what credentials or other fields expect; it cannot render HTML or execute links.
 
 `context.config` contains only this plugin instance's declared user configuration. Required empty fields put the source in `NEEDS_CONFIGURATION`. Configuration and optional plugin-owned storage are encrypted with Android Keystore AES-GCM under separate plugin namespaces, stored in `noBackupFilesDir`. Secret values are never included in the installed-source list, diagnostics or exported packages.
 
@@ -115,9 +144,9 @@ node samples/music-source-plugin/test.mjs
 python3 samples/music-source-plugin/package.py
 ```
 
-Import `offline-mock.meisource` from Audio Sources in settings. Select **MeiloX Offline Mock** for search and search for **Mock Recording**. It returns the SDK fixture and resolves the packaged test tone. The Android instrumentation test exercises import, real isolated JavaScript, search, detail, ordered fallback, an opaque audio read, disable/re-enable, and reload. The Node runner verifies the portable operation contract; it does not substitute for Android sandbox tests.
+Import `offline-mock.meisource` from **Settings → General → Audio Sources**. Select **MeiloX Offline Mock** for search and search for **Mock Recording**. It returns the SDK fixture and resolves the packaged test tone. The Android instrumentation test exercises import, real isolated JavaScript, search, detail, ordered fallback, an opaque audio read, disable/re-enable, and reload. The Node runner verifies the portable operation contract; it does not substitute for Android sandbox tests.
 
-For QQ Music or Kugou development, obtain a documented, authorized API and verify the account/playback contract first. Declare only verified capabilities and exact API/CDN hostnames. Preserve the platform's string track IDs, actual audio quality, token expiry and version metadata. The existing QQ lyrics extension is not an audio provider. This SDK deliberately ships no universal parser, copied platform secrets, or unverified full-platform adapter.
+The experimental [QQ Music website adapter](https://github.com/NEORUAA/MeiloX-QQMusic-Source) demonstrates public catalog/lyrics and personal-session playback resolution. Anonymous catalog requests are verified; live playback requires the user's privately configured session and separate validation. It is separate from the existing QQ lyrics extension and from QQ's partner OpenAPI. Declare exact API/CDN hosts, retain string track IDs, and report actual audio quality and expiry. The SDK contains no bundled account, platform secrets, or third-party parsing service.
 
 ## Distribution boundary
 

@@ -2,7 +2,7 @@ package com.ljyh.mei.source.api
 
 import java.io.IOException
 
-enum class SourceCapability { SEARCH, TRACK, PLAYBACK, LYRICS, ALBUM, ARTIST, PLAYLIST, ACCOUNT, LIBRARY, RECOMMENDATIONS, PODCAST, SOCIAL }
+enum class SourceCapability { SEARCH, TRACK, PLAYBACK, LYRICS, ALBUM, ARTIST, PLAYLIST, ACCOUNT, LIBRARY, RECOMMENDATIONS, PODCAST, SOCIAL, FEED, LIKE, COLLECTIONS, PLAYLIST_EDIT }
 enum class SourceStatus { READY, DISABLED, NEEDS_CONFIGURATION, INCOMPATIBLE, FAILED }
 enum class SourceErrorCode { AUTH_REQUIRED, AUTH_EXPIRED, UNAVAILABLE, NOT_FOUND, NETWORK, TIMEOUT, INVALID_RESPONSE, PLUGIN, UNSUPPORTED, MISSING_PROVIDER, AMBIGUOUS_MATCH }
 
@@ -22,10 +22,10 @@ data class Track(
     val version: String? = null,
     val explicit: Boolean = false,
 )
-data class PageRequest(val offset: Int = 0, val limit: Int = 30) {
-    init { require(offset >= 0 && limit in 1..100) }
+data class PageRequest(val offset: Int = 0, val limit: Int = 30, val cursor: String? = null) {
+    init { require(offset >= 0 && limit in 1..100 && (cursor == null || cursor.length <= 4096)) }
 }
-data class SourcePage<T>(val items: List<T>, val hasMore: Boolean = false)
+data class SourcePage<T>(val items: List<T>, val hasMore: Boolean = false, val nextCursor: String? = null)
 enum class CachePolicy { ALLOW, NO_STORE }
 
 /** A resource describes the returned bytes, independently of the queue's content identity. */

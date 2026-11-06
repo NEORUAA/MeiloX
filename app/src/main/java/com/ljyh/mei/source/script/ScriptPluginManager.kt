@@ -12,6 +12,8 @@ import com.ljyh.mei.source.core.ProviderRegistry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.security.MessageDigest
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.UUID
 import java.util.zip.ZipInputStream
 import javax.inject.Inject
@@ -89,8 +91,8 @@ class ScriptPluginManager @Inject constructor(
                         val entry = zip.nextEntry ?: break
                         if (++entries > 64) invalid("Source package has too many files")
                         val name = entry.name
-                        val allowed = name in setOf("manifest.json", "index.js") || Regex("assets/[A-Za-z0-9._-]+\\.(wav|mp3|flac|m4a|ogg)").matches(name)
-                        if (!allowed || !names.add(name) || entry.isDirectory) invalid("Source package contains an unsupported path")
+                        val limit = packageFileLimit(name)
+                        if (!names.add(name) || entry.isDirectory) invalid("Source package contains an unsupported path")
                         val target = File(directory, name).canonicalFile
                         if (!target.path.startsWith(directory.canonicalPath + File.separator)) invalid("Invalid source package path")
                         target.parentFile?.mkdirs()
@@ -102,11 +104,11 @@ class ScriptPluginManager @Inject constructor(
                                 if (read < 0) break
                                 fileBytes += read
                                 total += read
-                                val limit = when (name) { "manifest.json" -> 64 * 1024; "index.js" -> 256 * 1024; else -> 4 * 1024 * 1024 }
                                 if (fileBytes > limit || total > 8 * 1024 * 1024) invalid("Source package exceeds size limits")
                                 output.write(buffer, 0, read)
                             }
                         }
+                        if (name == "LICENSE" || name == "NOTICE") validateLegalText(target.readBytes())
                     }
                 }
             }
@@ -278,4 +280,26 @@ class ScriptPluginManager @Inject constructor(
     }
 
     private fun invalid(message: String): Nothing = throw SourceException(SourceErrorCode.PLUGIN, message)
+
+    companion object {
+        internal fun packageFileLimit(name: String): Int = when {
+            name in setOf("manifest.json", "LICENSE", "NOTICE") -> 64 * 1024
+            name == "index.js" -> 256 * 1024
+            Regex("assets/[A-Za-z0-9._-]+\\.(wav|mp3|flac|m4a|ogg)").matches(name) -> 4 * 1024 * 1024
+            else -> throw SourceException(SourceErrorCode.PLUGIN, "Source package contains an unsupported path")
+        }
+
+        internal fun validateLegalText(bytes: ByteArray) {
+            if (bytes.size > 64 * 1024) throw SourceException(SourceErrorCode.PLUGIN, "Source legal text exceeds size limits")
+            val text = try {
+                Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
+            } catch (_: Exception) {
+                throw SourceException(SourceErrorCode.PLUGIN, "Source legal text must be UTF-8 text")
+            }
+            if (text.any { it.isISOControl() && it !in "\t\r\n\u000c" }) {
+                throw SourceException(SourceErrorCode.PLUGIN, "Source legal text must be plain text")
+            }
+        }
+    }
 }

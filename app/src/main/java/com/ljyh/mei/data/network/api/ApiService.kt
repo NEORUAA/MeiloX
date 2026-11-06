@@ -168,7 +168,10 @@ interface ApiService {
     ): BaseResponse
 
     @POST("/api/playlist/create")
-    suspend fun createPlaylist(@Body body: CreatePlaylist): CreatePlaylistResult
+    suspend fun createPlaylist(
+        @Body body: CreatePlaylist,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
+    ): CreatePlaylistResult
 
 
 
@@ -179,7 +182,10 @@ interface ApiService {
     suspend fun unsubscribeAlbum(@Body body: SubscribePlaylist): BaseResponse
 
     @POST("/api/playlist/remove")
-    suspend fun deletePlaylist(@Body body: DeletePlaylist): BaseMessageResponse
+    suspend fun deletePlaylist(
+        @Body body: DeletePlaylist,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
+    ): BaseMessageResponse
 
 
     @POST("/api/artist/head/info/get")

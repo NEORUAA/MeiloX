@@ -6,6 +6,7 @@ import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.model.api.GetUserPhotoAlbum
 import com.ljyh.mei.data.model.api.EApiSubscribePlaylist
 import com.ljyh.mei.data.model.weapi.GetHomePageResourceShow
+import com.ljyh.mei.data.network.NETEASE_EXPECTED_SESSION_HEADER
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.Headers
@@ -24,6 +25,7 @@ interface EApiService {
     suspend fun subscribePlaylist(
         @Body body: EApiSubscribePlaylist,
         @Header("X-Netease-Anti-Cheat-Token") antiCheatToken: String,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
     ): BaseResponse
 
     @Headers("X-Netease-Crypto: eapi", "X-Netease-Check-Token: true")
@@ -31,5 +33,6 @@ interface EApiService {
     suspend fun unSubscribePlaylist(
         @Body body: EApiSubscribePlaylist,
         @Header("X-Netease-Anti-Cheat-Token") antiCheatToken: String,
+        @Header(NETEASE_EXPECTED_SESSION_HEADER) expectedSession: String? = null,
     ): BaseResponse
 }

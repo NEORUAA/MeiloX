@@ -9,12 +9,224 @@ import com.ljyh.mei.source.core.PlaybackResolver
 import com.ljyh.mei.source.core.ProviderRegistry
 import com.ljyh.mei.source.core.SourceSettings
 import java.io.File
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.util.Base64
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import com.google.gson.JsonObject
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.Source
+import okio.Timeout
+import okio.buffer
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
+    @Test
+    fun revokedInvocationsCannotSendAnotherRequestOrStartAfterWaitingForTheSandbox() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.revision-test","name":"Revision fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["track.like"],"permissions":{"network":["api.example.com"]}}""")
+        val network = ScriptNetworkPolicy(manifest.permissions.network)
+        val script = """globalThis.sourcePlugin = {
+            'track.like': function() { return {request:{url:'https://api.example.com/session'}}; },
+            onResponse: function() { return {request:{url:'https://api.example.com/like',method:'POST',body:'liked=true'}}; }
+        };""".trimIndent()
+        val gate = PluginRevisionGate()
+        val revision = gate.change { it }
+        val sentMethods = mutableListOf<String>()
+        try {
+            runtime.invoke(script, manifest, "track.like", JsonObject(), emptyMap(), emptyMap(), request = { request ->
+                network.validateUrl(request["url"].asString)
+                sentMethods += request["method"]?.asString ?: "GET"
+                gate.change { }
+                JsonObject().apply { addProperty("status", 200); addProperty("body", "session ready") }
+            }, ensureCurrent = { gate.read(revision) { } })
+            fail("Expected the revoked request to cancel")
+        } catch (_: CancellationException) { }
+        assertEquals(listOf("GET"), sentMethods)
+
+        withTimeout(30_000) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val holder = async {
+                runtime.invoke(script.replace("return {request:{url:'https://api.example.com/like',method:'POST',body:'liked=true'}};", "return true;"),
+                    manifest, "track.like", JsonObject(), emptyMap(), emptyMap(), request = { request ->
+                        network.validateUrl(request["url"].asString)
+                        entered.complete(Unit)
+                        release.await()
+                        JsonObject().apply { addProperty("status", 200); addProperty("body", "ready") }
+                    })
+            }
+            try {
+                entered.await()
+                val queuedRevision = gate.change { it }
+                var queuedRequests = 0
+                val queued = async(start = CoroutineStart.UNDISPATCHED) {
+                    runtime.invoke(script, manifest, "track.like", JsonObject(), emptyMap(), emptyMap(), request = {
+                        queuedRequests++
+                        fail("A revoked queued operation must not perform networking")
+                        JsonObject()
+                    }, ensureCurrent = { gate.read(queuedRevision) { } })
+                }
+                gate.change { }
+                release.complete(Unit)
+                assertTrue(holder.await().result.asBoolean)
+                try { queued.await(); fail("Expected the queued operation to cancel") }
+                catch (_: CancellationException) { }
+                assertEquals(0, queuedRequests)
+            } finally {
+                release.complete(Unit)
+                holder.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun transportBodyErrorsKeepTheirTypeAndTheProviderCanImmediatelyRecover() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.transport-test","name":"Transport fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"network":["api.example.com"]}}""")
+        val policy = ScriptNetworkPolicy(manifest.permissions.network)
+        val failures = listOf(IOException("private source URL") to SourceErrorCode.NETWORK,
+            SocketTimeoutException("private source timeout") to SourceErrorCode.TIMEOUT)
+        val requestScript = """globalThis.sourcePlugin = {'catalog.track':function() {
+            return {request:{url:'https://api.example.com/binary',responseEncoding:'base64'}};
+        }};""".trimIndent()
+        for ((failure, expected) in failures) {
+            try {
+                runtime.invoke(requestScript, manifest, "catalog.track", JsonObject(), emptyMap(), emptyMap(), request = { request ->
+                    policy.validateUrl(request["url"].asString)
+                    failingResponse(failure).use { policy.responsePayload(it, policy.responseEncoding(request)) }
+                })
+                fail("Expected a typed body read failure")
+            } catch (error: SourceException) { assertEquals(expected, error.code) }
+        }
+        val directory = File(context.cacheDir, "source-transport-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val failureCodes = mutableListOf<SourceErrorCode>()
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {'catalog.track':function(params) {
+                if(params.trackId !== 'healthy') return {error:params.trackId};
+                return {trackId:'healthy',title:'Recovered source'};
+            }};""".trimIndent())
+            val provider = ScriptMusicProvider(manifest, directory, runtime, enabled = true,
+                configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { emptyMap() },
+                saveStorage = {}, onFailure = { failureCodes += it }, configurationVersion = 0)
+            for ((_, expected) in failures) {
+                try { provider.getTrack(TrackRef(manifest.providerId, expected.name)); fail("Expected a typed transport error") }
+                catch (error: SourceException) { assertEquals(expected, error.code) }
+                assertEquals(SourceStatus.READY, provider.status)
+                assertFalse(provider.failed)
+                assertEquals("Recovered source", provider.getTrack(TrackRef(manifest.providerId, "healthy"))?.title)
+            }
+            assertTrue(failureCodes.isEmpty())
+        } finally { directory.deleteRecursively() }
+    }
+
+    private fun failingResponse(failure: Exception): Response {
+        val source = object : Source {
+            override fun read(sink: Buffer, byteCount: Long): Long = throw failure
+            override fun timeout(): Timeout = Timeout.NONE
+            override fun close() = Unit
+        }.buffer()
+        return Response.Builder().request(Request.Builder().url("https://api.example.com/binary").build())
+            .protocol(Protocol.HTTP_1_1).code(200).message("Fixture").body(object : ResponseBody() {
+                override fun contentType(): okhttp3.MediaType? = null
+                override fun contentLength() = -1L
+                override fun source() = source
+            }).build()
+    }
+
+    @Test
+    fun isolatedEvaluationsReceiveFreshEntropyAndBinaryResponsesWithoutAnObjectBridge() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.entropy-test","name":"Entropy fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"network":["api.example.com"]}}""")
+        val bytes = byteArrayOf(0, 0xff.toByte(), 0xc3.toByte(), 0x28)
+        val network = ScriptNetworkPolicy(manifest.permissions.network)
+        val script = """globalThis.sourcePlugin = {
+            'catalog.track': function(params, context) {
+                return {request:{url:'https://api.example.com/binary',responseEncoding:'base64'},
+                    state:{pools:[context.secureRandomBase64]}};
+            },
+            onResponse: function(operation, response, state, context) {
+                var pools = state.pools.concat([context.secureRandomBase64]);
+                if (pools.length < 3) return {
+                    request:{url:'https://api.example.com/binary',responseEncoding:'base64'}, state:{pools:pools}};
+                return {pools:pools,body:response.body,bodyBase64:response.bodyBase64,
+                    isolated:typeof Android === 'undefined' && typeof Java === 'undefined'};
+            }
+        };""".trimIndent()
+        var responses = 0
+        val result = runtime.invoke(script, manifest, "catalog.track", JsonObject(), emptyMap(), emptyMap(), request = { request ->
+            responses++
+            network.validateUrl(request["url"].asString)
+            val encoding = network.responseEncoding(request)
+            Response.Builder().request(Request.Builder().url(request["url"].asString).build())
+                .protocol(Protocol.HTTP_1_1).code(200).message("Fixture").body(bytes.toResponseBody()).build().use {
+                    network.responsePayload(it, encoding)
+                }
+        }).result.asJsonObject
+        val pools = result["pools"].asJsonArray.map { it.asString }
+        assertEquals(2, responses)
+        assertEquals(3, pools.distinct().size)
+        pools.forEach { assertEquals(256, Base64.getDecoder().decode(it).size) }
+        assertEquals("", result["body"].asString)
+        assertArrayEquals(bytes, Base64.getDecoder().decode(result["bodyBase64"].asString))
+        assertTrue(result["isolated"].asBoolean)
+    }
+
+    @Test
+    fun packageInspectionAcceptsOnlyBoundedRootLegalText() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manager = ScriptPluginManager(context, ProviderRegistry(emptyList()), ScriptRuntime(context))
+        val manifest = """{"id":"org.meilox.legal-test","name":"Legal fixture","author":"Tests",
+            "version":"1","apiVersion":1,"capabilities":["catalog.track"]}""".toByteArray()
+        val script = "globalThis.sourcePlugin={'catalog.track':function(){return null;}};".toByteArray()
+        val legal = mapOf("LICENSE" to "MIT License\n".toByteArray(), "NOTICE" to "Cryptography notices\n".toByteArray())
+        suspend fun inspect(extra: Map<String, ByteArray>): PreparedPlugin {
+            val file = File.createTempFile("source-legal-", ".meisource", context.cacheDir)
+            try {
+                ZipOutputStream(file.outputStream()).use { zip ->
+                    (mapOf("manifest.json" to manifest, "index.js" to script) + extra).forEach { (name, value) ->
+                        zip.putNextEntry(ZipEntry(name)); zip.write(value); zip.closeEntry()
+                    }
+                }
+                return manager.inspect(Uri.fromFile(file))
+            } finally { file.delete() }
+        }
+        val prepared = inspect(legal)
+        try {
+            assertEquals("MIT License\n", File(prepared.directory, "LICENSE").readText())
+            assertEquals("index.js", prepared.manifest.entry)
+        } finally { prepared.directory.deleteRecursively() }
+        for (invalid in listOf(mapOf("helper.js" to script), mapOf("nested/LICENSE" to legal.getValue("LICENSE")),
+            mapOf("LICENSE" to byteArrayOf(0xff.toByte())), mapOf("NOTICE" to ByteArray(64 * 1024 + 1)))) {
+            try { inspect(invalid).directory.deleteRecursively(); fail("Expected package rejection") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+    }
+
     @Test
     fun runawayCodeAndUndeclaredNetworkCannotEscapeTheSandbox() = runBlocking {
         assumeTrue(JavaScriptSandbox.isSupported())

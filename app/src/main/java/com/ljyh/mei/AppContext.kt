@@ -30,8 +30,8 @@ class AppContext : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var sourcePlugins: ScriptPluginManager
     private val sourceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {
-        super.onCreate()
         instance = this
+        super.onCreate()
         sourceScope.launch { sourcePlugins.loadInstalled() }
     }
 

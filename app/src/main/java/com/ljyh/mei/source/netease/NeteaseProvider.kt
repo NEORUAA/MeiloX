@@ -10,27 +10,7 @@ import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.playback.effectivePlaybackQuality
 import com.ljyh.mei.playback.isSupportedPlaybackQuality
 import com.ljyh.mei.playback.playbackQualityFallbacks
-import com.ljyh.mei.source.api.AlbumRef
-import com.ljyh.mei.source.api.ArtistRef
-import com.ljyh.mei.source.api.AudioResource
-import com.ljyh.mei.source.api.BatchCatalogCapability
-import com.ljyh.mei.source.api.CatalogCapability
-import com.ljyh.mei.source.api.FeatureContribution
-import com.ljyh.mei.source.api.LyricsCapability
-import com.ljyh.mei.source.api.MusicProvider
-import com.ljyh.mei.source.api.PageRequest
-import com.ljyh.mei.source.api.PlaybackCapability
-import com.ljyh.mei.source.api.ProviderIds
-import com.ljyh.mei.source.api.QualityCapability
-import com.ljyh.mei.source.api.SourceAlbum
-import com.ljyh.mei.source.api.SourceArtist
-import com.ljyh.mei.source.api.SourceCapability
-import com.ljyh.mei.source.api.SourceErrorCode
-import com.ljyh.mei.source.api.SourceException
-import com.ljyh.mei.source.api.SourceLyrics
-import com.ljyh.mei.source.api.SourcePage
-import com.ljyh.mei.source.api.Track
-import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.api.*
 import com.ljyh.mei.utils.netease.NeteaseUtils.getResourceLink
 import java.io.IOException
 import java.net.URI
@@ -45,20 +25,35 @@ class NeteaseProvider @Inject constructor(
     private val catalog: NeteaseCatalogTransport,
     private val playback: NeteasePlaybackTransport,
     private val api: ApiService,
+    private val content: NeteaseContentAdapter? = null,
 ) : MusicProvider, CatalogCapability, BatchCatalogCapability, PlaybackCapability, LyricsCapability,
-    QualityCapability, FeatureContribution {
+    QualityCapability, FeatureContribution, TypedSearchCapability, FeedCapability, AlbumCapability,
+    ArtistCapability, PlaylistCapability, AccountCapability, LibraryCapability, LikeCapability,
+    CollectionCapability, PlaylistEditCapability, AccountRevisionCapability {
     override val id = ProviderIds.NETEASE
     override val displayName = "网易云音乐"
     override val isBuiltIn = true
     override val capabilities = setOf(
-        SourceCapability.SEARCH, SourceCapability.TRACK, SourceCapability.PLAYBACK,
-        SourceCapability.LYRICS, SourceCapability.ALBUM, SourceCapability.ARTIST,
-        SourceCapability.PLAYLIST, SourceCapability.ACCOUNT, SourceCapability.LIBRARY,
-        SourceCapability.RECOMMENDATIONS, SourceCapability.PODCAST, SourceCapability.SOCIAL,
-    )
+        SourceCapability.SEARCH, SourceCapability.TRACK, SourceCapability.PLAYBACK, SourceCapability.LYRICS,
+    ) + if (content != null) setOf(
+        SourceCapability.ALBUM, SourceCapability.ARTIST, SourceCapability.PLAYLIST,
+        SourceCapability.ACCOUNT, SourceCapability.LIBRARY, SourceCapability.RECOMMENDATIONS,
+        SourceCapability.PODCAST, SourceCapability.SOCIAL, SourceCapability.FEED, SourceCapability.LIKE,
+        SourceCapability.COLLECTIONS, SourceCapability.PLAYLIST_EDIT,
+    ) else emptySet()
+    override val searchTypes get() = content?.searchTypes.orEmpty()
+    override val feedKinds get() = content?.feedKinds.orEmpty()
+    override val collections get() = content?.collections.orEmpty()
+    override val collectionTypes get() = content?.collectionTypes.orEmpty()
+    override val playlistEditActions get() = content?.playlistEditActions.orEmpty()
+    override val canReadLikes get() = content != null
+    override val canWriteLikes get() = content != null
+    override val canReadCollections get() = content != null
+    override val canWriteCollections get() = content != null
+    override val accountRevision get() = content?.accountRevision ?: kotlinx.coroutines.flow.flowOf("")
 
     override val featureRoutes = setOf(
-        "home", "find_music", "everyday", "podcasts", "podcast", "cloud_music",
+        "home", "find_music", "library", "library_category", "everyday", "podcasts", "podcast", "cloud_music",
         "account/login", "account/web_login", "account/pc_qr_login", "account/home",
         "account/musician", "account/security", "account/security/bindings",
         "account/security/devices", "account/security/authorizations", "account/security/web",
@@ -153,6 +148,29 @@ class NeteaseProvider @Inject constructor(
         requireSuccess(response.code)
         response.lrc?.lyric?.takeIf(String::isNotBlank)?.let { SourceLyrics(it, response.tlyric?.lyric) }
     }
+
+    override suspend fun search(query: String, type: ContentType, page: PageRequest) = contentAdapter().search(query, type, page)
+    override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest) = contentAdapter().getFeed(kind, categoryId, page)
+    override suspend fun album(ref: AlbumRef) = contentAdapter().album(ref)
+    override suspend fun albumTracks(ref: AlbumRef, page: PageRequest) = contentAdapter().albumTracks(ref, page)
+    override suspend fun artist(ref: ArtistRef) = contentAdapter().artist(ref)
+    override suspend fun artistTracks(ref: ArtistRef, page: PageRequest) = contentAdapter().artistTracks(ref, page)
+    override suspend fun artistAlbums(ref: ArtistRef, page: PageRequest) = contentAdapter().artistAlbums(ref, page)
+    override suspend fun playlist(ref: PlaylistRef) = contentAdapter().playlist(ref)
+    override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest) = contentAdapter().playlistTracks(ref, page)
+    override suspend fun account() = contentAdapter().account()
+    override suspend fun library(collection: LibraryCollection, page: PageRequest) = contentAdapter().library(collection, page)
+    override suspend fun liked(ref: TrackRef) = contentAdapter().liked(ref)
+    override suspend fun setLiked(ref: TrackRef, liked: Boolean) = contentAdapter().setLiked(ref, liked)
+    override suspend fun saved(ref: ContentRef) = contentAdapter().saved(ref)
+    override suspend fun setSaved(ref: ContentRef, saved: Boolean) = contentAdapter().setSaved(ref, saved)
+    override suspend fun createPlaylist(title: String, description: String?) = contentAdapter().createPlaylist(title, description)
+    override suspend fun updatePlaylist(ref: PlaylistRef, title: String?, description: String?) = contentAdapter().updatePlaylist(ref, title, description)
+    override suspend fun deletePlaylist(ref: PlaylistRef) = contentAdapter().deletePlaylist(ref)
+    override suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>) = contentAdapter().addTracks(ref, tracks)
+    override suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>) = contentAdapter().removeTracks(ref, tracks)
+    override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) = contentAdapter().reorderTracks(ref, tracks)
+    private fun contentAdapter() = content ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
 
     private fun requireTrack(ref: TrackRef) {
         if (ref.providerId != id || ref.trackId.toLongOrNull()?.let { it > 0 } != true) {
