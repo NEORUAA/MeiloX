@@ -2,7 +2,7 @@ package com.ljyh.mei.data.network
 
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.di.RetrofitModule
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 
 /** Use one runtime per process, as production does: WatchMan.init cannot run twice. */
 internal object NeteaseLoginTestRuntime {

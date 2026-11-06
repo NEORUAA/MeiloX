@@ -1,6 +1,6 @@
 package com.ljyh.mei.ui.screen.main.library
 
-import com.ljyh.mei.data.repository.LibraryCollectionPage
+import com.ljyh.mei.source.netease.repository.LibraryCollectionPage
 
 data class LibraryCollectionState<T>(
     val items: List<T> = emptyList(),

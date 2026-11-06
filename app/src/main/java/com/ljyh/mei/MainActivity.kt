@@ -202,7 +202,7 @@ import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.melox.NeteaseMusicLink
 import com.ljyh.mei.data.model.melox.NeteaseMusicLinkParser
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.source.netease.NeteaseCatalogTransport
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.playback.MusicService
@@ -304,7 +304,7 @@ class MainActivity : ComponentActivity() {
     lateinit var colorRepository: ColorRepository
 
     @Inject
-    lateinit var apiService: ApiService
+    lateinit var apiService: NeteaseCatalogTransport
     private var userData by mutableStateOf(UserData.VISITOR)
     private var pictureInPictureMode by mutableStateOf(false)
     private var floatingLyricsRequest: Boolean? = null

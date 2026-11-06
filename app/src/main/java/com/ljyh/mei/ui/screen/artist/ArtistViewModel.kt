@@ -7,8 +7,8 @@ import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.model.api.ArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.ArtistRepository
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.ArtistRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.di.repository.ColorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException

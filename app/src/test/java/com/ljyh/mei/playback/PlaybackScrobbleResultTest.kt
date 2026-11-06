@@ -1,10 +1,10 @@
 package com.ljyh.mei.playback
 
-import com.ljyh.mei.data.repository.PlaybackLogResponse
-import com.ljyh.mei.data.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
-import com.ljyh.mei.data.repository.diagnosticSummary
-import com.ljyh.mei.data.repository.parsePlaybackHistoryBody
-import com.ljyh.mei.data.repository.sanitizePlaybackDiagnosticText
+import com.ljyh.mei.source.netease.repository.PlaybackLogResponse
+import com.ljyh.mei.source.netease.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+import com.ljyh.mei.source.netease.repository.diagnosticSummary
+import com.ljyh.mei.source.netease.repository.parsePlaybackHistoryBody
+import com.ljyh.mei.source.netease.repository.sanitizePlaybackDiagnosticText
 import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

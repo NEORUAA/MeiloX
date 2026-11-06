@@ -5,9 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.AlbumDetail
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.LibraryAccount
-import com.ljyh.mei.data.repository.LibraryCollectionsRepository
-import com.ljyh.mei.data.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.LibraryAccount
+import com.ljyh.mei.source.netease.repository.LibraryCollectionsRepository
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job

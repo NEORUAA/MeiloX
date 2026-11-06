@@ -68,3 +68,17 @@ upgraded through Room v19 validation while preserving all seeded associations an
 files; legacy and external snapshots restored through real Media3 items. One existing
 quality test in the concurrently integrated P3 path exposed an exception-adapter
 regression, tracked for correction in P3.
+
+### P2
+
+Netease catalog, playback and quality capabilities now have a native provider. Native
+repositories and their DI graph own account/security, home, playlists, library,
+podcasts, cloud, social and together-listening behavior. Old public repository names
+remain compatibility aliases. Native UI operations use native catalog adapters;
+generic catalogs route by explicit source through the registry. QQ lyrics are a
+separate extension and do not advertise QQ playback.
+
+All five native-provider JVM tests passed in the shared build. Eleven AVD tests for
+playback identity, authentication isolation and playlist request transport passed.
+These synthetic transport regressions preserve the real account; they do not claim
+successful live login, cloud upload or social mutation.

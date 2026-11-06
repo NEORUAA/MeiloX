@@ -1,5 +1,7 @@
 package com.ljyh.mei.data.repository
 
+import com.ljyh.mei.source.netease.repository.*
+
 import com.google.gson.JsonParser
 import org.junit.Assert.*
 import org.junit.Test

@@ -8,7 +8,7 @@ import com.ljyh.mei.data.model.api.GetArtistDetail
 import com.ljyh.mei.data.model.api.ArtistSong
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.repository.ArtistRepository
+import com.ljyh.mei.source.netease.repository.ArtistRepository
 import com.ljyh.mei.di.dao.ColorDao
 import com.ljyh.mei.di.repository.ColorRepository
 import java.lang.reflect.Proxy

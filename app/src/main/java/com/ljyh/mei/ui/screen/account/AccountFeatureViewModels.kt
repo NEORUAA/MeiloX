@@ -3,7 +3,7 @@ package com.ljyh.mei.ui.screen.account
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.melox.*
-import com.ljyh.mei.data.repository.AccountFeatureRepository
+import com.ljyh.mei.source.netease.repository.AccountFeatureRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException

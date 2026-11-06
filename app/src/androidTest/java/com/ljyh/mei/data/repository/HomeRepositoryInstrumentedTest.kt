@@ -1,5 +1,7 @@
 package com.ljyh.mei.data.repository
 
+import com.ljyh.mei.source.netease.repository.*
+
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.JsonSyntaxException
 import com.ljyh.mei.AppContext

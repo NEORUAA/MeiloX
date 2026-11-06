@@ -3,7 +3,7 @@ package com.ljyh.mei.ui.screen.cloud
 import com.google.gson.JsonParser
 import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
-import com.ljyh.mei.data.repository.parseCloudMusicPage
+import com.ljyh.mei.source.netease.repository.parseCloudMusicPage
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException

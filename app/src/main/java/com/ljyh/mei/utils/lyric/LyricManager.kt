@@ -13,7 +13,7 @@ import com.ljyh.mei.data.model.qq.u.SearchResult
 import com.ljyh.mei.data.model.room.CachedLyric
 import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.PlayerRepository
+import com.ljyh.mei.source.netease.repository.PlayerRepository
 import com.ljyh.mei.di.repository.CachedLyricRepository
 import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricCandidate

@@ -1,0 +1,2232 @@
+package com.ljyh.mei.source.netease.repository
+
+import android.app.Activity
+import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.util.Log
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.google.gson.Gson
+import com.ljyh.mei.BuildConfig
+import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.DeviceIdKey
+import com.ljyh.mei.constants.NeteaseCsrfKey
+import com.ljyh.mei.constants.NeteaseMusicAKey
+import com.ljyh.mei.constants.NeteaseRefreshTokenKey
+import com.ljyh.mei.constants.NeteaseUrsAppIdKey
+import com.ljyh.mei.constants.NeteaseSecurityIdentityKey
+import com.ljyh.mei.constants.NeteaseLocalDeviceIdKey
+import com.ljyh.mei.constants.NeteaseDeviceRegisteredModelKey
+import com.ljyh.mei.constants.SDeviceIdKey
+import com.ljyh.mei.constants.UserIdKey
+import com.ljyh.mei.constants.UserAvatarUrlKey
+import com.ljyh.mei.constants.UserNicknameKey
+import com.ljyh.mei.data.model.melox.CloudMusicPage
+import com.ljyh.mei.data.model.melox.CloudSong
+import com.ljyh.mei.data.model.melox.ListenTogetherCommand
+import com.ljyh.mei.data.model.melox.ListenTogetherRoom
+import com.ljyh.mei.data.model.melox.ListenTogetherPlaybackCommand
+import com.ljyh.mei.data.model.melox.ListenTogetherPlaybackSnapshot
+import com.ljyh.mei.data.model.melox.ListenTogetherStatus
+import com.ljyh.mei.data.model.melox.ListenTogetherUser
+import com.ljyh.mei.data.model.melox.MessageContact
+import com.ljyh.mei.data.model.melox.Podcast
+import com.ljyh.mei.data.model.melox.PodcastCategory
+import com.ljyh.mei.data.model.melox.PodcastDetail
+import com.ljyh.mei.data.model.melox.PodcastHome
+import com.ljyh.mei.data.model.melox.PodcastHost
+import com.ljyh.mei.data.model.melox.PodcastPage
+import com.ljyh.mei.data.model.melox.PodcastProgram
+import com.ljyh.mei.data.model.melox.PodcastProgramPage
+import com.ljyh.mei.data.model.melox.PrivateConversation
+import com.ljyh.mei.data.model.melox.PrivateConversationPage
+import com.ljyh.mei.data.model.melox.PrivateMessage
+import com.ljyh.mei.data.model.melox.PrivateMessagePayload
+import com.ljyh.mei.data.model.melox.SearchDiscovery
+import com.ljyh.mei.data.model.melox.SearchDiscoveryPlaylist
+import com.ljyh.mei.data.model.melox.SongWiki
+import com.ljyh.mei.data.model.melox.SongWikiAssociationDetail
+import com.ljyh.mei.data.model.melox.SongWikiAssociationGroup
+import com.ljyh.mei.data.model.melox.SongWikiAttribute
+import com.ljyh.mei.data.model.melox.SongWikiMemoryItem
+import com.ljyh.mei.data.model.melox.SongWikiMemoryKind
+import com.ljyh.mei.data.model.melox.SongWikiPlaylistReference
+import com.ljyh.mei.data.model.melox.SongWikiReview
+import com.ljyh.mei.data.model.melox.SongWikiSongReference
+import com.ljyh.mei.data.model.melox.SongWikiTagGroup
+import com.ljyh.mei.data.model.melox.ShareResource
+import com.ljyh.mei.data.model.melox.ShareResourceKind
+import com.ljyh.mei.data.model.melox.AccountDetail
+import com.ljyh.mei.data.model.melox.AccountConnectionPage
+import com.ljyh.mei.data.model.melox.AccountConnectionType
+import com.ljyh.mei.data.model.melox.AccountPlaylist
+import com.ljyh.mei.data.model.melox.AccountProfile
+import com.ljyh.mei.data.model.melox.AccountSong
+import com.ljyh.mei.data.model.melox.UserPlayRecord
+import com.ljyh.mei.data.model.melox.ListeningStatsPeriod
+import com.ljyh.mei.data.model.melox.ListeningStatsReport
+import com.ljyh.mei.data.model.melox.ListeningStatsSummary
+import com.ljyh.mei.data.model.melox.ListeningStatsYear
+import com.ljyh.mei.data.network.api.MeloXDirectService
+import com.ljyh.mei.data.network.NeteaseLoginSecurity
+import com.ljyh.mei.data.network.readNeteaseLoginCookies
+import com.ljyh.mei.data.network.NeteaseSessionType
+import com.ljyh.mei.data.network.neteaseSessionType
+import com.ljyh.mei.data.network.requireNeteaseMobileSession
+import com.ljyh.mei.data.network.NETEASE_EXPECTED_SESSION_HEADER
+import com.ljyh.mei.data.network.neteaseSessionFingerprint
+import com.ljyh.mei.data.network.requireExpectedNeteaseSession
+import com.ljyh.mei.constants.NeteaseSessionTypeKey
+import com.ljyh.mei.di.NETEASE_WEB_SESSION_HEADER
+import com.ljyh.mei.data.network.NeteaseOfficialDeviceId
+import com.ljyh.mei.data.network.NeteaseUrsSmsLogin
+import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.constants.DebugKey
+import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
+import com.ljyh.mei.di.NETEASE_EAPI_PROFILE_HEADER
+import com.ljyh.mei.di.PLAYBACK_HISTORY_PROFILE
+import com.ljyh.mei.di.PlaybackResponseBodyException
+import com.ljyh.mei.di.readBoundedPlaybackResponseBody
+import com.ljyh.mei.utils.log.logPlaybackHistory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
+import okio.BufferedSink
+import org.json.JSONObject
+import timber.log.Timber
+import java.security.MessageDigest
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Named
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
+
+internal const val PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT =
+    "https://interface.music.163.com/eapi/feedback/weblog"
+
+data class PlaybackLogResponse(
+    val httpAccepted: Boolean,
+    val code: Int?,
+    val message: String?,
+    val httpStatus: Int? = null,
+    val exceptionType: String? = null,
+    val failureReason: String? = null,
+    val endpoint: String? = null,
+) {
+    val businessAccepted: Boolean
+        get() = httpAccepted && code?.let { it in 200..299 } == true
+}
+
+@Singleton
+class MeloXRepository @Inject constructor(
+    @Named("MeloXEapi") private val eapi: MeloXDirectService,
+    @Named("MeloXWeapi") private val weapi: MeloXDirectService,
+    @ApplicationContext private val context: Context,
+    @Named("CloudUploadClient") private val cloudUploadClient: OkHttpClient,
+    private val neteaseLoginSecurity: NeteaseLoginSecurity,
+    private val neteaseUrsSmsLogin: NeteaseUrsSmsLogin,
+) {
+    suspend fun podcastHome(): PodcastHome = coroutineScope {
+        val categories = async {
+            request("/api/djradio/category/get").array("categories").mapNotNull(::parsePodcastCategory)
+        }
+        val featured = async {
+            request("/api/djradio/recommend/v1").array("djRadios").mapNotNull(::parsePodcast)
+        }
+        val personalized = async {
+            request("/api/djradio/personalize/rcmd", mapOf("limit" to 12))
+                .array("data").mapNotNull(::parsePodcast)
+        }
+        PodcastHome(categories.await(), featured.await(), personalized.await())
+    }
+
+    suspend fun podcasts(categoryId: Long, offset: Int = 0, limit: Int = 30): List<Podcast> =
+        request(
+            "/api/djradio/hot",
+            mapOf("cateId" to categoryId, "offset" to offset, "limit" to limit.coerceIn(1, 50)),
+        ).array("djRadios").mapNotNull(::parsePodcast)
+
+    suspend fun podcastDetail(id: Long, offset: Int = 0, limit: Int = 50): PodcastDetail =
+        coroutineScope {
+            val podcastResponse = async { request("/api/djradio/v2/get", mapOf("id" to id)) }
+            val programsResponse = async { podcastPrograms(id, offset, limit) }
+            val podcast = parsePodcast(podcastResponse.await().objectOrNull("data"))
+                ?: error("Podcast $id was not returned by NetEase")
+            val programs = programsResponse.await()
+            PodcastDetail(
+                podcast = podcast,
+                programs = programs.programs.distinctBy(PodcastProgram::id),
+                hasMore = programs.hasMore,
+                totalCount = programs.totalCount,
+                nextOffset = offset + programs.fetchedCount,
+            )
+        }
+
+    suspend fun podcastProgram(id: Long): PodcastProgram {
+        require(id > 0) { "Invalid podcast program ID" }
+        return parsePodcastProgramDetail(
+            request("/api/dj/program/detail", mapOf("id" to id)),
+            id,
+        )
+    }
+
+    suspend fun podcastPrograms(id: Long, offset: Int = 0, limit: Int = 50): PodcastProgramPage {
+        val response = request(
+            "/api/dj/program/byradio",
+            mapOf("radioId" to id, "offset" to offset, "limit" to limit.coerceIn(1, 50), "asc" to false),
+        )
+        return parsePodcastProgramPage(response, offset)
+    }
+
+    suspend fun subscribedPodcasts(offset: Int = 0, limit: Int = 50): PodcastPage {
+        val response = request(
+            "/api/djradio/get/subed",
+            mapOf("offset" to offset, "limit" to limit.coerceIn(1, 100), "total" to true),
+        )
+        return parseSubscribedPodcastPage(response, offset)
+    }
+
+    suspend fun searchDiscovery(): SearchDiscovery {
+        val response = requestEapi(
+            "/api/personalized/playlist",
+            mapOf("limit" to 10, "total" to true, "n" to 1_000),
+        )
+        val recommendations = response.array("result").mapNotNull { element ->
+            val value = element.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return@mapNotNull null
+            val id = value.long("id")?.takeIf { it > 0 } ?: return@mapNotNull null
+            val name = value.string("name")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            SearchDiscoveryPlaylist(
+                id = id,
+                name = name,
+                artworkUrl = value.string("picUrl"),
+                copywriter = value.string("copywriter"),
+                creatorNickname = value.objectOrNull("creator")?.string("nickname"),
+            )
+        }
+        return SearchDiscovery(recommendations)
+    }
+
+    suspend fun accountProfile(webCookie: String? = null): AccountProfile {
+        suspend fun profileRequest(path: String): JsonObject = if (webCookie == null) {
+            requestEapi(path)
+        } else {
+            validate(eapi.post(
+                path = path.replaceFirst("/api/", "/eapi/"),
+                headers = mapOf(NETEASE_WEB_SESSION_HEADER to webCookie),
+            ))
+        }
+        val response = runCatching { profileRequest("/api/w/nuser/account/get") }
+            .getOrElse { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                profileRequest("/api/nuser/account/get")
+            }
+        return parseAccountProfile(response.objectOrNull("profile"))
+            ?: error("NetEase account profile is unavailable")
+    }
+
+    suspend fun loginWithMobilePassword(
+        phone: String,
+        countryCode: String,
+        password: String,
+    ): AccountProfile {
+        val (normalizedPhone, normalizedCountryCode) = normalizeMobileAccount(phone, countryCode)
+        require(password.isNotEmpty()) { "Password is required" }
+        val passwordMd5 = MessageDigest.getInstance("MD5")
+            .digest(password.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte ->
+                (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+            }
+
+        return loginWithMobileCredentials { checkToken ->
+            linkedMapOf(
+                "phone" to normalizedPhone,
+                "countrycode" to normalizedCountryCode,
+                "password" to passwordMd5,
+                "secureCaptcha" to "",
+                "nonce" to UUID.randomUUID().toString(),
+                "checkToken" to checkToken,
+            )
+        }
+    }
+
+    suspend fun requestMobileSmsCode(
+        activity: Activity,
+        phone: String,
+        countryCode: String,
+    ) {
+        val (normalizedPhone, normalizedCountryCode) = normalizeMobileAccount(phone, countryCode)
+        neteaseUrsSmsLogin.requestCode(activity, normalizedPhone, normalizedCountryCode)
+    }
+
+    suspend fun loginWithMobileSms(
+        phone: String,
+        countryCode: String,
+        code: String,
+    ): AccountProfile {
+        val (normalizedPhone, normalizedCountryCode) = normalizeMobileAccount(phone, countryCode)
+        val normalizedCode = code.trim()
+        require(normalizedCode.length in 4..8 && normalizedCode.all(Char::isDigit)) {
+            "Invalid SMS verification code"
+        }
+        val credentials = neteaseUrsSmsLogin.verifyCode(
+            normalizedPhone,
+            normalizedCountryCode,
+            normalizedCode,
+        )
+        return loginWithUrsCredentials(credentials)
+    }
+
+    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge): AccountProfile =
+        loginWithUrsCredentials(neteaseUrsSmsLogin.verifyUpSms(challenge))
+
+    private suspend fun loginWithUrsCredentials(credentials: com.ljyh.mei.data.network.NeteaseUrsLoginCredentials): AccountProfile =
+        loginWithMobileCredentials(ursAppId = credentials.appId) { checkToken ->
+            linkedMapOf(
+                "ursToken" to credentials.token,
+                "nonce" to UUID.randomUUID().toString(),
+                "checkToken" to checkToken,
+            )
+        }
+
+    private suspend fun loginWithMobileCredentials(
+        ursAppId: String? = null,
+        body: (checkToken: String) -> Map<String, Any>,
+    ): AccountProfile {
+        val loginUrsAppId = ursAppId ?: neteaseUrsSmsLogin.appId()
+        val ydDeviceToken = prepareNeteaseLoginDevice()
+        val deviceId = context.dataStore.data.first()[DeviceIdKey].orEmpty()
+        check(deviceId.isNotBlank()) { "NetEase official device identity is unavailable" }
+        val loginChainId = "v1_${deviceId}_android_login_${System.currentTimeMillis()}"
+        val checkToken = neteaseLoginSecurity.pcQrCheckToken()
+        val headerAntiCheatToken = neteaseLoginSecurity.freshCheckToken()
+        val securityCookies = neteaseLoginSecurity.securityCookies()
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Mobile login context ready loginChainId=${loginChainId.length} " +
+                "ursAppId=${loginUrsAppId.length} transport=eapi",
+        )
+        // 3.7.30 uses the ordinary EAPI login route. It does not depend on a
+        // banner request negotiating an unrelated AEAPI session first.
+        val response = eapi.postResponse(
+            path = "/api/login/cellphone",
+            body = body(checkToken),
+            cryptoMode = "eapi",
+            antiCheatToken = headerAntiCheatToken,
+            ydDeviceToken = ydDeviceToken,
+            loginChainId = loginChainId,
+            nmcid = securityCookies.nmcid,
+            nmdi = securityCookies.nmdi,
+            nmtid = securityCookies.nmtid.takeIf(String::isNotBlank),
+            withoutAccount = true,
+            ursAppId = loginUrsAppId,
+        )
+        val responseBody = response.body()
+        val code = responseBody?.int("code") ?: response.code()
+        if (!response.isSuccessful || code !in 200..299 || responseBody == null) {
+            Log.w(
+                PC_QR_LOG_TAG,
+                "Mobile login rejected http=${response.code()} code=$code " +
+                    "body=${responseBody != null}",
+            )
+            throw NeteaseMobileLoginException(
+                code = code,
+                message = responseBody?.string("message")
+                    ?: responseBody?.string("msg")
+                    ?: "NetEase mobile login failed ($code)",
+            )
+        }
+        val session = readNeteaseLoginCookies(response.raw())
+        val (musicU, csrf, musicA, refreshToken) = session
+        val profile = parseAccountProfile(responseBody.objectOrNull("profile"))
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Mobile login session fields musicU=${musicU.isNotBlank()} musicA=${musicA != null} " +
+                "csrf=${csrf.isNotBlank()} refreshToken=${refreshToken != null} " +
+                "profile=${profile?.id?.let { it > 0 } == true}",
+        )
+        check(
+            profile != null && profile.id > 0
+        ) {
+            "NetEase mobile login returned an incomplete account session"
+        }
+        context.dataStore.edit { preferences ->
+            preferences[CookieKey] = musicU
+            preferences[NeteaseSessionTypeKey] = NeteaseSessionType.Mobile.name
+            preferences[NeteaseCsrfKey] = csrf
+            preferences[NeteaseUrsAppIdKey] = loginUrsAppId
+            if (musicA == null) preferences.remove(NeteaseMusicAKey)
+            else preferences[NeteaseMusicAKey] = musicA
+            // Some supported clients do not receive a refresh token. MUSIC_U is
+            // the authenticated session; a missing refresh token is not a failure.
+            if (refreshToken == null) preferences.remove(NeteaseRefreshTokenKey)
+            else preferences[NeteaseRefreshTokenKey] = refreshToken
+            preferences[UserIdKey] = profile.id.toString()
+            preferences[UserNicknameKey] = profile.nickname
+            if (profile.avatarUrl == null) preferences.remove(UserAvatarUrlKey)
+            else preferences[UserAvatarUrlKey] = profile.avatarUrl
+        }
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Mobile account session ready musicU=${musicU.length} csrf=${csrf.length} " +
+                "musicA=${musicA?.length ?: 0} refreshToken=${refreshToken?.length ?: 0}",
+        )
+        return profile
+    }
+
+    private fun normalizeMobileAccount(phone: String, countryCode: String): Pair<String, String> {
+        val normalizedPhone = phone.trim()
+        val normalizedCountryCode = countryCode.trim().removePrefix("+")
+        require(normalizedPhone.length in 5..20 && normalizedPhone.all(Char::isDigit)) {
+            "Invalid mobile number"
+        }
+        require(normalizedCountryCode.length in 1..4 && normalizedCountryCode.all(Char::isDigit)) {
+            "Invalid country code"
+        }
+        return normalizedPhone to normalizedCountryCode
+    }
+
+    suspend fun preparePcQrLoginSecurity() {
+        val preferences = context.dataStore.data.first()
+        preferences.requireNeteaseMobileSession()
+        check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
+        check(preferences[UserIdKey]?.toLongOrNull()?.let { it > 0 } == true) {
+            "NetEase account user ID is unavailable"
+        }
+        prepareNeteaseLoginDevice()
+    }
+
+    internal suspend fun prepareNeteaseLoginDevice(): String {
+        ensureOfficialDeviceIdentity()
+        val ydDeviceToken = neteaseLoginSecurity.prepareForPcQrLogin()
+        ensureNeteaseDeviceRegistered(ydDeviceToken)
+        return ydDeviceToken
+    }
+
+    suspend fun markPcQrScanned(key: String, clientTraceId: String?): String =
+        submitPcQrLoginAction(key, clientTraceId, PcQrLoginAction.Scan)
+            .string("platform")
+            .orEmpty()
+
+    suspend fun authorizePcQrLogin(key: String, clientTraceId: String?) {
+        submitPcQrLoginAction(key, clientTraceId, PcQrLoginAction.Authorize)
+    }
+
+    suspend fun cancelPcQrLogin(key: String, clientTraceId: String?) {
+        submitPcQrLoginAction(key, clientTraceId, PcQrLoginAction.Cancel)
+    }
+
+    private suspend fun submitPcQrLoginAction(
+        key: String,
+        clientTraceId: String?,
+        action: PcQrLoginAction,
+    ): JsonObject {
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Action start action=${action.name} trace=${!clientTraceId.isNullOrBlank()}",
+        )
+        val preferences = context.dataStore.data.first()
+        preferences.requireNeteaseMobileSession()
+        check(!preferences[CookieKey].isNullOrBlank()) { "NetEase account is not signed in" }
+        val userId = preferences[UserIdKey]?.toLongOrNull()?.takeIf { it > 0 }
+            ?: error("NetEase account user ID is unavailable")
+        ensureOfficialDeviceIdentity()
+        val ydDeviceToken = neteaseLoginSecurity.ydDeviceToken()
+        ensureNeteaseDeviceRegistered(ydDeviceToken)
+        val checkToken = neteaseLoginSecurity.pcQrCheckToken()
+        val headerAntiCheatToken = neteaseLoginSecurity.freshCheckToken()
+        val securityCookies = neteaseLoginSecurity.securityCookies()
+        val response = try {
+            eapi.post(
+                path = "/api/login/qrcode/server/login",
+                body = buildPcQrLoginBody(
+                    key = key,
+                    clientTraceId = clientTraceId,
+                    userId = userId,
+                    action = action,
+                    antiCheatToken = checkToken,
+                ),
+                cryptoMode = "eapi",
+                antiCheatToken = headerAntiCheatToken,
+                ydDeviceToken = ydDeviceToken,
+                nmcid = securityCookies.nmcid,
+                nmdi = securityCookies.nmdi,
+                nmtid = securityCookies.nmtid.takeIf(String::isNotBlank),
+            )
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Log.e(
+                PC_QR_LOG_TAG,
+                "Request failed action=${action.name} security={checkToken:${checkToken.length}," +
+                    "antiCheatToken:${headerAntiCheatToken.length},ydDeviceToken:${ydDeviceToken.length},eapi:true}",
+                error,
+            )
+            Timber.tag(PC_QR_LOG_TAG).e(
+                error,
+                "Request failed action=%s security={antiCheat:%d,yd:%d,eapi:true}",
+                action.name,
+                checkToken.length,
+                ydDeviceToken.length,
+            )
+            throw error
+        }
+        val code = response.int("code") ?: 0
+        val message = response.string("message") ?: response.string("msg")
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Response action=${action.name} code=$code message=${message.orEmpty()} " +
+                "security={checkToken:${checkToken.length},antiCheatToken:${headerAntiCheatToken.length}," +
+                "ydDeviceToken:${ydDeviceToken.length},eapi:true}",
+        )
+        Timber.tag(PC_QR_LOG_TAG).i(
+            "Response action=%s code=%d message=%s security={antiCheat:%d,yd:%d,eapi:true}",
+            action.name,
+            code,
+            message.orEmpty(),
+            checkToken.length,
+            ydDeviceToken.length,
+        )
+        if (code != 200) {
+            throw PcQrLoginException(
+                code = code,
+                message = message ?: "NetEase PC QR login failed ($code)",
+            )
+        }
+        return response
+    }
+
+    private suspend fun ensureOfficialDeviceIdentity() {
+        val current = context.dataStore.data.first()
+        if (
+            current[NeteaseSecurityIdentityKey] == NETEASE_SECURITY_IDENTITY &&
+            !current[DeviceIdKey].isNullOrBlank()
+        ) {
+            Log.i(
+                PC_QR_LOG_TAG,
+                "Official device identity reused length=${current[DeviceIdKey]?.length ?: 0}",
+            )
+            return
+        }
+        val fallbackLocalId = current[NeteaseLocalDeviceIdKey]
+            ?.takeIf { it.length == NETEASE_LOCAL_ID_LENGTH }
+            ?: UUID.randomUUID().toString().replace("-", "").take(NETEASE_LOCAL_ID_LENGTH)
+        val identity = withContext(Dispatchers.IO) {
+            NeteaseOfficialDeviceId.create(context, fallbackLocalId)
+        }
+        check(identity.encoded.isNotBlank()) { "NetEase official device ID is unavailable" }
+        val wasRegistered = !current[SDeviceIdKey].isNullOrBlank()
+        context.dataStore.edit { settings ->
+            settings[DeviceIdKey] = identity.encoded
+            settings[NeteaseLocalDeviceIdKey] = fallbackLocalId
+            if (
+                wasRegistered &&
+                current[NeteaseDeviceRegisteredModelKey].isNullOrBlank()
+            ) {
+                settings[NeteaseDeviceRegisteredModelKey] = Build.MODEL
+            }
+            settings.remove(SDeviceIdKey)
+            settings.remove(NeteaseSecurityIdentityKey)
+        }
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Official device identity ready length=${identity.encoded.length} " +
+                "fields={wifi:${identity.wifiLength},android:${identity.androidIdLength}," +
+                "local:${identity.localIdLength},fallback:${identity.usedLocalIdFallback}}",
+        )
+    }
+
+    private suspend fun ensureNeteaseDeviceRegistered(ydDeviceToken: String) {
+        val current = context.dataStore.data.first()
+        if (
+            !current[SDeviceIdKey].isNullOrBlank() &&
+            current[NeteaseSecurityIdentityKey] == NETEASE_SECURITY_IDENTITY
+        ) {
+            Log.i(
+                PC_QR_LOG_TAG,
+                "Device fingerprint registration reused deviceId=${current[DeviceIdKey]?.length ?: 0} " +
+                    "sDeviceId=${current[SDeviceIdKey]?.length ?: 0}",
+            )
+            return
+        }
+        val registeredModel = current[NeteaseDeviceRegisteredModelKey].orEmpty()
+        val initType = when {
+            registeredModel.isBlank() -> 1
+            registeredModel == Build.MODEL -> 0
+            else -> 2
+        }
+        val androidId = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ANDROID_ID,
+        ).orEmpty()
+        val response = eapi.post(
+            path = "/api/middle/device-info/get?ydDeviceType=Android&ydDeviceToken=$ydDeviceToken",
+            body = mapOf(
+                "ydDeviceType" to "Android",
+                "ydDeviceToken" to ydDeviceToken,
+                "initType" to initType,
+                "imei" to "null",
+                "androidId" to androidId,
+                "oaid" to "",
+            ),
+            cryptoMode = "eapi",
+        )
+        val code = response.int("code") ?: 0
+        val data = response.objectOrNull("data")
+        val sDeviceId = data?.string("sDeviceId").orEmpty()
+        val correctDeviceId = data?.string("correctDeviceId").orEmpty()
+        val initializesFromServer = data?.boolean("initAppBySDeviceId") == true
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Device fingerprint registration code=$code initType=$initType " +
+                "sDeviceId=${sDeviceId.length} correctDeviceId=${correctDeviceId.length} " +
+                "initialize=$initializesFromServer",
+        )
+        check(code == 200 && sDeviceId.isNotBlank()) {
+            response.string("message")
+                ?: response.string("msg")
+                ?: "NetEase device fingerprint registration failed ($code)"
+        }
+        context.dataStore.edit { settings ->
+            settings[SDeviceIdKey] = sDeviceId
+            settings[NeteaseSecurityIdentityKey] = NETEASE_SECURITY_IDENTITY
+            settings[NeteaseDeviceRegisteredModelKey] = Build.MODEL
+            if (initializesFromServer) settings[DeviceIdKey] = sDeviceId
+        }
+        Log.i(
+            PC_QR_LOG_TAG,
+            "Device fingerprint identity active deviceId=${
+                if (initializesFromServer) sDeviceId.length else current[DeviceIdKey]?.length ?: 0
+            } sDeviceId=${sDeviceId.length}",
+        )
+    }
+
+    suspend fun accountDetail(userId: Long): AccountDetail {
+        val response = try {
+            validate(weapi.post("/weapi/v1/user/detail/$userId"))
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            requestEapi(
+                "/api/w/v1/user/detail/$userId",
+                mapOf("all" to true, "userId" to userId),
+            )
+        }
+        val profile = parseAccountProfile(response.objectOrNull("profile"))
+            ?: error("NetEase account details are unavailable")
+        return AccountDetail(
+            profile = profile,
+            level = response.int("level") ?: 0,
+            listenSongs = response.int("listenSongs")?.takeIf { it >= 0 },
+            createDays = response.int("createDays"),
+        )
+    }
+
+    suspend fun accountPlaylists(userId: Long, limit: Int = 2_000): List<AccountPlaylist> =
+        request(
+            "/api/user/playlist",
+            mapOf("uid" to userId, "limit" to limit.coerceIn(1, 2_000), "offset" to 0, "includeVideo" to true),
+        ).array("playlist").mapNotNull(::parseAccountPlaylist)
+
+    suspend fun accountConnections(
+        userId: Long,
+        type: AccountConnectionType,
+        offset: Int = 0,
+        limit: Int = 30,
+    ): AccountConnectionPage {
+        require(userId > 0) { "A valid NetEase user ID is required" }
+        require(offset >= 0) { "The account connection offset must not be negative" }
+        val pageSize = limit.coerceIn(1, 100)
+        val path = when (type) {
+            AccountConnectionType.Following -> "/api/user/getfollows/$userId"
+            AccountConnectionType.Followers -> "/api/user/getfolloweds/$userId"
+        }
+        val body = buildMap<String, Any> {
+            put("offset", offset)
+            put("limit", pageSize)
+            when (type) {
+                AccountConnectionType.Following -> put("order", true)
+                AccountConnectionType.Followers -> {
+                    put("userId", userId)
+                    put("time", "0")
+                    put("getcounts", "true")
+                }
+            }
+        }
+        val page = parseAccountConnections(request(path, body), type, offset, pageSize)
+        return page.copy(
+            users = resolveAccountConnectionArtists(page.users) { accountDetail(it).profile },
+        )
+    }
+
+    suspend fun userPlayRecords(userId: Long, allTime: Boolean): List<UserPlayRecord> {
+        val response = request(
+            "/api/v1/play/record",
+            mapOf("uid" to userId, "type" to if (allTime) 0 else 1),
+        )
+        return parseUserPlayRecords(response, allTime)
+    }
+
+    suspend fun listeningStatsSummary(): ListeningStatsSummary = parseListeningStatsSummary(
+        request("/api/content/activity/listen/data/total"),
+    )
+
+    suspend fun listeningStatsReport(
+        period: ListeningStatsPeriod,
+        endTimeMs: Long? = null,
+    ): ListeningStatsReport {
+        require(period != ListeningStatsPeriod.Year) { "Annual listening summaries use listeningStatsYears" }
+        require(endTimeMs == null || endTimeMs > 0) { "A valid listening report end time is required" }
+        val isCurrent = endTimeMs == null
+        val path = if (isCurrent) "realtime/report" else "report"
+        val body = buildMap<String, Any> {
+            put("type", period.wireValue)
+            if (endTimeMs != null) put("endTime", endTimeMs)
+        }
+        return parseListeningStatsReport(
+            request("/api/content/activity/listen/data/$path", body), period, isCurrent,
+        )
+    }
+
+    suspend fun listeningStatsYears(): List<ListeningStatsYear> = parseListeningStatsYears(
+        request("/api/content/activity/listen/data/year/report"),
+    )
+
+    suspend fun recentSongs(limit: Int = 100): List<AccountSong> {
+        val response = request(
+            "/api/play-record/song/list",
+            mapOf("limit" to limit.coerceIn(1, 100)),
+        )
+        return response.objectOrNull("data")
+            ?.array("list")
+            .orEmpty()
+            .mapNotNull(::parseRecentHistorySong)
+            .filter { it.id > 0 }
+            .deduplicateRecentSongs()
+    }
+
+    suspend fun recordPlaybackStart(
+        songId: Long,
+        sourceId: Long,
+        source: String,
+        startedAtMs: Long,
+    ): PlaybackLogResponse? {
+        if (songId <= 0L) return null
+        val preferences = authenticatedPlaybackHistoryPreferences() ?: return null
+        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
+
+        return submitPlaybackHistoryStart(
+            songId = songId,
+            sourceId = sourceId,
+            source = source,
+            startedAtMs = startedAtMs,
+            isMobileSession = preferences.neteaseSessionType() == NeteaseSessionType.Mobile,
+        ) { action, fields ->
+            submitPlaybackHistoryLog(eapi, action, fields).also { response ->
+                logPlaybackHistoryDebug(action, fields, response, debugEnabled)
+            }
+        }
+    }
+
+    suspend fun recordPlaybackDuration(
+        songId: Long,
+        sourceId: Long,
+        source: String,
+        timeSeconds: Long,
+        startedAtMs: Long,
+        endedAtMs: Long,
+        endReason: String,
+    ): PlaybackLogResponse? {
+        if (songId <= 0L) return null
+        val preferences = authenticatedPlaybackHistoryPreferences() ?: return null
+        val debugEnabled = BuildConfig.DEBUG || preferences[DebugKey] == true
+        val fields = playbackHistoryPlayFields(
+            songId = songId,
+            sourceId = sourceId,
+            source = source,
+            timeSeconds = timeSeconds,
+            startedAtMs = startedAtMs,
+            endedAtMs = endedAtMs,
+            endReason = endReason,
+            isMobileSession = preferences.neteaseSessionType() == NeteaseSessionType.Mobile,
+        )
+        return submitPlaybackHistoryLog(eapi, "play", fields).also { response ->
+            logPlaybackHistoryDebug("play", fields, response, debugEnabled)
+        }
+    }
+
+    private suspend fun authenticatedPlaybackHistoryPreferences(): Preferences? {
+        val preferences = context.dataStore.data.first()
+        if (preferences[CookieKey].isNullOrBlank()) return null
+        return preferences
+    }
+
+    private fun logPlaybackHistoryDebug(
+        action: String,
+        fields: Map<String, Any>,
+        response: PlaybackLogResponse,
+        debugEnabled: Boolean,
+    ) {
+        if (!debugEnabled) return
+        try {
+            logPlaybackHistory(
+                Log.DEBUG,
+                "PlaybackHistory action=%s params=id:%s sourceId:%s source:%s " +
+                    "sourcetype:%s time:%s startlogtime:%s logtime:%s end:%s result=%s",
+                action,
+                fields["id"],
+                fields["sourceId"],
+                fields["source"],
+                fields["sourcetype"],
+                fields["time"],
+                fields["startlogtime"],
+                fields["logtime"],
+                fields["end"],
+                response.diagnosticSummary(),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Diagnostics must not change the playback-history result.
+        }
+    }
+
+    suspend fun setPodcastSubscribed(id: Long, subscribed: Boolean) {
+        request(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", mapOf("id" to id))
+    }
+
+    suspend fun setArtistFollowed(id: Long, followed: Boolean) {
+        request(
+            if (followed) "/api/artist/sub" else "/api/artist/unsub",
+            mapOf("artistId" to id, "artistIds" to "[$id]"),
+        )
+    }
+
+    suspend fun cloudSongs(offset: Int = 0, limit: Int = 200): CloudMusicPage {
+        require(offset >= 0) { "Cloud offset must not be negative" }
+        val response = request(
+            "/api/v1/cloud/get",
+            mapOf("offset" to offset, "limit" to limit.coerceIn(1, 200)),
+        )
+        return parseCloudMusicPage(response, offset)
+    }
+
+    suspend fun deleteCloudSong(id: Long) {
+        request("/api/cloud/del", mapOf("songIds" to listOf(id)))
+    }
+
+    suspend fun uploadCloudSong(uri: Uri, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        val credential = context.dataStore.data.first()[CookieKey]
+        check(!credential.isNullOrBlank()) { "NetEase account is not signed in" }
+        val expectedSession = neteaseSessionFingerprint(credential)
+        val file = prepareCloudUploadFile(context, uri)
+        try {
+            uploadCloudSong(file, expectedSession, onProgress)
+        } finally {
+            file.close()
+        }
+    }
+
+    private suspend fun uploadCloudSong(
+        file: CloudUploadFile,
+        expectedSession: String,
+        onProgress: (Long, Long) -> Unit,
+    ) {
+        val bitrate = 999_000
+        val check = requestEapi(
+            "/api/cloud/upload/check",
+            mapOf(
+                "bitrate" to bitrate.toString(), "ext" to "", "length" to file.size,
+                "md5" to file.md5, "songId" to "0", "version" to 1,
+            ),
+            expectedSession = expectedSession,
+        )
+        val metadataToken = requestEapi(
+            "/api/nos/token/alloc",
+            mapOf(
+                "bucket" to "", "ext" to file.extension, "filename" to file.normalizedStem,
+                "local" to false, "nos_product" to 3, "type" to "audio", "md5" to file.md5,
+            ),
+            expectedSession = expectedSession,
+        ).objectOrNull("result") ?: error("NetEase did not return a cloud resource token")
+
+        if (check.boolean("needUpload") == true) {
+            val bucket = "jd-musicrep-privatecloud-audio-public"
+            val tokenData = mapOf<String, Any>(
+                "bucket" to bucket, "ext" to file.extension, "filename" to file.normalizedStem,
+                "local" to false, "nos_product" to 3, "type" to "audio", "md5" to file.md5,
+            )
+            val uploadToken = request("/api/nos/token/alloc", tokenData, expectedSession).objectOrNull("result")
+                ?: error("NetEase did not return a NOS upload token")
+            requireCloudUploadSession(expectedSession)
+            uploadToNos(
+                file = file,
+                bucket = bucket,
+                objectKey = uploadToken.string("objectKey") ?: error("NOS object key is missing"),
+                token = uploadToken.string("token") ?: error("NOS token is missing"),
+                onProgress = onProgress,
+            )
+            requireCloudUploadSession(expectedSession)
+        }
+
+        val info = requestEapi(
+            "/api/upload/cloud/info/v2",
+            mapOf(
+                "md5" to file.md5,
+                "songid" to (check.long("songId") ?: 0),
+                "filename" to file.filename,
+                "song" to file.songName,
+                "album" to file.album,
+                "artist" to file.artist,
+                "bitrate" to bitrate.toString(),
+                "resourceId" to (metadataToken.string("resourceId") ?: error("Cloud resource ID is missing")),
+            ),
+            expectedSession = expectedSession,
+        )
+        requestEapi(
+            "/api/cloud/pub/v2",
+            mapOf("songid" to (info.long("songId") ?: 0)),
+            expectedSession = expectedSession,
+        )
+        onProgress(file.size, file.size)
+    }
+
+    private suspend fun uploadToNos(
+        file: CloudUploadFile,
+        bucket: String,
+        objectKey: String,
+        token: String,
+        onProgress: (Long, Long) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val operation = currentCoroutineContext()
+        operation.ensureActive()
+        val lbsRequest = Request.Builder()
+            .url("https://wanproxy.127.net/lbs?version=1.0&bucketname=$bucket")
+            .get()
+            .build()
+        val uploadHost = executeCloudUploadRequest(cloudUploadClient, lbsRequest).let { body ->
+            JsonParser.parseString(body).asJsonObject.getAsJsonArray("upload")?.firstOrNull()?.asString
+                ?: error("NetEase did not return an available upload server")
+        }
+        val encodedObjectKey = java.net.URLEncoder.encode(objectKey, Charsets.UTF_8.name()).replace("+", "%20")
+        val uploadUrl = "${uploadHost.trimEnd('/')}/$bucket/$encodedObjectKey?offset=0&complete=true&version=1.0"
+        val body = object : RequestBody() {
+            override fun contentType() = file.mimeType.toMediaTypeOrNull()
+            override fun contentLength() = file.size
+            override fun writeTo(sink: BufferedSink) {
+                file.file.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var sent = 0L
+                    while (true) {
+                        operation.ensureActive()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        sent += read
+                        check(sent <= file.size) { "Cloud upload snapshot changed" }
+                        sink.write(buffer, 0, read)
+                        sink.flush()
+                        operation.ensureActive()
+                        // Publication is a separate request after the binary transfer.
+                        onProgress(sent.coerceAtMost(file.size - maxOf(1L, file.size / 100L)), file.size)
+                    }
+                    check(sent == file.size) { "Cloud upload snapshot changed" }
+                }
+            }
+        }
+        val request = Request.Builder()
+            .url(uploadUrl)
+            .header("x-nos-token", token)
+            .header("Content-MD5", file.md5)
+            .post(body)
+            .build()
+        val receipt = JsonParser.parseString(executeCloudUploadRequest(cloudUploadClient, request)).asJsonObject
+        check(receipt.long("offset") == file.size) {
+            "NOS did not acknowledge the complete file"
+        }
+    }
+
+    private suspend fun requireCloudUploadSession(expectedSession: String) {
+        currentCoroutineContext().ensureActive()
+        context.dataStore.data.first().requireExpectedNeteaseSession(expectedSession)
+    }
+
+    suspend fun privateConversations(offset: Int = 0, limit: Int = 50): List<PrivateConversation> =
+        request(
+            "/api/msg/private/users",
+            mapOf("offset" to offset, "limit" to limit, "total" to "true"),
+        ).array("msgs").mapNotNull(::parseConversation)
+
+    suspend fun officialConversations(before: Long = -1, limit: Int = 20): PrivateConversationPage =
+        parseOfficialConversations(
+            requestEapi(
+                "/api/communication/aggregation/dialogue/list",
+                officialConversationsBody(before, limit),
+            ),
+        )
+
+    suspend fun privateMessages(userId: Long, before: Long = -1, limit: Int = 100): List<PrivateMessage> =
+        request(
+            "/api/msg/private/history",
+            mapOf("userId" to userId, "time" to before, "limit" to limit, "total" to "true"),
+        ).array("msgs").mapNotNull(::parsePrivateMessage).sortedBy(PrivateMessage::time)
+
+    suspend fun sendPrivateText(message: String, userIds: List<Long>) {
+        require(userIds.isNotEmpty()) { "At least one recipient is required" }
+        requestEapi(
+            "/api/msg/private/send",
+            mapOf(
+                "type" to "text",
+                "msg" to message,
+                "userIds" to userIds.distinct().sorted().joinToString(",", "[", "]"),
+            ),
+        )
+    }
+
+    suspend fun messageContacts(
+        userId: Long,
+        pageSize: Int = 100,
+        maximumCount: Int = 1_000,
+    ): List<MessageContact> {
+        require(userId > 0) { "A valid NetEase user ID is required" }
+        val contacts = mutableListOf<MessageContact>()
+        val loadedIds = mutableSetOf<Long>()
+        var offset = 0
+        var hasMore = true
+        while (hasMore && contacts.size < maximumCount) {
+            val response = request(
+                "/api/user/getfollows/$userId",
+                mapOf(
+                    "offset" to offset,
+                    "limit" to minOf(pageSize, maximumCount - contacts.size),
+                    "order" to true,
+                ),
+            )
+            val page = response.array("follow").mapNotNull { parseContact(it.objectValue()) }
+            page.forEach { if (loadedIds.add(it.id)) contacts += it }
+            offset += page.size
+            hasMore = response.boolean("more") == true && page.isNotEmpty()
+        }
+        return contacts
+    }
+
+    suspend fun sendPrivateResource(
+        resource: ShareResource,
+        userIds: List<Long>,
+        message: String = "",
+    ) {
+        require(userIds.isNotEmpty()) { "At least one recipient is required" }
+        requestEapi(
+            "/api/msg/private/send",
+            mapOf(
+                "id" to resource.id,
+                "msg" to message,
+                "type" to resource.kind.wireValue,
+                "userIds" to userIds.distinct().sorted().joinToString(",", "[", "]"),
+            ),
+        )
+    }
+
+    suspend fun shareToTimeline(resource: ShareResource, message: String = "") {
+        require(resource.kind != ShareResourceKind.Album) { "Albums cannot be shared to the NetEase timeline" }
+        requestEapi(
+            "/api/share/friends/resource",
+            mapOf("type" to resource.kind.wireValue, "msg" to message, "id" to resource.id),
+        )
+    }
+
+    suspend fun songWiki(songId: Long): SongWiki {
+        require(songId > 0) { "A valid song ID is required" }
+        val response = requestEapi(
+            "/api/song/play/about/block/page",
+            mapOf("songId" to songId),
+        )
+        val blocks = parseSongWikiBlocks(response)
+        val basicBlockCodes = setOf(
+            "SONG_PLAY_ABOUT_SONG_BASIC",
+            "SONG_PLAY_ABOUT_MUSIC_SONG_GRADE",
+        )
+        val basicBlocks = blocks.filter { it.string("code") in basicBlockCodes }
+
+        val tags = mutableListOf<SongWikiTagGroup>()
+        val attributes = mutableListOf<SongWikiAttribute>()
+        val associations = mutableListOf<SongWikiAssociationGroup>()
+        val reviews = mutableListOf<SongWikiReview>()
+        basicBlocks.forEachIndexed { blockIndex, block ->
+            block.array("creatives").mapNotNull { it.objectValue() }
+                .forEachIndexed { creativeIndex, creative ->
+                    val id = "${block.string("code")}-$blockIndex-$creativeIndex"
+                    val ui = creative.objectOrNull("uiElement")
+                    val title = ui.mainTitle()
+                    val resources = creative.array("resources").mapNotNull { it.objectValue() }
+                    when (creative.string("creativeType")?.lowercase()) {
+                        "songtag", "songbiztag" -> {
+                            val values = uniqueStrings(
+                                resources.mapNotNull { it.objectOrNull("uiElement").mainTitle() } + ui.textValues(),
+                            )
+                            if (values.isNotEmpty()) tags += SongWikiTagGroup(id, title, values)
+                        }
+                        "songcomment" -> resources.forEachIndexed { index, resource ->
+                            val resourceUi = resource.objectOrNull("uiElement")
+                            resourceUi.descriptionValues().firstOrNull()?.let { body ->
+                                reviews += SongWikiReview("$id-$index", resourceUi.mainTitle(), body)
+                            }
+                        }
+                        "sheet" -> {
+                            val value = ui.buttonValues().firstOrNull()
+                                ?: resources.takeIf { it.isNotEmpty() }?.size?.toString()
+                            value?.let { attributes += SongWikiAttribute(id, title, it) }
+                        }
+                        else -> {
+                            val details = resources.mapIndexedNotNull { index, resource ->
+                                resource.objectOrNull("uiElement").associationDetail("$id-$index")
+                            }
+                            if (details.isNotEmpty()) {
+                                associations += SongWikiAssociationGroup(
+                                    id = id,
+                                    title = title,
+                                    countText = ui.buttonValues().firstOrNull(),
+                                    details = details,
+                                )
+                            } else {
+                                uniqueStrings(ui.textValues() + ui.buttonValues())
+                                    .takeIf { it.isNotEmpty() }
+                                    ?.let { values ->
+                                        attributes += SongWikiAttribute(id, title, values.joinToString("、"))
+                                    }
+                            }
+                        }
+                    }
+                }
+        }
+
+        val memories = parseSongListeningMemories(blocks)
+
+        val similarSongs = blocks
+            .filter { it.string("code") == "SONG_PLAY_ABOUT_SIMILAR_SONG" }
+            .flatMap(JsonObject::blockResources)
+            .mapNotNull { resource ->
+                val ui = resource.objectOrNull("uiElement")
+                val id = resource.long("resourceId") ?: return@mapNotNull null
+                val title = ui.mainTitle() ?: return@mapNotNull null
+                if (!resource.string("resourceType").equals("song", ignoreCase = true)) return@mapNotNull null
+                SongWikiSongReference(
+                    id = id,
+                    title = title,
+                    artist = ui.subtitleValues().joinToString(" / ").nonEmpty(),
+                    note = ui.descriptionValues().firstOrNull(),
+                    artworkUrl = ui.firstImageUrl(),
+                )
+            }.distinctBy(SongWikiSongReference::id)
+
+        val relatedPlaylists = blocks
+            .filter { it.string("code") == "SONG_PLAY_ABOUT_RELATED_PLAYLIST" }
+            .flatMap(JsonObject::blockResources)
+            .mapNotNull { resource ->
+                val ui = resource.objectOrNull("uiElement")
+                val id = resource.long("resourceId") ?: return@mapNotNull null
+                val title = ui.mainTitle() ?: return@mapNotNull null
+                if (!resource.string("resourceType").equals("playlist", ignoreCase = true)) return@mapNotNull null
+                val extension = resource.objectOrNull("resourceExt")
+                    ?: resource.objectOrNull("resourceExtInfo")
+                SongWikiPlaylistReference(id, title, ui.firstImageUrl(), extension?.long("playCount") ?: 0)
+            }.distinctBy(SongWikiPlaylistReference::id)
+
+        val contributionUrl = basicBlocks.asSequence()
+            .mapNotNull { it.objectOrNull("uiElement") }
+            .flatMap { ui -> ui.array("textLinks").asSequence() }
+            .mapNotNull { it.objectValue()?.string("url")?.officialHttpsUrl() }
+            .firstOrNull()
+
+        return SongWiki(
+            memories = memories,
+            tagGroups = tags,
+            attributes = attributes,
+            associationGroups = associations,
+            reviews = reviews,
+            similarSongs = similarSongs,
+            relatedPlaylists = relatedPlaylists,
+            contributionUrl = contributionUrl,
+        )
+    }
+
+    suspend fun listenTogetherStatus(): ListenTogetherStatus {
+        val data = request("/api/listen/together/status/get").objectOrNull("data")
+        return ListenTogetherStatus(
+            isInRoom = data?.boolean("inRoom") ?: false,
+            room = data?.objectOrNull("roomInfo")?.let(::parseRoom),
+            status = data?.string("status"),
+        )
+    }
+
+    suspend fun createListenTogetherRoom(): ListenTogetherRoom {
+        val response = requestEapi("/api/listen/together/room/create", mapOf("refer" to "songplay_more"))
+        return response.objectOrNull("data")?.objectOrNull("roomInfo")?.let(::parseRoom)
+            ?: error("NetEase did not return a Listen Together room")
+    }
+
+    suspend fun checkListenTogetherRoom(roomId: String): Pair<Boolean, String?> {
+        val data = requestEapi(
+            "/api/listen/together/room/check",
+            mapOf("roomId" to roomId),
+        ).objectOrNull("data")
+        return parseListenTogetherRoomCheck(data)
+    }
+
+    suspend fun acceptListenTogetherRoom(roomId: String, inviterId: String): ListenTogetherRoom {
+        val response = requestEapi(
+            "/api/listen/together/play/invitation/accept",
+            mapOf("refer" to "inbox_invite", "roomId" to roomId, "inviterId" to inviterId),
+        )
+        return response.objectOrNull("data")?.objectOrNull("roomInfo")?.let(::parseRoom)
+            ?: error("NetEase did not return the accepted room")
+    }
+
+    suspend fun reportListenTogetherCommand(
+        roomId: String,
+        command: ListenTogetherCommand,
+        progressMs: Long,
+        isPlaying: Boolean,
+        formerSongId: Long?,
+        targetSongId: Long,
+        clientSequence: Long,
+    ) {
+        val commandInfo = JSONObject(
+            mapOf(
+                "commandType" to command.wireValue,
+                "progress" to progressMs.coerceAtLeast(0),
+                "playStatus" to if (isPlaying) "PLAY" else "PAUSE",
+                "formerSongId" to (formerSongId ?: -1).toString(),
+                "targetSongId" to targetSongId.toString(),
+                "clientSeq" to clientSequence,
+            ),
+        ).toString()
+        requestEapi(
+            "/api/listen/together/play/command/report",
+            mapOf("roomId" to roomId, "commandInfo" to commandInfo),
+        )
+    }
+
+    suspend fun listenTogetherPlayback(roomId: String): ListenTogetherPlaybackSnapshot {
+        val data = requestEapi(
+            "/api/listen/together/sync/playlist/get",
+            mapOf("roomId" to roomId),
+        ).objectOrNull("data")
+        val playlist = data?.objectOrNull("playlist")
+        val playMode = playlist?.string("playMode")
+        val randomMode = playMode?.uppercase()?.let { "RANDOM" in it || "SHUFFLE" in it } == true
+        val songList = playlist?.objectOrNull(if (randomMode) "randomList" else "displayList")
+        val ids = songList?.array("result").orEmpty().mapNotNull { it.identifierLong() }.distinct()
+        val commandValue = data?.objectOrNull("playCommand")
+        val commandType = commandValue?.string("commandType")?.uppercase()
+        val playStatus = commandValue?.string("playStatus")?.uppercase()
+        val isPlaying = when (playStatus) {
+            "PLAY", "PLAYING" -> true
+            "PAUSE", "PAUSED" -> false
+            else -> when (commandType) {
+                "PLAY", "GOTO", "NEXT", "PREV" -> true
+                "PAUSE" -> false
+                else -> null
+            }
+        }
+        return ListenTogetherPlaybackSnapshot(
+            songIds = ids,
+            playMode = playMode,
+            command = commandValue?.let {
+                ListenTogetherPlaybackCommand(
+                    commandType = commandType,
+                    targetSongId = it.element("targetSongId")?.identifierLong(),
+                    formerSongId = it.element("formerSongId")?.identifierLong(),
+                    progressMs = it.long("progress") ?: 0,
+                    isPlaying = isPlaying,
+                    clientSequence = it.long("clientSeq") ?: 0,
+                    serverSequence = it.long("serverSeq") ?: 0,
+                )
+            },
+        )
+    }
+
+    suspend fun reportListenTogetherPlaylist(
+        roomId: String,
+        userId: Long,
+        version: Long,
+        displaySongIds: List<Long>,
+        randomSongIds: List<Long>,
+    ) {
+        val playlist = JSONObject(
+            mapOf(
+                "commandType" to "REPLACE",
+                "version" to listOf(mapOf("userId" to userId, "version" to version)),
+                "anchorSongId" to "",
+                "anchorPosition" to -1,
+                "randomList" to randomSongIds.map(Long::toString),
+                "displayList" to displaySongIds.map(Long::toString),
+            ),
+        ).toString()
+        requestEapi(
+            "/api/listen/together/sync/list/command/report",
+            mapOf("roomId" to roomId, "playlistParam" to playlist),
+        )
+    }
+
+    suspend fun sendListenTogetherHeartbeat(
+        roomId: String,
+        songId: Long,
+        isPlaying: Boolean,
+        progressMs: Long,
+    ): Int? = requestEapi(
+        "/api/listen/together/heartbeat",
+        mapOf(
+            "roomId" to roomId,
+            "songId" to songId,
+            "playStatus" to if (isPlaying) "PLAY" else "PAUSE",
+            "progress" to progressMs.coerceAtLeast(0),
+        ),
+    ).objectOrNull("data")?.int("timeSpan")
+
+    suspend fun endListenTogetherRoom(roomId: String) {
+        requestEapi("/api/listen/together/end/v2", mapOf("roomId" to roomId))
+    }
+
+    private suspend fun request(
+        path: String,
+        body: Map<String, Any> = emptyMap(),
+        expectedSession: String? = null,
+    ): JsonObject =
+        try {
+            if (expectedSession != null) requireCloudUploadSession(expectedSession)
+            val response = weapi.post(
+                path.replaceFirst("/api/", "/weapi/"), body,
+                headers = expectedSession?.let { mapOf(NETEASE_EXPECTED_SESSION_HEADER to it) }.orEmpty(),
+            )
+            if (expectedSession != null) requireCloudUploadSession(expectedSession)
+            validate(response)
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            requestEapi(path, body, expectedSession)
+        }
+
+    private suspend fun requestEapi(
+        path: String,
+        body: Map<String, Any> = emptyMap(),
+        expectedSession: String? = null,
+    ): JsonObject {
+        if (expectedSession != null) requireCloudUploadSession(expectedSession)
+        val response = eapi.post(
+            path.replaceFirst("/api/", "/eapi/"), body,
+            headers = expectedSession?.let { mapOf(NETEASE_EXPECTED_SESSION_HEADER to it) }.orEmpty(),
+        )
+        if (expectedSession != null) requireCloudUploadSession(expectedSession)
+        return validate(response)
+    }
+
+    private fun validate(response: JsonObject): JsonObject {
+        val code = response.int("code") ?: 200
+        check(code in 200..299) {
+            response.string("message") ?: response.string("msg") ?: "NetEase request failed ($code)"
+        }
+        return response
+    }
+
+}
+
+internal enum class PcQrLoginAction(val wireValue: String) {
+    Scan("1"),
+    Authorize("2"),
+    Cancel("3"),
+}
+
+internal fun buildPcQrLoginBody(
+    key: String,
+    clientTraceId: String?,
+    userId: Long,
+    action: PcQrLoginAction,
+    antiCheatToken: String,
+): Map<String, Any> = buildMap {
+    put("key", key)
+    put("type", action.wireValue)
+    put("userid", userId.toString())
+    put("checkToken", antiCheatToken)
+    clientTraceId?.takeIf(String::isNotBlank)?.let { put("clientTraceId", it) }
+}
+
+class PcQrLoginException(
+    val code: Int,
+    message: String,
+) : IllegalStateException(message)
+
+class NeteaseMobileLoginException(
+    val code: Int,
+    message: String,
+) : IllegalStateException(message)
+
+private const val PC_QR_LOG_TAG = "PcQrLogin"
+private const val NETEASE_SECURITY_IDENTITY = "official-9.5.70-v4"
+private const val NETEASE_LOCAL_ID_LENGTH = 16
+
+internal data class PlaybackBodyParseResult(
+    val code: Int?,
+    val message: String?,
+    val exceptionType: String? = null,
+    val failureReason: String? = null,
+)
+
+internal suspend fun submitPlaybackHistoryLog(
+    service: MeloXDirectService,
+    action: String,
+    fields: Map<String, Any>,
+): PlaybackLogResponse {
+    val endpoint = PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+    val response = try {
+        val logs = Gson().toJson(
+            listOf(
+                mapOf(
+                    "action" to action,
+                    "json" to fields,
+                ),
+            ),
+        )
+        service.postPlaybackRaw(
+            path = PLAYBACK_HISTORY_PATH,
+            body = mapOf("logs" to logs),
+            headers = mapOf(
+                "X-Netease-Crypto" to "eapi",
+                NETEASE_EAPI_PROFILE_HEADER to PLAYBACK_HISTORY_PROFILE,
+            ),
+        )
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        return playbackTransportFailure(endpoint, error)
+    }
+
+    val parsed = readPlaybackHistoryBody(
+        body = response.body() ?: response.errorBody(),
+        httpStatus = response.code(),
+    )
+    val statusReason = "HTTP status ${response.code()}"
+    val failureReason = when {
+        parsed.failureReason != null && !response.isSuccessful ->
+            "$statusReason; ${parsed.failureReason}"
+        parsed.failureReason != null -> parsed.failureReason
+        !response.isSuccessful -> statusReason
+        else -> null
+    }
+    return PlaybackLogResponse(
+        httpAccepted = response.isSuccessful,
+        httpStatus = response.code(),
+        code = parsed.code,
+        message = parsed.message,
+        exceptionType = parsed.exceptionType
+            ?: response.takeUnless { it.isSuccessful }?.let { "HttpStatus" },
+        failureReason = failureReason,
+        endpoint = endpoint,
+    )
+}
+
+internal suspend fun submitPlaybackHistoryStart(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+    startedAtMs: Long,
+    isMobileSession: Boolean = false,
+    submit: suspend (String, Map<String, Any>) -> PlaybackLogResponse,
+): PlaybackLogResponse {
+    require(songId > 0L) { "songId must be positive" }
+    // A play event closes a session; sending play(time=0) here creates a false completion.
+    return submit(
+        "startplay",
+        playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, startedAtMs, isMobileSession),
+    )
+}
+
+internal fun playbackHistoryPlayFields(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+    timeSeconds: Long,
+    startedAtMs: Long,
+    endedAtMs: Long,
+    endReason: String,
+    isMobileSession: Boolean = false,
+): Map<String, Any> = playbackHistoryBaseFields(songId, sourceId, source, startedAtMs, endedAtMs, isMobileSession) + mapOf(
+    "download" to 0,
+    "end" to endReason,
+    "time" to timeSeconds.coerceAtLeast(0L),
+    "wifi" to 0,
+)
+
+private fun playbackHistoryBaseFields(
+    songId: Long,
+    sourceId: Long,
+    source: String,
+    startedAtMs: Long,
+    loggedAtMs: Long,
+    isMobileSession: Boolean,
+): Map<String, Any> {
+    require(songId > 0L) { "songId must be positive" }
+    val knownSource = source.takeIf { it in PLAYBACK_SOURCES }
+    val hasReliableSource = sourceId > 0L && knownSource != null
+    val safeSourceId = if (hasReliableSource) sourceId else songId
+    val safeSource = knownSource.takeIf { hasReliableSource } ?: "track"
+    return mapOf(
+        "id" to songId.toString(),
+        "type" to "song",
+        // Native BI uses epoch seconds, unlike the car OpenAPI's millisecond startLogTime.
+        // Convert the captured start only; logtime keeps the event's epoch milliseconds.
+        "startlogtime" to startedAtMs / 1000L,
+        "logtime" to loggedAtMs,
+        "sourceId" to safeSourceId.toString(),
+        "source" to safeSource,
+        "sourcetype" to safeSource,
+        "content" to "id=$safeSourceId",
+    ) + if (isMobileSession) emptyMap() else mapOf("mainsite" to "1", "mainsiteWeb" to "1")
+}
+
+internal fun parsePlaybackHistoryBody(body: String?): PlaybackBodyParseResult {
+    if (body.isNullOrBlank()) {
+        return PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = "EmptyResponseBody",
+            failureReason = "response body is empty",
+        )
+    }
+    if (body.length > MAX_PLAYBACK_HISTORY_RESPONSE_BYTES) {
+        return playbackBodyTooLarge()
+    }
+    val response = try {
+        JsonParser.parseString(body).asJsonObject
+    } catch (error: Exception) {
+        return PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = playbackExceptionType(error),
+            failureReason = "response JSON parse failed: " +
+                (sanitizePlaybackDiagnosticText(error.message) ?: "invalid JSON"),
+        )
+    }
+    return PlaybackBodyParseResult(
+        code = response.int("code"),
+        message = sanitizePlaybackDiagnosticText(
+            response.string("message") ?: response.string("msg"),
+        ),
+    )
+}
+
+private fun readPlaybackHistoryBody(
+    body: ResponseBody?,
+    httpStatus: Int,
+): PlaybackBodyParseResult {
+    if (body == null) return parsePlaybackHistoryBody(null)
+    return try {
+        readBoundedPlaybackResponseBody(body, httpStatus)
+            .toString(Charsets.UTF_8)
+            .let(::parsePlaybackHistoryBody)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: PlaybackResponseBodyException) {
+        val causeReason = error.cause?.let(::playbackExceptionReason)
+        PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = error.cause?.let(::playbackExceptionType) ?: error.failureKind,
+            failureReason = if (causeReason != null && causeReason != "no message") {
+                "${error.failureReason}: $causeReason"
+            } else {
+                error.failureReason
+            },
+        )
+    } catch (error: Exception) {
+        PlaybackBodyParseResult(
+            code = null,
+            message = null,
+            exceptionType = playbackExceptionType(error),
+            failureReason = "response body read failed: ${playbackExceptionReason(error)}",
+        )
+    }
+}
+
+private fun playbackTransportFailure(endpoint: String, error: Throwable): PlaybackLogResponse {
+    val responseBodyError = error as? PlaybackResponseBodyException
+    val root = responseBodyError?.cause?.let(::playbackRootCause)
+        ?: playbackRootCause(error)
+    val httpStatus = responseBodyError?.httpStatus
+    val causeReason = responseBodyError?.cause?.let(::playbackExceptionReason)
+    return PlaybackLogResponse(
+        httpAccepted = httpStatus?.let { it in 200..299 } == true,
+        httpStatus = httpStatus,
+        code = null,
+        message = null,
+        exceptionType = responseBodyError?.cause?.let(::playbackExceptionType)
+            ?: responseBodyError?.failureKind
+            ?: playbackExceptionType(root),
+        failureReason = if (responseBodyError != null &&
+            causeReason != null &&
+            causeReason != "no message"
+        ) {
+            "${responseBodyError.failureReason}: $causeReason"
+        } else {
+            responseBodyError?.failureReason
+                ?: sanitizePlaybackDiagnosticText(root.message)
+        },
+        endpoint = endpoint,
+    )
+}
+
+private fun playbackBodyTooLarge() = PlaybackBodyParseResult(
+    code = null,
+    message = null,
+    exceptionType = "ResponseBodyTooLarge",
+    failureReason = "response body exceeds ${MAX_PLAYBACK_HISTORY_RESPONSE_BYTES} bytes",
+)
+
+internal fun PlaybackLogResponse.diagnosticSummary(): String = buildString {
+    append("httpAccepted=").append(httpAccepted)
+    append(" httpStatus=").append(httpStatus ?: "null")
+    append(" businessCode=").append(code ?: "null")
+    append(" exceptionType=").append(exceptionType ?: "none")
+    sanitizePlaybackDiagnosticText(message)?.let { append(" businessMessage=").append(it) }
+    val reason = sanitizePlaybackDiagnosticText(failureReason)
+        ?: if (httpAccepted && !businessAccepted) "business response rejected" else "none"
+    append(" reason=").append(reason)
+    if (endpoint == PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT) {
+        append(" endpoint=").append(endpoint)
+    } else {
+        sanitizePlaybackDiagnosticText(endpoint)?.let { append(" endpoint=").append(it) }
+    }
+}
+
+internal fun sanitizePlaybackDiagnosticText(value: String?): String? {
+    if (value.isNullOrBlank()) return null
+    var text = value.trim()
+    text = PLAYBACK_AUTHORIZATION_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_COOKIE_HEADER_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_SENSITIVE_VALUE_PATTERN.replace(text) {
+        "${it.groupValues[1]}=<redacted>"
+    }
+    text = PLAYBACK_QUERY_SENSITIVE_PATTERN.replace(text) {
+        "${it.groupValues[1]}<redacted>"
+    }
+    text = PLAYBACK_URL_CREDENTIAL_PATTERN.replace(text) {
+        "${it.groupValues[1]}<redacted>@"
+    }
+    text = text.replace(Regex("[\\r\\n\\t]+"), " ").trim()
+    if (text.contains('{') || text.contains('[')) {
+        text = text.substringBefore('{').substringBefore('[').trim()
+            .let { prefix -> if (prefix.isEmpty()) "<redacted>" else "$prefix <redacted>" }
+    }
+    return text.take(MAX_PLAYBACK_DIAGNOSTIC_LENGTH).trimEnd().ifEmpty { null }
+}
+
+internal fun playbackRootCause(error: Throwable): Throwable {
+    var root = error
+    var depth = 0
+    while (depth < MAX_PLAYBACK_CAUSE_DEPTH) {
+        val cause = root.cause ?: break
+        if (cause === root) break
+        root = cause
+        depth++
+    }
+    return root
+}
+
+internal fun playbackExceptionType(error: Throwable): String =
+    playbackRootCause(error)::class.simpleName ?: "Exception"
+
+internal fun playbackExceptionReason(error: Throwable): String =
+    sanitizePlaybackDiagnosticText(playbackRootCause(error).message) ?: "no message"
+
+private const val PLAYBACK_HISTORY_PATH = "/api/feedback/weblog"
+private const val MAX_PLAYBACK_DIAGNOSTIC_LENGTH = 240
+private const val MAX_PLAYBACK_CAUSE_DEPTH = 8
+private val PLAYBACK_SOURCES = setOf("list", "album", "artist", "track")
+private val PLAYBACK_AUTHORIZATION_PATTERN = Regex(
+    "(?i)(?<![?&])([\"']?authorization[\"']?)\\s*[:=]\\s*" +
+        "(?:[A-Za-z][A-Za-z0-9_-]*\\s+)?" +
+        "(\"[^\"]*\"|'[^']*'|[^\\s,;}&\\]]+)",
+)
+private val PLAYBACK_COOKIE_HEADER_PATTERN = Regex(
+    "(?i)(?<![?&])([\"']?(?:cookie|set-cookie)[\"']?)\\s*[:=]\\s*" +
+        "(\"[^\"]*\"|'[^']*'|[^\\r\\n]+)",
+)
+private val PLAYBACK_SENSITIVE_VALUE_PATTERN = Regex(
+    "(?i)([\"']?(?:authorization|cookie|set-cookie|music[_-]?u|music[_-]?a|csrf|__csrf|" +
+        "check[_-]?token|x-anticheattoken|token|password|passwd|secret|" +
+        "logs?|payload|body|header|stack(?:trace)?)[\"']?)" +
+        "\\s*[:=]\\s*(?:bearer\\s+)?(\"[^\"]*\"|'[^']*'|[^\\s,;}&\\]]+)",
+)
+private val PLAYBACK_QUERY_SENSITIVE_PATTERN = Regex(
+    "(?i)([?&](?:cookie|music[_-]?u|music[_-]?a|authorization|csrf|__csrf|" +
+        "check[_-]?token|x-anticheattoken|token|password|passwd|secret)=)[^&\\s]+",
+)
+private val PLAYBACK_URL_CREDENTIAL_PATTERN = Regex("(?i)(https?://)[^/@\\s:]+:[^/@\\s]+@")
+
+private fun JsonElement.identifierLong(): Long? = runCatching {
+    when {
+        isJsonPrimitive && asJsonPrimitive.isNumber -> asLong
+        isJsonPrimitive -> asString.toLongOrNull()
+        isJsonObject -> asJsonObject.element("id")?.identifierLong()
+            ?: asJsonObject.element("value")?.identifierLong()
+        else -> null
+    }
+}.getOrNull()?.takeIf { it > 0 }
+
+private fun JsonElement.objectValue(): JsonObject? = takeIf(JsonElement::isJsonObject)?.asJsonObject
+
+private fun JsonObject.blockResources(): List<JsonObject> = array("creatives")
+    .mapNotNull { it.objectValue() }
+    .flatMap { it.array("resources") }
+    .mapNotNull { it.objectValue() }
+
+internal fun parseSongWikiBlocks(response: JsonObject): List<JsonObject> {
+    check(response.int("code") == 200) {
+        response.string("message") ?: response.string("msg") ?: "Song information is unavailable"
+    }
+    val data = response.element("data") ?: return emptyList()
+    check(data.isJsonObject) { "Song information is unavailable" }
+    val blocks = data.asJsonObject.element("blocks") ?: return emptyList()
+    check(blocks.isJsonArray) { "Song information is unavailable" }
+    return blocks.asJsonArray.mapNotNull(JsonElement::objectValue)
+}
+
+internal fun parseSongListeningMemories(blocks: List<JsonObject>): List<SongWikiMemoryItem> = blocks
+    .filter { it.string("code") == "SONG_PLAY_ABOUT_MUSIC_MEMORY" }
+    .flatMap(JsonObject::blockResources)
+    .mapIndexedNotNull { index, resource ->
+        val extension = resource.objectOrNull("resourceExt")
+            ?: resource.objectOrNull("resourceExtInfo")
+        when (resource.string("resourceType")?.uppercase()) {
+            "FIRST_LISTEN" -> extension?.objectOrNull("musicFirstListenDto")
+                ?.string("date")?.nonEmpty()?.let {
+                    SongWikiMemoryItem("first-listen-$index", SongWikiMemoryKind.FirstListen, date = it)
+                }
+            "TOTAL_PLAY" -> extension?.objectOrNull("musicTotalPlayDto")?.let { total ->
+                SongWikiMemoryItem(
+                    id = "total-play-$index",
+                    kind = SongWikiMemoryKind.TotalPlay,
+                    playCount = total.long("playCount")?.takeIf { it >= 0 },
+                    durationMinutes = total.long("duration")?.takeIf { it > 0 },
+                    text = total.string("text")?.nonEmpty(),
+                ).takeIf { it.playCount != null || it.durationMinutes != null || it.text != null }
+            }
+            else -> null
+        }
+    }
+
+private fun JsonObject?.mainTitle(): String? = this?.objectOrNull("mainTitle")
+    ?.string("title")?.nonEmpty()
+
+private fun JsonObject?.subtitleValues(): List<String> {
+    val value = this ?: return emptyList()
+    val many = value.array("subTitles")
+        .mapNotNull { it.objectValue()?.string("title")?.nonEmpty() }
+    if (many.isNotEmpty()) return many
+    return listOfNotNull(value.objectOrNull("subTitle")?.string("title")?.nonEmpty())
+}
+
+private fun JsonObject?.textValues(): List<String> = this?.array("textLinks").orEmpty()
+    .mapNotNull { it.objectValue()?.string("text")?.nonEmpty() }
+
+private fun JsonObject?.descriptionValues(): List<String> = this?.array("descriptions").orEmpty()
+    .mapNotNull { it.objectValue()?.string("description")?.nonEmpty() }
+
+private fun JsonObject?.buttonValues(): List<String> = this?.array("buttons").orEmpty()
+    .mapNotNull { it.objectValue()?.string("text")?.nonEmpty() }
+
+private fun JsonObject?.firstImageUrl(): String? = this?.array("images")?.firstOrNull()
+    ?.objectValue()?.string("imageUrl")?.nonEmpty()
+
+private fun JsonObject?.associationDetail(id: String): SongWikiAssociationDetail? {
+    val title = mainTitle()
+    val subtitle = uniqueStrings(subtitleValues() + textValues()).joinToString(" · ").nonEmpty()
+    val body = descriptionValues().joinToString("\n").nonEmpty()
+    if (title == null && subtitle == null && body == null) return null
+    return SongWikiAssociationDetail(id, title, subtitle, body)
+}
+
+private fun uniqueStrings(values: List<String>): List<String> = buildList {
+    val seen = mutableSetOf<String>()
+    values.forEach { value -> if (seen.add(value)) add(value) }
+}
+
+private fun String.nonEmpty(): String? = trim().takeIf(String::isNotEmpty)
+
+private fun String.officialHttpsUrl(): String? = runCatching {
+    val uri = java.net.URI(this)
+    if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
+    if (uri.scheme == "https") this else java.net.URI(
+        "https", uri.userInfo, uri.host, uri.port, uri.path, uri.query, uri.fragment,
+    ).toString()
+}.getOrNull()
+
+private fun parsePodcastCategory(element: JsonElement?): PodcastCategory? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val id = value.long("id") ?: return null
+    if (id <= 0) return null
+    return PodcastCategory(id, value.string("name") ?: "Podcast", value.string("pic96x96Url") ?: value.string("pic56x56Url"))
+}
+
+private fun parsePodcast(element: JsonElement?): Podcast? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val id = value.long("id") ?: return null
+    if (id <= 0) return null
+    return Podcast(
+        id = id,
+        name = value.string("name") ?: "Unknown podcast",
+        picUrl = value.string("picUrl"),
+        description = value.string("desc"),
+        recommendation = value.string("rcmdText") ?: value.string("rcmdtext"),
+        categoryId = value.long("categoryId"),
+        category = value.string("category"),
+        secondCategory = value.string("secondCategory"),
+        programCount = value.int("programCount") ?: 0,
+        subscriberCount = value.long("subCount") ?: 0,
+        playCount = value.long("playCount") ?: 0,
+        host = value.objectOrNull("dj")?.let(::parseHost),
+        isSubscribed = value.boolean("subed") ?: false,
+        feeType = value.int("radioFeeType"),
+    )
+}
+
+internal fun parsePodcastProgramPage(response: JsonObject, offset: Int): PodcastProgramPage {
+    val rows = response.array("programs")
+    val totalCount = response.int("count") ?: (offset + rows.size)
+    val hasMore = response.boolean("more") ?: (offset + rows.size < totalCount)
+    check(!hasMore || rows.isNotEmpty()) { "Podcast pagination did not advance" }
+    return PodcastProgramPage(
+        programs = rows.mapNotNull(::parseProgram),
+        hasMore = hasMore,
+        totalCount = totalCount,
+        fetchedCount = rows.size,
+    )
+}
+
+internal fun parseSubscribedPodcastPage(response: JsonObject, offset: Int): PodcastPage {
+    val rows = response.array("djRadios")
+    val totalCount = response.int("count") ?: response.int("total") ?: (offset + rows.size)
+    val hasMore = response.boolean("hasMore")
+        ?: response.boolean("more")
+        ?: (offset + rows.size < totalCount)
+    check(!hasMore || rows.isNotEmpty()) { "Podcast pagination did not advance" }
+    return PodcastPage(
+        podcasts = rows.mapNotNull(::parsePodcast),
+        hasMore = hasMore,
+        totalCount = totalCount,
+        fetchedCount = rows.size,
+    )
+}
+
+internal fun parsePodcastProgramDetail(response: JsonObject, requestedId: Long): PodcastProgram {
+    val program = parseProgram(response.get("program"))
+    check(program != null && program.id == requestedId && (program.mainSongId ?: 0L) > 0L) {
+        "Playable podcast program $requestedId was not returned by NetEase"
+    }
+    return program
+}
+
+private fun parseProgram(element: JsonElement?): PodcastProgram? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val id = value.long("id") ?: return null
+    val radio = value.objectOrNull("radio")
+    return PodcastProgram(
+        id = id,
+        name = value.string("name") ?: "Unknown episode",
+        coverUrl = value.string("coverUrl") ?: radio?.string("picUrl"),
+        description = value.string("description"),
+        createTime = value.long("createTime"),
+        durationMs = value.long("duration") ?: 0,
+        listenerCount = value.long("listenerCount") ?: 0,
+        likedCount = value.long("likedCount") ?: 0,
+        commentCount = value.long("commentCount") ?: 0,
+        serialNumber = value.int("serialNum"),
+        radioId = radio?.long("id") ?: 0,
+        radioName = radio?.string("name") ?: "Podcast",
+        host = value.objectOrNull("dj")?.let(::parseHost),
+        mainSongId = value.objectOrNull("mainSong")?.long("id"),
+    )
+}
+
+internal fun parseCloudMusicPage(response: JsonObject, offset: Int): CloudMusicPage {
+    require(offset >= 0) { "Cloud offset must not be negative" }
+    val rows = response.get("data")?.takeIf(JsonElement::isJsonArray)?.asJsonArray
+        ?: error("NetEase did not return cloud songs")
+    val nextOffset = Math.addExact(offset, rows.size())
+    val count = response.int("count") ?: nextOffset
+    val hasMore = response.boolean("hasMore") ?: (nextOffset < count)
+    check(!hasMore || nextOffset > offset) { "Cloud pagination did not advance" }
+    return CloudMusicPage(
+        songs = rows.mapNotNull(::parseCloudSong),
+        count = count,
+        usedSize = response.long("size") ?: 0,
+        maxSize = response.long("maxSize") ?: 0,
+        hasMore = hasMore,
+        nextOffset = nextOffset,
+    )
+}
+
+private fun parseCloudSong(element: JsonElement?): CloudSong? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val simple = value.objectOrNull("simpleSong")
+    val album = simple?.objectOrNull("al") ?: simple?.objectOrNull("album")
+    val artists = simple?.array("ar")?.ifEmpty { simple.array("artists") }
+    val id = value.long("songId") ?: simple?.long("id") ?: return null
+    return CloudSong(
+        id = id,
+        name = value.string("songName") ?: simple?.string("name") ?: "Unknown song",
+        artist = value.string("artist") ?: artists?.joinToString(" / ") { it.asJsonObject.string("name") ?: "" }.orEmpty(),
+        album = value.string("album") ?: album?.string("name") ?: "Unknown album",
+        coverUrl = album?.string("picUrl"),
+        durationMs = simple?.long("dt") ?: simple?.long("duration") ?: 0,
+        fileSize = value.long("fileSize") ?: 0,
+        bitrate = value.int("bitrate") ?: 0,
+        addTime = value.long("addTime") ?: 0,
+    )
+}
+
+internal suspend fun resolveAccountConnectionArtists(
+    users: List<AccountProfile>,
+    loadProfile: suspend (Long) -> AccountProfile,
+): List<AccountProfile> = coroutineScope {
+    val requests = Semaphore(4)
+    users.map { user ->
+        async {
+            if (!user.hasVerifiedIdentity || user.artistId != null) return@async user
+            requests.withPermit {
+                try {
+                    val profile = loadProfile(user.id)
+                    user.copy(artistId = profile.artistId?.takeIf { it > 0 && profile.id == user.id })
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    user
+                }
+            }
+        }
+    }.awaitAll()
+}
+
+internal fun parseAccountConnections(
+    response: JsonObject,
+    type: AccountConnectionType,
+    offset: Int,
+    limit: Int,
+): AccountConnectionPage {
+    check(response.int("code") == 200) {
+        response.string("message") ?: response.string("msg") ?: "Account connections are unavailable"
+    }
+    val listKey = when (type) {
+        AccountConnectionType.Following -> "follow"
+        AccountConnectionType.Followers -> "followeds"
+    }
+    val data = response.element(listKey)
+    check(data?.isJsonArray == true) { "Account connections are unavailable" }
+    val rawUsers = data.asJsonArray
+    val nextOffset = (offset.toLong() + rawUsers.size()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    return AccountConnectionPage(
+        users = rawUsers.mapNotNull { parseAccountProfile(it.objectValue()) }
+            .filter { it.id > 0 }
+            .distinctBy(AccountProfile::id),
+        hasMore = rawUsers.size() > 0 && nextOffset > offset &&
+            (response.boolean("more") ?: (rawUsers.size() >= limit)),
+        nextOffset = nextOffset,
+    )
+}
+
+private fun parseAccountProfile(value: JsonObject?): AccountProfile? = value?.let {
+    val id = it.long("userId") ?: return null
+    val artistId = it.long("artistId")?.takeIf { artistId -> artistId > 0 }
+    AccountProfile(
+        id = id,
+        nickname = it.string("nickname") ?: "NetEase user",
+        avatarUrl = it.string("avatarUrl"),
+        backgroundUrl = it.string("backgroundUrl"),
+        signature = it.string("signature"),
+        follows = it.int("follows"),
+        followers = it.int("followeds"),
+        eventCount = it.int("eventCount"),
+        playlistCount = it.int("playlistCount"),
+        playlistSubscribedCount = it.int("playlistBeSubscribedCount"),
+        artistId = artistId,
+        hasVerifiedIdentity = artistId != null || it.int("authStatus") == 1 ||
+            (it.int("userType") ?: 0) > 0 ||
+            (it.objectOrNull("mainAuthType")?.int("type") ?: 0) > 0 ||
+            it.array("allAuthTypes").any { auth -> (auth.objectValue()?.int("type") ?: 0) > 0 },
+    )
+}
+
+private fun parseAccountPlaylist(element: JsonElement?): AccountPlaylist? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val id = value.long("id") ?: return null
+    val creator = value.objectOrNull("creator")
+    return AccountPlaylist(
+        id = id,
+        name = value.string("name") ?: "Playlist",
+        coverUrl = value.string("coverImgUrl") ?: value.string("picUrl"),
+        trackCount = value.int("trackCount") ?: 0,
+        creatorId = creator?.long("userId"),
+        creatorName = creator?.string("nickname"),
+    )
+}
+
+internal fun parseRecentHistorySong(element: JsonElement?): AccountSong? {
+    val item = element?.objectValue() ?: return null
+    val song = parseAccountSong(item.objectOrNull("data")) ?: return null
+    return song.copy(playedAt = normalizeCloudPlayTime(item.long("playTime")))
+}
+
+internal fun normalizeCloudPlayTime(value: Long?): Long? {
+    if (value == null || value <= 0L) return null
+    return if (value < CLOUD_MILLIS_TIMESTAMP_THRESHOLD) value * 1_000L else value
+}
+
+private fun List<AccountSong>.deduplicateRecentSongs(): List<AccountSong> {
+    val unique = LinkedHashMap<Long, AccountSong>()
+    for (song in this) {
+        val existing = unique[song.id]
+        if (existing == null || song.playedAt.isAfter(existing.playedAt)) {
+            unique[song.id] = song
+        }
+    }
+    return unique.values.toList()
+}
+
+private fun Long?.isAfter(other: Long?): Boolean = when {
+    this == null -> false
+    other == null -> true
+    else -> this > other
+}
+
+private const val CLOUD_MILLIS_TIMESTAMP_THRESHOLD = 100_000_000_000L
+
+private fun parseAccountSong(value: JsonObject?): AccountSong? = value?.let {
+    val id = it.long("id") ?: return null
+    val album = it.objectOrNull("al") ?: it.objectOrNull("album")
+    val artistValues = it.array("ar").ifEmpty { it.array("artists") }
+        .mapNotNull(JsonElement::objectValue)
+    val artists = artistValues.mapNotNull { artist -> artist.string("name") }
+    AccountSong(
+        id = id,
+        name = it.string("name") ?: "Unknown song",
+        artists = artists,
+        album = album?.string("name") ?: "Unknown album",
+        coverUrl = album?.string("picUrl"),
+        durationMs = it.long("dt") ?: it.long("duration") ?: 0,
+        artistIds = artistValues.mapNotNull { artist -> artist.long("id") },
+        albumId = album?.long("id") ?: 0,
+    )
+}
+
+internal fun parseUserPlayRecords(response: JsonObject, allTime: Boolean): List<UserPlayRecord> {
+    check(response.int("code") == 200) {
+        response.string("message") ?: response.string("msg") ?: "Listening statistics are unavailable"
+    }
+    val data = response.element(if (allTime) "allData" else "weekData")
+    check(data?.isJsonArray == true) { "Listening statistics are unavailable" }
+    return data.asJsonArray.mapNotNull(::parseUserPlayRecord).filter { it.song.id > 0 }
+}
+
+internal fun parseUserPlayRecord(element: JsonElement?): UserPlayRecord? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val song = parseAccountSong(value.objectOrNull("song")) ?: return null
+    return UserPlayRecord(
+        song = song,
+        playCount = value.int("playCount")?.takeIf { it >= 0 },
+        score = value.int("score"),
+    )
+}
+
+private fun parseHost(value: JsonObject): PodcastHost = PodcastHost(
+    id = value.long("userId") ?: 0,
+    nickname = value.string("nickname") ?: "NetEase host",
+    avatarUrl = value.string("avatarUrl"),
+)
+
+private fun parseContact(value: JsonObject?): MessageContact? = value?.let {
+    MessageContact(
+        id = it.long("userId") ?: return null,
+        nickname = it.string("nickname") ?: "NetEase user",
+        avatarUrl = it.string("avatarUrl"),
+        signature = it.string("signature"),
+        remarkName = it.string("remarkName"),
+        avatarBadgeUrl = it.objectOrNull("avatarDetail")?.string("identityIconUrl"),
+    )
+}
+
+internal fun parseConversation(element: JsonElement?): PrivateConversation? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val from = parseContact(value.objectOrNull("fromUser"))
+    val to = parseContact(value.objectOrNull("toUser"))
+    return PrivateConversation(
+        id = listOf(from?.id ?: 0, to?.id ?: 0).sorted().joinToString("-"),
+        fromUser = from,
+        toUser = to,
+        lastMessageTime = value.long("lastMsgTime") ?: 0,
+        summary = decodeMessagePayload(value.string("lastMsg")).summary,
+        unreadCount = value.int("newMsgCount") ?: 0,
+        isOfficialGroup = value.int("aggregationType") == 1 ||
+            listOfNotNull(from, to).any { it.id == 8888L || it.nickname == "官方号消息" },
+    )
+}
+
+internal fun officialConversationsBody(before: Long, limit: Int): Map<String, Any> = mapOf(
+    // NetEase 9.6.13 uses aggregation type 1 and the official related ID 8888.
+    "dialogueAggregationQueryMeta" to Gson().toJson(
+        mapOf("aggregationType" to 1, "relatedId" to 8888L, "time" to before, "limit" to limit),
+    ),
+)
+
+internal fun parseOfficialConversations(response: JsonObject): PrivateConversationPage {
+    val data = response.objectOrNull("data") ?: error("Missing official message list")
+    val records = data.get("records")?.let {
+        if (it.isJsonPrimitive && it.asJsonPrimitive.isString) JsonParser.parseString(it.asString) else it
+    }?.takeIf(JsonElement::isJsonArray)?.asJsonArray ?: error("Missing official message records")
+    val conversations = records.mapNotNull { element ->
+        val value = element.objectValue() ?: return@mapNotNull null
+        val user = value.objectOrNull("userInfoVO")?.array("userInfoDetailList")
+            ?.firstOrNull()?.objectValue()
+        val lastMessage = value.objectOrNull("lastMsg")
+        val noticeAccount = lastMessage?.objectOrNull("noticeAccount")
+            ?.takeIf { lastMessage.boolean("noticeAccountFlag") == true }
+        val contact = parseContact(user)?.let { contact ->
+            if (noticeAccount == null) contact else contact.copy(
+                nickname = noticeAccount.string("name") ?: contact.nickname,
+                avatarUrl = noticeAccount.string("avatarUrl") ?: contact.avatarUrl,
+                remarkName = null,
+            )
+        } ?: return@mapNotNull null
+        PrivateConversation(
+            id = contact.id.toString(),
+            fromUser = contact,
+            toUser = null,
+            lastMessageTime = lastMessage?.long("time") ?: 0L,
+            summary = lastMessage?.string("briefText").orEmpty(),
+            unreadCount = value.objectOrNull("msgCountVO")?.int("unreadCount")?.coerceAtLeast(0) ?: 0,
+        )
+    }
+    return PrivateConversationPage(
+        conversations = conversations,
+        hasMore = data.boolean("more") == true && records.size() > 0,
+        nextTime = records.lastOrNull()?.objectValue()?.objectOrNull("lastMsg")?.long("time") ?: -1,
+    )
+}
+
+private fun parsePrivateMessage(element: JsonElement?): PrivateMessage? {
+    val value = element?.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return null
+    val time = value.long("time") ?: 0
+    return PrivateMessage(
+        id = value.long("id") ?: time,
+        fromUser = parseContact(value.objectOrNull("fromUser")),
+        toUser = parseContact(value.objectOrNull("toUser")),
+        time = time,
+        payload = decodeMessagePayload(value.string("msg")),
+    )
+}
+
+private fun decodeMessagePayload(serialized: String?): PrivateMessagePayload {
+    if (serialized.isNullOrBlank()) return PrivateMessagePayload("", null)
+    return runCatching {
+        val wire = JsonParser.parseString(serialized).asJsonObject
+        val text = wire.string("msg")?.trim().orEmpty()
+        val resource = when {
+            wire.objectOrNull("song") != null -> parseShareResource(
+                ShareResourceKind.Song,
+                wire.objectOrNull("song")!!,
+            )
+            wire.objectOrNull("playlist") != null -> parseShareResource(
+                ShareResourceKind.Playlist,
+                wire.objectOrNull("playlist")!!,
+            )
+            wire.objectOrNull("album") != null -> parseShareResource(
+                ShareResourceKind.Album,
+                wire.objectOrNull("album")!!,
+            )
+            else -> null
+        }
+        PrivateMessagePayload(text, resource)
+    }.getOrElse { PrivateMessagePayload(serialized, null) }
+}
+
+private fun parseShareResource(kind: ShareResourceKind, value: JsonObject): ShareResource? {
+    val id = value.long("id") ?: return null
+    val album = value.objectOrNull("al") ?: value.objectOrNull("album")
+    val artists = value.array("ar").ifEmpty { value.array("artists") }
+        .mapNotNull { it.objectValue()?.string("name") }
+    val creator = value.objectOrNull("creator")
+    return ShareResource(
+        kind = kind,
+        id = id,
+        title = value.string("name") ?: kind.wireValue,
+        subtitle = when (kind) {
+            ShareResourceKind.Song, ShareResourceKind.Album -> artists.joinToString(" / ").nonEmpty()
+                ?: value.objectOrNull("artist")?.string("name")
+            ShareResourceKind.Playlist -> creator?.string("nickname")
+        },
+        artworkUrl = when (kind) {
+            ShareResourceKind.Song -> album?.string("picUrl")
+            ShareResourceKind.Playlist -> value.string("coverImgUrl") ?: value.string("picUrl")
+            ShareResourceKind.Album -> value.string("picUrl")
+        },
+    )
+}
+
+internal fun parseListenTogetherRoomCheck(data: JsonObject?): Pair<Boolean, String?> {
+    val joinable = data?.boolean("joinable") ?: false
+    val status = data?.string("status")
+    val reason = if (joinable) status else data?.string("copywriting")?.takeIf(String::isNotBlank) ?: status
+    return joinable to reason
+}
+
+private fun parseRoom(value: JsonObject): ListenTogetherRoom = ListenTogetherRoom(
+    id = value.string("roomId") ?: "",
+    creatorId = value.string("creatorId") ?: "",
+    users = value.array("roomUsers").mapNotNull { element ->
+        val user = element.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: return@mapNotNull null
+        ListenTogetherUser(user.string("userId") ?: return@mapNotNull null, user.string("nickname") ?: "NetEase user", user.string("avatarUrl"))
+    },
+    createTime = value.long("roomCreateTime"),
+    effectiveDurationMs = value.long("effectiveDurationMs"),
+)
+
+private fun JsonObject.array(name: String): List<JsonElement> =
+    get(name)?.takeIf(JsonElement::isJsonArray)?.asJsonArray?.toList().orEmpty()
+
+private fun JsonObject.objectOrNull(name: String): JsonObject? =
+    get(name)?.takeIf(JsonElement::isJsonObject)?.asJsonObject
+
+private fun JsonObject.element(name: String): JsonElement? =
+    get(name)?.takeUnless(JsonElement::isJsonNull)
+
+private fun JsonObject.string(name: String): String? {
+    val value = get(name)?.takeUnless(JsonElement::isJsonNull) ?: return null
+    return runCatching { value.asString }.getOrNull()
+}
+
+private fun JsonObject.long(name: String): Long? = string(name)?.toLongOrNull()
+private fun JsonObject.int(name: String): Int? = string(name)?.toIntOrNull()
+private fun JsonObject.boolean(name: String): Boolean? = string(name)?.let {
+    when (it.lowercase()) {
+        "true", "1", "yes" -> true
+        "false", "0", "no" -> false
+        else -> null
+    }
+}

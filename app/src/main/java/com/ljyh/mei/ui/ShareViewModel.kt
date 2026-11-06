@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.UserAccount
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.ShareRepository
-import com.ljyh.mei.data.repository.UserRepository
+import com.ljyh.mei.source.netease.repository.ShareRepository
+import com.ljyh.mei.source.netease.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

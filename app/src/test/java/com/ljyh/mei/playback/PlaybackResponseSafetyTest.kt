@@ -2,7 +2,7 @@ package com.ljyh.mei.playback
 
 import com.google.gson.JsonObject
 import com.ljyh.mei.data.network.api.MeloXDirectService
-import com.ljyh.mei.data.repository.submitPlaybackHistoryLog
+import com.ljyh.mei.source.netease.repository.submitPlaybackHistoryLog
 import com.ljyh.mei.di.MAX_PLAYBACK_HISTORY_RESPONSE_BYTES
 import com.ljyh.mei.di.PlaybackResponseBodyException
 import java.io.IOException

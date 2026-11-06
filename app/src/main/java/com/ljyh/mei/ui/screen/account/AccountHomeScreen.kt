@@ -73,7 +73,7 @@ import com.ljyh.mei.data.model.melox.AccountPlaylist
 import com.ljyh.mei.data.model.melox.AccountProfile
 import com.ljyh.mei.data.model.melox.ListeningStatsSummary
 import com.ljyh.mei.data.model.melox.UserPlayRecord
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard

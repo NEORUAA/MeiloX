@@ -14,7 +14,7 @@ import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.constants.UserAvatarUrlKey
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.di.NeteaseInterceptor
 import com.ljyh.mei.di.RetrofitModule
 import com.ljyh.mei.utils.dataStore

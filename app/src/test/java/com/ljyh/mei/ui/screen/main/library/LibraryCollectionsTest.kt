@@ -1,10 +1,10 @@
 package com.ljyh.mei.ui.screen.main.library
 
 import com.ljyh.mei.constants.LibraryStyle
-import com.ljyh.mei.data.repository.LibraryAccount
-import com.ljyh.mei.data.repository.LibraryCollectionPage
-import com.ljyh.mei.data.repository.collectLibraryPages
-import com.ljyh.mei.data.repository.collectPlaylistTracksIncrementally
+import com.ljyh.mei.source.netease.repository.LibraryAccount
+import com.ljyh.mei.source.netease.repository.LibraryCollectionPage
+import com.ljyh.mei.source.netease.repository.collectLibraryPages
+import com.ljyh.mei.source.netease.repository.collectPlaylistTracksIncrementally
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.di.repository.observeOwnedPlaylists
 import kotlinx.coroutines.ExperimentalCoroutinesApi

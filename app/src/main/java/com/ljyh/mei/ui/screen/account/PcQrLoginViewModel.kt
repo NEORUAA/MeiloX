@@ -4,8 +4,8 @@ import android.app.Activity
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.data.repository.PcQrLoginException
+import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.PcQrLoginException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.net.URI
 import java.net.URLDecoder

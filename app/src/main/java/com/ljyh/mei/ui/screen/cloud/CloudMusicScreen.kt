@@ -42,7 +42,7 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.CloudMusicPage
 import com.ljyh.mei.data.model.melox.CloudSong
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioButton

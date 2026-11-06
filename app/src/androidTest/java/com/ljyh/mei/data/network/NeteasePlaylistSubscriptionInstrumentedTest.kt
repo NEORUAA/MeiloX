@@ -14,7 +14,7 @@ import com.ljyh.mei.constants.NeteaseMusicAKey
 import com.ljyh.mei.constants.NeteaseUrsAppIdKey
 import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.constants.checkToken
-import com.ljyh.mei.data.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
 import com.ljyh.mei.di.NeteaseInterceptor
 import com.ljyh.mei.di.RetrofitModule
 import com.ljyh.mei.utils.dataStore

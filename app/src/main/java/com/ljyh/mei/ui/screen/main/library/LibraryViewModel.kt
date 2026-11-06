@@ -7,11 +7,11 @@ import androidx.paging.cachedIn
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.LibraryAccount
-import com.ljyh.mei.data.repository.LibraryCollectionPage
-import com.ljyh.mei.data.repository.LibraryCollectionsRepository
-import com.ljyh.mei.data.repository.PlayerRepository
-import com.ljyh.mei.data.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.LibraryAccount
+import com.ljyh.mei.source.netease.repository.LibraryCollectionPage
+import com.ljyh.mei.source.netease.repository.LibraryCollectionsRepository
+import com.ljyh.mei.source.netease.repository.PlayerRepository
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.ui.model.Album
 import com.ljyh.mei.ui.navigation.LibraryPage

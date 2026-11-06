@@ -4,11 +4,11 @@ import android.util.Log
 import com.ljyh.mei.data.network.netease.NcblSessionContext
 import com.ljyh.mei.data.network.netease.NcblSongInfo
 import com.ljyh.mei.data.network.netease.NeteaseClientLogClient
-import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.data.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
-import com.ljyh.mei.data.repository.diagnosticSummary
-import com.ljyh.mei.data.repository.playbackExceptionReason
-import com.ljyh.mei.data.repository.playbackExceptionType
+import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.PLAYBACK_HISTORY_DIAGNOSTIC_ENDPOINT
+import com.ljyh.mei.source.netease.repository.diagnosticSummary
+import com.ljyh.mei.source.netease.repository.playbackExceptionReason
+import com.ljyh.mei.source.netease.repository.playbackExceptionType
 import com.ljyh.mei.utils.log.logPlaybackHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

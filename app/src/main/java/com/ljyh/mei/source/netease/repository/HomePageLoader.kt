@@ -1,4 +1,4 @@
-package com.ljyh.mei.data.repository
+package com.ljyh.mei.source.netease.repository
 
 import com.google.gson.Gson
 import com.google.gson.JsonParser

@@ -43,7 +43,7 @@ import com.ljyh.mei.data.model.melox.SongWikiMemoryItem
 import com.ljyh.mei.data.model.melox.SongWikiMemoryKind
 import com.ljyh.mei.data.model.melox.SongWikiSongReference
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard

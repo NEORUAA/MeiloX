@@ -6,7 +6,7 @@ import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.model.api.GetArtistAlbum
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.repository.ArtistRepository
+import com.ljyh.mei.source.netease.repository.ArtistRepository
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers

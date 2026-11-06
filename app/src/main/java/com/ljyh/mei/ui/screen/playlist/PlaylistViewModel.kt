@@ -25,10 +25,10 @@ import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.weapi.EveryDaySongs
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.data.repository.LibraryCollectionsRepository
-import com.ljyh.mei.data.repository.LibraryAccount
+import com.ljyh.mei.source.netease.NeteaseCatalogTransport
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.LibraryCollectionsRepository
+import com.ljyh.mei.source.netease.repository.LibraryAccount
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.di.repository.LikeRepository
 import com.ljyh.mei.utils.dataStore
@@ -66,11 +66,11 @@ internal fun Flow<PagingData<MediaMetadata>>.excludeRemovedPlaylistTracks(
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
-    private val homeRepository: com.ljyh.mei.data.repository.HomeRepository,
+    private val homeRepository: com.ljyh.mei.source.netease.repository.HomeRepository,
     private val likeRepository: LikeRepository,
     private val colorRepository: ColorRepository,
     private val localPlaylistRepository: com.ljyh.mei.di.repository.LocalPlaylistRepository,
-    val apiService: ApiService,
+    val apiService: NeteaseCatalogTransport,
     private val collections: LibraryCollectionsRepository,
 ) : ViewModel() {
     val userId: String get() = AppContext.instance.dataStore[UserIdKey].orEmpty()

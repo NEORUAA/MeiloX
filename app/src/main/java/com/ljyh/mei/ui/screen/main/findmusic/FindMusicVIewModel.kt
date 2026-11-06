@@ -2,7 +2,7 @@ package com.ljyh.mei.ui.screen.main.findmusic
 
 import androidx.lifecycle.ViewModel
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.weapi.HighQualityPlaylistResult

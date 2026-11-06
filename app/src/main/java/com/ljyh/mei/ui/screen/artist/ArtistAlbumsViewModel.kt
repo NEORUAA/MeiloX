@@ -1,7 +1,7 @@
 package com.ljyh.mei.ui.screen.artist
 
-import com.ljyh.mei.data.repository.LibraryCollectionsRepository
-import com.ljyh.mei.data.repository.collectLibraryPages
+import com.ljyh.mei.source.netease.repository.LibraryCollectionsRepository
+import com.ljyh.mei.source.netease.repository.collectLibraryPages
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.api.ArtistAlbum
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.ArtistRepository
+import com.ljyh.mei.source.netease.repository.ArtistRepository
 import com.ljyh.mei.ui.model.Album
 import com.ljyh.mei.ui.model.toAlbum
 import dagger.hilt.android.lifecycle.HiltViewModel

@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.melox.RecognizedSong
-import com.ljyh.mei.data.repository.SongRecognitionRepository
+import com.ljyh.mei.source.netease.repository.SongRecognitionRepository
 import com.ljyh.mei.recognition.NeteaseFingerprintGenerator
 import com.ljyh.mei.recognition.RecognitionDuration
 import com.ljyh.mei.recognition.SongRecognitionRecorder

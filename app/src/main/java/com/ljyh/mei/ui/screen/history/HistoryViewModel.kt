@@ -8,7 +8,7 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.melox.AccountSong
 import com.ljyh.mei.data.model.room.HistoryItem
 import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.di.repository.HistoryRepository
 import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.lifecycle.HiltViewModel

@@ -5,7 +5,7 @@ import androidx.paging.PagingState
 import com.ljyh.mei.data.model.api.CommentSortType
 import com.ljyh.mei.data.model.weapi.CommentX
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.CommentRepository
+import com.ljyh.mei.source.netease.repository.CommentRepository
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 

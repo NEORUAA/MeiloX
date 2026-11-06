@@ -11,7 +11,7 @@ import com.ljyh.mei.data.model.weapi.CommentX
 import com.ljyh.mei.data.model.weapi.FComment
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.neteaseSessionFingerprint
-import com.ljyh.mei.data.repository.CommentRepository
+import com.ljyh.mei.source.netease.repository.CommentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel

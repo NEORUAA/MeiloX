@@ -9,7 +9,7 @@ import com.ljyh.mei.data.model.melox.ListeningStatsPeriod
 import com.ljyh.mei.data.model.melox.ListeningStatsReport
 import com.ljyh.mei.data.model.melox.ListeningStatsSummary
 import com.ljyh.mei.data.model.melox.ListeningStatsYear
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext

@@ -2,7 +2,7 @@ package com.ljyh.mei.data.model.eapi
 
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
-import com.ljyh.mei.di.SpecialKey
+import com.ljyh.mei.source.netease.di.SpecialKey
 
 data class HomePageResourceShow(
     @SerializedName("code")

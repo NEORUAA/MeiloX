@@ -7,7 +7,7 @@ import androidx.paging.cachedIn
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.data.repository.collectPlaylistTracksIncrementally
+import com.ljyh.mei.source.netease.repository.collectPlaylistTracksIncrementally
 import com.ljyh.mei.ui.screen.playlist.PlaylistTrackSource
 import com.ljyh.mei.ui.screen.playlist.matchesPlaylistSearch
 import kotlinx.coroutines.CoroutineDispatcher

@@ -6,7 +6,7 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.source.netease.NeteaseCatalogTransport
 import kotlinx.coroutines.CancellationException
 
 class PlaylistTrackSource internal constructor(
@@ -16,7 +16,7 @@ class PlaylistTrackSource internal constructor(
     private val onPageLoaded: (Int) -> Unit = {},
 ) : PagingSource<Int, MediaMetadata>() {
     constructor(
-        apiService: ApiService,
+        apiService: NeteaseCatalogTransport,
         firstData: List<PlaylistDetail.Playlist.Track>,
         ids: List<String>,
     ) : this(

@@ -1,0 +1,53 @@
+package com.ljyh.mei.source.netease.repository
+
+import com.ljyh.mei.data.model.api.AllArtistSongs
+import com.ljyh.mei.data.model.api.ArtistAlbum
+import com.ljyh.mei.data.model.api.ArtistDetail
+import com.ljyh.mei.data.model.api.ArtistSong
+import com.ljyh.mei.data.model.api.GetAllArtistSongs
+import com.ljyh.mei.data.model.api.GetArtistAlbum
+import com.ljyh.mei.data.model.api.GetArtistDetail
+import com.ljyh.mei.data.model.api.GetArtistSong
+import com.ljyh.mei.data.network.Resource
+import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.data.network.safeApiCall
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+class ArtistRepository(private val apiService: ApiService) {
+
+    suspend fun getArtistDetail(id: String): Resource<ArtistDetail> {
+        return withContext(Dispatchers.IO) {
+            safeApiCall {
+                apiService.getArtistDetail(GetArtistDetail(id = id))
+            }
+        }
+    }
+
+    suspend fun getArtistAlbums(id: String, offset: Int = 0): Resource<ArtistAlbum> {
+        return withContext(Dispatchers.IO) {
+            safeApiCall {
+                apiService.getArtistAlbums(GetArtistAlbum(offset = offset), id).also {
+                    check(it.code == 200) { "Unable to load artist albums (${it.code})" }
+                }
+            }
+        }
+    }
+
+    suspend fun getAllArtistSongs(id: String, offset: Int): Resource<AllArtistSongs> =
+        withContext(Dispatchers.IO) {
+            safeApiCall {
+                apiService.getAllArtistSongs(GetAllArtistSongs(id, offset)).also {
+                    check(it.code == 200) { "Unable to load artist songs (${it.code})" }
+                }
+            }
+        }
+
+    suspend fun getArtistSongs(id: String): Resource<ArtistSong> {
+        return withContext(Dispatchers.IO) {
+            safeApiCall {
+                apiService.getArtistSongs(GetArtistSong(), id)
+            }
+        }
+    }
+}

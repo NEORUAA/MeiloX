@@ -5,9 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.eapi.HomePageResourceShow
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.HomePageOwner
-import com.ljyh.mei.data.repository.HomeRepository
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.HomePageOwner
+import com.ljyh.mei.source.netease.repository.HomeRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.di.repository.ColorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job

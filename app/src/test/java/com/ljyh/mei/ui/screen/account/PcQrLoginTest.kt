@@ -1,7 +1,7 @@
 package com.ljyh.mei.ui.screen.account
 
-import com.ljyh.mei.data.repository.PcQrLoginAction
-import com.ljyh.mei.data.repository.buildPcQrLoginBody
+import com.ljyh.mei.source.netease.repository.PcQrLoginAction
+import com.ljyh.mei.source.netease.repository.buildPcQrLoginBody
 import com.ljyh.mei.di.RetrofitModule
 import com.ljyh.mei.di.usesOfficialAndroidIdentity
 import com.ljyh.mei.utils.log.toSafeLogUrl

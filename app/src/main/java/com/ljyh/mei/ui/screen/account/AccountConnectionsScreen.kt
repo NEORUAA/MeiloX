@@ -30,7 +30,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.melox.AccountConnectionPage
 import com.ljyh.mei.data.model.melox.AccountConnectionType
 import com.ljyh.mei.data.model.melox.AccountProfile
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton

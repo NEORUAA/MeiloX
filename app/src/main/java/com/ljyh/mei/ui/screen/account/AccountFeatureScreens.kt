@@ -41,7 +41,7 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.melox.AccountAuthorization
 import com.ljyh.mei.data.model.melox.AccountDevice
 import com.ljyh.mei.data.network.NeteaseSessionType
-import com.ljyh.mei.data.repository.AccountFeatureException
+import com.ljyh.mei.source.netease.repository.AccountFeatureException
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen

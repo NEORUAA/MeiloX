@@ -6,7 +6,7 @@ import com.ljyh.mei.data.model.melox.PrivateConversation
 import com.ljyh.mei.data.model.melox.PrivateConversationPage
 import com.ljyh.mei.data.model.melox.PrivateMessage
 import com.ljyh.mei.data.model.melox.MessageContact
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow

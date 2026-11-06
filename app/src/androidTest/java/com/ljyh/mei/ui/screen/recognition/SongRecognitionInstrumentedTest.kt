@@ -6,7 +6,7 @@ import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.MainActivity
-import com.ljyh.mei.data.repository.SongRecognitionRepository
+import com.ljyh.mei.source.netease.repository.SongRecognitionRepository
 import com.ljyh.mei.di.RetrofitModule
 import com.ljyh.mei.recognition.RecognitionDuration
 import kotlinx.coroutines.delay

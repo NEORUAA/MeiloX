@@ -5,7 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.ljyh.mei.data.model.weapi.GetHomePageResourceShow
-import com.ljyh.mei.data.repository.loadHomePageBlocks
+import com.ljyh.mei.source.netease.repository.loadHomePageBlocks
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking

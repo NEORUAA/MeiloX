@@ -1,11 +1,4 @@
 package com.ljyh.mei.data.repository
 
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.QQMusicUApiService
-
-class ShareRepository(
-    val apiService: ApiService,
-    val qqMusicUApiService: QQMusicUApiService
-) {
-
-}
+// Compatibility names for existing native NetEase screens and integrations.
+typealias ShareRepository = com.ljyh.mei.source.netease.repository.ShareRepository

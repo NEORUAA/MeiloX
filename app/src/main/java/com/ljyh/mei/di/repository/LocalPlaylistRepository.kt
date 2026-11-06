@@ -2,7 +2,7 @@ package com.ljyh.mei.di.repository
 
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.UserPlaylist
-import com.ljyh.mei.data.repository.LibraryAccount
+import com.ljyh.mei.source.netease.repository.LibraryAccount
 import com.ljyh.mei.data.model.room.PlaylistSongCrossRef
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.dao.PlaylistSongCrossRefDao
