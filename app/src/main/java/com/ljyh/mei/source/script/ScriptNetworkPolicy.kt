@@ -67,10 +67,13 @@ class ScriptNetworkPolicy(private val domains: List<String>) {
         val checked = validateUrl(url)
         val key = java.security.MessageDigest.getInstance("SHA-256").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
         val file = java.io.File(directory, "artwork/$key")
-        if (file.isFile) return@withPermit android.net.Uri.fromFile(file).toString()
         withContext(Dispatchers.IO) {
             transport {
                 ensureCurrent()
+                if (file.isFile) {
+                    file.setLastModified(System.currentTimeMillis())
+                    return@transport android.net.Uri.fromFile(file).toString()
+                }
                 client.newCall(Request.Builder().url(checked).build()).execute().use { response ->
                 ensureCurrent()
                 if (response.code in 300..399) denied()
@@ -88,7 +91,7 @@ class ScriptNetworkPolicy(private val domains: List<String>) {
                 var bytesRemaining = cached.sumOf { it.length() }
                 var countRemaining = cached.size
                 cached.filter { it != file }.forEach { old ->
-                    if (bytesRemaining > 16L * 1024 * 1024 || countRemaining > 64) {
+                    if (bytesRemaining > 16L * 1024 * 1024 || countRemaining > 256) {
                         val size = old.length()
                         if (old.delete()) { bytesRemaining -= size; countRemaining-- }
                     }
