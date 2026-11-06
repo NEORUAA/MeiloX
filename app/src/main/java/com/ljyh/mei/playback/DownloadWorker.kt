@@ -20,6 +20,7 @@ import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.script.ScriptAudioDataSource
+import com.ljyh.mei.source.script.ScriptPluginManager
 import androidx.media3.datasource.DataSpec
 import androidx.media3.common.C
 import dagger.hilt.EntryPoint
@@ -67,6 +68,7 @@ import java.util.concurrent.TimeUnit
 internal interface DownloadSourceEntryPoint {
     fun mediaUriProvider(): MediaUriProvider
     fun sourceRouter(): com.ljyh.mei.source.core.SourceRouter
+    fun sourcePlugins(): ScriptPluginManager
 }
 
 class DownloadWorker(
@@ -144,9 +146,22 @@ class DownloadWorker(
         val tempDir = File(applicationContext.cacheDir, "download")
         if (!tempDir.exists()) tempDir.mkdirs()
 
-        if (songIds.none { songId -> db.downloadDao().getBySongId(songId)?.let {
-                it.requestId == id.toString() || (it.requestId.isBlank() && it.status in activeDownloadStates)
-            } == true }) return Result.success()
+        val ownedTasks = songIds.mapNotNull { songId -> db.downloadDao().getBySongId(songId)?.takeIf {
+            it.requestId == id.toString() || (it.requestId.isBlank() && it.status in activeDownloadStates)
+        } }
+        if (ownedTasks.isEmpty()) return Result.success()
+        if (ownedTasks.any { it.originTrackRef != null }) {
+            try {
+                // A cold-start worker can run before the application's asynchronous source load.
+                EntryPointAccessors.fromApplication(applicationContext, DownloadSourceEntryPoint::class.java)
+                    .sourcePlugins().loadInstalled()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Timber.w("Download source initialization unavailable (%s)", error.javaClass.simpleName)
+                return Result.retry()
+            }
+        }
         showNotification("准备下载...", 0)
 
         val semaphore = Semaphore(CONCURRENCY)

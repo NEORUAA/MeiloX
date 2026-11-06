@@ -12,17 +12,21 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.javascriptengine.JavaScriptSandbox
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.DownloadLyrics
 import com.ljyh.mei.utils.ImageUtils
 import com.ljyh.mei.utils.SongMate
 import com.ljyh.mei.utils.detectAudioFileFormat
+import dagger.hilt.android.EntryPointAccessors
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
@@ -139,6 +143,60 @@ class DownloadLifecycleInstrumentedTest {
                 assertTrue(server.closed.await(3, TimeUnit.SECONDS))
                 assertFalse(file.exists())
             } finally { file.delete() }
+        }
+    }
+
+    @Test fun resumedSourceDownloadLoadsItsInstalledPluginBeforeResolving(): Unit = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val sources = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java)
+        val plugins = sources.sourcePlugins()
+        plugins.loadInstalled()
+        val pluginId = "org.meilox.download-startup-${UUID.randomUUID()}"
+        val ref = TrackRef(pluginId, "recording")
+        val songId = TrackRefCodec.storageKey(ref)
+        val directory = File(context.filesDir, "music-sources/$pluginId")
+        val db = AppDatabase.getDatabase(context)
+        var requestId: String? = null
+        try {
+            File(directory, "assets").mkdirs()
+            File(directory, "manifest.json").writeText("""{"id":"$pluginId","name":"Download startup fixture",
+                "author":"Tests","version":"1","apiVersion":1,"capabilities":["playback.resolve"],
+                "permissions":{"network":[]}}""".trimIndent())
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {'playback.resolve': function() {
+                return {uri:'asset://recording.flac',quality:'standard',contentId:'download-startup-fixture',cachePolicy:'ALLOW'};
+            }};""".trimIndent())
+            InstrumentationRegistry.getInstrumentation().context.assets.open("download-tags/blank.flac").use { input ->
+                File(directory, "assets/recording.flac").outputStream().use { input.copyTo(it) }
+            }
+            assertNull("A persisted plugin must start absent from the live registry", sources.sourceRouter().registry.provider(pluginId))
+            DownloadManager.enqueue(context, listOf(SongDownloadInfo(
+                songId, null, "Download startup fixture", listOf("Fixture"), "Fixture", "", 0,
+                quality = "standard", originTrackRef = ref,
+            )), "Lifecycle fixture", downloadPath = "Music/MeiloX-test-fixtures")
+            requestId = db.downloadDao().getBySongId(songId)?.requestId
+            val completed = withTimeout(30_000) {
+                while (true) {
+                    val task = checkNotNull(db.downloadDao().getBySongId(songId))
+                    check(task.status != DownloadStatus.FAILED) { "The installed source was not restored before download resolution" }
+                    if (task.status == DownloadStatus.COMPLETED) return@withTimeout task
+                    delay(50)
+                }
+                @Suppress("UNREACHABLE_CODE") error("Download did not complete")
+            }
+            assertEquals(pluginId, completed.actualAudioProviderId)
+            assertEquals(ref, completed.resolvedTrackRef?.let(TrackRefCodec::decode))
+            assertNotNull(sources.sourceRouter().registry.provider(pluginId))
+            assertEquals(pluginId, db.songDao().getById(songId)?.providerId)
+            assertNotNull(db.songDao().getById(songId)?.path)
+        } finally {
+            withContext(NonCancellable) {
+                requestId?.let { androidx.work.WorkManager.getInstance(context).cancelWorkById(UUID.fromString(it)).result.get() }
+                db.songDao().getById(songId)?.path?.let { context.contentResolver.delete(Uri.parse(it), null, null) }
+                db.downloadDao().delete(songId)
+                db.songDao().deleteById(songId)
+                if (plugins.installed.value.any { it.manifest.id == pluginId }) plugins.uninstall(pluginId)
+                directory.deleteRecursively()
+            }
         }
     }
 

@@ -79,6 +79,26 @@ Hash-gated cache package input allows adapter retests without recompiling the ho
 `MusicServiceQualityRecoveryTest` has three explicit isolated-package opt-ins. They
 were skipped on the original application ID and are not counted among these tests.
 
+### Final pre-push review
+
+The final review fixed three regressions: exact legacy negative local-song IDs now
+retain their original files, same-provider script calls serialize storage snapshots
+through commit, and resumed download batches finish loading installed plugins before
+resolving sources. Each has a regression in an existing instrumentation suite.
+
+Debug and instrumentation packages built with the 1 GiB profile (56s). The relevant
+AVD suites passed 40 tests, including all three new regressions; one existing
+host-supplied real-audio fixture test was skipped because its explicit input was not
+provided. Both authenticated QQ acceptance tests then passed again (13.108s),
+including full-resource playback and retained account configuration. The standalone
+QQ repository's `node --max-old-space-size=128 test.mjs` also passed.
+
+```sh
+adb -s emulator-5580 shell am instrument -w -r \
+  -e class com.ljyh.mei.playback.MediaUriProviderQualityTest,com.ljyh.mei.source.script.ScriptPluginInstrumentedTest,com.ljyh.mei.playback.DownloadLifecycleInstrumentedTest \
+  com.neoruaa.meilox.test/androidx.test.runner.AndroidJUnitRunner
+```
+
 ### Original P6 validation
 
 ```sh
