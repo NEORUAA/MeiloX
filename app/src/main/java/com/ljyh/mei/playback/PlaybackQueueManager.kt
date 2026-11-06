@@ -14,6 +14,9 @@ import com.ljyh.mei.data.model.api.GetRandomPlaylist
 import com.ljyh.mei.data.model.api.RandomPlaylistData
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.source.netease.NeteaseQueueTransport
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.core.SourceRouter
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.Queue
@@ -37,14 +40,24 @@ import timber.log.Timber
 @OptIn(UnstableApi::class)
 class PlaybackQueueManager(
     private val player: Player,
-    private val apiService: ApiService,
-    private val weApiService: WeApiService,
+    private val native: NeteaseQueueTransport,
     private val scope: CoroutineScope,
+    private val sourceRouter: SourceRouter? = null,
     private val serverShuffleAllowed: () -> Boolean = { true },
     private val radioItemFactory: (com.ljyh.mei.data.model.weapi.Data) -> MediaItem = {
         it.toMediaMetadata().toMediaItem()
     },
 ) : Player.Listener {
+
+    internal constructor(
+        player: Player,
+        apiService: ApiService,
+        weApiService: WeApiService,
+        scope: CoroutineScope,
+        serverShuffleAllowed: () -> Boolean = { true },
+        radioItemFactory: (com.ljyh.mei.data.model.weapi.Data) -> MediaItem = { it.toMediaMetadata().toMediaItem() },
+    ) : this(player, NeteaseQueueTransport(apiService, weApiService), scope,
+        serverShuffleAllowed = serverShuffleAllowed, radioItemFactory = radioItemFactory)
 
     private val TAG = "QueueManager"
     private val _queueState = MutableStateFlow<QueueState>(QueueState.Idle)
@@ -193,7 +206,7 @@ class PlaybackQueueManager(
         serverShuffleJob = scope.launch(Dispatchers.Main) {
             try {
                 val data = fetchCloudShuffleOrNull {
-                    apiService.getRandomPlaylist(GetRandomPlaylist(source.playlistId, seedId, source.alg))
+                    native.getRandomPlaylist(GetRandomPlaylist(source.playlistId, seedId, source.alg))
                 }
                 currentCoroutineContext().ensureActive()
                 if (generation != serverShuffleGeneration || playlistSource != source ||
@@ -325,7 +338,7 @@ class PlaybackQueueManager(
     }
 
     suspend fun loadPrivateFmScenes(): List<PrivateFmScene> = withContext(Dispatchers.IO) {
-        parsePrivateFmScenes(weApiService.getPrivateFmModes(mapOf(
+        parsePrivateFmScenes(native.getPrivateFmModes(mapOf(
             "positionCode" to "FMTopModeDialog",
             "extJson" to """{"isHomePageNewFramework":true,"userSetFMMode":true,"enableAutoPlay":true}""",
         )))
@@ -342,7 +355,7 @@ class PlaybackQueueManager(
         val result = scope.async(Dispatchers.Main, start = CoroutineStart.LAZY) {
             try {
                 _queueState.value = QueueState.Loading(SIMILAR_FM_TITLE)
-                val response = weApiService.getRadio(request.body())
+                val response = native.getRadio(request.body())
                 currentCoroutineContext().ensureActive()
                 if (generation != queueBuildGeneration || !shouldPlay()) return@async false
                 val items = if (response.code == 200) response.data.orEmpty()
@@ -496,9 +509,9 @@ class PlaybackQueueManager(
         val scene = _privateFmScene.value
         if (request == null) _privateFmBusy.value = true
         try {
-            val response = if (request != null) weApiService.getRadio(request.body()) else {
+            val response = if (request != null) native.getRadio(request.body()) else {
                 val queuedIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
-                weApiService.getPersonalRadio(mode.requestBody(recentPersonalFmIds.toList() + queuedIds, scene))
+                native.getPersonalRadio(mode.requestBody(recentPersonalFmIds.toList() + queuedIds, scene))
             }
             check(response.code == 200) { "漫游推荐加载失败 (${response.code})" }
             check(!response.data.isNullOrEmpty()) { "暂时没有新的推荐歌曲" }
@@ -584,8 +597,7 @@ class PlaybackQueueManager(
 
         scope.launch {
             try {
-                // 1. 调用云音乐的“不喜欢”接口 (建议在 apiService 中实现)
-                // apiService.dislikeSong(currentId)
+                // The native FM dislike action keeps its existing queue behavior.
 
                 withContext(Dispatchers.Main) {
                     // 2. 移除当前项，ExoPlayer 会自动切换到下一首
@@ -897,10 +909,18 @@ class PlaybackQueueManager(
     private suspend fun loadSongDetails(ids: List<String>): List<MediaItem> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getSongDetail(
-                    com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(","))
-                )
-                response.songs.map { it.toMediaItem() }
+                val router = sourceRouter
+                if (router == null) {
+                    // Compatibility for the existing native queue test harness.
+                    val response = native.getSongDetail(
+                        com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(","))
+                    )
+                    response.songs.map { it.toMediaItem() }
+                } else ids.mapNotNull(TrackRefCodec::decode).groupBy { it.providerId }.values.flatMap { refs ->
+                    try { router.getTracks(refs).map { it.toMediaMetadata().toMediaItem() } }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: com.ljyh.mei.source.api.SourceException) { emptyList() }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -32,6 +32,10 @@ class SourceIdentityTest {
         assertEquals(TrackRef("local", "local_42"), TrackRefCodec.decode("42", isLocal = true))
         assertEquals("local_42", TrackRefCodec.storageKey(TrackRef("local", "local_42")))
         assertEquals("-42", TrackRefCodec.mediaId(TrackRef("local", "local_42")))
+        val podcast = TrackRef("netease", "-42")
+        assertNotEquals("-42", TrackRefCodec.mediaId(podcast))
+        assertEquals(podcast, TrackRefCodec.decode(TrackRefCodec.mediaId(podcast)))
+        assertEquals("-42", TrackRefCodec.storageKey(podcast))
         assertNull(TrackRefCodec.decode(Long.MIN_VALUE.toString()))
     }
 
@@ -45,7 +49,7 @@ class SourceIdentityTest {
         val original = Track(
             TrackRef("demo", "曲目:42/音轨"), "Title",
             listOf(SourceArtist("Artist", ArtistRef("demo", "artist:string"))),
-            SourceAlbum("Album", AlbumRef("demo", "album/string")), 180_000, explicit = true,
+            SourceAlbum("Album", AlbumRef("demo", "album/string")), 180_000, isrc = "TEST00000001", version = "Live", explicit = true,
         )
         val metadata = original.toMediaMetadata()
         assertEquals(0L, metadata.id)

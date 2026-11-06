@@ -54,5 +54,6 @@ enum class LyricSource {
     NetEaseCloudMusic,
     QQMusic,
     AM,
-    Loading
+    Loading,
+    Provider,
 }

@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -265,7 +266,7 @@ fun ClassicTabletLayout(
                                     title = it.title,
                                     subTitle = it.artists.joinToString { artist -> artist.name },
                                     isLiked = isLiked,
-                                    showLikeButton = !it.isLocal && !it.isPodcast,
+                                    showLikeButton = it.supportsNeteaseSongActions,
                                     onLikeClick = { stateContainer.playerViewModel.like(it.id.toString()) },
                                     onMoreClick = { overlayHandler.showMoreAction() },
                                     onTitleClick = {

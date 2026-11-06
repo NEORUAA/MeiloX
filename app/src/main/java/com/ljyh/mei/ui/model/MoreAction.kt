@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.model
 
 import androidx.annotation.StringRes
 import com.ljyh.mei.R
+import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.source.api.ProviderIds
 
 enum class MoreAction(
     val id: String,
@@ -48,6 +50,12 @@ enum class SortOrder {
     FREQUENCY, // 常用的靠前
     RISK, // 低风险的靠前
     CUSTOM,
+}
+
+internal fun MoreAction.availableFor(metadata: MediaMetadata?): Boolean = when (this) {
+    MoreAction.ADD_TO_PLAYLIST, MoreAction.SHARE, MoreAction.SONG_WIKI, MoreAction.COMMENT ->
+        metadata != null && metadata.trackRef.providerId == ProviderIds.NETEASE && metadata.trackRef.trackId.toLongOrNull()?.let { it > 0L } == true
+    else -> true
 }
 
 internal fun resolveMoreActionOrder(order: SortOrder, savedIds: List<String>): List<MoreAction> = when (order) {

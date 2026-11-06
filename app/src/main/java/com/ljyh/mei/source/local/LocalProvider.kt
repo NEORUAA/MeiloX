@@ -16,22 +16,31 @@ class LocalProvider @Inject constructor(private val songs: SongRepository) : Mus
     override val isBuiltIn = true
     override val capabilities = setOf(SourceCapability.SEARCH, SourceCapability.TRACK, SourceCapability.PLAYBACK)
     override suspend fun search(query: String, page: PageRequest): SourcePage<Track> {
+        val terms = query.trim().split(Regex("\\s+")).filter(String::isNotBlank)
         val matches = songs.getLocalSongs().first().filter { song ->
-            query.isBlank() || (listOf(song.title, song.album) + song.artist).any { it.contains(query, ignoreCase = true) }
+            val text = (listOf(song.title, song.album) + song.artist).joinToString(" ")
+            terms.all { text.contains(it, ignoreCase = true) }
         }
         return SourcePage(matches.drop(page.offset).take(page.limit).map { it.toMediaMetadata().toSourceTrack() }, matches.size > page.offset + page.limit)
     }
     override suspend fun getTrack(ref: TrackRef): Track? {
         if (ref.providerId != id) return null
-        return songs.getSong(TrackRefCodec.storageKey(ref)).first()?.takeIf { it.providerId == id }?.toMediaMetadata()?.toSourceTrack()
+        return findSong(ref)?.toMediaMetadata()?.toSourceTrack()
     }
     override suspend fun resolve(ref: TrackRef, requestedQuality: String): AudioResource {
         if (ref.providerId != id) throw SourceException(SourceErrorCode.NOT_FOUND)
-        val song = songs.getSong(TrackRefCodec.storageKey(ref)).first()?.takeIf { it.providerId == id }
+        val song = findSong(ref)
             ?: throw SourceException(SourceErrorCode.NOT_FOUND)
         val path = song.path ?: throw SourceException(SourceErrorCode.NOT_FOUND)
         val file = File(path)
         if (!file.isFile) throw SourceException(SourceErrorCode.NOT_FOUND)
         return AudioResource(file.toURI().toString(), "local", contentLength = file.length(), contentId = song.fileHash, cachePolicy = CachePolicy.NO_STORE)
+    }
+    private suspend fun findSong(ref: TrackRef): com.ljyh.mei.data.model.room.Song? {
+        val primary = songs.getSong(TrackRefCodec.storageKey(ref)).first()
+        val legacy = if (primary == null && ref.trackId.startsWith("local_")) {
+            ref.trackId.removePrefix("local_").toLongOrNull()?.takeIf { it > 0 }?.let { songs.getSong((-it).toString()).first() }
+        } else null
+        return (primary ?: legacy)?.takeIf { it.providerId == id }
     }
 }

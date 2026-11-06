@@ -209,9 +209,9 @@ fun rememberPlayerStateContainer(
         }
     }
 
-    LaunchedEffect(container.mediaMetadata.value?.id) {
+    LaunchedEffect(container.mediaMetadata.value?.trackRef) {
         container.mediaMetadata.value?.let { meta ->
-            playerViewModel.getLike(meta.id)
+            playerViewModel.getLike(meta)
         }
     }
 

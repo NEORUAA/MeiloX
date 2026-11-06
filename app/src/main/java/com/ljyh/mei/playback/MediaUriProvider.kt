@@ -6,15 +6,22 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.media3.datasource.DataSpec
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.availableMusicQualities
+import com.ljyh.mei.data.model.toSourceTrack
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
-import com.ljyh.mei.data.network.api.ApiService
+import com.ljyh.mei.source.netease.NeteasePlaybackTransport
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.PlaybackResolver
+import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.source.core.audioResourceIdentity
 import com.ljyh.mei.di.repository.SongRepository
+import com.ljyh.mei.di.repository.DownloadRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +40,9 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
-class SourceNotFoundException(message: String) : IOException(message)
+class SourceNotFoundException(message: String, cause: Throwable? = null) : SourceException(SourceErrorCode.UNAVAILABLE, message) {
+    init { if (cause != null) initCause(cause) }
+}
 
 data class LocalPlaybackInfo(
     val mimeType: String? = null,
@@ -48,13 +57,26 @@ internal data class ResolvedMediaSource(
     val sourceIdentity: String? = null,
     val localPlaybackInfo: LocalPlaybackInfo? = null,
     val contentLength: Long? = null,
-)
+    val headers: Map<String, String> = emptyMap(),
+    val resolution: PlaybackResolution? = null,
+    val cachePolicy: CachePolicy = CachePolicy.ALLOW,
+    val expiresAtMs: Long? = null,
+) {
+    override fun toString(): String = "ResolvedMediaSource(quality=$actualQuality, cachePolicy=$cachePolicy)"
+}
+
+internal fun resolvedMediaDataSpec(dataSpec: DataSpec, source: ResolvedMediaSource): DataSpec =
+    dataSpec.buildUpon().setUri(source.uri).setHttpRequestHeaders(source.headers)
+        .setCustomData(source.cachePolicy).setKey(source.cacheKey).build()
 
 @Singleton
 class MediaUriProvider @Inject constructor(
-    private val apiService: ApiService,
+    private val transport: NeteasePlaybackTransport,
+    private val playbackResolver: PlaybackResolver,
+    private val router: SourceRouter,
     private val songRepository: SongRepository,
     @ApplicationContext private val context: Context,
+    private val downloadRepository: DownloadRepository? = null,
 ) {
     private data class CachedUrl(
         val url: String,
@@ -73,6 +95,15 @@ class MediaUriProvider @Inject constructor(
     private val urlCache = ConcurrentHashMap<String, CachedUrl>()
     private val availableQualityCache = ConcurrentHashMap<String, AvailableQualities>()
     private val resolvedSources = ConcurrentHashMap<String, ResolvedMediaSource>()
+    private val trackMetadata = ConcurrentHashMap<TrackRef, Track>()
+    private val contextualRefs = ConcurrentHashMap<String, TrackRef>()
+
+    private fun trackRef(mediaId: String): TrackRef? = contextualRefs[mediaId] ?: TrackRefCodec.decode(mediaId)
+
+    internal fun rememberTrack(metadata: com.ljyh.mei.data.model.MediaMetadata, mediaId: String = TrackRefCodec.mediaId(metadata.trackRef)) {
+        contextualRefs[mediaId] = metadata.trackRef
+        trackMetadata[metadata.trackRef] = metadata.toSourceTrack()
+    }
     private val rejectedSources = ConcurrentHashMap<String, MutableSet<String>>()
     private val onlineSourceOverrides = ConcurrentHashMap.newKeySet<String>()
     private val qualityStateVersion = AtomicLong()
@@ -85,12 +116,11 @@ class MediaUriProvider @Inject constructor(
     internal fun resolvedMediaSource(mediaId: String): ResolvedMediaSource? =
         resolvedSources[mediaId]?.takeIf { source ->
             source.cacheKey == null ||
-                (isSupportedPlaybackQuality(source.actualQuality) &&
-                    cachedPlaybackQuality(mediaId, source.cacheKey) == normalizePlaybackQuality(source.actualQuality))
+                resolvedCacheQuality(mediaId, source.cacheKey) == source.actualQuality
         }
 
     internal fun rememberCachedSource(mediaId: String, quality: String, cacheKey: String, uri: Uri) {
-        val actualQuality = cachedPlaybackQuality(mediaId, cacheKey)
+        val actualQuality = resolvedCacheQuality(mediaId, cacheKey)
             ?.takeIf { it == normalizePlaybackQuality(quality) }
             ?: return
         if (sourceIsRejected(mediaId, cacheKey.substringAfterLast(':'))) return
@@ -101,12 +131,13 @@ class MediaUriProvider @Inject constructor(
                 actualQuality = actualQuality,
                 cacheKey = cacheKey,
                 sourceIdentity = cacheKey.substringAfterLast(':'),
+                resolution = cachedPlaybackResolution(mediaId, cacheKey, uri.toString()),
             ),
         )
     }
 
     internal fun isRejectedCachedSource(mediaId: String, cacheKey: String): Boolean =
-        cachedPlaybackQuality(mediaId, cacheKey) == null ||
+        resolvedCacheQuality(mediaId, cacheKey) == null ||
             sourceIsRejected(mediaId, cacheKey.substringAfterLast(':'))
 
     suspend fun resolveMediaUri(mediaId: String, quality: String): Uri =
@@ -139,23 +170,88 @@ class MediaUriProvider @Inject constructor(
         if (song.sourceType != SourceType.LOCAL && onlineSourceOverrides.contains(mediaId)) return null
         val uri = localUri(song) ?: return null
         val info = readLocalPlaybackInfo(uri)
+        val task = if (song.sourceType == SourceType.DOWNLOAD) downloadRepository?.getBySongId(song.id) else null
+        val origin = task?.originTrackRef?.let(TrackRefCodec::decode) ?: trackRef(mediaId)
+        val actual = task?.resolvedTrackRef?.let(TrackRefCodec::decode)
+        val provenance = if (origin != null && actual != null && task != null) PlaybackResolution(
+            origin, actual, task.actualAudioProviderId, ProviderInstanceId(task.actualProviderInstanceId),
+            AudioResource(uri.toString(), task.actualQuality ?: task.quality), emptyList()) else null
         return synchronized(qualityStateLock) {
             ensureCurrentState(stateVersion)
             rememberResolvedSource(
                 mediaId,
-                ResolvedMediaSource(uri, actualQuality = "", cacheKey = null, localPlaybackInfo = info),
+                ResolvedMediaSource(uri, actualQuality = "", cacheKey = null, localPlaybackInfo = info, resolution = provenance),
             )
         }
     }
 
     internal suspend fun resolveMediaSource(mediaId: String, quality: String): ResolvedMediaSource {
         val stateVersion = synchronized(qualityStateLock) { qualityStateVersion.get() }
-        val requestedQuality = normalizePlaybackQuality(quality)
         resolveLocalSource(mediaId)?.let { return it }
-        if (!canResolveOnline(mediaId)) {
-            throw SourceNotFoundException("No local source for $mediaId")
+        val ref = trackRef(mediaId) ?: throw SourceNotFoundException("Unknown content identity")
+        if (ref.providerId == ProviderIds.LOCAL) throw SourceNotFoundException("Local file is unavailable")
+        val track = trackMetadata[ref] ?: localSong(mediaId)?.let { song ->
+            Track(ref, song.title, song.artist.map { SourceArtist(it) }, SourceAlbum(song.album),
+                song.duration, song.cover)
+        } ?: if (ref.providerId == ProviderIds.NETEASE) {
+            // Normal native playback needs no extra catalog request. Fallback can hydrate when needed.
+            Track(ref, "", emptyList())
+        } else router.getTrack(ref) ?: throw SourceNotFoundException("Track is unavailable")
+        val resolution = try { playbackResolver.resolve(
+            track, quality,
+            excludedResources = rejectedSources[mediaId]?.mapNotNull {
+                runCatching { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) }.getOrNull()
+            }?.toSet().orEmpty(),
+            originalResolver = if (ref.providerId == ProviderIds.NETEASE) ({
+                val native = resolveNeteaseSource(mediaId, ref.trackId, quality, stateVersion)
+                AudioResource(
+                    uri = native.uri.toString(), quality = native.actualQuality,
+                    contentLength = native.contentLength, contentId = native.sourceIdentity,
+                    expiresAtMs = native.expiresAtMs,
+                )
+            }) else null,
+        ) } catch (error: com.ljyh.mei.source.core.PlaybackResolutionException) {
+            throw SourceNotFoundException("No playable source is available", error)
         }
+        return synchronized(qualityStateLock) {
+            ensureCurrentState(stateVersion)
+            val identity = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(audioResourceIdentity(resolution).toByteArray(Charsets.UTF_8))
+            if (sourceIsRejected(mediaId, identity)) throw SourceNotFoundException("Playback resource was rejected")
+            rememberResolvedSource(mediaId, ResolvedMediaSource(
+                uri = resolution.resource.uri.toUri(), actualQuality = resolution.resource.quality,
+                cacheKey = if (resolution.resource.cachePolicy == CachePolicy.ALLOW) resolvedPlaybackCacheKey(resolution) else null,
+                sourceIdentity = identity, contentLength = resolution.resource.contentLength,
+                headers = resolution.resource.headers, resolution = resolution,
+                cachePolicy = resolution.resource.cachePolicy, expiresAtMs = resolution.resource.expiresAtMs,
+            ))
+        }
+    }
 
+    /** Downloads refresh credentials in the worker and never persist resource headers. */
+    internal suspend fun resolveDownloadSource(track: Track, quality: String): PlaybackResolution {
+        val stateVersion = synchronized(qualityStateLock) { accountStateVersion.get() }
+        val resolution = playbackResolver.resolve(track, quality, originalResolver =
+            if (track.ref.providerId == ProviderIds.NETEASE) ({
+                val native = resolveNeteaseSource(TrackRefCodec.mediaId(track.ref), track.ref.trackId,
+                    quality, stateVersion, forDownload = true)
+                AudioResource(native.uri.toString(), native.actualQuality,
+                    contentLength = native.contentLength, contentId = native.sourceIdentity,
+                    expiresAtMs = native.expiresAtMs)
+            }) else null,
+        )
+        synchronized(qualityStateLock) { ensureCurrentState(stateVersion, forDownload = true) }
+        return resolution
+    }
+
+    private suspend fun resolveNeteaseSource(
+        mediaId: String,
+        neteaseId: String,
+        quality: String,
+        stateVersion: Long,
+        forDownload: Boolean = false,
+    ): ResolvedMediaSource {
+        val requestedQuality = normalizePlaybackQuality(quality)
         val attemptedQualities = mutableListOf<String>()
         for (attemptedQuality in playbackQualityFallbacks(requestedQuality)) {
             val cacheKey = "$mediaId:$attemptedQuality"
@@ -163,11 +259,11 @@ class MediaUriProvider @Inject constructor(
             val cached = urlCache[cacheKey]
             if (cached != null) {
                 if (cached.expiresAtMs > now && cached.hasSupportedQuality(mediaId) &&
-                    !sourceIsRejected(mediaId, cached.sourceIdentity)
+                    (forDownload || !cached.isRejectedNativeSource(mediaId))
                 ) {
                     return synchronized(qualityStateLock) {
-                        ensureCurrentState(stateVersion)
-                        rememberResolvedSource(mediaId, cached.toResolvedSource())
+                        ensureCurrentState(stateVersion, forDownload)
+                        cached.toResolvedSource()
                     }
                 }
                 urlCache.remove(cacheKey, cached)
@@ -175,19 +271,22 @@ class MediaUriProvider @Inject constructor(
 
             attemptedQualities += attemptedQuality
             val response = try {
-                apiService.getSongUrlV1(
-                    GetSongUrlV1(ids = "[$mediaId]", level = attemptedQuality)
+                transport.getSongUrlV1(
+                    GetSongUrlV1(ids = "[$neteaseId]", level = attemptedQuality)
                 )
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: retrofit2.HttpException) {
+                throw SourceException(if (e.code() in setOf(301, 401, 403)) SourceErrorCode.AUTH_REQUIRED else SourceErrorCode.NETWORK)
             } catch (e: Exception) {
-                throw IOException("Network error resolving URL for $mediaId", e)
+                throw SourceException(SourceErrorCode.NETWORK, "Song URL request failed")
             }
+            if (response.code in setOf(301, 401, 403)) throw SourceException(SourceErrorCode.AUTH_REQUIRED)
             if (response.code != 200) {
-                throw IOException("Song URL API returned code ${response.code} for $mediaId")
+                throw SourceException(SourceErrorCode.NETWORK, "Song URL request failed")
             }
-            val source = response.data.firstOrNull { it.id.toString() == mediaId }
-            val fullSource = response.fullSourceFor(mediaId)
+            val source = response.data.firstOrNull { it.id.toString() == neteaseId }
+            val fullSource = response.fullSourceFor(neteaseId)
             logSourceAttempt(
                 mediaId = mediaId,
                 requestedQuality = requestedQuality,
@@ -198,24 +297,24 @@ class MediaUriProvider @Inject constructor(
 
             if (fullSource != null) {
                 val cacheEntry = fullSource.toCachedUrl(mediaId, attemptedQuality, now) ?: continue
-                if (sourceIsRejected(mediaId, cacheEntry.sourceIdentity)) continue
+                if (!forDownload && cacheEntry.isRejectedNativeSource(mediaId)) continue
                 // Cache the requested, attempted, and effective levels while retaining the
                 // effective level so disk bytes are never mislabeled as a higher quality.
                 return synchronized(qualityStateLock) {
-                    ensureCurrentState(stateVersion)
-                    if (sourceIsRejected(mediaId, cacheEntry.sourceIdentity)) {
+                    ensureCurrentState(stateVersion, forDownload)
+                    if (!forDownload && cacheEntry.isRejectedNativeSource(mediaId)) {
                         throw IOException("Playback source was rejected while resolving $mediaId")
                     }
                     urlCache["$mediaId:$requestedQuality"] = cacheEntry
                     urlCache[cacheKey] = cacheEntry
                     cacheEffectiveSource(mediaId, cacheEntry)
-                    rememberResolvedSource(mediaId, cacheEntry.toResolvedSource())
+                    cacheEntry.toResolvedSource()
                 }
             }
         }
 
         val message = "No playable full source for $mediaId at quality $requestedQuality"
-        throw SourceNotFoundException(message)
+        throw SourceException(SourceErrorCode.UNAVAILABLE, message)
     }
 
     /** Verifies catalog hints against full URLs for this account and device. */
@@ -233,6 +332,12 @@ class MediaUriProvider @Inject constructor(
     ): List<MusicQuality> {
         val stateVersion = synchronized(qualityStateLock) { availabilityStateVersion(forDownload) }
         if (!canResolveOnline(mediaId)) return emptyList()
+        val ref = trackRef(mediaId) ?: return emptyList()
+        if (ref.providerId != ProviderIds.NETEASE) {
+            return router.availableQualities(ref).mapNotNull { value -> MusicQuality.entries.firstOrNull { it.text == value } }
+                .filter { supportDolby || it != MusicQuality.DOLBY }
+        }
+        val neteaseId = ref.trackId
         val availabilityKey = if (forDownload) "download:$mediaId" else "$mediaId:$supportDolby"
         val now = System.currentTimeMillis()
         availableQualityCache[availabilityKey]?.let { cached ->
@@ -243,13 +348,14 @@ class MediaUriProvider @Inject constructor(
         }
 
         val knownSource = resolvedMediaSource(mediaId).takeUnless { forDownload }
+            ?.takeIf { it.resolution?.actualAudioProviderId?.let { provider -> provider == ProviderIds.NETEASE } != false }
             ?.takeIf { it.sourceIdentity != null && !sourceIsRejected(mediaId, it.sourceIdentity) }
         val knownQuality = MusicQuality.entries.firstOrNull { it.text == knownSource?.actualQuality }
             ?.takeIf { supportDolby || it != MusicQuality.DOLBY }
         val candidates = try {
-            val detail = apiService.getSongDetail(GetSongDetails(mediaId))
-            val track = detail.songs.firstOrNull { it.id.toString() == mediaId }
-            val privilege = detail.privileges.firstOrNull { it.id.toString() == mediaId }
+            val detail = transport.getSongDetail(GetSongDetails(neteaseId))
+            val track = detail.songs.firstOrNull { it.id.toString() == neteaseId }
+            val privilege = detail.privileges.firstOrNull { it.id.toString() == neteaseId }
             if (detail.code == 200) track?.availableMusicQualities(privilege).orEmpty() else emptyList()
         } catch (e: CancellationException) {
             throw e
@@ -283,6 +389,8 @@ class MediaUriProvider @Inject constructor(
         val identity = source.sourceIdentity ?: source.cacheKey?.substringAfterLast(':') ?: return false
         val rejected = rejectedSources.computeIfAbsent(mediaId) { ConcurrentHashMap.newKeySet() }
         if (!rejected.add(identity)) return false
+        source.resolution?.takeIf { it.actualAudioProviderId == ProviderIds.NETEASE }
+            ?.resource?.contentId?.let(rejected::add)
         qualityStateVersion.incrementAndGet()
         invalidate(mediaId)
         invalidateAvailableQualities(mediaId)
@@ -308,10 +416,12 @@ class MediaUriProvider @Inject constructor(
         rejectedSources.clear()
         resolvedSources.clear()
         onlineSourceOverrides.clear()
+        playbackResolver.invalidate()
     }
 
     /** Forces the next request for this song to obtain a fresh signed URL and source identity. */
     fun invalidate(mediaId: String) {
+        playbackResolver.invalidate()
         val prefix = "${mediaId.trim()}:"
         urlCache.keys
             .filter { it.startsWith(prefix) }
@@ -329,21 +439,22 @@ class MediaUriProvider @Inject constructor(
         if (cached != null && cached.expiresAtMs > now &&
             cached.hasSupportedQuality(mediaId) &&
             cached.actualQuality == quality.text &&
-            (forDownload || !sourceIsRejected(mediaId, cached.sourceIdentity))
+            (forDownload || !cached.isRejectedNativeSource(mediaId))
         ) {
             return quality
         }
         return try {
-            val response = apiService.getSongUrlV1(GetSongUrlV1(ids = "[$mediaId]", level = quality.text))
+            val neteaseId = trackRef(mediaId)?.trackId ?: return null
+            val response = transport.getSongUrlV1(GetSongUrlV1(ids = "[$neteaseId]", level = quality.text))
             if (availabilityStateVersion(forDownload) != stateVersion) return null
-            val source = response.fullSourceFor(mediaId) ?: return null
+            val source = response.fullSourceFor(neteaseId) ?: return null
             if (source.level.isNullOrBlank()) return null
             // A downgrade proves the returned level is available, rather than the requested
             // level. Only cache its actual level so probes cannot poison higher-quality aliases.
             val cacheEntry = source.toCachedUrl(mediaId, quality.text, now) ?: return null
             synchronized(qualityStateLock) {
                 if (availabilityStateVersion(forDownload) != stateVersion ||
-                    (!forDownload && sourceIsRejected(mediaId, cacheEntry.sourceIdentity))
+                    (!forDownload && cacheEntry.isRejectedNativeSource(mediaId))
                 ) return@synchronized null
                 cacheEffectiveSource(mediaId, cacheEntry)
                 MusicQuality.entries.firstOrNull { it.text == cacheEntry.actualQuality }
@@ -357,8 +468,12 @@ class MediaUriProvider @Inject constructor(
     }
 
     private suspend fun localSong(mediaId: String): Song? {
-        val exact = songRepository.getSong(mediaId).firstOrNull()
+        val ref = trackRef(mediaId)
+        val storageId = ref?.let(TrackRefCodec::storageKey) ?: mediaId
+        val exact = songRepository.getSong(storageId).firstOrNull()
+            ?.takeUnless { ref?.providerId != ProviderIds.LOCAL && it.sourceType == SourceType.LOCAL }
         if (!exact?.path.isNullOrBlank()) return exact
+        if (ref?.providerId != ProviderIds.LOCAL) return exact
         val localId = mediaId.toLongOrNull()?.takeIf { it < 0 && it != Long.MIN_VALUE }?.let { -it }
             ?: return exact
         val prefixed = songRepository.getSong("local_$localId").firstOrNull()
@@ -366,7 +481,7 @@ class MediaUriProvider @Inject constructor(
     }
 
     private suspend fun canResolveOnline(mediaId: String): Boolean =
-        !mediaId.startsWith("local_") && mediaId.toLongOrNull()?.let { it > 0L } == true &&
+        trackRef(mediaId)?.let { it.providerId != ProviderIds.LOCAL } == true &&
             localSong(mediaId)?.sourceType != SourceType.LOCAL
 
     private fun localUri(song: Song): Uri? {
@@ -424,14 +539,28 @@ class MediaUriProvider @Inject constructor(
         LocalPlaybackInfo(mimeType, bitrate, sampleRate)
     }
 
+    /** A disk hit retains a canonical digest; recover native byte aliases before lowering quality. */
+    private fun CachedUrl.isRejectedNativeSource(mediaId: String): Boolean {
+        val rejected = rejectedSources[mediaId] ?: return false
+        if (sourceIdentity in rejected) return true
+        val ref = trackRef(mediaId)?.takeIf { it.providerId == ProviderIds.NETEASE } ?: return false
+        val resource = AudioResource(url, actualQuality, contentLength = contentLength, contentId = sourceIdentity)
+        val digest = audioResourceIdentity(ProviderInstanceId(ProviderIds.NETEASE), ref, resource)
+        val encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(digest.toByteArray(Charsets.UTF_8))
+        if (encoded !in rejected) return false
+        // Other requested levels can alias these same bytes even when their quality differs.
+        rejected.add(sourceIdentity)
+        return true
+    }
+
     private fun sourceIsRejected(mediaId: String, identity: String): Boolean =
         rejectedSources[mediaId]?.contains(identity) == true
 
     private fun availabilityStateVersion(forDownload: Boolean): Long =
         if (forDownload) accountStateVersion.get() else qualityStateVersion.get()
 
-    private fun ensureCurrentState(stateVersion: Long) {
-        if (qualityStateVersion.get() != stateVersion) {
+    private fun ensureCurrentState(stateVersion: Long, forDownload: Boolean = false) {
+        if (availabilityStateVersion(forDownload) != stateVersion) {
             throw IOException("Playback quality state changed while resolving a source")
         }
     }
@@ -458,6 +587,7 @@ class MediaUriProvider @Inject constructor(
         cacheKey = cacheKey,
         sourceIdentity = sourceIdentity,
         contentLength = contentLength,
+        expiresAtMs = expiresAtMs,
     )
 
     private fun CachedUrl.hasSupportedQuality(mediaId: String): Boolean =

@@ -90,7 +90,7 @@ object TrackRefCodec {
 
     /** Preserve old numeric Media3 IDs where their meaning is already unambiguous. */
     fun mediaId(ref: TrackRef): String = when {
-        ref.providerId == ProviderIds.NETEASE && legacyNumber.matches(ref.trackId) && ref.trackId.toLongOrNull() != null -> ref.trackId
+        ref.providerId == ProviderIds.NETEASE && legacyNumber.matches(ref.trackId) && ref.trackId.toLongOrNull()?.let { it >= 0L } == true -> ref.trackId
         ref.providerId == ProviderIds.LOCAL -> ref.trackId.removePrefix("local_")
             .takeIf { ref.trackId.startsWith("local_") && it.matches(Regex("[1-9][0-9]*")) }
             ?.toLongOrNull()?.let { (-it).toString() } ?: encode(ref)

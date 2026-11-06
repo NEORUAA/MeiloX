@@ -56,7 +56,7 @@ internal fun lyricVariantOf(data: LyricData): LyricVariant? = when (data.source)
     LyricSource.AM -> LyricVariant.AppleMusic
     LyricSource.NetEaseCloudMusic -> if (data.isVerbatim) LyricVariant.NeteaseYrc else LyricVariant.NeteaseLrc
     LyricSource.QQMusic -> if (data.isVerbatim) LyricVariant.QqQrc else LyricVariant.QqLrc
-    LyricSource.Empty, LyricSource.Loading -> null
+    LyricSource.Empty, LyricSource.Loading, LyricSource.Provider -> null
 }
 
 internal fun lyricVariantPreference(source: LyricSource?, stored: String?): LyricVariant? =

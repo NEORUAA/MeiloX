@@ -39,6 +39,8 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
+import com.ljyh.mei.data.model.mediaId
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import com.ljyh.mei.data.model.MediaMetadata
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
@@ -95,7 +97,7 @@ fun PlaylistTrackList(
             if (pagingItems != null) {
                 items(
                     count = pagingItems.itemCount,
-                    key = pagingItems.itemKey { it.id },
+                    key = pagingItems.itemKey { it.mediaId },
                     contentType = pagingItems.itemContentType { "Track" }
                 ) { index ->
                     val track = pagingItems[index]
@@ -173,7 +175,7 @@ fun PlaylistTrackList(
                         )
                     }
                 }
-                itemsIndexed(staticTracks, key = { _, item -> item.id }) { index, track ->
+                itemsIndexed(staticTracks, key = { _, item -> item.mediaId }) { index, track ->
                     if (flatDetailStyle) DetailTrackRow(
                         track = track,
                         trackNumber = index + 1,
@@ -243,7 +245,7 @@ fun LazyListScope.playlistTrackItems(
     if (pagingItems != null) {
         items(
             count = pagingItems.itemCount,
-            key = pagingItems.itemKey { it.id },
+            key = pagingItems.itemKey { it.mediaId },
             contentType = pagingItems.itemContentType { "Track" },
         ) { index ->
             val track = pagingItems[index]
@@ -259,13 +261,13 @@ fun LazyListScope.playlistTrackItems(
                             trackNumber = trackNumbers[track.id] ?: index + 1,
                             showArtwork = showArtwork,
                             showDuration = showDuration,
-                            isCurrentTrack = track.id.toString() == currentTrackId,
+                            isCurrentTrack = track.mediaId == currentTrackId,
                             isPlaying = isPlaying,
-                            isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&
+                            isFavorite = track.supportsNeteaseSongActions &&
                                 track.id.toString() in favoriteTrackIds,
                             onClick = { onTrackClick(track, index) },
                             onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
-                            selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                            selected = if (selectionMode) track.mediaId in selectedTrackIds else null,
                         )
                     } else {
                         Track(
@@ -274,7 +276,7 @@ fun LazyListScope.playlistTrackItems(
                             isTablet = isTablet,
                             onClick = { onTrackClick(track, index) },
                             onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
-                            selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                            selected = if (selectionMode) track.mediaId in selectedTrackIds else null,
                         )
                     }
                     if (index < itemCount - 1 || hasAppendFooter) {
@@ -317,7 +319,7 @@ fun LazyListScope.playlistTrackItems(
             else -> Unit
         }
     } else {
-        itemsIndexed(staticTracks, key = { _, item -> item.id }) { index, track ->
+        itemsIndexed(staticTracks, key = { _, item -> item.mediaId }) { index, track ->
             PlaylistSurface(
                 isFirst = index == 0 && (!flatDetailStyle || showLeadingDivider),
                 isLast = index == staticTracks.lastIndex,
@@ -329,13 +331,13 @@ fun LazyListScope.playlistTrackItems(
                         trackNumber = trackNumbers[track.id] ?: index + 1,
                         showArtwork = showArtwork,
                         showDuration = showDuration,
-                        isCurrentTrack = track.id.toString() == currentTrackId,
+                        isCurrentTrack = track.mediaId == currentTrackId,
                         isPlaying = isPlaying,
-                        isFavorite = !track.isLocal && !track.isPodcast && track.id > 0 &&
+                        isFavorite = track.supportsNeteaseSongActions &&
                             track.id.toString() in favoriteTrackIds,
                         onClick = { onTrackClick(track, index) },
                         onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
-                        selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                        selected = if (selectionMode) track.mediaId in selectedTrackIds else null,
                     )
                 } else {
                     Track(
@@ -344,7 +346,7 @@ fun LazyListScope.playlistTrackItems(
                         isTablet = isTablet,
                         onClick = { onTrackClick(track, index) },
                         onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
-                        selected = if (selectionMode) track.id.toString() in selectedTrackIds else null,
+                        selected = if (selectionMode) track.mediaId in selectedTrackIds else null,
                     )
                 }
                 if (index < staticTracks.lastIndex) {

@@ -322,7 +322,7 @@ private fun LyricCandidateItem(
         LyricSource.NetEaseCloudMusic -> R.drawable.netease to R.string.lyric_selection_source_netease
         LyricSource.QQMusic -> R.drawable.qq to R.string.lyric_selection_source_qq
         LyricSource.AM -> R.drawable.am to R.string.lyric_selection_source_am
-        LyricSource.Empty, LyricSource.Loading -> R.drawable.empty to R.string.lyric_selection_source_other
+        LyricSource.Empty, LyricSource.Loading, LyricSource.Provider -> R.drawable.empty to R.string.lyric_selection_source_other
     }
     val versionName = candidate.variant?.let { variant ->
         stringResource(when (variant) {

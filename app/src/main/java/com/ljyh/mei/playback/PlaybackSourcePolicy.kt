@@ -5,6 +5,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.StuckPlayerException
 import com.ljyh.mei.constants.MusicQuality
 import java.util.Locale
+import java.util.Base64
+import com.ljyh.mei.source.api.PlaybackResolution
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.TrackRef
+import com.ljyh.mei.source.api.ProviderInstanceId
+import com.ljyh.mei.source.api.AudioResource
+import com.ljyh.mei.source.core.audioResourceIdentity
 
 private const val PLAYBACK_CACHE_KEY_VERSION = "meilox-media-v3"
 
@@ -122,9 +129,68 @@ internal fun playbackCacheKey(
 ): String = playbackCacheKeyPrefix(mediaId, quality) +
     playbackSourceIdentity(sourceMd5, sourceSize)
 
+/** Exact resolved bytes use their own platform and instance, independently of origin metadata. */
+internal fun resolvedPlaybackCacheKey(resolution: PlaybackResolution): String {
+    val resource = resolution.resource
+    fun component(value: String) = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(value.toByteArray(Charsets.UTF_8))
+    return "meilox-media-v4:" + listOf(
+        TrackRefCodec.encode(resolution.originTrackRef),
+        resource.quality,
+        resolution.instanceId.value,
+        TrackRefCodec.encode(resolution.resolvedTrackRef),
+        audioResourceIdentity(resolution),
+    ).joinToString(":", transform = ::component)
+}
+
+internal fun resolvedPlaybackCacheKeyPrefix(mediaId: String, quality: String? = null): String? {
+    val origin = TrackRefCodec.decode(mediaId) ?: return null
+    fun component(value: String) = Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(value.toByteArray(Charsets.UTF_8))
+    return "meilox-media-v4:${component(TrackRefCodec.encode(origin))}:" +
+        (quality?.let { "${component(normalizePlaybackQuality(it))}:" } ?: "")
+}
+
+/** Only called for a complete disk cache hit, which needs no expired remote credentials. */
+internal fun cachedPlaybackResolution(mediaId: String, cacheKey: String, uri: String): PlaybackResolution? {
+    if (!cacheKey.startsWith("meilox-media-v4:")) return null
+    val fields = cacheKey.removePrefix("meilox-media-v4:").split(':')
+    if (fields.size != 5) return null
+    return runCatching {
+        fun decode(value: String) = String(Base64.getUrlDecoder().decode(value), Charsets.UTF_8)
+        val origin = TrackRefCodec.decode(decode(fields[0])) ?: return null
+        if (origin != TrackRefCodec.decode(mediaId)) return null
+        val resolved = TrackRefCodec.decode(decode(fields[3])) ?: return null
+        PlaybackResolution(origin, resolved, resolved.providerId, ProviderInstanceId(decode(fields[2])),
+            AudioResource(uri, decode(fields[1])), emptyList())
+    }.getOrNull()
+}
+
+internal fun resolvedCacheQuality(mediaId: String, cacheKey: String): String? {
+    if (!cacheKey.startsWith("meilox-media-v4:")) return cachedPlaybackQuality(mediaId, cacheKey)
+    val fields = cacheKey.removePrefix("meilox-media-v4:").split(':')
+    if (fields.size != 5) return null
+    return runCatching {
+        fun decode(value: String) = String(Base64.getUrlDecoder().decode(value), Charsets.UTF_8)
+        val origin = TrackRefCodec.decode(decode(fields[0])) ?: return null
+        if (origin != TrackRefCodec.decode(mediaId)) return null
+        decode(fields[1]).takeIf(String::isNotBlank)
+    }.getOrNull()
+}
+
 /** Returns whether the current source should be invalidated and retried in place. */
 internal fun shouldRefreshPlaybackSource(errorCode: Int): Boolean =
     errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+
+/** Resource transport failures get bounded refresh and source fallback before queue skipping. */
+internal fun shouldRetryOnlinePlaybackSource(errorCode: Int): Boolean = when (errorCode) {
+    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+    PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> true
+    else -> false
+}
 
 /** Recovers only Media3's confirmed loading or playback stalls, not generic runtime failures. */
 internal fun shouldRecoverStalledPlayback(errorCode: Int, cause: Throwable?): Boolean {

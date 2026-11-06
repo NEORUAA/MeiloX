@@ -3,6 +3,7 @@ package com.ljyh.mei.playback
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import com.ljyh.mei.constants.MusicQuality
+import com.ljyh.mei.source.api.*
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.isFullSourceFor
 import org.junit.Assert.assertEquals
@@ -13,6 +14,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackSourcePolicyTest {
+    @Test
+    fun resolvedCacheSeparatesActualProviderInstanceRecordingQualityAndContentRevision() {
+        val origin = TrackRef("netease", "123")
+        val target = TrackRef("fixture", "123/: 雪")
+        val resolution = PlaybackResolution(origin, target, target.providerId, ProviderInstanceId("fixture:account-a"),
+            AudioResource("https://audio.example/track", "lossless", contentId = "revision-a", contentLength = 120), emptyList())
+        val key = resolvedPlaybackCacheKey(resolution)
+        assertEquals("lossless", resolvedCacheQuality("123", key))
+        assertNull(resolvedCacheQuality("124", key))
+        assertTrue(key.startsWith(resolvedPlaybackCacheKeyPrefix("123", "lossless")!!))
+        assertEquals(target, cachedPlaybackResolution("123", key, "opaque:cached")?.resolvedTrackRef)
+        assertEquals(resolution.instanceId, cachedPlaybackResolution("123", key, "opaque:cached")?.instanceId)
+        for (changed in listOf(
+            resolution.copy(instanceId = ProviderInstanceId("fixture:account-b")),
+            resolution.copy(resolvedTrackRef = TrackRef("other", target.trackId), actualAudioProviderId = "other"),
+            resolution.copy(resolvedTrackRef = target.copy(trackId = "different")),
+            resolution.copy(resource = resolution.resource.copy(quality = "standard")),
+            resolution.copy(resource = resolution.resource.copy(contentId = "revision-b")),
+        )) assertFalse(key == resolvedPlaybackCacheKey(changed))
+        assertEquals("lossless", resolvedCacheQuality("123", playbackCacheKey("123", "lossless", "legacy", 120)))
+        assertNull(cachedPlaybackResolution("123", key + ":invalid", "opaque:cached"))
+    }
+
     @Test
     fun consecutiveFailuresRemainBoundedAcrossUnsuccessfulTracks() {
         val failures = PlaybackFailureTracker()
@@ -161,6 +185,16 @@ class PlaybackSourcePolicyTest {
         assertNull(cachedPlaybackQuality("123", "meilox-media-v2:123:dolby:source"))
         assertNull(cachedPlaybackQuality("123", "meilox-media-v3:123:dolby:"))
         assertNull(cachedPlaybackQuality("123", "123"))
+    }
+
+    @Test
+    fun networkAndExpiredHttpResourcesEnterBoundedRecoveryBeforeFinalSkip() {
+        assertTrue(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+        assertTrue(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))
+        assertTrue(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT))
+        assertTrue(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE))
+        assertFalse(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_DECODING_FAILED))
+        assertFalse(shouldRetryOnlinePlaybackSource(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE))
     }
 
     @Test

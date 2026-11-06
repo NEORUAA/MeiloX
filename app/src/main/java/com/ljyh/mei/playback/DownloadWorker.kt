@@ -18,6 +18,14 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.script.ScriptAudioDataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.common.C
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
@@ -53,6 +61,13 @@ import org.jaudiotagger.audio.AudioFileIO
 import timber.log.Timber
 import java.io.File
 import java.util.concurrent.TimeUnit
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+internal interface DownloadSourceEntryPoint {
+    fun mediaUriProvider(): MediaUriProvider
+    fun sourceRouter(): com.ljyh.mei.source.core.SourceRouter
+}
 
 class DownloadWorker(
     context: Context,
@@ -180,9 +195,9 @@ class DownloadWorker(
     ) = coroutineScope {
         val dao = db.downloadDao()
         dao.claimLegacyRequest(songId, id.toString())
-        val task = dao.getBySongId(songId) ?: return@coroutineScope
+        var task = dao.getBySongId(songId) ?: return@coroutineScope
         if (task.requestId != id.toString() || task.status !in activeDownloadStates) return@coroutineScope
-        if (task.url.isBlank()) {
+        if (task.url.isBlank() && task.originTrackRef == null) {
             updateTask(db, songId, DownloadStatus.FAILED, 0)
             failedCount.incrementAndGet()
             return@coroutineScope
@@ -200,7 +215,7 @@ class DownloadWorker(
                     val tags = SongMate.checkTags(existingPath)
                     if (tags != null && (!tags.isBasicComplete || !tags.hasLyric)) {
                         try {
-                            val lyric = if (!tags.hasLyric) LyricFetcher.fetchBestLyric(songId) else null
+                            val lyric = if (!tags.hasLyric) downloadLyric(task, songId) else null
                             currentCoroutineContext().ensureActive()
                             SongMate.writeTags(task.songTitle, task.songArtist, task.songAlbum,
                                 task.songCover, existingPath, lyric)
@@ -213,6 +228,40 @@ class DownloadWorker(
                 return@coroutineScope
             }
         }
+        val resolution = task.originTrackRef?.let { encoded ->
+            try {
+                val ref = TrackRefCodec.decode(encoded) ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+                val resolver = EntryPointAccessors.fromApplication(applicationContext, DownloadSourceEntryPoint::class.java)
+                    .mediaUriProvider()
+                resolver.resolveDownloadSource(Track(ref, task.songTitle,
+                    task.songArtist.split('/').filter(String::isNotBlank).map { SourceArtist(it) },
+                    SourceAlbum(task.songAlbum), durationMs = existingSong?.duration ?: 0, artworkUrl = task.songCover), task.quality.ifBlank { "exhigh" })
+                    .also { check(it.resource.cachePolicy != CachePolicy.NO_STORE) { "This source does not allow downloads" } }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                Timber.w("Download source unavailable (%s)", error.javaClass.simpleName)
+                updateTask(db, songId, DownloadStatus.FAILED, 0)
+                failedCount.incrementAndGet()
+                return@coroutineScope
+            }
+        }
+        if (resolution != null) {
+            db.withTransaction {
+                val owned = dao.getBySongId(songId)
+                if (owned?.requestId != id.toString() || owned.status !in activeDownloadStates) {
+                    throw CancellationException("Download task was retired")
+                }
+                task = owned.copy(
+                    resolvedTrackRef = TrackRefCodec.encode(resolution.resolvedTrackRef),
+                    actualAudioProviderId = resolution.actualAudioProviderId,
+                    actualProviderInstanceId = resolution.instanceId.value,
+                    actualQuality = resolution.resource.quality,
+                )
+                dao.insert(task)
+            }
+        }
+        val audioUrl = resolution?.resource?.uri ?: task.url
+        val audioHeaders = resolution?.resource?.headers.orEmpty()
         updateTask(db, songId, DownloadStatus.DOWNLOADING, 0)
         val tempFile = try {
             createDownloadTempFile(tempDir, id.toString(), "download")
@@ -224,15 +273,18 @@ class DownloadWorker(
             return@coroutineScope
         }
         try {
-            downloadAudioFile(okHttpClient, task.url, tempFile) { progress ->
+            val onProgress: (Int) -> Unit = { progress ->
                 launch { updateTask(db, songId, DownloadStatus.DOWNLOADING, progress) }
             }
+            if (ScriptAudioDataSource.accepts(audioUrl.toUri())) {
+                downloadScriptAudio(applicationContext, audioUrl, tempFile, onProgress)
+            } else downloadAudioFile(okHttpClient, audioUrl, tempFile, audioHeaders, onProgress)
             currentCoroutineContext().ensureActive()
             val format = checkNotNull(detectAudioFileFormat(tempFile)) {
                 "Unsupported or malformed downloaded audio"
             }
             val fileName = "${DownloadFileNames.songBaseName(task.songTitle, task.songArtist)}.${format.extension}"
-            val lyric = async { LyricFetcher.fetchBestLyric(songId) }
+            val lyric = async { downloadLyric(task, songId) }
             val cover = async { if (task.songCover.isNotBlank()) ImageUtils.downloadImageBytes(task.songCover) else null }
             try {
                 SongMate.writeTagsWithCoverBytes(task.songTitle, task.songArtist, task.songAlbum,
@@ -277,6 +329,16 @@ class DownloadWorker(
         }
     }
 
+    private suspend fun downloadLyric(task: com.ljyh.mei.data.model.room.DownloadTask, songId: String): String? {
+        val ref = task.originTrackRef?.let(TrackRefCodec::decode) ?: TrackRefCodec.decode(songId)
+        if (ref == null || ref.providerId == ProviderIds.NETEASE) return LyricFetcher.fetchBestLyric(ref?.trackId ?: songId)
+        return try {
+            EntryPointAccessors.fromApplication(applicationContext, DownloadSourceEntryPoint::class.java)
+                .sourceRouter().lyrics(ref)?.text
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { null }
+    }
+
     private suspend fun saveDownloadedSong(
         db: AppDatabase,
         songId: String,
@@ -309,6 +371,8 @@ class DownloadWorker(
             fileSize = fileSize,
             folderPath = relativePath,
             addedAt = existing?.addedAt ?: System.currentTimeMillis(),
+            providerId = task.originTrackRef?.let(TrackRefCodec::decode)?.providerId ?: existing?.providerId ?: ProviderIds.NETEASE,
+            providerTrackId = task.originTrackRef?.let(TrackRefCodec::decode)?.trackId ?: existing?.providerTrackId ?: songId,
         )
         if (existing == null) db.songDao().insertSong(downloaded)
         else db.songDao().updateSong(downloaded)
@@ -434,11 +498,14 @@ internal suspend fun downloadAudioFile(
     client: OkHttpClient,
     url: String,
     file: File,
+    headers: Map<String, String> = emptyMap(),
     onProgress: (Int) -> Unit,
 ) = withContext(Dispatchers.IO) {
     val owner = currentCoroutineContext()
     try {
-        readDownloadResponse(client, Request.Builder().url(url).build()) { response ->
+        readDownloadResponse(client, Request.Builder().url(url).apply {
+            headers.forEach { (name, value) -> header(name, value) }
+        }.build()) { response ->
             check(response.isSuccessful) { "Audio download failed (${response.code})" }
             val body = response.body
             val total = body.contentLength()
@@ -465,6 +532,34 @@ internal suspend fun downloadAudioFile(
     } catch (error: Throwable) { file.delete(); throw error }
 }
 
+/** Reads through the same permission-enforcing transport used by Media3. */
+internal suspend fun downloadScriptAudio(
+    context: Context,
+    resource: String,
+    file: File,
+    onProgress: (Int) -> Unit,
+) = withContext(Dispatchers.IO) {
+    val source = ScriptAudioDataSource.Factory(context).createDataSource()
+    try {
+        val total = source.open(DataSpec.Builder().setUri(resource).build())
+        var received = 0L
+        file.outputStream().use { output ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val count = source.read(buffer, 0, buffer.size)
+                if (count == C.RESULT_END_OF_INPUT) break
+                if (count == 0) continue
+                output.write(buffer, 0, count)
+                received += count
+                if (total > 0) onProgress((received * 100 / total).coerceAtMost(99).toInt())
+            }
+        }
+        check(received > 0 && (total < 0 || received == total)) { "Incomplete audio download" }
+    } catch (error: Throwable) { file.delete(); throw error
+    } finally { source.close() }
+}
+
 data class SongDownloadInfo(
     val songId: String,
     val url: String?,
@@ -475,5 +570,7 @@ data class SongDownloadInfo(
     val duration: Long,
     val fileType: String = "",
     val quality: String = "",
-    val lyric: String = ""
+    val lyric: String = "",
+    val originTrackRef: TrackRef? = null,
+    val resolution: PlaybackResolution? = null,
 )

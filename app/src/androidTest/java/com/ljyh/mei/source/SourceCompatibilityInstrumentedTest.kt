@@ -12,6 +12,18 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.constants.CookieKey
+import com.ljyh.mei.constants.UserIdKey
+import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.source.api.AudioResource
+import com.ljyh.mei.source.api.PageRequest
+import com.ljyh.mei.source.api.PlaybackCapability
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.SourceErrorCode
+import com.ljyh.mei.source.api.SourceException
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.withTimeout
+import com.ljyh.mei.playback.DownloadSourceEntryPoint
 import com.ljyh.mei.playback.PlaybackArtistSnapshot
 import com.ljyh.mei.playback.PlaybackItemSnapshot
 import com.ljyh.mei.playback.PlaybackPersistence
@@ -28,12 +40,48 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Isolated on-device fixtures never open the user's database or alter its queue. */
+/** Compatibility fixtures use isolated data; the native smoke performs read-only online requests. */
 @androidx.annotation.OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class SourceCompatibilityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    @Test fun installedNativeProviderCanSearchReadAndResolveWithoutChangingAccount(): Unit = runBlocking {
+        val entryPoint = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java)
+        val router = entryPoint.sourceRouter()
+        val provider = router.registry.requireProvider(ProviderIds.NETEASE)
+        assertTrue(provider.isBuiltIn)
+        val accountBefore = context.dataStore.data.first().let { it[CookieKey] to it[UserIdKey] }
+        try {
+            withTimeout(45_000) {
+                val results = router.search(ProviderIds.NETEASE, "晴天", PageRequest(limit = 10)).items
+                assertTrue("Native search must return real catalog results", results.isNotEmpty())
+                var audio: AudioResource? = null
+                for (result in results) {
+                    assertEquals(ProviderIds.NETEASE, result.ref.providerId)
+                    val track = router.getTrack(result.ref) ?: continue
+                    assertEquals(result.ref, track.ref)
+                    assertTrue(track.title.isNotBlank())
+                    try {
+                        audio = (provider as PlaybackCapability).resolve(track.ref, "standard")
+                        break
+                    } catch (error: SourceException) {
+                        // Copyright restrictions on one result do not turn into a fake successful source.
+                        if (error.code !in setOf(SourceErrorCode.UNAVAILABLE, SourceErrorCode.NOT_FOUND)) throw error
+                    }
+                }
+                assertTrue("Native catalog results must contain at least one full playable source", audio != null)
+                val resource = checkNotNull(audio)
+                assertTrue(resource.uri.startsWith("https://") || resource.uri.startsWith("http://"))
+                assertTrue(resource.quality.isNotBlank())
+                assertTrue(resource.expiresAtMs?.let { it > System.currentTimeMillis() } != false)
+            }
+        } finally {
+            val accountAfter = context.dataStore.data.first().let { it[CookieKey] to it[UserIdKey] }
+            assertTrue("Read-only native requests must retain the current account", accountBefore == accountAfter)
+        }
+    }
 
     @Test fun v18MigrationKeepsRelationshipsFilesAndLegacyIdentities(): Unit = runBlocking {
         val name = "source-migration-${UUID.randomUUID()}"
@@ -121,16 +169,19 @@ class SourceCompatibilityInstrumentedTest {
         val oldItems = persistence.restoreItems(legacy)
         assertEquals(listOf(TrackRef("netease", "42"), TrackRef("local", "local_42"), TrackRef("netease", "-99")),
             oldItems.map { it.metadata!!.trackRef })
-        assertEquals(listOf("42", "local_42", "-99"), oldItems.map { it.mediaId })
+        assertEquals(listOf("42", "local_42", TrackRefCodec.mediaId(TrackRef("netease", "-99"))), oldItems.map { it.mediaId })
 
         val ref = TrackRef("demo", "42:歌曲/音轨")
         val snapshot = PlaybackSnapshot(items = listOf(PlaybackItemSnapshot(
             mediaId = TrackRefCodec.mediaId(ref), title = "External", trackRef = TrackRefCodec.encode(ref),
             artists = listOf(PlaybackArtistSnapshot(name = "Artist", ref = ArtistRef("demo", "artist:string"))),
             albumTitle = "Album", albumRef = AlbumRef("demo", "album/string"),
+            isrc = "TEST00000001", recordingVersion = "Live",
         )))
         val restored = persistence.restoreItems(gson.fromJson(gson.toJson(snapshot), PlaybackSnapshot::class.java)).single()
         assertEquals(ref, restored.metadata!!.trackRef)
+        assertEquals("TEST00000001", restored.metadata!!.isrc)
+        assertEquals("Live", restored.metadata!!.recordingVersion)
         assertEquals(0L, restored.metadata!!.id)
         assertEquals(0L, restored.metadata!!.artists.single().id)
         assertEquals(snapshot.items.single().albumRef, restored.metadata!!.album.ref)
@@ -145,6 +196,8 @@ class SourceCompatibilityInstrumentedTest {
             } finally { player.release() }
         }
         assertEquals(TrackRefCodec.encode(ref), captured!!.items.single().trackRef)
+        assertEquals("TEST00000001", captured!!.items.single().isrc)
+        assertEquals("Live", captured!!.items.single().recordingVersion)
         assertEquals(snapshot.items.single().albumRef, captured!!.items.single().albumRef)
         assertEquals(snapshot.items.single().artists.single().ref, captured!!.items.single().artists.single().ref)
     }

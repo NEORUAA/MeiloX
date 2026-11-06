@@ -23,6 +23,10 @@ import com.ljyh.mei.ui.model.LyricSourceData
 import com.ljyh.mei.ui.model.LyricVariant
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.encrypt.QRCUtils
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.SourceLyrics
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.core.SourceRouter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -56,7 +60,8 @@ class LyricManager @Inject constructor(
     private val cachedLyricRepository: CachedLyricRepository,
     private val duetDetector: DuetDetector,
     private val preloader: LyricPreloader,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val sourceRouter: SourceRouter,
 ) {
 
     private val TAG = "LyricManager"
@@ -164,7 +169,7 @@ class LyricManager @Inject constructor(
      * @param forceReload 是否强制重新拉取，true 时跳过缓存和 currentSongId 拦截
      */
     fun loadLyrics(metadata: MediaMetadata, forceReload: Boolean = false) {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         if (!forceReload && currentSongId == songId) return
 
         currentSongId = songId
@@ -235,10 +240,19 @@ class LyricManager @Inject constructor(
                 }
             }
 
+            if (metadata.trackRef.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) {
+                loadProviderLyrics(metadata, songId, generation)
+                return@launch
+            }
             delay(100)
             if (!isCurrentLoad(songId, generation)) return@launch
-            launch { fetchNetEaseLyric(songId, generation) }
-            launch { fetchAMLLyric(songId, generation) }
+            if (metadata.trackRef.providerId == ProviderIds.NETEASE && metadata.trackRef.trackId.toLongOrNull()?.let { it > 0 } == true) {
+                launch { fetchNetEaseLyric(metadata.trackRef.trackId, generation) }
+                launch { fetchAMLLyric(metadata.trackRef.trackId, generation) }
+            } else {
+                netLyricResult.value = Resource.Error("No native lyric identity")
+                amLyricResult.value = Resource.Error("No native lyric identity")
+            }
 
             val selectionGeneration = sourceSelectionGeneration
             val localSong = qqSongRepository.getQQSong(songId).firstOrNull()
@@ -274,6 +288,33 @@ class LyricManager @Inject constructor(
     private fun isCurrentLoad(songId: String, generation: Long): Boolean =
         currentSongId == songId && loadGeneration == generation
 
+    private suspend fun loadProviderLyrics(metadata: MediaMetadata, songId: String, generation: Long) {
+        try {
+            val lyrics = sourceRouter.lyrics(metadata.trackRef)
+            currentCoroutineContext().ensureActive()
+            if (!isCurrentLoad(songId, generation)) return
+            val data = lyrics?.toProviderLyricData() ?: createDefaultLyricData("没有歌词")
+            publishRawLyricData(data)
+            if (data.source == LyricSource.Provider && data.lyricLine.lines.isNotEmpty()) {
+                lyricCache[songId] = data
+                trimCache()
+                cacheMutex.withLock {
+                    if (!isCurrentLoad(songId, generation)) return@withLock
+                    val entry = CachedLyric(songId, lyrics!!.text, lyrics.translation, isVerbatim = false, isPureMusic = false,
+                        sourceName = LyricSource.Provider.name, parserType = "LRC", updatedAt = System.currentTimeMillis())
+                    cachedLyricRepository.insert(entry)
+                    lastPersistedLyric = entry
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (isCurrentLoad(songId, generation) && rawLyricData.source == LyricSource.Loading) {
+                publishRawLyricData(createDefaultLyricData("没有歌词"))
+            }
+        }
+    }
+
     /**
      * 自动搜索 QQ 音乐并选择最佳匹配
      *
@@ -284,7 +325,7 @@ class LyricManager @Inject constructor(
         generation: Long,
         selectionGeneration: Long,
     ) {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         val best = searchAndMatchBest(metadata, generation)
         if (!isCurrentLoad(songId, generation) || selectionGeneration != sourceSelectionGeneration) return
         if (best != null) {
@@ -305,7 +346,7 @@ class LyricManager @Inject constructor(
         metadata: MediaMetadata,
         generation: Long,
     ): SearchResult.Request.Data.Body.ItemSong? {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         val targetDurationSec = metadata.duration / 1000
         val artistName = metadata.artists.firstOrNull()?.name.orEmpty()
         val title = metadata.title
@@ -488,6 +529,7 @@ class LyricManager @Inject constructor(
     ) {
         val songIdAtStart = currentSongId ?: return
         val metadata = lastMetadata ?: return
+        if (metadata.trackRef.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) return
         val selectionGeneration = sourceSelectionGeneration
         val selectedSource = preferredSource
         val selectedVariant = preferredVariant
@@ -671,6 +713,7 @@ class LyricManager @Inject constructor(
     }
 
     fun searchQQSong(keyword: String) {
+        if (lastMetadata?.trackRef?.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) return
         val songId = currentSongId ?: return
         val generation = loadGeneration
         val searchToken = ++searchGeneration
@@ -690,7 +733,8 @@ class LyricManager @Inject constructor(
     }
 
     fun selectLyricCandidate(metadata: MediaMetadata, candidate: LyricCandidate) {
-        val songId = metadata.id.toString()
+        if (metadata.trackRef.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) return
+        val songId = metadata.lyricStorageKey()
         if (songId != currentSongId || !_lyricCandidates.value.any {
                 it.source == candidate.source && it.key == candidate.key
             }
@@ -734,7 +778,7 @@ class LyricManager @Inject constructor(
     }
 
     private fun updateLyricOffset(metadata: MediaMetadata, transform: (Int) -> Int) {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         if (songId != currentSongId) return
         val generation = loadGeneration
         scope.launch {
@@ -765,7 +809,7 @@ class LyricManager @Inject constructor(
     }
 
     fun resetLyricSource(metadata: MediaMetadata) {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         if (songId != currentSongId) return
         val generation = loadGeneration
         val selectionGeneration = ++sourceSelectionGeneration
@@ -815,7 +859,7 @@ class LyricManager @Inject constructor(
      * 委托给 [LyricPreloader] 执行，不干扰当前歌词展示。
      */
     fun preloadLyrics(metadata: MediaMetadata) {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         if (lyricCache.containsKey(songId) || currentSongId == songId) return
 
         preloadJob?.cancel()
@@ -876,7 +920,7 @@ internal fun loadedLyricCandidates(
     val variant = requireNotNull(lyricVariantOf(data))
     val match = qqSong?.takeIf { data.source == LyricSource.QQMusic }
     LyricCandidate(
-        key = "${variant.name}:${metadata.id}${match?.qid?.let { ":$it" }.orEmpty()}",
+        key = "${variant.name}:${metadata.lyricStorageKey()}${match?.qid?.let { ":$it" }.orEmpty()}",
         source = data.source,
         title = match?.title ?: metadata.title,
         artist = match?.artist ?: metadata.artists.joinToString(", ") { it.name },
@@ -972,4 +1016,15 @@ internal fun CachedLyric.toLyricData(): LyricData? {
         },
         lyricLine = lyrics
     )
+}
+
+/** Keep old native/local lyric keys readable while namespacing all third-party identities. */
+internal fun MediaMetadata.lyricStorageKey(): String =
+    if (trackRef.providerId == ProviderIds.LOCAL && id < 0L) id.toString()
+    else TrackRefCodec.storageKey(trackRef)
+
+internal fun SourceLyrics.toProviderLyricData(): LyricData {
+    val parsed = LRCParser.parse(text, translation)
+    return if (parsed.lines.isEmpty()) createDefaultLyricData("没有歌词")
+        else LyricData(source = LyricSource.Provider, lyricLine = parsed)
 }

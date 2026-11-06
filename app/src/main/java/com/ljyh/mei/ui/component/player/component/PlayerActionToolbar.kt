@@ -48,6 +48,7 @@ import com.ljyh.mei.playback.SleepTimerState
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.PlayerAction
+import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -69,6 +70,7 @@ fun PlayerActionToolbar(
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
+    val currentMetadata by playerConnection.mediaMetadata.collectAsState()
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val pressedAlpha = if (playerStyle == PlayerStyle.AppleMusic) 0.6f else 0.3f
 
@@ -102,7 +104,7 @@ fun PlayerActionToolbar(
             .then(if (playerStyle == PlayerStyle.AppleMusic) Modifier.alpha(0.5f) else Modifier)
     ) {
 
-        actions.forEach { action ->
+        actions.filter { it != PlayerAction.ADD_TO_PLAYLIST || currentMetadata?.trackRef?.providerId == ProviderIds.NETEASE }.forEach { action ->
             when (action) {
                 PlayerAction.PLAY_MODE -> {
                     PlayerPlayModeButton(

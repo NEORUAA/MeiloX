@@ -9,6 +9,8 @@ import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.ui.model.LyricSourceData
 import com.ljyh.mei.ui.model.LyricVariant
+import com.ljyh.mei.source.api.SourceLyrics
+import com.ljyh.mei.source.api.TrackRef
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import org.junit.Assert.*
@@ -18,6 +20,23 @@ class LyricCacheTest {
     private val qrc = "[15800,1200]First(15800,600) line(16400,600)"
     private val lrc = "[00:15.80]First line"
     private val translation = "[00:15.80]Translated line"
+
+    @Test
+    fun providerLyricsKeepTheirOwnIdentityLabelTranslationAndLegacyLocalKeys() {
+        val native = MediaMetadata(42, "Song", "", emptyList(), 180000, MediaMetadata.Album(1, "Album"))
+        val external = native.copy(id = 0L, trackRef = TrackRef("demo", "42"))
+        val other = external.copy(trackRef = TrackRef("other", "42"))
+        assertEquals("42", native.lyricStorageKey())
+        assertNotEquals(native.lyricStorageKey(), external.lyricStorageKey())
+        assertNotEquals(other.lyricStorageKey(), external.lyricStorageKey())
+        assertEquals("-42", native.copy(id = -42L, isLocal = true, trackRef = TrackRef("local", "local_42")).lyricStorageKey())
+        val lyrics = SourceLyrics(lrc, translation).toProviderLyricData()
+        assertEquals(LyricSource.Provider, lyrics.source)
+        assertTrue(lyrics.lyricLine.lines.isNotEmpty())
+        val stored = CachedLyric(external.lyricStorageKey(), lrc, translation, false, false,
+            LyricSource.Provider.name, "LRC", 1L)
+        assertEquals(lyrics, stored.toLyricData())
+    }
 
     @Test
     fun pronunciationUsesTheClosestLineBeforeAnEarlierToleranceMatch() {

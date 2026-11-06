@@ -9,6 +9,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.gson.Gson
 import com.ljyh.mei.AppContext
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.AppDatabase
@@ -81,6 +83,11 @@ object DownloadManager {
                 songAlbum = info.songAlbum,
                 songCover = info.songCover,
                 quality = info.quality,
+                originTrackRef = (info.originTrackRef ?: TrackRefCodec.decode(info.songId))?.let(TrackRefCodec::encode),
+                resolvedTrackRef = info.resolution?.resolvedTrackRef?.let(TrackRefCodec::encode),
+                actualAudioProviderId = info.resolution?.actualAudioProviderId ?: info.originTrackRef?.providerId ?: ProviderIds.NETEASE,
+                actualProviderInstanceId = info.resolution?.instanceId?.value ?: info.originTrackRef?.providerId ?: ProviderIds.NETEASE,
+                actualQuality = info.resolution?.resource?.quality ?: info.quality,
                 requestId = requests.getValue(info.songId).toString(),
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
@@ -137,6 +144,7 @@ object DownloadManager {
                     songCover = task.songCover,
                     duration = 0,
                     quality = task.quality,
+                    originTrackRef = task.originTrackRef?.let(TrackRefCodec::decode),
                 )
             ),
             playlistName = playlistName,

@@ -161,7 +161,7 @@ internal fun LibraryDownloadsPage(
         player?.playQueue(ListQueue(
             id = "library-downloads",
             title = queueTitle,
-            items = playable.mapNotNull { row -> row.song?.toMediaMetadata()?.let { it.id.toString() to it.toMediaItem() } },
+            items = playable.mapNotNull { row -> row.song?.toMediaMetadata()?.toMediaItem()?.let { it.mediaId to it } },
             startIndex = index,
         ))
     }

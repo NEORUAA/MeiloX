@@ -1,6 +1,24 @@
 package com.ljyh.mei.playback
 
 import android.net.Uri
+import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.cache.NoOpCacheEvictor
+import androidx.media3.database.StandaloneDatabaseProvider
+import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.data.model.toMediaItem
+import com.ljyh.mei.data.model.metadata
+import java.net.ServerSocket
+import java.net.InetAddress
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import androidx.core.content.FileProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -14,7 +32,13 @@ import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.di.dao.SongDao
+import com.ljyh.mei.di.dao.DownloadDao
+import com.ljyh.mei.di.repository.DownloadRepository
+import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.repository.SongRepository
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.*
+import com.ljyh.mei.source.netease.NeteasePlaybackTransport
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
@@ -43,6 +67,101 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MediaUriProviderQualityTest {
     private val gson = Gson()
+
+    @Test
+    fun realMedia3FallbackKeepsOriginUsesResourceHeadersAndHonorsNoStore() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val original = Track(TrackRef(ProviderIds.NETEASE, "1"), "Fixture recording",
+            listOf(SourceArtist("Fixture artist")), SourceAlbum("Fixture album"), durationMs = 1_000)
+        val target = original.copy(ref = TrackRef("fixture", "1/: 雪"))
+        val bytes = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+            .put("RIFF".toByteArray()).putInt(16_036).put("WAVEfmt ".toByteArray())
+            .putInt(16).putShort(1).putShort(1).putInt(8_000).putInt(16_000)
+            .putShort(2).putShort(16).put("data".toByteArray()).putInt(16_000).array() + ByteArray(16_000)
+        val server = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
+        val receivedHeaders = AtomicReference<List<String>>(emptyList())
+        val serving = thread(name = "source-playback-fixture", isDaemon = true) {
+            while (!server.isClosed) {
+                val client = try { server.accept() } catch (_: IOException) { break }
+                client.use {
+                    val reader = it.getInputStream().bufferedReader(Charsets.US_ASCII)
+                    reader.readLine() ?: return@use
+                    val headers = buildList {
+                        while (true) { val line = reader.readLine() ?: break; if (line.isEmpty()) break; add(line) }
+                    }
+                    receivedHeaders.set(headers)
+                    val authorized = headers.any { line -> line.equals("X-Fixture-Key: resource-only", true) }
+                    val range = headers.firstOrNull { line -> line.startsWith("Range:", true) }
+                        ?.substringAfter("bytes=")?.substringBefore('-')?.toIntOrNull() ?: 0
+                    val body = if (authorized) bytes.copyOfRange(range.coerceAtMost(bytes.size), bytes.size) else byteArrayOf()
+                    val status = if (!authorized) "403 Forbidden" else if (range > 0) "206 Partial Content" else "200 OK"
+                    val response = "HTTP/1.1 $status\r\nContent-Type: audio/wav\r\nContent-Length: ${body.size}\r\n" +
+                        (if (range > 0) "Content-Range: bytes $range-${bytes.lastIndex}/${bytes.size}\r\n" else "") +
+                        "Connection: close\r\n\r\n"
+                    it.getOutputStream().write(response.toByteArray(Charsets.US_ASCII))
+                    it.getOutputStream().write(body)
+                }
+            }
+        }
+        val plugin = object : MusicProvider, CatalogCapability, PlaybackCapability {
+            override val id = "fixture"
+            override val displayName = "Offline fixture"
+            override val isBuiltIn = true // Instrumentation owns the localhost endpoint.
+            override val capabilities = setOf(SourceCapability.SEARCH, SourceCapability.TRACK, SourceCapability.PLAYBACK)
+            override suspend fun search(query: String, page: PageRequest) = SourcePage(listOf(target))
+            override suspend fun getTrack(ref: TrackRef) = target.takeIf { it.ref == ref }
+            override suspend fun resolve(ref: TrackRef, requestedQuality: String) = AudioResource(
+                "http://127.0.0.1:${server.localPort}/recording.wav", "standard",
+                headers = mapOf("X-Fixture-Key" to "resource-only", "User-Agent" to "SourceFixture/1"),
+                contentLength = bytes.size.toLong(), contentId = "fixture-wav", cachePolicy = CachePolicy.NO_STORE)
+        }
+        val resolver = provider("{}", additionalProviders = listOf(plugin), sourceSettings = SourceSettings(
+            autoFallbackEnabled = true, fallbackOrder = listOf(plugin.instanceId.value))) {
+            source(it.level, "unavailable", code = 404)
+        }
+        resolver.rememberTrack(original.toMediaMetadata())
+        val cacheDir = File(context.cacheDir, "source-playback-${UUID.randomUUID()}")
+        val cache = SimpleCache(cacheDir, NoOpCacheEvictor(), StandaloneDatabaseProvider(context))
+        val ended = CountDownLatch(1)
+        val failure = AtomicReference<PlaybackException?>()
+        var player: ExoPlayer? = null
+        try {
+            val dataSource = ResolvingDataSource.Factory(CacheManager.getPlaybackDataSourceFactory(context, cache)) { spec ->
+                resolvedMediaDataSpec(spec, runBlocking { resolver.resolveMediaSource(checkNotNull(spec.key), "lossless") })
+            }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                player = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(dataSource)).build().apply {
+                    addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_ENDED) ended.countDown() }
+                        override fun onPlayerError(error: PlaybackException) { failure.set(error); ended.countDown() }
+                    })
+                    setMediaItem(original.toMediaMetadata().toMediaItem())
+                    prepare()
+                    play()
+                }
+            }
+            assertTrue("Playback did not complete", ended.await(10, TimeUnit.SECONDS))
+            assertEquals(null, failure.get())
+            val resolution = checkNotNull(resolver.resolvedMediaSource("1")?.resolution)
+            assertEquals(original.ref, resolution.originTrackRef)
+            assertEquals(target.ref, resolution.resolvedTrackRef)
+            assertEquals("fixture", resolution.actualAudioProviderId)
+            assertFalse(canReportNeteasePlayback(original.ref, resolution))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                assertEquals("1", player?.currentMediaItem?.mediaId)
+                assertEquals(original.ref, player?.currentMediaItem?.metadata?.trackRef)
+            }
+            assertTrue(receivedHeaders.get().any { it.equals("X-Fixture-Key: resource-only", true) })
+            assertEquals(1, receivedHeaders.get().count { it.equals("User-Agent: SourceFixture/1", true) })
+            assertTrue("NO_STORE resources must not publish cached bytes", cache.keys.isEmpty())
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { player?.release() }
+            server.close()
+            serving.join(1_000)
+            cache.release()
+            cacheDir.deleteRecursively()
+        }
+    }
 
     @Test
     fun menuIncludesOnlyActualFullSourcesAndUsesShortLivedResults() = runBlocking {
@@ -98,7 +217,7 @@ class MediaUriProviderQualityTest {
 
         assertEquals(2, masterCalls.get())
         assertEquals("jymaster", resolved.actualQuality)
-        assertEquals("master-source", resolved.sourceIdentity)
+        assertEquals("master-source", resolved.resolution?.resource?.contentId)
         assertEquals(resolved, provider.resolvedMediaSource("1"))
         assertEquals(listOf(resolved), observed)
     }
@@ -122,8 +241,8 @@ class MediaUriProviderQualityTest {
 
             assertEquals(listOf("dolby", "sky", "jyeffect"), calls)
             assertEquals(actualFallback, resolved.actualQuality)
-            assertEquals("supported-source", resolved.sourceIdentity)
-            assertEquals(playbackCacheKey("1", actualFallback, "supported-source", 12345), resolved.cacheKey)
+            assertEquals("supported-source", resolved.resolution?.resource?.contentId)
+            assertEquals(resolvedPlaybackCacheKey(resolved.resolution!!), resolved.cacheKey)
             assertEquals(listOf(resolved), observed)
             assertEquals(resolved, provider.resolveMediaSource("1", "dolby"))
             assertEquals(listOf("dolby", "sky", "jyeffect"), calls)
@@ -164,7 +283,7 @@ class MediaUriProviderQualityTest {
 
         assertEquals(listOf("dolby"), calls)
         assertEquals("dolby", resolved.actualQuality)
-        assertEquals("dolby-source", resolved.sourceIdentity)
+        assertEquals("dolby-source", resolved.resolution?.resource?.contentId)
         assertEquals(listOf(resolved), observed)
     }
 
@@ -182,7 +301,7 @@ class MediaUriProviderQualityTest {
 
                 assertEquals(listOf(requestedQuality), calls)
                 assertEquals(requestedQuality, resolved.actualQuality)
-                assertEquals("supported-source", resolved.sourceIdentity)
+                assertEquals("supported-source", resolved.resolution?.resource?.contentId)
             }
         }
     }
@@ -228,13 +347,57 @@ class MediaUriProviderQualityTest {
         val fallback = provider.resolveMediaSource("1", "jymaster")
 
         assertEquals("lossless", fallback.actualQuality)
-        assertEquals("working-source", fallback.sourceIdentity)
+        assertEquals("working-source", fallback.resolution?.resource?.contentId)
         assertEquals(listOf("jymaster", "jymaster", "hires", "lossless"), calls)
         assertEquals(listOf(MusicQuality.LOSSLESS), provider.getAvailableMusicQualities("1", true))
 
         provider.resetRejectedSources()
         assertFalse(provider.isRejectedCachedSource("1", failed.cacheKey))
         assertEquals("jymaster", provider.resolveMediaSource("1", "jymaster").actualQuality)
+    }
+
+    @Test
+    fun nativeQualityFallbackPrecedesExternalRequestsAfterLiveOrDiskSourceRejection() = runBlocking {
+        for (restoredFromDisk in listOf(false, true)) {
+            val externalRequests = AtomicInteger()
+            val original = Track(TrackRef(ProviderIds.NETEASE, "1"), "Priority recording",
+                listOf(SourceArtist("Fixture artist")), SourceAlbum("Album"), durationMs = 180_000)
+            val target = original.copy(ref = TrackRef("fixture", "1"))
+            val external = object : MusicProvider, CatalogCapability, PlaybackCapability {
+                override val id = "fixture"
+                override val displayName = "Fixture"
+                override val capabilities = setOf(SourceCapability.SEARCH, SourceCapability.TRACK, SourceCapability.PLAYBACK)
+                override suspend fun search(query: String, page: PageRequest): SourcePage<Track> {
+                    externalRequests.incrementAndGet()
+                    return SourcePage(listOf(target))
+                }
+                override suspend fun getTrack(ref: TrackRef) = target
+                override suspend fun resolve(ref: TrackRef, requestedQuality: String): AudioResource {
+                    externalRequests.incrementAndGet()
+                    return AudioResource("https://example.test/external", requestedQuality, contentId = "external")
+                }
+            }
+            val calls = mutableListOf<String>()
+            val resolver = provider("{}", additionalProviders = listOf(external), sourceSettings = SourceSettings(
+                autoFallbackEnabled = true, fallbackOrder = listOf(external.instanceId.value))) { request ->
+                calls += request.level
+                when (request.level) {
+                    "jymaster", "hires" -> source(request.level, "rejected-shared-bytes")
+                    "lossless" -> source("lossless", "native-working-bytes")
+                    else -> error("Native lossless must resolve before other levels or providers")
+                }
+            }
+            resolver.rememberTrack(original.toMediaMetadata())
+            val failed = resolver.resolveMediaSource("1", "jymaster")
+            if (restoredFromDisk) resolver.rememberCachedSource("1", "jymaster", failed.cacheKey!!, failed.uri)
+            assertTrue(resolver.rejectCurrentSource("1"))
+            val recovered = resolver.resolveMediaSource("1", "jymaster")
+            assertEquals("lossless", recovered.actualQuality)
+            assertEquals(ProviderIds.NETEASE, recovered.resolution?.actualAudioProviderId)
+            assertEquals("native-working-bytes", recovered.resolution?.resource?.contentId)
+            assertEquals(listOf("jymaster", "jymaster", "hires", "lossless"), calls)
+            assertEquals("External sources must wait for the native quality ladder", 0, externalRequests.get())
+        }
     }
 
     @Test
@@ -319,7 +482,7 @@ class MediaUriProviderQualityTest {
         complete.complete(Unit)
 
         assertTrue(probe.await().isEmpty())
-        assertEquals("new-account-source", provider.resolveMediaSource("1", "jymaster").sourceIdentity)
+        assertEquals("new-account-source", provider.resolveMediaSource("1", "jymaster").resolution?.resource?.contentId)
         assertEquals(2, calls.get())
     }
 
@@ -388,6 +551,24 @@ class MediaUriProviderQualityTest {
     }
 
     @Test
+    fun playbackQualityChangesDoNotCancelAnInFlightDownloadResolution() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val resolver = provider("{}") { request ->
+            started.complete(Unit)
+            release.await()
+            source(request.level, "download-source")
+        }
+        val download = async { resolver.resolveDownloadSource(
+            Track(TrackRef(ProviderIds.NETEASE, "1"), "Track", emptyList()), "lossless") }
+        started.await()
+        resolver.resetRejectedSources()
+        resolver.preferOnlineSource("1")
+        release.complete(Unit)
+        assertEquals("lossless", download.await().resource.quality)
+    }
+
+    @Test
     fun downloadMenuUsesReportedFullLevelsAndExcludesTrialsAndUnavailableSources() = runBlocking {
         val provider = provider(
             catalog = """{"l":{"br":128000},"h":{"br":320000},"sq":{"size":12345},"jm":{"size":23456},"dl":{"size":34567}}""",
@@ -442,7 +623,7 @@ class MediaUriProviderQualityTest {
 
         assertTrue(query.await().isEmpty())
         assertEquals(listOf(MusicQuality.JYMASTER), provider.getAvailableDownloadQualities("1"))
-        assertEquals("new-account-source", provider.resolveMediaSource("1", "jymaster").sourceIdentity)
+        assertEquals("new-account-source", provider.resolveMediaSource("1", "jymaster").resolution?.resource?.contentId)
         assertEquals(2, calls.get())
     }
 
@@ -484,6 +665,52 @@ class MediaUriProviderQualityTest {
             provider.preferOnlineSource("1")
             provider.clearQualityState()
             assertEquals("Account reset must return to the intact local copy", local, provider.resolveMediaSource("1", "jymaster"))
+        }
+    }
+
+    @Test
+    fun negativePodcastIdentityNeverOpensTheUnrelatedLocalFile() = runBlocking {
+        withLocalWave(false) { uri ->
+            val local = Song("local_99", "Local recording", emptyList(), "", "", 100,
+                sourceType = SourceType.LOCAL, path = uri.toString())
+            val calls = AtomicInteger()
+            val resolver = provider("{}", localSong = local) {
+                calls.incrementAndGet()
+                source(it.level, "unavailable", code = 404)
+            }
+            val podcast = Track(TrackRef(ProviderIds.NETEASE, "-99"), "Podcast", emptyList()).toMediaMetadata()
+                .copy(isPodcast = true)
+            resolver.rememberTrack(podcast, "-99")
+            assertEquals(null, resolver.resolveLocalSource("-99"))
+            try {
+                resolver.resolveMediaSource("-99", "exhigh")
+                fail("A missing podcast source must not become local_99")
+            } catch (_: SourceNotFoundException) { }
+            assertTrue(calls.get() > 0)
+            resolver.rememberTrack(local.toMediaMetadata(), "-99")
+            assertEquals(uri, resolver.resolveMediaSource("-99", "exhigh").uri)
+        }
+    }
+
+    @Test
+    fun downloadedFallbackRetainsItsActualSourceAndCannotEmitOfficialHistory() = runBlocking {
+        withLocalWave(false) { uri ->
+            val origin = TrackRef(ProviderIds.NETEASE, "1")
+            val actual = TrackRef("fixture", "1")
+            val song = Song("1", "Downloaded recording", emptyList(), "", "", 100,
+                sourceType = SourceType.DOWNLOAD, path = uri.toString())
+            val task = DownloadTask("1", originTrackRef = TrackRefCodec.encode(origin),
+                resolvedTrackRef = TrackRefCodec.encode(actual), actualAudioProviderId = actual.providerId,
+                actualProviderInstanceId = "fixture:account", actualQuality = "standard")
+            val resolver = provider("{}", localSong = song, downloadTasks = listOf(task)) {
+                error("A downloaded file must not resolve online")
+            }
+            val source = resolver.resolveMediaSource("1", "lossless")
+            assertEquals(uri, source.uri)
+            assertNotNull(source.localPlaybackInfo)
+            assertEquals(actual, source.resolution?.resolvedTrackRef)
+            assertEquals("standard", source.resolution?.resource?.quality)
+            assertFalse(canReportNeteasePlayback(origin, source.resolution))
         }
     }
 
@@ -538,6 +765,9 @@ class MediaUriProviderQualityTest {
         catalog: String,
         localSong: Song? = null,
         extraSongs: List<Song> = emptyList(),
+        additionalProviders: List<MusicProvider> = emptyList(),
+        downloadTasks: List<DownloadTask> = emptyList(),
+        sourceSettings: SourceSettings = SourceSettings(),
         onDetailRequested: () -> Unit = {},
         response: suspend (GetSongUrlV1) -> SongUrl,
     ): MediaUriProvider {
@@ -573,7 +803,21 @@ class MediaUriProviderQualityTest {
             check(method.name == "getSong") { "Unexpected database call: ${method.name}" }
             flowOf((listOfNotNull(localSong) + extraSongs).firstOrNull { it.id == arguments!![0] })
         } as SongDao
-        return MediaUriProvider(api, SongRepository(songDao), InstrumentationRegistry.getInstrumentation().targetContext)
+        val native = object : MusicProvider {
+            override val id = ProviderIds.NETEASE
+            override val displayName = "Native test provider"
+            override val capabilities = setOf(SourceCapability.PLAYBACK)
+            override val isBuiltIn = true
+        }
+        val registry = ProviderRegistry(listOf(native) + additionalProviders)
+        val downloads = if (downloadTasks.isEmpty()) null else DownloadRepository(
+            Proxy.newProxyInstance(DownloadDao::class.java.classLoader, arrayOf(DownloadDao::class.java)) { _, method, args ->
+                check(method.name == "getBySongId")
+                downloadTasks.firstOrNull { it.songId == args!![0] }
+            } as DownloadDao, songDao)
+        return MediaUriProvider(NeteasePlaybackTransport(api),
+            PlaybackResolver(registry, { sourceSettings }), SourceRouter(registry),
+            SongRepository(songDao), InstrumentationRegistry.getInstrumentation().targetContext, downloads)
     }
 
     private fun source(

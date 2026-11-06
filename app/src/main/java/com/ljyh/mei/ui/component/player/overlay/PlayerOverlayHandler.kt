@@ -21,6 +21,9 @@ import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.model.MoreAction
+import com.ljyh.mei.ui.model.availableFor
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.utils.lyric.lyricStorageKey
 import com.ljyh.mei.ui.component.player.enterFloatingLyricsPip
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
@@ -69,6 +72,7 @@ class PlayerOverlayHandler(
      * 显示添加到播放列表弹窗
      */
     fun showAddToPlaylist(mediaId: Long) {
+        if (mediaId <= 0L) return
         stateContainer.playerViewModel.refreshPlaylistChoices()
         _currentOverlay.value = OverlayState.AddToPlaylist(mediaId)
     }
@@ -109,8 +113,10 @@ class PlayerOverlayHandler(
         viewportBounds: Rect? = null,
     ) {
         val connection = stateContainer.playerConnection
+        val nativeOrigin = stateContainer.mediaMetadata.value?.trackRef?.providerId == ProviderIds.NETEASE
         _currentOverlay.value = OverlayState.AlbumArtist(
-            album, artists, cover, anchorBounds,
+            if (nativeOrigin) album else album.copy(id = 0L),
+            if (nativeOrigin) artists else artists.map { it.copy(id = 0L) }, cover, anchorBounds,
             playlistTitle = connection.queueTitle.value,
             playlistId = connection.service.queueManager.playlistSource?.playlistId,
             viewportBounds = viewportBounds,
@@ -135,6 +141,7 @@ class PlayerOverlayHandler(
      * 显示轨道操作菜单
      */
     fun showShare(metadata: MediaMetadata) {
+        if (!MoreAction.SHARE.availableFor(metadata)) return
         _currentOverlay.value = OverlayState.Share(metadata)
     }
 
@@ -160,6 +167,7 @@ class PlayerOverlayHandler(
         action: MoreAction,
         mediaMetadata: MediaMetadata? = stateContainer.mediaMetadata.value,
     ) {
+        if (!action.availableFor(mediaMetadata)) return
         when (action) {
             MoreAction.ADD_TO_PLAYLIST -> {
                 mediaMetadata?.let {
@@ -180,7 +188,7 @@ class PlayerOverlayHandler(
             }
             MoreAction.DELETE -> {
                 mediaMetadata?.let {
-                    stateContainer.playerViewModel.deleteSongById(it.id.toString())
+                    stateContainer.playerViewModel.deleteSongById(it.lyricStorageKey())
                 }
             }
             MoreAction.VIEW_PLAYLIST -> {
@@ -209,6 +217,7 @@ class PlayerOverlayHandler(
      * 添加歌曲到播放列表
      */
     fun addSongToPlaylist(selectedPlaylist: Playlist, mediaId: Long) {
+        if (mediaId <= 0L) return
         playlistViewModel.addSongToPlaylist(
             pid = selectedPlaylist.id,
             trackIds = mediaId.toString(),

@@ -33,6 +33,9 @@ import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
+import com.ljyh.mei.ui.model.availableFor
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.utils.lyric.lyricStorageKey
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.R
@@ -127,8 +130,8 @@ fun CommonOverlayHandler(
         }
 
         is OverlayState.SongInfo -> {
-            val qqSongId by produceState<String?>(null, overlay.metadata.id) {
-                value = stateContainer.playerViewModel.getQQSongId(overlay.metadata.id)
+            val qqSongId by produceState<String?>(null, overlay.metadata.trackRef) {
+                value = stateContainer.playerViewModel.getQQSongId(overlay.metadata)
             }
             SongInfoSheet(
                 metadata = overlay.metadata,
@@ -183,12 +186,13 @@ fun CommonOverlayHandler(
             // the displayed track now so an automatic advance cannot retarget that action.
             val actionMetadata = currentMetadata
             MoreActionsSheet(
+                metadata = actionMetadata,
                 onChoosePrivateFmScene = if (isPrivateFm) overlayHandler::showPrivateFmScenes else null,
                 onDismissRequest = {
                     overlayHandler.dismiss()
                 },
                 onActionClick = { action ->
-                    if (action == MoreAction.COMMENT || action == MoreAction.SONG_WIKI) {
+                    if ((action == MoreAction.COMMENT || action == MoreAction.SONG_WIKI) && action.availableFor(actionMetadata)) {
                         actionMetadata?.let { v->
                             val destination = if (action == MoreAction.COMMENT) Screen.Comment else Screen.SongWiki
                             destination.navigate(navController) {
@@ -204,15 +208,14 @@ fun CommonOverlayHandler(
 
                 },
                 viewModel = playerViewModel,
-                onFindLyrics = if (actionMetadata != null) {
+                onFindLyrics = if (actionMetadata?.trackRef?.providerId in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) {
                     {
-                        playerViewModel.searchQQSong(actionMetadata.title)
-                        overlayHandler.showQQMusicSelection(actionMetadata)
+                        actionMetadata?.let { playerViewModel.searchQQSong(it.title); overlayHandler.showQQMusicSelection(it) }
                     }
                 } else null,
                 onFindLyricsLongClick = if (stateContainer.lyricLine.source == LyricSource.QQMusic && actionMetadata != null) {
                     {
-                        playerViewModel.deleteSongById(actionMetadata.id.toString())
+                        playerViewModel.deleteSongById(actionMetadata.lyricStorageKey())
                         android.widget.Toast.makeText(context, "已删除QQ音乐歌词", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 } else null,
@@ -243,7 +246,7 @@ fun CommonOverlayHandler(
                 onDismiss = overlayHandler::dismiss,
                 onAddToPlaylist = { overlayHandler.showAddToPlaylist(overlay.track.id) },
                 onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
-                onCopyId = { setClipboard(context, overlay.track.id.toString(), "id") },
+                onCopyId = { setClipboard(context, overlay.track.trackRef.trackId, "id") },
                 onCopyName = { setClipboard(context, overlay.track.title, "name") },
             )
         }

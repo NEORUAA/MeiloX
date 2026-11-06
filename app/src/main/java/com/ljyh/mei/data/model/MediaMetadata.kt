@@ -37,6 +37,8 @@ data class MediaMetadata(
     val isLocal: Boolean = false,
     val trackRef: TrackRef = TrackRefCodec.decode(id.toString(), isLocal, isPodcast)
         ?: TrackRef(ProviderIds.NETEASE, id.toString()),
+    val isrc: String? = null,
+    val recordingVersion: String? = null,
 ) {
     data class Artist(
         val id: Long,
@@ -272,6 +274,8 @@ fun Track.toMediaMetadata() = MediaMetadata(
     explicit = explicit,
     isLocal = ref.providerId == ProviderIds.LOCAL,
     trackRef = ref,
+    isrc = isrc,
+    recordingVersion = version,
 )
 
 fun MediaMetadata.toSourceTrack() = Track(
@@ -282,7 +286,15 @@ fun MediaMetadata.toSourceTrack() = Track(
     durationMs = duration,
     artworkUrl = coverUrl,
     explicit = explicit,
+    isrc = isrc,
+    version = recordingVersion,
 )
+
+val MediaMetadata.supportsNeteaseSongActions: Boolean
+    get() = trackRef.providerId == ProviderIds.NETEASE && !isLocal && !isPodcast &&
+        trackRef.trackId.toLongOrNull()?.let { it > 0L } == true
+
+val MediaMetadata.mediaId: String get() = TrackRefCodec.mediaId(trackRef)
 
 
 fun com.ljyh.mei.data.model.room.Song.toMediaMetadata(): MediaMetadata {

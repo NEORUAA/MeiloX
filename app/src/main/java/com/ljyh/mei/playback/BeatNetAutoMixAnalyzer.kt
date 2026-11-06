@@ -195,8 +195,9 @@ internal class AndroidAudioDecoder(
                 var dataSource: MediaDataSource? = null
                 try {
                     val uri = source.uri
-                    if (source.cacheKey != null || uri.scheme == "http" || uri.scheme == "https") {
-                        dataSource = CacheMediaDataSource(source, sourceCache, cacheDataSourceFactory) { coroutineContext.ensureActive() }
+                    if (source.cacheKey != null || uri.scheme in setOf("http", "https", "mei-source")) {
+                        dataSource = CacheMediaDataSource(source, sourceCache, cacheDataSourceFactory,
+                            CacheManager.getUpstreamDataSourceFactory(context)) { coroutineContext.ensureActive() }
                         extractor.setDataSource(dataSource)
                     } else {
                         extractor.setDataSource(context, uri, emptyMap())

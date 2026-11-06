@@ -11,6 +11,8 @@ import com.ljyh.mei.di.repository.QQSongRepository
 import com.ljyh.mei.ui.model.LyricData
 import com.ljyh.mei.ui.model.LyricSourceData
 import com.ljyh.mei.utils.encrypt.QRCUtils
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.core.SourceRouter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -32,6 +34,7 @@ import kotlin.math.abs
 class LyricPreloader @Inject constructor(
     private val repository: PlayerRepository,
     private val qqSongRepository: QQSongRepository,
+    private val sourceRouter: SourceRouter,
 ) {
     private val TAG = "LyricPreloader"
 
@@ -42,9 +45,11 @@ class LyricPreloader @Inject constructor(
      * @return 合并后的歌词数据，失败或无需预加载时返回 null
      */
     suspend fun preload(metadata: MediaMetadata): LyricData? {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
         return try {
-            fetchAndMerge(metadata, songId)
+            if (metadata.trackRef.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) {
+                sourceRouter.lyrics(metadata.trackRef)?.toProviderLyricData()
+            } else fetchAndMerge(metadata, songId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Exception) {
@@ -55,8 +60,9 @@ class LyricPreloader @Inject constructor(
 
     private suspend fun fetchAndMerge(metadata: MediaMetadata, songId: String): LyricData? {
         val (netResult, amResult, qqResult) = coroutineScope {
-            val netDeferred = async { fetchNetEase(songId) }
-            val amDeferred = async { fetchAM(songId) }
+            val native = metadata.trackRef.providerId == ProviderIds.NETEASE && metadata.trackRef.trackId.toLongOrNull()?.let { it > 0 } == true
+            val netDeferred = async { if (native) fetchNetEase(metadata.trackRef.trackId) else Resource.Error("No native lyric identity") }
+            val amDeferred = async { if (native) fetchAM(metadata.trackRef.trackId) else Resource.Error("No native lyric identity") }
             val qqDeferred = async { fetchQQ(metadata) }
             Triple(netDeferred.await(), amDeferred.await(), qqDeferred.await())
         }
@@ -104,7 +110,7 @@ class LyricPreloader @Inject constructor(
     }
 
     private suspend fun fetchQQ(metadata: MediaMetadata): Resource<LyricResult> {
-        val songId = metadata.id.toString()
+        val songId = metadata.lyricStorageKey()
 
         val localSong = qqSongRepository.getQQSong(songId).firstOrNull()
         if (localSong != null) {

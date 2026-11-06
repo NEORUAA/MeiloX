@@ -13,8 +13,8 @@ import com.ljyh.mei.data.model.melox.ListenTogetherCommand
 import com.ljyh.mei.data.model.melox.ListenTogetherInvitation
 import com.ljyh.mei.data.model.melox.ListenTogetherRoom
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.repository.MeloXRepository
+import com.ljyh.mei.source.netease.NeteaseListenTogetherTransport
+import com.ljyh.mei.source.netease.repository.MeloXRepository
 import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -49,7 +49,7 @@ data class ListenTogetherSessionState(
 class ListenTogetherStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: MeloXRepository,
-    private val apiService: ApiService,
+    private val native: NeteaseListenTogetherTransport,
 ) : Player.Listener {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(ListenTogetherSessionState())
@@ -334,7 +334,7 @@ class ListenTogetherStore @Inject constructor(
     private suspend fun loadMediaItems(ids: List<Long>): List<MediaItem> {
         val byId = LinkedHashMap<Long, MediaItem>()
         ids.chunked(100).forEach { page ->
-            val response = apiService.getSongDetail(GetSongDetails(page.joinToString(",")))
+            val response = native.getSongDetail(GetSongDetails(page.joinToString(",")))
             response.songs.forEach { byId[it.id] = it.toMediaItem() }
         }
         return ids.mapNotNull(byId::get)

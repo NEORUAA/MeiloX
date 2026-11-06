@@ -70,6 +70,7 @@ private fun LyricData.displayPriority(): Int {
         LyricSource.AM -> 5
         LyricSource.NetEaseCloudMusic -> if (isVerbatim) 4 else 2
         LyricSource.QQMusic -> if (isVerbatim) 3 else 1
+        LyricSource.Provider -> 2
         LyricSource.Empty, LyricSource.Loading -> 0
     }
 }

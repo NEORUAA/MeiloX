@@ -4,6 +4,8 @@ import android.media.MediaDataSource
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DataSource
+import com.ljyh.mei.source.api.CachePolicy
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheSpan
@@ -16,6 +18,7 @@ internal class CacheMediaDataSource(
     private val source: ResolvedMediaSource,
     private val cache: Cache,
     factory: (Cache) -> CacheDataSource.Factory,
+    private val uncachedFactory: DataSource.Factory? = null,
     private val checkActive: () -> Unit,
 ) : MediaDataSource() {
     private val cacheKey = source.cacheKey ?: source.uri.toString()
@@ -42,7 +45,7 @@ internal class CacheMediaDataSource(
 
     init {
         val contentLength = source.contentLength ?: C.LENGTH_UNSET.toLong()
-        if (contentLength > 0 &&
+        if (source.cachePolicy != CachePolicy.NO_STORE && contentLength > 0 &&
             ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey)) == C.LENGTH_UNSET.toLong()
         ) {
             val mutations = ContentMetadataMutations()
@@ -52,7 +55,8 @@ internal class CacheMediaDataSource(
     }
 
     override fun getSize(): Long = source.contentLength?.takeIf { it > 0 }
-        ?: ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
+        ?: if (source.cachePolicy == CachePolicy.NO_STORE) C.LENGTH_UNSET.toLong()
+        else ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
 
     @Synchronized
     override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
@@ -89,7 +93,9 @@ internal class CacheMediaDataSource(
         } else READ_AHEAD_SIZE
         // Background extraction waits for the foreground writer instead of downloading
         // the same cache hole through a second upstream connection.
-        val dataSource = readerFactory.createDataSourceForDownloading()
+        val dataSource = if (source.cachePolicy == CachePolicy.NO_STORE) {
+            checkNotNull(uncachedFactory) { "Uncached resource needs a direct transport" }.createDataSource()
+        } else readerFactory.createDataSourceForDownloading()
         var totalRead = 0
         try {
             // Batch tiny extractor reads without retaining a song or an open network request.
@@ -97,6 +103,7 @@ internal class CacheMediaDataSource(
             dataSource.open(
                 DataSpec.Builder()
                     .setUri(source.uri)
+                    .setHttpRequestHeaders(source.headers)
                     .setKey(cacheKey)
                     .setPosition(position)
                     .setLength(length.toLong())

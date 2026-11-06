@@ -102,6 +102,7 @@ class PlayerConnection(
     val error = MutableStateFlow<PlaybackException?>(null)
     val availableMusicQualities = service.availableMusicQualities
     val currentMusicQuality = service.currentMusicQuality
+    val currentPlaybackResolution = service.currentPlaybackResolution
     val localPlaybackInfo = service.localPlaybackInfo
     val isPlayingLocalSource = service.isPlayingLocalSource
     val isLoadingMusicQualities = service.isLoadingMusicQualities

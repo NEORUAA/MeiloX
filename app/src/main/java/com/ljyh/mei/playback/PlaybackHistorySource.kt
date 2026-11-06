@@ -1,5 +1,9 @@
 package com.ljyh.mei.playback
 
+import com.ljyh.mei.source.api.PlaybackResolution
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.TrackRef
+
 /** The NetEase source context attached to one playback weblog. */
 internal data class PlaybackHistorySource(
     val sourceId: Long,
@@ -16,3 +20,9 @@ internal fun playbackHistoryStorageId(mediaId: String, isLocal: Boolean): String
         "local_${-number}"
     } else mediaId
 }
+
+/** Platform reports describe official playback, while local history always retains origin identity. */
+internal fun canReportNeteasePlayback(origin: TrackRef, resolution: PlaybackResolution?): Boolean =
+    origin.providerId == ProviderIds.NETEASE &&
+        (resolution == null || resolution.actualAudioProviderId == ProviderIds.NETEASE &&
+            resolution.resolvedTrackRef == origin)

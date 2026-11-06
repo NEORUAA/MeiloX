@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.classic
 
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -163,7 +164,7 @@ fun ClassicImmersiveLayout(
                             title = metadata.title,
                             subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
-                            showLikeButton = !metadata.isLocal && !metadata.isPodcast,
+                            showLikeButton = metadata.supportsNeteaseSongActions,
                             onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = onTitleClick,

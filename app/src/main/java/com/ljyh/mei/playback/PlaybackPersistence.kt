@@ -116,6 +116,8 @@ data class PlaybackItemSnapshot(
     val isPlaceholder: Boolean = false,
     val trackRef: String? = null,
     val albumRef: AlbumRef? = null,
+    val isrc: String? = null,
+    val recordingVersion: String? = null,
 )
 
 data class PlaybackArtistSnapshot(
@@ -273,6 +275,8 @@ class PlaybackPersistence(
             isPlaceholder = placeholder,
             trackRef = domainMetadata?.trackRef?.let(TrackRefCodec::encode),
             albumRef = domainMetadata?.album?.ref,
+            isrc = domainMetadata?.isrc,
+            recordingVersion = domainMetadata?.recordingVersion,
         )
     }
 
@@ -291,6 +295,9 @@ class PlaybackPersistence(
                 ?.takeIf { it > 0L }?.let { -it } ?: 0L
             else -> 0L
         }
+        val transportId = if (ref.providerId == ProviderIds.NETEASE && legacyId < 0L) {
+            TrackRefCodec.mediaId(ref)
+        } else mediaId
         val domainMetadata = MediaMetadata(
             id = legacyId,
             title = title.ifBlank { UNKNOWN_TITLE },
@@ -315,6 +322,8 @@ class PlaybackPersistence(
             isPodcast = isPodcast,
             isLocal = isLocal,
             trackRef = ref,
+            isrc = isrc,
+            recordingVersion = recordingVersion,
         )
         val displayMetadata = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(domainMetadata.title)
@@ -331,9 +340,9 @@ class PlaybackPersistence(
             }
             .build()
         return MediaItem.Builder()
-            .setMediaId(mediaId)
-            .setUri(mediaId)
-            .setCustomCacheKey(mediaId)
+            .setMediaId(transportId)
+            .setUri(transportId)
+            .setCustomCacheKey(transportId)
             .setTag(domainMetadata)
             .setMediaMetadata(displayMetadata)
             .build()

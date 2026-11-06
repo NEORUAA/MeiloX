@@ -15,7 +15,9 @@ class ProviderRegistry(providers: List<MusicProvider>) {
 
     private val entries = ConcurrentHashMap<String, MusicProvider>()
     private val mutableProviders = MutableStateFlow<List<MusicProvider>>(emptyList())
+    private val mutableRevision = MutableStateFlow(0L)
     val providers: StateFlow<List<MusicProvider>> = mutableProviders
+    val revision: StateFlow<Long> = mutableRevision
     init { providers.forEach { register(it) } }
 
     @Synchronized fun register(provider: MusicProvider) {
@@ -36,7 +38,10 @@ class ProviderRegistry(providers: List<MusicProvider>) {
     }
 
     @Synchronized fun refresh() = publish()
-    private fun publish() { mutableProviders.value = entries.values.sortedWith(compareByDescending<MusicProvider> { it.isBuiltIn }.thenBy { it.displayName }) }
+    private fun publish() {
+        mutableProviders.value = entries.values.sortedWith(compareByDescending<MusicProvider> { it.isBuiltIn }.thenBy { it.displayName })
+        mutableRevision.value += 1
+    }
     fun instance(id: ProviderInstanceId): MusicProvider? = entries[id.value]
     fun provider(id: String): MusicProvider? = providers.value.firstOrNull { it.id == id && it.status == SourceStatus.READY }
     fun requireProvider(id: String): MusicProvider = provider(id) ?: throw SourceException(SourceErrorCode.MISSING_PROVIDER)
@@ -54,14 +59,25 @@ class SourceRouter @Inject constructor(val registry: ProviderRegistry) {
         val provider = registry.requireProvider(ref.providerId)
         if (SourceCapability.TRACK !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
         return (provider as? CatalogCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).getTrack(ref)
+            ?.also { if (it.ref != ref) throw SourceException(SourceErrorCode.INVALID_RESPONSE) }
     }
-    suspend fun getTracks(refs: List<TrackRef>): List<Track> = refs.groupBy { it.providerId }.flatMap { (id, group) ->
-        val provider = registry.requireProvider(id)
-        if (provider is BatchCatalogCapability) provider.getTracks(group)
-        else group.mapNotNull { getTrack(it) }
+    suspend fun getTracks(refs: List<TrackRef>): List<Track> {
+        val requested = refs.toSet()
+        val tracks = refs.groupBy { it.providerId }.flatMap { (id, group) ->
+            val provider = registry.requireProvider(id)
+            if (SourceCapability.TRACK !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
+            if (provider is BatchCatalogCapability) provider.getTracks(group)
+            else group.distinct().mapNotNull { getTrack(it) }
+        }
+        if (tracks.any { it.ref !in requested }) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        val indexed = tracks.associateBy { it.ref }
+        return refs.mapNotNull(indexed::get)
     }
     suspend fun availableQualities(ref: TrackRef): List<String> =
         (registry.requireProvider(ref.providerId) as? QualityCapability)?.availableQualities(ref).orEmpty()
-    suspend fun lyrics(ref: TrackRef): SourceLyrics? =
-        (registry.requireProvider(ref.providerId) as? LyricsCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).getLyrics(ref)
+    suspend fun lyrics(ref: TrackRef): SourceLyrics? {
+        val provider = registry.requireProvider(ref.providerId)
+        if (SourceCapability.LYRICS !in provider.capabilities) throw SourceException(SourceErrorCode.UNSUPPORTED)
+        return (provider as? LyricsCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)).getLyrics(ref)
+    }
 }

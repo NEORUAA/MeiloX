@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.applemusic
 
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -520,7 +521,7 @@ fun AppleMusicPlayer(
                                                                 title = metadata.title,
                                                                 subTitle = metadata.artists.joinToString { it.name },
                                                                 isLiked = isLiked,
-                                                                showLikeButton = !metadata.isLocal && !metadata.isPodcast,
+                                                                showLikeButton = metadata.supportsNeteaseSongActions,
                                                                 onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                                                                 onMoreClick = { overlayHandler.showMoreAction() },
                                                                 onTitleClick = {
@@ -634,7 +635,7 @@ fun AppleMusicPlayer(
                                 title = metadata.title,
                                 subTitle = metadata.artists.joinToString { it.name },
                                 isLiked = isLiked,
-                                showLikeButton = !metadata.isLocal && !metadata.isPodcast,
+                                showLikeButton = metadata.supportsNeteaseSongActions,
                                 onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                                 onMoreClick = { overlayHandler.showMoreAction() },
                                 onTitleClick = {
@@ -681,7 +682,7 @@ fun AppleMusicPlayer(
                             title = metadata.title,
                             subTitle = metadata.artists.joinToString { it.name },
                             isLiked = isLiked,
-                            showLikeButton = !metadata.isLocal && !metadata.isPodcast,
+                            showLikeButton = metadata.supportsNeteaseSongActions,
                             onLikeClick = { stateContainer.playerViewModel.like(metadata.id.toString()) },
                             onMoreClick = { overlayHandler.showMoreAction() },
                             onTitleClick = {

@@ -15,6 +15,10 @@ import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.Lyric
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.toSourceTrack
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.CachePolicy
 import com.ljyh.mei.data.model.Tracks
 import com.ljyh.mei.data.model.UserPlaylist
 import com.ljyh.mei.data.model.api.CreatePlaylistResult
@@ -25,10 +29,10 @@ import com.ljyh.mei.data.model.room.QQSong
 import com.ljyh.mei.data.model.weapi.Radio
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.neteaseSessionFingerprint
-import com.ljyh.mei.data.repository.PlayerRepository
-import com.ljyh.mei.data.repository.LibraryCollectionsRepository
-import com.ljyh.mei.data.repository.PlaylistRepository
-import com.ljyh.mei.data.repository.UserRepository
+import com.ljyh.mei.source.netease.repository.PlayerRepository
+import com.ljyh.mei.source.netease.repository.LibraryCollectionsRepository
+import com.ljyh.mei.source.netease.repository.PlaylistRepository
+import com.ljyh.mei.source.netease.repository.UserRepository
 import com.ljyh.mei.di.repository.LocalPlaylistRepository
 import com.ljyh.mei.di.repository.observeOwnedPlaylists
 import com.ljyh.mei.di.repository.toLocalPlaylist
@@ -44,6 +48,7 @@ import com.ljyh.mei.ui.model.resolveMoreActionOrder
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.utils.get
 import com.ljyh.mei.utils.lyric.LyricManager
+import com.ljyh.mei.utils.lyric.lyricStorageKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -131,6 +136,11 @@ class PlayerViewModel @Inject constructor(
             mediaUriProvider.getAvailableDownloadQualities(mediaId.toString())
         }
 
+    suspend fun getAvailableDownloadQualities(metadata: MediaMetadata): List<MusicQuality> =
+        withContext(Dispatchers.IO) {
+            mediaUriProvider.getAvailableDownloadQualities(TrackRefCodec.mediaId(metadata.trackRef))
+        }
+
     val localPlaylists: StateFlow<List<Playlist>> = localPlaylistRepository.getAllPlaylist()
         .stateIn(
             scope = viewModelScope,
@@ -148,6 +158,7 @@ class PlayerViewModel @Inject constructor(
         )
 
     fun getLike(id: Long) {
+        if (id <= 0L) { clearLikeSelection(); return }
         val expectedSession = neteaseSessionFingerprint(AppContext.instance.dataStore[CookieKey].orEmpty())
         val key = id.toString()
         selectedLikeId = key
@@ -162,7 +173,21 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    fun getLike(metadata: MediaMetadata) {
+        if (!metadata.supportsNeteaseSongActions) { clearLikeSelection(); return }
+        getLike(metadata.trackRef.trackId.toLong())
+    }
+
+    private fun clearLikeSelection() {
+        selectedLikeId = null
+        likeSelectionGeneration++
+        likeStatusJob?.cancel()
+        _like.value = Resource.Success(false)
+    }
+
     fun like(id: String) {
+        val metadata = mediaMetadata ?: return
+        if (!metadata.supportsNeteaseSongActions || metadata.trackRef.trackId != id) return
         val expectedSession = neteaseSessionFingerprint(AppContext.instance.dataStore[CookieKey].orEmpty())
         viewModelScope.launch {
             val result = repository.toggleLike(id, expectedSession)
@@ -211,12 +236,16 @@ class PlayerViewModel @Inject constructor(
 
     fun deleteSongById(id: String) {
         val metadata = mediaMetadata ?: return
-        if (metadata.id.toString() == id) lyricManager.resetLyricSource(metadata)
+        if (metadata.lyricStorageKey() == id) lyricManager.resetLyricSource(metadata)
     }
 
     suspend fun getQQSongId(metadataId: Long): String? {
+        if (metadataId == 0L) return null
         return qqSongRepository.getQQSong(metadataId.toString()).firstOrNull()?.qid
     }
+
+    suspend fun getQQSongId(metadata: MediaMetadata): String? =
+        qqSongRepository.getQQSong(metadata.lyricStorageKey()).firstOrNull()?.qid
 
 
 
@@ -255,6 +284,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun startIntelligenceMode(id: String, playlistId: String, startSongId: String) {
+        if (listOf(id, playlistId, startSongId).any { it.toLongOrNull()?.let { value -> value > 0L } != true }) return
         intelligenceJob?.cancel()
         intelligenceJob = viewModelScope.launch {
             _songDetail.value = Resource.Loading
@@ -279,6 +309,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun getSongDetail(id:String){
+        if (id.toLongOrNull()?.let { it > 0L } != true) return
         viewModelScope.launch {
             _songDetail.value = Resource.Loading
             val result = repository.getSongDetail(id)
@@ -297,42 +328,35 @@ class PlayerViewModel @Inject constructor(
                 MusicQuality.EXHIGH
             }
 
-            val result = playlistRepository.getSongUrlV1(
-                ids = listOf(metadata.id.toString()),
-                quality = quality
-            )
-
-            if (result is Resource.Success) {
-                val songData = result.data.fullSourceFor(metadata.id.toString())
-                val url = songData?.url
-                if (url != null) {
-                    val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
-                        ?: com.ljyh.mei.utils.DownloadManager.getDefaultDownloadPath()
-
-                    com.ljyh.mei.utils.DownloadManager.enqueue(
-                        context = context,
-                        songs = listOf(
-                            com.ljyh.mei.playback.SongDownloadInfo(
-                                songId = metadata.id.toString(),
-                                url = url,
-                                songTitle = metadata.title,
-                                songArtist = metadata.artists.map { it.name },
-                                songAlbum = metadata.album.title,
-                                songCover = metadata.coverUrl,
-                                duration = metadata.duration,
-                                fileType = songData.encodeType,
-                                quality = songData.level,
-                            )
-                        ),
-                        playlistName = "单曲下载",
-                        downloadPath = downloadPath
-                    )
-                    android.widget.Toast.makeText(context, "已添加到下载队列", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    android.widget.Toast.makeText(context, "无法获取歌曲链接", android.widget.Toast.LENGTH_SHORT).show()
+            try {
+                val resolution = mediaUriProvider.resolveDownloadSource(metadata.toSourceTrack(), quality.text)
+                if (resolution.resource.cachePolicy == CachePolicy.NO_STORE) {
+                    android.widget.Toast.makeText(context, "此音源不允许下载", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
-            } else {
-                android.widget.Toast.makeText(context, "获取链接失败", android.widget.Toast.LENGTH_SHORT).show()
+                val downloadPath = AppContext.instance.dataStore[DownloadPathKey]
+                    ?: com.ljyh.mei.utils.DownloadManager.getDefaultDownloadPath()
+                com.ljyh.mei.utils.DownloadManager.enqueue(
+                    context = context,
+                    songs = listOf(com.ljyh.mei.playback.SongDownloadInfo(
+                        songId = TrackRefCodec.storageKey(metadata.trackRef),
+                        url = resolution.resource.uri,
+                        songTitle = metadata.title,
+                        songArtist = metadata.artists.map { it.name },
+                        songAlbum = metadata.album.title,
+                        songCover = metadata.coverUrl,
+                        duration = metadata.duration,
+                        quality = quality.text,
+                        originTrackRef = metadata.trackRef,
+                        resolution = resolution,
+                    )),
+                    playlistName = "单曲下载",
+                    downloadPath = downloadPath,
+                )
+                android.widget.Toast.makeText(context, "已添加到下载队列", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(context, "获取播放源失败", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }

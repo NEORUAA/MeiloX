@@ -31,6 +31,10 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.common.util.UnstableApi
+import com.ljyh.mei.source.netease.NeteaseQueueTransport
+import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.core.SourceRouter
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -92,14 +96,12 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.network.netease.NcblSongInfo
 import com.ljyh.mei.data.network.netease.NeteaseClientLogClient
-import com.ljyh.mei.data.repository.MeloXRepository
-import com.ljyh.mei.data.repository.PlayerRepository
+import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.netease.repository.PlayerRepository
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.data.network.neteaseSessionFingerprint
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.di.repository.HistoryRepository
 import com.ljyh.mei.di.repository.SongRepository
 import com.ljyh.mei.extensions.currentMetadata
@@ -181,6 +183,7 @@ class MusicService : MediaLibraryService(),
     private val automaticCachePlayback = AutomaticCachePlaybackTracker(scope)
     private lateinit var playbackHistoryReporter: PlaybackHistoryReporter
     private val playbackHistorySession = PlaybackHistorySession()
+    private var platformHistorySuppressedFor: String? = null
     private var playbackSnapshotJob: Job? = null
     private var periodicSnapshotJob: Job? = null
     private var playbackRestoreJob: Job? = null
@@ -190,6 +193,7 @@ class MusicService : MediaLibraryService(),
     val currentMediaMetadata = MutableStateFlow<MediaMetadata?>(null)
     val availableMusicQualities = MutableStateFlow<List<MusicQuality>>(emptyList())
     val currentMusicQuality = MutableStateFlow<MusicQuality?>(null)
+    val currentPlaybackResolution = MutableStateFlow<com.ljyh.mei.source.api.PlaybackResolution?>(null)
     val localPlaybackInfo = MutableStateFlow<LocalPlaybackInfo?>(null)
     val isPlayingLocalSource = MutableStateFlow(false)
     val isLoadingMusicQualities = MutableStateFlow(false)
@@ -223,9 +227,7 @@ class MusicService : MediaLibraryService(),
     private var openedAudioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
 
     @Inject
-    lateinit var weApiService: WeApiService
-    @Inject
-    lateinit var apiService: ApiService
+    lateinit var neteaseQueueTransport: NeteaseQueueTransport
 
 
     @Inject
@@ -243,6 +245,8 @@ class MusicService : MediaLibraryService(),
     lateinit var listenTogetherStore: ListenTogetherStore
     @Inject
     lateinit var automaticCacheController: AutomaticCacheController
+    @Inject
+    lateinit var sourceRouter: SourceRouter
 
     override fun onCreate() {
         super.onCreate()
@@ -388,7 +392,7 @@ class MusicService : MediaLibraryService(),
         })
 
         queueManager = PlaybackQueueManager(
-            player, apiService, weApiService, scope,
+            player, neteaseQueueTransport, scope, sourceRouter = sourceRouter,
             serverShuffleAllowed = { listenTogetherStore.state.value.room == null },
         )
         scope.launch {
@@ -408,6 +412,7 @@ class MusicService : MediaLibraryService(),
             player = player,
             scope = scope,
             sourceResolver = { item ->
+                item.metadata?.let { mediaUriProvider.rememberTrack(it, item.mediaId) }
                 val quality = context.dataStore[MusicQualityKey]
                     ?.lowercase(getDefault())
                     ?: MusicQuality.EXHIGH.text
@@ -669,7 +674,13 @@ class MusicService : MediaLibraryService(),
     private fun publishResolvedQuality(source: ResolvedMediaSource) {
         val mediaId = player.currentMediaItem?.mediaId ?: return
         if (source.cacheKey?.let { mediaUriProvider.isRejectedCachedSource(mediaId, it) } == true) return
-        val isLocal = source.cacheKey == null
+        val isLocal = source.localPlaybackInfo != null
+        currentPlaybackResolution.value = source.resolution
+        source.resolution?.let { resolution ->
+            if (!canReportNeteasePlayback(resolution.originTrackRef, resolution)) {
+                platformHistorySuppressedFor = mediaId
+            }
+        }
         isPlayingLocalSource.value = isLocal
         if (isLocal) localPlaybackInfo.value = source.localPlaybackInfo ?: LocalPlaybackInfo()
         val quality = source.actualQuality.takeIf { !isLocal }?.let { actual ->
@@ -688,6 +699,7 @@ class MusicService : MediaLibraryService(),
         qualityMediaId = mediaId
         availableMusicQualities.value = emptyList()
         currentMusicQuality.value = null
+        currentPlaybackResolution.value = null
         localPlaybackInfo.value = null
         isPlayingLocalSource.value = false
         isLoadingMusicQualities.value = false
@@ -939,8 +951,10 @@ class MusicService : MediaLibraryService(),
 
     private fun MediaItem.playbackHistorySongIdOrNull(): Long? {
         val metadata = metadata ?: return null
-        if (metadata.isPodcast || metadata.isLocal) return null
-        return mediaId.toLongOrNull()?.takeIf { it > 0L }
+        if (metadata.isPodcast || metadata.isLocal || metadata.trackRef.providerId != ProviderIds.NETEASE) return null
+        val actual = mediaUriProvider.resolvedMediaSource(mediaId)?.resolution
+        if (platformHistorySuppressedFor == mediaId || !canReportNeteasePlayback(metadata.trackRef, actual)) return null
+        return metadata.trackRef.trackId.toLongOrNull()?.takeIf { it > 0L }
     }
 
     private fun recordPlaybackStart(
@@ -985,6 +999,9 @@ class MusicService : MediaLibraryService(),
 
     private fun recordPlaybackDuration(completed: CompletedPlaybackHistorySession?) {
         completed ?: return
+        val actual = mediaUriProvider.resolvedMediaSource(completed.mediaId)?.resolution
+        val origin = TrackRefCodec.decode(completed.mediaId) ?: return
+        if (platformHistorySuppressedFor == completed.mediaId || !canReportNeteasePlayback(origin, actual)) return
         playbackHistoryReporter.recordDuration(
             completed = completed,
             endedAtMs = System.currentTimeMillis(),
@@ -994,8 +1011,9 @@ class MusicService : MediaLibraryService(),
 
     private fun notificationLikeSongId(): String? {
         val metadata = player.currentMetadata ?: return null
-        return player.currentMediaItem?.mediaId?.takeIf {
-            !metadata.isLocal && !metadata.isPodcast && (it.toLongOrNull() ?: 0L) > 0L
+        return metadata.trackRef.trackId.takeIf {
+            metadata.trackRef.providerId == ProviderIds.NETEASE && !metadata.isLocal && !metadata.isPodcast &&
+                (it.toLongOrNull() ?: 0L) > 0L
         }
     }
 
@@ -1273,7 +1291,7 @@ class MusicService : MediaLibraryService(),
     private fun createDataSourceFactory(): DataSource.Factory {
         val simpleCache = CacheManager.getSimpleCache(context)
 
-        return ResolvingDataSource.Factory(getCacheDataSourceFactory(context)) { dataSpec ->
+        return ResolvingDataSource.Factory(CacheManager.getPlaybackDataSourceFactory(context)) { dataSpec ->
             val mediaId = dataSpec.key ?: error("No media key")
             val quality = context.dataStore[MusicQualityKey]
                 ?.let(::normalizePlaybackQuality)
@@ -1297,10 +1315,7 @@ class MusicService : MediaLibraryService(),
 
             runBlocking {
                 val resolved = mediaUriProvider.resolveMediaSource(mediaId, quality)
-                dataSpec.buildUpon()
-                    .setUri(resolved.uri)
-                    .setKey(resolved.cacheKey)
-                    .build()
+                resolvedMediaDataSpec(dataSpec, resolved)
             }
         }
     }
@@ -1438,12 +1453,17 @@ class MusicService : MediaLibraryService(),
             }
         }
 
-        val isSourceError = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-                error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
-                error.cause is SourceNotFoundException ||
-                error.message?.contains("Unable to resolve url") == true
+        val isSourceError = shouldRetryOnlinePlaybackSource(error.errorCode) ||
+                generateSequence(error.cause) { it.cause }.take(16).any {
+                    it is SourceNotFoundException || it is com.ljyh.mei.source.api.SourceException
+                }
 
         if (isSourceError) {
+            val mediaId = player.currentMediaItem?.mediaId
+            if (mediaId != null) {
+                if (scheduleSourceRecovery(preserveCache = true)) return
+                if (mediaUriProvider.rejectCurrentSource(mediaId) && scheduleSourceRecovery(qualityFallback = true)) return
+            }
             val limitReached = playbackFailures.recordFailure()
             Timber.tag("MusicService").e("Play failure detected. Count: %s", playbackFailures.consecutiveFailures)
             if (limitReached) {
@@ -1546,6 +1566,7 @@ class MusicService : MediaLibraryService(),
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (isRefreshingPlaybackSource) return
+        mediaItem?.metadata?.let { mediaUriProvider.rememberTrack(it, mediaItem.mediaId) }
         playbackFailures.onMediaItemTransition(mediaItem?.queueEntryId ?: mediaItem?.mediaId, reason)
         if (mediaItem?.mediaId != qualityMediaId) resetCurrentQualityState(mediaItem?.mediaId)
         recordPlaybackDuration(
@@ -1555,6 +1576,11 @@ class MusicService : MediaLibraryService(),
                 realtimeMs = SystemClock.elapsedRealtime(),
             ),
         )
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ||
+            mediaItem?.mediaId != sourceRecoveryMediaId || mediaItem?.queueEntryId != sourceRecoveryEntryId
+        ) {
+            platformHistorySuppressedFor = null
+        }
         if (mediaItem?.mediaId != sourceRecoveryMediaId || mediaItem?.queueEntryId != sourceRecoveryEntryId) {
             sourceRecoveryJob?.cancel()
             sourceRecoveryJob = null

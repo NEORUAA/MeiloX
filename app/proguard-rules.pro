@@ -100,6 +100,10 @@
 # their generic signatures so R8 cannot erase List element types in release builds.
 -keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
 -keep class com.ljyh.mei.playback.PlaybackItemSnapshot { *; }
+-keep class com.ljyh.mei.source.core.SourceSettings { *; }
+-keep class com.ljyh.mei.source.api.Track { *; }
+-keep class com.ljyh.mei.source.api.SourceArtist { *; }
+-keep class com.ljyh.mei.source.api.SourceAlbum { *; }
 -keep class com.ljyh.mei.playback.PlaybackArtistSnapshot { *; }
 
 -keepclasseswithmembernames class * {

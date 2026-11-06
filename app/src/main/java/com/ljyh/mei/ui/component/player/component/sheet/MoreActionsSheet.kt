@@ -48,6 +48,8 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.ui.model.PlayerAction
 import com.ljyh.mei.ui.model.SortOrder
+import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.ui.model.availableFor
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -58,6 +60,7 @@ fun MoreActionsSheet(
     onFindLyrics: (() -> Unit)? = null,
     onFindLyricsLongClick: (() -> Unit)? = null,
     onChoosePrivateFmScene: (() -> Unit)? = null,
+    metadata: MediaMetadata? = viewModel.mediaMetadata,
 ) {
     val connection = LocalPlayerConnection.current
     val sleepTimer = connection?.service?.sleepTimer
@@ -204,7 +207,7 @@ fun MoreActionsSheet(
                             color = LocalGlassColors.current.content)
                     }
                 } else GlasmioGroupedList {
-                    moreActions.forEachIndexed { index, action ->
+                    moreActions.filter { it.availableFor(metadata) }.forEachIndexed { index, action ->
                         GlasmioListRow(
                             title = stringResource(action.labelRes),
                             systemName = action.systemName,

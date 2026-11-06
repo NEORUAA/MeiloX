@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
+import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.toMediaItem
@@ -134,7 +135,7 @@ fun LocalSongListScreen(
     }
 
     fun buildQueue(index: Int = 0): ListQueue {
-        val items = tracks.map { it.id.toString() to it.toMediaItem() }
+        val items = tracks.map { it.mediaId to it.toMediaItem() }
         return ListQueue(
             id = "local_$filterType+$filterValue",
             title = title,
@@ -177,12 +178,12 @@ fun LocalSongListScreen(
                         contentPadding = padding,
                         isTablet = true,
                         onTrackClick = { track, index ->
-                            val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
+                            val isLost = songs.find { it.toMediaMetadata().trackRef == track.trackRef }?.let {
                                 !localAudioPathExists(it.path)
                             } ?: false
                             if (!isLost) {
                                 playerConnection.onTrackClicked(
-                                    trackId = track.id.toString(),
+                                    trackId = track.mediaId,
                                     buildQueue = { buildQueue(index) },
                                 )
                             }
@@ -204,12 +205,12 @@ fun LocalSongListScreen(
                         )
                     },
                     onTrackClick = { track, index ->
-                        val isLost = songs.find { it.toMediaMetadata().id == track.id }?.let {
+                        val isLost = songs.find { it.toMediaMetadata().trackRef == track.trackRef }?.let {
                             !localAudioPathExists(it.path)
                         } ?: false
                         if (!isLost) {
                             playerConnection.onTrackClicked(
-                                trackId = track.id.toString(),
+                                trackId = track.mediaId,
                                 buildQueue = { buildQueue(index) },
                             )
                         }
@@ -237,7 +238,7 @@ fun LocalSongListScreen(
                 anchorBounds = actionAnchor,
                 onShare = { shareTrack = track },
                 onDismiss = { actionTrack = null },
-                onCopyId = { setClipboard(context, track.id.toString(), "id") },
+                onCopyId = { setClipboard(context, track.trackRef.trackId, "id") },
                 onCopyName = { setClipboard(context, track.title, "name") },
             )
         }

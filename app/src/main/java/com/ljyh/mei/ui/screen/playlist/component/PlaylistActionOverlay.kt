@@ -89,7 +89,7 @@ fun PlaylistActionOverlay(
                     onDismiss()
                 },
                 onCopyId = {
-                    setClipboard(context, overlay.track.id.toString(), "id")
+                    setClipboard(context, overlay.track.trackRef.trackId, "id")
                     onDismiss()
                 },
                 onCopyName = {

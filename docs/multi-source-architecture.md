@@ -82,3 +82,25 @@ All five native-provider JVM tests passed in the shared build. Eleven AVD tests 
 playback identity, authentication isolation and playlist request transport passed.
 These synthetic transport regressions preserve the real account; they do not claim
 successful live login, cloud upload or social mutation.
+
+### P3
+
+Playback now resolves original content and actual audio separately. Native URL
+refresh/quality ladders run before configured cross-source matching. Resolution has
+typed failures, bounded timeouts, cancellation/invalidation epochs, shared request
+gates, concurrency limits, positive/negative mapping caches and explicit manual
+bindings. Ambiguous recordings are not selected automatically.
+
+Media3, AutoMix and downloads preserve per-resource headers and cache permission.
+Version 4 audio cache keys contain actual provider/instance/ref/quality/content;
+legacy Netease v3 keys remain readable. Download tasks retain origin and actual
+provenance without persisting headers. Platform history excludes cross-source audio,
+including downloaded copies. Native-only UI actions and lyric cache keys now respect
+the content provider. Negative podcast transports cannot collide with local songs.
+
+The shared build passed 910 JVM tests. Thirty AVD migration, snapshot, real ExoPlayer,
+quality, native-before-external rejection, download-generation and queue tests passed.
+The new live-native smoke initially exposed a test-only Hilt entry-point wiring
+mistake; its adapter was corrected for the final regression run. Earlier isolated
+service-recovery tests require a dedicated opt-in package and were skipped, not
+counted as successful recovery coverage.
