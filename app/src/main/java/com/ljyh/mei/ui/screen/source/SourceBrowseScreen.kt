@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +92,7 @@ fun SourceFeedScreen(
     kind: FeedKind,
     viewModel: SourceContentViewModel = hiltViewModel(),
 ) {
+    val glassColors = LocalGlassColors.current
     val state by viewModel.state.collectAsState()
     val selectedId by viewModel.selectedProviderId.collectAsState()
     val providers by viewModel.providers.collectAsState()
@@ -110,6 +112,7 @@ fun SourceFeedScreen(
         bottomPadding = bottom + HomeSectionSpacing,
         horizontalContentPadding = 0.dp,
         largeTitleHorizontalPadding = 20.dp,
+        backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
         listState = listState,
         verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing),
         actions = {
