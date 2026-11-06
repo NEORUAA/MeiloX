@@ -470,14 +470,15 @@ class MediaUriProvider @Inject constructor(
     private suspend fun localSong(mediaId: String): Song? {
         val ref = trackRef(mediaId)
         val storageId = ref?.let(TrackRefCodec::storageKey) ?: mediaId
+        val legacy = if (ref?.providerId == ProviderIds.LOCAL && mediaId != storageId &&
+            mediaId.toLongOrNull()?.let { it < 0 && it != Long.MIN_VALUE } == true
+        ) songRepository.getSong(mediaId).firstOrNull()?.takeIf {
+            it.providerId == ref.providerId && it.providerTrackId == ref.trackId
+        } else null
+        if (!legacy?.path.isNullOrBlank()) return legacy
         val exact = songRepository.getSong(storageId).firstOrNull()
             ?.takeUnless { ref?.providerId != ProviderIds.LOCAL && it.sourceType == SourceType.LOCAL }
-        if (!exact?.path.isNullOrBlank()) return exact
-        if (ref?.providerId != ProviderIds.LOCAL) return exact
-        val localId = mediaId.toLongOrNull()?.takeIf { it < 0 && it != Long.MIN_VALUE }?.let { -it }
-            ?: return exact
-        val prefixed = songRepository.getSong("local_$localId").firstOrNull()
-        return prefixed?.takeIf { !it.path.isNullOrBlank() } ?: exact ?: prefixed
+        return exact?.takeIf { !it.path.isNullOrBlank() } ?: legacy ?: exact
     }
 
     private suspend fun canResolveOnline(mediaId: String): Boolean =

@@ -693,6 +693,26 @@ class MediaUriProviderQualityTest {
     }
 
     @Test
+    fun migratedNegativeLocalRowRetainsItsOriginalFileAndCannotBecomeAPodcastCopy() = runBlocking {
+        withLocalWave(false) { uri ->
+            val legacy = Song("-77", "Legacy local recording", emptyList(), "", "", 100,
+                sourceType = SourceType.LOCAL, path = uri.toString())
+            val alias = legacy.copy(id = "local_77", path = "content://example.test/different-copy")
+            val resolver = provider("{}", localSong = legacy, extraSongs = listOf(alias)) {
+                error("A migrated local file must not resolve online")
+            }
+            resolver.rememberTrack(legacy.toMediaMetadata(), "-77")
+            assertEquals(uri, resolver.resolveMediaSource("-77", "exhigh").uri)
+            assertEquals(legacy.path, resolver.resolveLocalSource("-77")?.uri.toString())
+            val podcast = Track(TrackRef(ProviderIds.NETEASE, "-77"), "Podcast", emptyList())
+                .toMediaMetadata().copy(isPodcast = true)
+            resolver.rememberTrack(podcast, "-77")
+            assertEquals(null, resolver.resolveLocalSource("-77"))
+            assertEquals(null, resolver.resolveLocalSource("77"))
+        }
+    }
+
+    @Test
     fun downloadedFallbackRetainsItsActualSourceAndCannotEmitOfficialHistory() = runBlocking {
         withLocalWave(false) { uri ->
             val origin = TrackRef(ProviderIds.NETEASE, "1")
