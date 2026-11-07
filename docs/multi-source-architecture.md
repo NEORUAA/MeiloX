@@ -54,7 +54,7 @@ Home/discovery/search/library source switching uses top-bar actions and dropdown
 
 The API 1/2 contract and declarations are documented in [source-plugin-spec.md](source-plugin-spec.md). API 2 gains optional `feature.invoke`, links, session identity and host effects while preserving API 1 behavior.
 
-Each isolated operation has enforced heap, result, evaluation and HTTP-hop limits. Source configuration/storage is encrypted per package instance. Revision gates protect reads, network hops, storage writes, artwork and audio publication. Generic source HTTP has no account-bearing shared cookie jar. Exact domain permissions, public-address DNS checks, HTTPS, redirect rejection and bounded bodies apply to both ordinary and SDK-coded requests.
+Each isolated operation has enforced heap, result, evaluation and HTTP-hop limits. Source configuration/storage is encrypted per package instance. Revision gates protect reads, network hops, storage writes, artwork and audio publication. Generic source HTTP has no account-bearing shared cookie jar. Exact domain permissions, system-DNS address checks, HTTPS, redirect rejection and bounded bodies apply to both ordinary and SDK-coded requests. The DNS policy accepts public addresses and the system proxy's `198.18.0.0/15` Fake-IP range while retaining hostname/TLS checks and rejecting literal IP URLs. Transport and bounded response failures do not disable an otherwise valid source.
 
 A feature returns a bounded `{hostEffect,continuation}` plan. `SourceFeatureExecutor` releases the isolate before invoking a host handler, then resumes the same action with a host-issued continuation token and structured outcome. The entire chain remains bound to provider/version/account/screen. In-flight handlers are cancelled on revocation. A final session transition is opt-in from named host login/logout/account-web flows, while pending effects remain pinned to the original account.
 
@@ -80,7 +80,7 @@ Updates and ordinary package imports use the inspected-byte approval path. Confi
 
 `SourceUpdatePlaybackGuard` coordinates installation reservations with queue restoration and resource resolution. Current original/actual audio providers remain protected even while paused; cancellation releases pending resolution leases. Deferred updates remain available for a later startup or explicit review without a polling loop. Existing HTTPS audio handles retain their validated transport.
 
-The host-owned marketplace transport permits system VPN/Fake-IP DNS routing for its fixed HTTPS raw GitHub endpoints. It retains hostname/TLS validation, redirect rejection and size/digest limits. This dedicated transport does not change the public-address DNS policy of untrusted plugins.
+The host-owned marketplace transport uses system DNS routing for its fixed HTTPS raw GitHub endpoints. It retains hostname/TLS validation, redirect rejection and size/digest limits. Plugin requests additionally enforce their own reviewed domain grants and DNS address policy.
 
 ## Playback and independent lyrics
 

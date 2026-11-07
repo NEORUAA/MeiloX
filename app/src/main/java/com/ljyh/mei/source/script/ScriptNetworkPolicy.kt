@@ -41,9 +41,7 @@ class ScriptNetworkPolicy(
         .proxy(java.net.Proxy.NO_PROXY)
         .dns(Dns { host ->
             validateHost(host)
-            Dns.SYSTEM.lookup(host).also { addresses ->
-                if (addresses.isEmpty() || addresses.any { !isPublicAddress(it) }) denied()
-            }
+            Dns.SYSTEM.lookup(host).also(::validateResolvedAddresses)
         })
         .addInterceptor { chain ->
             validateUrl(chain.request().url.toString())
@@ -77,14 +75,14 @@ class ScriptNetworkPolicy(
                 return@withContext artworkUri(file)
             }
             exchange(client.newCall(Request.Builder().url(checked).build()), ensureCurrent) { response, guard ->
-                if (response.code in 300..399) denied()
+                if (response.code in 300..399) throw SourceException(SourceErrorCode.NETWORK)
                 if (!response.isSuccessful) throw SourceException(
                     if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
                 )
                 val body = response.body ?: denied()
-                if (body.contentLength() > MAX_RESPONSE_BYTES) denied()
+                if (body.contentLength() > MAX_RESPONSE_BYTES) invalidResponse()
                 val source = body.source()
-                if (source.request(MAX_RESPONSE_BYTES + 1L)) denied()
+                if (source.request(MAX_RESPONSE_BYTES + 1L)) invalidResponse()
                 val bytes = source.readByteArray()
                 guard()
                 check(file.parentFile?.isDirectory == true || file.parentFile?.mkdirs() == true)
@@ -149,7 +147,7 @@ class ScriptNetworkPolicy(
                     chain.proceed(chain.request()).let { response ->
                         response.body?.let { payload ->
                             val source = payload.source()
-                            if (source.request(MAX_RESPONSE_BYTES + 1L)) { response.close(); denied() }
+                            if (source.request(MAX_RESPONSE_BYTES + 1L)) { response.close(); invalidResponse() }
                         }
                         response
                     }
@@ -190,11 +188,12 @@ class ScriptNetworkPolicy(
     }
 
     internal fun responsePayload(response: Response, encoding: String): JsonObject = transport {
-        if (encoding !in setOf("utf8", "base64") || response.code in 300..399) denied()
+        if (encoding !in setOf("utf8", "base64")) denied()
+        if (response.code in 300..399) throw SourceException(SourceErrorCode.NETWORK)
         val responseBody = response.body
-        if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) denied()
+        if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) invalidResponse()
         val source = responseBody?.source()
-        if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) denied()
+        if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) invalidResponse()
         val bytes = source?.readByteArray() ?: byteArrayOf()
         JsonObject().apply {
             addProperty("status", response.code)
@@ -220,6 +219,16 @@ class ScriptNetworkPolicy(
     }
 
     companion object {
+        /** System DNS may return a local proxy's synthetic address; TLS still authenticates the declared hostname. */
+        internal fun validateResolvedAddresses(addresses: List<InetAddress>) {
+            if (addresses.isEmpty() || addresses.any { address ->
+                    val bytes = address.address
+                    val fakeIp = bytes.size == 4 && (bytes[0].toInt() and 255) == 198 &&
+                        (bytes[1].toInt() and 255) in 18..19
+                    !isPublicAddress(address) && !fakeIp
+                }) throw SourceException(SourceErrorCode.NETWORK)
+        }
+
         internal fun artworkFile(url: String, directory: java.io.File): java.io.File {
             val key = java.security.MessageDigest.getInstance("SHA-256").digest(url.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
@@ -254,5 +263,6 @@ class ScriptNetworkPolicy(
         }
 
         private fun denied(): Nothing = throw SourceException(SourceErrorCode.PLUGIN, "Source network permission denied")
+        private fun invalidResponse(): Nothing = throw SourceException(SourceErrorCode.INVALID_RESPONSE, "Source response exceeded its size limit")
     }
 }

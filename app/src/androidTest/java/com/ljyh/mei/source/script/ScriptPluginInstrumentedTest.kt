@@ -661,7 +661,7 @@ class ScriptPluginInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.transport-test","name":"Transport fixture","author":"Tests",
-            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"network":["api.example.com"]}}""")
+            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"network":["api.example.com"],"storage":true}}""")
         val policy = ScriptNetworkPolicy(manifest.permissions.network)
         val failures = listOf(IOException("private source URL") to SourceErrorCode.NETWORK,
             SocketTimeoutException("private source timeout") to SourceErrorCode.TIMEOUT)
@@ -681,14 +681,18 @@ class ScriptPluginInstrumentedTest {
         val failureCodes = mutableListOf<SourceErrorCode>()
         try {
             File(directory, "index.js").writeText("""globalThis.sourcePlugin = {'catalog.track':function(params) {
+                if(params.trackId === 'oversized') return {trackId:'oversized',title:'x'.repeat(300000)};
+                if(params.trackId === 'storage') return {result:{trackId:'storage',title:'Fixture'},storage:{large:'x'.repeat(65536)}};
                 if(params.trackId !== 'healthy') return {error:params.trackId};
                 return {trackId:'healthy',title:'Recovered source'};
             }};""".trimIndent())
             val provider = ScriptMusicProvider(manifest, directory, runtime, enabled = true,
                 configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { emptyMap() },
                 saveStorage = {}, onFailure = { failureCodes += it }, configurationVersion = 0)
-            for ((_, expected) in failures) {
-                try { provider.getTrack(TrackRef(manifest.providerId, expected.name)); fail("Expected a typed transport error") }
+            val cases = failures.map { it.second.name to it.second } + listOf(
+                "oversized" to SourceErrorCode.INVALID_RESPONSE, "storage" to SourceErrorCode.INVALID_RESPONSE)
+            for ((trackId, expected) in cases) {
+                try { provider.getTrack(TrackRef(manifest.providerId, trackId)); fail("Expected a bounded operation failure") }
                 catch (error: SourceException) { assertEquals(expected, error.code) }
                 assertEquals(SourceStatus.READY, provider.status)
                 assertFalse(provider.failed)

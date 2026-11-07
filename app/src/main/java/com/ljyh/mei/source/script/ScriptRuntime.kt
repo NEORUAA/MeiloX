@@ -122,7 +122,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                             phase = ScriptRuntimePhase.OPERATION
                             val raw = withTimeout(3_000) { isolate.evaluateJavaScriptAsync(invocation).await() }
                             ensureCurrent()
-                            if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) throw SourceException(SourceErrorCode.PLUGIN)
+                            if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
                             phase = ScriptRuntimePhase.RESULT
                             val result = JsonParser.parseString(raw)
                             val envelope = result.takeIf(JsonElement::isJsonObject)?.asJsonObject
@@ -151,8 +151,9 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                     throw SourceException(code)
                                 }
                                 val updated = envelope?.getAsJsonObject("storage")?.let { values ->
-                                    if (!manifest.permissions.storage || values.size() > 64 || values.toString().toByteArray().size > 64 * 1024) {
-                                        throw SourceException(SourceErrorCode.PLUGIN, "Source storage limit exceeded")
+                                    if (!manifest.permissions.storage) throw SourceException(SourceErrorCode.PLUGIN)
+                                    if (values.size() > 64 || values.toString().toByteArray().size > 64 * 1024) {
+                                        throw SourceException(SourceErrorCode.INVALID_RESPONSE, "Source storage limit exceeded")
                                     }
                                     values.entrySet().associate { it.key to it.value.asString }
                                 }
@@ -172,10 +173,10 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         } catch (error: Exception) {
             ensureCurrent()
             val failure = scriptRuntimeFailure(error, phase, memoryLimited.get(), requestSent)
-            if (failure.code == SourceErrorCode.UNAVAILABLE) {
+            if (failure.code in setOf(SourceErrorCode.UNAVAILABLE, SourceErrorCode.PLUGIN, SourceErrorCode.INVALID_RESPONSE)) {
                 // Engine exception messages may contain script data. Record fixed metadata only.
                 val kind = (error as? java.util.concurrent.ExecutionException)?.cause?.javaClass?.simpleName ?: error.javaClass.simpleName
-                android.util.Log.w("ScriptRuntime", "Sandbox unavailable phase=${phase.name} kind=$kind")
+                android.util.Log.w("ScriptRuntime", "Sandbox failure code=${failure.code.name} phase=${phase.name} kind=$kind")
             }
             throw failure
         }
@@ -216,7 +217,8 @@ internal fun scriptRuntimeFailure(error: Throwable, phase: ScriptRuntimePhase,
     if (cause is CancellationException) throw cause as CancellationException
     if (cause is SourceException) return cause as SourceException
     val code = when {
-        memoryLimited || cause is MemoryLimitExceededException || cause is EvaluationResultSizeLimitExceededException -> SourceErrorCode.PLUGIN
+        memoryLimited || cause is MemoryLimitExceededException -> SourceErrorCode.PLUGIN
+        cause is EvaluationResultSizeLimitExceededException -> SourceErrorCode.INVALID_RESPONSE
         cause is SandboxUnsupportedException -> SourceErrorCode.UNSUPPORTED
         cause is ScriptConnectionCloseException -> SourceErrorCode.UNAVAILABLE
         cause is EvaluationFailedException -> if (phase == ScriptRuntimePhase.SCRIPT) SourceErrorCode.PLUGIN else SourceErrorCode.INVALID_RESPONSE

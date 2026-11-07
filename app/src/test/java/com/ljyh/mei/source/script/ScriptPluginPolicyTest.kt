@@ -109,7 +109,7 @@ class ScriptPluginPolicyTest {
             IllegalStateException(secret) to SourceErrorCode.UNAVAILABLE,
             androidx.javascriptengine.SandboxUnsupportedException(secret) to SourceErrorCode.UNSUPPORTED,
             androidx.javascriptengine.MemoryLimitExceededException(secret) to SourceErrorCode.PLUGIN,
-            androidx.javascriptengine.EvaluationResultSizeLimitExceededException(secret) to SourceErrorCode.PLUGIN,
+            androidx.javascriptengine.EvaluationResultSizeLimitExceededException(secret) to SourceErrorCode.INVALID_RESPONSE,
         )
         for ((failure, code) in failures) {
             val result = scriptRuntimeFailure(java.util.concurrent.ExecutionException(failure), ScriptRuntimePhase.CONNECTION)
@@ -631,10 +631,16 @@ class ScriptPluginPolicyTest {
         }
         listOf(-1L, ScriptNetworkPolicy.MAX_RESPONSE_BYTES + 1L).forEach { length ->
             response(ByteArray(ScriptNetworkPolicy.MAX_RESPONSE_BYTES + 1), length).use { response ->
-                rejects { policy.responsePayload(response, "base64") }
+                assertEquals(SourceErrorCode.INVALID_RESPONSE, assertThrows(SourceException::class.java) {
+                    policy.responsePayload(response, "base64")
+                }.code)
             }
         }
-        response(binary, code = 302).use { response -> rejects { policy.responsePayload(response, "base64") } }
+        response(binary, code = 302).use { response ->
+            assertEquals(SourceErrorCode.NETWORK, assertThrows(SourceException::class.java) {
+                policy.responsePayload(response, "base64")
+            }.code)
+        }
     }
 
     @Test
@@ -713,6 +719,20 @@ class ScriptPluginPolicyTest {
         blocked.forEach { assertFalse(it, ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName(it))) }
         assertTrue(ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName("8.8.8.8")))
         assertTrue(ScriptNetworkPolicy.isPublicAddress(InetAddress.getByName("2606:4700:4700::1111")))
+        for (address in listOf("198.18.0.0", "198.19.255.255", "8.8.8.8", "2606:4700:4700::1111")) {
+            ScriptNetworkPolicy.validateResolvedAddresses(listOf(InetAddress.getByName(address)))
+        }
+        val policy = ScriptNetworkPolicy(listOf("api.example.com"))
+        assertEquals(SourceErrorCode.PLUGIN, assertThrows(SourceException::class.java) {
+            policy.validateUrl("https://198.18.0.1/api")
+        }.code)
+        for (addresses in listOf(emptyList<InetAddress>()) + blocked.filter { it != "198.18.0.1" }.map { blockedAddress ->
+            listOf(InetAddress.getByName("8.8.8.8"), InetAddress.getByName(blockedAddress))
+        }) {
+            assertEquals(SourceErrorCode.NETWORK, assertThrows(SourceException::class.java) {
+                ScriptNetworkPolicy.validateResolvedAddresses(addresses)
+            }.code)
+        }
     }
 
     @Test

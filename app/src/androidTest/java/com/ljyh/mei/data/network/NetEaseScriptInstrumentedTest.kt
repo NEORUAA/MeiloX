@@ -48,6 +48,72 @@ class NetEaseScriptInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun largeSourceResponsesPreserveIdentifiersWithinTheSandboxMemoryBudget() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val (manifest, script) = bundledSource()
+        val text = "x".repeat(700_000)
+        val payload = """{"code":200,"songs":[{"id":9223372036854775807,"name":"12345678901234567890","padding":"$text","ar":[],"al":{},"dt":1500}]}"""
+        val result = ScriptRuntime(context).invoke(script, manifest, "catalog.track",
+            JsonObject().apply { addProperty("trackId", "9223372036854775807") }, emptyMap(), emptyMap(),
+            request = { JsonObject().apply { addProperty("status", 200); addProperty("body", payload) } }).result.asJsonObject
+        assertEquals("9223372036854775807", result["trackId"].asString)
+        assertEquals("12345678901234567890", result["title"].asString)
+        assertEquals(1500, result["durationMs"].asInt)
+    }
+
+    @Test fun explicitlyEnabledPrivateSessionReadsDoNotChangeInstalledAccounts() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("neteasePrivateSession") == "true")
+        val fixture = File(context.cacheDir, "source-session-smoke.json")
+        val configuration = try {
+            require(fixture.length() in 2..32_768)
+            val value = JsonParser.parseString(fixture.readText())
+            require(value.isJsonObject)
+            value.asJsonObject.entrySet().associate {
+                require(it.value.isJsonPrimitive && it.value.asJsonPrimitive.isString)
+                it.key to it.value.asString
+            }
+        } catch (_: Exception) {
+            throw AssertionError("Invalid private session fixture")
+        } finally { fixture.delete() }
+        val preferences = context.dataStore.data.first()
+        val (manifest, script) = bundledSource()
+        val runtime = ScriptRuntime(context)
+        val failures = mutableListOf<String>()
+        var storage = emptyMap<String, String>()
+        val network = com.ljyh.mei.source.script.ScriptNetworkPolicy(
+            manifest.permissions.network, manifest.permissions.nativeSdks, { configuration + storage })
+        try {
+            for ((operation, parameters) in listOf(
+                "account.get" to "{}",
+                "feed.home" to "{\"limit\":3}",
+                "feed.discover" to "{\"limit\":3}",
+                "catalog.search" to "{\"query\":\"HOYO-MiX\",\"type\":\"track\",\"limit\":3}",
+                "catalog.track" to "{\"trackId\":\"29897918\"}",
+                "playback.resolve" to "{\"trackId\":\"29897918\",\"quality\":\"standard\"}",
+            )) {
+                try {
+                    val result = runtime.invoke(script, manifest, operation, json(parameters), configuration, storage,
+                        request = { frame -> network.request(frame).also { response ->
+                            val body = runCatching { JsonParser.parseString(response["body"].asString) }.getOrNull()
+                            val code = body?.takeIf { it.isJsonObject }?.asJsonObject?.get("code")
+                                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt
+                            instrumentation.sendStatus(0, android.os.Bundle().apply {
+                                putString("stream", "Private-session read: $operation HTTP=${response["status"].asInt} JSON=${body?.isJsonObject == true} code=$code\n")
+                            })
+                        } })
+                    result.storage?.let { storage = it }
+                    assertFalse("$operation returned null", result.result.isJsonNull)
+                } catch (error: com.ljyh.mei.source.api.SourceException) {
+                    failures += "$operation:${error.code.name}"
+                }
+            }
+            assertTrue("Private-session reads failed: ${failures.joinToString()}", failures.isEmpty())
+        } finally {
+            fixture.delete()
+            assertTrue("Read-only validation must retain preferences", preferences == context.dataStore.data.first())
+        }
+    }
+
     @Test fun bundledSourceRunsCatalogAndAccountReadsThroughTheRealSandboxAndWireCodec() = runBlocking {
         assumeTrue(JavaScriptSandbox.isSupported())
         val (manifest, script) = bundledSource()
