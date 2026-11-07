@@ -442,7 +442,7 @@ class SourceContentViewModel internal constructor(
                 .takeIf { it.isJsonObject }?.asJsonObject ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
             val rows = result.get("tracks")?.takeIf { it.isJsonArray }?.asJsonArray
                 ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-            if (rows.size() !in 1..100) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            if (rows.isEmpty()) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
             val tracks = rows.map { owner.track(it.takeIf { value -> value.isJsonObject }?.asJsonObject
                 ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)) }
             val mediaType = result.get("mediaType")?.takeUnless { it.isJsonNull }?.asString ?: "music"
