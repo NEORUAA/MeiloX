@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class SourceRouter @Inject constructor(
@@ -45,6 +47,7 @@ class SourceRouter @Inject constructor(
     }
     private val mutableContentRevision = MutableStateFlow(0L)
     val contentRevision = mutableContentRevision.asStateFlow()
+    private val accountReads = mutableMapOf<String, AccountRead>()
     fun searchTypes(providerId: String): Set<ContentType> {
         val provider = registry.provider(providerId) ?: return emptySet()
         if (SourceCapability.SEARCH !in provider.capabilities) return emptySet()
@@ -113,12 +116,44 @@ class SourceRouter @Inject constructor(
         }
     }
 
-    suspend fun account(providerId: String): SourceAccount? {
-        val provider = readyProvider(providerId)
-        if (SourceCapability.ACCOUNT !in provider.capabilities) unsupported()
-        return (provider as? AccountCapability ?: unsupported()).account().also {
-            if (it != null && it.ref.instanceId != provider.instanceId) invalid()
+    suspend fun account(providerId: String, refresh: Boolean = false): SourceAccount? {
+        val requestedAt = System.nanoTime()
+        val owner = mutations.capture(providerId)
+        val provider = ownedCapability<AccountCapability>(owner, SourceCapability.ACCOUNT)
+        val read = synchronized(accountReads) {
+            accountReads[providerId]?.takeIf {
+                it.owner.provider === owner.provider && it.owner.version == owner.version && it.owner.revision == owner.revision
+            } ?: AccountRead(owner).also { accountReads[providerId] = it }
         }
+        return read.mutex.withLock {
+            mutations.ensureCurrent(owner)
+            // Concurrent callers share the completed result, including an explicit refresh.
+            read.result?.takeIf {
+                read.completedAt >= requestedAt || !refresh && it.isSuccess && owner.provider is AccountRevisionCapability &&
+                    System.nanoTime() - read.completedAt < 60_000_000_000L
+            }?.let { return@withLock it.getOrThrow() }
+            try {
+                val account = provider.account()
+                mutations.ensureCurrent(owner)
+                if (account != null && account.ref.instanceId != owner.provider.instanceId) invalid()
+                read.result = Result.success(account)
+                read.completedAt = System.nanoTime()
+                account
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                mutations.ensureCurrent(owner)
+                read.result = Result.failure(error)
+                read.completedAt = System.nanoTime()
+                throw error
+            }
+        }
+    }
+
+    private class AccountRead(val owner: SourceMutationOwner) {
+        val mutex = Mutex()
+        var result: Result<SourceAccount?>? = null
+        var completedAt = 0L
     }
 
     suspend fun library(providerId: String, collection: LibraryCollection, page: PageRequest = PageRequest()): SourcePage<SourceItem> {

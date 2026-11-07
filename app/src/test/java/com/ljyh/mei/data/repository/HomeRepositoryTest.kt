@@ -4,12 +4,17 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.ViewModel
 import com.google.gson.JsonObject
 import com.google.gson.JsonElement
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.*
 import com.ljyh.mei.ui.screen.source.SourceContentRequest
 import com.ljyh.mei.ui.screen.source.SourceContentViewModel
+import com.ljyh.mei.ui.screen.source.SourceProfileState
+import com.ljyh.mei.ui.screen.source.SourceProfileViewModel
+import com.ljyh.mei.ui.component.sourceProfileFeatureScreen
+import com.ljyh.mei.ui.screen.Screen
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.*
@@ -29,7 +34,7 @@ import org.junit.rules.TemporaryFolder
 class HomeRepositoryTest {
     @get:Rule val temporary = TemporaryFolder()
     private val dispatcher = StandardTestDispatcher()
-    private val models = mutableListOf<SourceContentViewModel>()
+    private val models = mutableListOf<ViewModel>()
     private val fetchedAt = Instant.parse("2026-10-15T04:00:00Z").toEpochMilli()
     private var now = fetchedAt
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
@@ -39,6 +44,74 @@ class HomeRepositoryTest {
             jobs.forEach { it.cancel() }
             jobs.joinAll()
         } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun profileEntryKeepsLoadingAndTemporaryFailuresOutOfTheLoginFlow() {
+        val profile = SourceProfileState(providerId = "netease", featureRoutes = setOf("account/home", "account/login"))
+        val account = SourceAccount(SourceAccountRef(ProviderInstanceId("fixture:netease"), ProviderAccountId("account")), "Account")
+
+        assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(profile))
+        assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.AUTH_EXPIRED)))
+        assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.AUTH_REQUIRED)))
+        assertNull(sourceProfileFeatureScreen(profile.copy(loading = true)))
+        assertNull(sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.NETWORK)))
+        assertNull(sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.TIMEOUT)))
+        assertEquals(Screen.AccountHome, sourceProfileFeatureScreen(profile.copy(account = account, loading = true)))
+        assertEquals(Screen.AccountHome, sourceProfileFeatureScreen(profile.copy(account = account, error = SourceErrorCode.NETWORK)))
+    }
+
+    @Test fun sharedProfileRetriesInitialFailuresAndKeepsOnlyTheCurrentAccount() = runTest(dispatcher) {
+        val provider = ProfileProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val preferences = SourcePreferences(MemoryPreferences())
+        preferences.update { it.copy(preferredBrowseProvider = provider.id) }
+        val model = SourceProfileViewModel(preferences, registry,
+            readAccount = { (registry.requireProvider(it) as AccountCapability).account() },
+            exportAccount = { error("Session export is outside this account-state regression") }).also(models::add)
+        provider.failure = SourceErrorCode.NETWORK
+        advanceUntilIdle()
+        assertEquals(SourceErrorCode.NETWORK, model.state.value.error)
+        assertNull(sourceProfileFeatureScreen(model.state.value))
+
+        provider.failure = null
+        val pending = CompletableDeferred<Unit>()
+        provider.pending = pending
+        model.refresh()
+        runCurrent()
+        assertTrue(model.state.value.loading)
+        assertNull(sourceProfileFeatureScreen(model.state.value))
+        pending.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(provider.value, model.state.value.account)
+        assertEquals(Screen.AccountHome, sourceProfileFeatureScreen(model.state.value))
+
+        provider.failure = SourceErrorCode.TIMEOUT
+        registry.refresh()
+        advanceUntilIdle()
+        assertEquals(provider.value, model.state.value.account)
+        assertEquals(SourceErrorCode.TIMEOUT, model.state.value.error)
+        provider.failure = null
+        model.refresh()
+        advanceUntilIdle()
+        assertNull(model.state.value.error)
+
+        val next = CompletableDeferred<Unit>()
+        provider.pending = next
+        provider.accountRevision.value = "next-account"
+        provider.value = provider.value?.copy(displayName = "Next account")
+        runCurrent()
+        assertTrue(model.state.value.loading)
+        assertNull(model.state.value.account)
+        next.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(provider.value, model.state.value.account)
+
+        provider.failure = SourceErrorCode.AUTH_EXPIRED
+        registry.refresh()
+        advanceUntilIdle()
+        assertNull(model.state.value.account)
+        assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(model.state.value))
+        assertEquals(6, provider.reads)
     }
 
     @Test fun normalizedCacheRoundTripsAllContentAndSourceOwnedTargets() = runBlocking {
@@ -255,6 +328,24 @@ class HomeRepositoryTest {
     private class MemoryPreferences : DataStore<Preferences> {
         override val data = MutableStateFlow(emptyPreferences())
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
+    }
+    private class ProfileProvider : MusicProvider, AccountCapability, AccountRevisionCapability, FeatureContribution {
+        override val id = "profile"
+        override val displayName = "Profile"
+        override val instanceId = ProviderInstanceId("fixture:profile")
+        override val capabilities = setOf(SourceCapability.ACCOUNT)
+        override val accountRevision = MutableStateFlow<String?>("first-account")
+        override val featureRoutes = setOf("account/home", "account/login")
+        var value: SourceAccount? = SourceAccount(SourceAccountRef(instanceId, ProviderAccountId("account")), "Account")
+        var failure: SourceErrorCode? = null
+        var pending: CompletableDeferred<Unit>? = null
+        var reads = 0
+        override suspend fun account(): SourceAccount? {
+            reads++
+            pending?.await()
+            failure?.let { throw SourceException(it) }
+            return value
+        }
     }
     private class FeedProvider : MusicProvider, FeedCapability, AccountRevisionCapability, SourceFeatureCapability, FeatureContribution {
         override val id = "qq"

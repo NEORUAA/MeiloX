@@ -23,41 +23,63 @@ data class SourceProfileState(
 )
 
 @HiltViewModel
-class SourceProfileViewModel @Inject constructor(
+class SourceProfileViewModel internal constructor(
     preferences: SourcePreferences,
     registry: ProviderRegistry,
-    router: SourceRouter,
-    private val client: com.ljyh.mei.source.core.SourceFeatureClient,
+    private val readAccount: suspend (String) -> SourceAccount?,
+    private val exportAccount: suspend (String) -> Pair<String, String>,
 ) : ViewModel() {
+    @Inject constructor(preferences: SourcePreferences, registry: ProviderRegistry, router: SourceRouter,
+        client: com.ljyh.mei.source.core.SourceFeatureClient) : this(
+        preferences, registry, { router.account(it) }, { providerId ->
+            val owner = client.bind(providerId, "session-export:${java.util.UUID.randomUUID()}")
+            val value = owner.invoke("login", "exportSession").asJsonObject
+            val label = value.get("label")?.asString?.takeIf { it.length in 1..100 } ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            val secret = value.get("value")?.asString?.takeIf { it.isNotBlank() && it.length <= 16_384 } ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            owner.ensureCurrent()
+            label to secret
+        },
+    )
+    private val refreshVersion = MutableStateFlow(0L)
     private val mutableState = MutableStateFlow(SourceProfileState())
     val state = mutableState.asStateFlow()
     init {
         viewModelScope.launch {
-            combine(preferences.settings.map { it.preferredBrowseProvider }.distinctUntilChanged(), registry.revision) { id, _ -> id }
+            var displayedOwner: Triple<MusicProvider?, String?, String?>? = null
+            combine(preferences.settings.map { it.preferredBrowseProvider }.distinctUntilChanged(), registry.revision, refreshVersion) { id, _, _ -> id }
                 .flatMapLatest { id ->
                     val provider = registry.provider(id)
                     ((provider as? AccountRevisionCapability)?.accountRevision ?: flowOf(null))
                         .map { Triple(id, provider, it) }
-                }.collectLatest { (id, provider, _) ->
+                }.collectLatest { (id, provider, revision) ->
+                    val owner = Triple(provider, provider?.version, revision)
+                    val account = mutableState.value.account.takeIf {
+                        mutableState.value.providerId == id && displayedOwner?.first === provider &&
+                            displayedOwner?.second == owner.second && displayedOwner?.third == revision
+                    }
+                    displayedOwner = owner
                     val base = SourceProfileState(id, provider?.displayName ?: id,
+                        account = account,
                         featureRoutes = (provider as? FeatureContribution)?.featureRoutes.orEmpty(),
                         features = (provider as? SourceFeatureCapability)?.features.orEmpty())
-                    mutableState.value = base
-                    if (provider == null || SourceCapability.ACCOUNT !in provider.capabilities) return@collectLatest
+                    if (provider == null || SourceCapability.ACCOUNT !in provider.capabilities) {
+                        mutableState.value = base.copy(account = null)
+                        return@collectLatest
+                    }
                     mutableState.value = base.copy(loading = true)
-                    try { mutableState.value = base.copy(account = router.account(id)) }
+                    try { mutableState.value = base.copy(account = readAccount(id)) }
                     catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { mutableState.value = base.copy(error = error.sourceCode()) }
+                    catch (error: Exception) {
+                        val code = error.sourceCode()
+                        mutableState.value = base.copy(
+                            account = base.account.takeUnless { code == SourceErrorCode.AUTH_REQUIRED || code == SourceErrorCode.AUTH_EXPIRED },
+                            error = code,
+                        )
+                    }
                 }
         }
     }
-    suspend fun exportSession(providerId: String): Pair<String, String> {
-        val owner = client.bind(providerId, "session-export:${java.util.UUID.randomUUID()}")
-        val value = owner.invoke("login", "exportSession").asJsonObject
-        val label = value.get("label")?.asString?.takeIf { it.length in 1..100 } ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-        val secret = value.get("value")?.asString?.takeIf { it.isNotBlank() && it.length <= 16_384 } ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-        owner.ensureCurrent()
-        return label to secret
-    }
+    fun refresh() { refreshVersion.update { it + 1 } }
 
+    suspend fun exportSession(providerId: String): Pair<String, String> = exportAccount(providerId)
 }

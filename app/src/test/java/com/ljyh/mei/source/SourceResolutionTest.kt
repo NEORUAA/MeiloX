@@ -620,6 +620,136 @@ class SourceResolutionTest {
         assertFalse(sourceSearchHasMore(incoming.copy(hasMore = false), previous, merged, emptySet()))
     }
 
+    private open class AccountProvider : MusicProvider, AccountCapability {
+        override val id = "account"
+        override val displayName = "Account"
+        override val capabilities = setOf(SourceCapability.ACCOUNT)
+        var reads = 0
+        var result = SourceAccount(SourceAccountRef(instanceId, ProviderAccountId("user-A")), "Listener")
+        var load: suspend () -> SourceAccount? = { result }
+        override suspend fun account(): SourceAccount? { reads++; return load() }
+    }
+
+    private class RevisionAccountProvider : AccountProvider(), AccountRevisionCapability {
+        override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow<String?>("session-A")
+    }
+
+    @Test fun concurrentAccountReadsAndExplicitRefreshesShareEachCompletedRequest() = runTest {
+        val source = RevisionAccountProvider()
+        val gate = CompletableDeferred<Unit>()
+        source.load = { gate.await(); source.result }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val initial = List(4) { async { router.account(source.id) } }
+        runCurrent()
+        assertEquals(1, source.reads)
+        gate.complete(Unit)
+        assertEquals(List(4) { source.result }, initial.awaitAll())
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(1, source.reads)
+
+        val refreshGate = CompletableDeferred<Unit>()
+        source.result = source.result.copy(displayName = "Updated listener")
+        source.load = { refreshGate.await(); source.result }
+        val refreshed = List(4) { async { router.account(source.id, refresh = true) } }
+        runCurrent()
+        assertEquals(2, source.reads)
+        refreshGate.complete(Unit)
+        assertEquals(List(4) { source.result }, refreshed.awaitAll())
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(2, source.reads)
+    }
+
+    @Test fun failedAccountRequestsAreSharedWithWaitingReadersAndRemainRetryable() = runTest {
+        val source = RevisionAccountProvider()
+        val gate = CompletableDeferred<Unit>()
+        source.load = { gate.await(); throw SourceException(SourceErrorCode.TIMEOUT) }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val pending = List(3) { async { runCatching { router.account(source.id) } } }
+        runCurrent()
+        assertEquals(1, source.reads)
+        gate.complete(Unit)
+        pending.awaitAll().forEach {
+            assertEquals(SourceErrorCode.TIMEOUT, (it.exceptionOrNull() as? SourceException)?.code)
+        }
+        assertEquals(1, source.reads)
+        source.load = { source.result }
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(2, source.reads)
+    }
+
+    @Test fun accountRevisionChangesRejectAnOldResponseAndInvalidateTheCachedAccount() = runTest {
+        val source = RevisionAccountProvider()
+        val gate = CompletableDeferred<Unit>()
+        source.load = { val original = source.result; gate.await(); original }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val old = async { runCatching { router.account(source.id) } }
+        runCurrent()
+        source.accountRevision.value = "session-B"
+        source.result = source.result.copy(ref = source.result.ref.copy(accountId = ProviderAccountId("user-B")))
+        source.load = { source.result }
+        assertEquals(source.result, router.account(source.id))
+        gate.complete(Unit)
+        assertTrue(old.await().exceptionOrNull() is CancellationException)
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(2, source.reads)
+
+        source.accountRevision.value = "session-C"
+        source.result = source.result.copy(displayName = "Third session")
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(3, source.reads)
+    }
+
+    @Test fun sameVersionProviderReplacementRejectsItsPredecessorsPendingAccountResponse() = runTest {
+        val source = RevisionAccountProvider()
+        val gate = CompletableDeferred<Unit>()
+        source.load = { gate.await(); source.result }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val old = async { runCatching { router.account(source.id) } }
+        runCurrent()
+        val replacement = RevisionAccountProvider().apply { result = result.copy(displayName = "Replacement listener") }
+        assertEquals(source.version, replacement.version)
+        assertEquals(source.accountRevision.value, replacement.accountRevision.value)
+        registry.register(replacement)
+        assertEquals(replacement.result, router.account(replacement.id))
+        gate.complete(Unit)
+        assertTrue(old.await().exceptionOrNull() is CancellationException)
+        assertEquals(replacement.result, router.account(replacement.id))
+        assertEquals(1, source.reads)
+        assertEquals(1, replacement.reads)
+    }
+
+    @Test fun cancellingTheFirstAccountReadAllowsTheNextWaitingReaderToRetry() = runTest {
+        val source = RevisionAccountProvider()
+        source.load = { awaitCancellation() }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val first = async { router.account(source.id) }
+        runCurrent()
+        assertEquals(1, source.reads)
+        source.load = { source.result }
+        val next = async { router.account(source.id) }
+        runCurrent()
+        assertEquals(1, source.reads)
+        first.cancelAndJoin()
+        assertEquals(source.result, next.await())
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(2, source.reads)
+    }
+
+    @Test fun providersWithoutAccountRevisionsDoNotReuseCompletedAccountReads() = runTest {
+        val source = AccountProvider()
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        assertEquals(source.result, router.account(source.id))
+        source.result = source.result.copy(ref = source.result.ref.copy(accountId = ProviderAccountId("user-B")))
+        assertEquals(source.result, router.account(source.id))
+        assertEquals(2, source.reads)
+    }
+
     private open class ContentProvider : MusicProvider, TypedSearchCapability, FeedCapability, LibraryCapability,
         PlaylistCapability, LikeCapability, CollectionCapability, PlaylistEditCapability, AccountRevisionCapability {
         override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)

@@ -240,7 +240,7 @@ class SourceContentViewModel internal constructor(
                 }
                 is SourceContentRequest.Library -> {
                     val account = if (append) previous.account else if (SourceCapability.ACCOUNT in router.registry.requireProvider(id).capabilities)
-                        router.account(id) else null
+                        router.account(id, refresh = refresh) else null
                     val collection = router.library(id, requested.collection, page)
                     received = collection.items.size
                     incomingRefs = collection.items.map { it.ref }
@@ -291,7 +291,7 @@ class SourceContentViewModel internal constructor(
                     previous.copy(title = info.name, artworkUrl = info.artworkUrl, description = info.description,
                         detail = SourceItem.ArtistItem(info), hasMore = false, nextCursor = null)
                 }
-                is SourceContentRequest.Account -> previous.copy(account = router.account(id))
+                is SourceContentRequest.Account -> previous.copy(account = router.account(id, refresh = refresh))
                 is SourceContentRequest.Editor -> {
                     val editor = boundProvider as? PlaylistEditCapability
                     if (SourceCapability.PLAYLIST_EDIT !in boundProvider.capabilities ||
@@ -323,6 +323,7 @@ class SourceContentViewModel internal constructor(
             throw cancelled
         } catch (error: Exception) {
             if (token == generation) mutableState.value = state.value.copy(loading = false, error = error.sourceCode(),
+                account = state.value.account.takeUnless { error.sourceCode() == SourceErrorCode.AUTH_REQUIRED || error.sourceCode() == SourceErrorCode.AUTH_EXPIRED },
                 hasMore = state.value.hasMore && error.sourceCode() != SourceErrorCode.INVALID_RESPONSE)
         }
     }

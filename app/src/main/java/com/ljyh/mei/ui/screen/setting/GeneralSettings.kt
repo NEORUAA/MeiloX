@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.screen.setting
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,7 +58,7 @@ fun GeneralSettings() {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (appearance, setAppearance) = rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
     val (recognizeClipboard, setRecognizeClipboard) = rememberPreference(RecognizeClipboardLinksKey, false)
-    val profileViewModel: com.ljyh.mei.ui.screen.source.SourceProfileViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+    val profileViewModel: com.ljyh.mei.ui.screen.source.SourceProfileViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel(LocalActivity.current as ComponentActivity)
     val profile by profileViewModel.state.collectAsState()
     val sessionType = rememberNeteaseSessionType(profile.providerId)
     val canLogout = profile.account != null && "logout" in profile.features["login"].orEmpty()

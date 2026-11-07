@@ -11,6 +11,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -448,8 +450,12 @@ internal class ScriptMusicProvider(
     }
 
     private suspend fun <T> serialized(block: suspend () -> T): T = withContext(Dispatchers.IO) {
-        try { withTimeout(20_000) { operations.withLock { block() } } }
-        catch (_: TimeoutCancellationException) { ensureCurrent(); throw SourceException(SourceErrorCode.TIMEOUT) }
+        try { operations.withScriptOperationTimeout(20_000, block) }
+        catch (_: TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
+            ensureCurrent()
+            throw SourceException(SourceErrorCode.TIMEOUT)
+        }
     }
 
     private suspend fun invokeLocked(operation: String, params: JsonObject,
@@ -581,3 +587,7 @@ internal class ScriptMusicProvider(
     }
     private fun invalid(): Nothing = throw SourceException(SourceErrorCode.INVALID_RESPONSE, "Source returned invalid data")
 }
+
+/** Waiting for a preceding source request does not consume this operation's execution time. */
+internal suspend fun <T> Mutex.withScriptOperationTimeout(timeoutMillis: Long, block: suspend () -> T): T =
+    withLock { withTimeout(timeoutMillis) { block() } }

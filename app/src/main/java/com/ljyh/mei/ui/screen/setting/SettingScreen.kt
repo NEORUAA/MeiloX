@@ -20,6 +20,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.ui.screen.source.SourceProfileViewModel
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
+import com.ljyh.mei.ui.component.openSourceProfile
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -52,7 +55,7 @@ fun SettingScreen(
     @Suppress("UNUSED_PARAMETER") scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val navController = LocalNavController.current
-    val profileViewModel: SourceProfileViewModel = hiltViewModel()
+    val profileViewModel: SourceProfileViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
     val profile by profileViewModel.state.collectAsState()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     MeiloXPinnedListPage(
@@ -62,7 +65,7 @@ fun SettingScreen(
     ) {
         if ("accountProfile" in profile.features["account"].orEmpty()) {
             item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
-            item { SourceSettingsAccountGroup(profile) }
+            item { SourceSettingsAccountGroup(profile, profileViewModel::refresh) }
         } else if (profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL) {
             item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
             item { GlasmioGroupedList {
@@ -108,13 +111,13 @@ fun SettingScreen(
 }
 
 @Composable
-private fun SourceSettingsAccountGroup(profile: com.ljyh.mei.ui.screen.source.SourceProfileState) {
+private fun SourceSettingsAccountGroup(profile: com.ljyh.mei.ui.screen.source.SourceProfileState, refresh: () -> Unit) {
     val navController = LocalNavController.current
     val sessionType = rememberNeteaseSessionType(profile.providerId)
     fun open(screen: Screen) = screen.navigate(navController) { addQuery("providerId", Uri.encode(profile.providerId)) }
     GlasmioGroupedList {
         if (profile.account == null) {
-            SettingsEntry(profile.providerName, "person.crop.circle", false) { open(Screen.NeteaseLogin) }
+            SettingsEntry(profile.providerName, "person.crop.circle", false) { openSourceProfile(navController, profile, refresh) }
         } else {
             SettingsEntry(profile.account.displayName.ifBlank { stringResource(R.string.account_home) }, "person.crop.circle", false) {
                 open(Screen.AccountHome)

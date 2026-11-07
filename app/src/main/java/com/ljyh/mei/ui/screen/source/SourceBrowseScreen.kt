@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.screen.source
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.ljyh.mei.source.api.AccountRevisionCapability
@@ -901,6 +903,7 @@ fun SourceAccountScreen(
     providerId: String,
     viewModel: SourceContentViewModel = hiltViewModel(),
 ) {
+    val profileViewModel: SourceProfileViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
     val state by viewModel.state.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val installed by viewModel.installedPlugins.collectAsState()
@@ -912,6 +915,10 @@ fun SourceAccountScreen(
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val account = state.account.takeIf { state.providerId == providerId }
     LaunchedEffect(providerId) { viewModel.open(SourceContentRequest.Account(providerId)) }
+    LaunchedEffect(providerId, state.providerId, state.loading, state.error, account) {
+        if (state.providerId == providerId && !state.loading && state.error == null &&
+            profileViewModel.state.value.providerId == providerId) profileViewModel.refresh()
+    }
 
     MeiloXPinnedListPage(
         title = provider?.displayName ?: "音源账号",
@@ -922,7 +929,12 @@ fun SourceAccountScreen(
         item("source-account-profile") {
             GlasmioGroupedList {
                 GlasmioListRow(
-                    title = account?.displayName ?: if (state.loading || state.providerId != providerId) "正在加载" else "未登录",
+                    title = account?.displayName ?: when {
+                        state.loading || state.providerId != providerId -> "正在加载"
+                        state.error != null && state.error != SourceErrorCode.AUTH_REQUIRED && state.error != SourceErrorCode.AUTH_EXPIRED ->
+                            provider?.displayName ?: "音源账号"
+                        else -> "未登录"
+                    },
                     showTopSeparator = false,
                     showDisclosure = false,
                     leading = {

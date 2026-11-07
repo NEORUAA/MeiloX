@@ -8,6 +8,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import android.net.Uri
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -24,20 +26,21 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.ui.screen.source.SourceProfileState
 import com.ljyh.mei.ui.screen.source.SourceProfileViewModel
 
 @Composable
 fun globalProfileHeaderAction(): GlasmioHeaderAction {
     val navController = LocalNavController.current
-    val sourceViewModel: SourceProfileViewModel = hiltViewModel()
+    val sourceViewModel: SourceProfileViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
     val profile by sourceViewModel.state.collectAsState()
     return meiloxHeaderAction(
         key = "account",
         visualKey = listOf(profile.providerId, profile.account?.ref, profile.account?.avatarUrl),
         contentDescription = profile.account?.displayName ?: profile.providerName.ifBlank { "账号" },
         enabled = profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL,
-        onClick = { openSourceProfile(navController, profile) },
+        onClick = { openSourceProfile(navController, profile, sourceViewModel::refresh) },
     ) { SourceProfileImage(profile) }
 }
 
@@ -45,20 +48,28 @@ fun globalProfileHeaderAction(): GlasmioHeaderAction {
 @Composable
 fun GlobalProfileAvatarButton(modifier: Modifier = Modifier) {
     val navController = LocalNavController.current
-    val sourceViewModel: SourceProfileViewModel = hiltViewModel()
+    val sourceViewModel: SourceProfileViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
     val profile by sourceViewModel.state.collectAsState()
     GlasmioIconButton(
         modifier = modifier,
         enabled = profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL,
-        onClick = { openSourceProfile(navController, profile) },
+        onClick = { openSourceProfile(navController, profile, sourceViewModel::refresh) },
     ) { SourceProfileImage(profile) }
 }
 
-private fun openSourceProfile(nav: com.ljyh.mei.ui.navigation.MeiNavigator, profile: SourceProfileState) {
-    val screen = if (profile.account != null && "account/home" in profile.featureRoutes) Screen.AccountHome
-        else if (profile.account == null && "account/login" in profile.featureRoutes) Screen.NeteaseLogin else null
+internal fun openSourceProfile(nav: com.ljyh.mei.ui.navigation.MeiNavigator, profile: SourceProfileState, refresh: () -> Unit) {
+    if (profile.error != null) refresh()
+    val screen = sourceProfileFeatureScreen(profile)
     if (screen != null) screen.navigate(nav) { addQuery("providerId", Uri.encode(profile.providerId)) }
     else Screen.SourceAccount.navigate(nav) { addPath(Uri.encode(profile.providerId)) }
+}
+
+internal fun sourceProfileFeatureScreen(profile: SourceProfileState): Screen? = when {
+    profile.account != null && "account/home" in profile.featureRoutes -> Screen.AccountHome
+    profile.account == null && !profile.loading &&
+        (profile.error == null || profile.error == SourceErrorCode.AUTH_REQUIRED || profile.error == SourceErrorCode.AUTH_EXPIRED) &&
+        "account/login" in profile.featureRoutes -> Screen.NeteaseLogin
+    else -> null
 }
 
 @Composable

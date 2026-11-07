@@ -7,6 +7,11 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
 import java.net.InetAddress
 import java.util.Base64
 import java.io.IOException
@@ -28,6 +33,45 @@ import okhttp3.FormBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class ScriptPluginPolicyTest {
+    @Test fun queuedScriptOperationsKeepTheirExecutionBudgetAndCanBeCancelledWhileWaiting() = runTest {
+        val operations = Mutex()
+        var cancelledOperationStarted = false
+        val first = async { operations.withScriptOperationTimeout(200) { delay(150); "first" } }
+        val second = async { operations.withScriptOperationTimeout(100) { delay(75); "second" } }
+        val cancelled = async {
+            operations.withScriptOperationTimeout(100) { cancelledOperationStarted = true }
+        }
+        runCurrent()
+        assertFalse(first.isCompleted)
+        assertFalse(second.isCompleted)
+        cancelled.cancelAndJoin()
+        advanceUntilIdle()
+        assertEquals("first", first.await())
+        assertEquals("second", second.await())
+        assertEquals(225L, testScheduler.currentTime)
+        assertFalse(cancelledOperationStarted)
+    }
+
+    @Test fun scriptExecutionTimeoutAndCallerCancellationReleaseTheOperationLock() = runTest {
+        val operations = Mutex()
+        val expired = async {
+            runCatching { operations.withScriptOperationTimeout(100) { delay(101) } }
+        }
+        advanceUntilIdle()
+        assertTrue(expired.await().exceptionOrNull() is TimeoutCancellationException)
+        assertEquals("recovered", operations.withScriptOperationTimeout(100) { "recovered" })
+
+        var entered = false
+        val cancelled = async {
+            operations.withScriptOperationTimeout(1000) { entered = true; awaitCancellation() }
+        }
+        runCurrent()
+        assertTrue(entered)
+        cancelled.cancelAndJoin()
+        assertTrue(cancelled.isCancelled)
+        assertEquals("after cancellation", operations.withScriptOperationTimeout(100) { "after cancellation" })
+    }
+
     @Test fun cancelledBindingsRetireTheirLateSandboxBeforeAnotherConnectionStarts() = runTest {
         for (completedBeforeCancellation in listOf(false, true)) {
             val gate = ScriptConnectionGate()
