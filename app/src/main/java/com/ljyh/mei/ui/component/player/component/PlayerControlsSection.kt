@@ -148,6 +148,6 @@ internal fun PlayerProgressSection(
             onQualityMenuVisibilityChanged)
     } else {
         PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier,
-            onQualityMenuVisibilityChanged)
+            onQualityMenuVisibilityChanged, onTrackTopChanged = onProgressTrackTopChanged)
     }
 }

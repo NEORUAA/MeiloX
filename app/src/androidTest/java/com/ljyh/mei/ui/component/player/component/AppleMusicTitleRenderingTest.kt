@@ -1477,6 +1477,77 @@ class AppleMusicTitleRenderingTest {
         }
     }
 
+    @Test fun waveControlsRestoreTheLyricFadeAndQueueViewportAfterReentry() {
+        compose.mainClock.autoAdvance = false
+        val visible = mutableStateOf(true)
+        val trackTops = mutableListOf<Float>()
+        var viewportBounds = Rect.Zero
+        var headerHeight = 0f
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalPlayerConnection provides null,
+                LocalGlassBackdrop provides emptyBackdrop(),
+                LocalBlurBackdrop provides emptyBackdrop(),
+            ) {
+                MaterialTheme {
+                    headerHeight = with(LocalDensity.current) { 48.dp.toPx() }
+                    Box(
+                        Modifier.width(260.dp).height(320.dp).clipToBounds()
+                            .onGloballyPositioned { viewportBounds = it.boundsInRoot() },
+                    ) {
+                        AnimatedVisibility(
+                            visible = visible.value,
+                            enter = slideInVertically(tween(320)) { it },
+                            exit = slideOutVertically(tween(320)) { it },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        ) {
+                            PlayerProgressSlider(
+                                position = 5_000,
+                                duration = 200_000,
+                                isPlaying = false,
+                                onPositionChange = {},
+                                modifier = Modifier.fillMaxWidth(),
+                                onTrackTopChanged = { trackTops += it },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.runOnIdle {
+            assertTrue("The wave rail must publish its initial boundary", trackTops.isNotEmpty())
+            visible.value = false
+        }
+        compose.mainClock.advanceTimeBy(400)
+        compose.runOnIdle {
+            trackTops.clear()
+            visible.value = true
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertTrue("Recreated wave controls must publish their track position", trackTops.isNotEmpty())
+            assertTrue("Clipping the entering wave must preserve its real position",
+                trackTops.any { it >= viewportBounds.bottom })
+        }
+        compose.mainClock.advanceTimeBy(400)
+        compose.runOnIdle {
+            val viewportHeight = viewportBounds.height - headerHeight
+            val controlsTop = trackTops.last() - viewportBounds.top - headerHeight
+            val queueHeight = controlsTop.coerceAtLeast(0f)
+            val fade = appleMusicLyricsControlsFadeRange(
+                viewportHeight = viewportHeight,
+                shift = 0f,
+                translationY = 0f,
+                controlsTop = controlsTop,
+            )
+            assertTrue("The wave rail must leave a visible queue viewport", queueHeight > 0f)
+            assertTrue("Queue rows must stop above the wave controls", queueHeight < viewportHeight)
+            assertTrue("Lyrics must clear before the wave controls", fade.endInclusive < viewportHeight)
+            assertEquals(controlsTop, fade.endInclusive, 0.001f)
+        }
+    }
+
     @Test fun queueViewportClipsBeforeControlsUnderFullHeightParentConstraints() {
         val entryOffset = mutableStateOf(0.dp)
         val additive = mutableStateOf(false)

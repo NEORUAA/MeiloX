@@ -23,12 +23,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -38,6 +41,8 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,7 +51,10 @@ import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.utils.rememberLifecycleStarted
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.sin
 
@@ -60,6 +68,7 @@ fun PlayerProgressSlider(
     onPositionChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
+    onTrackTopChanged: ((Float) -> Unit)? = null,
 ) {
     val playerConnection = LocalPlayerConnection.current
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
@@ -116,6 +125,20 @@ fun PlayerProgressSlider(
         animationSpec = tween(300),
         label = "amplitude"
     )
+    val density = LocalDensity.current
+    var trackCenterInRoot by remember { mutableStateOf<Float?>(null) }
+    val trackTopListener by rememberUpdatedState(onTrackTopChanged)
+    val hasProgress by rememberUpdatedState(progressFraction > 0f)
+    if (onTrackTopChanged != null) LaunchedEffect(density) {
+        snapshotFlow {
+            trackCenterInRoot?.let { center ->
+                // Reserve the waveform envelope, including its moving endpoint.
+                // The phase changes within that envelope without moving the fade.
+                val radius = with(density) { if (hasProgress) 6.dp.toPx() else 1.dp.toPx() }
+                center - radius - if (hasProgress) abs(amplitude) else 0f
+            }
+        }.filterNotNull().distinctUntilChanged().collect { trackTopListener?.invoke(it) }
+    }
 
     Column(modifier = modifier) {
         // 自定义 Slider
@@ -151,6 +174,9 @@ fun PlayerProgressSlider(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(24.dp) // 确保有足够空间画波峰波谷
+                        .onGloballyPositioned {
+                            trackCenterInRoot = it.localToRoot(Offset(0f, it.size.height / 2f)).y
+                        }
                 ) {
                     val width = size.width
                     val height = size.height
