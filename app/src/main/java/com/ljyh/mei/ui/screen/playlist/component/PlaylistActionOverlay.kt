@@ -54,7 +54,6 @@ fun PlaylistActionOverlay(
             onDismiss = onDismiss,
             viewModel = sourceViewModel,
             playerViewModel = playerViewModel,
-            onSongInfo = { onUpdateOverlay(OverlayState.SongInfo(overlay.track)) },
             onShare = { onUpdateOverlay(OverlayState.Share(overlay.track)) },
             onDownloadTrack = onDownloadTrack?.let { download -> { quality -> download(overlay.track, quality) } },
         )

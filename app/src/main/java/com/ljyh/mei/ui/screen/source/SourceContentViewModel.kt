@@ -49,6 +49,7 @@ data class SourceContentState(
     val sections: List<SourceFeedSection> = emptyList(),
     val categories: List<SourceCategory> = emptyList(),
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
     val hasMore: Boolean = false,
     val nextCursor: String? = null,
     val nextOffset: Int = 0,
@@ -112,17 +113,21 @@ class SourceContentViewModel internal constructor(
                 val id = selection.providerId.takeIf(String::isNotBlank) ?: return@collectLatest
                 val provider = registry.provider(id)
                 val revisionFlow: Flow<String?> = (provider as? AccountRevisionCapability)?.accountRevision ?: flowOf(null)
+                var refreshPending = explicitRefresh
                 try {
                     revisionFlow.distinctUntilChanged().collectLatest account@{ accountRevision ->
                         invalidatePage()
                         val token = generation
+                        val refreshing = refreshPending
+                        refreshPending = false
                         val previous = state.value
                         val sameOwner = displayedRequest == requested && previous.providerId == id &&
                             previous.providerVersion == provider?.version.orEmpty() && previous.accountRevision == accountRevision
                         if (!sameOwner) mutableMessage.value = null
-                        mutableState.value = if (sameOwner) previous.copy(loading = true, error = null,
+                        mutableState.value = if (sameOwner) previous.copy(loading = true, refreshing = refreshing, error = null,
                             albumsLoading = false, albumsError = null) else SourceContentState(providerId = id,
-                            providerVersion = provider?.version.orEmpty(), accountRevision = accountRevision, loading = true)
+                            providerVersion = provider?.version.orEmpty(), accountRevision = accountRevision, loading = true,
+                            refreshing = refreshing)
                         displayedRequest = requested
                         val home = requested is SourceContentRequest.Feed && requested.kind == FeedKind.HOME
                         val owner = provider?.takeIf { home }?.let { SourceHomeCacheOwner(id, it.instanceId, it.version, accountRevision) }
@@ -153,6 +158,7 @@ class SourceContentViewModel internal constructor(
                                 homeCache?.write(owner, SourceFeedPage(state.value.sections, state.value.categories), cacheGuard)
                             }
                         }
+                        if (token == generation) mutableState.value = state.value.copy(refreshing = false)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (error: Exception) {

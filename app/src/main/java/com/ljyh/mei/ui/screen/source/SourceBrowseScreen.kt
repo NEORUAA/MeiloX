@@ -246,6 +246,12 @@ fun SourceFeedScreen(
         largeTitleHorizontalPadding = 20.dp,
         backgroundColor = if (glassColors.isDark) glassColors.groupedBackground else Color.White,
         listState = listState,
+        isRefreshing = state.providerId == selectedId && state.refreshing,
+        onRefresh = {
+            if (state.providerId == selectedId && !state.loading && !state.refreshing) {
+                viewModel.refresh()
+            }
+        },
         verticalArrangement = Arrangement.spacedBy(if (kind == FeedKind.DISCOVER) 16.dp else HomeSectionSpacing),
         actions = {
             listOfNotNull(
@@ -256,7 +262,6 @@ fun SourceFeedScreen(
                     categories.map { it.id to it.title },
                     { categoryId = it.takeIf(String::isNotEmpty) },
                 ) else null,
-                meiloxHeaderAction("source-feed-refresh", "刷新", viewModel::refresh) { SfIcon("arrow.clockwise", null, size = 22.dp) },
                 if (isNavigationTab) globalProfileHeaderAction() else null,
             )
         },
@@ -660,7 +665,9 @@ fun SourceLibraryScreen(
     }
     val collapseDistance = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
     val collapse by remember(listState, collapseDistance) { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / collapseDistance).coerceIn(0f, 1f) } }
-    val collectionLoading = combined.loading || podcastState?.isSubscriptionsLoading == true || podcastState?.isLoadingMoreSubscriptions == true
+    val collectionLoading = combined.loading || ownState.refreshing || extra?.refreshing == true || podcastState?.isSubscriptionsLoading == true ||
+        podcastState?.isLoadingMoreSubscriptions == true || cloudState?.isLoading == true ||
+        cloudState?.isLoadingMore == true || historyState.isRefreshing
     var pullRefreshing by remember(page, featureOwner) { mutableStateOf(false) }
     LaunchedEffect(collectionLoading) { if (!collectionLoading) pullRefreshing = false }
     val emptyText = if (query.text.isNotBlank()) stringResource(R.string.no_search_results) else libraryCollectionEmpty(collection)
@@ -674,13 +681,17 @@ fun SourceLibraryScreen(
             if (page == LibraryPage.Playlists && PlaylistEditAction.CREATE in (provider as? PlaylistEditCapability)?.playlistEditActions.orEmpty()) meiloxHeaderAction("source-library-create", "新建歌单", { navigateSourcePlaylistEditor(nav, selectedId) }) { SfIcon("plus", null) } else null,
             if (page == LibraryPage.Cloud && cloudViewModel != null) meiloxHeaderAction("source-library-upload", stringResource(R.string.cloud_upload),
                 { cloudViewModel.upload() }, enabled = cloudState?.isUploading != true) { SfIcon("arrow.up.circle.fill", null) } else null,
-            if (page == LibraryPage.Cloud || page == LibraryPage.History) meiloxHeaderAction("source-library-refresh", stringResource(R.string.refresh), ::refresh) { SfIcon("arrow.clockwise", null) } else null,
             if (page == LibraryPage.History && historyState.canClearLocalHistory && historyViewModel != null)
                 meiloxHeaderAction("source-library-clear-history", stringResource(R.string.clear_history), historyViewModel::clearHistory) { SfIcon("trash", null) } else null,
             if (isNavigationTab) globalProfileHeaderAction() else null) }) { contentPadding ->
-        LibraryCollectionRefresh(enabled = page == LibraryPage.Albums || page == LibraryPage.Playlists || mergePodcasts,
+        LibraryCollectionRefresh(enabled = hasCoreCollection || mergePodcasts || cloudViewModel != null || historyViewModel != null,
             isRefreshing = pullRefreshing && collectionLoading, topPadding = contentPadding.calculateTopPadding(),
-            onRefresh = { pullRefreshing = true; refresh() }) {
+            onRefresh = {
+                if (!collectionLoading) {
+                    pullRefreshing = true
+                    refresh()
+                }
+            }) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = (maxWidth / 180.dp).toInt().coerceAtLeast(2)
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(

@@ -14,6 +14,7 @@ import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -135,18 +136,30 @@ class HomeRepositoryTest {
     @Test fun completePagedHomeIsReusedAndExplicitRefreshBypassesIt() = runTest(dispatcher) {
         val fixture = Fixture()
         val first = fixture.model()
+        val refreshingStates = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            first.state.collect { refreshingStates += it.refreshing }
+        }
         first.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
         first.state.first { !it.loading && it.sections.size == 2 }
         awaitCache(fixture)
         assertEquals(listOf(0, 30), fixture.provider.requests.map { it.offset })
         first.viewModelScope.cancel()
         val reopened = fixture.model()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            reopened.state.collect { refreshingStates += it.refreshing }
+        }
         reopened.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
         reopened.state.first { !it.loading && it.sections.size == 2 }
         assertEquals(2, fixture.provider.requests.size)
+        assertTrue(refreshingStates.none { it })
+        refreshingStates.clear()
         reopened.refresh()
-        reopened.state.first { !it.loading && fixture.provider.requests.size == 4 }
+        reopened.state.first { !it.loading && !it.refreshing && fixture.provider.requests.size == 4 }
         assertEquals(listOf(false, false, true, false), fixture.provider.requests.map { it.refresh })
+        assertTrue(refreshingStates.dropLast(1).isNotEmpty())
+        assertTrue(refreshingStates.dropLast(1).all { it })
+        assertFalse(refreshingStates.last())
     }
 
     @Test fun failedLaterHomePageAndCorruptRefetchKeepSavedBytesUntilSuccess() = runTest(dispatcher) {
@@ -158,7 +171,7 @@ class HomeRepositoryTest {
         vm.state.first { !it.loading && it.sections.isNotEmpty() }
         fixture.provider.failAppend = true
         vm.refresh()
-        vm.state.first { !it.loading && it.error != null }
+        vm.state.first { !it.loading && !it.refreshing && it.error != null }
         assertArrayEquals(before, fixture.cache.file(fixture.owner).readBytes())
         assertEquals(SourceErrorCode.NETWORK, vm.state.value.error)
         vm.viewModelScope.cancel()

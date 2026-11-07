@@ -41,7 +41,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioSheetButton
 import io.github.neoruaa.glasmio.core.IosTypography
 import java.util.Locale
 import io.github.neoruaa.glasmio.ui.GlasmioReorderableGroup
-import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
@@ -62,7 +61,6 @@ fun MoreActionsSheet(
     onFindLyricsLongClick: (() -> Unit)? = null,
     onChoosePrivateFmScene: (() -> Unit)? = null,
     metadata: MediaMetadata? = viewModel.mediaMetadata,
-    additionalTrackActions: List<GlasmioCascadingMenuItem> = emptyList(),
 ) {
     val connection = LocalPlayerConnection.current
     val sleepTimer = connection?.service?.sleepTimer
@@ -211,15 +209,6 @@ fun MoreActionsSheet(
                             color = LocalGlassColors.current.content)
                     }
                 } else GlasmioGroupedList {
-                    additionalTrackActions.forEachIndexed { index, action ->
-                        GlasmioListRow(
-                            title = action.title,
-                            systemName = action.systemName,
-                            enabled = action.enabled,
-                            showTopSeparator = index > 0,
-                            onClick = { dismissal.requestDismiss(action.onClick) },
-                        )
-                    }
                     moreActions.filter { it.availableFor(metadata, sourceProvider) }.forEachIndexed { index, action ->
                         GlasmioListRow(
                             title = stringResource(action.labelRes),
@@ -239,7 +228,7 @@ fun MoreActionsSheet(
                                     SfIcon("chevron.forward", null, size = 12.dp, tint = LocalGlassColors.current.separator)
                                 }
                             } else null,
-                            showTopSeparator = index > 0 || additionalTrackActions.isNotEmpty(),
+                            showTopSeparator = index > 0,
                             onClick = { dismissal.requestDismiss { onActionClick(action) } },
                         )
                     }

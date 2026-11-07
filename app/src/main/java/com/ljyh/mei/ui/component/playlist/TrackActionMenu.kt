@@ -14,7 +14,6 @@ import com.ljyh.mei.R
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.source.api.ProviderIds
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
 import com.ljyh.mei.ui.local.LocalPlayerConnection
@@ -31,18 +30,19 @@ fun TrackActionMenu(
     onDismiss: () -> Unit,
     onAddToPlaylist: (() -> Unit)? = null,
     onDownloadTrack: ((MusicQuality) -> Unit)? = null,
-    onDelete: () -> Unit? = {},
+    onDelete: () -> Unit = {},
     onCopyId: () -> Unit,
     onCopyName: () -> Unit,
     anchorBounds: Rect? = null,
-    onShare: () -> Unit,
+    onShare: (() -> Unit)? = null,
+    deleteEnabled: Boolean = true,
+    playerViewModel: PlayerViewModel? = null,
 ) {
     if (targetTrack == null) return
     val context = LocalContext.current
     val connection = LocalPlayerConnection.current
-    val nativeOrigin = targetTrack.trackRef.providerId == ProviderIds.NETEASE
     val canDownload = onDownloadTrack != null && !targetTrack.isLocal && !targetTrack.isPodcast
-    val downloadViewModel = if (canDownload) hiltViewModel<PlayerViewModel>() else null
+    val downloadViewModel = if (canDownload) playerViewModel ?: hiltViewModel<PlayerViewModel>() else null
     var downloadQualities by remember(targetTrack.trackRef, downloadViewModel) {
         mutableStateOf<List<MusicQuality>?>(null)
     }
@@ -78,18 +78,20 @@ fun TrackActionMenu(
         )
     }
     val headerActions = mutableListOf<GlasmioCascadingMenuItem>()
-    onAddToPlaylist?.takeIf { nativeOrigin }?.let {
+    onAddToPlaylist?.let {
         headerActions += GlasmioCascadingMenuItem(
             title = stringResource(R.string.track_action_add_playlist),
             systemName = "plus.circle.fill",
             onClick = it,
         )
     }
-    if (nativeOrigin) headerActions += GlasmioCascadingMenuItem(
-        title = stringResource(R.string.track_action_share),
-        systemName = "square.and.arrow.up.fill",
-        onClick = onShare,
-    )
+    onShare?.let {
+        headerActions += GlasmioCascadingMenuItem(
+            title = stringResource(R.string.track_action_share),
+            systemName = "square.and.arrow.up.fill",
+            onClick = it,
+        )
+    }
 
     onDownloadTrack?.takeIf { canDownload }?.let { download ->
         val qualityOptions = downloadQualities
@@ -112,11 +114,12 @@ fun TrackActionMenu(
             children = children,
         )
     }
-    if (isCreator && nativeOrigin) {
+    if (isCreator) {
         items += GlasmioCascadingMenuItem(
             title = stringResource(R.string.track_action_delete),
             systemName = "trash",
             destructive = true,
+            enabled = deleteEnabled,
             onClick = { onDelete() },
         )
     }

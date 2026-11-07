@@ -29,19 +29,15 @@ import com.ljyh.mei.ui.component.player.component.sheet.SongInfoSheet
 import com.ljyh.mei.ui.component.player.state.PlayerStateContainer
 import com.ljyh.mei.ui.component.playlist.AddToPlaylistSheet
 import com.ljyh.mei.ui.component.playlist.CreatePlaylistSheet
-import com.ljyh.mei.ui.component.playlist.TrackActionMenu
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.model.MoreAction
-import com.ljyh.mei.ui.model.availableFor
 import com.ljyh.mei.source.api.ProviderIds
-import com.ljyh.mei.data.model.toSourceTrack
 import com.ljyh.mei.ui.screen.source.SourceContentViewModel
 import com.ljyh.mei.ui.screen.source.SourceTrackActions
 import com.ljyh.mei.ui.screen.source.SourceTrackActionMessage
 import com.ljyh.mei.ui.screen.source.navigateSourceContent
 import com.ljyh.mei.ui.screen.source.sourceContentSupported
-import com.ljyh.mei.ui.screen.source.sourceTrackActionItems
 import com.ljyh.mei.utils.lyric.lyricStorageKey
 import com.ljyh.mei.ui.model.LyricSource
 import com.ljyh.mei.ui.screen.Screen
@@ -53,7 +49,6 @@ import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.social.NeteaseShareSheet
-import com.ljyh.mei.utils.setClipboard
 import timber.log.Timber
 
 /**
@@ -206,8 +201,6 @@ fun CommonOverlayHandler(
             val actionMetadata = currentMetadata
             MoreActionsSheet(
                 metadata = actionMetadata,
-                additionalTrackActions = sourceTrackActionItems(actionMetadata?.toSourceTrack(), sourceViewModel,
-                    includeQueue = false, includeAddToPlaylist = false),
                 onChoosePrivateFmScene = if (isPrivateFm) overlayHandler::showPrivateFmScenes else null,
                 onDismissRequest = {
                     overlayHandler.dismiss()
@@ -267,7 +260,6 @@ fun CommonOverlayHandler(
                 onDismiss = overlayHandler::dismiss,
                 viewModel = sourceViewModel,
                 playerViewModel = playerViewModel,
-                onSongInfo = { overlayHandler.showSongInfo(overlay.track) },
                 onShare = { overlayHandler.showShare(overlay.track) },
                 onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
             )

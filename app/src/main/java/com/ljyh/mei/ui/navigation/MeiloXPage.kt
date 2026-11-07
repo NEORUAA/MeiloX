@@ -6,8 +6,11 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -245,6 +248,7 @@ fun MeiloXLoadingPage(title: String, onNavigateBack: (() -> Unit)? = null) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeiloXPinnedListPage(
     title: String,
@@ -268,6 +272,8 @@ fun MeiloXPinnedListPage(
     backgroundColor: Color? = null,
     backgroundBrush: Brush? = null,
     bottomPaddingValues: PaddingValues? = null,
+    isRefreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     registerMeiloXNavigationViewport(listState)
@@ -291,26 +297,38 @@ fun MeiloXPinnedListPage(
                     (bottomPaddingValues?.calculateBottomPadding() ?: 0.dp)
             }
         }
-        key(listState) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
-                contentPadding = listPadding, verticalArrangement = verticalArrangement,
-            ) {
-                if (showTitle) item(key = "ios-large-title:$title") {
-                    Column(Modifier.fillMaxWidth().graphicsLayer {
-                        alpha = 1f - collapse
-                        scaleX = 1f - .04f * collapse
-                        scaleY = scaleX
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
-                    }.blur(6.dp * collapse).offset(y = (-10).dp)
-                        .padding(horizontal = largeTitleHorizontalPadding, vertical = 6.dp),
-                    ) {
-                        Text(title, style = IosTypography.largeTitle, fontWeight = FontWeight.Bold,
-                            color = LocalGlassColors.current.content)
-                        subtitle?.let { Text(it, style = IosTypography.subheadline,
-                            color = LocalGlassColors.current.secondaryContent, modifier = Modifier.padding(top = 3.dp)) }
+        val listContent: @Composable () -> Unit = {
+            key(listState) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                    contentPadding = listPadding, verticalArrangement = verticalArrangement,
+                ) {
+                    if (showTitle) item(key = "ios-large-title:$title") {
+                        Column(Modifier.fillMaxWidth().graphicsLayer {
+                            alpha = 1f - collapse
+                            scaleX = 1f - .04f * collapse
+                            scaleY = scaleX
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                        }.blur(6.dp * collapse).offset(y = (-10).dp)
+                            .padding(horizontal = largeTitleHorizontalPadding, vertical = 6.dp),
+                        ) {
+                            Text(title, style = IosTypography.largeTitle, fontWeight = FontWeight.Bold,
+                                color = LocalGlassColors.current.content)
+                            subtitle?.let { Text(it, style = IosTypography.subheadline,
+                                color = LocalGlassColors.current.secondaryContent, modifier = Modifier.padding(top = 3.dp)) }
+                        }
                     }
+                    content()
                 }
-                content()
+            }
+        }
+        if (onRefresh == null) {
+            listContent()
+        } else {
+            val refreshState = rememberPullToRefreshState()
+            PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = onRefresh, state = refreshState) {
+                Box(Modifier.fillMaxSize().pullToRefreshRebound(refreshState, isRefreshing)) {
+                    listContent()
+                }
             }
         }
     }

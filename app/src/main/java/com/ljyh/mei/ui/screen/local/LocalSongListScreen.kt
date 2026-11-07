@@ -236,7 +236,7 @@ fun LocalSongListScreen(
             TrackActionMenu(
                 targetTrack = track,
                 anchorBounds = actionAnchor,
-                onShare = { shareTrack = track },
+                onShare = if (track.isLocal || track.isPodcast) null else ({ shareTrack = track }),
                 onDismiss = { actionTrack = null },
                 onCopyId = { setClipboard(context, track.trackRef.trackId, "id") },
                 onCopyName = { setClipboard(context, track.title, "name") },
