@@ -105,7 +105,7 @@ class PlaybackShuffleSnapshotTest {
         val restored = gson.fromJson(gson.toJson(original), PlaybackSnapshot::class.java)
         assertTrue(restored.isFmMode)
         assertEquals(listOf("42", "19", "7"), restored.similarFmSourceIds)
-        assertEquals("[42,19,7]", SimilarFmRequest.fromSongIds(restored.similarFmSourceIds!!)!!.body()["sourceIds"])
+        assertEquals("[\"42\",\"19\",\"7\"]", SimilarFmRequest.fromSongIds(restored.similarFmSourceIds!!)!!.body()["seedTrackIds"])
     }
 
     @Test

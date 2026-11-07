@@ -64,7 +64,7 @@ class QQMusicSourceInstrumentedTest {
                 searchTypes = setOf("track"), collectionTypes = emptySet())
             expectRejectedContract { assertSameUpdateContract(legacy, inspected.manifest, reviewed = false) }
             assertSameUpdateContract(legacy, inspected.manifest, reviewed = true)
-            val previousApi2 = inspected.manifest.copy(permissions = inspected.manifest.permissions.copy(network = API2_PREVIOUS_DOMAINS.toList()))
+            val previousApi2 = inspected.manifest.copy(version = "0.3.0", permissions = inspected.manifest.permissions.copy(network = API2_PREVIOUS_DOMAINS.toList()))
             expectRejectedContract { assertSameUpdateContract(previousApi2, inspected.manifest, reviewed = false) }
             assertSameUpdateContract(previousApi2, inspected.manifest, reviewed = true)
             expectRejectedContract { assertSameUpdateContract(legacy, inspected.manifest.copy(
@@ -131,7 +131,9 @@ class QQMusicSourceInstrumentedTest {
                 assertTrue(lyricText.contains("[ar:周杰伦]"))
 
                 val home = parser.feed(invoke("feed.home", pageParams()).getAsJsonObject("value"), PageRequest(limit = 3))
-                assertEquals(listOf("recommend", "songs", "albums", "charts"), home.sections.map { it.id })
+                assertEquals(listOf("recommend", "songs", "albums"), home.sections.map { it.id })
+                assertEquals(com.ljyh.mei.source.api.SourceFeedLayout.HERO, home.sections.first().layout)
+                assertTrue(home.categories.isEmpty())
                 assertTrue(home.sections.all { it.items.isNotEmpty() })
                 val playlist = home.sections.first().items.first() as SourceItem.PlaylistItem
                 val playlistInfo = parser.playlist(invoke("playlist.get", idParams("playlistId", playlist.ref.playlistId)).getAsJsonObject("value"))
@@ -144,7 +146,11 @@ class QQMusicSourceInstrumentedTest {
                 assertTrue(playlistTracks.hasMore)
                 assertEquals("3", playlistTracks.nextCursor)
 
-                val charts = home.sections.first { it.id == "charts" }.items.first() as SourceItem.PlaylistItem
+                val chartFeed = parser.feed(invoke("feed.discover", pageParams().apply {
+                    addProperty("categoryId", "charts")
+                }).getAsJsonObject("value"), PageRequest(limit = 3))
+                assertEquals(listOf("charts"), chartFeed.sections.map { it.id })
+                val charts = chartFeed.sections.single().items.first() as SourceItem.PlaylistItem
                 assertEquals("chart:62", charts.ref.playlistId)
                 assertEquals(charts.ref, parser.playlist(invoke("playlist.get", idParams("playlistId", charts.ref.playlistId)).getAsJsonObject("value")).ref)
                 assertEquals(3, parser.page(invoke("playlist.tracks", pageParams().apply {
@@ -457,7 +463,10 @@ class QQMusicSourceInstrumentedTest {
         progress("playlist.get / playlist.tracks")
         assertEquals(playlist!!.ref, router.playlist(playlist.ref).ref)
         assertValidTracks("QQ home playlist", router.playlistTracks(playlist.ref, page).items)
-        val chart = discover.sections.flatMap { it.items }.filterIsInstance<SourceItem.PlaylistItem>()
+        assertTrue("QQ default discovery must retain its official category feed", discover.sections.any { it.id == "category" })
+        progress("feed.discover.charts")
+        val chartFeed = router.getFeed(PROVIDER_ID, FeedKind.DISCOVER, "charts", page)
+        val chart = chartFeed.sections.flatMap { it.items }.filterIsInstance<SourceItem.PlaylistItem>()
             .firstOrNull { it.ref.playlistId.startsWith("chart:") }
         assertNotNull("QQ discovery must contain a chart that can be opened", chart)
         progress("chart.get / chart.tracks")
@@ -484,6 +493,7 @@ class QQMusicSourceInstrumentedTest {
     }
 
     private suspend fun verifyLiveAccountAndLibrary(router: SourceRouter, required: Boolean, noSession: Boolean) {
+        val pageSize = arguments.getString("qqMusicLibraryPageSize")?.toIntOrNull()?.coerceIn(1, 100) ?: 3
         progress("account.get")
         val account = try { router.account(PROVIDER_ID) }
         catch (error: SourceException) {
@@ -500,13 +510,21 @@ class QQMusicSourceInstrumentedTest {
         for (collection in LibraryCollection.entries) {
             progress(collection.operation)
             try {
-                val result = router.library(PROVIDER_ID, collection, PageRequest(limit = 3))
+                val result = router.library(PROVIDER_ID, collection, PageRequest(limit = pageSize))
                 assertFalse("An anonymous library must return AUTH_REQUIRED rather than a fake empty success", noSession)
                 assertNotNull("Library success requires a confirmed personal QQ account", account)
                 assertTrue(result.items.all { it.ref.providerId == PROVIDER_ID && it.ref.type == collection.type })
                 progress("${collection.operation}:items=${result.items.size}")
                 if (collection.operation in arguments.getString("qqMusicRequireNonemptyCollections").orEmpty().split(',')) {
                     assertTrue("The configured library collection must contain its known items", result.items.isNotEmpty())
+                }
+                if (collection == LibraryCollection.LIKED_TRACKS && arguments.getString("qqMusicVerifyLikedFlags") == "true") {
+                    val refs = result.items.filterIsInstance<SourceItem.TrackItem>().map { it.track.ref }.distinct()
+                    if (refs.isNotEmpty()) {
+                        progress("track.liked:count=${refs.size}")
+                        val flags = router.liked(refs)
+                        assertTrue("Every returned favorite must retain its visible star", refs.all { flags[it] == true })
+                    }
                 }
             } catch (error: SourceException) {
                 if (required || error.code !in AUTH_ERRORS) throw error
@@ -534,7 +552,10 @@ class QQMusicSourceInstrumentedTest {
         val same = previous.apiVersion == proposed.apiVersion && previous.entry == proposed.entry &&
             previous.capabilities == proposed.capabilities && previous.searchTypes == proposed.searchTypes &&
             previous.collectionTypes == proposed.collectionTypes && previous.permissions.network.toSet() == proposed.permissions.network.toSet() &&
-            previous.permissions.storage == proposed.permissions.storage
+            previous.permissions.storage == proposed.permissions.storage && previous.permissions.nativeSdks == proposed.permissions.nativeSdks &&
+            previous.features == proposed.features && previous.featureRoutes == proposed.featureRoutes &&
+            previous.permissions.effects == proposed.permissions.effects && previous.sessionKeys == proposed.sessionKeys &&
+            previous.sessionCookieNames == proposed.sessionCookieNames && previous.linkHosts == proposed.linkHosts
         if (same) return
         assertTrue("Contract changes require explicit qqMusicReviewedUpdate=true", reviewed)
         if (previous.apiVersion == 2) {
@@ -563,12 +584,19 @@ class QQMusicSourceInstrumentedTest {
     private fun assertReviewedApi2Contract(manifest: PluginManifest) {
         assertEquals(PLUGIN_ID, manifest.id)
         assertEquals(PROVIDER_ID, manifest.providerId)
-        assertEquals("0.3.0", manifest.version)
+        assertEquals("0.3.1", manifest.version)
         assertEquals(2, manifest.apiVersion)
         assertEquals("index.js", manifest.entry)
         assertEquals(API2_CAPABILITIES, manifest.capabilities)
         assertEquals(API2_DOMAINS, manifest.permissions.network.toSet())
         assertTrue(manifest.permissions.storage)
+        assertTrue(manifest.permissions.nativeSdks.isEmpty())
+        assertTrue(manifest.features.isEmpty())
+        assertTrue(manifest.featureRoutes.isEmpty())
+        assertTrue(manifest.permissions.effects.isEmpty())
+        assertTrue(manifest.sessionKeys.isEmpty())
+        assertTrue(manifest.sessionCookieNames.isEmpty())
+        assertTrue(manifest.linkHosts.isEmpty())
         assertEquals(setOf("track", "playlist", "album", "artist"), manifest.searchTypes)
         assertEquals(setOf("playlist", "album", "artist"), manifest.collectionTypes)
         assertEquals(listOf(
@@ -602,7 +630,8 @@ class QQMusicSourceInstrumentedTest {
                             response = {code: 0};
                             const categoryId = String(state.categoryId || '');
                             const keys = /^\d+$/.test(categoryId) ? ['categories', 'category'] :
-                                ['categories'].concat(categoryId ? [{recommend:'recommend', tracks:'songs', albums:'albums', charts:'charts'}[categoryId] || 'recommend'] : ['recommend', 'songs', 'albums', 'charts']);
+                                state.feedKind === 'home' ? ['recommend', 'songs', 'albums'] :
+                                ['categories', {recommend:'recommend', tracks:'songs', albums:'albums', charts:'charts'}[categoryId] || 'category'];
                             keys.forEach(function (key) {
                                 response[key] = key === 'category' ? captured.category.category : captured.feed[key];
                                 if (!response[key]) throw new Error('Missing captured feed response');

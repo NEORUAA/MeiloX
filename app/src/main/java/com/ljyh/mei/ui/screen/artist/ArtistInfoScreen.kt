@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -21,6 +22,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ljyh.mei.R
 import com.ljyh.mei.data.network.Resource
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.ui.screen.source.SourceContentViewModel
+import com.ljyh.mei.ui.screen.source.SourceContentRequest
+import com.ljyh.mei.ui.screen.source.sourceErrorMessage
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioListRow
@@ -34,13 +39,22 @@ import com.ljyh.mei.ui.screen.Screen
 @Composable
 fun ArtistInfoScreen(
     id: String,
-    viewModel: ArtistViewModel = hiltViewModel(key = "artist-info:$id"),
+    providerId: String = ProviderIds.NETEASE,
+    viewModel: SourceContentViewModel = hiltViewModel(key = "artist-info:$providerId:$id"),
 ) {
     val navController = LocalNavController.current
-    val artistDetail by viewModel.artistDetail.collectAsState()
-    val artist = (artistDetail as? Resource.Success)?.data?.data?.artist
-
-    LaunchedEffect(id) { viewModel.getArtistDetail(id) }
+    val state by viewModel.state.collectAsState()
+    val artist = (state.detail as? SourceItem.ArtistItem)?.artist
+    val errorMessage = state.error?.let { sourceErrorMessage(it) }
+    val artistDetail: Resource<SourceArtistInfo?> = when {
+        state.loading || state.providerId.isBlank() -> Resource.Loading
+        errorMessage != null -> Resource.Error(errorMessage)
+        else -> Resource.Success(artist)
+    }
+    LaunchedEffect(id, providerId) { viewModel.open(SourceContentRequest.ArtistInformation(ArtistRef(providerId, id))) }
+    fun openCatalog(screen: Screen) {
+        screen.navigate(navController) { addPath(Uri.encode(providerId)); addPath(Uri.encode(id)) }
+    }
 
     MeiloXPinnedListPage(
         title = stringResource(R.string.artist_info_title),
@@ -67,13 +81,12 @@ fun ArtistInfoScreen(
                     )
                     GlasmioListRow(
                         title = stringResource(R.string.retry),
-                        onClick = { viewModel.getArtistDetail(id) },
+                        onClick = { viewModel.refresh() },
                     )
                 }
             }
             is Resource.Success -> {
-                val data = detail.data.data
-                val artistData = data?.artist
+                val artistData = detail.data
                 if (artistData == null) {
                     item(key = "unavailable") {
                         Column(
@@ -101,23 +114,23 @@ fun ArtistInfoScreen(
                         ArtistInfoSection(stringResource(R.string.artist_info_works)) {
                             GlasmioListRow(
                                 title = stringResource(R.string.artist_info_songs),
-                                detail = artistData.musicSize.toString(),
-                                onClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") },
+                                detail = artistData.trackCount?.toString().orEmpty(),
+                                onClick = { openCatalog(Screen.SourceArtistSongs) },
                                 showTopSeparator = false,
                             )
                             GlasmioListRow(
                                 title = stringResource(R.string.artist_info_albums),
-                                detail = artistData.albumSize.toString(),
-                                onClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") },
+                                detail = artistData.albumCount?.toString().orEmpty(),
+                                onClick = { openCatalog(Screen.SourceArtistAlbums) },
                             )
-                            GlasmioListRow(
+                            if (artistData.musicVideoCount != null) GlasmioListRow(
                                 title = stringResource(R.string.artist_info_music_videos),
-                                detail = artistData.mvSize.toString(),
+                                detail = artistData.musicVideoCount?.toString().orEmpty(),
                             )
                         }
                     }
 
-                    val identities = (artistData.identifyTag.orEmpty() + artistData.identities.orEmpty())
+                    val identities = artistData.identities
                         .map(String::trim)
                         .filter(String::isNotBlank)
                         .distinct()
@@ -134,15 +147,15 @@ fun ArtistInfoScreen(
                         }
                     }
 
-                    val expertise = data.secondaryExpertIdentiy.orEmpty()
-                        .filter { it.expertIdentiyName.isNotBlank() }
+                    val expertise = artistData.expertise
+                        .filter { it.name.isNotBlank() }
                     if (expertise.isNotEmpty()) {
                         item(key = "expertise") {
                             ArtistInfoSection(stringResource(R.string.artist_info_expertise)) {
                                 expertise.forEachIndexed { index, expert ->
                                     GlasmioListRow(
-                                        title = expert.expertIdentiyName.trim(),
-                                        detail = expert.expertIdentiyCount.toString(),
+                                        title = expert.name.trim(),
+                                        detail = expert.count?.toString().orEmpty(),
                                         showTopSeparator = index != 0,
                                     )
                                 }
@@ -150,7 +163,7 @@ fun ArtistInfoScreen(
                         }
                     }
 
-                    val translatedNames = artistData.transNames.orEmpty()
+                    val translatedNames = artistData.translatedNames
                         .map(String::trim)
                         .filter(String::isNotBlank)
                         .distinct()
@@ -162,8 +175,7 @@ fun ArtistInfoScreen(
                         }
                     }
 
-                    val aliases = artistData.alias.orEmpty()
-                        .filterIsInstance<String>()
+                    val aliases = artistData.aliases.ifEmpty { artistData.alternateNames.filterNot(artistData.translatedNames::contains) }
                         .map(String::trim)
                         .filter(String::isNotBlank)
                         .distinct()
@@ -175,14 +187,14 @@ fun ArtistInfoScreen(
                         }
                     }
 
-                    if (artistData.briefDesc.isNotBlank()) {
+                    if (!artistData.description.isNullOrBlank()) {
                         item(key = "biography") {
                             ArtistInfoSection(stringResource(R.string.artist_info_biography)) {
                                 Column(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    artistData.briefDesc.trim().split(Regex("\\n\\s*\\n|\\r?\\n"))
+                                    artistData.description.orEmpty().trim().split(Regex("\\n\\s*\\n|\\r?\\n"))
                                         .filter(String::isNotBlank)
                                         .forEach { paragraph ->
                                             Text(

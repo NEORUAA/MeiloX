@@ -60,9 +60,10 @@ import com.ljyh.mei.constants.HomeRowHorizontalPadding
 import com.ljyh.mei.constants.homeCardSpacing
 import com.ljyh.mei.constants.homePlaylistCardSize
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.melox.Podcast
+import com.ljyh.mei.data.model.mediaId
+import com.ljyh.mei.data.model.toSourceTrack
+import com.ljyh.mei.source.shared.OnlinePodcast as Podcast
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
@@ -98,8 +99,7 @@ fun PodcastScreen(
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current
     val bottomPadding = insets.asPaddingValues().calculateBottomPadding()
-    val cookie by rememberPreference(CookieKey, defaultValue = "")
-    val isVisitor = cookie.isBlank()
+    val isVisitor = !state.isSignedIn
     val listState = rememberLazyListState()
     val colors = LocalGlassColors.current
     val pageBackground = if (state.selectedTab == PodcastTab.Subscriptions || colors.isDark) {
@@ -176,7 +176,7 @@ fun PodcastScreen(
                             if (state.selectedCategoryId == null) R.string.podcast_for_you else R.string.podcast_category,
                         ),
                         podcasts = visible,
-                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(it.toString()) } },
+                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(android.net.Uri.encode(it.id)); addQuery("providerId", it.providerId) } },
                     )
                 }
             }
@@ -185,7 +185,7 @@ fun PodcastScreen(
                     PodcastSection(
                         title = stringResource(R.string.podcast_featured),
                         podcasts = featured,
-                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(it.toString()) } },
+                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(android.net.Uri.encode(it.id)); addQuery("providerId", it.providerId) } },
                     )
                 }
             }
@@ -196,7 +196,7 @@ fun PodcastScreen(
                         title = stringResource(R.string.podcast_subscriptions_sign_in),
                         description = stringResource(R.string.podcast_subscriptions_sign_in_description),
                         actionLabel = stringResource(R.string.library_sign_in),
-                        onAction = { Screen.NeteaseLogin.navigate(navController) },
+                        onAction = { Screen.NeteaseLogin.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                 }
                 !state.subscriptionsLoaded && state.subscriptionsError == null -> {
@@ -237,7 +237,7 @@ fun PodcastScreen(
                                 )
                             },
                             onClick = {
-                                Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                                Screen.PodcastDetail.navigate(navController) { addPath(android.net.Uri.encode(podcast.id)); addQuery("providerId", podcast.providerId) }
                             },
                         )
                     }
@@ -259,9 +259,9 @@ fun PodcastScreen(
 
 @Composable
 private fun PodcastCategorySelector(
-    categories: List<com.ljyh.mei.data.model.melox.PodcastCategory>,
-    selectedCategoryId: Long?,
-    onCategorySelected: (Long?) -> Unit,
+    categories: List<com.ljyh.mei.source.shared.OnlinePodcastCategory>,
+    selectedCategoryId: String?,
+    onCategorySelected: (String?) -> Unit,
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
@@ -312,7 +312,7 @@ private fun PodcastCategoryTab(
 private fun PodcastSection(
     title: String,
     podcasts: List<Podcast>,
-    onClick: (Long) -> Unit,
+    onClick: (Podcast) -> Unit,
 ) {
     val colors = LocalGlassColors.current
     val isLandscape = rememberDeviceInfo().isLandscape
@@ -341,10 +341,10 @@ private fun PodcastSection(
 private fun PodcastRecommendationCard(
     podcast: Podcast,
     cardSize: Dp,
-    onClick: (Long) -> Unit,
+    onClick: (Podcast) -> Unit,
 ) {
     Column(
-        modifier = Modifier.width(cardSize).clickable { onClick(podcast.id) },
+        modifier = Modifier.width(cardSize).clickable { onClick(podcast) },
     ) {
         AsyncImage(
             model = podcast.picUrl,
@@ -367,7 +367,7 @@ private fun PodcastRecommendationCard(
 
 @Composable
 fun PodcastDetailScreen(
-    id: Long,
+    id: String,
     viewModel: PodcastDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -375,7 +375,8 @@ fun PodcastDetailScreen(
     val playerConnection = LocalPlayerConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val downloadViewModel: com.ljyh.mei.ui.screen.playlist.PlaylistViewModel = hiltViewModel()
+    val sourceViewModel: com.ljyh.mei.ui.screen.source.SourceContentViewModel = hiltViewModel()
+    var trackMenu by remember(id) { mutableStateOf<Pair<com.ljyh.mei.source.api.Track, androidx.compose.ui.geometry.Rect>?>(null) }
     val selection = rememberDetailSelection(id)
     val listState = rememberLazyListState()
     var restoredListIndex by remember(id, listState) { androidx.compose.runtime.mutableIntStateOf(listState.firstVisibleItemIndex) }
@@ -391,7 +392,7 @@ fun PodcastDetailScreen(
         (restorationRequests < MaxAutomaticRestorationPages || waitingForRestorationPage)
     var searchActive by remember(id) { mutableStateOf(false) }
     var query by remember(id) { mutableStateOf("") }
-    var searchResults by remember(id) { mutableStateOf<List<MediaMetadata>>(emptyList()) }
+    var searchResults by remember(id) { mutableStateOf<List<com.ljyh.mei.source.shared.OnlinePodcastProgram>>(emptyList()) }
     var searching by remember(id) { mutableStateOf(false) }
     var searchError by remember(id) { mutableStateOf<String?>(null) }
     var pendingDownload by remember(id) { mutableStateOf<List<MediaMetadata>?>(null) }
@@ -421,8 +422,7 @@ fun PodcastDetailScreen(
         searching = true
         try {
             kotlinx.coroutines.delay(200)
-            searchResults = viewModel.allPrograms(id).map { it.toMediaMetadata() }
-                .filter { it.matchesPlaylistSearch(query) }
+            searchResults = viewModel.allPrograms(id).filter { it.toMediaMetadata().matchesPlaylistSearch(query) }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) { searchError = error.message }
@@ -437,24 +437,21 @@ fun PodcastDetailScreen(
             if (totalItemsCount > 0 && lastVisibleIndex >= totalItemsCount - 1) viewModel.loadMore()
         }
     }
-    val tracks = if (query.isBlank()) detail?.programs.orEmpty().map { it.toMediaMetadata() } else searchResults
+    val displayedPrograms = if (query.isBlank()) detail?.programs.orEmpty() else searchResults
+    val tracks = remember(displayedPrograms) { displayedPrograms.map { it.toMediaMetadata() } }
     val count = maxOf(detail?.totalCount ?: 0, detail?.podcast?.programCount ?: 0, detail?.programs?.size ?: 0)
 
     fun download(tracks: List<MediaMetadata>, quality: com.ljyh.mei.constants.MusicQuality) {
         scope.launch {
             try {
-                val sources = tracks.map { it.id.toString() }.chunked(200).flatMap { ids ->
-                    val result = downloadViewModel.resolveSongUrls(ids, quality)
-                    if (result is com.ljyh.mei.data.network.Resource.Success) result.data.fullSourcesFor(ids.toSet()) else emptyList()
-                }.associateBy { it.id.toString() }
-                val songs = tracks.mapNotNull { track ->
-                    val source = sources[track.id.toString()] ?: return@mapNotNull null
-                    val url = source.url ?: return@mapNotNull null
+                val songs = tracks.map { track ->
+                    val resolution = viewModel.resolveDownload(track, quality)
+                    check(resolution.resource.cachePolicy != com.ljyh.mei.source.api.CachePolicy.NO_STORE)
                     com.ljyh.mei.playback.SongDownloadInfo(
-                        songId = track.id.toString(), url = url, songTitle = track.title,
-                        songArtist = track.artists.map { it.name }, songAlbum = track.album.title,
-                        songCover = track.coverUrl, duration = track.duration,
-                        fileType = source.encodeType, quality = source.level,
+                        songId = com.ljyh.mei.source.api.TrackRefCodec.storageKey(track.trackRef), url = resolution.resource.uri,
+                        songTitle = track.title, songArtist = track.artists.map { it.name }, songAlbum = track.album.title,
+                        songCover = track.coverUrl, duration = track.duration, quality = quality.text,
+                        originTrackRef = track.trackRef, resolution = resolution,
                     )
                 }
                 check(songs.isNotEmpty()) { "No downloadable programs" }
@@ -473,7 +470,7 @@ fun PodcastDetailScreen(
         scope.launch {
             try {
                 val selected = viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.toMediaMetadata() }
-                    .filter { ids == null || it.id.toString() in ids }
+                    .filter { ids == null || it.mediaId in ids }
                 if (selected.isEmpty()) {
                     android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
                 } else if (quality == null) pendingDownload = selected else download(selected, quality)
@@ -485,7 +482,7 @@ fun PodcastDetailScreen(
     DetailSelectionToolbar(selection,
         onSelectAll = {
             viewModel.allPrograms(id).filter { it.mainSongId != null }.map { it.toMediaMetadata() }
-                .filter { it.matchesPlaylistSearch(query) }.map { it.id.toString() }.toSet()
+                .filter { it.matchesPlaylistSearch(query) }.map { it.mediaId }.toSet()
         },
         onDownload = { prepareDownload(ids = selection.ids) },
     )
@@ -504,18 +501,18 @@ fun PodcastDetailScreen(
         onSubscribe = viewModel::toggleSubscription,
         onRefresh = { selection.finish(); refreshDetail() },
     )
-    fun play(trackId: Long? = null, shuffle: Boolean = false) {
+    fun play(trackId: String? = null, shuffle: Boolean = false) {
         val playable = detail?.programs.orEmpty().filter { it.mainSongId != null }
         val items = playable.map { it.toMediaMetadata().toMediaItem().let { song -> song.mediaId to song } }
         if (items.isEmpty()) return
         val index = if (shuffle) items.indices.random() else playable.indexOfFirst { it.mainSongId == trackId }.coerceAtLeast(0)
         playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index), shuffle = shuffle)
     }
-    com.ljyh.mei.ui.screen.playlist.CommonSongListScreen(
+    com.ljyh.mei.ui.screen.playlist.SongListDetailScreen(
         useCoverBackground = true,
         landscapeLayout = com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout.Split,
-        uiData = com.ljyh.mei.ui.model.UiPlaylist(
-            id = id, title = detail?.podcast?.name.orEmpty(), count = count,
+        uiData = com.ljyh.mei.ui.screen.playlist.SongListDetailData(
+             title = detail?.podcast?.name.orEmpty(), count = count,
             subscriberCount = detail?.podcast?.subscriberCount ?: 0,
             cover = detail?.podcast?.picUrl.orEmpty(), coverList = emptyList(),
             creatorName = detail?.podcast?.host?.nickname.orEmpty(), tracks = tracks,
@@ -530,17 +527,21 @@ fun PodcastDetailScreen(
         headerActionIcon = Icons.Default.Add,
         headerActionLabel = stringResource(if (detail?.podcast?.isSubscribed == true) R.string.detail_podcast_unsubscribe else R.string.podcast_subscribe),
         onHeaderAction = viewModel::toggleSubscription,
-        onTrackClick = { track, _ ->
-            if (selection.active) { if (track.id > 0) selection.toggle(track.id.toString()) }
-            else if (track.id > 0) {
-                // Search may return a program outside the pages loaded for scrolling.
-                val playable = if (query.isBlank()) detail?.programs.orEmpty().map { it.toMediaMetadata() } else tracks
-                val items = playable.filter { it.id > 0 }.map { it.toMediaItem().let { song -> song.mediaId to song } }
-                val index = items.indexOfFirst { it.first == track.id.toString() }.coerceAtLeast(0)
-                playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, index))
+        onTrackClick = { track, index ->
+            if (displayedPrograms.getOrNull(index)?.mainTrackRef != null) {
+                if (selection.active) selection.toggle(track.mediaId)
+                else {
+                    val items = displayedPrograms.filter { it.mainTrackRef != null }.map { it.toMediaMetadata().toMediaItem().let { song -> song.mediaId to song } }
+                    val start = items.indexOfFirst { it.first == track.mediaId }.coerceAtLeast(0)
+                    playerConnection?.playQueue(ListQueue("podcast_$id", detail?.podcast?.name.orEmpty(), items, start))
+                }
             }
         },
-        onTrackDownload = { track, quality -> if (track.id > 0) download(listOf(track), quality) },
+        onTrackMore = { track, anchor ->
+            val index = tracks.indexOfFirst { it === track }
+            if (displayedPrograms.getOrNull(index)?.mainTrackRef != null) trackMenu = track.toSourceTrack() to anchor
+        },
+        overlayContent = { com.ljyh.mei.ui.screen.source.SourceTrackActions(trackMenu, { trackMenu = null }, sourceViewModel) },
         detailMenu = menu, detailMenuTitle = stringResource(R.string.detail_podcast_menu),
         selectionMode = selection.active, selectedTrackIds = selection.ids, onSelectionDone = selection::finish,
         playlistSearchQuery = query, isPlaylistSearchActive = searchActive,

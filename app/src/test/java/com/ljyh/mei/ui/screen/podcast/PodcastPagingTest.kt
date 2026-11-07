@@ -1,10 +1,10 @@
 package com.ljyh.mei.ui.screen.podcast
 
-import com.ljyh.mei.data.model.melox.Podcast
-import com.ljyh.mei.data.model.melox.PodcastDetail
-import com.ljyh.mei.data.model.melox.PodcastPage
-import com.ljyh.mei.data.model.melox.PodcastProgram
-import com.ljyh.mei.data.model.melox.PodcastProgramPage
+import com.ljyh.mei.source.shared.OnlinePodcast as Podcast
+import com.ljyh.mei.source.shared.OnlinePodcastDetail as PodcastDetail
+import com.ljyh.mei.source.shared.OnlinePodcastPage as PodcastPage
+import com.ljyh.mei.source.shared.OnlinePodcastProgram as PodcastProgram
+import com.ljyh.mei.source.shared.OnlinePodcastProgramPage as PodcastProgramPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -18,7 +18,7 @@ class PodcastPagingTest {
             incoming = listOf(podcast(2), podcast(3)),
         )
 
-        assertEquals(listOf(1L, 2L, 3L), merged.map(Podcast::id))
+        assertEquals(listOf("1", "2", "3"), merged.map(Podcast::id))
     }
 
     @Test
@@ -28,7 +28,7 @@ class PodcastPagingTest {
             incoming = listOf(program(11), program(12)),
         )
 
-        assertEquals(listOf(10L, 11L, 12L), merged.map(PodcastProgram::id))
+        assertEquals(listOf("10", "11", "12"), merged.map(PodcastProgram::id))
     }
 
     @Test
@@ -42,7 +42,7 @@ class PodcastPagingTest {
             PodcastPage(listOf(podcast(2)), true, 10, fetchedCount = 3),
             reset = false,
         )
-        assertEquals(listOf(1L, 2L), state.subscribedPodcasts.map(Podcast::id))
+        assertEquals(listOf("1", "2"), state.subscribedPodcasts.map(Podcast::id))
         assertEquals(7, state.subscriptionOffset)
         assertTrue(state.hasMoreSubscriptions)
 
@@ -56,12 +56,12 @@ class PodcastPagingTest {
             PodcastPage(listOf(podcast(3)), false, 10),
             reset = false,
         )
-        assertEquals(listOf(1L, 2L, 3L), state.subscribedPodcasts.map(Podcast::id))
+        assertEquals(listOf("1", "2", "3"), state.subscribedPodcasts.map(Podcast::id))
         assertEquals(10, state.subscriptionOffset)
         assertFalse(state.hasMoreSubscriptions)
 
         state = state.withSubscriptionPage(PodcastPage(listOf(podcast(4)), false, 1), reset = true)
-        assertEquals(listOf(4L), state.subscribedPodcasts.map(Podcast::id))
+        assertEquals(listOf("4"), state.subscribedPodcasts.map(Podcast::id))
         assertEquals(1, state.subscriptionOffset)
     }
 
@@ -77,7 +77,7 @@ class PodcastPagingTest {
         detail = detail.withProgramPage(
             PodcastProgramPage(listOf(program(10)), true, 8, fetchedCount = 2),
         )
-        assertEquals(listOf(10L), detail.programs.map(PodcastProgram::id))
+        assertEquals(listOf("10"), detail.programs.map(PodcastProgram::id))
         assertEquals(5, detail.nextOffset)
         assertTrue(detail.hasMore)
 
@@ -85,13 +85,13 @@ class PodcastPagingTest {
         assertEquals(7, detail.nextOffset)
         assertTrue(detail.hasMore)
         detail = detail.withProgramPage(PodcastProgramPage(listOf(program(11)), false, 8))
-        assertEquals(listOf(10L, 11L), detail.programs.map(PodcastProgram::id))
+        assertEquals(listOf("10", "11"), detail.programs.map(PodcastProgram::id))
         assertEquals(8, detail.nextOffset)
         assertFalse(detail.hasMore)
     }
 
     private fun podcast(id: Long) = Podcast(
-        id = id,
+        id = id.toString(),
         name = "Podcast $id",
         picUrl = null,
         description = null,
@@ -108,7 +108,7 @@ class PodcastPagingTest {
     )
 
     private fun program(id: Long) = PodcastProgram(
-        id = id,
+        id = id.toString(),
         name = "Episode $id",
         coverUrl = null,
         description = null,
@@ -118,7 +118,7 @@ class PodcastPagingTest {
         likedCount = 0,
         commentCount = 0,
         serialNumber = null,
-        radioId = 1,
+        radioId = "1",
         radioName = "Podcast",
         host = null,
         mainSongId = null,

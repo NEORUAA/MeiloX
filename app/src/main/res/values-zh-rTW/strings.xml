@@ -203,7 +203,7 @@
     <string name="general_clipboard">剪貼簿</string>
     <string name="general_recognize_clipboard">辨識網易雲連結</string>
     <string name="general_recognize_clipboard_description">啟動後讀取一次剪貼簿，發現網易雲歌曲或一起聽邀請時會先詢問是否開啟。</string>
-    <string name="general_export_music_u">匯出 MUSIC_U Cookie</string>
+    <string name="general_export_music_u">複製登入工作階段</string>
     <string name="general_export_music_u_description">將目前登入帳號的 MUSIC_U 值複製到剪貼簿。</string>
     <string name="clipboard_song_title">發現網易雲歌曲連結</string>
     <string name="clipboard_song_message">是否在 Mei 中開啟剪貼簿裡的歌曲？</string>
@@ -574,7 +574,7 @@
     <string name="account_playlists">歌單 · %1$d</string>
     <string name="account_track_count">%1$d 首歌曲</string>
     <string name="account_level_listens">Lv.%1$d · 累計聽歌 %2$d 首</string>
-    <string name="account_user_id">使用者 ID %1$d</string>
+    <string name="account_user_id">使用者 ID %1$s</string>
     <string name="account_follows">關注</string>
     <string name="account_followers">粉絲</string>
     <string name="account_no_follows">暫無關注</string>
@@ -713,7 +713,7 @@
     <string name="comment_sort_hot">熱門</string>
     <string name="comment_sort_latest">最新</string>
     <string name="netease_sms_up_title">簡訊安全驗證</string>
-    <string name="netease_sms_up_tip">網易要求使用登入手機號碼主動傳送一則簡訊。模擬器中請用該號碼所在的手機傳送，然後回到這裡繼續登入。</string>
+    <string name="netease_sms_up_tip">登入需要使用目前手機號碼主動傳送一則簡訊。請用該號碼所在的手機傳送，然後回到這裡繼續登入。</string>
     <string name="netease_sms_up_destination">接收號碼：%1$s</string>
     <string name="netease_sms_up_content">簡訊內容：%1$s</string>
     <string name="netease_sms_up_copy_number">複製號碼</string>

@@ -27,10 +27,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
-import com.ljyh.mei.data.model.melox.AccountConnectionPage
+import com.ljyh.mei.source.shared.OnlineAccountConnectionPage as AccountConnectionPage
 import com.ljyh.mei.data.model.melox.AccountConnectionType
-import com.ljyh.mei.data.model.melox.AccountProfile
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.OnlineAccountProfile as AccountProfile
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.shared.SharedOnlineSession
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
@@ -62,20 +63,31 @@ data class AccountConnectionsState(
 
 @HiltViewModel
 class AccountConnectionsViewModel internal constructor(
-    private val loadPage: suspend (Long, AccountConnectionType, Int) -> AccountConnectionPage,
+    private val loadPage: suspend (String, AccountConnectionType, Int) -> AccountConnectionPage,
 ) : ViewModel() {
     @Inject
-    constructor(repository: MeloXRepository) : this(
-        { userId, type, offset -> repository.accountConnections(userId, type, offset) },
+    constructor(repository: SharedOnlineRepository, savedStateHandle: androidx.lifecycle.SavedStateHandle) : this(
+        repository.screen("account-connections", savedStateHandle["providerId"]),
     )
+    private constructor(repository: SharedOnlineSession) : this(
+        { userId, type, offset -> repository.accountConnections(userId, type, offset) },
+    ) {
+        viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            if (owner.isBlank()) {
+                revision++
+                loadJob?.cancel()
+                _state.value = AccountConnectionsState(loading = false)
+            }
+        } }
+    }
 
     private val _state = MutableStateFlow(AccountConnectionsState())
     val state = _state.asStateFlow()
-    private var selection: Pair<Long, AccountConnectionType>? = null
+    private var selection: Pair<String, AccountConnectionType>? = null
     private var loadJob: Job? = null
     private var revision = 0L
 
-    fun load(userId: Long, type: AccountConnectionType) {
+    fun load(userId: String, type: AccountConnectionType) {
         if (selection == (userId to type)) return
         selection = userId to type
         _state.value = AccountConnectionsState()
@@ -136,7 +148,7 @@ class AccountConnectionsViewModel internal constructor(
 
 @Composable
 fun AccountConnectionsScreen(
-    userId: Long,
+    userId: String,
     type: AccountConnectionType,
     viewModel: AccountConnectionsViewModel = hiltViewModel(key = "account-connections:$userId:$type"),
 ) {
@@ -204,9 +216,9 @@ fun AccountConnectionsScreen(
                         modifier = Modifier.size(44.dp).clip(CircleShape),
                     )
                 },
-                onClick = user.artistId?.takeIf { it > 0 }?.let { artistId ->
+                onClick = user.artistId?.let { artistId ->
                     {
-                        Screen.Artist.navigate(navController) { addPath(artistId.toString()) }
+                        com.ljyh.mei.ui.screen.source.navigateSourceContent(navController, com.ljyh.mei.source.api.ArtistRef(user.providerId, artistId))
                     }
                 },
             )

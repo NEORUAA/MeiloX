@@ -159,14 +159,7 @@ class SourceContentQueue private constructor(
             request.job = requestJob
             if (request.generation != generation || released) request.job?.cancel()
         }
-        try {
-            val result = withContext(Dispatchers.IO) { loadPage(request) }
-            request.result.complete(result)
-            result
-        } catch (error: CancellationException) {
-            request.result.cancel(error)
-            throw error
-        } catch (error: Exception) {
+        fun failedPage(error: Exception): Queue.Result.Error {
             val result = Queue.Result.Error("音源队列加载失败", error)
             synchronized(lock) {
                 if (request.generation == generation && !released) {
@@ -175,7 +168,30 @@ class SourceContentQueue private constructor(
                 }
             }
             request.result.complete(result)
+            return result
+        }
+        try {
+            val result = withContext(Dispatchers.IO) { loadPage(request) }
+            request.result.complete(result)
             result
+        } catch (error: CancellationException) {
+            // A retired source can reject a read without cancelling this queue's caller.
+            // Preserve its loaded audio and stop pagination just like an explicit stale-session response.
+            val retiredOwner = try {
+                currentCoroutineContext().ensureActive()
+                withContext(Dispatchers.IO) { checkAccountAndProvider() }
+                null
+            } catch (cancelled: CancellationException) {
+                request.result.cancel(cancelled)
+                throw cancelled
+            } catch (failure: SourceException) { failure }
+            if (retiredOwner == null) {
+                request.result.cancel(error)
+                throw error
+            }
+            failedPage(retiredOwner)
+        } catch (error: Exception) {
+            failedPage(error)
         } finally {
             synchronized(lock) { if (flight === request) flight = null }
         }

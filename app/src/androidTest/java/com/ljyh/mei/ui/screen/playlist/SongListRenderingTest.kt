@@ -5,11 +5,14 @@ import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.ui.test.performScrollToIndex
+import com.ljyh.mei.ui.screen.playlist.component.playlistTrackItems
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import com.ljyh.mei.ui.screen.artist.ArtistPopularSongs
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
+import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.data.model.MediaMetadata
 import kotlin.math.abs
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
@@ -21,6 +24,8 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderMotion
 import io.github.neoruaa.glasmio.core.GlassAppearance
 import io.github.neoruaa.glasmio.core.GlasmioTheme
 import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -64,6 +69,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -87,12 +93,57 @@ import org.junit.runner.RunWith
 class SongListRenderingTest {
     @get:Rule val compose = createComposeRule()
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test
+    fun filteredLibrarySongsKeepOnlyVisibleResultsAndTheirOpaquePlaybackIdentities() = runBlocking {
+        val all = listOf(
+            com.ljyh.mei.source.api.Track(com.ljyh.mei.source.api.TrackRef("qq", "hidden"), "Other song", emptyList()),
+            com.ljyh.mei.source.api.Track(com.ljyh.mei.source.api.TrackRef("qq", "00042"), "Match one", emptyList()),
+            com.ljyh.mei.source.api.Track(com.ljyh.mei.source.api.TrackRef("qq", "song/B"), "Match two", emptyList()),
+        )
+        val filtered = all.filter { it.title.contains("match", true) }
+        val queue = com.ljyh.mei.ui.screen.source.sourceLibrarySearchQueue("library-search", "Songs", filtered, 1)!!
+        val status = queue.getInitialStatus()
+        val expected = filtered.map { com.ljyh.mei.source.api.TrackRefCodec.mediaId(it.ref) }
+        assertEquals(expected, status.ids.map { it.first })
+        assertEquals(expected, status.ids.map { it.second!!.mediaId })
+        assertEquals(1, status.mediaItemIndex)
+        org.junit.Assert.assertNull(queue.playlistSource)
+        org.junit.Assert.assertFalse(queue.hasNextPage())
+        org.junit.Assert.assertNull(com.ljyh.mei.ui.screen.source.sourceLibrarySearchQueue("library-search", "Songs", emptyList(), 0))
+    }
+
+
     private val loading = mutableStateOf(false)
     private val hasLoadedContent = mutableStateOf(true)
     private val rowCount = mutableIntStateOf(150)
     private val paginationError = mutableStateOf(false)
     private lateinit var contentState: LazyListState
     private lateinit var layoutState: LazyListState
+
+    @Test
+    fun sharedDetailRowsPreserveRepeatedExternalTrackPositions() {
+        val ref = com.ljyh.mei.source.api.TrackRef("qqmusic", "name/海:77")
+        val repeated = com.ljyh.mei.source.api.Track(ref, "Repeated recording", emptyList()).toMediaMetadata()
+        val other = com.ljyh.mei.source.api.Track(ref.copy(providerId = "other-source"), "Other source", emptyList()).toMediaMetadata()
+        val clicked = mutableListOf<Int>()
+        compose.setContent {
+            GlasmioTheme {
+                LazyColumn {
+                    playlistTrackItems(
+                        pagingItems = null, staticTracks = listOf(repeated, repeated, other),
+                        isTablet = false, showTableHeader = false, flatDetailStyle = true,
+                        onTrackClick = { _, index -> clicked += index }, onMoreClick = { _, _ -> },
+                        currentTrackId = repeated.mediaId, showArtwork = false,
+                    )
+                }
+            }
+        }
+        compose.onAllNodesWithText("Repeated recording").assertCountEquals(2)
+        compose.onAllNodesWithText("Repeated recording")[1].performClick()
+        compose.runOnIdle { assertEquals(listOf(1), clicked) }
+        compose.onNodeWithText("Other source").assertIsDisplayed()
+    }
 
     @Test
     fun homeAndCatalogArtworkShareDimensionsAcrossRotation() {
@@ -603,10 +654,13 @@ class SongListRenderingTest {
             }
         }
 
-        compose.onNodeWithText("42%").assertIsDisplayed()
+        fun assertStatus(text: String) {
+            compose.onNode(hasText("本地音乐 · 下载任务 · $text") or hasText(text)).assertIsDisplayed()
+        }
+        assertStatus("42%")
         val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
-        compose.onNodeWithText(targetContext.getString(R.string.download_paused)).assertIsDisplayed()
-        compose.onNodeWithText(targetContext.getString(R.string.download_failed)).assertIsDisplayed()
+        assertStatus(targetContext.getString(R.string.download_paused))
+        assertStatus(targetContext.getString(R.string.download_failed))
         compose.onNode(SemanticsMatcher.expectValue(
             SemanticsProperties.ProgressBarRangeInfo,
             ProgressBarRangeInfo(0.42f, 0f..1f),

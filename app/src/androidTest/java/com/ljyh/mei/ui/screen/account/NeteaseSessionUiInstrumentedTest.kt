@@ -7,7 +7,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import android.os.SystemClock
 import android.os.ParcelFileDescriptor
-import android.webkit.CookieManager
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,8 +14,6 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.ljyh.mei.MainActivity
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.utils.dataStore
 import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiRoute
@@ -28,68 +25,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlin.coroutines.resume
 
 /** UI callbacks use local fixtures only; no account data is changed or submitted. */
 @RunWith(AndroidJUnit4::class)
 class NeteaseSessionUiInstrumentedTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun text(resource: Int) = instrumentation.targetContext.getString(resource)
-
-    @Test fun webCookieRetryAndManualHandoffPreserveTheInstalledSession() = runBlocking {
-        val before = instrumentation.targetContext.dataStore.data.first()[CookieKey]
-        val fixtureUrl = "https://meilox-cookie-poller-fixture.invalid/"
-        withContext(Dispatchers.Main) {
-            val cookies = CookieManager.getInstance()
-            suspend fun setFixture(value: String) = suspendCancellableCoroutine { continuation ->
-                cookies.setCookie(fixtureUrl, value) { accepted ->
-                    if (continuation.isActive) continuation.resume(accepted)
-                }
-            }
-            try {
-                assertTrue(setFixture("MUSIC_U=fixture-cookie; Secure; Path=/"))
-                val readCookie = { musicUFromCookieHeader(cookies.getCookie(fixtureUrl).orEmpty()) }
-                val attempts = mutableListOf<Long>()
-                val retried = withTimeout(12_000) {
-                    WebCookieLoginPoller().poll(readCookie) {
-                        assertEquals("fixture-cookie", it)
-                        attempts += SystemClock.elapsedRealtime()
-                        attempts.size == 2
-                    }
-                }
-                assertTrue(retried)
-                assertEquals(2, attempts.size)
-                assertTrue(attempts[1] - attempts[0] >= 5_000)
-
-                val poller = WebCookieLoginPoller()
-                val automatic = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-                    poller.poll(readCookie) { awaitCancellation() }
-                }
-                poller.pauseForManualLogin()
-                assertTrue(poller.loginManually("fixture-manual") {
-                    currentCoroutineContext().ensureActive()
-                    it == "fixture-manual"
-                })
-                automatic.cancelAndJoin()
-                assertFalse(poller.poll(readCookie) { error("Completed login must not run again") })
-            } finally {
-                setFixture("MUSIC_U=; Max-Age=0; Secure; Path=/")
-            }
-        }
-        assertTrue("The installed account session must remain unchanged",
-            before == instrumentation.targetContext.dataStore.data.first()[CookieKey])
-    }
 
     @Test fun webLoginCompletionReturnsHomeAndRemovesLoginBranch() {
         instrumentation.runOnMainSync {

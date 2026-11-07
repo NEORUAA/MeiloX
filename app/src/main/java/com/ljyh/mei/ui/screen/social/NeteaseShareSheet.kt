@@ -42,10 +42,14 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.melox.MessageContact
-import com.ljyh.mei.data.model.melox.ShareResource
+import com.ljyh.mei.source.shared.SourceMessageContact as MessageContact
+import com.ljyh.mei.source.shared.SourceShareResource as ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.SourceSocialRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceErrorCode
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
@@ -70,58 +74,63 @@ data class NeteaseShareUiState(
     val isLoadingContacts: Boolean = false,
     val isSending: Boolean = false,
     val error: String? = null,
+    val canPrivate: Boolean = false,
+    val canTimeline: Boolean = false,
 )
 
 @HiltViewModel
-class NeteaseShareViewModel @Inject constructor(
-    private val repository: MeloXRepository,
-) : ViewModel() {
+class NeteaseShareViewModel @Inject constructor(repository: SourceSocialRepository) : ViewModel() {
     private val _state = MutableStateFlow(NeteaseShareUiState())
     val state = _state.asStateFlow()
-
+    private var actionJob: Job? = null
+    private val session = SocialScreenSession(repository, viewModelScope) {
+        actionJob?.cancel(); _state.value = NeteaseShareUiState(error = "音源或账号已变更")
+    }
+    fun open(providerId: String) {
+        session.open(providerId)
+        viewModelScope.launch {
+            try {
+                val owner = session.get().owner
+                _state.value = _state.value.copy(canPrivate = owner.supports("messages", "sendPrivateResource"),
+                    canTimeline = owner.supports("social", "shareToTimeline"))
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: SourceException) { if (error.code != SourceErrorCode.UNSUPPORTED && error.code != SourceErrorCode.MISSING_PROVIDER) _state.value = _state.value.copy(error = error.message)
+            } catch (error: Exception) { _state.value = _state.value.copy(error = error.message) }
+        }
+    }
     fun loadContacts() {
         if (_state.value.contacts.isNotEmpty() || _state.value.isLoadingContacts) return
-        viewModelScope.launch {
+        actionJob = viewModelScope.launch {
             _state.value = _state.value.copy(isLoadingContacts = true, error = null)
-            runCatching {
-                val profile = repository.accountProfile()
-                repository.messageContacts(profile.id)
-            }.onSuccess {
-                _state.value = _state.value.copy(contacts = it, isLoadingContacts = false)
-            }.onFailure {
-                _state.value = _state.value.copy(isLoadingContacts = false, error = it.message)
-            }
+            try { _state.value = _state.value.copy(contacts = session.get().contacts(), isLoadingContacts = false)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { _state.value = _state.value.copy(isLoadingContacts = false, error = error.message) }
         }
     }
-
-    fun sendPrivate(
-        resource: ShareResource,
-        recipients: Set<Long>,
-        message: String,
-        onSent: () -> Unit,
-    ) {
+    fun sendPrivate(resource: ShareResource, recipients: Set<String>, message: String, onSent: () -> Unit) {
         if (recipients.isEmpty() || _state.value.isSending) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isSending = true, error = null)
-            runCatching { repository.sendPrivateResource(resource, recipients.toList(), message.trim()) }
-                .onSuccess {
-                    _state.value = _state.value.copy(isSending = false)
-                    onSent()
-                }
-                .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
-        }
+        perform(onSent) { session.get().sendResource(resource, recipients, message.trim()) }
     }
-
     fun shareTimeline(resource: ShareResource, message: String, onSent: () -> Unit) {
         if (_state.value.isSending) return
+        perform(onSent) { session.get().shareTimeline(resource, message.trim()) }
+    }
+    fun shareLink(resource: ShareResource, onReady: (String?) -> Unit) {
         viewModelScope.launch {
+            try { onReady(session.get().shareLink(resource))
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: SourceException) {
+                if (error.code in setOf(SourceErrorCode.UNSUPPORTED, SourceErrorCode.MISSING_PROVIDER, SourceErrorCode.AUTH_REQUIRED)) onReady(null)
+                else _state.value = _state.value.copy(error = error.message)
+            } catch (error: Exception) { _state.value = _state.value.copy(error = error.message) }
+        }
+    }
+    private fun perform(onSent: () -> Unit, operation: suspend () -> Unit) {
+        actionJob = viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null)
-            runCatching { repository.shareToTimeline(resource, message.trim()) }
-                .onSuccess {
-                    _state.value = _state.value.copy(isSending = false)
-                    onSent()
-                }
-                .onFailure { _state.value = _state.value.copy(isSending = false, error = it.message) }
+            try { operation(); _state.value = _state.value.copy(isSending = false); onSent()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { _state.value = _state.value.copy(isSending = false, error = error.message) }
         }
     }
 }
@@ -135,7 +144,7 @@ fun NeteaseShareSheet(
     val resource = remember(metadata) {
         ShareResource(
             kind = ShareResourceKind.Song,
-            id = metadata.id,
+            ref = metadata.trackRef,
             title = metadata.title,
             subtitle = metadata.artists.joinToString(" / ") { it.name },
             artworkUrl = metadata.coverUrl,
@@ -145,8 +154,9 @@ fun NeteaseShareSheet(
     val context = LocalContext.current
     var mode by remember { mutableStateOf(NeteaseShareMode.Menu) }
     var message by remember { mutableStateOf("") }
-    var selectedContactIds by remember { mutableStateOf(emptySet<Long>()) }
+    var selectedContactIds by remember { mutableStateOf(emptySet<String>()) }
 
+    LaunchedEffect(metadata.trackRef) { viewModel.open(metadata.trackRef.providerId) }
     LaunchedEffect(mode) {
         if (mode == NeteaseShareMode.PrivateMessage) viewModel.loadContacts()
     }
@@ -195,18 +205,19 @@ fun NeteaseShareSheet(
             when (mode) {
                 NeteaseShareMode.Menu -> item(key = "share-modes") {
                     GlasmioGroupedList {
-                        ShareModeButton("paperplane", R.string.netease_private_message, showTopSeparator = false) {
+                        if (state.canPrivate) ShareModeButton("paperplane", R.string.netease_private_message, showTopSeparator = false) {
                             mode = NeteaseShareMode.PrivateMessage
                         }
-                        ShareModeButton("arrowshape.turn.up.right", R.string.netease_timeline_share) {
+                        if (state.canTimeline) ShareModeButton("arrowshape.turn.up.right", R.string.netease_timeline_share) {
                             mode = NeteaseShareMode.Timeline
                         }
                         ShareModeButton("square.and.arrow.up", R.string.system_share) {
-                            val artists = metadata.artists.joinToString(" / ") { it.name }
-                            val text = buildString {
+                            viewModel.shareLink(resource) { shareUrl ->
+                                val artists = metadata.artists.joinToString(" / ") { it.name }
+                                val text = buildString {
                                 append(metadata.title)
                                 if (artists.isNotBlank()) append(" — ").append(artists)
-                                if (!metadata.isLocal) append("\nhttps://music.163.com/song?id=").append(metadata.id)
+                                if (!shareUrl.isNullOrBlank()) append("\n").append(shareUrl)
                             }
                             context.startActivity(
                                 Intent.createChooser(
@@ -218,6 +229,7 @@ fun NeteaseShareSheet(
                                     context.getString(R.string.system_share),
                                 ),
                             )
+                            }
                         }
                     }
                 }

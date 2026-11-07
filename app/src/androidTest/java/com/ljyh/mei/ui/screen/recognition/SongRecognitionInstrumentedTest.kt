@@ -6,8 +6,13 @@ import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.MainActivity
-import com.ljyh.mei.source.netease.repository.SongRecognitionRepository
-import com.ljyh.mei.di.RetrofitModule
+import com.ljyh.mei.source.shared.SourceRecognitionRepository
+import com.ljyh.mei.source.script.ScriptPluginManager
+import com.ljyh.mei.source.api.ProviderIds
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import com.ljyh.mei.recognition.RecognitionDuration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -27,11 +32,15 @@ class SongRecognitionInstrumentedTest {
 
     @Test
     fun actualCaptureFingerprintAndMatchingFinishAndStopReleasesTheMicrophone() = runBlocking {
-        val service = RetrofitModule.provideAudioMatchService(RetrofitModule.provideAudioMatchRetrofit())
-        val model = SongRecognitionViewModel(context, SongRecognitionRepository(service))
+        val dependencies = EntryPointAccessors.fromApplication(context, RecognitionTestDependencies::class.java)
+        dependencies.plugins().loadInstalled()
+        val model = SongRecognitionViewModel(context, dependencies.repository())
         val store = ViewModelStore()
         instrumentation.runOnMainSync { store.put("recognition", model) }
         try {
+            instrumentation.runOnMainSync { model.open(ProviderIds.NETEASE) }
+            await { model.state.value.isAvailable || model.state.value.phase == RecognitionPhase.Failed }
+            assertTrue("Recognition source unavailable: ${model.state.value.error}", model.state.value.isAvailable)
             instrumentation.runOnMainSync {
                 model.selectDuration(RecognitionDuration.Quick)
                 model.start()
@@ -69,4 +78,11 @@ class SongRecognitionInstrumentedTest {
     private suspend fun await(timeoutMs: Long = 5_000, condition: () -> Boolean) = withTimeout(timeoutMs) {
         while (!condition()) delay(40)
     }
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+internal interface RecognitionTestDependencies {
+    fun repository(): SourceRecognitionRepository
+    fun plugins(): ScriptPluginManager
 }

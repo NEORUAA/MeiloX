@@ -1,33 +1,16 @@
 package com.ljyh.mei.ui.screen.artist
 
 import com.ljyh.mei.ui.component.item.FixedCardCaption
-import io.github.neoruaa.glasmio.core.swipeBackExcluded
-import androidx.compose.material3.IconButton
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInWindow
 import com.ljyh.mei.ui.component.item.ThreeRowSongList
 import com.ljyh.mei.constants.HomeSongRowSpacing
 import com.ljyh.mei.ui.component.item.HomeSongListRow
-import com.ljyh.mei.constants.HomeSongActionSize
 import com.ljyh.mei.constants.homePlaylistCardSize
 import com.ljyh.mei.constants.homeCardSpacing
 import com.ljyh.mei.constants.HomeSongNextPagePeek
+import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.api.ArtistAlbum
-import java.text.DateFormat
-import java.util.Date
-import androidx.annotation.OptIn
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.ui.platform.LocalContext
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.utils.rememberPreference
-import com.ljyh.mei.ui.screen.album.AlbumDetailViewModel
-import com.ljyh.mei.ui.screen.album.AlbumSubscriptionError
-import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
-import com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider
-import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,19 +31,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,9 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -98,41 +73,23 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.DetailPageHorizontalPadding
-import com.ljyh.mei.data.model.api.ArtistDetail
-import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.ui.component.item.Track
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.playlist.CoverBackground
 import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
-import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
-import com.ljyh.mei.ui.component.shimmer.ListItemPlaceHolder
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.shimmer.TextPlaceholder
-import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalColorfulPageBackgrounds
-import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPageAppearance
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
-import com.ljyh.mei.ui.local.LocalPlayerConnection
-import com.ljyh.mei.ui.model.Album
-import com.ljyh.mei.ui.model.toAlbum
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
-import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.theme.LocalAccentSeedColor
 import com.ljyh.mei.ui.theme.MusicTheme
-import com.ljyh.mei.utils.color.ColorExtractionUtils
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.defaultGlassColors
@@ -140,282 +97,58 @@ import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.ui.GlasmioButton
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
 private val ArtistSongCoverSize = com.ljyh.mei.constants.LandscapeSongCoverSize
 private val ArtistPopularSongsHeight = ArtistSongCoverSize * 3 + HomeSongRowSpacing * 2
 
-@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
+/** The original artist detail layout, shared by every source. */
 @Composable
-fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "artist:$id")) {
-    val navController = LocalNavController.current
-    val playerConnection = LocalPlayerConnection.current
-
-    val artistDetail by viewModel.artistDetail.collectAsState()
-    val artistAlbums by viewModel.artistAlbums.collectAsState()
-    // Lazy content and its derived tracks must capture the same response snapshot.
-    val artistSongs = viewModel.artistSongs.collectAsState().value
-    val followMutation by viewModel.followMutation.collectAsState()
-    val confirmedFollowed by viewModel.confirmedFollowed.collectAsState()
-    val isFollowed = resolveArtistFollowed(id, artistSongs, artistAlbums, confirmedFollowed)
-    var currentOverlay by remember(id) { mutableStateOf<OverlayState>(OverlayState.None) }
-    val onAllSongsClick = { navController.navigate("${Screen.ArtistSongs.route}/$id") }
-    val onAllAlbumsClick = { navController.navigate("${Screen.ArtistAlbums.route}/$id") }
-    val onInfoClick = { navController.navigate("${Screen.ArtistInfo.route}/$id") }
-    val artistData = (artistDetail as? Resource.Success)?.data?.data
-    val isArtistUnavailable = artistDetail is Resource.Success && artistData?.artist == null
-    val heroCover =
-        artistData
-            ?.artist
-            ?.let { artist -> artist.cover.takeIf(String::isNotBlank) ?: artist.avatar }
-            .orEmpty()
-    val hotSongs = (artistSongs as? Resource.Success)?.data?.hotSongs.orEmpty()
-    val hotTracks = remember(hotSongs) { hotSongs.map { it.toMediaMetadata() } }
-    val favoriteTrackIds = rememberFavoriteTrackIds(hotTracks)
-    val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.id
-    val currentlyPlaying = playerConnection?.isPlaying?.collectAsState()?.value == true
-
-    val scrollState = rememberLazyListState()
-    val landscape = rememberDeviceInfo().isLandscape
-    var popularSongsHeightPx by remember { mutableStateOf(0) }
-    LaunchedEffect(id) { viewModel.loadArtistIfNeeded(id) }
-
-    ArtistCoverTheme(
-        route = "${Screen.Artist.route}/$id",
-        coverUrl = heroCover,
-        viewModel = viewModel,
-    ) { background ->
-        val headerAccent =
-            remember(background.seedColor, background.color, background.endColor) {
-                ColorExtractionUtils.detailAccentColor(
-                    // Neutral artwork or unavailable extraction must not inherit another cover's
-                    // accent.
-                    seedColor = background.seedColor ?: Color.Gray,
-                    backgroundColor = background.color,
-                    backgroundEndColor = background.endColor,
-                )
-            }
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            // The square hero follows the actual page width, including split-screen resizing.
-            val heroHeightPx =
-                with(LocalDensity.current) { if (landscape) 400.dp.toPx() else maxWidth.toPx() }
-            val topBarCollapseProgress by
-                remember(scrollState, heroHeightPx) {
-                    derivedStateOf {
-                        if (scrollState.firstVisibleItemIndex > 0) 1f
-                        else
-                            (scrollState.firstVisibleItemScrollOffset /
-                                    (heroHeightPx * 0.6f).coerceAtLeast(1f))
-                                .coerceIn(0f, 1f)
-                    }
-                }
-            val blurDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
-            val topBarBlurProgress by
-                remember(scrollState, blurDistancePx) {
-                    derivedStateOf {
-                        if (scrollState.firstVisibleItemIndex > 0) 1f
-                        else
-                            (scrollState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(
-                                0f,
-                                1f,
-                            )
-                    }
-                }
-            val latestArtworkHeight =
-                with(LocalDensity.current) { popularSongsHeightPx.toDp() }.takeIf { it > 0.dp }
-                    ?: ArtistPopularSongsHeight
-            val latestTextWidth = with(LocalDensity.current) { 120.sp.toDp() }
-            val latestMinimumWidth =
-                latestArtworkHeight + DetailPageHorizontalPadding * 2 + 16.dp + latestTextWidth
-            val latestPaneWidth =
-                maxOf(maxWidth * 0.31f, latestMinimumWidth.coerceAtMost(maxWidth * 0.55f))
-            val songSection: @Composable () -> Unit = {
-                Column {
-                    // --- 2. Hot Songs ---
-                    SectionTitle(stringResource(R.string.artist_hot_songs), onClick = onAllSongsClick)
-
-                    when (val songsResource = artistSongs) {
-                        is Resource.Success -> {
-                            val songs = songsResource.data.hotSongs.orEmpty()
-                            val visibleSongs = songs.take(10)
-                            visibleSongs.forEachIndexed { index, song ->
-                                val track = hotTracks[index]
-                                Column(Modifier.padding(horizontal = 20.dp)) {
-                                    DetailTrackRow(
-                                        track = track, trackNumber = index + 1, showArtwork = true,
-                                        isCurrentTrack = track.id == currentTrackId,
-                                        isPlaying = currentlyPlaying,
-                                        isFavorite = track.id.toString() in favoriteTrackIds,
-                                        selected = null,
-                                        onClick = {
-                                            playerConnection?.onTrackClicked(
-                                                trackId = track.id.toString(),
-                                                buildQueue = {
-                                                    ListQueue(UUID.randomUUID().toString(), "Hot Songs",
-                                                        hotTracks.map { it.id.toString() to it.toMediaItem() }, index)
-                                                },
-                                            )
-                                        },
-                                        onMoreClick = { currentOverlay = OverlayState.TrackActionMenu(track, it) },
-                                    )
-                                    if (index < visibleSongs.lastIndex) DetailTrackDivider()
-                                }
-                            }
-                        }
-                        is Resource.Loading -> repeat(5) {
-                            ShimmerHost {
-                                Box(Modifier.padding(horizontal = 20.dp)) {
-                                    TrackItemShimmer(isTablet = false, flatDetailStyle = true)
-                                }
-                            }
-                        }
-                        is Resource.Error -> ErrorItem(songsResource.message)
-                    }
-
-                }
-            }
-            val albumSection: @Composable () -> Unit = {
-                Column {
-                    // --- 3. Albums ---
-                    SectionTitle(
-                        stringResource(R.string.artist_albums),
-                        onClick = onAllAlbumsClick,
-                        landscape = landscape,
-                        topPadding = 16.dp,
-                    )
-
-                    when (val albumsResource = artistAlbums) {
-                        is Resource.Success -> {
-                            val albums = albumsResource.data.hotAlbums.orEmpty()
-
-                            LazyRow(
-                                modifier = Modifier.swipeBackExcluded(),
-                                contentPadding =
-                                    PaddingValues(horizontal = if (landscape) DetailPageHorizontalPadding else 20.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                items(albums, key = { it.id }) { hotAlbum ->
-                                    AlbumCard(
-                                        album = hotAlbum.toAlbum(),
-                                        artworkSize = homePlaylistCardSize(landscape),
-                                        onClick = {
-                                            navController.navigate("${Screen.Album.route}/$it")
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        is Resource.Loading -> {
-                            LazyRow(
-                                modifier = Modifier.swipeBackExcluded(),
-                                contentPadding =
-                                    PaddingValues(horizontal = if (landscape) DetailPageHorizontalPadding else 20.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                items(4) {
-                                    ShimmerHost {
-                                        AlbumCardShimmer(
-                                            artworkSize = homePlaylistCardSize(landscape),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        is Resource.Error -> ErrorItem(albumsResource.message)
-                    }
-
-                }
-            }
-            val latestRelease: @Composable () -> Unit = {
-                Column {
-                    if (landscape) SectionTitle(
-                        stringResource(R.string.artist_latest_release),
-                        bottomPadding = 12.dp,
-                        landscape = landscape,
-                    )
-                    when (val resource = artistAlbums) {
-                        is Resource.Success -> {
-                            resource.data.hotAlbums
-                                .orEmpty()
-                                .maxByOrNull { it.publishTime }
-                                ?.let { latest ->
-                                    ArtistFeaturedAlbum(
-                                        latest,
-                                        artworkHeight = latestArtworkHeight,
-                                        landscape = landscape,
-                                        onClick = {
-                                            navController.navigate("${Screen.Album.route}/$it")
-                                        },
-                                    )
-                                }
-                        }
-                        is Resource.Loading ->
-                            ShimmerHost { ArtistFeaturedAlbumPlaceholder(latestArtworkHeight, landscape) }
-                        is Resource.Error -> ErrorItem(resource.message)
-                    }
-                }
-            }
-            val popularSongs: @Composable () -> Unit = {
-                Column {
-                    SectionTitle(
-                        stringResource(R.string.artist_hot_songs),
-                        onClick = onAllSongsClick,
-                        landscape = true,
-                    )
-                    when (val resource = artistSongs) {
-                        is Resource.Success ->
-                            ArtistPopularSongs(
-                                tracks = hotTracks.take(10),
-                                favoriteIds = favoriteTrackIds,
-                                currentTrackId = currentTrackId,
-                                playing = currentlyPlaying,
-                                onHeightChanged = { popularSongsHeightPx = it },
-                                onClick = { index ->
-                                    playerConnection?.onTrackClicked(
-                                        trackId = hotTracks[index].id.toString(),
-                                        buildQueue = {
-                                            ListQueue(
-                                                UUID.randomUUID().toString(),
-                                                "Hot Songs",
-                                                hotTracks.map {
-                                                    it.id.toString() to it.toMediaItem()
-                                                },
-                                                index,
-                                            )
-                                        },
-                                    )
-                                },
-                                onMore = { track, anchor ->
-                                    currentOverlay = OverlayState.TrackActionMenu(track, anchor)
-                                },
-                            )
-                        is Resource.Loading ->
-                            ShimmerHost {
-                                Column(Modifier.padding(horizontal = DetailPageHorizontalPadding)) {
-                                    repeat(3) { index ->
-                                        ListItemPlaceHolder(Modifier.height(ArtistSongCoverSize))
-                                        if (index < 2) Spacer(Modifier.height(8.dp))
-                                    }
-                                }
-                            }
-                        is Resource.Error -> ErrorItem(resource.message)
-                    }
-                }
-            }
+internal fun ArtistDetailPageLayout(
+    title: String,
+    background: CoverBackground,
+    scrollState: androidx.compose.foundation.lazy.LazyListState,
+    landscape: Boolean,
+    popularSongsHeightPx: Int,
+    onBack: () -> Unit,
+    header: @Composable (PaddingValues) -> Unit,
+    latestRelease: @Composable () -> Unit,
+    songSection: @Composable () -> Unit,
+    popularSongs: @Composable () -> Unit,
+    albumSection: @Composable () -> Unit,
+    isArtistUnavailable: Boolean = false,
+    footer: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {},
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The hero and the glass collapse follow the actual available page width.
+        val heroHeightPx = with(LocalDensity.current) { if (landscape) 400.dp.toPx() else maxWidth.toPx() }
+        val topBarCollapseProgress by remember(scrollState, heroHeightPx) { derivedStateOf {
+            if (scrollState.firstVisibleItemIndex > 0) 1f else
+                (scrollState.firstVisibleItemScrollOffset / (heroHeightPx * 0.6f).coerceAtLeast(1f)).coerceIn(0f, 1f)
+        } }
+        val blurDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
+        val topBarBlurProgress by remember(scrollState, blurDistancePx) { derivedStateOf {
+            if (scrollState.firstVisibleItemIndex > 0) 1f else
+                (scrollState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(0f, 1f)
+        } }
+        val latestArtworkHeight = with(LocalDensity.current) { popularSongsHeightPx.toDp() }.takeIf { it > 0.dp }
+            ?: ArtistPopularSongsHeight
+        val latestTextWidth = with(LocalDensity.current) { 120.sp.toDp() }
+        val latestMinimumWidth = latestArtworkHeight + DetailPageHorizontalPadding * 2 + 16.dp + latestTextWidth
+        val latestPaneWidth = maxOf(maxWidth * 0.31f, latestMinimumWidth.coerceAtMost(maxWidth * 0.55f))
             MeiloXPinnedPage(
-                title = artistData?.artist?.name.orEmpty(),
+                title = title,
                 bottomPadding =
                     LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
                 collapseProgress = topBarCollapseProgress,
                 topBarBlurProgress = topBarBlurProgress,
-                onNavigateBack = navController::popBackStack,
+                onNavigateBack = onBack,
                 backgroundColor = background.color,
                 backgroundBrush = background.brush,
             ) { contentPadding ->
                 if (isArtistUnavailable) {
                     ArtistUnavailableState(
-                        onNavigateBack = navController::popBackStack,
+                        onNavigateBack = onBack,
                         modifier =
                             Modifier.fillMaxSize()
                                 .padding(
@@ -435,65 +168,7 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                     ) {
                         // --- 1. Hero + Info Header ---
                         item {
-                            when (val detail = artistDetail) {
-                                is Resource.Success -> {
-                                    val data = detail.data.data
-                                    val artist = data?.artist
-                                    if (artist != null) {
-                                        ArtistHeader(
-                                            artist = artist,
-                                            cover =
-                                                if (landscape) artist.avatar.ifBlank { heroCover }
-                                                else heroCover,
-                                            landscape = landscape,
-                                            accent = headerAccent,
-                                            canPlayHotSongs =
-                                                playerConnection != null && hotSongs.isNotEmpty(),
-                                            onInfoClick = onInfoClick,
-                                            onPlayHotSongs = {
-                                                if (hotSongs.isNotEmpty()) {
-                                                    playerConnection?.playQueue(
-                                                        ListQueue(
-                                                            UUID.randomUUID().toString(),
-                                                            artist.name,
-                                                            hotSongs.map { song ->
-                                                                song.id.toString() to
-                                                                    song
-                                                                        .toMediaMetadata()
-                                                                        .toMediaItem()
-                                                            },
-                                                            0,
-                                                        ),
-                                                        shuffle = false,
-                                                    )
-                                                }
-                                            },
-                                            isFollowed = isFollowed == true,
-                                            isFollowLoading =
-                                                isFollowed == null ||
-                                                    followMutation is Resource.Loading,
-                                            onFollowClick = {
-                                                isFollowed?.let { followed ->
-                                                    viewModel.setArtistFollowed(
-                                                        artist.id.toLong(),
-                                                        !followed,
-                                                    )
-                                                }
-                                            },
-                                        )
-                                    } else {
-                                        ErrorItem(detail.data.message ?: "Unable to load artist")
-                                    }
-                                }
-                                is Resource.Loading -> ArtistHeaderShimmer(landscape = landscape)
-                                is Resource.Error -> {
-                                    Box(
-                                        Modifier.padding(top = contentPadding.calculateTopPadding())
-                                    ) {
-                                        ErrorItem(detail.message)
-                                    }
-                                }
-                            }
+                            header(contentPadding)
                         }
 
                         if (landscape) {
@@ -511,33 +186,28 @@ fun ArtistScreen(id: String, viewModel: ArtistViewModel = hiltViewModel(key = "a
                             item(key = "artist-songs") { songSection() }
                             item(key = "artist-albums") { albumSection() }
                         }
+                        footer()
                     }
                 }
             }
-            StandaloneTrackActionOverlay(
-                overlay = currentOverlay,
-                onDismiss = { currentOverlay = OverlayState.None },
-                onUpdateOverlay = { currentOverlay = it },
-            )
-        }
     }
 }
 
 @Composable
-private fun ArtistCoverTheme(
+internal fun ArtistDetailTheme(
     route: String,
     coverUrl: String,
-    viewModel: ArtistViewModel,
+    artwork: com.ljyh.mei.ui.screen.playlist.DetailArtworkViewModel = hiltViewModel(),
     content: @Composable (CoverBackground) -> Unit,
 ) {
     val colorfulBackgrounds = LocalColorfulPageBackgrounds.current
-    var coverIsDark by remember(viewModel, coverUrl) {
-        mutableStateOf(viewModel.getCachedCoverIsDark(coverUrl))
+    var coverIsDark by remember(artwork, coverUrl) {
+        mutableStateOf(artwork.getCachedCoverIsDark(coverUrl))
     }
-    LaunchedEffect(viewModel, coverUrl, colorfulBackgrounds) {
+    LaunchedEffect(artwork, coverUrl, colorfulBackgrounds) {
         if (!colorfulBackgrounds || coverUrl.isBlank()) return@LaunchedEffect
         try {
-            viewModel.getCoverIsDarkOrExtract(coverUrl)?.let { coverIsDark = it }
+            artwork.getCoverIsDarkOrExtract(coverUrl)?.let { coverIsDark = it }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -547,7 +217,7 @@ private fun ArtistCoverTheme(
 
     val isDark = (if (colorfulBackgrounds) coverIsDark else null) ?: LocalGlassColors.current.isDark
     val setPageAppearance = LocalPageAppearance.current
-    val appearanceOwner = remember(viewModel, route) { Any() }
+    val appearanceOwner = remember(artwork, route) { Any() }
     DisposableEffect(route, appearanceOwner, isDark, setPageAppearance) {
         setPageAppearance(route, appearanceOwner, isDark)
         onDispose { setPageAppearance(route, appearanceOwner, null) }
@@ -559,9 +229,9 @@ private fun ArtistCoverTheme(
         CompositionLocalProvider(LocalGlassColors provides colors) {
             val background = rememberCoverBackground(
                 coverUrl = coverUrl,
-                getCachedColor = viewModel::getCachedColor,
-                getOrExtractColor = viewModel::getOrExtractColor,
-                ownerKey = viewModel,
+                getCachedColor = artwork::getCachedColor,
+                getOrExtractColor = artwork::getOrExtractColor,
+                ownerKey = artwork,
             )
             // Body controls use the cover-local surface. Menus inherit the rendered page backdrop.
             val backdropBrush = rememberUpdatedState(background.brush)
@@ -621,8 +291,9 @@ private fun ArtistUnavailableState(
 // ─── Artist Hero ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun ArtistHeader(
-    artist: ArtistDetail.Data.Artist,
+internal fun ArtistDetailHeader(
+    name: String,
+    subtitle: String = "",
     cover: String,
     accent: Color,
     canPlayHotSongs: Boolean,
@@ -632,16 +303,9 @@ private fun ArtistHeader(
     onPlayHotSongs: () -> Unit,
     onFollowClick: () -> Unit,
     landscape: Boolean = false,
+    canFollow: Boolean = true,
 ) {
     val colors = LocalGlassColors.current
-    val subtitle =
-        remember(artist) {
-            (artist.transNames + artist.alias.filterIsInstance<String>())
-                .map(String::trim)
-                .filter { it.isNotEmpty() && !it.equals(artist.name, ignoreCase = true) }
-                .distinct()
-                .joinToString(" · ")
-        }
     val playHotSongsLabel = stringResource(R.string.artist_play_hot_songs)
 
     ArtistHeroLayout(
@@ -681,7 +345,7 @@ private fun ArtistHeader(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = artist.name,
+                    text = name,
                     style = if (landscape) IosTypography.title2.copy(fontSize = 32.sp, lineHeight = 36.sp) else IosTypography.title2,
                     color = colors.content,
                     textAlign = TextAlign.Center,
@@ -740,7 +404,7 @@ private fun ArtistHeader(
                             tint = Color.Black,
                         )
                     }
-                    ArtistActionButton(
+                    if (canFollow) ArtistActionButton(
                         onClick = onFollowClick,
                         accent = accent,
                         enabled = !isFollowLoading,
@@ -798,11 +462,11 @@ private fun ArtistActionButton(
 // ─── Album Card ───────────────────────────────────────────────────────────────
 
 @Composable
-fun AlbumCard(album: Album, artworkSize: Dp = 116.dp, onClick: (Long) -> Unit) {
-    Column(modifier = Modifier.width(artworkSize).clickable { onClick(album.id) }) {
+internal fun ArtistAlbumCard(title: String, cover: String, trackCount: Int, artworkSize: Dp = 116.dp, onClick: () -> Unit) {
+    Column(modifier = Modifier.width(artworkSize).clickable { onClick() }) {
         AsyncImage(
-            model = album.cover,
-            contentDescription = album.title,
+            model = cover,
+            contentDescription = title,
             modifier =
                 Modifier.size(artworkSize)
                     .clip(ContinuousRoundedRectangle(8.dp))
@@ -811,8 +475,8 @@ fun AlbumCard(album: Album, artworkSize: Dp = 116.dp, onClick: (Long) -> Unit) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         FixedCardCaption(
-            title = album.title,
-            subtitle = "${album.size} 首",
+            title = title,
+            subtitle = "$trackCount 首",
         )
     }
 }
@@ -933,88 +597,22 @@ private fun ArtistHeroLayout(
 }
 
 @Composable
-internal fun ArtistFeaturedAlbum(
-    album: ArtistAlbum.HotAlbum,
-    artworkHeight: Dp = ArtistPopularSongsHeight,
-    landscape: Boolean = true,
-    onClick: (Long) -> Unit,
-) {
-    val viewModel: AlbumDetailViewModel = hiltViewModel(key = "artist-featured-album:${album.id}")
-    val subscription by viewModel.subscription.collectAsState()
-    val cookie by rememberPreference(CookieKey, "")
-    val navController = LocalNavController.current
-    val context = LocalContext.current
-    val albumId = album.id.toLong()
-    LaunchedEffect(albumId) { viewModel.refreshSubscription(albumId) }
-    LaunchedEffect(subscription.error) {
-        if (subscription.error == AlbumSubscriptionError.Update) {
-            android.widget.Toast.makeText(context, R.string.load_failed, android.widget.Toast.LENGTH_SHORT).show()
-        }
+internal fun ArtistFeaturedAlbumInformation(title: String, trackCount: Int, releaseDate: String? = null, landscape: Boolean) {
+    val metadataStyle = if (landscape) IosTypography.subheadline
+        else IosTypography.subheadline.copy(fontSize = 13.sp, lineHeight = 18.sp)
+    releaseDate?.takeIf(String::isNotBlank)?.let {
+        Text(it, style = metadataStyle, color = LocalGlassColors.current.secondaryContent)
     }
-    val subscribed = subscription.subscribed == true
-    val saveAction: @Composable () -> Unit = {
-        val label = stringResource(when {
-            subscription.isUpdating -> R.string.album_subscription_updating
-            subscription.error == AlbumSubscriptionError.Load -> R.string.retry
-            subscribed -> R.string.album_unsubscribe
-            else -> R.string.album_subscribe
-        })
-        Box(
-            Modifier.size(44.dp)
-                .clickable(
-                    enabled = cookie.isBlank() || (!subscription.isLoading && !subscription.isUpdating),
-                    role = Role.Button,
-                    onClickLabel = label,
-                ) {
-                    when {
-                        cookie.isBlank() -> Screen.NeteaseLogin.navigate(navController)
-                        subscription.error == AlbumSubscriptionError.Load -> viewModel.refreshSubscription(albumId)
-                        else -> viewModel.toggleSubscription(albumId)
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.size(if (landscape) 36.dp else 32.dp).clip(CircleShape)
-                    .background(LocalGlassColors.current.content.copy(alpha = 0.10f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (cookie.isNotBlank() && (subscription.isLoading || subscription.isUpdating)) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
-                        color = LocalGlassColors.current.content)
-                } else SfIcon(if (subscribed) "checkmark" else "plus", label,
-                    size = if (landscape) 18.dp else 16.dp, weight = FontWeight.SemiBold,
-                    tint = LocalGlassColors.current.content)
-            }
-        }
-    }
-
-    ArtistFeaturedAlbumLayout(landscape, artworkHeight,
-        artwork = { modifier ->
-            AsyncImage(album.picUrl, album.name, modifier, contentScale = ContentScale.Crop)
-        },
-        information = {
-            val releaseDate = remember(album.publishTime, androidx.compose.ui.platform.LocalConfiguration.current) {
-                DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(album.publishTime))
-            }
-            val metadataStyle = if (landscape) IosTypography.subheadline
-                else IosTypography.subheadline.copy(fontSize = 13.sp, lineHeight = 18.sp)
-            Text(releaseDate, style = metadataStyle, color = LocalGlassColors.current.secondaryContent)
-            Text(album.name,
-                style = if (landscape) IosTypography.headline else IosTypography.headline.copy(
-                    fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-                maxLines = if (landscape) 3 else 2,
-                overflow = TextOverflow.Ellipsis, color = LocalGlassColors.current.content)
-            Text(stringResource(R.string.playlist_song_count, album.size),
-                style = metadataStyle, color = LocalGlassColors.current.secondaryContent)
-        },
-        action = saveAction,
-        onClick = { onClick(albumId) },
-    )
+    Text(title, style = if (landscape) IosTypography.headline else IosTypography.headline.copy(
+        fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+        maxLines = if (landscape) 3 else 2, overflow = TextOverflow.Ellipsis,
+        color = LocalGlassColors.current.content)
+    Text(stringResource(R.string.playlist_song_count, trackCount), style = metadataStyle,
+        color = LocalGlassColors.current.secondaryContent)
 }
 
 @Composable
-private fun ArtistFeaturedAlbumLayout(
+internal fun ArtistFeaturedAlbumLayout(
     landscape: Boolean,
     artworkHeight: Dp,
     artwork: @Composable (Modifier) -> Unit,
@@ -1063,7 +661,7 @@ private fun ArtistFeaturedAlbumPlaceholder(artworkHeight: Dp = ArtistPopularSong
 internal fun ArtistPopularSongs(
     tracks: List<MediaMetadata>,
     favoriteIds: Set<String>,
-    currentTrackId: Long?,
+    currentTrackId: String?,
     playing: Boolean,
     onClick: (Int) -> Unit,
     onMore: (MediaMetadata, Rect) -> Unit,
@@ -1099,7 +697,7 @@ internal fun ArtistPopularSongs(
         ) { index ->
             val track = tracks[index]
             Box {
-                if (track.id.toString() in favoriteIds) {
+                if (track.mediaId in favoriteIds) {
                     FavoriteTrackStar(
                         Modifier.align(Alignment.CenterStart)
                             .offset(x = (-14).dp)

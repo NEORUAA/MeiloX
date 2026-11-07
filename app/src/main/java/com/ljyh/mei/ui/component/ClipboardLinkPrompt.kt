@@ -3,7 +3,8 @@ package com.ljyh.mei.ui.component
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.ljyh.mei.R
-import com.ljyh.mei.data.model.melox.NeteaseMusicLink
+import com.ljyh.mei.source.core.OwnedSourceLink
+import com.ljyh.mei.source.api.SourceLinkTarget
 import com.ljyh.mei.ui.component.utils.rememberAlertContent
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
@@ -11,12 +12,12 @@ import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 
 @Composable
 fun ClipboardLinkPrompt(
-    link: NeteaseMusicLink?,
+    link: OwnedSourceLink?,
     onDismiss: () -> Unit,
-    onOpen: (NeteaseMusicLink) -> Unit,
+    onOpen: (OwnedSourceLink) -> Unit,
 ) {
     val displayedLink = rememberAlertContent(link) ?: return
-    val isSong = displayedLink is NeteaseMusicLink.Song
+    val isSong = displayedLink.target is SourceLinkTarget.Content
     GlasmioAlertDialog(
         visible = link != null,
         onDismissRequest = onDismiss,

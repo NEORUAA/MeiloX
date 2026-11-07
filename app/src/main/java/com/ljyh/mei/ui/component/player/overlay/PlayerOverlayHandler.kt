@@ -26,8 +26,8 @@ import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.utils.lyric.lyricStorageKey
 import com.ljyh.mei.ui.component.player.enterFloatingLyricsPip
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
-import com.ljyh.mei.ui.screen.playlist.PlaylistTrackAddOutcome
+import android.net.Uri
+import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.navigation.MeiNavigator
 
 /**
@@ -37,7 +37,6 @@ import com.ljyh.mei.ui.navigation.MeiNavigator
 @OptIn(UnstableApi::class)
 class PlayerOverlayHandler(
     private val stateContainer: PlayerStateContainer,
-    private val playlistViewModel: PlaylistViewModel,
     private val navController: MeiNavigator,
     private val context: android.content.Context
 ) {
@@ -72,9 +71,14 @@ class PlayerOverlayHandler(
      * 显示添加到播放列表弹窗
      */
     fun showAddToPlaylist(mediaId: Long) {
-        if (mediaId <= 0L) return
-        stateContainer.playerViewModel.refreshPlaylistChoices()
-        _currentOverlay.value = OverlayState.AddToPlaylist(mediaId)
+        val metadata = stateContainer.mediaMetadata.value?.takeIf { it.id == mediaId } ?: return
+        showAddToPlaylist(metadata)
+    }
+
+    fun showAddToPlaylist(metadata: MediaMetadata) {
+        if (metadata.isLocal || metadata.isPodcast) return
+        dismiss()
+        Screen.SourcePlaylistPicker.navigate(navController) { addPath(Uri.encode(TrackRefCodec.encode(metadata.trackRef))) }
     }
 
     /**
@@ -113,10 +117,8 @@ class PlayerOverlayHandler(
         viewportBounds: Rect? = null,
     ) {
         val connection = stateContainer.playerConnection
-        val nativeOrigin = stateContainer.mediaMetadata.value?.trackRef?.providerId == ProviderIds.NETEASE
         _currentOverlay.value = OverlayState.AlbumArtist(
-            if (nativeOrigin) album else album.copy(id = 0L),
-            if (nativeOrigin) artists else artists.map { it.copy(id = 0L) }, cover, anchorBounds,
+            album, artists, cover, anchorBounds,
             playlistTitle = connection.queueTitle.value,
             playlistId = connection.service.queueManager.playlistSource?.playlistId,
             viewportBounds = viewportBounds,
@@ -141,7 +143,7 @@ class PlayerOverlayHandler(
      * 显示轨道操作菜单
      */
     fun showShare(metadata: MediaMetadata) {
-        if (!MoreAction.SHARE.availableFor(metadata)) return
+        if (!stateContainer.playerViewModel.isActionAvailable(MoreAction.SHARE, metadata)) return
         _currentOverlay.value = OverlayState.Share(metadata)
     }
 
@@ -167,11 +169,11 @@ class PlayerOverlayHandler(
         action: MoreAction,
         mediaMetadata: MediaMetadata? = stateContainer.mediaMetadata.value,
     ) {
-        if (!action.availableFor(mediaMetadata)) return
+        if (!stateContainer.playerViewModel.isActionAvailable(action, mediaMetadata)) return
         when (action) {
             MoreAction.ADD_TO_PLAYLIST -> {
                 mediaMetadata?.let {
-                    showAddToPlaylist(it.id)
+                    showAddToPlaylist(it)
                 }
             }
             MoreAction.SHARE -> {
@@ -217,19 +219,11 @@ class PlayerOverlayHandler(
      * 添加歌曲到播放列表
      */
     fun addSongToPlaylist(selectedPlaylist: Playlist, mediaId: Long) {
-        if (mediaId <= 0L) return
-        playlistViewModel.addSongToPlaylist(
-            pid = selectedPlaylist.id,
-            trackIds = mediaId.toString(),
-            previousTrackCount = selectedPlaylist.count,
-        ) { outcome ->
-            val message = when (outcome) {
-                PlaylistTrackAddOutcome.Added -> "已添加到 ${selectedPlaylist.title}"
-                PlaylistTrackAddOutcome.AlreadyExists -> "歌曲已在 ${selectedPlaylist.title} 中"
-                PlaylistTrackAddOutcome.Failed -> "添加到歌单失败"
-            }
+        val ref = stateContainer.mediaMetadata.value?.takeIf { it.id == mediaId }?.trackRef
+            ?: TrackRefCodec.decode(mediaId.toString()) ?: return
+        stateContainer.playerViewModel.addSongToPlaylist(selectedPlaylist, ref) { added ->
+            val message = if (added) "已添加到 ${selectedPlaylist.title}" else "添加到歌单失败"
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
-            timber.log.Timber.tag("Playlist").d("Add song to ${selectedPlaylist.title}: $outcome")
         }
         dismiss()
     }
@@ -265,7 +259,6 @@ class PlayerOverlayHandler(
 @Composable
 fun rememberOverlayHandler(
     stateContainer: PlayerStateContainer,
-    playlistViewModel: PlaylistViewModel,
     navController: MeiNavigator
 ): PlayerOverlayHandler {
     val context = LocalContext.current
@@ -273,7 +266,6 @@ fun rememberOverlayHandler(
     return remember(stateContainer) {
         PlayerOverlayHandler(
             stateContainer = stateContainer,
-            playlistViewModel = playlistViewModel,
             navController = navController,
             context = context
         )

@@ -1,7 +1,6 @@
 package com.ljyh.mei.source.core
 
 import com.ljyh.mei.source.api.*
-import com.ljyh.mei.source.netease.NeteaseProvider
 import com.ljyh.mei.source.local.LocalProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,8 +9,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class ProviderRegistry(providers: List<MusicProvider>) {
-    @Inject constructor(netease: NeteaseProvider, local: LocalProvider) : this(listOf(netease, local))
+class ProviderRegistry(providers: List<MusicProvider>, startupPending: Boolean = false) {
+    @Inject constructor(local: LocalProvider) : this(listOf(local), startupPending = true)
+
+    private val initialized = kotlinx.coroutines.CompletableDeferred<Unit>().apply { if (!startupPending) complete(Unit) }
+    suspend fun awaitInitialized() = initialized.await()
+    internal fun completeInitialization() { initialized.complete(Unit) }
 
     private val entries = ConcurrentHashMap<String, MusicProvider>()
     private val mutableProviders = MutableStateFlow<List<MusicProvider>>(emptyList())
@@ -22,7 +25,7 @@ class ProviderRegistry(providers: List<MusicProvider>) {
 
     @Synchronized fun register(provider: MusicProvider) {
         require(provider.id.isNotBlank() && provider.instanceId.value.isNotBlank())
-        if (provider.id in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL)) {
+        if (provider.id == ProviderIds.LOCAL) {
             require(provider.isBuiltIn) { "Reserved provider ID" }
         }
         val old = entries[provider.instanceId.value]
@@ -44,7 +47,14 @@ class ProviderRegistry(providers: List<MusicProvider>) {
     }
     fun instance(id: ProviderInstanceId): MusicProvider? = entries[id.value]
     fun provider(id: String): MusicProvider? = providers.value.firstOrNull { it.id == id && it.status == SourceStatus.READY }
-    fun requireProvider(id: String): MusicProvider = provider(id) ?: throw SourceException(SourceErrorCode.MISSING_PROVIDER)
+    fun requireProvider(id: String): MusicProvider = provider(id) ?: throw SourceException(
+        when (providers.value.firstOrNull { it.id == id }?.status) {
+            SourceStatus.NEEDS_CONFIGURATION -> SourceErrorCode.AUTH_REQUIRED
+            SourceStatus.INCOMPATIBLE -> SourceErrorCode.UNSUPPORTED
+            SourceStatus.FAILED -> SourceErrorCode.PLUGIN
+            else -> SourceErrorCode.MISSING_PROVIDER
+        },
+    )
     fun supportsFeatureRoute(providerId: String, route: String): Boolean =
         (provider(providerId) as? FeatureContribution)?.featureRoutes?.contains(route) == true
     fun playable(): List<MusicProvider> = providers.value.filter { it.status == SourceStatus.READY && SourceCapability.PLAYBACK in it.capabilities && it is PlaybackCapability }

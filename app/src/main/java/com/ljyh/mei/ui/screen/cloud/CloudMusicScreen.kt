@@ -1,10 +1,7 @@
 package com.ljyh.mei.ui.screen.cloud
 
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
-import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,10 +35,12 @@ import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.melox.CloudMusicPage
-import com.ljyh.mei.data.model.melox.CloudSong
+import com.ljyh.mei.source.shared.OnlineCloudPage as CloudMusicPage
+import com.ljyh.mei.source.shared.OnlineCloudSong as CloudSong
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.shared.SharedOnlineSession
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioButton
@@ -70,7 +68,7 @@ import kotlinx.coroutines.launch
 data class CloudMusicUiState(
     val isLoading: Boolean = true,
     val page: CloudMusicPage? = null,
-    val deletingIds: Set<Long> = emptySet(),
+    val deletingIds: Set<String> = emptySet(),
     val isUploading: Boolean = false,
     val uploadProgress: Float = 0f,
     val error: String? = null,
@@ -81,15 +79,28 @@ data class CloudMusicUiState(
 @HiltViewModel
 class CloudMusicViewModel internal constructor(
     private val loadPage: suspend (Int) -> CloudMusicPage,
-    private val deleteSong: suspend (Long) -> Unit,
+    private val deleteSong: suspend (String) -> Unit,
     private val uploadSong: suspend (Uri, (Long, Long) -> Unit) -> Unit,
+    private val pickAndUpload: suspend () -> Unit = { throw com.ljyh.mei.source.api.SourceException(com.ljyh.mei.source.api.SourceErrorCode.UNSUPPORTED) },
 ) : ViewModel() {
     @Inject
-    constructor(repository: MeloXRepository) : this(
+    constructor(repository: SharedOnlineRepository, savedStateHandle: androidx.lifecycle.SavedStateHandle) : this(
+        repository.screen("cloud-music", savedStateHandle["providerId"]),
+    )
+    internal constructor(repository: SharedOnlineSession) : this(
         { offset -> repository.cloudSongs(offset = offset) },
         repository::deleteCloudSong,
+        { _, _ -> repository.uploadCloudSong() },
         repository::uploadCloudSong,
-    )
+    ) {
+        viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            if (owner.isBlank()) synchronized(lock) {
+                readRevision++; uploadRevision++
+                readJob?.cancel()
+                _state.value = CloudMusicUiState(isLoading = false)
+            }
+        } }
+    }
 
     private val _state = MutableStateFlow(CloudMusicUiState())
     val state = _state.asStateFlow()
@@ -191,6 +202,7 @@ class CloudMusicViewModel internal constructor(
     }
 
     fun upload(uri: Uri) = upload { progress -> uploadSong(uri, progress) }
+    fun upload() = upload { _ -> pickAndUpload() }
 
     internal fun upload(operation: suspend ((Long, Long) -> Unit) -> Unit) {
         val job = synchronized(lock) {
@@ -240,15 +252,6 @@ fun CloudMusicScreen(
     val bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val songs = state.page?.songs.orEmpty()
     val cloudTitle = stringResource(R.string.cloud_music)
-    val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            viewModel.upload(uri)
-        }
-    }
 
     MeiloXPinnedListPage(
         title = cloudTitle,
@@ -263,7 +266,7 @@ fun CloudMusicScreen(
                 meiloxHeaderAction(
                     key = "cloud.upload",
                     contentDescription = stringResource(R.string.cloud_upload),
-                    onClick = { picker.launch(arrayOf("audio/*")) },
+                    onClick = { viewModel.upload() },
                     enabled = !state.isUploading,
                 ) { SfIcon("arrow.up.circle.fill", null, size = 18.dp) },
                 meiloxHeaderAction(
@@ -287,9 +290,11 @@ fun CloudMusicScreen(
                     ),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(progress = { state.uploadProgress }, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        if (state.uploadProgress > 0f) CircularProgressIndicator(progress = { state.uploadProgress }, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                         Text(
-                            stringResource(R.string.cloud_upload_progress, (state.uploadProgress * 100).toInt()),
+                            if (state.uploadProgress > 0f) stringResource(R.string.cloud_upload_progress, (state.uploadProgress * 100).toInt())
+                            else stringResource(R.string.cloud_upload),
                             modifier = Modifier.padding(start = 12.dp),
                         )
                     }
@@ -398,14 +403,7 @@ internal fun CloudMusicUiState.withCloudPage(incoming: CloudMusicPage): CloudMus
     )
 }
 
-private fun CloudSong.asMediaMetadata() = MediaMetadata(
-    id = id,
-    title = name,
-    coverUrl = coverUrl.orEmpty(),
-    artists = listOf(MediaMetadata.Artist(artist.hashCode().toLong(), artist)),
-    duration = durationMs,
-    album = MediaMetadata.Album(album.hashCode().toLong(), album),
-)
+private fun CloudSong.asMediaMetadata() = track.toMediaMetadata()
 
 private fun formatBytes(value: Long): String = when {
     value >= 1_073_741_824 -> "%.1f GB".format(value / 1_073_741_824.0)

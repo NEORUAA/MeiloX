@@ -69,6 +69,7 @@ class PlaybackResolver(
         excludedResources: Set<String> = emptySet(),
         originalResolver: (suspend () -> AudioResource)? = null,
     ): PlaybackResolution {
+        registry.awaitInitialized()
         val version = stateVersion.get()
         val settings = settingsProvider()
         val generation = registry.providers.value.joinToString { "${it.instanceId.value}:${it.version}:${it.status}" }

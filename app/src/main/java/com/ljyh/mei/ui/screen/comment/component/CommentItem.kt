@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.ljyh.mei.R
-import com.ljyh.mei.data.model.weapi.CommentX
-import com.ljyh.mei.data.model.weapi.FComment
+import com.ljyh.mei.source.shared.OnlineComment as CommentX
+import com.ljyh.mei.source.shared.OnlineComment as FComment
 import com.ljyh.mei.data.network.Resource
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -55,16 +55,16 @@ fun CommentItem(
     comment: CommentX,
     isExpanded: Boolean,
     floorComments: Resource<List<FComment>>,
-    likes: Map<Long, CommentLikeState>,
-    pendingLikes: Set<Long>,
-    onToggleFloor: (Long, Int) -> Unit,
+    likes: Map<String, CommentLikeState>,
+    pendingLikes: Set<String>,
+    onToggleFloor: (String, Int) -> Unit,
     onRetryFloor: () -> Unit,
     onReply: (CommentReplyTarget) -> Unit,
-    onLike: (Long, Boolean, Int) -> Unit,
+    onLike: (String, Boolean, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalGlassColors.current
-    val floorCount = comment.showFloorComment?.replyCount ?: comment.replyCount
+    val floorCount = comment.replyCount
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, top = 16.dp, end = 20.dp)) {
             AsyncImage(

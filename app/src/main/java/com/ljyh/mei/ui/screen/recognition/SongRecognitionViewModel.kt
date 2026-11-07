@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.melox.RecognizedSong
-import com.ljyh.mei.source.netease.repository.SongRecognitionRepository
+import com.ljyh.mei.source.shared.SourceRecognitionRepository
+import com.ljyh.mei.source.shared.SourceRecognitionSession
+import com.ljyh.mei.source.shared.guard
 import com.ljyh.mei.recognition.NeteaseFingerprintGenerator
 import com.ljyh.mei.recognition.RecognitionDuration
 import com.ljyh.mei.recognition.SongRecognitionRecorder
@@ -28,6 +30,7 @@ data class SongRecognitionUiState(
     val phase: RecognitionPhase = RecognitionPhase.Ready,
     val results: List<RecognizedSong> = emptyList(),
     val error: String? = null,
+    val isAvailable: Boolean = true,
 ) {
     val isWorking: Boolean get() = phase in setOf(
         RecognitionPhase.Listening,
@@ -42,24 +45,52 @@ class SongRecognitionViewModel internal constructor(
     private val generate: suspend (FloatArray) -> String,
     private val match: suspend (String, Int) -> List<RecognizedSong>,
     private val release: () -> Unit,
+    private val repository: SourceRecognitionRepository? = null,
 ) : ViewModel() {
     private constructor(
         context: Context,
-        repository: SongRecognitionRepository,
+        repository: SourceRecognitionRepository,
         generator: NeteaseFingerprintGenerator,
-    ) : this(SongRecognitionRecorder(context)::record, generator::generate, repository::match, generator::release)
+    ) : this(SongRecognitionRecorder(context)::record, generator::generate, { _, _ -> error("Recognition source is unavailable") }, generator::release, repository)
 
     @Inject
     constructor(
         @ApplicationContext context: Context,
-        repository: SongRecognitionRepository,
+        repository: SourceRecognitionRepository,
     ) : this(context, repository, NeteaseFingerprintGenerator(context))
 
-    private val _state = MutableStateFlow(SongRecognitionUiState())
+    private val _state = MutableStateFlow(SongRecognitionUiState(isAvailable = repository == null))
     val state = _state.asStateFlow()
     private val lock = Any()
     private var revision = 0L
     private var recognitionJob: Job? = null
+    private var bindingJob: Job? = null
+    private var bound: SourceRecognitionSession? = null
+
+    fun open(providerId: String? = null) {
+        if (repository == null || bindingJob != null) return
+        bindingJob = viewModelScope.launch {
+            try {
+                bound = repository.open(providerId).also { session ->
+                    session.owner.guard(viewModelScope) {
+                        stop(); bound = null
+                        _state.value = _state.value.copy(phase = RecognitionPhase.Failed, results = emptyList(), isAvailable = false, error = "音源或账号已变更")
+                    }
+                }
+                _state.value = _state.value.copy(isAvailable = true)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { _state.value = _state.value.copy(phase = RecognitionPhase.Failed, isAvailable = false, error = error.message) }
+        }
+    }
+
+    fun media(song: RecognizedSong, onReady: (androidx.media3.common.MediaItem) -> Unit) {
+        val session = bound ?: return
+        viewModelScope.launch {
+            try { onReady(session.media(song))
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { _state.value = _state.value.copy(error = error.message) }
+        }
+    }
 
     fun selectDuration(duration: RecognitionDuration) {
         synchronized(lock) {
@@ -69,7 +100,7 @@ class SongRecognitionViewModel internal constructor(
 
     fun start() {
         val job = synchronized(lock) {
-            if (_state.value.isWorking) return
+            if (_state.value.isWorking || !_state.value.isAvailable) return
             val expected = ++revision
             val duration = _state.value.duration
             _state.value = _state.value.copy(phase = RecognitionPhase.Listening, error = null)
@@ -85,18 +116,19 @@ class SongRecognitionViewModel internal constructor(
                 currentCoroutineContext().ensureActive()
                 val seconds = duration.seconds ?: 9
                 if (!publish(expected) { it.copy(phase = RecognitionPhase.Listening, error = null) }) return
+                bound?.owner?.ensureCurrent()
                 val samples = record(seconds)
                 currentCoroutineContext().ensureActive()
                 if (!publish(expected) { it.copy(phase = RecognitionPhase.Fingerprinting) }) return
                 val fingerprint = generate(samples)
                 currentCoroutineContext().ensureActive()
                 if (!publish(expected) { it.copy(phase = RecognitionPhase.Matching) }) return
-                val matches = match(fingerprint, seconds)
+                val matches = bound?.match(fingerprint, seconds) ?: match(fingerprint, seconds)
                 currentCoroutineContext().ensureActive()
                 if (!publish(expected) { current ->
                     if (matches.isNotEmpty()) current.copy(
                         phase = if (duration == RecognitionDuration.Continuous) RecognitionPhase.Listening else RecognitionPhase.Results,
-                        results = (matches + current.results).distinctBy(RecognizedSong::id).take(50),
+                        results = (matches + current.results).distinctBy(RecognizedSong::ref).take(50),
                     ) else if (duration != RecognitionDuration.Continuous) current.copy(phase = RecognitionPhase.NoMatch)
                     else current
                 }) return

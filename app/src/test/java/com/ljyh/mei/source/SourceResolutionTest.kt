@@ -1,7 +1,12 @@
 package com.ljyh.mei.source
 
 import com.ljyh.mei.source.api.*
+import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.ui.model.MoreAction
+import com.ljyh.mei.ui.model.availableFor
 import com.ljyh.mei.source.core.*
+import com.ljyh.mei.source.platform.SourceWebOwner
+import com.ljyh.mei.source.platform.SourceWebRecipe
 import com.ljyh.mei.ui.screen.source.mergeFallbackOrder
 import com.ljyh.mei.ui.screen.source.orderedPlayableInstances
 import com.ljyh.mei.ui.screen.search.SearchType
@@ -11,10 +16,537 @@ import com.ljyh.mei.ui.screen.search.searchableProviders
 import com.ljyh.mei.ui.screen.search.supportedSourceSearchType
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class SourceResolutionTest {
+    @Test fun sharedArtistInformationPreservesOriginalFieldsAndOpaqueIdentity() = runTest {
+        val parser = com.ljyh.mei.source.script.ScriptContentParser("qq", 2, emptySet()) { it }
+        val artist = parser.artist(com.google.gson.JsonParser.parseString("""{
+            "artistId":"artist/A-001","name":"Artist","description":"Biography",
+            "alternateNames":["Alias"],"trackCount":12,"albumCount":4,"musicVideoCount":0,
+            "identities":["Composer"],"expertise":[{"name":"Piano","count":9},{"name":"Voice"}],
+            "translatedNames":["Translated"],"aliases":["Alias"]
+        }""").asJsonObject)
+        assertEquals(ArtistRef("qq", "artist/A-001"), artist.ref)
+        assertEquals(12, artist.trackCount)
+        assertEquals(4, artist.albumCount)
+        assertEquals(0, artist.musicVideoCount)
+        assertEquals(listOf("Composer"), artist.identities)
+        assertEquals(listOf(SourceArtistExpertise("Piano", 9), SourceArtistExpertise("Voice")), artist.expertise)
+        assertEquals(listOf("Translated"), artist.translatedNames)
+        assertEquals(listOf("Alias"), artist.aliases)
+        assertNull(parser.artist(com.google.gson.JsonParser.parseString("""{"artistId":"A","name":"Artist"}""").asJsonObject).trackCount)
+        for (count in listOf("-1", "2147483648", "1.5", "\"12\"")) {
+            try {
+                parser.artist(com.google.gson.JsonParser.parseString("""{"artistId":"A","name":"Artist","trackCount":$count}""").asJsonObject)
+                fail("An invalid artist count must not enter the original information UI")
+            } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+    }
+
+    @Test fun dailyRecommendationsKeepTypedQueuesReasonsAndEmptyDays() = runTest {
+        val parser = com.ljyh.mei.source.shared.SourceOnlineParser("qq", ProviderInstanceId("installed:qq"))
+        val tracks = com.ljyh.mei.source.script.ScriptContentParser("qq", 2, emptySet()) { it }
+        val value = com.google.gson.JsonParser.parseString("""{
+            "title":"Daily","creatorName":"QQ","updatedAtMs":1234,
+            "tracks":[{"trackId":"mid:0007","title":"Song","artists":[{"name":"Artist","artistId":"artist/A"}]}],
+            "recommendations":[{"trackId":"mid:0007","reason":"A reason"},{"trackId":"other","reason":"Ignore"}]
+        }""")
+        val page = parser.daily(value, tracks::track)
+        assertEquals(TrackRef("qq", "mid:0007"), page.tracks.single().toMediaMetadata().trackRef)
+        assertEquals(ArtistRef("qq", "artist/A"), page.tracks.single().artists.single().ref)
+        assertEquals(1234L, page.updatedAtMs)
+        assertEquals("A reason", page.recommendations.single().reason)
+        assertEquals("QQ", page.creatorName)
+        assertTrue(parser.daily(com.google.gson.JsonParser.parseString("""{"tracks":[]}"""), tracks::track).tracks.isEmpty())
+    }
+
+    @Test fun outgoingSmsLoginDistinguishesSignedInFromCodeSent() {
+        fun outcome(json: String) = com.ljyh.mei.source.shared.sourceSmsLoginAuthenticated(com.google.gson.JsonParser.parseString(json))
+        assertTrue(outcome("""{"authenticated":true,"id":"user/007"}"""))
+        assertFalse(outcome("""{"status":"sent"}"""))
+        for (invalid in listOf("""{"id":"stale-user"}""", """{"authenticated":false,"id":"stale-user"}""", """{"authenticated":"true"}""")) {
+            try { outcome(invalid); fail("Only an explicit successful login may dismiss the sign-in sheet") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+    }
+
+    @Test fun advancedPresentationModelsPreserveOpaqueProviderIdentities() {
+        val parser = com.ljyh.mei.source.shared.SourceOnlineParser("qq", ProviderInstanceId("installed:qq"))
+        val profile = parser.profile(com.google.gson.JsonParser.parseString("""{"id":"user:0007","nickname":"Listener","artistId":"artist/A"}"""))
+        assertEquals("user:0007", profile.ref.accountId.value)
+        assertEquals(ArtistRef("qq", "artist/A"), profile.artistRef)
+        val song = parser.cloud(com.google.gson.JsonParser.parseString("""{
+            "id":"song-00042","name":"Song","artist":"Artist","album":"Album","durationMs":1000,"fileSize":10,"bitrate":320,"addTime":0
+        }"""))
+        assertEquals(TrackRef("qq", "song-00042"), song.track.ref)
+        val comment = parser.comment(com.google.gson.JsonParser.parseString("""{
+            "commentId":"comment:008","user":{"userId":"user:0007","nickname":"Listener"},
+            "content":"A reply","time":1,"timeStr":"Now","liked":false,"likedCount":0,"replyCount":2
+        }"""))
+        assertEquals("comment:008", comment.commentId)
+        assertEquals("user:0007", comment.user.id)
+        assertEquals(2, comment.replyCount)
+        val program = parser.program(com.google.gson.JsonParser.parseString("""{
+            "id":"episode:007","name":"Episode","radioId":"podcast:002","radioName":"Podcast","mainSongId":"song-00042"
+        }"""))
+        assertEquals(TrackRef("qq", "song-00042"), program.mainTrackRef)
+        assertEquals(program.mainTrackRef, program.toMediaMetadata().trackRef)
+    }
+
+    @Test fun webRecipesSeparatePageOriginsFromApprovedStaticResourceOrigins() {
+        val owner = SourceWebOwner(setOf("music.example.com", "static.example.com"), sdkNamespace = "fixture.web")
+        val parameters = com.google.gson.JsonObject().apply {
+            addProperty("url", "https://music.example.com/account#details")
+            add("allowedHosts", com.google.gson.JsonArray().apply { add("music.example.com") })
+        }
+        val recipe = SourceWebRecipe.parse(SourceHostEffect("web.page", parameters), owner)
+        assertEquals("https://static.example.com/app.js", recipe.checkedUrl("https://static.example.com/app.js"))
+        assertEquals("https://music.example.com/next", recipe.checkedPageUrl("/next", recipe.url))
+        for (url in listOf("https://static.example.com/", "http://music.example.com/", "https://music.example.com:444/",
+            "https://user:password@music.example.com/", "https://127.0.0.1/", "https://music.example.com.attacker.test/",
+            "file:///data/user/0/file", "content://fixture/file", "javascript:alert(1)", "intent://fixture")) {
+            try { recipe.checkedPageUrl(url); fail("An undeclared page URL must be blocked") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+    }
+
+    @Test fun webRecipesOnlyMapDeclaredFeatureActionsAndFixedPromptVerbs() {
+        val owner = SourceWebOwner(setOf("music.example.com"), sdkNamespace = "fixture.web", features = mapOf("web" to setOf("openPage")))
+        val parameters = com.google.gson.JsonParser.parseString("""{
+            "url":"https://music.example.com/","bridgeAliases":{"page.setTitle":"page.title"},
+            "urlMappings":[{"scheme":"fixture","host":"page","pathPrefix":"/artist","feature":"web","action":"openPage","parameters":{"page":"Artist"}}]
+        }""").asJsonObject
+        val recipe = SourceWebRecipe.parse(SourceHostEffect("web.page", parameters), owner)
+        assertEquals("page.title", recipe.bridgeAliases["page.setTitle"])
+        assertEquals("Artist", recipe.navigation("fixture://page/artist/details", owner)?.parameters?.get("page")?.asString)
+        assertNull(recipe.navigation("fixture://page/artists", owner))
+        assertNull(recipe.navigation("fixture://other/artist", owner))
+        assertNull(recipe.navigation("fixture://user@page/artist", owner))
+        for (mutate in listOf<(com.google.gson.JsonObject) -> Unit>(
+            { it.getAsJsonObject("bridgeAliases").addProperty("execute", "android.reflect") },
+            { it.getAsJsonArray("urlMappings")[0].asJsonObject.addProperty("action", "deleteAccount") },
+            { it.getAsJsonArray("urlMappings")[0].asJsonObject.addProperty("scheme", "intent") },
+        )) {
+            val invalid = parameters.deepCopy().also(mutate)
+            try { SourceWebRecipe.parse(SourceHostEffect("web.page", invalid), owner); fail("An undeclared bridge action must be blocked") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+    }
+
+    @Test fun webAuthenticationRequiresExplicitSourceOwnedCookieNames() {
+        val owner = SourceWebOwner(setOf("music.example.com"), cookieHeaders = mapOf("music.example.com" to "SESSION=private-fixture"), sdkNamespace = "fixture.web")
+        val parameters = com.google.gson.JsonObject().apply { addProperty("url", "https://music.example.com/login") }
+        try { SourceWebRecipe.parse(SourceHostEffect("web.auth", parameters), owner); fail("Authentication must declare returned cookies") }
+        catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        parameters.add("cookieNames", com.google.gson.JsonArray().apply { add("SESSION") })
+        val recipe = SourceWebRecipe.parse(SourceHostEffect("web.auth", parameters), owner)
+        assertEquals(setOf("SESSION"), recipe.cookieNames)
+        assertFalse(owner.toString().contains("private-fixture"))
+        parameters.add("cookieHosts", com.google.gson.JsonArray().apply { add("other.example.com") })
+        try { SourceWebRecipe.parse(SourceHostEffect("web.auth", parameters), owner); fail("Cookies may only leave approved page hosts") }
+        catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+    }
+
+    @Test fun webMultipartKeepsSelectedFilesNativeAndPreservesRepeatedFields() {
+        val parameters = com.google.gson.JsonParser.parseString("""{"multipart":[
+            {"name":"tag","value":"first"},{"name":"tag","value":"second"},
+            {"name":"asset","filename":"fixture.bin","file":{"handle":"selected","offset":2,"length":3}},
+            {"name":"generated","filename":"empty.txt","bytes":"","mimeType":"text/plain"}
+        ]}""").asJsonObject
+        val handles = mutableListOf<String>()
+        val body = com.ljyh.mei.source.platform.sourceWebRequestBody(parameters, emptyMap()) { file ->
+            handles += file.get("handle").asString
+            assertEquals(2, file.get("offset").asInt)
+            assertEquals(3, file.get("length").asInt)
+            "abc".toRequestBody()
+        } as okhttp3.MultipartBody
+        assertEquals(listOf("selected"), handles)
+        assertEquals(4, body.parts.size)
+        val serialized = okio.Buffer().also(body::writeTo).readUtf8()
+        assertTrue(serialized.contains("name=\"tag\""))
+        assertTrue(serialized.indexOf("first") < serialized.indexOf("second"))
+        assertTrue(serialized.contains("filename=\"fixture.bin\""))
+        assertTrue(serialized.contains("abc"))
+        val empty = com.google.gson.JsonParser.parseString("""{"multipart":[]}""").asJsonObject
+        assertNotNull(com.ljyh.mei.source.platform.sourceWebRequestBody(empty, emptyMap()) { error("No file was selected") })
+    }
+
+    @Test fun webUploadDescriptorsRejectAmbiguousBodiesAndUnselectedFiles() {
+        val inputs = listOf("""{"body":"YWJj","file":{"handle":"selected"}}""",
+            """{"multipart":[{"name":"asset","file":{"handle":"missing"}}]}""",
+            """{"multipart":[{"name":"asset","bytes":"?"}]}""")
+        for (input in inputs) {
+            try {
+                com.ljyh.mei.source.platform.sourceWebRequestBody(com.google.gson.JsonParser.parseString(input).asJsonObject, emptyMap()) {
+                    throw SourceException(SourceErrorCode.PERMISSION_DENIED)
+                }
+                fail("A malformed or unselected upload must be rejected")
+            } catch (_: SourceException) { }
+        }
+        val repeated = com.google.gson.JsonParser.parseString("""{"multipart":[
+            {"name":"a","file":{"handle":"selected"}},{"name":"b","file":{"handle":"selected"}}
+        ]}""").asJsonObject
+        try {
+            com.ljyh.mei.source.platform.sourceWebRequestBody(repeated, emptyMap()) {
+                object : okhttp3.RequestBody() {
+                    override fun contentType(): okhttp3.MediaType? = null
+                    override fun contentLength() = 1_073_741_824L
+                    override fun writeTo(sink: okio.BufferedSink) { fail("Oversized multipart must reject before opening a file") }
+                }
+            }
+            fail("Repeating a selected handle cannot multiply the upload budget")
+        } catch (_: SourceException) { }
+    }
+
+    private class EffectProvider : MusicProvider, AccountScopedFeatureCapability, AccountRevisionCapability {
+        override val id = "effect-fixture"
+        override val instanceId = ProviderInstanceId("installed:effect-fixture")
+        override val displayName = "Effect fixture"
+        override var version = "1"
+        override var status = SourceStatus.READY
+        override val capabilities = setOf(SourceCapability.FEATURES)
+        override val features = mapOf("account" to setOf("login"))
+        override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow("account-A")
+        val calls = mutableListOf<com.google.gson.JsonObject>()
+        var committedRevision: String? = null
+        var respond: suspend (com.google.gson.JsonObject) -> com.google.gson.JsonElement = { parameters ->
+            if (parameters.has("\$continuation")) parameters.getAsJsonObject("\$continuation").get("effect")
+            else effectEnvelope()
+        }
+        override suspend fun invokeFeature(feature: String, action: String, parameters: com.google.gson.JsonObject): com.google.gson.JsonElement {
+            calls += parameters.deepCopy()
+            return respond(parameters)
+        }
+        override suspend fun invokeFeature(feature: String, action: String, parameters: com.google.gson.JsonObject,
+            expectedAccountRevision: String?, onSessionCommitted: ((String?) -> Unit)?): com.google.gson.JsonElement {
+            if (accountRevision.value != expectedAccountRevision) throw CancellationException("Stale account")
+            return invokeFeature(feature, action, parameters).also { response ->
+                committedRevision?.let { next ->
+                    if (!(response.isJsonObject && response.asJsonObject.has("hostEffect"))) onSessionCommitted?.invoke(next)
+                    kotlinx.coroutines.yield()
+                    accountRevision.value = next
+                    committedRevision = null
+                }
+            }
+        }
+    }
+
+    @Test fun aScreenKeepsItsOwnSuccessfulLoginButRejectsLaterExternalAccountChanges() = runTest {
+        val source = EffectProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(source)))
+        val bound = BoundSourceFeatures(router, SourceFeatureExecutor(router), source, source.accountRevision.value,
+            "login-screen", SourceHostEffectHandler.Unsupported)
+        val invalidation = async(start = CoroutineStart.UNDISPATCHED) { bound.awaitInvalidation() }
+        source.respond = {
+            source.committedRevision = "account-B"
+            com.google.gson.JsonPrimitive("authenticated")
+        }
+        assertEquals("authenticated", bound.invoke("account", "login", allowSessionChange = true).asString)
+        runCurrent()
+        bound.ensureCurrent()
+        assertTrue(invalidation.isActive)
+        source.accountRevision.value = "account-C"
+        try { invalidation.await(); fail("An unrelated account replacement must invalidate the screen") }
+        catch (_: CancellationException) { }
+    }
+
+    @Test fun unavailableSourcesDistinguishMissingAccountsAndRuntimeFailuresFromDisabling() {
+        val source = EffectProvider()
+        val registry = ProviderRegistry(listOf(source))
+        for ((status, code) in listOf(SourceStatus.NEEDS_CONFIGURATION to SourceErrorCode.AUTH_REQUIRED,
+            SourceStatus.INCOMPATIBLE to SourceErrorCode.UNSUPPORTED, SourceStatus.FAILED to SourceErrorCode.PLUGIN,
+            SourceStatus.DISABLED to SourceErrorCode.MISSING_PROVIDER)) {
+            source.status = status
+            registry.refresh()
+            try { registry.requireProvider(source.id); fail("An unavailable source cannot execute") }
+            catch (error: SourceException) { assertEquals(code, error.code) }
+        }
+    }
+
+    companion object {
+        private fun effectEnvelope(type: String = "sdk.call", state: com.google.gson.JsonElement = com.google.gson.JsonObject()): com.google.gson.JsonObject =
+            com.google.gson.JsonObject().apply {
+                add("hostEffect", com.google.gson.JsonObject().apply {
+                    addProperty("type", type)
+                    add("parameters", com.google.gson.JsonObject().apply { addProperty("secret", "private-fixture-value") })
+                })
+                add("continuation", state)
+            }
+    }
+
+    @Test fun internalSourceContinuationNeverCallsPrivilegedHostHandlers() = runTest {
+        val source = EffectProvider()
+        source.respond = { parameters ->
+            if (!parameters.has("\$continuation")) effectEnvelope("source.continue")
+            else parameters.getAsJsonObject("\$continuation").get("effect")
+        }
+        var dispatched = 0
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val result = executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+            dispatched++
+            SourceHostEffectResult.Failure(SourceErrorCode.UNSUPPORTED)
+        }).asJsonObject
+        assertEquals(0, dispatched)
+        assertEquals(2, source.calls.size)
+        assertTrue(result.get("ok").asBoolean)
+        assertTrue(result.get("result").isJsonNull)
+    }
+
+    @Test fun featureExecutionsReleaseOnlyTheirOwnHostResourcesOnCompletionAndCancellation() = runTest {
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val entered = CompletableDeferred<SourceEffectScope>()
+        val released = mutableListOf<String>()
+        val handler = object : SourceHostEffectHandler {
+            override suspend fun handle(effect: SourceHostEffect, scope: SourceEffectScope): SourceHostEffectResult {
+                entered.complete(scope)
+                awaitCancellation()
+            }
+            override suspend fun release(executionId: String) { released += executionId }
+        }
+        val pending = async { executor.execute(source.id, "account", "login", handler = handler) }
+        val scope = entered.await()
+        pending.cancelAndJoin()
+        assertEquals(listOf(scope.executionId), released)
+        assertFalse(scope.isActive)
+        source.respond = { com.google.gson.JsonPrimitive(true) }
+        assertTrue(executor.execute(source.id, "account", "login", handler = handler).asBoolean)
+        assertEquals(2, released.distinct().size)
+    }
+
+    @Test fun loginSessionOptInOnlyAcceptsFinalResultsFromTheSameProvider() = runTest {
+        for (mode in listOf("default", "final", "effect", "replacement")) {
+            val source = EffectProvider()
+            val registry = ProviderRegistry(listOf(source))
+            source.respond = {
+                source.accountRevision.value = "account-B"
+                if (mode == "replacement") registry.register(EffectProvider())
+                if (mode == "effect") effectEnvelope() else com.google.gson.JsonPrimitive("authenticated")
+            }
+            val executor = SourceFeatureExecutor(SourceRouter(registry))
+            var effects = 0
+            try {
+                val result = executor.execute(source.id, "account", "login", allowSessionChange = mode != "default",
+                    handler = SourceHostEffectHandler { _, _ -> effects++; SourceHostEffectResult.Success(com.google.gson.JsonNull.INSTANCE) })
+                assertEquals("final", mode)
+                assertEquals("authenticated", result.asString)
+            } catch (_: CancellationException) {
+                assertNotEquals("final", mode)
+            }
+            assertEquals(0, effects)
+            assertEquals(1, source.calls.size)
+        }
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val entered = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        val operation = async {
+            executor.execute(source.id, "account", "login", allowSessionChange = true,
+                handler = SourceHostEffectHandler { _, _ ->
+                    try { entered.complete(Unit); awaitCancellation() } finally { stopped.complete(Unit) }
+                })
+        }
+        entered.await()
+        source.accountRevision.value = "account-C"
+        stopped.await()
+        try { operation.await(); fail("Login opt-in must not extend a pending effect across account changes") }
+        catch (_: CancellationException) { }
+        assertEquals(1, source.calls.size)
+    }
+
+    @Test fun hostEffectsResumeTheSameActionWithOpaqueStateAndFreshBoundTokens() = runTest {
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val parameters = com.google.gson.JsonObject().apply { addProperty("intent", "sign-in") }
+        val tokens = mutableListOf<String>()
+        val scopes = mutableListOf<SourceEffectScope>()
+        val expectedState = com.google.gson.JsonObject().apply { addProperty("stage", "challenge") }
+        source.respond = { p ->
+            if (!p.has("\$continuation")) effectEnvelope(state = expectedState)
+            else p.getAsJsonObject("\$continuation").also {
+                assertEquals("sign-in", p.get("intent").asString)
+                assertEquals(expectedState, it.get("state"))
+                assertEquals(tokens.last(), it.get("token").asString)
+            }.get("effect")
+        }
+        val handler = SourceHostEffectHandler { effect, scope ->
+            assertEquals("sdk.call", effect.type)
+            assertEquals(source.id, scope.providerId)
+            assertEquals(source.instanceId, scope.instanceId)
+            assertNotEquals(scope.providerId, scope.instanceId.value)
+            assertEquals("1", scope.providerVersion)
+            assertEquals("account-A", scope.accountRevision)
+            assertEquals("account", scope.feature)
+            assertEquals("login", scope.action)
+            assertEquals("screen-A", scope.scopeId)
+            assertTrue(scope.isActive)
+            scope.ensureCurrent()
+            assertTrue(java.util.Base64.getUrlDecoder().decode(scope.token).size >= 64)
+            assertFalse(effect.toString().contains("private-fixture-value"))
+            assertFalse(scope.toString().contains(scope.token))
+            scopes += scope
+            tokens += scope.token
+            SourceHostEffectResult.Success(com.google.gson.JsonObject().apply { addProperty("accepted", true) })
+        }
+        repeat(2) {
+            val result = executor.execute(source.id, "account", "login", parameters, "screen-A", handler).asJsonObject
+            assertTrue(result.get("ok").asBoolean)
+            assertTrue(result.getAsJsonObject("result").get("accepted").asBoolean)
+        }
+        assertEquals(4, source.calls.size)
+        assertEquals(2, tokens.distinct().size)
+        assertFalse(parameters.has("\$continuation"))
+        for (scope in scopes) {
+            assertFalse(scope.isActive)
+            try { scope.ensureCurrent(); fail("A completed effect scope must expire") } catch (_: CancellationException) { }
+        }
+    }
+
+    @Test fun unsupportedAndFailedHostEffectsReturnOnlyTypedFailureCodes() = runTest {
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val unsupported = executor.execute(source.id, "account", "login").asJsonObject
+        assertFalse(unsupported.get("ok").asBoolean)
+        assertEquals("UNSUPPORTED", unsupported.get("code").asString)
+        val rejected = executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+            throw SourceException(SourceErrorCode.AUTH_REQUIRED, "private-host-error")
+        }).asJsonObject
+        assertEquals("AUTH_REQUIRED", rejected.get("code").asString)
+        assertFalse(rejected.toString().contains("private-host-error"))
+        val failed = executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+            throw IllegalStateException("private-platform-error")
+        }).asJsonObject
+        assertEquals("UNAVAILABLE", failed.get("code").asString)
+        assertFalse(failed.toString().contains("private-platform-error"))
+    }
+
+    @Test fun revokedChangedAndCancelledHostEffectsStopInFlightWithoutCallbacks() = runTest {
+        for (change in listOf("remove", "replace", "account", "version", "disable", "cancel")) {
+            val source = EffectProvider()
+            val registry = ProviderRegistry(listOf(source))
+            val executor = SourceFeatureExecutor(SourceRouter(registry))
+            val entered = CompletableDeferred<SourceEffectScope>()
+            val stopped = CompletableDeferred<Unit>()
+            val operation = async {
+                executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, scope ->
+                    try {
+                        entered.complete(scope)
+                        awaitCancellation()
+                    } finally { stopped.complete(Unit) }
+                })
+            }
+            val scope = entered.await()
+            when (change) {
+                "remove" -> registry.unregister(source.instanceId)
+                "replace" -> registry.register(EffectProvider())
+                "account" -> source.accountRevision.value = "account-B"
+                "version" -> { source.version = "2"; registry.refresh() }
+                "disable" -> { source.status = SourceStatus.DISABLED; registry.refresh() }
+                else -> operation.cancel()
+            }
+            stopped.await()
+            try { operation.await(); fail("A retired host effect must cancel: $change") } catch (_: CancellationException) { }
+            assertFalse(scope.isActive)
+            assertEquals("No callback may reach the retired provider: $change", 1, source.calls.size)
+        }
+    }
+
+    @Test fun anEffectCannotDispatchItsCallbackToAReplacementProvider() = runTest {
+        val source = EffectProvider()
+        val replacement = EffectProvider()
+        val registry = ProviderRegistry(listOf(source))
+        val executor = SourceFeatureExecutor(SourceRouter(registry))
+        try {
+            executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+                registry.register(replacement)
+                SourceHostEffectResult.Success(com.google.gson.JsonPrimitive("retired-result"))
+            })
+            fail("Replacing the source must retire its callback")
+        } catch (_: CancellationException) { }
+        assertEquals(1, source.calls.size)
+        assertTrue(replacement.calls.isEmpty())
+    }
+
+    @Test fun featureCallsCanProceedWhileAnotherScreenIsWaitingForAHostEffect() = runTest {
+        val source = EffectProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(source)))
+        val executor = SourceFeatureExecutor(router)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = async {
+            executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+                entered.complete(Unit)
+                release.await()
+                SourceHostEffectResult.Success(com.google.gson.JsonPrimitive(true))
+            })
+        }
+        entered.await()
+        val concurrent = router.feature(source.id, "account", "login")
+        assertTrue(concurrent.asJsonObject.has("hostEffect"))
+        release.complete(Unit)
+        assertTrue(first.await().asJsonObject.get("ok").asBoolean)
+        assertEquals(3, source.calls.size)
+    }
+
+    @Test fun hostEffectValidationBoundsPrivilegedDispatchAndContinuationResources() = runTest {
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        var dispatched = 0
+        val handler = SourceHostEffectHandler { _, _ -> dispatched++; SourceHostEffectResult.Success(com.google.gson.JsonNull.INSTANCE) }
+        val invalid = listOf(
+            effectEnvelope("android.reflection") to SourceErrorCode.UNSUPPORTED,
+            effectEnvelope(state = com.google.gson.JsonPrimitive("🎵".repeat(17_000))) to SourceErrorCode.INVALID_RESPONSE,
+            effectEnvelope(state = com.google.gson.JsonPrimitive("s".repeat(64 * 1024))) to SourceErrorCode.INVALID_RESPONSE,
+            effectEnvelope().apply { getAsJsonObject("hostEffect").getAsJsonObject("parameters").addProperty("large", "s".repeat(64 * 1024)) } to SourceErrorCode.INVALID_RESPONSE,
+            effectEnvelope().apply { addProperty("unreviewed", true) } to SourceErrorCode.INVALID_RESPONSE,
+        )
+        for ((response, expected) in invalid) {
+            source.respond = { response }
+            try { executor.execute(source.id, "account", "login", handler = handler); fail() }
+            catch (error: SourceException) { assertEquals(expected, error.code) }
+        }
+        assertEquals(0, dispatched)
+        source.respond = { parameters -> if (parameters.has("\$continuation")) parameters else effectEnvelope() }
+        try {
+            executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+                SourceHostEffectResult.Success(com.google.gson.JsonPrimitive("r".repeat(128 * 1024)))
+            })
+            fail("Oversized effect results must not re-enter the plugin")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        assertFalse(source.calls.last().has("\$continuation"))
+        source.respond = { effectEnvelope(state = com.google.gson.JsonPrimitive("s".repeat(60 * 1024))) }
+        try {
+            executor.execute(source.id, "account", "login", com.google.gson.JsonObject().apply { addProperty("initial", "i".repeat(80 * 1024)) },
+                handler = SourceHostEffectHandler { _, _ -> SourceHostEffectResult.Success(com.google.gson.JsonPrimitive("r".repeat(120 * 1024))) })
+            fail("Individually bounded fields must still fit the complete callback budget")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+    }
+
+    @Test fun repeatedHostEffectsStopAtEightAndRejectInjectedContinuationInputs() = runTest {
+        val source = EffectProvider()
+        source.respond = { effectEnvelope() }
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        var handled = 0
+        try {
+            executor.execute(source.id, "account", "login", handler = SourceHostEffectHandler { _, _ ->
+                handled++
+                SourceHostEffectResult.Success(com.google.gson.JsonNull.INSTANCE)
+            })
+            fail("An endless host-effect chain must be bounded")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        assertEquals(8, handled)
+        assertEquals(9, source.calls.size)
+        try {
+            executor.execute(source.id, "account", "login", com.google.gson.JsonObject().apply { add("\$continuation", com.google.gson.JsonObject()) })
+            fail("Only the executor may create a callback envelope")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        assertEquals(9, source.calls.size)
+    }
+
     @Test fun optionalSourceChoicesDoNotRequireTrackSearchOrInventLibrarySupport() {
         val feed = object : MusicProvider, FeedCapability {
             override val id = "feed-only"
@@ -71,8 +603,9 @@ class SourceResolutionTest {
         assertNull(supportedSourceSearchType(SearchType.Song.type, emptySet()))
     }
 
-    private class ContentProvider : MusicProvider, TypedSearchCapability, FeedCapability, LibraryCapability,
-        PlaylistCapability, LikeCapability, CollectionCapability, PlaylistEditCapability {
+    private open class ContentProvider : MusicProvider, TypedSearchCapability, FeedCapability, LibraryCapability,
+        PlaylistCapability, LikeCapability, CollectionCapability, PlaylistEditCapability, AccountRevisionCapability {
+        override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
         override val id = "content"
         override val displayName = "Content"
         override val capabilities = setOf(SourceCapability.SEARCH, SourceCapability.FEED, SourceCapability.LIBRARY,
@@ -114,6 +647,338 @@ class SourceResolutionTest {
         override suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "add" }
         override suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "remove" }
         override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) { writes += "reorder" }
+    }
+
+    @Test fun favoriteTogglesReadUnknownStateAndQueueOppositeConfirmedTargets() = runTest {
+        var confirmed = false
+        var reads = 0
+        var failRead = false
+        val targets = mutableListOf<Boolean>()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : ContentProvider() {
+            override suspend fun liked(ref: TrackRef): Boolean {
+                reads++
+                if (failRead) throw SourceException(SourceErrorCode.NETWORK)
+                return confirmed
+            }
+            override suspend fun setLiked(ref: TrackRef, liked: Boolean) {
+                targets += liked
+                if (targets.size == 1) { entered.complete(Unit); release.await() }
+                confirmed = liked
+            }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val first = async { router.toggleLike(source.track.ref, null, source) }
+        entered.await()
+        val second = async { router.toggleLike(source.track.ref, null, source) }
+        runCurrent()
+        assertEquals(1, reads)
+        assertEquals(listOf(true), targets)
+        release.complete(Unit)
+        assertTrue(first.await())
+        assertFalse(second.await())
+        assertEquals(listOf(true, false), targets)
+        assertFalse(confirmed)
+        assertEquals(2L, router.contentRevision.value)
+        failRead = true
+        try { router.toggleLike(TrackRef(source.id, "unknown")); fail("An unread favorite must not invent false") }
+        catch (error: SourceException) { assertEquals(SourceErrorCode.NETWORK, error.code) }
+        assertEquals(listOf(true, false), targets)
+        assertEquals(2L, router.contentRevision.value)
+    }
+
+    @Test fun acceptedSubscriptionsSurviveCallerCancellationAndReadersWaitForReconciliation() = runTest {
+        var confirmed = false
+        var reads = 0
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : ContentProvider() {
+            override suspend fun saved(ref: ContentRef): Boolean { reads++; return confirmed }
+            override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                entered.complete(Unit)
+                release.await()
+                confirmed = saved
+            }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val caller = launch { router.setSaved(source.playlist.ref, true, null, source) }
+        entered.await()
+        caller.cancelAndJoin()
+        val reader = async { router.saved(source.playlist.ref) }
+        runCurrent()
+        assertEquals(0, reads)
+        assertFalse(reader.isCompleted)
+        release.complete(Unit)
+        assertTrue(reader.await())
+        assertEquals(1L, router.contentRevision.value)
+        assertTrue(caller.isCancelled)
+    }
+
+    @Test fun readsRacingMutationsRetryStaleValuesAndFailuresAcrossRelatedKeys() = runTest {
+        for (likeRead in listOf(false, true)) for (failedResponse in listOf(false, true)) {
+            var confirmed = false
+            var reads = 0
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            suspend fun read(): Boolean {
+                val snapshot = confirmed
+                if (++reads == 1) {
+                    entered.complete(Unit)
+                    release.await()
+                    if (failedResponse) throw SourceException(SourceErrorCode.NETWORK)
+                }
+                return snapshot
+            }
+            val source = object : ContentProvider() {
+                override suspend fun saved(ref: ContentRef) = read()
+                override suspend fun liked(ref: TrackRef) = read()
+                override suspend fun setSaved(ref: ContentRef, saved: Boolean) { confirmed = saved }
+                override suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>) { confirmed = true }
+            }
+            val registry = ProviderRegistry(listOf(source))
+            val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+            val reader = async { if (likeRead) router.liked(source.track.ref) else router.saved(source.playlist.ref) }
+            entered.await()
+            if (likeRead) router.addTracks(source.playlist.ref, listOf(source.track.ref))
+            else router.setSaved(source.playlist.ref, true, null, source)
+            release.complete(Unit)
+            assertTrue(reader.await())
+            assertEquals(if (likeRead) 2 else 1, reads)
+        }
+    }
+
+    @Test fun duplicateTargetsShareAcceptedWorkAndOppositeTargetsKeepTheirOrder() = runTest {
+        val targets = mutableListOf<Boolean>()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val source = object : ContentProvider() {
+            override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                targets += saved
+                if (targets.size == 1) { entered.complete(Unit); release.await() }
+            }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val first = launch { router.setSaved(source.playlist.ref, true, null, source) }
+        entered.await()
+        val duplicate = async { router.setSaved(source.playlist.ref, true, null, source) }
+        runCurrent()
+        val opposite = async { router.setSaved(source.playlist.ref, false, null, source) }
+        runCurrent()
+        first.cancelAndJoin()
+        assertEquals(listOf(true), targets)
+        release.complete(Unit)
+        duplicate.await()
+        opposite.await()
+        assertEquals(listOf(true, false), targets)
+        assertEquals(2L, router.contentRevision.value)
+    }
+
+    @Test fun failedWritesReleaseReadersWithoutInventingConfirmedStateAndCanRetry() = runTest {
+        var reject = true
+        var confirmed = false
+        val source = object : ContentProvider() {
+            override suspend fun saved(ref: ContentRef) = confirmed
+            override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                if (reject) throw SourceException(SourceErrorCode.UNAVAILABLE)
+                confirmed = saved
+            }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        try { router.setSaved(source.playlist.ref, true); fail("Expected the business failure") }
+        catch (error: SourceException) { assertEquals(SourceErrorCode.UNAVAILABLE, error.code) }
+        assertFalse(router.saved(source.playlist.ref))
+        assertEquals(0L, router.contentRevision.value)
+        reject = false
+        router.setSaved(source.playlist.ref, true)
+        assertTrue(router.saved(source.playlist.ref))
+        assertEquals(1L, router.contentRevision.value)
+    }
+
+    @Test fun accountReplacementCancelsRunningAndQueuedWritesBeforeTheyCanCommit() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val source = object : ContentProvider() {
+            var committed = false
+            override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+            override suspend fun deletePlaylist(ref: PlaylistRef) { committed = true }
+        }
+        source.accountRevision.value = "account-A"
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val running = async { router.setSaved(source.playlist.ref, true, "account-A", source) }
+        entered.await()
+        val queued = async { router.deletePlaylist(source.playlist.ref, "account-A", source) }
+        runCurrent()
+        source.accountRevision.value = "account-B"
+        runCurrent()
+        for (result in listOf(running, queued)) {
+            try { result.await(); fail("An old account must not commit a write") }
+            catch (_: CancellationException) { }
+        }
+        assertFalse(source.committed)
+        assertEquals(0L, router.contentRevision.value)
+        router.deletePlaylist(source.playlist.ref, "account-B", source)
+        assertTrue(source.committed)
+    }
+
+    @Test fun confirmedCollectionsOverrideStaleAndFailedReadsUntilTheirOwnerChanges() = runTest {
+        var raw = false
+        var failRead = false
+        var rejectWrite = false
+        val source = object : ContentProvider() {
+            override suspend fun saved(ref: ContentRef): Boolean {
+                if (failRead) throw SourceException(SourceErrorCode.NETWORK)
+                return raw
+            }
+            override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                if (rejectWrite) throw SourceException(SourceErrorCode.UNAVAILABLE)
+            }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        assertFalse(router.saved(source.playlist.ref))
+        router.setSaved(source.playlist.ref, true)
+        failRead = true
+        assertTrue(router.saved(source.playlist.ref))
+        failRead = false
+        assertTrue(router.saved(source.playlist.ref))
+        rejectWrite = true
+        try { router.setSaved(source.playlist.ref, false); fail("Expected a rejected mutation") }
+        catch (_: SourceException) { }
+        assertTrue(router.saved(source.playlist.ref))
+        assertEquals(1L, router.contentRevision.value)
+        rejectWrite = false
+        router.setSaved(source.playlist.ref, false)
+        raw = true
+        assertFalse(router.saved(source.playlist.ref))
+        source.accountRevision.value = "new-account"
+        assertTrue(router.saved(source.playlist.ref))
+        registry.register(ContentProvider())
+        assertTrue(router.saved(source.playlist.ref))
+    }
+
+    @Test fun playlistMutationsInvalidateOnlyAffectedLikesAndNeverLoseTheirConfirmedSuccess() = runTest {
+        var serverLiked = true
+        var failRead = false
+        val source = object : ContentProvider() {
+            override suspend fun liked(ref: TrackRef): Boolean {
+                if (failRead) throw SourceException(SourceErrorCode.NETWORK)
+                return serverLiked
+            }
+            override suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>) { serverLiked = false }
+        }
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val unaffected = TrackRef(source.id, "other-track")
+        router.setLiked(source.track.ref, true)
+        router.setLiked(unaffected, true)
+        router.removeTracks(source.playlist.ref, listOf(source.track.ref))
+        failRead = true
+        assertTrue(router.liked(unaffected))
+        try { router.liked(source.track.ref); fail("An unread state must stay unknown after a failed refresh") }
+        catch (error: SourceException) { assertEquals(SourceErrorCode.NETWORK, error.code) }
+        assertEquals(3L, router.contentRevision.value)
+        failRead = false
+        assertFalse(router.liked(source.track.ref))
+    }
+
+    @Test fun ambiguousWriteFailuresDiscardOldReceiptsAndReconcileCanonicalState() = runTest {
+        for (likeWrite in listOf(false, true)) for (runtimeInterruption in listOf(false, true)) {
+            var confirmed = false
+            var loseResponse = false
+            val source = object : ContentProvider() {
+                override suspend fun liked(ref: TrackRef) = confirmed
+                override suspend fun saved(ref: ContentRef) = confirmed
+                override suspend fun setLiked(ref: TrackRef, liked: Boolean) {
+                    confirmed = liked
+                    if (loseResponse) throw SourceException(if (runtimeInterruption) SourceErrorCode.UNAVAILABLE else SourceErrorCode.NETWORK,
+                        outcomeUnknown = runtimeInterruption)
+                }
+                override suspend fun setSaved(ref: ContentRef, saved: Boolean) {
+                    confirmed = saved
+                    if (loseResponse) throw SourceException(if (runtimeInterruption) SourceErrorCode.UNAVAILABLE else SourceErrorCode.TIMEOUT,
+                        outcomeUnknown = runtimeInterruption)
+                }
+            }
+            val registry = ProviderRegistry(listOf(source))
+            val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+            if (likeWrite) router.setLiked(source.track.ref, true) else router.setSaved(source.playlist.ref, true)
+            loseResponse = true
+            try {
+                if (likeWrite) router.setLiked(source.track.ref, false) else router.setSaved(source.playlist.ref, false)
+                fail("An ambiguous transport result must not be reported as successful")
+            } catch (_: SourceException) { }
+            assertFalse(if (likeWrite) router.liked(source.track.ref) else router.saved(source.playlist.ref))
+            assertEquals(2L, router.contentRevision.value)
+        }
+    }
+
+    @Test fun everyCommonMutationRejectsTheDisplayedAnonymousOrReplacedAccount() = runTest {
+        val source = ContentProvider()
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        source.accountRevision.value = "replacement-account"
+        for (old in listOf(null, "old-account")) {
+            val attempts: List<suspend () -> Unit> = listOf(
+                { router.setLiked(source.track.ref, true, old, source) },
+                { router.setSaved(source.playlist.ref, true, old, source) },
+                { router.createPlaylist(source.id, "New", expectedAccountRevision = old, expectedProvider = source); Unit },
+                { router.updatePlaylist(source.playlist.ref, "New", expectedAccountRevision = old, expectedProvider = source) },
+                { router.deletePlaylist(source.playlist.ref, old, source) },
+                { router.addTracks(source.playlist.ref, listOf(source.track.ref), old, source) },
+                { router.removeTracks(source.playlist.ref, listOf(source.track.ref), old, source) },
+                { router.reorderTracks(source.playlist.ref, listOf(source.track.ref), old, source) },
+            )
+            for (attempt in attempts) {
+                try { attempt(); fail("A mutation must keep the displayed account, including null") }
+                catch (_: CancellationException) { }
+            }
+        }
+        assertTrue(source.writes.isEmpty())
+        assertEquals(0L, router.contentRevision.value)
+    }
+
+    @Test fun favoriteMutationRejectsAnExpectedNullAccountAndAReplacedProvider() = runTest {
+        val provider = ContentProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry)
+        provider.accountRevision.value = "signed-in-after-click"
+        try { router.setLiked(provider.track.ref, true, expectedAccountRevision = null, expectedProvider = provider); fail() }
+        catch (_: CancellationException) { }
+        assertTrue(provider.writes.isEmpty())
+        val replacement = ContentProvider()
+        registry.register(replacement)
+        try { router.setLiked(provider.track.ref, true, expectedAccountRevision = null, expectedProvider = provider); fail() }
+        catch (_: CancellationException) { }
+        assertTrue(replacement.writes.isEmpty())
+        router.setLiked(replacement.track.ref, true, expectedAccountRevision = null, expectedProvider = replacement)
+        assertEquals(listOf("like:${replacement.track.ref.trackId}"), replacement.writes)
+    }
+
+    @Test fun playerActionsFollowDeclaredSourceFeaturesAndTypedPlaylistCapabilities() {
+        val provider = ContentProvider()
+        val metadata = provider.track.toMediaMetadata()
+        assertTrue(MoreAction.ADD_TO_PLAYLIST.availableFor(metadata, provider))
+        assertTrue(MoreAction.SHARE.availableFor(metadata, provider))
+        assertFalse(MoreAction.COMMENT.availableFor(metadata, provider))
+        assertFalse(MoreAction.SONG_WIKI.availableFor(metadata, provider))
+        val withFeatures = object : MusicProvider by provider, SourceFeatureCapability {
+            override val capabilities = provider.capabilities + SourceCapability.FEATURES
+            override val features = mapOf("social" to setOf("comments", "songWiki"))
+            override suspend fun invokeFeature(feature: String, action: String, parameters: com.google.gson.JsonObject): com.google.gson.JsonElement =
+                throw SourceException(SourceErrorCode.UNSUPPORTED)
+        }
+        assertTrue(MoreAction.COMMENT.availableFor(metadata, withFeatures))
+        assertTrue(MoreAction.SONG_WIKI.availableFor(metadata, withFeatures))
+        assertFalse(MoreAction.SHARE.availableFor(metadata.copy(isLocal = true), withFeatures))
+        assertFalse(MoreAction.ADD_TO_PLAYLIST.availableFor(metadata, null))
     }
 
     @Test fun typedRouterKeepsContentKindsProviderRefsAndPageCursors() = runTest {
@@ -280,8 +1145,12 @@ class SourceResolutionTest {
         catch (_: PlaybackResolutionException) { assertEquals(1, a.calls) }
     }
     @Test fun reservedProviderCannotBeReplacedAndCapabilitiesAreExplicit() = runTest {
-        try { ProviderRegistry(listOf(Provider(ProviderIds.NETEASE, track(ProviderIds.NETEASE)))); fail() }
+        try { ProviderRegistry(listOf(Provider(ProviderIds.LOCAL, track(ProviderIds.LOCAL)))); fail() }
         catch (_: IllegalArgumentException) { }
+        val removable = Provider(ProviderIds.NETEASE, track(ProviderIds.NETEASE))
+        val sources = ProviderRegistry(listOf(removable))
+        sources.unregister(removable.instanceId)
+        assertNull(sources.provider(ProviderIds.NETEASE))
         val lyricsOnly = object : MusicProvider {
             override val id = "lyrics"
             override val displayName = "Lyrics"

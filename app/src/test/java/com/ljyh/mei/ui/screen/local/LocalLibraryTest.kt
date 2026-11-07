@@ -76,6 +76,21 @@ class LocalLibraryTest {
         )
     }
 
+    @Test
+    fun matchingKeepsOpaqueIdsAndEqualNumericPlaceholdersFromDifferentSources() {
+        val first = track(0, "Song", "Artist", 180_000).copy(
+            trackRef = com.ljyh.mei.source.api.TrackRef("qq", "first-mid"))
+        val second = first.copy(trackRef = com.ljyh.mei.source.api.TrackRef("qq", "second-mid"))
+        val otherSource = first.copy(trackRef = com.ljyh.mei.source.api.TrackRef("other", "first-mid"))
+        assertEquals(listOf(first.trackRef, second.trackRef, otherSource.trackRef),
+            rankLocalMatches(song(), listOf(first, second, otherSource, first)).map { it.trackRef })
+        val matched = song().withMatchedMetadata(second)
+        assertEquals(song().id, matched.id)
+        assertEquals(song().path, matched.path)
+        assertEquals(song().providerId, matched.providerId)
+        assertEquals(song().providerTrackId, matched.providerTrackId)
+    }
+
     private fun song(id: String = "local_42", source: SourceType = SourceType.LOCAL) = Song(
         id = id, title = "Song", artist = listOf("Artist"), album = "Album", cover = "",
         duration = 180_000, path = "content://media/external/audio/media/42", sourceType = source,

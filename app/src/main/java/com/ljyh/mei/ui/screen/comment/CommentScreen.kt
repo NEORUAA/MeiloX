@@ -56,8 +56,6 @@ import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.network.Resource
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioButtonSize
@@ -78,7 +76,6 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.comment.component.CommentItem
 import com.ljyh.mei.ui.screen.comment.component.CommentSortAction
-import com.ljyh.mei.utils.rememberPreference
 
 @Composable
 fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel()) {
@@ -87,9 +84,8 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
     val density = LocalDensity.current
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val currentUserId by rememberPreference(UserIdKey, "")
-    val cookie by rememberPreference(CookieKey, "")
-    val signedInUserId = currentUserId.toLongOrNull()?.takeIf { it > 0 && cookie.isNotBlank() }
+    val signedInUserId by viewModel.signedInUserId.collectAsState()
+    val providerId by viewModel.providerId.collectAsState()
     val sortType by viewModel.sortType.collectAsState()
     val total by viewModel.total.collectAsState()
     val composer by viewModel.composer.collectAsState()
@@ -116,7 +112,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
             else (listState.firstVisibleItemScrollOffset / blurDistancePx).coerceIn(0f, 1f)
         }
     }
-    LaunchedEffect(songId, signedInUserId, cookie) { viewModel.setContext(songId, signedInUserId, cookie) }
+    LaunchedEffect(songId) { viewModel.openContext(songId) }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -138,7 +134,7 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val keyboardBottom = with(density) { WindowInsets.ime.getBottom(this).toDp() }
     val bottomPadding = maxOf(insets.calculateBottomPadding(), keyboardBottom)
-    val signIn = { Screen.NeteaseLogin.navigate(navController) }
+    val signIn = { Screen.NeteaseLogin.navigate(navController) { providerId?.let { addQuery("providerId", it) } } }
 
     val sortAction = CommentSortAction(sortType, viewModel::setSortType)
     Box(Modifier.fillMaxSize()) {

@@ -49,7 +49,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.R
 import com.ljyh.mei.playback.PrivateFmMode
 import com.ljyh.mei.utils.rememberEnumPreference
-import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCombinedBackdrop
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberLayerBackdrop
 
@@ -69,7 +68,6 @@ fun BottomSheetPlayer(
     miniPlayerVerticalOffset: () -> Dp,
     onBackgroundReadyChanged: (Boolean) -> Unit = {},
     playerViewModel: PlayerViewModel = hiltViewModel(),
-    playlistViewModel: PlaylistViewModel = hiltViewModel(),
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val navController = LocalNavController.current
@@ -118,7 +116,6 @@ fun BottomSheetPlayer(
     // 创建弹窗处理器
     val overlayHandler = rememberOverlayHandler(
         stateContainer = stateContainer,
-        playlistViewModel = playlistViewModel,
         navController = navController
     )
 

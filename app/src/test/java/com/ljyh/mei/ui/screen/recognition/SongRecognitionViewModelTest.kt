@@ -63,7 +63,7 @@ class SongRecognitionViewModelTest {
         recordings[1].resume(floatArrayOf(1f))
         runCurrent()
         assertEquals(1, generated)
-        assertEquals(listOf(2L), viewModel.state.value.results.map { it.id })
+        assertEquals(listOf("2"), viewModel.state.value.results.map { it.id })
         assertEquals(RecognitionPhase.Results, viewModel.state.value.phase)
     }
 
@@ -86,7 +86,7 @@ class SongRecognitionViewModelTest {
         runCurrent()
         matches[0].resume(listOf(song(1)))
         runCurrent()
-        assertEquals(listOf(2L), viewModel.state.value.results.map { it.id })
+        assertEquals(listOf("2"), viewModel.state.value.results.map { it.id })
 
         viewModel.start()
         runCurrent()
@@ -118,7 +118,7 @@ class SongRecognitionViewModelTest {
         runCurrent()
 
         assertEquals(RecognitionPhase.Results, viewModel.state.value.phase)
-        assertEquals(listOf(1L), viewModel.state.value.results.map { it.id })
+        assertEquals(listOf("1"), viewModel.state.value.results.map { it.id })
         assertFalse(viewModel.state.value.isWorking)
     }
 
@@ -140,6 +140,16 @@ class SongRecognitionViewModelTest {
 
         assertFalse(matched)
         assertEquals(RecognitionPhase.Ready, viewModel.state.value.phase)
+    }
+
+    @Test
+    fun opaqueRecognitionIdsAreDeduplicatedByProviderScopedReference() = runTest(dispatcher) {
+        fun candidate(provider: String) = RecognizedSong(com.ljyh.mei.source.api.TrackRef(provider, "opaque/song/42"), "Song", emptyList(), "Album", null, 1000, null)
+        val viewModel = SongRecognitionViewModel(record = { floatArrayOf(1f) }, generate = { "fingerprint" },
+            match = { _, _ -> listOf(candidate("first.source"), candidate("second.source"), candidate("first.source")) }, release = {})
+        viewModel.start(); runCurrent()
+        assertEquals(listOf("first.source", "second.source"), viewModel.state.value.results.map { it.ref.providerId })
+        assertEquals(listOf("opaque/song/42", "opaque/song/42"), viewModel.state.value.results.map { it.id })
     }
 
     private fun song(id: Long) = RecognizedSong(id, "Song $id", emptyList(), "Album", null, 1_000, null)

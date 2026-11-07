@@ -28,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.UserNicknameKey
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import io.github.neoruaa.glasmio.ui.GlasmioCard
@@ -44,7 +43,6 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.data.network.NeteaseSessionType
 import com.ljyh.mei.ui.screen.account.rememberNeteaseSessionType
 import androidx.compose.ui.draw.alpha
-import com.ljyh.mei.utils.rememberPreference
 
 private val LocalSettingsGroup = staticCompositionLocalOf { false }
 
@@ -62,9 +60,9 @@ fun SettingScreen(
         bottomPadding = insets.calculateBottomPadding(),
         actions = { listOf(globalProfileHeaderAction()) },
     ) {
-        if (profile.providerId == ProviderIds.NETEASE) {
+        if ("accountProfile" in profile.features["account"].orEmpty()) {
             item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
-            item { NeteaseSettingsAccountGroup() }
+            item { SourceSettingsAccountGroup(profile) }
         } else if (profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL) {
             item { SettingsSectionTitle(stringResource(R.string.settings_account)) }
             item { GlasmioGroupedList {
@@ -85,15 +83,20 @@ fun SettingScreen(
                 SettingsEntry(stringResource(R.string.storage_management), "internaldrive.fill") { Screen.StorageManagement.navigate(navController) }
             }
         }
-        if (profile.providerId == ProviderIds.NETEASE) {
+        val extensionScreens = listOf(
+            Triple(Screen.PrivateMessages, R.string.private_messages, "message"),
+            Triple(Screen.ListenTogether, R.string.listen_together, "person.2.wave.2"),
+            Triple(Screen.SongRecognition, R.string.song_recognition, "waveform.badge.magnifyingglass"),
+        ).filter { it.first.route in profile.featureRoutes }
+        if (extensionScreens.isNotEmpty()) {
             item { SettingsSectionTitle(stringResource(R.string.settings_extensions)) }
-            item {
-                GlasmioGroupedList {
-                    SettingsEntry(stringResource(R.string.private_messages), "message", false) { Screen.PrivateMessages.navigate(navController) }
-                    SettingsEntry(stringResource(R.string.listen_together), "person.2.wave.2") { Screen.ListenTogether.navigate(navController) }
-                    SettingsEntry(stringResource(R.string.song_recognition), "waveform.badge.magnifyingglass") { Screen.SongRecognition.navigate(navController) }
+            item { GlasmioGroupedList {
+                extensionScreens.forEachIndexed { index, (screen, title, icon) ->
+                    SettingsEntry(stringResource(title), icon, index > 0) {
+                        screen.navigate(navController) { addQuery("providerId", Uri.encode(profile.providerId)) }
+                    }
                 }
-            }
+            } }
         }
         item { SettingsSectionTitle(stringResource(R.string.settings_information)) }
         item {
@@ -105,39 +108,26 @@ fun SettingScreen(
 }
 
 @Composable
-private fun NeteaseSettingsAccountGroup() {
+private fun SourceSettingsAccountGroup(profile: com.ljyh.mei.ui.screen.source.SourceProfileState) {
     val navController = LocalNavController.current
-    val sessionType = rememberNeteaseSessionType()
-    val (userNickname) = rememberPreference(UserNicknameKey, "")
+    val sessionType = rememberNeteaseSessionType(profile.providerId)
+    fun open(screen: Screen) = screen.navigate(navController) { addQuery("providerId", Uri.encode(profile.providerId)) }
     GlasmioGroupedList {
-        if (sessionType == NeteaseSessionType.None) {
-            SettingsEntry(stringResource(R.string.netease_login), "person.crop.circle", false) {
-                Screen.NeteaseLogin.navigate(navController)
-            }
+        if (profile.account == null) {
+            SettingsEntry(profile.providerName, "person.crop.circle", false) { open(Screen.NeteaseLogin) }
         } else {
-            SettingsEntry(
-                userNickname.ifBlank { stringResource(R.string.account_home) },
-                "person.crop.circle",
-                false,
-            ) {
-                Screen.AccountHome.navigate(navController)
+            SettingsEntry(profile.account.displayName.ifBlank { stringResource(R.string.account_home) }, "person.crop.circle", false) {
+                open(Screen.AccountHome)
             }
-            SettingsEntry(stringResource(R.string.netease_musician), "mic") {
-                Screen.NeteaseMusician.navigate(navController)
+            if ("musician" in profile.features["security"].orEmpty()) SettingsEntry(stringResource(R.string.netease_musician), "mic") { open(Screen.NeteaseMusician) }
+            if ("account/security" in profile.featureRoutes) SettingsEntry(stringResource(R.string.account_security), "shield") { open(Screen.AccountSecurity) }
+            if ("preparePcQrLoginSecurity" in profile.features["login"].orEmpty()) {
+                val canAuthorize = sessionType == NeteaseSessionType.Mobile
+                GlasmioListRow(title = stringResource(R.string.pc_qr_login), systemName = "viewfinder",
+                    subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
+                    modifier = Modifier.alpha(if (canAuthorize) 1f else 0.38f),
+                    onClick = if (canAuthorize) { { open(Screen.PcQrLogin) } } else null)
             }
-            SettingsEntry(stringResource(R.string.account_security), "shield") {
-                Screen.AccountSecurity.navigate(navController)
-            }
-            val canAuthorize = sessionType == NeteaseSessionType.Mobile
-            GlasmioListRow(
-                title = stringResource(R.string.pc_qr_login),
-                systemName = "viewfinder",
-                subtitle = if (canAuthorize) null else stringResource(R.string.pc_qr_login_mobile_only),
-                modifier = Modifier.alpha(if (canAuthorize) 1f else 0.38f),
-                onClick = if (canAuthorize) {
-                    { Screen.PcQrLogin.navigate(navController) }
-                } else null,
-            )
         }
     }
 }

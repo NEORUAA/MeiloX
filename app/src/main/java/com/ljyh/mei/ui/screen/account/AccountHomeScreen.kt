@@ -6,7 +6,6 @@ import io.github.neoruaa.glasmio.icons.*
 import io.github.neoruaa.glasmio.ui.*
 import io.github.neoruaa.glasmio.scaffold.*
 
-import android.content.Context
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,7 +54,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.edit
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -63,17 +61,15 @@ import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserAvatarUrlKey
-import com.ljyh.mei.constants.UserIdKey
-import com.ljyh.mei.constants.UserNicknameKey
-import com.ljyh.mei.data.model.melox.AccountDetail
+import com.ljyh.mei.source.shared.OnlineAccountDetail as AccountDetail
 import com.ljyh.mei.data.model.melox.AccountConnectionType
-import com.ljyh.mei.data.model.melox.AccountPlaylist
-import com.ljyh.mei.data.model.melox.AccountProfile
+import com.ljyh.mei.source.shared.OnlineAccountPlaylist as AccountPlaylist
+import com.ljyh.mei.source.shared.OnlineAccountProfile as AccountProfile
+import com.ljyh.mei.data.model.toMediaMetadata
+import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.melox.ListeningStatsSummary
-import com.ljyh.mei.data.model.melox.UserPlayRecord
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.OnlineUserPlayRecord as UserPlayRecord
+import com.ljyh.mei.source.shared.SharedOnlineRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
@@ -94,10 +90,8 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
-import com.ljyh.mei.utils.dataStore
 import io.github.neoruaa.glasmio.scaffold.pullToRefreshRebound
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -125,16 +119,23 @@ data class AccountHomeState(
 
 @HiltViewModel
 class AccountHomeViewModel @Inject constructor(
-    private val repository: MeloXRepository,
-    @ApplicationContext private val context: Context,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("account-home", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
     private val _state = MutableStateFlow(AccountHomeState())
     val state: StateFlow<AccountHomeState> = _state
 
     private var refreshJob: Job? = null
 
     init {
-        refresh()
+        viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            if (owner.isNotBlank()) refresh() else {
+                refreshJob?.cancel()
+                _state.value = AccountHomeState(loading = false, summaryLoading = false)
+            }
+        } }
     }
 
     fun refresh() {
@@ -143,11 +144,6 @@ class AccountHomeViewModel @Inject constructor(
             _state.value = _state.value.copy(loading = true, summaryLoading = true, error = null)
             try {
                 val profile = repository.accountProfile()
-                context.dataStore.edit { preferences ->
-                    preferences[UserIdKey] = profile.id.toString()
-                    preferences[UserNicknameKey] = profile.nickname
-                    profile.avatarUrl?.let { preferences[UserAvatarUrlKey] = it }
-                }
                 coroutineScope {
                     val detail = async { runCatching { repository.accountDetail(profile.id) }.getOrNull() }
                     val playlists = async { runCatching { repository.accountPlaylists(profile.id) }.getOrDefault(emptyList()) }
@@ -160,6 +156,7 @@ class AccountHomeViewModel @Inject constructor(
                         listeningSummary = _state.value.listeningSummary.takeIf { _state.value.profile?.id == profile.id },
                     )
                     ensureActive()
+                    repository.features().ensureCurrent()
                     _state.value = account
                     val summary = listeningSummary.await()
                     ensureActive()
@@ -205,16 +202,18 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                         playlistCount = state.playlists.size,
                         listeningSummary = state.listeningSummary,
                         summaryLoading = state.summaryLoading,
-                        onListeningStats = { Screen.ListeningStats.navigate(navController) },
+                        onListeningStats = { Screen.ListeningStats.navigate(navController) { addQuery("providerId", displayedProfile.providerId) } },
                         onConnections = { type ->
                             Screen.AccountConnections.navigate(navController) {
-                                addPath(displayedProfile.id.toString())
+                                addPath(android.net.Uri.encode(displayedProfile.id))
+                                addQuery("providerId", displayedProfile.providerId)
                                 addPath(type.name)
                             }
                         },
                         onRankings = {
                             Screen.AccountListeningRank.navigate(navController) {
-                                addPath(displayedProfile.id.toString())
+                                addPath(android.net.Uri.encode(displayedProfile.id))
+                                addQuery("providerId", displayedProfile.providerId)
                             }
                         },
                     )
@@ -225,12 +224,12 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                     GlasmioListRow(
                         title = stringResource(R.string.netease_musician),
                         systemName = "mic",
-                        onClick = { Screen.NeteaseMusician.navigate(navController) },
+                        onClick = { Screen.NeteaseMusician.navigate(navController) { addQuery("providerId", displayedProfile.providerId) } },
                     )
                     GlasmioListRow(
                         title = stringResource(R.string.account_security),
                         systemName = "shield",
-                        onClick = { Screen.AccountSecurity.navigate(navController) },
+                        onClick = { Screen.AccountSecurity.navigate(navController) { addQuery("providerId", displayedProfile.providerId) } },
                     )
                 }
             }
@@ -289,7 +288,7 @@ fun AccountHomeScreen(viewModel: AccountHomeViewModel = hiltViewModel()) {
                         )
                     },
                     onClick = {
-                        Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                        com.ljyh.mei.ui.screen.source.navigateSourceContent(navController, playlist.ref)
                     },
                 )
             }
@@ -437,33 +436,32 @@ data class ListeningRankState(
 
 @HiltViewModel
 class ListeningRankViewModel @Inject constructor(
-    private val repository: MeloXRepository,
-    @ApplicationContext private val context: Context,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
-    private val cache = mutableMapOf<Pair<Long, ListeningPeriod>, List<UserPlayRecord>>()
-    private val totalSongsCache = mutableMapOf<Long, Int?>()
+    private val repository = onlineRepository.screen("listening-rank", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
+    private val cache = mutableMapOf<Pair<String, ListeningPeriod>, List<UserPlayRecord>>()
+    private val totalSongsCache = mutableMapOf<String, Int?>()
     private var loadJob: Job? = null
-    private var currentUserId: Long? = null
+    private var currentUserId: String? = null
     private val _state = MutableStateFlow(ListeningRankState())
     val state: StateFlow<ListeningRankState> = _state
 
     init {
         viewModelScope.launch {
-            context.dataStore.data
-                .map { it[UserIdKey] to it[CookieKey] }
-                .distinctUntilChanged()
-                .collect {
+            repository.sessionChanges.collect { owner ->
                     loadJob?.cancel()
                     cache.clear()
                     totalSongsCache.clear()
                     val period = _state.value.period
                     _state.value = ListeningRankState(period = period)
-                    currentUserId?.let { userId -> load(userId, period, force = true) }
+                    if (owner.isNotBlank()) currentUserId?.let { userId -> load(userId, period, force = true) }
                 }
         }
     }
 
-    fun load(userId: Long, period: ListeningPeriod, force: Boolean = false) {
+    fun load(userId: String, period: ListeningPeriod, force: Boolean = false) {
         currentUserId = userId
         loadJob?.cancel()
         val key = userId to period
@@ -495,6 +493,7 @@ class ListeningRankViewModel @Inject constructor(
             }
             val totalSongs = summary.await()
             ensureActive()
+            repository.features().ensureCurrent()
             totalSongs.onSuccess { totalSongsCache[userId] = it }
             records.onSuccess { cache[key] = it }
             _state.value = ListeningRankState(
@@ -511,7 +510,7 @@ class ListeningRankViewModel @Inject constructor(
 @OptIn(UnstableApi::class)
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltViewModel()) {
+fun ListeningRankScreen(userId: String, viewModel: ListeningRankViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
@@ -640,7 +639,7 @@ fun ListeningRankScreen(userId: Long, viewModel: ListeningRankViewModel = hiltVi
                                         ListQueue(
                                             id = "account-rank-${state.period.name}",
                                             title = navController.context.getString(R.string.account_listening_rank),
-                                            items = state.records.map { it.song.id.toString() to null },
+                                            items = state.records.map { val item = it.song.track.toMediaMetadata().toMediaItem(); item.mediaId to item },
                                             startIndex = index,
                                         ),
                                     )

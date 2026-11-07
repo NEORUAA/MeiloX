@@ -175,7 +175,7 @@ fun PlaylistTrackList(
                         )
                     }
                 }
-                itemsIndexed(staticTracks, key = { _, item -> item.mediaId }) { index, track ->
+                itemsIndexed(staticTracks, key = { index, item -> "$index:${item.mediaId}" }) { index, track ->
                     if (flatDetailStyle) DetailTrackRow(
                         track = track,
                         trackNumber = index + 1,
@@ -220,6 +220,7 @@ fun LazyListScope.playlistTrackItems(
     showDuration: Boolean = false,
     currentTrackId: String? = null,
     trackNumbers: Map<Long, Int> = emptyMap(),
+    trackNumber: ((MediaMetadata, Int) -> Int)? = null,
     isPlaying: Boolean = false,
     favoriteTrackIds: Set<String> = emptySet(),
     showLeadingDivider: Boolean = true,
@@ -258,13 +259,12 @@ fun LazyListScope.playlistTrackItems(
                     if (flatDetailStyle) {
                         DetailTrackRow(
                             track = track,
-                            trackNumber = trackNumbers[track.id] ?: index + 1,
+                            trackNumber = trackNumber?.invoke(track, index) ?: trackNumbers[track.id] ?: index + 1,
                             showArtwork = showArtwork,
                             showDuration = showDuration,
                             isCurrentTrack = track.mediaId == currentTrackId,
                             isPlaying = isPlaying,
-                            isFavorite = track.supportsNeteaseSongActions &&
-                                track.id.toString() in favoriteTrackIds,
+                            isFavorite = track.mediaId in favoriteTrackIds,
                             onClick = { onTrackClick(track, index) },
                             onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
                             selected = if (selectionMode) track.mediaId in selectedTrackIds else null,
@@ -319,7 +319,7 @@ fun LazyListScope.playlistTrackItems(
             else -> Unit
         }
     } else {
-        itemsIndexed(staticTracks, key = { _, item -> item.mediaId }) { index, track ->
+        itemsIndexed(staticTracks, key = { index, item -> "$index:${item.mediaId}" }) { index, track ->
             PlaylistSurface(
                 isFirst = index == 0 && (!flatDetailStyle || showLeadingDivider),
                 isLast = index == staticTracks.lastIndex,
@@ -328,13 +328,12 @@ fun LazyListScope.playlistTrackItems(
                 if (flatDetailStyle) {
                     DetailTrackRow(
                         track = track,
-                        trackNumber = trackNumbers[track.id] ?: index + 1,
+                        trackNumber = trackNumber?.invoke(track, index) ?: trackNumbers[track.id] ?: index + 1,
                         showArtwork = showArtwork,
                         showDuration = showDuration,
                         isCurrentTrack = track.mediaId == currentTrackId,
                         isPlaying = isPlaying,
-                        isFavorite = track.supportsNeteaseSongActions &&
-                            track.id.toString() in favoriteTrackIds,
+                        isFavorite = track.mediaId in favoriteTrackIds,
                         onClick = { onTrackClick(track, index) },
                         onMoreClick = if (selectionMode) null else { { onMoreClick(track, it) } },
                         selected = if (selectionMode) track.mediaId in selectedTrackIds else null,

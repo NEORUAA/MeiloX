@@ -11,11 +11,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioSheetTopToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSheetValue
 import com.ljyh.mei.ui.component.sheet.rememberMeiloXSheetDismissal
 import android.annotation.SuppressLint
-import android.view.View
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,34 +35,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.datastore.preferences.core.edit
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import com.ljyh.mei.BuildConfig
+import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.UserAvatarUrlKey
-import com.ljyh.mei.constants.UserIdKey
-import com.ljyh.mei.constants.UserNicknameKey
-import com.ljyh.mei.source.netease.repository.MeloXRepository
-import com.ljyh.mei.data.network.clearNeteaseAccountSession
-import com.ljyh.mei.data.network.setNeteaseWebSession
+import com.ljyh.mei.source.shared.SharedOnlineRepository
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
@@ -76,26 +61,18 @@ import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
-import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderCollapseDefaults
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
-import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -141,7 +118,7 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
                     )
                 }
                 GlasmioButton(
-                    onClick = { Screen.NeteaseWebLogin.navigate(navController) },
+                    onClick = { Screen.NeteaseWebLogin.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     modifier = Modifier.fillMaxWidth(),
                     style = GlassSurfaceStyle.Navigation,
                 ) {
@@ -162,157 +139,61 @@ fun NeteaseLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
             onSubmitPassword = viewModel::loginWithMobilePassword,
             onRequestSmsCode = viewModel::requestMobileSmsCode,
             onSubmitSms = viewModel::loginWithMobileSms,
-            onSubmitUpSms = viewModel::loginWithUpSms,
             onLoginSuccess = navController::finishNeteaseLogin,
         )
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun NeteaseWebLoginScreen(viewModel: NeteaseLoginViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    var canGoBack by remember { mutableStateOf(false) }
-    var canPanHorizontally by remember { mutableStateOf(false) }
-    var scrollEdge by remember { mutableFloatStateOf(0f) }
-    val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
-    var detected by remember { mutableStateOf(false) }
-    var verificationFailed by remember { mutableStateOf(false) }
     var showCookieLoginSheet by remember { mutableStateOf(false) }
-    val cookieLogin = remember(viewModel) { WebCookieLoginPoller() }
-    val cookieManager = remember { CookieManager.getInstance() }
+    var detected by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    var attempt by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val bottomPadding = LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime)
         .asPaddingValues().calculateBottomPadding()
-    val goBack = {
-        if (webView?.canGoBack() == true) webView?.goBack() else navController.navigateUp()
-        Unit
+
+    LaunchedEffect(viewModel, attempt) {
+        try {
+            viewModel.webLogin()
+            detected = true
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { failed = true }
     }
-    BackHandler(enabled = canGoBack) { goBack() }
-
-    LaunchedEffect(webView, showCookieLoginSheet) {
-        if (webView != null && !detected && !showCookieLoginSheet) {
-            detected = cookieLogin.poll(
-                readMusicU = {
-                    musicUFromCookieHeader(cookieManager.getCookie("https://music.163.com").orEmpty())
-                },
-                verify = { musicU ->
-                    viewModel.loginWithCookie(musicU).also { verificationFailed = !it }
-                },
-            )
-        }
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        MeiloXPinnedPage(
-            title = stringResource(R.string.netease_web_login),
-            subtitle = stringResource(when {
-                detected -> R.string.netease_login_detected
-                verificationFailed -> R.string.netease_cookie_login_verification_failed
-                else -> R.string.netease_login_waiting
-            }),
-            topBarBlurProgress = scrollEdge,
-            bottomPadding = bottomPadding,
-            onNavigateBack = goBack,
-            actions = {
-                if (detected) listOf(meiloxHeaderAction(
-                    "done", stringResource(R.string.done), navController::finishNeteaseLogin,
-                ) { Text(stringResource(R.string.done), color = LocalGlassColors.current.accent) })
-                else emptyList()
-            },
-        ) { pagePadding ->
-            val padding = PaddingValues(
-                top = pagePadding.calculateTopPadding(), bottom = pagePadding.calculateBottomPadding(),
-            )
-            AndroidView(
-                factory = { currentContext ->
-                    WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-                    WebView(currentContext).apply {
-                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-                        setOnScrollChangeListener { _, _, scrollY, _, _ ->
-                            scrollEdge = (scrollY / scrollEdgeDistance.coerceAtLeast(1f)).coerceIn(0f, 1f)
-                            canPanHorizontally = canScrollHorizontally(-1) || canScrollHorizontally(1)
-                        }
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.userAgentString += " Mei/1.0"
-                        cookieManager.setAcceptCookie(true)
-                        cookieManager.setAcceptThirdPartyCookies(this, true)
-                        webViewClient = object : WebViewClient() {
-                            override fun onScaleChanged(view: WebView?, oldScale: Float, newScale: Float) {
-                                canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
-                                    view?.canScrollHorizontally(1) == true
-                            }
-                            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
-                                canGoBack = view?.canGoBack() == true
-                            }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                canGoBack = view?.canGoBack() == true
-                                canPanHorizontally = view?.canScrollHorizontally(-1) == true ||
-                                    view?.canScrollHorizontally(1) == true
-                            }
-                        }
-                        loadUrl("https://music.163.com/#/login")
-                        webView = this
-                    }
-                },
-                modifier = Modifier.fillMaxSize().padding(padding)
-                    .swipeBackExcluded(canGoBack || canPanHorizontally),
-            )
-        }
-        if (!detected && !showCookieLoginSheet) {
-            GlasmioButton(
-                onClick = {
-                    cookieLogin.pauseForManualLogin()
-                    showCookieLoginSheet = true
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .glasmioAdaptiveContent()
-                    .padding(
-                        start = 18.dp,
-                        end = 18.dp,
-                        bottom = bottomPadding + 12.dp,
-                    )
-                    .fillMaxWidth(),
+    MeiloXPinnedPage(
+        title = stringResource(R.string.netease_web_login),
+        bottomPadding = bottomPadding,
+        onNavigateBack = navController::navigateUp,
+        actions = {
+            if (detected) listOf(meiloxHeaderAction("done", stringResource(R.string.done), navController::finishNeteaseLogin) {
+                Text(stringResource(R.string.done), color = LocalGlassColors.current.accent)
+            }) else emptyList()
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            if (!detected && !failed) CircularProgressIndicator(Modifier.align(Alignment.Center))
+            if (failed) GlasmioButton(
+                onClick = { failed = false; attempt++ },
+                modifier = Modifier.align(Alignment.Center),
+            ) { Text(stringResource(R.string.retry)) }
+            if (!detected) GlasmioButton(
+                onClick = { showCookieLoginSheet = true },
+                modifier = Modifier.align(Alignment.BottomCenter).glasmioAdaptiveContent()
+                    .padding(horizontal = 18.dp, vertical = 12.dp).fillMaxWidth(),
                 style = GlassSurfaceStyle.Navigation,
             ) {
                 SfIcon("key", null, size = 19.dp)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.netease_cookie_login),
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text(stringResource(R.string.netease_cookie_login), fontWeight = FontWeight.SemiBold)
             }
         }
     }
-    if (showCookieLoginSheet) {
-        NeteaseCookieLoginSheet(
-            onDismiss = {
-                cookieLogin.resumeWebLogin()
-                showCookieLoginSheet = false
-            },
-            onSubmit = { musicU -> cookieLogin.loginManually(musicU, viewModel::loginWithCookie) },
-            onLoginSuccess = {
-                showCookieLoginSheet = false
-                detected = true
-                navController.finishNeteaseLogin()
-            },
-        )
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            webView?.apply {
-                stopLoading()
-                webViewClient = WebViewClient()
-                destroy()
-            }
-            webView = null
-            canGoBack = false
-            canPanHorizontally = false
-        }
-    }
+    if (showCookieLoginSheet) NeteaseCookieLoginSheet(
+        onDismiss = { showCookieLoginSheet = false },
+        onSubmit = viewModel::loginWithCookie,
+        onLoginSuccess = { showCookieLoginSheet = false; detected = true; navController.finishNeteaseLogin() },
+    )
 }
 
 internal fun MeiNavigator.finishNeteaseLogin() {
@@ -498,9 +379,14 @@ private fun NeteaseCookieLoginSheet(
 
 @HiltViewModel
 class NeteaseLoginViewModel @Inject constructor(
-    @ApplicationContext private val context: android.content.Context,
-    private val repository: MeloXRepository,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("source-login", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
+    init { viewModelScope.launch { runCatching { repository.features() } } }
+    suspend fun webLogin() = repository.webLogin()
+
     suspend fun loginWithMobilePassword(
         phone: String,
         countryCode: String,
@@ -513,8 +399,9 @@ class NeteaseLoginViewModel @Inject constructor(
         activity: android.app.Activity,
         phone: String,
         countryCode: String,
-    ) {
-        repository.requestMobileSmsCode(activity, phone, countryCode)
+    ): Boolean {
+        val authenticated = repository.requestMobileSmsCode(phone, countryCode)
+        return authenticated
     }
 
     suspend fun loginWithMobileSms(
@@ -525,38 +412,19 @@ class NeteaseLoginViewModel @Inject constructor(
         repository.loginWithMobileSms(phone, countryCode, code)
     }
 
-    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge) {
-        repository.loginWithUpSms(challenge)
-    }
-
-    suspend fun loginWithCookie(musicU: String): Boolean {
-        val profile = try {
-            repository.accountProfile(webCookie = musicU)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            return false
-        }
-        currentCoroutineContext().ensureActive()
-        context.dataStore.edit { preferences ->
-            currentCoroutineContext().ensureActive()
-            preferences.setNeteaseWebSession(musicU)
-            preferences[UserIdKey] = profile.id.toString()
-            preferences[UserNicknameKey] = profile.nickname
-            if (profile.avatarUrl == null) preferences.remove(UserAvatarUrlKey)
-            else preferences[UserAvatarUrlKey] = profile.avatarUrl
-        }
-        return true
-    }
+    suspend fun loginWithCookie(musicU: String): Boolean = try {
+        repository.importCookie(musicU)
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { false }
 }
 
-suspend fun logoutNetease(context: android.content.Context) {
-    withContext(Dispatchers.Main) {
-        suspendCancellableCoroutine { continuation ->
-            CookieManager.getInstance().removeAllCookies {
-                if (continuation.isActive) continuation.resume(Unit)
-            }
-        }
-    }
-    context.dataStore.edit { it.clearNeteaseAccountSession() }
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+internal interface OnlineLogoutEntryPoint {
+    fun onlineRepository(): SharedOnlineRepository
+}
+
+suspend fun logoutNetease(context: android.content.Context, providerId: String? = null) {
+    dagger.hilt.android.EntryPointAccessors.fromApplication(context, OnlineLogoutEntryPoint::class.java)
+        .onlineRepository().screen("source-logout", providerId).logout()
 }

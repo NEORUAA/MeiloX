@@ -10,19 +10,15 @@ import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.data.model.PLACEHOLDER_URI
 import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.metadata
-import com.ljyh.mei.data.model.api.GetRandomPlaylist
-import com.ljyh.mei.data.model.api.RandomPlaylistData
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.toSourceTrack
-import com.ljyh.mei.source.netease.NeteaseQueueTransport
 import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.source.api.Track
 import com.ljyh.mei.source.api.TrackRef
 import com.ljyh.mei.source.api.ProviderInstanceId
+import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.source.core.SourceRouter
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.playback.queue.SourceContentQueue
@@ -46,24 +42,12 @@ import timber.log.Timber
 @OptIn(UnstableApi::class)
 class PlaybackQueueManager(
     private val player: Player,
-    private val native: NeteaseQueueTransport,
+    private val sources: QueueSourceActions,
     private val scope: CoroutineScope,
     private val sourceRouter: SourceRouter? = null,
     private val serverShuffleAllowed: () -> Boolean = { true },
-    private val radioItemFactory: (com.ljyh.mei.data.model.weapi.Data) -> MediaItem = {
-        it.toMediaMetadata().toMediaItem()
-    },
+    private val radioItemFactory: (Track) -> MediaItem = { it.toMediaMetadata().toMediaItem() },
 ) : Player.Listener {
-
-    internal constructor(
-        player: Player,
-        apiService: ApiService,
-        weApiService: WeApiService,
-        scope: CoroutineScope,
-        serverShuffleAllowed: () -> Boolean = { true },
-        radioItemFactory: (com.ljyh.mei.data.model.weapi.Data) -> MediaItem = { it.toMediaMetadata().toMediaItem() },
-    ) : this(player, NeteaseQueueTransport(apiService, weApiService), scope,
-        serverShuffleAllowed = serverShuffleAllowed, radioItemFactory = radioItemFactory)
 
     private val TAG = "QueueManager"
     private val _queueState = MutableStateFlow<QueueState>(QueueState.Idle)
@@ -74,6 +58,8 @@ class PlaybackQueueManager(
     private var queueBuildGeneration = 0L
     private var activeFmGeneration: Long? = null
     private var similarFmRequest: SimilarFmRequest? = null
+    private var fmSource: QueueSourceSession? = null
+    private var fmProviderId: String? = null
     private val _privateFmMode = MutableStateFlow(PrivateFmMode.DEFAULT)
     val privateFmMode = _privateFmMode.asStateFlow()
     private val _privateFmScene = MutableStateFlow<PrivateFmScene?>(null)
@@ -218,17 +204,13 @@ class PlaybackQueueManager(
         val generation = ++serverShuffleGeneration
         serverShuffleJob = scope.launch(Dispatchers.Main) {
             try {
-                val data = fetchCloudShuffleOrNull {
-                    native.getRandomPlaylist(GetRandomPlaylist(source.playlistId, seedId, source.alg))
-                }
+                val owner = sources.open(currentSourceProviderId())
+                val data = owner.shuffle(source.playlistId.toString(), seedId.toString(), source.alg)
+                owner.ensureCurrent()
                 currentCoroutineContext().ensureActive()
                 if (generation != serverShuffleGeneration || playlistSource != source ||
                     cloudShuffleEnabled != true || !player.shuffleModeEnabled || isFmMode || !serverShuffleAllowed()
                 ) return@launch
-                if (data == null) {
-                    Log.w(TAG, "Cloud shuffle failed; continuing the existing local shuffle")
-                    return@launch
-                }
                 stablePlayer.withInternalQueueUpdate { applyServerShuffle(stablePlayer, data) }
                 checkAndLoadMetadata()
             } catch (error: CancellationException) {
@@ -241,9 +223,8 @@ class PlaybackQueueManager(
         }
     }
 
-    private fun applyServerShuffle(stablePlayer: StableDeckPlayer, data: RandomPlaylistData) {
-        val songIds = data.songIds.orEmpty().map { it.id.toString() }.distinct()
-            .filter { (it.toLongOrNull() ?: 0) > 0 }
+    private fun applyServerShuffle(stablePlayer: StableDeckPlayer, data: SourceShufflePage) {
+        val songIds = data.order.map(TrackRefCodec::mediaId).distinct()
         if (songIds.isEmpty() || player.mediaItemCount == 0) return
         val previousOrder = player.playbackOrderIndices()
         val currentPosition = previousOrder.indexOf(player.currentMediaItemIndex)
@@ -252,10 +233,10 @@ class PlaybackQueueManager(
             .mapNotNull { player.getMediaItemAt(it).queueEntryId }.toSet()
         val protectedOrder = previousOrder.take(currentPosition + 1)
             .mapNotNull { player.getMediaItemAt(it).queueEntryId }
-        val unavailableIds = data.privileges.orEmpty().filter { it.isUnavailable }
-            .map { it.id.toString() }.toSet()
-        val tracks = data.songData.orEmpty().associateBy { it.id.toString() }
-        val resolvedTracks = tracks.mapValues { (_, track) -> runCatching { track.toMediaItem() }.getOrNull() }
+        val unavailableIds = data.unavailable.map(TrackRefCodec::mediaId).toSet()
+        val resolvedTracks = data.tracks.associate { track ->
+            TrackRefCodec.mediaId(track.ref) to runCatching { track.toMediaMetadata().toMediaItem() }.getOrNull()
+        }
 
         // Keep the current/history prefix, but do not introduce known unavailable tracks.
         for (index in player.mediaItemCount - 1 downTo 0) {
@@ -289,12 +270,12 @@ class PlaybackQueueManager(
         stablePlayer.setPlaybackOrder(prefix + ordered)
     }
 
-    fun startFmMode(seedItem: MediaItem) {
+    fun startFmMode(seedItem: MediaItem, providerId: String? = null) {
         cancelActiveQueueBuild()
         val generation = queueBuildGeneration
         activeQueueBuildJob = scope.launch(Dispatchers.Main) {
             try {
-                startFmPlayback(seedItem, generation)
+                startFmPlayback(seedItem, generation, providerId)
             } catch (e: CancellationException) {
                 throw e
             } finally {
@@ -305,20 +286,20 @@ class PlaybackQueueManager(
         }
     }
 
-    fun startFmModeById(seedId: String?) {
+    fun startFmModeById(seedId: String?, providerId: String? = null) {
         cancelActiveQueueBuild()
         val generation = queueBuildGeneration
         activeQueueBuildJob = scope.launch(Dispatchers.Main) {
             try {
                 if (generation != queueBuildGeneration) return@launch
                 if (seedId == null) {
-                    startFmPlayback(null, generation)
+                    startFmPlayback(null, generation, providerId)
                 } else {
                     // 先加载这首歌的详情，再进入 FM；新播放请求会取消此 job。
-                    val details = loadSongDetails(listOf(seedId))
+                    val details = loadSongDetails(listOf(seedId), providerId)
                     currentCoroutineContext().ensureActive()
                     if (generation != queueBuildGeneration) return@launch
-                    startFmPlayback(details.firstOrNull(), generation)
+                    startFmPlayback(details.firstOrNull(), generation, providerId)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -351,14 +332,21 @@ class PlaybackQueueManager(
     }
 
     suspend fun loadPrivateFmScenes(): List<PrivateFmScene> = withContext(Dispatchers.IO) {
-        parsePrivateFmScenes(native.getPrivateFmModes(mapOf(
-            "positionCode" to "FMTopModeDialog",
-            "extJson" to """{"isHomePageNewFramework":true,"userSetFMMode":true,"enableAutoPlay":true}""",
-        )))
+        (fmSource ?: sources.open(fmProviderId ?: currentSourceProviderId())).scenes()
+    }
+
+    private fun currentSourceProviderId(): String? = player.currentMediaItem?.let { item ->
+        item.metadata?.trackRef?.providerId ?: TrackRefCodec.decode(item.mediaId)?.providerId
     }
 
     fun startSimilarFmMode(
         songIds: List<String>,
+        shouldPlay: () -> Boolean = { true },
+    ): Deferred<Boolean> = startSimilarFmMode(songIds, providerId = null, shouldPlay = shouldPlay)
+
+    fun startSimilarFmMode(
+        songIds: List<String>,
+        providerId: String?,
         shouldPlay: () -> Boolean = { true },
     ): Deferred<Boolean> {
         val request = SimilarFmRequest.fromSongIds(songIds) ?: return CompletableDeferred(false)
@@ -368,13 +356,12 @@ class PlaybackQueueManager(
         val result = scope.async(Dispatchers.Main, start = CoroutineStart.LAZY) {
             try {
                 _queueState.value = QueueState.Loading(SIMILAR_FM_TITLE)
-                val response = native.getRadio(request.body())
+                val owner = sources.open(providerId ?: currentSourceProviderId())
+                val tracks = owner.radio(request.body(), similar = true)
                 currentCoroutineContext().ensureActive()
+                owner.ensureCurrent()
                 if (generation != queueBuildGeneration || !shouldPlay()) return@async false
-                val items = if (response.code == 200) response.data.orEmpty()
-                    .filter { it.id > 0 }.distinctBy { it.id }
-                    .mapNotNull { runCatching { radioItemFactory(it) }.getOrNull() }
-                else emptyList()
+                val items = tracks.distinctBy { it.ref }.mapNotNull { runCatching { radioItemFactory(it) }.getOrNull() }
                 if (items.isEmpty()) {
                     _queueState.value = QueueState.Error("相似歌曲 FM 加载失败")
                     return@async false
@@ -383,6 +370,8 @@ class PlaybackQueueManager(
                 // Keep the current queue until a valid recommendation response is ready.
                 pendingSimilarGeneration = null
                 similarFmRequest = request
+                fmSource = owner
+                fmProviderId = owner.providerId
                 isFmMode = true
                 _queueAutoplayEnabled.value = false
                 _queueAutoplayStartEntryId.value = null
@@ -423,9 +412,13 @@ class PlaybackQueueManager(
             if (isFmMode) return false
             val current = player.currentMediaItem ?: return false
             if (current.metadata?.isLocal == true || current.metadata?.isPodcast == true) return false
-            val request = SimilarFmRequest.fromSongIds(listOf(current.mediaId)) ?: return false
+            val ref = current.metadata?.trackRef ?: TrackRefCodec.decode(current.mediaId) ?: return false
+            if (ref.providerId == ProviderIds.LOCAL) return false
+            val request = SimilarFmRequest.fromSongIds(listOf(ref.trackId)) ?: return false
             cancelActiveQueueBuild(clearPlaylistSource = false)
             restoreFmMode(true, request.sourceIds, queueAutoplay = true)
+            fmSource = null
+            fmProviderId = ref.providerId
             scope.launch { fetchAndAppendFmRecommendations(current.mediaId) }
         } else {
             // Invalidate even a transport that finishes after a quick off/on toggle.
@@ -444,7 +437,7 @@ class PlaybackQueueManager(
         // An invalid saved similar context must not silently request personal FM.
         isFmMode = enabled && (similarSourceIds == null || similarFmRequest != null) &&
             (!queueAutoplay || similarFmRequest != null)
-        if (!isFmMode) similarFmRequest = null
+        if (!isFmMode) { similarFmRequest = null; fmSource = null; fmProviderId = null }
         if (isFmMode && similarFmRequest == null) {
             recentPersonalFmIds.clear()
             (0 until player.mediaItemCount).forEach {
@@ -474,7 +467,9 @@ class PlaybackQueueManager(
         queueAutoplayQueueEntryIds = currentIds
     }
 
-    private suspend fun startFmPlayback(seedItem: MediaItem?, generation: Long) {
+    private suspend fun startFmPlayback(seedItem: MediaItem?, generation: Long, providerId: String? = null) {
+        fmSource = null
+        fmProviderId = providerId ?: seedItem?.metadata?.trackRef?.providerId ?: currentSourceProviderId()
         if (generation != queueBuildGeneration) return
 
         isFmMode = true
@@ -522,15 +517,18 @@ class PlaybackQueueManager(
         val scene = _privateFmScene.value
         if (request == null) _privateFmBusy.value = true
         try {
-            val response = if (request != null) native.getRadio(request.body()) else {
+            val owner = fmSource ?: sources.open(fmProviderId ?: currentSourceProviderId()).also { fmSource = it }
+            val tracks = if (request != null) owner.radio(request.body(), similar = true) else {
                 val queuedIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
-                native.getPersonalRadio(mode.requestBody(recentPersonalFmIds.toList() + queuedIds, scene))
+                owner.radio(mode.parameters((recentPersonalFmIds.toList() + queuedIds).mapNotNull { id ->
+                    val ref = TrackRefCodec.decode(id)
+                    if (ref == null) id else ref.takeIf { it.providerId == owner.providerId }?.trackId
+                }, scene), similar = false)
             }
-            check(response.code == 200) { "漫游推荐加载失败 (${response.code})" }
-            check(!response.data.isNullOrEmpty()) { "暂时没有新的推荐歌曲" }
-            if (response.code == 200 && !response.data.isNullOrEmpty()) {
-                val items = response.data.filter { it.id > 0 }
-                    .mapNotNull { runCatching { radioItemFactory(it) }.getOrNull() }
+            owner.ensureCurrent()
+            check(tracks.isNotEmpty()) { "暂时没有新的推荐歌曲" }
+            if (tracks.isNotEmpty()) {
+                val items = tracks.mapNotNull { runCatching { radioItemFactory(it) }.getOrNull() }
 
                 withContext(Dispatchers.Main) {
                     if (!isFmMode || fmGeneration != activeFmGeneration ||
@@ -1060,18 +1058,12 @@ class PlaybackQueueManager(
     }
 
 
-    private suspend fun loadSongDetails(ids: List<String>): List<MediaItem> {
+    private suspend fun loadSongDetails(ids: List<String>, providerId: String? = null): List<MediaItem> {
         return withContext(Dispatchers.IO) {
             try {
-                val router = sourceRouter
-                if (router == null) {
-                    // Compatibility for the existing native queue test harness.
-                    val response = native.getSongDetail(
-                        com.ljyh.mei.data.model.api.GetSongDetails(c = ids.joinToString(","))
-                    )
-                    response.songs.map { it.toMediaItem() }
-                } else ids.mapNotNull(TrackRefCodec::decode).groupBy { it.providerId }.values.flatMap { refs ->
-                    try { router.getTracks(refs).map { it.toMediaMetadata().toMediaItem() } }
+                ids.mapNotNull { id -> if (providerId == null) TrackRefCodec.decode(id) else TrackRef(providerId, id) }
+                    .groupBy { it.providerId }.values.flatMap { refs ->
+                    try { sources.tracks(refs).map { it.toMediaMetadata().toMediaItem() } }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: com.ljyh.mei.source.api.SourceException) { emptyList() }
                 }

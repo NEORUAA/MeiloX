@@ -23,7 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
-import coil3.ImageLoader
+import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -60,7 +60,7 @@ fun AmbientBackground(
 
         // 放在 IO 线程，不阻塞 UI
         withContext(Dispatchers.IO) {
-            val loader = ImageLoader(context)
+            val loader = context.imageLoader
             val request = ImageRequest.Builder(context)
                 .data(imageUrl)
                 .size(200) // 稍微大一点点以获得更准确的色调，但仍然很小

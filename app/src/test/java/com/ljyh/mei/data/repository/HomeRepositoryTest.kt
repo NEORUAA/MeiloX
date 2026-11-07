@@ -1,213 +1,233 @@
 package com.ljyh.mei.data.repository
 
-import com.ljyh.mei.source.netease.repository.*
-
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.mutablePreferencesOf
-import com.google.gson.Gson
-import com.google.gson.JsonParser
-import com.google.gson.JsonSyntaxException
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.NeteaseSessionTypeKey
-import com.ljyh.mei.constants.NeteaseUrsAppIdKey
-import com.ljyh.mei.constants.UserIdKey
-import com.ljyh.mei.data.model.eapi.HomePageResourceShow
-import com.ljyh.mei.data.model.eapi.HomePageResourceShow.Data.Block
-import com.ljyh.mei.data.network.NeteaseSessionType
-import com.ljyh.mei.data.network.Resource
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.lifecycle.viewModelScope
+import com.google.gson.JsonObject
+import com.google.gson.JsonElement
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.*
+import com.ljyh.mei.ui.screen.source.SourceContentRequest
+import com.ljyh.mei.ui.screen.source.SourceContentViewModel
 import java.io.File
-import java.io.IOException
 import java.time.Instant
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.withContext
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+/** The previous Home cache policies now operate on source-neutral normalized content. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class HomeRepositoryTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val gson = Gson()
-    private val now = Instant.parse("2026-10-15T04:00:00Z").toEpochMilli()
-
-    @Test
-    fun radarArtworkUsesOnlyTheCurrentOwnersDailyCacheWithoutFetching() = runBlocking {
-        val blocks = listOf(gson.fromJson(
-            """{"positionCode":"PAGE_RECOMMEND_RADAR","dslData":{"template":{"blockResource":{"resources":[
-                {"resourceId":"5300458264","coverImg":"https://p1.music.126.net/uUUN57qTiveMY442WVWK2g==/109951168539760536.jpg?imageView=1%7Cwatermark&type=1&image=caption%7Cwatermark&type=1&image=dim"},
-                {"resourceId":"5320167908","coverImg":"https://p1.music.126.net/2XJqd79V8LfCdW0TAGXhIQ==/109951164787608780.jpg"}
-            ]}}}}""", Block::class.java,
-        ))
-        var requests = 0
-        val fixture = Fixture { requests++; blocks }
-        assertEquals(null, fixture.repository.cachedRadarCover("5300458264"))
-        assertEquals(0, requests)
-        fixture.repository.getHomePageResourceShow()
-        assertEquals("https://p1.music.126.net/uUUN57qTiveMY442WVWK2g==/109951168539760536.jpg?imageView=1",
-            fixture.repository.cachedRadarCover("5300458264"))
-        assertEquals("https://p1.music.126.net/2XJqd79V8LfCdW0TAGXhIQ==/109951164787608780.jpg",
-            fixture.repository.cachedRadarCover("5320167908"))
-        assertEquals(null, fixture.repository.cachedRadarCover("8402996200"))
-        assertEquals(1, requests)
-        fixture.preferences.value = account("42")
-        assertEquals(null, fixture.repository.cachedRadarCover("5300458264"))
-        fixture.preferences.value = account()
-        val expired = HomeRepository(fixture.file, fixture.preferences, { error("Unexpected fetch") }, { now + 24 * 60 * 60 * 1000 })
-        assertEquals(null, expired.cachedRadarCover("5300458264"))
+    private val dispatcher = StandardTestDispatcher()
+    private val models = mutableListOf<SourceContentViewModel>()
+    private val fetchedAt = Instant.parse("2026-10-15T04:00:00Z").toEpochMilli()
+    private var now = fetchedAt
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() = runTest(dispatcher) {
+        try {
+            val jobs = models.mapNotNull { it.viewModelScope.coroutineContext[Job] }
+            jobs.forEach { it.cancel() }
+            jobs.joinAll()
+        } finally { Dispatchers.resetMain() }
     }
 
-    @Test
-    fun completedFeedIsCachedForTheOwnerAndExplicitRefreshReplacesIt() = runBlocking {
-        val refreshes = mutableListOf<Boolean>()
-        val fixture = Fixture { refresh ->
-            refreshes += refresh
-            blocks("PAGE_${refreshes.size}")
+    @Test fun normalizedCacheRoundTripsAllContentAndSourceOwnedTargets() = runBlocking {
+        val fixture = Fixture()
+        val page = fixture.richFeed()
+        assertTrue(fixture.cache.write(fixture.owner, page))
+        assertEquals(page, fixture.cache.read(fixture.owner, fixture.provider))
+        val bytes = fixture.cache.file(fixture.owner).readText()
+        assertFalse(bytes.contains("private-account-revision"))
+        assertFalse(bytes.contains("dslData"))
+        assertEquals(1, fixture.directory.listFiles()!!.size)
+        val corrupted = fixture.cache.file(fixture.owner).readBytes()
+        val title = bytes.indexOf("Home")
+        corrupted[title] = 0xc3.toByte()
+        fixture.cache.file(fixture.owner).writeBytes(corrupted)
+        assertNull(fixture.cache.read(fixture.owner, fixture.provider))
+        assertArrayEquals(corrupted, fixture.cache.file(fixture.owner).readBytes())
+    }
+
+    @Test fun sourceVersionInstanceAndAccountEachHaveTheirOwnCache() = runBlocking {
+        val fixture = Fixture()
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        for (other in listOf(fixture.owner.copy(providerId = "another"), fixture.owner.copy(instanceId = ProviderInstanceId("another:instance")),
+            fixture.owner.copy(version = "next"), fixture.owner.copy(accountRevision = "other"), fixture.owner.copy(accountRevision = null))) {
+            assertNull(fixture.cache.read(other, fixture.provider))
         }
-
-        assertEquals(listOf("PAGE_1"), fixture.repository.getHomePageResourceShow().positions())
-        assertEquals(listOf("PAGE_1"), fixture.repository.getHomePageResourceShow().positions())
-        assertEquals(listOf("PAGE_2"), fixture.repository.getHomePageResourceShow(refresh = true).positions())
-        assertEquals(listOf(false, true), refreshes)
-        val cached = JsonParser.parseString(fixture.file.readText()).asJsonObject
-        assertEquals(2, cached["version"].asInt)
-        assertEquals("Mobile", cached.getAsJsonObject("owner")["sessionType"].asString)
-        assertEquals(now, cached["fetchedAt"].asLong)
-        assertFalse(fixture.file.readText().contains("private-session-cookie"))
-        assertEquals(listOf(fixture.file.name), fixture.file.parentFile.list()!!.toList())
+        assertTrue(fixture.cache.file(fixture.owner).name.matches(Regex("[a-f0-9]{64}\\.json")))
+        assertFalse(fixture.owner.toString().contains("private-account-revision"))
     }
 
-    @Test
-    fun legacyMalformedAndIncompatibleCachesRefetchWithoutChangingBytesOnFailure() = runBlocking {
-        val invalidCaches = listOf(
-            gson.toJson(blocks("LEGACY")),
-            "{broken",
-            "null",
-            "{}",
-            cacheJson(version = 1),
-            cacheJson(owner = HomePageOwner("17", NeteaseSessionType.Web)),
-            cacheJson(owner = HomePageOwner("42", NeteaseSessionType.Mobile)),
-            cacheJson(fetchedAt = now - 24 * 60 * 60 * 1000),
-            cacheJson(fetchedAt = now + 1),
-        )
-        for (cached in invalidCaches) {
-            var calls = 0
-            val fixture = Fixture { calls++; throw IOException("offline") }
-            fixture.file.writeText(cached)
-            val before = fixture.file.readBytes()
+    @Test fun cacheSurvivesMidnightButExpiresAtSixAmShanghaiAndRejectsTheFuture() = runBlocking {
+        val fixture = Fixture()
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        now = Instant.parse("2026-10-15T21:59:59Z").toEpochMilli()
+        assertNotNull(fixture.cache.read(fixture.owner, fixture.provider))
+        now = Instant.parse("2026-10-15T22:00:00Z").toEpochMilli()
+        assertNull(fixture.cache.read(fixture.owner, fixture.provider))
+        now = fetchedAt - 1
+        assertNull(fixture.cache.read(fixture.owner, fixture.provider))
+    }
 
-            assertEquals(Resource.Error("offline"), fixture.repository.getHomePageResourceShow())
-            assertEquals(1, calls)
-            assertArrayEquals(before, fixture.file.readBytes())
+    @Test fun corruptLegacyAndIncompatibleRecordsAreMissesWithoutChangingTheirBytes() = runBlocking {
+        val fixture = Fixture()
+        for (invalid in listOf("{broken", "null", "{}", "[]", """{"version":2,"feed":{}}""", "[".repeat(65) + "]".repeat(65))) {
+            fixture.directory.mkdirs()
+            val file = fixture.cache.file(fixture.owner)
+            file.writeText(invalid)
+            val before = file.readBytes()
+            assertNull(fixture.cache.read(fixture.owner, fixture.provider))
+            assertArrayEquals(before, file.readBytes())
+            assertFalse(fixture.cache.write(fixture.owner, fixture.richFeed().copy(hasMore = true)))
+            assertArrayEquals(before, file.readBytes())
         }
     }
 
-    @Test
-    fun sameAccountWebToMobileAndAccountChangesLoadTheirOwnFeed() = runBlocking {
-        var calls = 0
-        val fixture = Fixture { blocks("PAGE_${++calls}") }
-        fixture.preferences.value = account(type = NeteaseSessionType.Web)
-        assertEquals(listOf("PAGE_1"), fixture.repository.getHomePageResourceShow().positions())
-
-        // Older mobile sessions identify their origin through URS_APPID.
-        fixture.preferences.value = mutablePreferencesOf(
-            CookieKey to "private-session-cookie", UserIdKey to "17", NeteaseUrsAppIdKey to "mobile-app",
-        )
-        assertEquals(listOf("PAGE_2"), fixture.repository.getHomePageResourceShow().positions())
-        assertEquals(listOf("PAGE_2"), fixture.repository.getHomePageResourceShow().positions())
-        fixture.preferences.value = account(userId = "42")
-        assertEquals(listOf("PAGE_3"), fixture.repository.getHomePageResourceShow().positions())
-        assertEquals(3, calls)
-    }
-
-    @Test
-    fun failedAndCancelledRefreshesPreserveTheCompletedCache() = runBlocking {
-        var failure: Exception? = null
-        val fixture = Fixture { failure?.let { throw it }; blocks("COMPLETE") }
-        fixture.repository.getHomePageResourceShow()
-        val before = fixture.file.readBytes()
-        for (error in listOf(IOException("offline"), JsonSyntaxException("bad page"), CancellationException("cancelled"))) {
-            failure = error
+    @Test fun failedCancelledAndStaleWritesPreserveTheCompletedCache() = runBlocking {
+        val fixture = Fixture()
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        val before = fixture.cache.file(fixture.owner).readBytes()
+        for (failure in listOf(CancellationException("owner changed"), java.io.IOException("offline"))) {
+            var checks = 0
             try {
-                val result = fixture.repository.getHomePageResourceShow(refresh = true)
-                if (error is CancellationException) fail("Cancellation must propagate")
-                assertEquals(Resource.Error(error.message!!), result)
-            } catch (actual: CancellationException) {
-                assertTrue(error is CancellationException)
-                assertEquals(error.message, actual.message)
-            }
-            assertArrayEquals(before, fixture.file.readBytes())
+                val written = fixture.cache.write(fixture.owner, fixture.richFeed("replacement")) {
+                    if (++checks == 2) throw failure
+                }
+                assertFalse(written)
+                assertFalse(failure is CancellationException)
+            } catch (cancelled: CancellationException) { assertTrue(failure is CancellationException) }
+            assertArrayEquals(before, fixture.cache.file(fixture.owner).readBytes())
+            assertEquals(1, fixture.directory.listFiles()!!.size)
         }
     }
 
-    @Test
-    fun lateResponseForThePreviousOwnerCannotReplaceTheCache() = runBlocking {
-        val started = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val fixture = Fixture {
-            started.complete(Unit)
-            withContext(NonCancellable) { release.await() }
-            blocks("OLD_RESPONSE")
+    @Test fun oversizedPayloadCannotReplaceACompletedCache() = runBlocking {
+        val fixture = Fixture()
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        val before = fixture.cache.file(fixture.owner).readBytes()
+        val tooLarge = SourceFeedPage(listOf(SourceFeedSection("oversized", "", SourceFeedLayout.ARTISTS,
+            listOf(SourceItem.ArtistItem(SourceArtistInfo(ArtistRef("qq", "artist"), "Artist", description = "x".repeat(8 * 1024 * 1024)))))))
+        assertFalse(fixture.cache.write(fixture.owner, tooLarge))
+        assertArrayEquals(before, fixture.cache.file(fixture.owner).readBytes())
+    }
+
+    @Test fun cachedArtworkUsesOnlyTheFreshOwnerAndNeverFetches() = runBlocking {
+        val fixture = Fixture()
+        val playlist = PlaylistRef("qq", "playlist-007")
+        assertNull(fixture.cache.cachedArtwork(fixture.owner, fixture.provider, playlist))
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        assertEquals(fixture.artwork, fixture.cache.cachedArtwork(fixture.owner, fixture.provider, playlist))
+        assertNull(fixture.cache.cachedArtwork(fixture.owner.copy(accountRevision = "another"), fixture.provider, playlist))
+        assertNull(fixture.cache.cachedArtwork(fixture.owner, fixture.provider, PlaylistRef("other", playlist.playlistId)))
+        assertEquals(0, fixture.provider.requests.size)
+    }
+
+    @Test fun completePagedHomeIsReusedAndExplicitRefreshBypassesIt() = runTest(dispatcher) {
+        val fixture = Fixture()
+        val first = fixture.model()
+        first.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
+        first.state.first { !it.loading && it.sections.size == 2 }
+        awaitCache(fixture)
+        assertEquals(listOf(0, 30), fixture.provider.requests.map { it.offset })
+        first.viewModelScope.cancel()
+        val reopened = fixture.model()
+        reopened.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
+        reopened.state.first { !it.loading && it.sections.size == 2 }
+        assertEquals(2, fixture.provider.requests.size)
+        reopened.refresh()
+        reopened.state.first { !it.loading && fixture.provider.requests.size == 4 }
+        assertEquals(listOf(false, false, true, false), fixture.provider.requests.map { it.refresh })
+    }
+
+    @Test fun failedLaterHomePageAndCorruptRefetchKeepSavedBytesUntilSuccess() = runTest(dispatcher) {
+        val fixture = Fixture()
+        fixture.cache.write(fixture.owner, fixture.richFeed())
+        val before = fixture.cache.file(fixture.owner).readBytes()
+        val vm = fixture.model()
+        vm.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
+        vm.state.first { !it.loading && it.sections.isNotEmpty() }
+        fixture.provider.failAppend = true
+        vm.refresh()
+        vm.state.first { !it.loading && it.error != null }
+        assertArrayEquals(before, fixture.cache.file(fixture.owner).readBytes())
+        assertEquals(SourceErrorCode.NETWORK, vm.state.value.error)
+        vm.viewModelScope.cancel()
+        fixture.cache.file(fixture.owner).writeText("{broken")
+        fixture.provider.failAppend = false
+        val reopened = fixture.model()
+        reopened.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
+        reopened.state.first { !it.loading && it.sections.size == 2 }
+        awaitCache(fixture, rejects = "{broken")
+        assertNotNull(fixture.cache.read(fixture.owner, fixture.provider))
+    }
+
+    private suspend fun awaitCache(fixture: Fixture, rejects: String? = null) = withContext(Dispatchers.IO) {
+        withTimeout(3_000) {
+            while (!fixture.cache.file(fixture.owner).isFile || rejects != null && fixture.cache.file(fixture.owner).readText() == rejects) delay(10)
         }
-        fixture.file.writeText(cacheJson())
-        val before = fixture.file.readBytes()
+    }
 
-        supervisorScope {
-            val request = async { fixture.repository.getHomePageResourceShow(refresh = true) }
-            started.await()
-            fixture.preferences.value = account(type = NeteaseSessionType.Web)
-            release.complete(Unit)
-            try {
-                request.await()
-                fail("A response for the previous owner must be cancelled")
-            } catch (_: CancellationException) {
-                assertTrue(request.isCancelled)
-            }
+    private inner class Fixture {
+        val directory = temporary.newFolder()
+        val artwork = File(temporary.root, "cover.jpg").toURI().toString()
+        val provider = FeedProvider()
+        val owner = SourceHomeCacheOwner(provider.id, provider.instanceId, provider.version, provider.accountRevision.value)
+        val cache = SourceHomeFeedCache(directory, listOf(temporary.root)) { now }
+        fun model(): SourceContentViewModel {
+            val registry = ProviderRegistry(listOf(provider))
+            return SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()), registry, homeCache = cache).also(models::add)
         }
-        assertArrayEquals(before, fixture.file.readBytes())
+        fun richFeed(title: String = "Home"): SourceFeedPage {
+            val artist = SourceArtistInfo(ArtistRef("qq", "artist/A"), "Artist", artwork, "Biography", listOf("Alias"), 12, 4, 0,
+                listOf("Composer"), listOf(SourceArtistExpertise("Piano", 9)), listOf("Translated"), listOf("Alias"))
+            val playlist = SourcePlaylist(PlaylistRef("qq", "playlist-007"), "Playlist", artwork, "Creator", 120, playCount = 12_345L)
+            val album = SourceAlbumInfo(AlbumRef("qq", "album-2"), "Album", artwork, listOf(SourceArtist("Artist", artist.ref)), 120, publishedAtMs = 1234)
+            val items = listOf(SourceItem.PlaylistItem(playlist), SourceItem.AlbumItem(album), SourceItem.ArtistItem(artist))
+            val targets = listOf(SourceFeedTarget.Content(playlist.ref), SourceFeedTarget.Route("podcasts"),
+                SourceFeedTarget.Radio(listOf("track-1")), SourceFeedTarget.Queue("discovery", "dailySongs", JsonObject().apply { addProperty("id", "public-id") }))
+            return SourceFeedPage(listOf(SourceFeedSection("hero", title, SourceFeedLayout.HERO, items,
+                targets.mapIndexed { index, target -> SourceFeedCard("card-$index", "Card", artwork, "Subtitle", artwork, target) }),
+                SourceFeedSection("tracks", "Tracks", SourceFeedLayout.TRACKS, (1..120).map {
+                    SourceItem.TrackItem(Track(TrackRef("qq", "track-$it"), "Track $it", listOf(SourceArtist("Artist", artist.ref)), SourceAlbum("Album", album.ref), 1000, artwork))
+                }), SourceFeedSection("radar", "Radar", SourceFeedLayout.PLAYLISTS, listOf(SourceItem.PlaylistItem(playlist)),
+                    listOf(SourceFeedCard("radar-card", "", artwork, "Creator", "", SourceFeedTarget.Content(playlist.ref),
+                        coverCaptions = listOf("First caption", "Second caption"), detail = "120 plays", titleMaxLines = 1)))),
+                listOf(SourceCategory("category", "Category")))
+        }
     }
-
-    @Test
-    fun cacheRemainsFreshAcrossMidnightUntilTheSixAmBoundary() = runBlocking {
-        val earlyMorning = Instant.parse("2026-10-15T21:00:00Z").toEpochMilli()
-        val fixture = Fixture { throw AssertionError("The current daily cache should be reused") }
-        fixture.file.writeText(cacheJson(fetchedAt = now))
-        val repository = HomeRepository(fixture.file, fixture.preferences, { error("Unexpected fetch") }, { earlyMorning })
-
-        assertEquals(listOf("COMPLETE"), repository.getHomePageResourceShow().positions())
+    private class MemoryPreferences : DataStore<Preferences> {
+        override val data = MutableStateFlow(emptyPreferences())
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
     }
-
-    private inner class Fixture(fetch: suspend (Boolean) -> List<Block>) {
-        val file = File(temporary.newFolder(), "home_page_data_1.json")
-        val preferences = MutableStateFlow<Preferences>(account())
-        val repository = HomeRepository(file, preferences, fetch, { now })
-    }
-
-    private fun account(userId: String = "17", type: NeteaseSessionType = NeteaseSessionType.Mobile): Preferences =
-        mutablePreferencesOf(CookieKey to "private-session-cookie", UserIdKey to userId, NeteaseSessionTypeKey to type.name)
-
-    private fun cacheJson(
-        version: Int = 2,
-        owner: HomePageOwner = HomePageOwner("17", NeteaseSessionType.Mobile),
-        fetchedAt: Long = now,
-    ): String = gson.toJson(mapOf("version" to version, "owner" to owner, "fetchedAt" to fetchedAt, "blocks" to blocks("COMPLETE")))
-
-    private fun blocks(vararg positions: String): List<Block> = gson.fromJson(
-        gson.toJson(mapOf("code" to 200, "data" to mapOf("blocks" to positions.map { mapOf("positionCode" to it) }))),
-        HomePageResourceShow::class.java,
-    ).data.blocks
-
-    private fun Resource<List<Block>>.positions(): List<String> {
-        assertTrue("Expected a successful home feed, got $this", this is Resource.Success)
-        return (this as Resource.Success).data.map { it.positionCode }
+    private class FeedProvider : MusicProvider, FeedCapability, AccountRevisionCapability, SourceFeatureCapability, FeatureContribution {
+        override val id = "qq"
+        override val displayName = "Fixture"
+        override val version = "1"
+        override val instanceId = ProviderInstanceId("fixture:qq")
+        override val capabilities = setOf(SourceCapability.FEED, SourceCapability.FEATURES)
+        override val accountRevision = MutableStateFlow<String?>("private-account-revision")
+        override val feedKinds = setOf(FeedKind.HOME)
+        override val features = mapOf("discovery" to setOf("dailySongs", "personalRadio"))
+        override val featureRoutes = setOf("podcasts")
+        val requests = mutableListOf<PageRequest>()
+        var failAppend = false
+        override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest): SourceFeedPage {
+            requests += page
+            if (page.offset > 0 && failAppend) throw SourceException(SourceErrorCode.NETWORK)
+            return SourceFeedPage(listOf(SourceFeedSection("page-${page.offset}", "Page", SourceFeedLayout.TRACKS,
+                listOf(SourceItem.TrackItem(Track(TrackRef("qq", "track-${page.offset}"), "Track", listOf(SourceArtist("Artist"))))))),
+                hasMore = page.offset == 0, nextCursor = if (page.offset == 0) "next" else null)
+        }
+        override suspend fun invokeFeature(feature: String, action: String, parameters: JsonObject): JsonElement = error("Cache lookup must not invoke a feature")
     }
 }

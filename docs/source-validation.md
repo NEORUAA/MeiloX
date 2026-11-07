@@ -1,191 +1,150 @@
 # Source refactor validation
 
-Baseline: `56322350` (Room 18). Validation device: the existing arm64 HyperOS AVD
-`emulator-5580`, Android System WebView 150.0.7871.181. The original application ID
-`com.neoruaa.meilox` was updated with `adb install -r`; its data was backed up locally.
-No account logout, remote social writes or destructive database reset was used.
+This report distinguishes the current removable-source refactor from earlier P6
+and API 2 checkpoints. Earlier test totals and screenshots do not describe the
+current build unless explicitly repeated below.
 
-## Automated checks
+The compatibility baseline is `56322350` (Room 18). Device checks use the existing
+arm64 HyperOS AVD, `emulator-5580`, and the original application ID,
+`com.neoruaa.meilox`. Application updates retain data with `adb install -r`. The
+user's AVD launcher and configuration remain unchanged.
 
-### Current API 2 extension
+## Current architecture
 
-The 943-test JVM run and 51-test AVD regression run precede the final bounded
-artwork-cache and feed-background changes (`9e4beaa8`, `54b64dda`). The final Debug
-at `54b64dda` built successfully with the 1 GiB profile below (1m 21s) and was
-installed over the original application for the final UI and QQ acceptance checks.
+- Local playback remains a host capability. NetEase online business is supplied
+  by a removable, separately maintained script source rather than a built-in
+  native provider. Its reviewed bundled package supports initial provisioning
+  and legacy-session migration; an explicit uninstall prevents automatic
+  reinstallation.
+- NetEase and QQ use the same host screens and original presentation components
+  for browsing, search, details and the media library. Source-owned feature
+  recipes also drive the shared account, messages, recognition, together-listening,
+  cloud, podcast and other online flows. Capabilities determine which actions are
+  available.
+- The host supplies bounded source-scoped networking, cryptographic codecs,
+  recording/fingerprinting, file and interactive effects. The source owns endpoint
+  selection, request fields, protocol profiles and response interpretation.
+  Interactive effects run outside the serialized script segment and resume only
+  the owning source/account operation.
+- Lyrics remain an independent host feature. The existing source chooser,
+  manual QQ search and binding, NetEase lyric variants, phonetics, TTML, offsets
+  and caches do not depend on the selected browsing/search/playback source or on
+  installing the NetEase online extension.
+- Provider-scoped string identities preserve arbitrary external IDs. Legacy
+  database keys, local files, queue snapshots and user lyric bindings retain
+  their compatibility readers.
 
-```sh
-./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest -Pksp.incremental=false --console=plain
-```
+The standalone producers are maintained in the separate
+`MeiloX-Netease-Source` and `MeiloX-QQMusic-Source` repositories.
 
-- 943 JVM tests passed.
-- Debug application and instrumentation APKs built successfully.
-- The broad AVD regression run passed all 51 selected tests.
-- The pinned QQ 0.3 package (`0e88f488…`) passed both final Android acceptance tests:
-  captured payloads in the real isolate, and authenticated live catalog/library/playback.
-  All four search types, home/discovery/categories/charts, album/artist/playlist
-  details and all five personal collections returned real data. Known nonempty
-  collections were explicitly asserted. An independent muted ExoPlayer played the
-  authorized resource and its decoded duration matched the full track metadata.
-  Both native credentials and saved QQ configuration were retained.
+## Current verified results
 
-The first API 2 Release attempt was stopped during R8 because of memory pressure
-on the 16 GB host. The optimized Release subsequently passed before those two
-visual/cache changes with a 2 GiB heap, one worker and in-process Kotlin compilation
-(4m 35s). Later Debug and instrumentation builds
-use a 1 GiB heap, one worker, one active processor and no persistent compiler daemon.
-The AVD is kept running through the user's original launcher and configuration:
+Verified on 2026-11-07 against the final removable-source and marketplace changes.
 
-```sh
-nice -n 19 ./gradlew :app:assembleDebugAndroidTest --no-daemon --max-workers=1 \
-  -Dorg.gradle.parallel=false \
-  '-Dorg.gradle.jvmargs=-Xmx1024m -XX:ActiveProcessorCount=1 -Dfile.encoding=UTF-8' \
-  -Pkotlin.compiler.execution.strategy=in-process -Pksp.incremental=false --console=plain
-```
-
-AVD instrumentation uses the installed application and `androidx.test.runner.AndroidJUnitRunner`:
-
-```sh
-adb -s emulator-5580 shell am instrument -w -r \
-  -e class com.ljyh.mei.source.SourceCompatibilityInstrumentedTest,com.ljyh.mei.playback.MediaUriProviderQualityTest,com.ljyh.mei.playback.PlaybackQueueIntegrationTest,com.ljyh.mei.source.script.ScriptPluginInstrumentedTest,com.ljyh.mei.ui.screen.search.SourceSearchInstrumentedTest,com.ljyh.mei.data.network.NeteasePlaybackIdentityInstrumentedTest,com.ljyh.mei.data.network.NeteaseSourceAuthInstrumentedTest,com.ljyh.mei.data.network.NeteasePlaylistRequestInstrumentedTest \
-  com.neoruaa.meilox.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-The selected 51 tests cover real SQLite migration/schema validation, legacy/current
-Media3 snapshots, original-platform quality recovery, exact-byte rejection, real
-ExoPlayer fallback, per-resource headers/UA, `NO_STORE`, download provenance and
-generation isolation, queue controls, actual native search/detail/audio resolution,
-real isolated JavaScript import/search/detail/fallback/audio/lifecycle, infinite-loop
-termination, network denial, revision revocation, binary transport errors, search
-cancellation and preference isolation. The separate captured QQ fixture test uses
-the real isolate without live account mutations. The final QQ checks used:
-
-```sh
-adb -s emulator-5580 shell am instrument -w -r \
-  -e class com.ljyh.mei.source.script.QQMusicSourceInstrumentedTest#shippedAdapterParsesCapturedResponsesInsideTheIsolatedRuntime,com.ljyh.mei.source.script.QQMusicSourceInstrumentedTest#installedQQSourceSupportsDeclaredReadOnlyCapabilities \
-  -e qqMusicLive true -e qqMusicUpdate true -e qqMusicReviewedUpdate true \
-  -e qqMusicAccount true -e qqMusicPlayback true -e qqMusicQuery 城南花已开 \
-  -e qqMusicRequireNonemptyCollections library.likedTracks,library.savedPlaylists,library.savedAlbums,library.followedArtists \
-  -e keepQqPlugin true \
-  com.neoruaa.meilox.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-The QQ contract pins exact capabilities, configuration and eleven hosts. The observed
-`sjy6` audio CDN requires explicit reviewed-update opt-in. Unknown permissions are
-rejected. Optional diagnostics emit field presence, numeric status or QQ CDN
-hostnames, never Cookie values, account identifiers or signed audio URLs.
-Hash-gated cache package input allows adapter retests without recompiling the host.
-
-`MusicServiceQualityRecoveryTest` has three explicit isolated-package opt-ins. They
-were skipped on the original application ID and are not counted among these tests.
-
-### Final pre-push review
-
-The final review fixed three regressions: exact legacy negative local-song IDs now
-retain their original files, same-provider script calls serialize storage snapshots
-through commit, and resumed download batches finish loading installed plugins before
-resolving sources. Each has a regression in an existing instrumentation suite.
-
-Debug and instrumentation packages built with the 1 GiB profile (56s). The relevant
-AVD suites passed 40 tests, including all three new regressions; one existing
-host-supplied real-audio fixture test was skipped because its explicit input was not
-provided. Both authenticated QQ acceptance tests then passed again (13.108s),
-including full-resource playback and retained account configuration. The standalone
-QQ repository's `node --max-old-space-size=128 test.mjs` also passed.
-
-```sh
-adb -s emulator-5580 shell am instrument -w -r \
-  -e class com.ljyh.mei.playback.MediaUriProviderQualityTest,com.ljyh.mei.source.script.ScriptPluginInstrumentedTest,com.ljyh.mei.playback.DownloadLifecycleInstrumentedTest \
-  com.neoruaa.meilox.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-### Original P6 validation
-
-```sh
-./gradlew :app:assembleRelease -Pksp.incremental=false --console=plain
-node samples/music-source-plugin/test.mjs
-```
-
-Before the API 2 extension, P6 passed 913 JVM tests against the original 873-test
-baseline and all 45 selected AVD tests (7.729 seconds). Its optimized Release APK
-completed R8 and vital lint, the portable offline plugin contract runner passed,
-and independently checked P1/P2 commits compiled in detached worktrees. These
-earlier results are separate from the current API 2 runs above.
-
-## Static analysis
-
-```sh
-./gradlew :app:lintDebug -Pksp.incremental=false --console=plain
-```
-
-The current API 2 full debug lint reported **37 errors, 280 warnings and 5 hints**,
-matching the error/warning counts from P6. All 37 offending statements also exist
-verbatim in the original baseline: permission handling in recognition, Media3
-constant/opt-in restrictions, vendored Netease SDK shims, locale/resource reads and
-an existing instrumentation layout. No error was reported in the new source runtime,
-source core or source management code. These existing errors were retained in the
-report rather than hidden by disabling checks or creating a broad lint baseline.
-
-## Acceptance matrix
-
-| Requirement | Implementation / evidence |
+| Check | Result |
 | --- | --- |
-| Default Netease and offline playback | Built-in native provider, retained native features; actual online catalog/audio and local/ExoPlayer regression coverage |
-| User data upgrade | Additive Room 18→19, no rekey/delete; complete v18 fixture preserves all seeded associations and files under Room validation |
-| Old/new queues | Snapshot v1/v2 readers and v3 typed references; actual Media3 capture/restore tests |
-| Netease advanced features | Native repository/UI ownership and compatibility facades retain login/security, FM, cloud, podcast, library, social and together-listening code; domain regressions pass |
-| Existing player behavior | Quality/cache/recovery, queue, lyrics, downloads, Media3 and AutoMix integration retained; AVD and JVM regressions |
-| Collision-free content | Provider-scoped typed refs, canonical UTF-8 codec, legacy adapters, string-ID tests |
-| Capability discovery/routing | Registry/Router plus native feature contributions; unsupported operations are explicit |
-| Plugin lifecycle | Real imported ZIP and V8 tests cover search, detail, audio, disable/re-enable and reload; transactional update and remove preserve library/files |
-| Browse/search/order/settings | Separate persistent preferences, top-bar dropdowns, General settings entry and Glasmio drag ordering; real DataStore and process-restart checks |
-| Ordered bounded fallback | Original-first/override/disabled policies, deduplication, gates, timeout/cancel/invalidation and byte rejection tests |
-| Recording identity | ISRC validation, title/artist/duration/version/explicit guards, confidence/ambiguity threshold and manual binding |
-| Origin actions after fallback | Queue metadata/ref unchanged; native-only actions use origin; remote reporting rejects foreign audio and downloaded copies |
-| Actual audio provenance | Actual provider/instance/ref/quality/content cache keys and download fields; headers stay in memory |
-| Untrusted-code isolation | Isolated V8, no Android/Room/account bridge; controlled HTTPS and opaque audio transport; runaway/denial/recovery tests |
-| Permissions/limits/credentials | Size/time/memory/domain/DNS limits, Keystore storage, revision-gated account state, sanitized errors and bounded caches |
-| Regression tests | Aggregated source, native, policy and existing domain suites; real migration, Media3 and sandbox instrumentation |
-| Documentation/SDK | Architecture, migration, user guide, API/security spec, type declarations, authored offline sample and portable runner |
+| Host JVM suite | **800 tests passed**, no failures or skips |
+| Final Debug build | Application and instrumentation APKs built and installed with data retained |
+| Final optimized Release | R8 and release assembly passed with a 2 GiB G1 heap and one Gradle worker |
+| Final AVD regression batch | **61 tests passed**, including real NetEase reads/resolve, QQ authenticated catalog/library and muted full-resource decoding |
+| Runtime lifecycle | Rapid sandbox cancellation/reconnection and rejected artwork/audio metadata retain usable source capabilities |
+| Source removal and compatibility | Earlier 10-test AVD batch passed actual NetEase removal, no automatic reinstall, and data restoration; final batch passed queue and account compatibility checks |
+| Marketplace | Real GitHub index and both immutable packages downloaded and inspected on the user's unchanged Fake-IP network; installed payloads acquired the correct repository origins |
+| Update transactions | Actual isolated Android installation exercised payload-based origin adoption, automatic upgrade, disabled/configuration preservation, changed-permission review, stale review rejection, hash refusal and no reinstall after removal |
+| Interrupted updates and playback | JVM checks covered transaction recovery, automatic-update authorization and resolution leases; AVD restored the saved paused queue |
+| Standalone producers | Both aggregated Node suites, builds and package checks passed; published package bytes match the registry SHA-256 values |
+| Registry | Offline schema/contract validation and GitHub metadata workflow passed |
 
-## Practical limits
+The earlier failing checkpoints were resolved before this final batch. NetEase's
+missing image/audio CDN declarations were corrected with exact hostnames. Optional
+artwork rejection no longer discards a valid page; rejected audio metadata fails
+only that operation. Direct script network permission violations still fail closed.
+The QQ favorite acknowledgement and canonical status readback, finite home feed,
+and album total metadata were corrected without changing the shared presenters.
 
-Script API 1 remains compatible with its search, track, playback and lyrics contract.
-API 2 optionally advertises typed catalogs, home/discovery feeds, account, library,
-likes, collections and granular playlist operations. The host routes external
-content through shared screens and overlays while preserving native Netease pages.
-The portable SDK example is an offline test tone. The independently maintained
-[QQ plugin](https://github.com/NEORUAA/MeiloX-QQMusic-Source) has its own fixtures and
-transport implementation; the pinned host fixture is used for real isolated-runtime
-and explicitly enabled live tests.
+Foreground checks confirmed the original home cards, distinct discovery layout,
+QQ library and album presentation, and the standard grouped source management and
+market pages. The user's selected source and library style are restored after
+checks; the paused queue is retained.
 
-The API 2 extension adds no Room migration. Paged source queues preserve loaded
-tracks and duplicate positions, stop fetching after account/provider changes, and
-can resume through the optional safe snapshot-v3 content context. Stale script
-invocations cannot start another HTTP hop or publish storage/audio results after
-revocation. Ordinary optional-artwork failures do not discard catalog content.
+The JVM count is not directly comparable with the historical 943-test checkpoint.
+Obsolete native repository and transport tests were removed with their
+implementations; protocol assertions moved to the producers' aggregated suites.
+Host lifecycle, mutation, paging, cache, playback and update behavior remains
+covered by the host suites.
 
-No physical USB DAC/bit-perfect hardware acceptance or whole-app performance claim
-is made from the AVD. Account creation/security changes, cloud uploads and remote
-social mutations were not repeated against the user's live account. Their existing
-code and automated domain regressions are preserved.
+Builds run serially with one worker and in-process Kotlin compilation. Debug used
+a 1.5 GiB heap; Release used a 2 GiB G1 heap. The user's AVD launcher, AVD settings,
+LAN and proxy configuration were not changed. No full-lint result is claimed for
+this refactor; historical findings below remain separate.
 
-The management page and settings persistence were checked through ADB. Import opens
-the system file picker. The AVD's file manager presented its first-use agreement;
-that agreement was left unaccepted. Package installation and permission review
-semantics were verified through the actual manager and sandbox instrumentation.
+## Compatibility coverage
 
-The final installed Debug also displayed real QQ home artwork, discovery charts
-and chart tracks, and the user's created playlists. Feed and library categories
-open from top-bar dropdowns. Native search rows use the standard continuous grouped
-list. The source-detail push transition and Glasmio drag ordering were checked on
-the AVD; the original fallback order, disabled switch and original-first setting
-were restored afterward. QQ playlist and collection writes were validated with
-offline protocol fixtures, without changing the user's live account.
+| Requirement | Current implementation and evidence |
+| --- | --- |
+| Removable online sources | NetEase and QQ script packages, source-scoped sessions and shared feature execution; actual NetEase removal/no-reinstall check passed |
+| Existing online presentation | Shared original components, source-owned feed actions and presentation metadata, library-style preferences and top-bar category menus; current visual acceptance remains separate from compilation |
+| User data and local playback | Additive legacy migration, unchanged keys/files and compatibility readers; current early AVD data-restoration batch passed |
+| Player and queues | Typed origin references, legacy snapshot readers, bounded source queues, quality/fallback and FM behavior; current JVM suite passed |
+| Independent lyrics | Host-owned full lyric workflow, manual bindings and caches across all selected content providers |
+| Online feature ownership | Source recipes for account/security, social, recognition, together-listening, cloud, podcast and discovery; closed generic host SDK/effect contracts |
+| Mutations and sessions | Source/account-pinned operations, serialized segment commits, explicit receipts and revocation guards; current JVM and producer contract suites passed |
+| Network and artwork | Exact declared hosts, DNS/size/time limits, source-owned credentials, lazy artwork ownership and cancellation guards |
+| Source settings | Separate browse/search preferences, General settings entry, top-bar dropdowns and Glasmio drag ordering |
+| Origin after fallback | Queue metadata and original references remain stable; actions and reporting use the owning source rather than the fallback audio provider |
 
-The original AVD database was independently compared before and after the upgrade.
-Its primary keys and record counts remained identical: 37 songs, 3 playlists,
-15 likes, 31 history rows, 29 playback-count rows, 1 download task, 0 playlist-song
-associations, 39 QQ lyric mappings and 16 cached lyrics. Offline paths/file facts and
-QQ mappings also remained identical. The automatic-fallback switch survived process
-restart and was restored to its initial disabled state after the UI check.
+## Historical checkpoints
+
+These results apply to the earlier implementations and packages named here. They
+remain useful compatibility evidence but do not replace current acceptance.
+
+### API 2 before removable NetEase
+
+- The earlier API 2 extension passed **943 JVM tests** and **51 selected AVD
+  tests**. That run preceded the artwork-cache and feed-background changes at
+  `9e4beaa8` and `54b64dda`.
+- Debug at `54b64dda` built and was installed over the original application.
+  An optimized Release had passed before those two later changes. The first
+  Release attempt was stopped during R8 because of host memory pressure.
+- The pinned QQ 0.3 package (`0e88f488…`) passed real-isolate captured fixtures
+  and explicitly enabled authenticated read-only catalog/library/playback tests.
+  Those checks covered all four search types, feeds/categories/charts, detail
+  navigation, personal collections and decoded full-resource playback. Saved QQ
+  configuration was retained.
+- A later pre-push run passed **40 AVD tests**, with one explicitly supplied
+  real-audio fixture skipped. It covered legacy negative local IDs, serialized
+  script storage commits and resumed downloads waiting for plugin loading. Both
+  authenticated QQ acceptance tests then passed again.
+
+At this historical stage, NetEase still used the built-in native provider and
+native repositories. Descriptions of that ownership must not be read as the
+current architecture.
+
+The earlier original-application database comparison retained identical primary
+keys and counts: 37 songs, 3 playlists, 15 likes, 31 history rows, 29 playback-count
+rows, 1 download task, 0 playlist-song associations, 39 QQ lyric mappings and 16
+cached lyrics. Offline paths/file facts and QQ mappings also matched. These are
+historical comparison values, not a claim about today's account contents.
+
+### Original P6 and lint
+
+Before API 2, P6 passed **913 JVM tests** against the original 873-test baseline
+and **45 selected AVD tests**. Its optimized Release completed R8 and vital lint;
+the portable offline plugin runner and isolated P1/P2 compilation checks passed.
+
+The historical API 2 full Debug lint reported **37 errors, 280 warnings and 5
+hints**, matching the P6 error/warning counts. The 37 statements were verified
+against the original baseline at that time. They were reported rather than hidden
+with disabled checks or a broad lint baseline. These counts have not been rerun
+for the current removable-source refactor.
+
+## Acceptance boundaries
+
+Compilation, offline producer fixtures, device instrumentation and visual checks
+are separate evidence. No physical USB DAC/bit-perfect hardware
+acceptance or whole-app performance claim is made from the AVD.
+
+Account creation/security changes, cloud uploads and remote social writes were
+not repeated against the user's live account. Their source recipes are exercised
+by offline contract fixtures. Credentials, signed audio URLs and private account
+identifiers are excluded from diagnostics and this report.

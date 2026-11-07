@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +46,8 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 
 @Composable
-fun ListenTogetherScreen(store: ListenTogetherStore = hiltViewModel<ListenTogetherStoreHolder>().store) {
+fun ListenTogetherScreen(store: ListenTogetherStore = hiltViewModel<ListenTogetherStoreHolder>().store, providerId: String? = null) {
+    DisposableEffect(store, providerId) { store.open(providerId); onDispose { store.closeScreen() } }
     val state by store.state.collectAsState()
     val navController = LocalNavController.current
     val context = LocalContext.current

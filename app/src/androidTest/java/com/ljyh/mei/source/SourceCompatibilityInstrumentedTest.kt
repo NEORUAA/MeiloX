@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
@@ -16,11 +17,16 @@ import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.source.api.AudioResource
+import com.ljyh.mei.source.api.AccountRevisionCapability
+import com.ljyh.mei.source.api.ResourceValidationCapability
+import com.ljyh.mei.source.script.ScriptAudioResources
 import com.ljyh.mei.source.api.PageRequest
 import com.ljyh.mei.source.api.PlaybackCapability
 import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceCoreEffectCapability
+import com.ljyh.mei.source.script.ScriptMusicProvider
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.withTimeout
 import com.ljyh.mei.playback.DownloadSourceEntryPoint
@@ -40,23 +46,26 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Compatibility fixtures use isolated data; the native smoke performs read-only online requests. */
+/** Compatibility fixtures use isolated data; the installed-source smoke performs read-only online requests. */
 @androidx.annotation.OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class SourceCompatibilityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    @Test fun installedNativeProviderCanSearchReadAndResolveWithoutChangingAccount(): Unit = runBlocking {
+    @Test fun installedRemovableNeteaseSourceCanSearchReadAndResolveWithoutChangingAccount(): Unit = runBlocking {
         val entryPoint = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java)
         val router = entryPoint.sourceRouter()
+        router.registry.awaitInitialized()
         val provider = router.registry.requireProvider(ProviderIds.NETEASE)
-        assertTrue(provider.isBuiltIn)
+        assertFalse("NetEase must be an independently removable source", provider.isBuiltIn)
+        assertTrue(provider.instanceId.value.startsWith("script:"))
+        val sourceAccountBefore = (provider as? AccountRevisionCapability)?.accountRevision?.first()
         val accountBefore = context.dataStore.data.first().let { it[CookieKey] to it[UserIdKey] }
         try {
             withTimeout(45_000) {
                 val results = router.search(ProviderIds.NETEASE, "晴天", PageRequest(limit = 10)).items
-                assertTrue("Native search must return real catalog results", results.isNotEmpty())
+                assertTrue("Installed NetEase search must return real catalog results", results.isNotEmpty())
                 var audio: AudioResource? = null
                 for (result in results) {
                     assertEquals(ProviderIds.NETEASE, result.ref.providerId)
@@ -64,6 +73,9 @@ class SourceCompatibilityInstrumentedTest {
                     assertEquals(result.ref, track.ref)
                     assertTrue(track.title.isNotBlank())
                     try {
+                        if (InstrumentationRegistry.getArguments().getString("neteaseArtworkDiagnostics") == "true") {
+                            recordUndeclaredPlaybackHost(provider as ScriptMusicProvider, track.ref, "standard", sourceAccountBefore)
+                        }
                         audio = (provider as PlaybackCapability).resolve(track.ref, "standard")
                         break
                     } catch (error: SourceException) {
@@ -71,15 +83,48 @@ class SourceCompatibilityInstrumentedTest {
                         if (error.code !in setOf(SourceErrorCode.UNAVAILABLE, SourceErrorCode.NOT_FOUND)) throw error
                     }
                 }
-                assertTrue("Native catalog results must contain at least one full playable source", audio != null)
+                assertTrue("Installed NetEase catalog results must contain at least one full playable source", audio != null)
                 val resource = checkNotNull(audio)
-                assertTrue(resource.uri.startsWith("https://") || resource.uri.startsWith("http://"))
+                assertTrue("Resolved script audio must retain the host permission-enforcing transport", resource.uri.startsWith("mei-source://"))
+                assertTrue(ScriptAudioResources.isRegistered(resource.uri))
+                assertTrue((provider as ResourceValidationCapability).acceptsResource(resource))
+                assertTrue(resource.headers.isEmpty())
                 assertTrue(resource.quality.isNotBlank())
                 assertTrue(resource.expiresAtMs?.let { it > System.currentTimeMillis() } != false)
             }
         } finally {
             val accountAfter = context.dataStore.data.first().let { it[CookieKey] to it[UserIdKey] }
-            assertTrue("Read-only native requests must retain the current account", accountBefore == accountAfter)
+            assertTrue("Read-only source requests must retain the legacy account", accountBefore == accountAfter)
+            assertTrue("Read-only source requests must retain its private account", sourceAccountBefore ==
+                (provider as? AccountRevisionCapability)?.accountRevision?.first())
+        }
+    }
+
+    private suspend fun recordUndeclaredPlaybackHost(provider: ScriptMusicProvider, ref: TrackRef,
+        quality: String, accountRevision: String?) {
+        // Match playbackResponse's raw IDs, quality and bounded continuation before URI registration.
+        val cursors = mutableSetOf<String>()
+        var cursor: String? = null
+        repeat(3) {
+            val result = (provider as SourceCoreEffectCapability).invokeCoreOperation("playback.resolve", JsonObject().apply {
+                addProperty("trackId", ref.trackId)
+                addProperty("quality", quality)
+                cursor?.let { addProperty("cursor", it) }
+            }, accountRevision).takeIf { it.isJsonObject }?.asJsonObject ?: return
+            val uri = result.get("uri")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            if (uri != null) {
+                val host = runCatching { java.net.URI(uri).host?.lowercase(java.util.Locale.ROOT) }.getOrNull()
+                if (host != null && host.matches(Regex("[a-z0-9.-]{1,253}")) &&
+                    host !in provider.manifest.permissions.network) {
+                    instrumentation.sendStatus(0, android.os.Bundle().apply {
+                        putString("stream", "NetEase undeclared audio host=$host\n")
+                    })
+                }
+                return
+            }
+            val next = result.get("nextCursor")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return
+            if (next.length !in 1..128 || !cursors.add(next)) return
+            cursor = next
         }
     }
 

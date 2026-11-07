@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen
 
 import com.ljyh.mei.source.api.*
+import com.ljyh.mei.ui.screen.source.SourceArtistCatalogScreen
 import com.ljyh.mei.ui.screen.source.SourceContentScreen
 import com.ljyh.mei.ui.screen.source.SourceAccountScreen
 import com.ljyh.mei.ui.screen.source.SourcePlaylistEditorScreen
@@ -24,21 +25,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.net.URLDecoder
 import com.ljyh.mei.ui.screen.about.AboutScreen
-import com.ljyh.mei.ui.screen.album.AlbumDetailScreen
 import com.ljyh.mei.ui.screen.history.HistoryScreen
 import com.ljyh.mei.ui.screen.local.LocalMusicScreen
 import com.ljyh.mei.ui.screen.local.LocalSongListScreen
 import com.ljyh.mei.ui.screen.main.home.HomeHubScreen
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.screen.main.library.LibraryScreen
-import com.ljyh.mei.ui.screen.main.library.LibraryViewModel
 import com.ljyh.mei.ui.screen.playlist.EveryDay
-import com.ljyh.mei.ui.screen.playlist.PlaylistScreen
 import com.ljyh.mei.ui.screen.search.SearchResultScreen
 import com.ljyh.mei.ui.screen.setting.AppearanceSettings
-import com.ljyh.mei.ui.screen.artist.ArtistSongsScreen
-import com.ljyh.mei.ui.screen.artist.ArtistAlbumsScreen
-import com.ljyh.mei.ui.screen.artist.ArtistScreen
 import com.ljyh.mei.ui.screen.artist.ArtistInfoScreen
 import com.ljyh.mei.ui.screen.main.findmusic.FindMusicScreen
 import com.ljyh.mei.ui.screen.setting.ContentsSetting
@@ -101,27 +96,28 @@ fun NavGraphBuilder.navigationBuilder(
         }
     }
 
-    composable(Screen.FindMusic.route) {
-        FindMusicScreen()
+    sourceScoped(Screen.FindMusic) { providerId ->
+        FindMusicScreen(providerId = providerId)
     }
 
     composable(
-        route = "${Screen.PlaylistCategory.route}/{category}/{title}",
+        route = "${Screen.PlaylistCategory.route}/{category}/{title}?providerId={providerId}",
         arguments = listOf(
             navArgument("category") { type = NavType.StringType },
             navArgument("title") { type = NavType.StringType },
+            navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null },
         ),
     ) {
         val category = it.arguments?.getString("category").orEmpty()
         val title = it.arguments?.getString("title").orEmpty()
-        FindMusicScreen(initialCategory = category, titleOverride = title)
+        FindMusicScreen(initialCategory = category, titleOverride = title, providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.Podcasts.route) {
+    sourceScoped(Screen.Podcasts) {
         PodcastScreen()
     }
 
-    composable(Screen.CloudMusic.route) {
+    sourceScoped(Screen.CloudMusic) {
         CloudMusicScreen()
     }
 
@@ -129,92 +125,92 @@ fun NavGraphBuilder.navigationBuilder(
         SearchLandingScreen()
     }
 
-    composable(Screen.PrivateMessages.route) {
-        ConversationsScreen()
+    composable("${Screen.PrivateMessages.route}?providerId={providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+        ConversationsScreen(providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.OfficialMessages.route) {
-        ConversationsScreen(officialMessages = true)
+    composable("${Screen.OfficialMessages.route}?providerId={providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+        ConversationsScreen(officialMessages = true, providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.MessageContacts.route) {
-        MessageContactsScreen()
+    composable("${Screen.MessageContacts.route}?providerId={providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+        MessageContactsScreen(providerId = it.arguments?.getString("providerId"))
     }
 
     composable(
-        route = "${Screen.PrivateConversation.route}/{userId}",
-        arguments = listOf(navArgument("userId") { type = NavType.LongType }),
+        route = "${Screen.PrivateConversation.route}/{userId}?providerId={providerId}",
+        arguments = listOf(navArgument("userId") { type = NavType.StringType }, navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
-        ConversationScreen(it.arguments!!.getLong("userId"))
+        ConversationScreen(it.arguments!!.getString("userId").orEmpty(), providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.ListenTogether.route) {
-        ListenTogetherScreen()
+    composable("${Screen.ListenTogether.route}?providerId={providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+        ListenTogetherScreen(providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.SongRecognition.route) {
-        SongRecognitionScreen()
+    composable("${Screen.SongRecognition.route}?providerId={providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null })) {
+        SongRecognitionScreen(providerId = it.arguments?.getString("providerId"))
     }
 
-    composable(Screen.NeteaseLogin.route) {
+    sourceScoped(Screen.NeteaseLogin) {
         NeteaseLoginScreen()
     }
-    composable(Screen.NeteaseWebLogin.route) {
+    sourceScoped(Screen.NeteaseWebLogin) {
         NeteaseWebLoginScreen()
     }
 
-    composable(Screen.PcQrLogin.route) {
+    sourceScoped(Screen.PcQrLogin) {
         PcQrLoginScreen()
     }
 
-    composable(Screen.AccountHome.route) {
+    sourceScoped(Screen.AccountHome) {
         AccountHomeScreen()
     }
-    composable(Screen.NeteaseMusician.route) {
+    sourceScoped(Screen.NeteaseMusician) {
         MusicianAccountScreen()
     }
-    composable(Screen.AccountSecurity.route) {
+    sourceScoped(Screen.AccountSecurity) {
         AccountSecurityScreen()
     }
-    composable(Screen.AccountBindings.route) { AccountBindingsScreen() }
-    composable(Screen.AccountDevices.route) { AccountDevicesScreen() }
-    composable(Screen.AccountAuthorizations.route) { AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations) }
+    sourceScoped(Screen.AccountBindings) { AccountBindingsScreen() }
+    sourceScoped(Screen.AccountDevices) { AccountDevicesScreen() }
+    sourceScoped(Screen.AccountAuthorizations) { AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations) }
     composable(
-        route = "${Screen.AccountWeb.route}/{page}",
-        arguments = listOf(navArgument("page") { type = NavType.StringType }),
+        route = "${Screen.AccountWeb.route}/{page}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null }, navArgument("page") { type = NavType.StringType }),
     ) { entry ->
         OfficialNeteasePage.entries.firstOrNull { it.name == entry.arguments?.getString("page") }
             ?.let { OfficialNeteasePageScreen(it) }
     }
 
-    composable(Screen.ListeningStats.route) {
+    sourceScoped(Screen.ListeningStats) {
         ListeningStatsScreen()
     }
 
     composable(
-        route = "${Screen.AccountConnections.route}/{userId}/{type}",
-        arguments = listOf(
-            navArgument("userId") { type = NavType.LongType },
+        route = "${Screen.AccountConnections.route}/{userId}/{type}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null },
+            navArgument("userId") { type = NavType.StringType },
             navArgument("type") { type = NavType.StringType },
         ),
     ) { entry ->
         AccountConnectionType.entries.firstOrNull { it.name == entry.arguments?.getString("type") }?.let {
-            AccountConnectionsScreen(entry.arguments!!.getLong("userId"), it)
+            AccountConnectionsScreen(entry.arguments!!.getString("userId").orEmpty(), it)
         }
     }
 
     composable(
-        route = "${Screen.AccountListeningRank.route}/{userId}",
-        arguments = listOf(navArgument("userId") { type = NavType.LongType }),
+        route = "${Screen.AccountListeningRank.route}/{userId}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null }, navArgument("userId") { type = NavType.StringType }),
     ) {
-        ListeningRankScreen(it.arguments!!.getLong("userId"))
+        ListeningRankScreen(it.arguments!!.getString("userId").orEmpty())
     }
 
     composable(
-        route = "${Screen.PodcastDetail.route}/{id}",
-        arguments = listOf(navArgument("id") { type = NavType.LongType }),
+        route = "${Screen.PodcastDetail.route}/{id}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null }, navArgument("id") { type = NavType.StringType }),
     ) {
-        PodcastDetailScreen(it.arguments!!.getLong("id"))
+        PodcastDetailScreen(it.arguments!!.getString("id").orEmpty())
     }
 
     composable(Screen.Test.route) {
@@ -257,6 +253,9 @@ fun NavGraphBuilder.navigationBuilder(
     composable(Screen.SourceManagement.route) {
         com.ljyh.mei.ui.screen.source.SourceManagementScreen()
     }
+    composable(Screen.SourceMarket.route) {
+        com.ljyh.mei.ui.screen.source.SourceManagementScreen(market = true)
+    }
     composable(
         route = "${Screen.SourcePluginSettings.route}/{pluginId}",
         arguments = listOf(navArgument("pluginId") { type = NavType.StringType }),
@@ -272,6 +271,15 @@ fun NavGraphBuilder.navigationBuilder(
     )) { entry ->
         val ref = sourceContentRef(entry.arguments?.getString("providerId").orEmpty(), entry.arguments?.getString("kind").orEmpty(), entry.arguments?.getString("contentId").orEmpty())
         if (ref != null) SourceContentScreen(ref) else MissingSourceContentPage()
+    }
+    for ((screen, albums) in listOf(Screen.SourceArtistSongs to false, Screen.SourceArtistAlbums to true)) {
+        composable("${screen.route}/{providerId}/{artistId}", arguments = listOf(
+            navArgument("providerId") { type = NavType.StringType }, navArgument("artistId") { type = NavType.StringType },
+        )) { entry ->
+            val ref = sourceContentRef(entry.arguments?.getString("providerId").orEmpty(), "artist",
+                entry.arguments?.getString("artistId").orEmpty()) as? ArtistRef
+            if (ref != null) SourceArtistCatalogScreen(ref, albums) else MissingSourceContentPage()
+        }
     }
     composable("${Screen.SourceAccount.route}/{providerId}", arguments = listOf(navArgument("providerId") { type = NavType.StringType })) {
         SourceAccountScreen(it.arguments?.getString("providerId").orEmpty())
@@ -339,7 +347,7 @@ fun NavGraphBuilder.navigationBuilder(
         )
     }
 
-    composable(Screen.EveryDay.route){
+    sourceScoped(Screen.EveryDay){
         EveryDay()
     }
     composable(Screen.About.route) {
@@ -373,7 +381,7 @@ fun NavGraphBuilder.navigationBuilder(
             }
         )
     ) {
-        PlaylistScreen(id = it.arguments!!.getLong("id"))
+        SourceContentScreen(PlaylistRef(ProviderIds.NETEASE, it.arguments!!.getLong("id").toString()))
     }
 
 
@@ -385,9 +393,9 @@ fun NavGraphBuilder.navigationBuilder(
             }
         )
     ) {
-        AlbumDetailScreen(id = it.arguments!!.getLong("id"))
+        SourceContentScreen(AlbumRef(ProviderIds.NETEASE, it.arguments!!.getLong("id").toString()))
     }
-    
+
     composable(
         route = "${Screen.Artist.route}/{id}",
         arguments = listOf(
@@ -396,37 +404,39 @@ fun NavGraphBuilder.navigationBuilder(
             }
         )
     ) {
-        ArtistScreen(id = it.arguments!!.getString("id")!!)
+        SourceContentScreen(ArtistRef(ProviderIds.NETEASE, it.arguments!!.getString("id")!!))
     }
 
     composable(
-        route = "${Screen.ArtistInfo.route}/{id}",
-        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+        route = "${Screen.ArtistInfo.route}/{id}?providerId={providerId}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType },
+            navArgument("providerId") { type = NavType.StringType; defaultValue = ProviderIds.NETEASE }),
     ) {
-        ArtistInfoScreen(id = it.arguments!!.getString("id")!!)
+        ArtistInfoScreen(id = it.arguments!!.getString("id")!!,
+            providerId = it.arguments?.getString("providerId") ?: ProviderIds.NETEASE)
     }
 
     composable(
         route = "${Screen.ArtistSongs.route}/{id}",
         arguments = listOf(navArgument("id") { type = NavType.StringType }),
     ) {
-        ArtistSongsScreen(id = it.arguments!!.getString("id")!!)
+        SourceArtistCatalogScreen(ArtistRef(ProviderIds.NETEASE, it.arguments!!.getString("id")!!), albums = false)
     }
 
     composable(
         route = "${Screen.ArtistAlbums.route}/{id}",
         arguments = listOf(navArgument("id") { type = NavType.StringType }),
     ) {
-        ArtistAlbumsScreen(id = it.arguments!!.getString("id")!!)
+        SourceArtistCatalogScreen(ArtistRef(ProviderIds.NETEASE, it.arguments!!.getString("id")!!), albums = true)
     }
 
-    composable(Screen.History.route) {
+    sourceScoped(Screen.History) {
         HistoryScreen()
     }
 
     composable(
-        route = "${Screen.Comment.route}/{songId}",
-        arguments = listOf(
+        route = "${Screen.Comment.route}/{songId}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null },
             navArgument("songId") { type = NavType.StringType }
         )
     ) {
@@ -436,10 +446,10 @@ fun NavGraphBuilder.navigationBuilder(
     }
 
     composable(
-        route = "${Screen.SongWiki.route}/{songId}",
-        arguments = listOf(navArgument("songId") { type = NavType.LongType }),
+        route = "${Screen.SongWiki.route}/{songId}?providerId={providerId}",
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null }, navArgument("songId") { type = NavType.StringType }),
     ) {
-        SongWikiScreen(songId = it.arguments!!.getLong("songId"))
+        SongWikiScreen(songId = it.arguments!!.getString("songId").orEmpty())
     }
 }
 
@@ -450,110 +460,119 @@ fun navigationEntry(
     scrollBehavior: TopAppBarScrollBehavior,
     isNavigationTab: Boolean = false,
 ) {
+    val path = route.substringBefore('?')
     when {
-        route == Screen.Home.route -> HomeHubScreen()
-        route == Screen.Library.route -> LibraryScreen(
+        path == Screen.Home.route -> HomeHubScreen()
+        path == Screen.Library.route -> LibraryScreen(
             isNavigationTab = isNavigationTab,
-            shareNativeViewModel = true,
         )
-        route.startsWith("${Screen.LibraryCategory.route}/") -> {
+        path.startsWith("${Screen.LibraryCategory.route}/") -> {
             LibraryPage.entries.firstOrNull {
-                it.name == route.substringAfter("${Screen.LibraryCategory.route}/")
+                it.name == path.substringAfter("${Screen.LibraryCategory.route}/")
             }?.let { LibraryScreen(category = it) }
         }
-        route == Screen.FindMusic.route -> FindMusicScreen(isNavigationTab = isNavigationTab)
-        route.startsWith("${Screen.PlaylistCategory.route}/") -> {
-            val arguments = route.substringAfter("${Screen.PlaylistCategory.route}/")
+        path == Screen.FindMusic.route -> FindMusicScreen(isNavigationTab = isNavigationTab, providerId = sourceFeatureRouteProvider(route))
+        path.startsWith("${Screen.PlaylistCategory.route}/") -> {
+            val arguments = path.substringAfter("${Screen.PlaylistCategory.route}/")
                 .split('/', limit = 2)
             if (arguments.size == 2) {
                 val category = URLDecoder.decode(arguments[0], "UTF-8")
                 val title = URLDecoder.decode(arguments[1], "UTF-8")
-                FindMusicScreen(initialCategory = category, titleOverride = title)
+                FindMusicScreen(initialCategory = category, titleOverride = title, providerId = sourceFeatureRouteProvider(route))
             }
         }
-        route == Screen.Podcasts.route -> PodcastScreen(isNavigationTab = isNavigationTab)
-        route == Screen.CloudMusic.route -> CloudMusicScreen(isNavigationTab = isNavigationTab)
-        route == Screen.Search.route -> SearchLandingScreen()
-        route == Screen.PrivateMessages.route -> ConversationsScreen()
-        route == Screen.OfficialMessages.route -> ConversationsScreen(officialMessages = true)
-        route == Screen.MessageContacts.route -> MessageContactsScreen()
-        route == Screen.ListenTogether.route -> ListenTogetherScreen()
-        route == Screen.SongRecognition.route -> SongRecognitionScreen()
-        route == Screen.NeteaseLogin.route -> NeteaseLoginScreen()
-        route == Screen.NeteaseWebLogin.route -> NeteaseWebLoginScreen()
-        route == Screen.PcQrLogin.route -> PcQrLoginScreen()
-        route == Screen.AccountHome.route -> AccountHomeScreen()
-        route == Screen.NeteaseMusician.route -> MusicianAccountScreen()
-        route == Screen.AccountSecurity.route -> AccountSecurityScreen()
-        route == Screen.AccountBindings.route -> AccountBindingsScreen()
-        route == Screen.AccountDevices.route -> AccountDevicesScreen()
-        route == Screen.AccountAuthorizations.route -> AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations)
-        route.startsWith("${Screen.AccountWeb.route}/") -> {
+        path == Screen.Podcasts.route -> PodcastScreen(isNavigationTab = isNavigationTab)
+        path == Screen.CloudMusic.route -> CloudMusicScreen(isNavigationTab = isNavigationTab)
+        path == Screen.Search.route -> SearchLandingScreen()
+        path.substringBefore('?') == Screen.PrivateMessages.route -> ConversationsScreen(providerId = sourceFeatureRouteProvider(route))
+        path.substringBefore('?') == Screen.OfficialMessages.route -> ConversationsScreen(officialMessages = true, providerId = sourceFeatureRouteProvider(route))
+        path.substringBefore('?') == Screen.MessageContacts.route -> MessageContactsScreen(providerId = sourceFeatureRouteProvider(route))
+        path.substringBefore('?') == Screen.ListenTogether.route -> ListenTogetherScreen(providerId = sourceFeatureRouteProvider(route))
+        path.substringBefore('?') == Screen.SongRecognition.route -> SongRecognitionScreen(providerId = sourceFeatureRouteProvider(route))
+        path == Screen.NeteaseLogin.route -> NeteaseLoginScreen()
+        path == Screen.NeteaseWebLogin.route -> NeteaseWebLoginScreen()
+        path == Screen.PcQrLogin.route -> PcQrLoginScreen()
+        path == Screen.AccountHome.route -> AccountHomeScreen()
+        path == Screen.NeteaseMusician.route -> MusicianAccountScreen()
+        path == Screen.AccountSecurity.route -> AccountSecurityScreen()
+        path == Screen.AccountBindings.route -> AccountBindingsScreen()
+        path == Screen.AccountDevices.route -> AccountDevicesScreen()
+        path == Screen.AccountAuthorizations.route -> AccountDevicesScreen(initialTab = AccountDeviceTab.Authorizations)
+        path.startsWith("${Screen.AccountWeb.route}/") -> {
             OfficialNeteasePage.entries.firstOrNull {
-                it.name == route.substringAfter("${Screen.AccountWeb.route}/")
+                it.name == path.substringAfter("${Screen.AccountWeb.route}/")
             }?.let { OfficialNeteasePageScreen(it) }
         }
-        route == Screen.ListeningStats.route -> ListeningStatsScreen()
-        route == Screen.Test.route -> Test()
-        route == Screen.Setting.route -> SettingScreen(scrollBehavior)
-        route == Screen.AppearanceSettings.route -> AppearanceSettings(scrollBehavior)
-        route == Screen.GeneralSettings.route -> GeneralSettings()
-        route == Screen.LyricsSettings.route -> LyricsSettings()
-        route == Screen.ContentSettings.route -> ContentsSetting(scrollBehavior)
-        route == Screen.PlaySettings.route -> PlaySetting(scrollBehavior)
-        route == Screen.EqualizerSettings.route -> EqualizerSettings()
-        route == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
-        route == Screen.StorageManagement.route -> StorageManagementScreen()
-        route == Screen.SourceManagement.route -> com.ljyh.mei.ui.screen.source.SourceManagementScreen()
-        route.startsWith("${Screen.SourcePluginSettings.route}/") -> {
+        path == Screen.ListeningStats.route -> ListeningStatsScreen()
+        path == Screen.Test.route -> Test()
+        path == Screen.Setting.route -> SettingScreen(scrollBehavior)
+        path == Screen.AppearanceSettings.route -> AppearanceSettings(scrollBehavior)
+        path == Screen.GeneralSettings.route -> GeneralSettings()
+        path == Screen.LyricsSettings.route -> LyricsSettings()
+        path == Screen.ContentSettings.route -> ContentsSetting(scrollBehavior)
+        path == Screen.PlaySettings.route -> PlaySetting(scrollBehavior)
+        path == Screen.EqualizerSettings.route -> EqualizerSettings()
+        path == Screen.DownloadSettings.route -> DownloadSetting(scrollBehavior)
+        path == Screen.StorageManagement.route -> StorageManagementScreen()
+        path == Screen.SourceManagement.route -> com.ljyh.mei.ui.screen.source.SourceManagementScreen()
+        path == Screen.SourceMarket.route -> com.ljyh.mei.ui.screen.source.SourceManagementScreen(market = true)
+        path.startsWith("${Screen.SourcePluginSettings.route}/") -> {
             com.ljyh.mei.ui.screen.source.SourceManagementScreen(
-                pluginId = android.net.Uri.decode(route.substringAfter("${Screen.SourcePluginSettings.route}/")),
+                pluginId = android.net.Uri.decode(path.substringAfter("${Screen.SourcePluginSettings.route}/")),
             )
         }
-        route.startsWith("${Screen.SourceContent.route}/") -> {
-            val parts = route.substringAfter("${Screen.SourceContent.route}/").split('/')
+        path.startsWith("${Screen.SourceContent.route}/") -> {
+            val parts = path.substringAfter("${Screen.SourceContent.route}/").split('/')
             val ref = if (parts.size == 3) sourceContentRef(android.net.Uri.decode(parts[0]), parts[1], android.net.Uri.decode(parts[2])) else null
             if (ref != null) SourceContentScreen(ref) else MissingSourceContentPage()
         }
-        route.startsWith("${Screen.SourceAccount.route}/") -> SourceAccountScreen(android.net.Uri.decode(route.substringAfter("${Screen.SourceAccount.route}/")))
-        route.startsWith("${Screen.SourcePlaylistCreate.route}/") -> SourcePlaylistEditorScreen(android.net.Uri.decode(route.substringAfter("${Screen.SourcePlaylistCreate.route}/")))
-        route.startsWith("${Screen.SourcePlaylistEdit.route}/") -> {
-            val parts = route.substringAfter("${Screen.SourcePlaylistEdit.route}/").split('/')
+        path.startsWith("${Screen.SourceArtistSongs.route}/") || path.startsWith("${Screen.SourceArtistAlbums.route}/") -> {
+            val albums = path.startsWith("${Screen.SourceArtistAlbums.route}/")
+            val prefix = if (albums) Screen.SourceArtistAlbums.route else Screen.SourceArtistSongs.route
+            val parts = path.substringAfter("$prefix/").split('/')
+            val ref = if (parts.size == 2) sourceContentRef(android.net.Uri.decode(parts[0]), "artist",
+                android.net.Uri.decode(parts[1])) as? ArtistRef else null
+            if (ref != null) SourceArtistCatalogScreen(ref, albums) else MissingSourceContentPage()
+        }
+        path.startsWith("${Screen.SourceAccount.route}/") -> SourceAccountScreen(android.net.Uri.decode(path.substringAfter("${Screen.SourceAccount.route}/")))
+        path.startsWith("${Screen.SourcePlaylistCreate.route}/") -> SourcePlaylistEditorScreen(android.net.Uri.decode(path.substringAfter("${Screen.SourcePlaylistCreate.route}/")))
+        path.startsWith("${Screen.SourcePlaylistEdit.route}/") -> {
+            val parts = path.substringAfter("${Screen.SourcePlaylistEdit.route}/").split('/')
             if (parts.size == 2) SourcePlaylistEditorScreen(android.net.Uri.decode(parts[0]), android.net.Uri.decode(parts[1])) else MissingSourceContentPage()
         }
-        route.startsWith("${Screen.SourcePlaylistPicker.route}/") -> {
-            val ref = TrackRefCodec.decode(android.net.Uri.decode(route.substringAfter("${Screen.SourcePlaylistPicker.route}/")))
+        path.startsWith("${Screen.SourcePlaylistPicker.route}/") -> {
+            val ref = TrackRefCodec.decode(android.net.Uri.decode(path.substringAfter("${Screen.SourcePlaylistPicker.route}/")))
             if (ref != null) SourcePlaylistPickerScreen(ref) else MissingSourceContentPage()
         }
-        route == Screen.DownloadManage.route -> DownloadManageScreen(
+        path == Screen.DownloadManage.route -> DownloadManageScreen(
             scrollBehavior = scrollBehavior,
             isNavigationTab = isNavigationTab,
         )
-        route == Screen.LocalMusic.route -> LocalMusicScreen(scrollBehavior)
-        route == Screen.EveryDay.route -> EveryDay()
-        route == Screen.About.route -> AboutScreen()
-        route == Screen.Log.route -> LogScreen()
-        route == Screen.History.route -> HistoryScreen(isNavigationTab = isNavigationTab)
-        route.startsWith("${Screen.PrivateConversation.route}/") -> {
-            route.substringAfter("${Screen.PrivateConversation.route}/").toLongOrNull()
-                ?.let { userId -> ConversationScreen(userId) }
+        path == Screen.LocalMusic.route -> LocalMusicScreen(scrollBehavior)
+        path == Screen.EveryDay.route -> EveryDay()
+        path == Screen.About.route -> AboutScreen()
+        path == Screen.Log.route -> LogScreen()
+        path == Screen.History.route -> HistoryScreen(isNavigationTab = isNavigationTab)
+        path.startsWith("${Screen.PrivateConversation.route}/") -> {
+            android.net.Uri.decode(path.substringBefore('?').substringAfter("${Screen.PrivateConversation.route}/"))
+                .takeIf(String::isNotBlank)?.let { userId -> ConversationScreen(userId, providerId = sourceFeatureRouteProvider(route)) }
         }
-        route.startsWith("${Screen.AccountListeningRank.route}/") -> {
-            route.substringAfter("${Screen.AccountListeningRank.route}/").toLongOrNull()
-                ?.let { userId -> ListeningRankScreen(userId) }
+        path.startsWith("${Screen.AccountListeningRank.route}/") -> {
+            path.substringAfter("${Screen.AccountListeningRank.route}/").let(android.net.Uri::decode)
+                .let { userId -> ListeningRankScreen(userId) }
         }
-        route.startsWith("${Screen.AccountConnections.route}/") -> {
-            val arguments = route.substringAfter("${Screen.AccountConnections.route}/").split('/', limit = 2)
-            val userId = arguments.firstOrNull()?.toLongOrNull()
+        path.startsWith("${Screen.AccountConnections.route}/") -> {
+            val arguments = path.substringAfter("${Screen.AccountConnections.route}/").split('/', limit = 2)
+            val userId = arguments.firstOrNull()?.let(android.net.Uri::decode)?.takeIf(String::isNotBlank)
             val type = AccountConnectionType.entries.firstOrNull { it.name == arguments.getOrNull(1) }
             if (userId != null && type != null) AccountConnectionsScreen(userId, type)
         }
-        route.startsWith("${Screen.PodcastDetail.route}/") -> {
-            route.substringAfter("${Screen.PodcastDetail.route}/").toLongOrNull()
-                ?.let { id -> PodcastDetailScreen(id) }
+        path.startsWith("${Screen.PodcastDetail.route}/") -> {
+            path.substringAfter("${Screen.PodcastDetail.route}/").let(android.net.Uri::decode)
+                .let { id -> PodcastDetailScreen(id) }
         }
-        route.startsWith("${Screen.LocalSongList.route}/") -> {
-            val args = route.substringAfter("${Screen.LocalSongList.route}/").split('/', limit = 2)
+        path.startsWith("${Screen.LocalSongList.route}/") -> {
+            val args = path.substringAfter("${Screen.LocalSongList.route}/").split('/', limit = 2)
             if (args.size == 2) {
                 val type = args[0]
                 val name = args[1]
@@ -583,8 +602,8 @@ fun navigationEntry(
                 )
             }
         }
-        route.startsWith("${Screen.SearchResult.route}/") -> {
-            val args = route.substringAfter("${Screen.SearchResult.route}/").split('/', limit = 2)
+        path.startsWith("${Screen.SearchResult.route}/") -> {
+            val args = path.substringAfter("${Screen.SearchResult.route}/").split('/', limit = 2)
             if (args.size == 2) {
                 SearchResultScreen(
                     query = android.net.Uri.decode(args[0]),
@@ -592,36 +611,37 @@ fun navigationEntry(
                 )
             }
         }
-        route.startsWith("${Screen.PlayList.route}/") -> {
-            route.substringAfter("${Screen.PlayList.route}/").toLongOrNull()
-                ?.let { PlaylistScreen(id = it) }
+        path.startsWith("${Screen.PlayList.route}/") -> {
+            path.substringAfter("${Screen.PlayList.route}/").toLongOrNull()
+                ?.let { SourceContentScreen(PlaylistRef(ProviderIds.NETEASE, it.toString())) }
         }
-        route.startsWith("${Screen.Album.route}/") -> {
-            route.substringAfter("${Screen.Album.route}/").toLongOrNull()
-                ?.let { AlbumDetailScreen(id = it) }
+        path.startsWith("${Screen.Album.route}/") -> {
+            path.substringAfter("${Screen.Album.route}/").toLongOrNull()
+                ?.let { SourceContentScreen(AlbumRef(ProviderIds.NETEASE, it.toString())) }
         }
-        route.startsWith("${Screen.ArtistInfo.route}/") -> {
-            ArtistInfoScreen(id = route.substringAfter("${Screen.ArtistInfo.route}/"))
+        path.startsWith("${Screen.ArtistInfo.route}/") -> {
+            ArtistInfoScreen(id = URLDecoder.decode(path.substringAfter("${Screen.ArtistInfo.route}/"), "UTF-8"),
+                providerId = sourceFeatureRouteProvider(route) ?: ProviderIds.NETEASE)
         }
-        route.startsWith("${Screen.ArtistSongs.route}/") -> {
-            ArtistSongsScreen(id = route.substringAfter("${Screen.ArtistSongs.route}/"))
+        path.startsWith("${Screen.ArtistSongs.route}/") -> {
+            SourceArtistCatalogScreen(ArtistRef(ProviderIds.NETEASE, path.substringAfter("${Screen.ArtistSongs.route}/")), albums = false)
         }
-        route.startsWith("${Screen.ArtistAlbums.route}/") -> {
-            ArtistAlbumsScreen(id = route.substringAfter("${Screen.ArtistAlbums.route}/"))
+        path.startsWith("${Screen.ArtistAlbums.route}/") -> {
+            SourceArtistCatalogScreen(ArtistRef(ProviderIds.NETEASE, path.substringAfter("${Screen.ArtistAlbums.route}/")), albums = true)
         }
-        route.startsWith("${Screen.Artist.route}/") -> {
-            route.substringAfter("${Screen.Artist.route}/")
-                .let { ArtistScreen(id = it) }
+        path.startsWith("${Screen.Artist.route}/") -> {
+            path.substringAfter("${Screen.Artist.route}/")
+                .let { SourceContentScreen(ArtistRef(ProviderIds.NETEASE, it)) }
         }
-        route.startsWith("${Screen.Comment.route}/") -> {
-            route.substringAfter("${Screen.Comment.route}/")
+        path.startsWith("${Screen.Comment.route}/") -> {
+            path.substringAfter("${Screen.Comment.route}/")
                 .let { CommentScreen(songId = it) }
         }
-        route.startsWith("${Screen.SongWiki.route}/") -> {
-            route.substringAfter("${Screen.SongWiki.route}/").toLongOrNull()
-                ?.let { SongWikiScreen(songId = it) }
+        path.startsWith("${Screen.SongWiki.route}/") -> {
+            path.substringAfter("${Screen.SongWiki.route}/").let(android.net.Uri::decode)
+                .let { SongWikiScreen(songId = it) }
         }
-        else -> error("Unknown Mei navigation route: $route")
+        else -> error("Unknown Mei navigation path: $path")
     }
 }
 
@@ -635,6 +655,10 @@ internal fun sourceContentRef(providerId: String, kind: String, id: String): Con
     }
 }.getOrNull()
 
+private fun sourceFeatureRouteProvider(route: String): String? = runCatching {
+    android.net.Uri.parse("meilox://feature/$route").getQueryParameter("providerId")?.takeIf(String::isNotBlank)
+}.getOrNull()
+
 @Composable
 private fun MissingSourceContentPage() {
     val nav = com.ljyh.mei.ui.local.LocalNavController.current
@@ -643,4 +667,10 @@ private fun MissingSourceContentPage() {
             io.github.neoruaa.glasmio.ui.GlasmioListRow("来源或内容不存在", showDisclosure = false)
         } }
     }
+}
+
+private fun NavGraphBuilder.sourceScoped(screen: Screen, content: @Composable (String?) -> Unit) {
+    composable("${screen.route}?providerId={providerId}", arguments = listOf(
+        navArgument("providerId") { type = NavType.StringType; nullable = true; defaultValue = null },
+    )) { content(it.arguments?.getString("providerId")) }
 }

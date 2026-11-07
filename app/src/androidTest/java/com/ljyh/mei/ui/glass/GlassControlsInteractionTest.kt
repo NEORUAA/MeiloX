@@ -159,15 +159,15 @@ import com.ljyh.mei.ui.screen.setting.SettingsGroupedList
 import com.ljyh.mei.ui.screen.social.privateConversationItems
 import com.ljyh.mei.ui.screen.social.IosMessageBubble
 import com.ljyh.mei.ui.screen.social.MessageResourceCard
-import com.ljyh.mei.data.model.melox.ShareResource
+import com.ljyh.mei.source.shared.SourceShareResource as ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.model.melox.AccountDevice
 import com.ljyh.mei.data.model.melox.AccountAuthorization
-import com.ljyh.mei.data.model.melox.MessageContact
+import com.ljyh.mei.source.shared.SourceMessageContact as MessageContact
 import com.ljyh.mei.ui.screen.account.accountDeviceRecordItems
 import com.ljyh.mei.ui.screen.account.AccountDevicesState
 import com.ljyh.mei.ui.screen.account.AccountDeviceTab
-import com.ljyh.mei.data.model.melox.PrivateConversation
+import com.ljyh.mei.source.shared.SourcePrivateConversation as PrivateConversation
 import com.ljyh.mei.ui.theme.MusicTheme
 import com.ljyh.mei.R
 import com.ljyh.mei.data.model.api.CommentSortType
@@ -354,11 +354,11 @@ class GlassControlsInteractionTest {
 
     @Test
     fun privateConversationsRemainTouchableAfterScrollingToOldMessages() {
-        val currentUser = MessageContact(100, "Current user", null, null, null)
+        val currentUser = MessageContact("test.messages", "100", "Current user", null, null, null)
         val conversations = List(50) { index ->
-            val contact = MessageContact(1_000L + index, "Contact $index", null, null, null)
+            val contact = MessageContact("test.messages", "user/${1000 + index}", "Contact $index", null, null, null)
             PrivateConversation(
-                id = "conversation-$index",
+                providerId = "test.messages", id = "conversation-$index",
                 fromUser = if (index % 2 == 0) contact else currentUser,
                 toUser = if (index % 2 == 0) currentUser else contact,
                 lastMessageTime = 1_700_000_000_000L - index * 86_400_000L,
@@ -366,7 +366,7 @@ class GlassControlsInteractionTest {
                 unreadCount = if (index == 0) 3 else 0,
             )
         }
-        val openedUsers = mutableListOf<Long>()
+        val openedUsers = mutableListOf<String>()
         compose.setContent {
             MusicTheme(seedColor = Color.Red, isDark = false) {
                 Box(Modifier.width(360.dp).height(600.dp)) {
@@ -384,9 +384,9 @@ class GlassControlsInteractionTest {
         for (index in listOf(0, 24, 49, 0)) {
             compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Contact $index"))
             compose.onNodeWithText("Contact $index").assertIsDisplayed().performTouchInput { click() }
-            compose.runOnIdle { assertEquals(1_000L + index, openedUsers.lastOrNull()) }
+            compose.runOnIdle { assertEquals("user/${1000 + index}", openedUsers.lastOrNull()) }
         }
-        compose.runOnIdle { assertEquals(listOf(1_000L, 1_024L, 1_049L, 1_000L), openedUsers) }
+        compose.runOnIdle { assertEquals(listOf("user/1000", "user/1024", "user/1049", "user/1000"), openedUsers) }
     }
 
     @Test fun messageBubbleSurfaceInheritsHostContentColorsAndClipsArbitraryContent() {
@@ -430,7 +430,7 @@ class GlassControlsInteractionTest {
         var density = 1f
         var copies = 0
         var resourceClicks = 0
-        val resource = ShareResource(ShareResourceKind.Song, 1L, "Shared resource", "Fixture artist", null)
+        val resource = ShareResource(com.ljyh.mei.source.api.TrackRef("test.messages", "opaque/song/1"), ShareResourceKind.Song, "Shared resource", "Fixture artist", null)
         val copyTitle = InstrumentationRegistry.getInstrumentation().targetContext
             .getString(R.string.message_copy_content)
         compose.setContent {

@@ -199,10 +199,8 @@ import com.ljyh.mei.constants.NavigationBarSurfaceHeight
 import com.ljyh.mei.constants.NavigationBarBottomMargin
 import com.ljyh.mei.data.model.UserData
 import com.ljyh.mei.data.model.api.GetSongDetails
-import com.ljyh.mei.data.model.melox.NeteaseMusicLink
-import com.ljyh.mei.data.model.melox.NeteaseMusicLinkParser
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.source.netease.NeteaseCatalogTransport
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.playback.MusicService
@@ -301,10 +299,15 @@ class MainActivity : ComponentActivity() {
     lateinit var database: AppDatabase
 
     @Inject
+    lateinit var sourceEffects: com.ljyh.mei.source.platform.SourcePlatformEffects
+
+    @Inject
     lateinit var colorRepository: ColorRepository
 
     @Inject
-    lateinit var apiService: NeteaseCatalogTransport
+    lateinit var sourceLinks: com.ljyh.mei.source.core.SourceLinkRouter
+    @Inject
+    lateinit var sourceRouter: com.ljyh.mei.source.core.SourceRouter
     private var userData by mutableStateOf(UserData.VISITOR)
     private var pictureInPictureMode by mutableStateOf(false)
     private var floatingLyricsRequest: Boolean? = null
@@ -421,7 +424,7 @@ class MainActivity : ComponentActivity() {
                 ?: Index.DefaultOrder.joinToString(",", transform = Index::name)
             var playerConnection by remember { mutableStateOf<PlayerConnection?>(null) }
             var playerVisibilitySynchronized by remember { mutableStateOf(false) }
-            var clipboardLink by remember { mutableStateOf<NeteaseMusicLink?>(null) }
+            var clipboardLink by remember { mutableStateOf<com.ljyh.mei.source.core.OwnedSourceLink?>(null) }
             var clipboardInspected by rememberSaveable { mutableStateOf(false) }
             var startupUpdateResult by remember { mutableStateOf<VersionUpdateResult?>(null) }
 
@@ -943,16 +946,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    LaunchedEffect(Unit) {
-                        lifecycleScope.launch {
-                            getAndroidId(this@MainActivity)
-                            if (dataStore.get(DeviceIdKey, "").isEmpty()) {
-                                dataStore.edit { settings ->
-                                    settings[DeviceIdKey] = com.ljyh.mei.utils.getDeviceId()
-                                }
-                            }
-                        }
-                    }
                     DisposableEffect(playerConnection, playerBottomSheetState, isMeasured) {
                         playerVisibilitySynchronized = false
                         val player =
@@ -1176,7 +1169,7 @@ class MainActivity : ComponentActivity() {
                                             decorate = { entry ->
                                                 val route = entry.contentKey.toString()
                                                 val owner = entryViewModelOwners.getOrPut(route) {
-                                                    MeiNavEntryViewModelStoreOwner(this@MainActivity)
+                                                    MeiNavEntryViewModelStoreOwner(this@MainActivity, route)
                                                 }
                                                 CompositionLocalProvider(
                                                     LocalViewModelStoreOwner provides owner,
@@ -1507,7 +1500,7 @@ class MainActivity : ComponentActivity() {
                                     ?.getItemAt(0)
                                     ?.coerceToText(this@MainActivity)
                                     ?.toString()
-                                clipboardLink = text?.let(NeteaseMusicLinkParser::parse)
+                                clipboardLink = text?.let { sourceLinks.resolve(it) }
                             }
                         }
                         ClipboardLinkPrompt(
@@ -1515,42 +1508,37 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { clipboardLink = null },
                             onOpen = { detectedLink ->
                                 clipboardLink = null
-                                when (detectedLink) {
-                                    is NeteaseMusicLink.ListenTogether -> {
-                                        navController.currentBackStackEntry?.savedStateHandle?.set(
-                                            "listen_invitation",
-                                            detectedLink.invitationText,
-                                        )
-                                        Screen.ListenTogether.navigate(navController)
-                                    }
-                                    is NeteaseMusicLink.Song -> {
-                                        lifecycleScope.launch {
-                                            runCatching {
-                                                apiService.getSongDetail(GetSongDetails(detectedLink.id.toString()))
-                                                    .songs
-                                                    .firstOrNull()
-                                                    ?: error(getString(R.string.clipboard_song_not_found))
-                                            }.onSuccess { song ->
-                                                playerConnection?.playQueue(
-                                                    ListQueue(
-                                                        id = "clipboard-${song.id}",
-                                                        title = song.name,
-                                                        items = listOf(song.id.toString() to song.toMediaItem()),
-                                                    ),
-                                                )
-                                            }.onFailure { error ->
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    getString(R.string.clipboard_open_failed, error.message.orEmpty()),
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
+                                lifecycleScope.launch {
+                                    try {
+                                        if (!sourceLinks.isCurrent(detectedLink)) throw com.ljyh.mei.source.api.SourceException(com.ljyh.mei.source.api.SourceErrorCode.MISSING_PROVIDER)
+                                        when (val target = detectedLink.target) {
+                                            is com.ljyh.mei.source.api.SourceLinkTarget.Content -> {
+                                                if (target.ref is com.ljyh.mei.source.api.TrackRef) {
+                                                    val track = sourceRouter.getTrack(target.ref) ?: error(getString(R.string.clipboard_song_not_found))
+                                                    if (!sourceLinks.isCurrent(detectedLink)) return@launch
+                                                    val media = track.toMediaMetadata().toMediaItem()
+                                                    playerConnection?.playQueue(ListQueue(
+                                                        id = "clipboard-${media.mediaId}", title = track.title,
+                                                        items = listOf(media.mediaId to media),
+                                                    ))
+                                                } else com.ljyh.mei.ui.screen.source.navigateSourceContent(navController, target.ref)
+                                            }
+                                            is com.ljyh.mei.source.api.SourceLinkTarget.Feature -> {
+                                                if (target.route == Screen.ListenTogether.route) {
+                                                    navController.currentBackStackEntry?.savedStateHandle?.set(
+                                                        "listen_invitation", target.parameters.get("invitationText")?.asString.orEmpty())
+                                                    Screen.ListenTogether.navigate(navController) { addQuery("providerId", Uri.encode(detectedLink.providerId)) }
+                                                }
                                             }
                                         }
+                                    } catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) {
+                                        Toast.makeText(this@MainActivity, getString(R.string.clipboard_open_failed, ""), Toast.LENGTH_LONG).show()
                                     }
                                 }
                             },
                         )
-                        if (!pictureInPictureMode) NeteaseLegacyWebSessionNotice()
+                        if (!pictureInPictureMode) com.ljyh.mei.ui.screen.source.SourcePlatformEffectHost(sourceEffects)
                         VersionUpdateAlert(
                             result = startupUpdateResult,
                             onDismiss = { startupUpdateResult = null },

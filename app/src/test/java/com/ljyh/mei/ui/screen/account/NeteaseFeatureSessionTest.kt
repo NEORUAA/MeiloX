@@ -1,24 +1,28 @@
 package com.ljyh.mei.ui.screen.account
 
-import androidx.datastore.preferences.core.preferencesOf
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.NeteaseCsrfKey
+import com.google.gson.JsonParser
+import com.ljyh.mei.source.api.ProviderInstanceId
+import com.ljyh.mei.source.shared.OnlineSessionKind
+import com.ljyh.mei.source.shared.SourceOnlineParser
 import org.junit.Assert.*
 import org.junit.Test
 
 class NeteaseFeatureSessionTest {
-    @Test fun webSessionOnlyUsesTheCurrentAppsStoredCredentials() {
-        val cookies = featureSessionCookies(preferencesOf(CookieKey to "example-session", NeteaseCsrfKey to "example-csrf"))
-        assertEquals("example-session", cookies["MUSIC_U"])
-        assertEquals("example-csrf", cookies["__csrf"])
-        assertFalse(cookies.containsKey("MUSIC_A"))
-        assertFalse(featureSessionCookies(preferencesOf()).containsKey("MUSIC_U"))
+    @Test fun sessionStatusReadsOnlyTheNamedProviderResult() {
+        val parser = SourceOnlineParser("fixture-source", ProviderInstanceId("installed:fixture"))
+        val web = parser.session(JsonParser.parseString("""{"authenticated":true,"kind":"web"}"""))
+        assertEquals("fixture-source", web.providerId)
+        assertTrue(web.authenticated)
+        assertEquals(OnlineSessionKind.Web, web.kind)
+        assertEquals(OnlineSessionKind.Mobile, parser.session(JsonParser.parseString("""{"authenticated":true,"kind":"mobile"}""")).kind)
     }
 
-    @Test fun malformedCookieValuesAndForeignBridgeTargetsAreRejected() {
-        assertFalse(featureSessionCookies(preferencesOf(CookieKey to "bad; injected=value")).containsKey("MUSIC_U"))
-        assertTrue(isNeteaseFeatureUrl("https://st.music.163.com/g/device"))
-        assertFalse(isNeteaseFeatureUrl("https://music.163.com.example.test/"))
-        assertFalse(isNeteaseFeatureUrl("http://music.163.com/"))
+    @Test fun signedOutAndOtherSessionKindsRemainDistinct() {
+        val parser = SourceOnlineParser("fixture-source", ProviderInstanceId("installed:fixture"))
+        val signedOut = parser.session(JsonParser.parseString("""{"authenticated":false,"kind":"mobile"}"""))
+        assertFalse(signedOut.authenticated)
+        assertEquals(OnlineSessionKind.None, signedOut.kind)
+        val other = parser.session(JsonParser.parseString("""{"authenticated":true,"kind":"oauth"}"""))
+        assertEquals(OnlineSessionKind.Other, other.kind)
     }
 }

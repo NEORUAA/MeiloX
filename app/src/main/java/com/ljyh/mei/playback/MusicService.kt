@@ -31,8 +31,8 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.common.util.UnstableApi
-import com.ljyh.mei.source.netease.NeteaseQueueTransport
-import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.SourceFeatureClient
 import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.source.core.SourceRouter
 import androidx.media3.datasource.DataSource
@@ -84,9 +84,7 @@ import com.ljyh.mei.constants.LoopPlaybackKey
 import com.ljyh.mei.constants.NotificationAction
 import com.ljyh.mei.constants.NotificationLeftActionKey
 import com.ljyh.mei.constants.NotificationRightActionKey
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.constants.CloudShuffleEnabledKey
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.MusicQualityKey
 import com.ljyh.mei.constants.NoAudioSourceKey
@@ -94,13 +92,6 @@ import com.ljyh.mei.constants.RepeatModeKey
 import com.ljyh.mei.constants.UserAgent
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.metadata
-import com.ljyh.mei.data.network.netease.NcblSongInfo
-import com.ljyh.mei.data.network.netease.NeteaseClientLogClient
-import com.ljyh.mei.source.netease.repository.MeloXRepository
-import com.ljyh.mei.source.netease.repository.PlayerRepository
-import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.network.neteaseSessionFingerprint
-import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.di.repository.HistoryRepository
 import com.ljyh.mei.di.repository.SongRepository
@@ -124,6 +115,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -166,14 +160,18 @@ class MusicService : MediaLibraryService(),
     private var notificationLeftAction = NotificationAction.PlayMode
     private var notificationRightAction = NotificationAction.Like
     private var notificationSignedIn = false
-    private var notificationAccount: Pair<String?, String?>? = null
+    private var notificationLikeOwner: MusicProvider? = null
+    private var notificationLikeRef: TrackRef? = null
+    private var notificationLiked: Boolean? = null
+    private var notificationLikeGeneration = 0L
+    private var notificationLikeMutation: Job? = null
     private var notificationLikeJob: Job? = null
     private var notificationButtons: List<CommandButton> = emptyList()
     private var floatingLyricsActivity = WeakReference<MainActivity>(null)
     private var floatingLyricsEnabled = false
 
     @Inject
-    lateinit var playerRepository: PlayerRepository
+    lateinit var sourceFeatures: SourceFeatureClient
 
     lateinit var sleepTimer: SleepTimer
     lateinit var sleepTimerNotification: SleepTimerNotification
@@ -227,17 +225,11 @@ class MusicService : MediaLibraryService(),
     private var openedAudioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
 
     @Inject
-    lateinit var neteaseQueueTransport: NeteaseQueueTransport
+    lateinit var queueFeatures: SourcePlaybackFeatures
 
 
     @Inject
     lateinit var historyRepository: HistoryRepository
-
-    @Inject
-    lateinit var meloXRepository: MeloXRepository
-
-    @Inject
-    lateinit var neteaseClientLogClient: NeteaseClientLogClient
 
     @Inject
     lateinit var songRepository: SongRepository
@@ -247,9 +239,13 @@ class MusicService : MediaLibraryService(),
     lateinit var automaticCacheController: AutomaticCacheController
     @Inject
     lateinit var sourceRouter: SourceRouter
+    @Inject
+    lateinit var sourceUpdatePlaybackGuard: com.ljyh.mei.source.update.SourceUpdatePlaybackGuard
+    private var sourceUpdateRestoreBarrier: kotlinx.coroutines.Deferred<Unit>? = null
 
     override fun onCreate() {
         super.onCreate()
+        sourceUpdateRestoreBarrier = sourceUpdatePlaybackGuard.beginRestore()
         mediaUriProvider.clearQualityState()
         mediaUriProvider.onSourceResolved = { mediaId, source ->
             scope.launch {
@@ -260,7 +256,7 @@ class MusicService : MediaLibraryService(),
                 }
             }
         }
-        playbackHistoryReporter = PlaybackHistoryReporter(meloXRepository, neteaseClientLogClient)
+        playbackHistoryReporter = PlaybackHistoryReporter(sourceFeatures)
         equalizerConfigurationState = EqualizerConfigurationState(this, scope)
         audioOutputMode = context.dataStore[AudioOutputModeKey].toEnum(AudioOutputMode.AudioTrack)
         usbAudioOutput = UsbAudioOutput(this) {
@@ -392,7 +388,7 @@ class MusicService : MediaLibraryService(),
         })
 
         queueManager = PlaybackQueueManager(
-            player, neteaseQueueTransport, scope, sourceRouter = sourceRouter,
+            player, queueFeatures, scope, sourceRouter = sourceRouter,
             serverShuffleAllowed = { listenTogetherStore.state.value.room == null },
         )
         scope.launch {
@@ -460,44 +456,51 @@ class MusicService : MediaLibraryService(),
         }
         scope.launch {
             context.dataStore.data.map { preferences ->
-                Triple(
-                    NotificationAction.fromPreference(preferences[NotificationLeftActionKey], NotificationAction.PlayMode),
-                    NotificationAction.fromPreference(preferences[NotificationRightActionKey], NotificationAction.Like),
-                    preferences[CookieKey] to preferences[UserIdKey],
-                )
-            }.distinctUntilChanged().collect { (left, right, account) ->
+                NotificationAction.fromPreference(preferences[NotificationLeftActionKey], NotificationAction.PlayMode) to
+                    NotificationAction.fromPreference(preferences[NotificationRightActionKey], NotificationAction.Like)
+            }.distinctUntilChanged().collect { (left, right) ->
                 notificationLeftAction = left
                 notificationRightAction = right
-                val accountChanged = notificationAccount != account
-                if (accountChanged) {
-                    notificationAccount = account
-                    playerRepository.resetLikeState()
-                }
-                notificationSignedIn = !account.first.isNullOrBlank() && !account.second.isNullOrBlank()
-                refreshNotificationLike(force = accountChanged)
+                refreshNotificationLike(force = true)
                 updateNotificationButtons()
             }
         }
         scope.launch {
-            playerRepository.songLikes.collect { updateNotificationButtons() }
+            sourceRouter.contentRevision.collect { refreshNotificationLike(force = true) }
         }
         systemLyricsBridge = SystemLyricsBridge(this, player, lyricManager, mediaSession)
         flymeLyricsPublisher = FlymeStatusBarLyricsPublisher(this, player, lyricManager, flymeNotificationProvider)
         scope.launch {
-            context.dataStore.data.map { it[CookieKey] }.distinctUntilChanged().drop(1).collect {
-                val mediaId = player.currentMediaItem?.mediaId
-                val hasOpenedSource = player.playbackState == Player.STATE_READY
-                val playingQuality = currentMusicQuality.value
-                val playingLocal = isPlayingLocalSource.value
-                val localInfo = localPlaybackInfo.value
-                mediaUriProvider.clearQualityState()
-                resetCurrentQualityState(mediaId)
-                // Already prepared bytes retain their actual format. Entitlement and URL
-                // caches are still cleared, and the new account gets a fresh quality catalog.
-                if (hasOpenedSource && player.currentMediaItem?.mediaId == mediaId) {
-                    currentMusicQuality.value = playingQuality
-                    isPlayingLocalSource.value = playingLocal
-                    localPlaybackInfo.value = localInfo
+            var previousSourceId: String? = null
+            var previousOwner: MusicProvider? = null
+            var previousRevision: String? = null
+            combine(sourceRouter.registry.revision,
+                currentMediaMetadata.map { it?.trackRef?.providerId }.distinctUntilChanged()) { _, id ->
+                id to id?.let(sourceRouter.registry::provider)
+            }.distinctUntilChanged { before, after -> before.first == after.first && before.second === after.second }
+                .collectLatest { (id, provider) ->
+                val revision = (provider as? AccountRevisionCapability)?.accountRevision ?: flowOf(null)
+                revision.collect { account ->
+                    val invalidate = shouldInvalidatePlaybackOwner(previousOwner, previousRevision, provider, account,
+                        sameSource = previousSourceId == id)
+                    previousSourceId = id
+                    previousOwner = provider
+                    previousRevision = account
+                    if (!invalidate) return@collect
+                    val mediaId = player.currentMediaItem?.mediaId
+                    val hasOpenedSource = player.playbackState == Player.STATE_READY
+                    val playingQuality = currentMusicQuality.value
+                    val playingLocal = isPlayingLocalSource.value
+                    val localInfo = localPlaybackInfo.value
+                    mediaUriProvider.clearQualityState()
+                    resetCurrentQualityState(mediaId)
+                    // Prepared bytes keep playing while new requests use the replacement owner.
+                    if (hasOpenedSource && player.currentMediaItem?.mediaId == mediaId) {
+                        currentMusicQuality.value = playingQuality
+                        isPlayingLocalSource.value = playingLocal
+                        localPlaybackInfo.value = localInfo
+                    }
+                    refreshNotificationLike(force = true)
                 }
             }
         }
@@ -529,6 +532,7 @@ class MusicService : MediaLibraryService(),
     private fun restorePlayerState() {
         playbackRestoreJob = scope.launch {
             try {
+                sourceUpdateRestoreBarrier?.await()
                 val restoredState = withContext(Dispatchers.IO) {
                     val preferences = context.dataStore.data.firstOrNull() ?: return@withContext null
                     playbackPersistence.load()?.withRestorePreferences(preferences)?.let { snapshot ->
@@ -588,6 +592,7 @@ class MusicService : MediaLibraryService(),
                 Timber.tag("MusicService").e(error, "Unable to restore playback snapshot")
             } finally {
                 isRestoringPlayback = false
+                sourceUpdatePlaybackGuard.finishRestore(protectedUpdateSources())
                 // Save a queue selected during loading, but never replace disk data
                 // with an empty queue after a failed or cancelled startup read.
                 if (currentCoroutineContext().isActive && player.mediaItemCount > 0) {
@@ -674,13 +679,19 @@ class MusicService : MediaLibraryService(),
         resetCurrentQualityState(player.currentMediaItem?.mediaId, refresh = false)
     }
 
+    private fun protectedUpdateSources(): Set<String> = buildSet {
+        if (::player.isInitialized) player.currentMetadata?.trackRef?.providerId?.let(::add)
+        currentPlaybackResolution.value?.let { add(it.originTrackRef.providerId); add(it.actualAudioProviderId) }
+    }
+
     private fun publishResolvedQuality(source: ResolvedMediaSource) {
         val mediaId = player.currentMediaItem?.mediaId ?: return
         if (source.cacheKey?.let { mediaUriProvider.isRejectedCachedSource(mediaId, it) } == true) return
         val isLocal = source.localPlaybackInfo != null
         currentPlaybackResolution.value = source.resolution
+        sourceUpdatePlaybackGuard.updateSources(protectedUpdateSources())
         source.resolution?.let { resolution ->
-            if (!canReportNeteasePlayback(resolution.originTrackRef, resolution)) {
+            if (!canReportProviderPlayback(resolution.originTrackRef, resolution)) {
                 platformHistorySuppressedFor = mediaId
             }
         }
@@ -874,6 +885,7 @@ class MusicService : MediaLibraryService(),
         }
         if (events.containsAny(EVENT_TIMELINE_CHANGED, EVENT_POSITION_DISCONTINUITY)) {
             currentMediaMetadata.value = player.currentMetadata
+            sourceUpdatePlaybackGuard.updateSources(protectedUpdateSources())
         }
         if (events.containsAny(
                 EVENT_TIMELINE_CHANGED,
@@ -952,51 +964,32 @@ class MusicService : MediaLibraryService(),
         historyRepository.addToHistory(song, playedAt)
     }
 
-    private fun MediaItem.playbackHistorySongIdOrNull(): Long? {
+    private fun MediaItem.playbackHistoryTrackOrNull(): TrackRef? {
         val metadata = metadata ?: return null
-        if (metadata.isPodcast || metadata.isLocal || metadata.trackRef.providerId != ProviderIds.NETEASE) return null
+        if (metadata.isPodcast || metadata.isLocal) return null
+        val ref = metadata.trackRef
         val actual = mediaUriProvider.resolvedMediaSource(mediaId)?.resolution
-        if (platformHistorySuppressedFor == mediaId || !canReportNeteasePlayback(metadata.trackRef, actual)) return null
-        return metadata.trackRef.trackId.toLongOrNull()?.takeIf { it > 0L }
+        if (platformHistorySuppressedFor == mediaId || !canReportProviderPlayback(ref, actual)) return null
+        val provider = sourceRouter.registry.provider(ref.providerId) as? SourceFeatureCapability ?: return null
+        if ("recordPlaybackStart" !in provider.features["history"].orEmpty()) return null
+        return ref
     }
 
-    private fun recordPlaybackStart(
-        mediaItem: MediaItem,
-        startedAtMs: Long,
-    ) {
+    private fun recordPlaybackStart(mediaItem: MediaItem, startedAtMs: Long) {
         scope.launchPlaybackHistoryPersistence {
-            try {
-                recordHistory(mediaItem, startedAtMs)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Timber.tag("MusicService").e(error, "add history record error")
-            }
+            try { recordHistory(mediaItem, startedAtMs) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { Timber.tag("MusicService").e(error, "add history record error") }
         }
-
-        val songId = mediaItem.playbackHistorySongIdOrNull() ?: return
-        val source = resolvePlaybackHistorySource(songId) ?: return
+        val ref = mediaItem.playbackHistoryTrackOrNull() ?: return
         val metadata = mediaItem.metadata
-        val artist = metadata?.artists
-            ?.map { it.name }
-            ?.filter(String::isNotBlank)
-            ?.joinToString(", ")
-            .orEmpty()
-            .ifBlank { mediaItem.mediaMetadata.artist?.toString().orEmpty() }
         playbackHistoryReporter.recordStart(
-            mediaId = mediaItem.mediaId,
-            songId = songId,
-            source = source,
-            startedAtMs = startedAtMs,
-            song = NcblSongInfo(
-                id = songId,
-                name = metadata?.title.orEmpty().ifBlank {
-                    mediaItem.mediaMetadata.title?.toString().orEmpty()
-                },
-                artist = artist,
-                durationMs = metadata?.duration?.takeIf { it > 0L }
-                    ?: player.duration.takeIf { it > 0L && it != C.TIME_UNSET },
-            ),
+            mediaId = mediaItem.mediaId, ref = ref, startedAtMs = startedAtMs,
+            title = metadata?.title.orEmpty().ifBlank { mediaItem.mediaMetadata.title?.toString().orEmpty() },
+            artist = metadata?.artists?.map { it.name }?.filter(String::isNotBlank)?.joinToString(", ")
+                .orEmpty().ifBlank { mediaItem.mediaMetadata.artist?.toString().orEmpty() },
+            durationMs = metadata?.duration?.takeIf { it > 0L }
+                ?: player.duration.takeIf { it > 0L && it != C.TIME_UNSET },
         )
     }
 
@@ -1004,30 +997,48 @@ class MusicService : MediaLibraryService(),
         completed ?: return
         val actual = mediaUriProvider.resolvedMediaSource(completed.mediaId)?.resolution
         val origin = TrackRefCodec.decode(completed.mediaId) ?: return
-        if (platformHistorySuppressedFor == completed.mediaId || !canReportNeteasePlayback(origin, actual)) return
-        playbackHistoryReporter.recordDuration(
-            completed = completed,
-            endedAtMs = System.currentTimeMillis(),
-        )
+        if (platformHistorySuppressedFor == completed.mediaId || !canReportProviderPlayback(origin, actual)) return
+        playbackHistoryReporter.recordDuration(completed, System.currentTimeMillis())
     }
 
-
-    private fun notificationLikeSongId(): String? {
+    private fun notificationLikeTrack(): TrackRef? {
         val metadata = player.currentMetadata ?: return null
-        return metadata.trackRef.trackId.takeIf {
-            metadata.trackRef.providerId == ProviderIds.NETEASE && !metadata.isLocal && !metadata.isPodcast &&
-                (it.toLongOrNull() ?: 0L) > 0L
-        }
+        if (metadata.isLocal || metadata.isPodcast) return null
+        val owner = sourceRouter.registry.provider(metadata.trackRef.providerId) ?: return null
+        val likes = owner as? LikeCapability ?: return null
+        return metadata.trackRef.takeIf { SourceCapability.LIKE in owner.capabilities && likes.canReadLikes && likes.canWriteLikes }
     }
 
     private fun refreshNotificationLike(force: Boolean = false) {
         notificationLikeJob?.cancel()
-        val id = notificationLikeSongId()?.toLongOrNull() ?: return
-        if (!notificationSignedIn ||
-            (!force && notificationLeftAction != NotificationAction.Like && notificationRightAction != NotificationAction.Like)
-        ) return
-        val expectedSession = notificationAccount?.first?.let(::neteaseSessionFingerprint) ?: return
-        notificationLikeJob = scope.launch { playerRepository.checkSongLike(id, expectedSession) }
+        val ref = notificationLikeTrack()
+        val owner = ref?.let { sourceRouter.registry.provider(it.providerId) }
+        if (notificationLikeRef != ref || notificationLikeOwner !== owner) {
+            notificationLikeMutation?.cancel()
+            notificationLiked = null
+        }
+        notificationLikeRef = ref
+        notificationLikeOwner = owner
+        val generation = ++notificationLikeGeneration
+        notificationSignedIn = false
+        updateNotificationButtons()
+        if (ref == null || owner == null || (!force && notificationLeftAction != NotificationAction.Like &&
+            notificationRightAction != NotificationAction.Like)) return
+        notificationLikeJob = scope.launch {
+            try {
+                val liked = sourceRouter.liked(ref)
+                if (generation == notificationLikeGeneration && notificationLikeTrack() == ref &&
+                    sourceRouter.registry.provider(ref.providerId) === owner) {
+                    notificationLiked = liked
+                    notificationSignedIn = true
+                }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (generation == notificationLikeGeneration && notificationLikeTrack() == ref) {
+                    notificationSignedIn = (error as? SourceException)?.code !in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)
+                }
+            } finally { if (generation == notificationLikeGeneration) updateNotificationButtons() }
+        }
     }
 
     fun attachFloatingLyricsActivity(activity: MainActivity) {
@@ -1097,8 +1108,8 @@ class MusicService : MediaLibraryService(),
 
     private fun updateNotificationButtons() {
         if (!::mediaSession.isInitialized) return
-        val songId = notificationLikeSongId()
-        val liked = playerRepository.songLikes.value[songId] == true
+        val songId = notificationLikeTrack()
+        val liked = notificationLiked == true
         val buttons = listOfNotNull(
             notificationButton(
                 this, notificationLeftAction, true, player.repeatMode, player.shuffleModeEnabled, liked,
@@ -1203,25 +1214,36 @@ class MusicService : MediaLibraryService(),
                     ))
                 }
                 NotificationAction.Like -> {
-                    val id = notificationLikeSongId()
+                    val ref = notificationLikeTrack()
                         ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
                     if (!notificationSignedIn) {
                         Toast.makeText(this@MusicService, R.string.notification_like_login_required, Toast.LENGTH_SHORT).show()
                         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED))
                     }
-                    val expectedSession = neteaseSessionFingerprint(notificationAccount?.first.orEmpty())
+                    if (notificationLikeMutation?.isActive == true) {
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
+                    }
+                    val owner = sourceRouter.registry.provider(ref.providerId)
                     val future = SettableFuture.create<SessionResult>()
-                    scope.launch {
-                        val result = playerRepository.toggleLike(id, expectedSession)
-                        if (result is Resource.Success) {
+                    notificationLikeMutation = scope.launch {
+                        try {
+                            val account = (owner as? AccountRevisionCapability)?.accountRevision?.firstOrNull()
+                            val liked = notificationLiked ?: sourceRouter.liked(ref)
+                            if (notificationLikeTrack() != ref || sourceRouter.registry.provider(ref.providerId) !== owner ||
+                                (owner as? AccountRevisionCapability)?.accountRevision?.firstOrNull() != account) {
+                                throw CancellationException("Source changed before updating the notification favorite")
+                            }
+                            sourceRouter.setLiked(ref, !liked, account, owner)
+                            refreshNotificationLike(force = true)
                             future.set(SessionResult(SessionResult.RESULT_SUCCESS))
-                        } else {
+                        } catch (cancelled: CancellationException) { throw cancelled
+                        } catch (_: Exception) {
                             Toast.makeText(this@MusicService, R.string.notification_like_failed, Toast.LENGTH_SHORT).show()
                             future.set(SessionResult(SessionResult.RESULT_ERROR_UNKNOWN))
                         }
-                    }.invokeOnCompletion { error ->
+                    }.also { task -> task.invokeOnCompletion { error ->
                         if (error != null) future.set(SessionResult(SessionResult.RESULT_ERROR_UNKNOWN))
-                    }
+                    } }
                     return future
                 }
             }
@@ -1273,6 +1295,7 @@ class MusicService : MediaLibraryService(),
 
         closeAudioEffectSession()
         player.release()
+        sourceUpdatePlaybackGuard.release()
         usbAudioOutput.release()
         serviceJob.cancel()
         super.onDestroy()

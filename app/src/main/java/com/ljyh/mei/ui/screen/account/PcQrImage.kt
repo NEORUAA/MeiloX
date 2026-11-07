@@ -12,7 +12,9 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal suspend fun readPcQrImage(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+internal suspend fun readPcQrImage(context: Context, uri: Uri): String? = readPcQrValues(context, uri).firstOrNull()
+
+internal suspend fun readPcQrValues(context: Context, uri: Uri): List<String> = withContext(Dispatchers.IO) {
     val image = InputImage.fromFilePath(context, uri)
     val scanner = BarcodeScanning.getClient(
         BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
@@ -22,7 +24,7 @@ internal suspend fun readPcQrImage(context: Context, uri: Uri): String? = withCo
             scanner.process(image)
                 .addOnSuccessListener { codes ->
                     if (continuation.isActive) {
-                        val value = selectNeteaseLoginQr(codes.mapNotNull { it.rawValue })
+                        val value = decodedQrCandidates(codes.mapNotNull { it.rawValue })
                         continuation.resume(value)
                     }
                 }

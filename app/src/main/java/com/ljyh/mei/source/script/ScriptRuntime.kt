@@ -2,6 +2,12 @@ package com.ljyh.mei.source.script
 
 import android.content.Context
 import androidx.javascriptengine.IsolateStartupParameters
+import androidx.javascriptengine.EvaluationFailedException
+import androidx.javascriptengine.EvaluationResultSizeLimitExceededException
+import androidx.javascriptengine.MemoryLimitExceededException
+import androidx.javascriptengine.SandboxUnsupportedException
+import androidx.javascriptengine.TerminationInfo
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.javascriptengine.JavaScriptSandbox
 import com.google.gson.Gson
 import com.google.gson.JsonElement
@@ -15,12 +21,11 @@ import javax.inject.Singleton
 import java.security.SecureRandom
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -59,10 +64,14 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
     ): ScriptInvocation = execution.withLock {
         ensureCurrent()
         if (!supported) throw SourceException(SourceErrorCode.UNSUPPORTED, "Update Android System WebView to run sources")
+        var phase = ScriptRuntimePhase.CONNECTION
+        var requestSent = false
+        val memoryLimited = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             withTimeout(20_000) {
-                val sandbox = connect()
-                try {
+                connections.connect { JavaScriptSandbox.createConnectedInstanceAsync(context.applicationContext) }.use { lease ->
+                    val sandbox = lease.value
+                    phase = ScriptRuntimePhase.INITIALIZATION
                     if (!sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE) ||
                         !sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) {
                         throw SourceException(SourceErrorCode.UNSUPPORTED, "Source resource limits are unavailable on this device")
@@ -71,9 +80,12 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                         maxHeapSizeBytes = 16L * 1024 * 1024
                         maxEvaluationReturnSizeBytes = MAX_RESULT_BYTES
                     }
-                    val isolate = sandbox.createIsolate(settings)
-                    try {
+                    sandbox.createIsolate(settings).use { isolate ->
+                        isolate.addOnTerminatedCallback(java.util.concurrent.Executor { it.run() }) {
+                            if (it.status == TerminationInfo.STATUS_MEMORY_LIMIT_EXCEEDED) memoryLimited.set(true)
+                        }
                         ensureCurrent()
+                        phase = ScriptRuntimePhase.SCRIPT
                         withTimeout(3_000) { isolate.evaluateJavaScriptAsync(script + "\n;'loaded';").await() }
                         val gson = Gson()
                         val entropy = SecureRandom()
@@ -81,7 +93,18 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                         var state: JsonElement? = null
                         repeat(5) { hop ->
                             ensureCurrent()
-                            val pluginContext = newContext(manifest, configuration, storage, entropy)
+                            val pluginContext = newContext(manifest, configuration, storage, entropy).apply {
+                                add("device", JsonObject().apply {
+                                    addProperty("installationId", ScriptPlatformSdk.installationDeviceId(context, "script:${manifest.id}:default"))
+                                    addProperty("resolution", context.resources.displayMetrics.let { "${it.widthPixels}x${it.heightPixels}" })
+                                    addProperty("osVersion", android.os.Build.VERSION.RELEASE)
+                                    addProperty("model", android.os.Build.MODEL)
+                                    addProperty("brand", android.os.Build.BRAND)
+                                    addProperty("processName", context.applicationInfo.processName ?: context.packageName)
+                                    addProperty("pid", android.os.Process.myPid())
+                                    addProperty("buildId", android.os.Build.ID)
+                                })
+                            }
                             val expression = if (response == null) {
                                 "__p[${gson.toJson(operation)}](${params},${pluginContext})"
                             } else {
@@ -96,15 +119,30 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                 return JSON.stringify(__r === undefined ? null : __r);
                             })()""".trimIndent()
                             ensureCurrent()
+                            phase = ScriptRuntimePhase.OPERATION
                             val raw = withTimeout(3_000) { isolate.evaluateJavaScriptAsync(invocation).await() }
                             ensureCurrent()
                             if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) throw SourceException(SourceErrorCode.PLUGIN)
+                            phase = ScriptRuntimePhase.RESULT
                             val result = JsonParser.parseString(raw)
                             val envelope = result.takeIf(JsonElement::isJsonObject)?.asJsonObject
                             if (envelope?.has("request") == true) {
                                 if (hop == 4) throw SourceException(SourceErrorCode.PLUGIN, "Source request limit exceeded")
                                 ensureCurrent()
-                                response = request(envelope.getAsJsonObject("request"))
+                                val frame = envelope.getAsJsonObject("request")
+                                val recovery = frame.get("errorResponse")?.let {
+                                    if (!it.isJsonPrimitive || !it.asJsonPrimitive.isBoolean) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+                                    it.asBoolean
+                                } ?: false
+                                phase = ScriptRuntimePhase.REQUEST
+                                requestSent = true
+                                response = try { request(frame) }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (error: SourceException) {
+                                    if (!recovery || error.code !in setOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT)) throw error
+                                    ensureCurrent()
+                                    JsonObject().apply { addProperty("status", 0); addProperty("body", ""); addProperty("error", error.code.name) }
+                                }
                                 ensureCurrent()
                                 state = envelope.get("state")
                             } else {
@@ -123,39 +161,31 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                             }
                         }
                         throw SourceException(SourceErrorCode.PLUGIN)
-                    } finally { isolate.close() }
-                } finally { sandbox.close() }
+                    }
+                }
             }
         } catch (_: TimeoutCancellationException) {
             ensureCurrent()
             throw SourceException(SourceErrorCode.TIMEOUT)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (error: SourceException) { ensureCurrent(); throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             ensureCurrent()
-            // Evaluation errors can contain plugin-generated credential strings.
-            throw SourceException(SourceErrorCode.PLUGIN, "Source execution failed")
-        }
-    }
-
-    private suspend fun connect(): JavaScriptSandbox = suspendCancellableCoroutine { continuation ->
-        val connection = JavaScriptSandbox.createConnectedInstanceAsync(context)
-        // Do not cancel the connection future: once binding completes, close the sandbox
-        // even when this caller has already been cancelled and never acquired it.
-        connection.addListener({
-            try {
-                val sandbox = connection.get()
-                continuation.resume(sandbox) { _, abandoned, _ -> abandoned.close() }
-            } catch (error: Exception) {
-                if (continuation.isActive) continuation.resumeWithException(error)
+            val failure = scriptRuntimeFailure(error, phase, memoryLimited.get(), requestSent)
+            if (failure.code == SourceErrorCode.UNAVAILABLE) {
+                // Engine exception messages may contain script data. Record fixed metadata only.
+                val kind = (error as? java.util.concurrent.ExecutionException)?.cause?.javaClass?.simpleName ?: error.javaClass.simpleName
+                android.util.Log.w("ScriptRuntime", "Sandbox unavailable phase=${phase.name} kind=$kind")
             }
-        }, java.util.concurrent.Executor { it.run() })
+            throw failure
+        }
     }
 
     companion object {
         const val MAX_RESULT_BYTES = 256 * 1024
         const val SECURE_RANDOM_BYTES = 256
         private val execution = Mutex()
+        private val connections = ScriptConnectionGate()
 
         internal fun newContext(
             manifest: PluginManifest,
@@ -172,3 +202,76 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         }
     }
 }
+
+internal enum class ScriptRuntimePhase { CONNECTION, INITIALIZATION, SCRIPT, OPERATION, RESULT, REQUEST }
+
+/** Runtime availability is separate from script/resource/permission failures. */
+internal fun scriptRuntimeFailure(error: Throwable, phase: ScriptRuntimePhase,
+    memoryLimited: Boolean = false, requestSent: Boolean = false): SourceException {
+    var cause = error
+    repeat(8) {
+        val next = (cause as? java.util.concurrent.ExecutionException)?.cause
+        if (next != null && next !== cause) cause = next
+    }
+    if (cause is CancellationException) throw cause as CancellationException
+    if (cause is SourceException) return cause as SourceException
+    val code = when {
+        memoryLimited || cause is MemoryLimitExceededException || cause is EvaluationResultSizeLimitExceededException -> SourceErrorCode.PLUGIN
+        cause is SandboxUnsupportedException -> SourceErrorCode.UNSUPPORTED
+        cause is ScriptConnectionCloseException -> SourceErrorCode.UNAVAILABLE
+        cause is EvaluationFailedException -> if (phase == ScriptRuntimePhase.SCRIPT) SourceErrorCode.PLUGIN else SourceErrorCode.INVALID_RESPONSE
+        phase in setOf(ScriptRuntimePhase.RESULT, ScriptRuntimePhase.REQUEST) &&
+            cause !is androidx.javascriptengine.JavaScriptException && cause !is android.os.RemoteException -> SourceErrorCode.INVALID_RESPONSE
+        else -> SourceErrorCode.UNAVAILABLE
+    }
+    return SourceException(code, outcomeUnknown = code == SourceErrorCode.UNAVAILABLE && requestSent)
+}
+
+/** AndroidX permits one binding. A cancelled caller must retire its late connection first. */
+internal class ScriptConnectionGate {
+    private val acquisition = Mutex()
+    private var retirement: CompletableDeferred<Unit>? = null
+
+    suspend fun <T : AutoCloseable> connect(create: () -> ListenableFuture<T>): ScriptConnectionLease<T> = acquisition.withLock {
+        retirement?.await()
+        val settled = CompletableDeferred<Unit>()
+        retirement = settled
+        val connection = try { create() } catch (error: Throwable) { settled.complete(Unit); throw error }
+        suspendCancellableCoroutine<ScriptConnectionLease<T>> { continuation ->
+            // Cancelling the future does not unbind AndroidX's service. Keep the listener alive
+            // and block later acquisitions until a late result has actually been closed.
+            connection.addListener({
+                try {
+                    val lease = ScriptConnectionLease(connection.get()) { failure ->
+                        if (failure == null) settled.complete(Unit) else settled.completeExceptionally(failure)
+                    }
+                    continuation.resume(lease) { _, abandoned, _ ->
+                        runCatching { abandoned.close() }
+                    }
+                } catch (error: Exception) {
+                    settled.complete(Unit)
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            }, java.util.concurrent.Executor { it.run() })
+        }
+    }
+}
+
+/** The binding remains leased until its single close has proven retirement successful. */
+internal class ScriptConnectionLease<T : AutoCloseable>(val value: T, private val retire: (Throwable?) -> Unit) : AutoCloseable {
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        try { value.close() }
+        catch (_: Throwable) {
+            // Do not expose framework exception text or retry a partially completed unbind.
+            val failure = ScriptConnectionCloseException()
+            retire(failure)
+            throw failure
+        }
+        retire(null)
+    }
+}
+
+private class ScriptConnectionCloseException : Exception("Sandbox retirement failed")

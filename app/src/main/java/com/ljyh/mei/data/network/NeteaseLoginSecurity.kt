@@ -17,14 +17,14 @@ import android.test.mock.MockPackageManager
 import android.util.Base64
 import android.util.Log
 import android.util.Pair
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.ljyh.mei.constants.NeteaseNmcidKey
 import com.ljyh.mei.constants.NeteaseNmdiFinalKey
 import com.ljyh.mei.constants.NeteaseNmdiKey
 import com.ljyh.mei.constants.NeteaseNmtidKey
-import com.ljyh.mei.utils.dataStore
 import com.netease.cloudmusic.crypto.caesarson.CaesarsonCryptor
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
@@ -35,9 +35,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import javax.inject.Inject
-import javax.inject.Named
-import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,15 +49,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-@Singleton
-class NeteaseLoginSecurity @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    @param:Named("NeteaseSecurityClient") private val client: OkHttpClient,
+class NeteaseLoginSecurity internal constructor(
+    private val context: Context,
+    private val client: OkHttpClient,
+    private val sourceStore: DataStore<Preferences>,
+    private val networkAllowed: () -> Boolean = { true },
 ) {
-    init {
-        activeInstance = this
-    }
-
     private val sdkContext: Context by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         OfficialNeteaseSecurityContext(context)
     }
@@ -126,7 +120,7 @@ class NeteaseLoginSecurity @Inject constructor(
     }
 
     suspend fun securityCookies(): NeteaseSecurityCookies = withContext(Dispatchers.IO) {
-        val preferences = context.dataStore.data.first()
+        val preferences = sourceStore.data.first()
         val watchManDeviceId = awaitWatchManDeviceId()
         val nmcid = preferences[NeteaseNmcidKey].orEmpty().ifBlank(::createNmcid)
         val existingNmdi = preferences[NeteaseNmdiKey].orEmpty()
@@ -142,7 +136,7 @@ class NeteaseLoginSecurity @Inject constructor(
                 if (storedTrackId.isNotBlank()) updateServerTrackId(storedTrackId, persist = false)
             }
         }
-        context.dataStore.edit { values ->
+        sourceStore.edit { values ->
             values[NeteaseNmcidKey] = nmcid
             values[NeteaseNmdiKey] = nmdi
             values[NeteaseNmdiFinalKey] = nmdiIsFinal
@@ -156,18 +150,18 @@ class NeteaseLoginSecurity @Inject constructor(
     }
 
     private suspend fun restoreServerTrackId() {
-        val storedTrackId = context.dataStore.data.first()[NeteaseNmtidKey].orEmpty()
+        val storedTrackId = sourceStore.data.first()[NeteaseNmtidKey].orEmpty()
         if (storedTrackId.isNotBlank()) updateServerTrackId(storedTrackId, persist = false)
     }
 
-    private fun updateServerTrackId(trackId: String, persist: Boolean) {
+    internal fun updateServerTrackId(trackId: String, persist: Boolean) {
         if (trackId.isBlank() || serverTrackId.getAndSet(trackId) == trackId) return
         initializedWatchManSdk?.setCustomTrackId(trackId)
         Log.i(TAG, "Security track ID updated length=${trackId.length}")
         if (persist) {
             persistenceScope.launch {
                 if (serverTrackId.get() == trackId) {
-                    context.dataStore.edit { it[NeteaseNmtidKey] = trackId }
+                    sourceStore.edit { it[NeteaseNmtidKey] = trackId }
                 }
             }
         }
@@ -380,6 +374,7 @@ class NeteaseLoginSecurity @Inject constructor(
         var tracked = false
         var succeeded = false
         return try {
+            check(networkAllowed()) { "Security capability is no longer active" }
             check(!url.isNullOrBlank()) { "WatchMan request URL is empty" }
             val request = Request.Builder()
                 .url(url)
@@ -405,6 +400,7 @@ class NeteaseLoginSecurity @Inject constructor(
                 .readTimeout(phaseTimeoutMs, TimeUnit.MILLISECONDS)
                 .writeTimeout(phaseTimeoutMs, TimeUnit.MILLISECONDS)
                 .build()
+            check(networkAllowed()) { "Security capability is no longer active" }
             requestClient.newCall(request).execute().use { response ->
                 val responseBody = response.body.string()
                 Log.i(
@@ -506,13 +502,6 @@ class NeteaseLoginSecurity @Inject constructor(
     )
 
     internal companion object {
-        @Volatile
-        private var activeInstance: NeteaseLoginSecurity? = null
-
-        fun acceptServerTrackId(trackId: String) {
-            activeInstance?.updateServerTrackId(trackId, persist = true)
-        }
-
         internal fun getOrCreateSecurityClassLoader(context: Context): ClassLoader = context.classLoader
 
         const val TAG = "PcQrLogin"

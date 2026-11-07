@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 internal class PluginSecretStore(context: Context) {
     private val directory = File(context.noBackupFilesDir, "source-secrets").apply { mkdirs() }
     private val gson = Gson()
-    private val lock = Any()
+    private val lock get() = globalLock
 
     fun read(id: String, kind: String): Map<String, String> = synchronized(lock) {
         val file = File(directory, "$id-$kind.bin")
@@ -45,7 +45,27 @@ internal class PluginSecretStore(context: Context) {
 
     fun delete(id: String) = synchronized(lock) {
         listOf("config", "storage").forEach { File(directory, "$id-$it.bin").delete() }
+        val artworkName = Regex("${Regex.escape(id)}-artwork-[a-f0-9]{64}\\.(bin|tmp)")
+        directory.listFiles().orEmpty().filter { artworkName.matches(it.name) }.forEach { it.delete() }
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("mei.source.$id")
+    }
+
+    internal fun pruneArtwork() = synchronized(lock) {
+        directory.listFiles().orEmpty().filter { it.name.matches(Regex(".+-artwork-[a-f0-9]{64}\\.tmp")) }.forEach { it.delete() }
+        val records = directory.listFiles().orEmpty().filter { it.name.matches(Regex(".+-artwork-[a-f0-9]{64}\\.bin")) }
+            .sortedBy { it.lastModified() }
+        var bytes = records.sumOf { it.length() }
+        var count = records.size
+        records.forEach { file ->
+            if (bytes > 28L * 1024 * 1024 || count > 8128) {
+                val size = file.length()
+                if (file.delete()) { bytes -= size; count-- }
+            }
+        }
+    }
+
+    internal fun hasArtwork(id: String, hash: String): Boolean = synchronized(lock) {
+        File(directory, "$id-artwork-$hash.bin").isFile
     }
 
     private fun key(id: String): SecretKey {
@@ -58,5 +78,8 @@ internal class PluginSecretStore(context: Context) {
         }.generateKey()
     }
 
-    private companion object { const val MAX_BYTES = 128 * 1024 }
+    private companion object {
+        const val MAX_BYTES = 128 * 1024
+        val globalLock = Any()
+    }
 }

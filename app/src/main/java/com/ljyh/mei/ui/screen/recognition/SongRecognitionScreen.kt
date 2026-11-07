@@ -17,6 +17,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import com.ljyh.mei.source.api.Track
+import com.ljyh.mei.source.api.SourceArtist
+import com.ljyh.mei.source.api.SourceAlbum
+import com.ljyh.mei.data.model.toMediaMetadata
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -51,7 +56,8 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 
 @Composable
-fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel()) {
+fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel(), providerId: String? = null) {
+    LaunchedEffect(providerId) { viewModel.open(providerId) }
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
@@ -106,6 +112,7 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
                             if (state.isWorking) viewModel.stop()
                             else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         },
+                        enabled = state.isAvailable,
                         emphasis = GlassEmphasis.Prominent,
                     ) {
                         Text(stringResource(if (state.isWorking) R.string.recognition_stop else R.string.recognition_start))
@@ -114,17 +121,18 @@ fun SongRecognitionScreen(viewModel: SongRecognitionViewModel = hiltViewModel())
             }
         }
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        items(state.results, key = { it.id }) { song ->
+        items(state.results, key = { it.ref.toString() }) { song ->
             GlasmioCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val media = song.asMediaMetadata().toMediaItem()
+                    viewModel.media(song) { media ->
                     val lastPosition = song.durationMs.takeIf { it > 0 }?.minus(1) ?: Int.MAX_VALUE.toLong()
                     playerConnection?.playQueue(ListQueue(
                         "recognition", recognitionTitle, listOf(media.mediaId to media),
                         position = (song.startTimeMs ?: 0L)
                             .coerceIn(0L, minOf(lastPosition, Int.MAX_VALUE.toLong())).toInt(),
                     ))
+                    }
                 },
             ) {
                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -172,12 +180,3 @@ private fun RecognitionPhase.textResource(): Int = when (this) {
     RecognitionPhase.NoMatch -> R.string.recognition_no_match
     RecognitionPhase.Failed -> R.string.recognition_failed
 }
-
-private fun RecognizedSong.asMediaMetadata() = MediaMetadata(
-    id = id,
-    title = name,
-    coverUrl = coverUrl.orEmpty(),
-    artists = artists.map { MediaMetadata.Artist(it.hashCode().toLong(), it) },
-    duration = durationMs,
-    album = MediaMetadata.Album(album.hashCode().toLong(), album),
-)

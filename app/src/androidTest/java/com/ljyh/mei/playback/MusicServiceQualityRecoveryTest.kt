@@ -40,6 +40,65 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MusicServiceQualityRecoveryTest {
     @Test
+    fun installedSourcesRestoreTheSavedPausedQueueWithoutOpeningAnActivity() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("sourcePausedRestore") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val persistence = PlaybackPersistence(context)
+        val saved = runBlocking {
+            persistence.load()?.withRestorePreferences(context.dataStore.data.first())
+        }
+        assumeTrue("A saved paused queue is required", saved != null && saved.items.isNotEmpty() && !saved.playWhenReady)
+        val expected = checkNotNull(saved)
+        val expectedItems = persistence.restoreItems(expected)
+        val connected = CountDownLatch(1)
+        val completed = CountDownLatch(1)
+        val reference = AtomicReference<MusicService?>()
+        val failure = AtomicReference<String?>()
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) completed.countDown()
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                failure.set(error.errorCodeName)
+                completed.countDown()
+            }
+        }
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                reference.set((binder as? MusicService.MusicBinder)?.service)
+                connected.countDown()
+            }
+            override fun onServiceDisconnected(name: ComponentName?) = Unit
+        }
+        assertTrue(context.bindService(Intent(context, MusicService::class.java), connection, Context.BIND_AUTO_CREATE))
+        try {
+            assertTrue("The saved service must bind", connected.await(10, TimeUnit.SECONDS))
+            val service = checkNotNull(reference.get())
+            instrumentation.runOnMainSync {
+                service.player.addListener(listener)
+                service.player.playerError?.let { failure.set(it.errorCodeName); completed.countDown() }
+                if (service.player.playbackState == Player.STATE_READY) completed.countDown()
+            }
+            assertTrue("The saved paused song must finish preparing", completed.await(30, TimeUnit.SECONDS))
+            assertEquals("Source initialization must not invalidate the restored request", null, failure.get())
+            instrumentation.runOnMainSync {
+                val player = service.player
+                assertEquals(Player.STATE_READY, player.playbackState)
+                assertFalse("Background validation must remain paused", player.playWhenReady)
+                assertEquals(expectedItems.map { it.mediaId }, List(player.mediaItemCount) { player.getMediaItemAt(it).mediaId })
+                assertEquals(expected.currentIndex, player.currentMediaItemIndex)
+                assertTrue("The saved position must remain unchanged", abs(expected.positionMs - player.currentPosition) <= 500L)
+                assertEquals(expected.repeatMode, player.repeatMode)
+                assertEquals(expected.shuffleModeEnabled && (!expected.isFmMode || expected.queueAutoplayEnabled), player.shuffleModeEnabled)
+            }
+        } finally {
+            reference.get()?.let { service -> instrumentation.runOnMainSync { service.player.removeListener(listener) } }
+            context.unbindService(connection)
+        }
+    }
+
+    @Test
     fun repeatedSourceFailuresStopAcrossRealQueueTransitionsAndRetainTheQueue() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("issue59Recovery") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()

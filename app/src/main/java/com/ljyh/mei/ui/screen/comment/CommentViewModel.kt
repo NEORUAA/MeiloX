@@ -7,11 +7,13 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.ljyh.mei.data.model.api.CommentSortType
-import com.ljyh.mei.data.model.weapi.CommentX
-import com.ljyh.mei.data.model.weapi.FComment
+import com.ljyh.mei.source.shared.OnlineComment as CommentX
+import com.ljyh.mei.source.shared.OnlineComment as FComment
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.network.neteaseSessionFingerprint
-import com.ljyh.mei.source.netease.repository.CommentRepository
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceErrorCode
+import kotlinx.coroutines.CancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -27,8 +29,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class CommentReplyTarget(
-    val commentId: Long,
-    val parentCommentId: Long,
+    val commentId: String,
+    val parentCommentId: String,
     val nickname: String,
     val content: String,
 )
@@ -53,15 +55,21 @@ sealed interface CommentEvent {
 
 @HiltViewModel
 class CommentViewModel @Inject constructor(
-    private val repository: CommentRepository,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("comments", savedStateHandle["providerId"])
+    private val _signedInUserId = MutableStateFlow<String?>(null)
+    val signedInUserId: StateFlow<String?> = _signedInUserId
+    private val _providerId = MutableStateFlow<String?>(savedStateHandle["providerId"])
+    val providerId: StateFlow<String?> = _providerId
     private val _songId = MutableStateFlow("")
-    private var accountId: Long? = null
+    private var accountId: String? = null
     private var sessionIdentity: String = ""
     private var contextVersion = 0
     private var publishJob: Job? = null
     private var floorJob: Job? = null
-    private val likeJobs = mutableMapOf<Long, Job>()
+    private val likeJobs = mutableMapOf<String, Job>()
     private val refreshVersion = MutableStateFlow(0)
     private val _sortType = MutableStateFlow(CommentSortType.RECOMMEND)
     val sortType: StateFlow<CommentSortType> = _sortType
@@ -69,10 +77,10 @@ class CommentViewModel @Inject constructor(
     val total: StateFlow<Int> = _total
     private val _composer = MutableStateFlow(CommentComposerState())
     val composer: StateFlow<CommentComposerState> = _composer
-    private val _likes = MutableStateFlow<Map<Long, CommentLikeState>>(emptyMap())
-    val likes: StateFlow<Map<Long, CommentLikeState>> = _likes
-    private val _pendingLikes = MutableStateFlow<Set<Long>>(emptySet())
-    val pendingLikes: StateFlow<Set<Long>> = _pendingLikes
+    private val _likes = MutableStateFlow<Map<String, CommentLikeState>>(emptyMap())
+    val likes: StateFlow<Map<String, CommentLikeState>> = _likes
+    private val _pendingLikes = MutableStateFlow<Set<String>>(emptySet())
+    val pendingLikes: StateFlow<Set<String>> = _pendingLikes
     private val eventChannel = Channel<CommentEvent>(Channel.BUFFERED)
     val events = eventChannel.receiveAsFlow()
 
@@ -92,7 +100,19 @@ class CommentViewModel @Inject constructor(
             ).flow
         }.cachedIn(viewModelScope)
 
-    fun setContext(songId: String, signedInUserId: Long?, sessionIdentity: String) {
+    suspend fun openContext(songId: String) {
+        try {
+            val source = repository.features()
+            _providerId.value = source.providerId
+            val account = try { repository.accountProfileRecord() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: SourceException) { null }
+            setContext(songId, account?.id, source.scopeId)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: SourceException) { setContext(songId, null, "") }
+    }
+
+    fun setContext(songId: String, signedInUserId: String?, sessionIdentity: String) {
         if (_songId.value == songId && accountId == signedInUserId && this.sessionIdentity == sessionIdentity) return
         val retainedComposer = _composer.value.takeIf {
             _songId.value == songId && accountId == signedInUserId && signedInUserId != null
@@ -110,6 +130,7 @@ class CommentViewModel @Inject constructor(
         _floorComments.value = Resource.Loading
         _total.value = 0
         accountId = signedInUserId
+        _signedInUserId.value = signedInUserId
         this.sessionIdentity = sessionIdentity
         _songId.value = songId
         refreshVersion.value++
@@ -135,13 +156,11 @@ class CommentViewModel @Inject constructor(
         if (accountId == null || !state.canSend || _songId.value.isBlank()) return
         val version = contextVersion
         val songId = _songId.value
-        val expectedSession = neteaseSessionFingerprint(sessionIdentity)
         _composer.value = state.copy(isSending = true, error = null)
         publishJob = viewModelScope.launch {
             val result = repository.publishComment(
                 songId,
                 state.draft,
-                expectedSession,
                 state.replyTarget?.commentId,
             )
             if (version != contextVersion) return@launch
@@ -164,16 +183,15 @@ class CommentViewModel @Inject constructor(
         }
     }
 
-    fun toggleLike(commentId: Long, liked: Boolean, count: Int) {
+    fun toggleLike(commentId: String, liked: Boolean, count: Int) {
         if (accountId == null || commentId in _pendingLikes.value) return
         val version = contextVersion
         val songId = _songId.value
-        val expectedSession = neteaseSessionFingerprint(sessionIdentity)
         val previous = _likes.value[commentId] ?: CommentLikeState(liked, count)
         val next = previous.toggled()
         _pendingLikes.update { it + commentId }
         likeJobs[commentId] = viewModelScope.launch {
-            val result = repository.setCommentLiked(songId, commentId, next.liked, expectedSession)
+            val result = repository.setCommentLiked(songId, commentId, next.liked)
             if (version != contextVersion) return@launch
             _pendingLikes.update { it - commentId }
             likeJobs.remove(commentId)
@@ -187,12 +205,16 @@ class CommentViewModel @Inject constructor(
 
     private val _floorComments = MutableStateFlow<Resource<List<FComment>>>(Resource.Loading)
     val floorComments: StateFlow<Resource<List<FComment>>> = _floorComments
-    private val _expandedCommentId = MutableStateFlow<Long?>(null)
-    val expandedCommentId: StateFlow<Long?> = _expandedCommentId
+    private val _expandedCommentId = MutableStateFlow<String?>(null)
+    val expandedCommentId: StateFlow<String?> = _expandedCommentId
     private val _expandedFloorCount = MutableStateFlow(0)
     val expandedFloorCount: StateFlow<Int> = _expandedFloorCount
 
-    fun toggleFloorComments(commentId: Long, floorCount: Int) {
+    init { viewModelScope.launch { repository.sessionChanges.collect { owner ->
+        if (owner.isBlank()) setContext(_songId.value, null, "invalidated")
+    } } }
+
+    fun toggleFloorComments(commentId: String, floorCount: Int) {
         floorJob?.cancel()
         if (_expandedCommentId.value == commentId) {
             _expandedCommentId.value = null
@@ -208,7 +230,7 @@ class CommentViewModel @Inject constructor(
         _expandedCommentId.value?.let { loadFloorComments(it, _expandedFloorCount.value) }
     }
 
-    private fun loadFloorComments(parentCommentId: Long, limit: Int) {
+    private fun loadFloorComments(parentCommentId: String, limit: Int) {
         floorJob?.cancel()
         val version = contextVersion
         floorJob = viewModelScope.launch {
@@ -220,8 +242,7 @@ class CommentViewModel @Inject constructor(
             )
             if (version != contextVersion || _expandedCommentId.value != parentCommentId) return@launch
             _floorComments.value = when (result) {
-                is Resource.Success -> result.data.data?.comments?.let { Resource.Success(it) }
-                    ?: Resource.Error("Reply rows are missing")
+                is Resource.Success -> Resource.Success(result.data.comments)
                 is Resource.Error -> Resource.Error(result.message)
                 Resource.Loading -> Resource.Loading
             }

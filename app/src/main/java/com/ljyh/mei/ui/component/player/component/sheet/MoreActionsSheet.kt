@@ -68,6 +68,8 @@ fun MoreActionsSheet(
     val sleepTimer = connection?.service?.sleepTimer
     val sortOrder by viewModel.moreSortOrder.collectAsState()
     val moreActions by viewModel.sortedMoreActions.collectAsState()
+    val providers by viewModel.sourceProviders.collectAsState()
+    val sourceProvider = providers.firstOrNull { it.id == metadata?.trackRef?.providerId }
     var showSortOptions by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<List<MoreAction>?>(null) }
 
@@ -218,7 +220,7 @@ fun MoreActionsSheet(
                             onClick = { dismissal.requestDismiss(action.onClick) },
                         )
                     }
-                    moreActions.filter { it.availableFor(metadata) }.forEachIndexed { index, action ->
+                    moreActions.filter { it.availableFor(metadata, sourceProvider) }.forEachIndexed { index, action ->
                         GlasmioListRow(
                             title = stringResource(action.labelRes),
                             systemName = action.systemName,

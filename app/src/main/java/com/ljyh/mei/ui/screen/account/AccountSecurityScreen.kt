@@ -24,10 +24,10 @@ import com.ljyh.mei.ui.screen.Screen
 @Composable
 fun AccountSecurityScreen(viewModel: AccountSecurityViewModel = hiltViewModel()) {
     val navController = LocalNavController.current
-    val sessionType = rememberNeteaseSessionType()
+    val sessionType = rememberNeteaseSessionType(viewModel.providerId)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val openPage: (OfficialNeteasePage) -> Unit = { page ->
-        Screen.AccountWeb.navigate(navController) { addPath(page.name) }
+        Screen.AccountWeb.navigate(navController) { addPath(page.name); viewModel.providerId?.let { addQuery("providerId", it) } }
     }
     MeiloXPinnedListPage(
         title = stringResource(R.string.account_security),
@@ -43,7 +43,7 @@ fun AccountSecurityScreen(viewModel: AccountSecurityViewModel = hiltViewModel())
                     GlasmioListRow(
                         title = stringResource(R.string.netease_login),
                         systemName = "person.crop.circle",
-                        onClick = { Screen.NeteaseLogin.navigate(navController) },
+                        onClick = { Screen.NeteaseLogin.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                 } else {
                     GlasmioListRow(
@@ -55,7 +55,7 @@ fun AccountSecurityScreen(viewModel: AccountSecurityViewModel = hiltViewModel())
                     GlasmioListRow(
                         title = stringResource(R.string.account_third_party_binding),
                         systemName = "person.2",
-                        onClick = { Screen.AccountBindings.navigate(navController) },
+                        onClick = { Screen.AccountBindings.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                     GlasmioListRow(
                         title = stringResource(R.string.account_login_protection),
@@ -69,12 +69,12 @@ fun AccountSecurityScreen(viewModel: AccountSecurityViewModel = hiltViewModel())
                         title = stringResource(R.string.account_device_management),
                         systemName = "iphone",
                         detail = state.data?.deviceCount?.let { stringResource(R.string.account_device_count, it) },
-                        onClick = { Screen.AccountDevices.navigate(navController) },
+                        onClick = { Screen.AccountDevices.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                     GlasmioListRow(
                         title = stringResource(R.string.account_authorizations),
                         systemName = "person.2",
-                        onClick = { Screen.AccountAuthorizations.navigate(navController) },
+                        onClick = { Screen.AccountAuthorizations.navigate(navController) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                     GlasmioListRow(
                         title = stringResource(R.string.account_security_center),

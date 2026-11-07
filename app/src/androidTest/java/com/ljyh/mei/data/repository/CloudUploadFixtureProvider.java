@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Platform-only test provider in a separate APK process; never addresses user files. */
+/** Instrumentation-local provider using the Android transport; never addresses user files. */
 public final class CloudUploadFixtureProvider extends ContentProvider {
     private static final class Fixture {
         final File file;

@@ -80,16 +80,19 @@ import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.player.PlayerViewModel
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.navigation.LibraryPage
 import com.ljyh.mei.ui.screen.local.LocalLibraryViewModel
-import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
-import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.social.NeteaseShareSheet
+import com.ljyh.mei.ui.screen.Screen
+import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.Track
+import com.ljyh.mei.source.api.SourceArtist
+import com.ljyh.mei.source.api.SourceAlbum
+import com.ljyh.mei.ui.model.MoreAction
 import com.ljyh.mei.utils.DownloadManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -130,10 +133,8 @@ internal fun LibraryDownloadsPage(
     var info by remember { mutableStateOf<Song?>(null) }
     var deleteEntry by remember { mutableStateOf<DownloadLibraryEntry?>(null) }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
-    var overlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     var share by remember { mutableStateOf<MediaMetadata?>(null) }
     var pendingSystemDelete by remember { mutableStateOf<Song?>(null) }
-    val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionDenied = !granted
@@ -295,16 +296,14 @@ internal fun LibraryDownloadsPage(
         val task = entry.task
         val metadata = song?.toMediaMetadata()
         val retryMetadata = task?.takeIf { song?.sourceType != SourceType.LOCAL }?.let { download ->
-            val id = download.songId.toLongOrNull()?.takeIf { it > 0L } ?: return@let null
-            metadata ?: MediaMetadata(
-                id = id,
-                title = entry.title,
-                coverUrl = entry.cover,
+            val ref = download.originTrackRef?.let(TrackRefCodec::decode)
+                ?: TrackRefCodec.decode(download.songId) ?: return@let null
+            metadata ?: Track(
+                ref = ref, title = entry.title, artworkUrl = entry.cover,
                 artists = download.songArtist.split(Regex("[/、,;]")).map(String::trim)
-                    .filter(String::isNotBlank).map { MediaMetadata.Artist(0L, it) },
-                duration = 0L,
-                album = MediaMetadata.Album(0L, entry.album),
-            )
+                    .filter(String::isNotBlank).map { SourceArtist(it) },
+                album = SourceAlbum(entry.album),
+            ).toMediaMetadata()
         }
         val retryQuality = task?.quality?.trim()?.let { saved ->
             MusicQuality.entries.firstOrNull {
@@ -323,13 +322,15 @@ internal fun LibraryDownloadsPage(
             onMatch = song?.let { { viewModel.openMatch(it) } },
             onInfo = song?.let { { info = it } },
             onShare = metadata?.let { { share = it } },
-            onAddToPlaylist = metadata?.let { { playlistViewModel.getAllMePlaylist(); overlay = OverlayState.AddToPlaylist(it.id) } },
+            onAddToPlaylist = metadata?.takeIf { playerViewModel.isActionAvailable(MoreAction.ADD_TO_PLAYLIST, it) }?.let { track -> {
+                selectedKey = null
+                Screen.SourcePlaylistPicker.navigate(navController) { addPath(Uri.encode(TrackRefCodec.encode(track.trackRef))) }
+            } },
             onPause = task?.let { { DownloadManager.pauseSong(context, it.songId) } },
             onResume = task?.let { { scope.launch { DownloadManager.resumeSong(context, it.songId, queueTitle) }; Unit } },
             onRetry = retryMetadata?.let { { playerViewModel.downloadSong(it, context, retryQuality) } },
         )
     }
-    StandaloneTrackActionOverlay(overlay, { overlay = OverlayState.None }, { overlay = it }, playlistViewModel = playlistViewModel)
     share?.let { NeteaseShareSheet(it, onDismiss = { share = null }) }
     info?.let { song -> LocalFileInfo(song) { info = null } }
     LocalMatchSheet(viewModel)

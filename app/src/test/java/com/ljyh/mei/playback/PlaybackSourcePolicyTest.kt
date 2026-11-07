@@ -15,6 +15,23 @@ import org.junit.Test
 
 class PlaybackSourcePolicyTest {
     @Test
+    fun initialSourceBindingAndQueueSelectionDoNotCancelRestoredPreparation() {
+        fun source(id: String) = object : MusicProvider {
+            override val id = id
+            override val displayName = id
+            override val capabilities = setOf(SourceCapability.PLAYBACK)
+        }
+        val first = source("first")
+        val second = source("second")
+        assertFalse(shouldInvalidatePlaybackOwner(null, null, first, "account-A", sameSource = true))
+        assertFalse(shouldInvalidatePlaybackOwner(first, "account-A", first, "account-A", sameSource = true))
+        assertFalse(shouldInvalidatePlaybackOwner(first, "account-A", second, "account-B", sameSource = false))
+        assertTrue(shouldInvalidatePlaybackOwner(first, "account-A", first, "account-B", sameSource = true))
+        assertTrue(shouldInvalidatePlaybackOwner(first, "account-A", source("first"), "account-A", sameSource = true))
+        assertTrue(shouldInvalidatePlaybackOwner(first, "account-A", null, null, sameSource = true))
+    }
+
+    @Test
     fun resolvedCacheSeparatesActualProviderInstanceRecordingQualityAndContentRevision() {
         val origin = TrackRef("netease", "123")
         val target = TrackRef("fixture", "123/: 雪")

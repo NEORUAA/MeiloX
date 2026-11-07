@@ -207,7 +207,7 @@
     <string name="general_clipboard">Clipboard</string>
     <string name="general_recognize_clipboard">Recognize NetEase links</string>
     <string name="general_recognize_clipboard_description">Reads the clipboard once after launch and asks before opening a NetEase song or Listen Together invitation.</string>
-    <string name="general_export_music_u">Export MUSIC_U Cookie</string>
+    <string name="general_export_music_u">Copy sign-in session</string>
     <string name="general_export_music_u_description">Copy the MUSIC_U value for the current account to the clipboard.</string>
     <string name="clipboard_song_title">NetEase song link found</string>
     <string name="clipboard_song_message">Open the song from your clipboard in Mei?</string>
@@ -578,7 +578,7 @@
     <string name="account_playlists">Playlists · %1$d</string>
     <string name="account_track_count">%1$d songs</string>
     <string name="account_level_listens">Lv.%1$d · %2$d songs listened</string>
-    <string name="account_user_id">User ID %1$d</string>
+    <string name="account_user_id">User ID %1$s</string>
     <string name="account_follows">Following</string>
     <string name="account_followers">Followers</string>
     <string name="account_no_follows">Not following anyone yet</string>
@@ -717,7 +717,7 @@
     <string name="comment_sort_hot">Popular</string>
     <string name="comment_sort_latest">Latest</string>
     <string name="netease_sms_up_title">SMS security verification</string>
-    <string name="netease_sms_up_tip">NetEase requires a text sent from the phone number you are signing in with. In an emulator, send it using the phone that has that SIM, then continue here.</string>
+    <string name="netease_sms_up_tip">Sign-in requires a text sent from this phone number. Send it using the phone that has that SIM, then continue here.</string>
     <string name="netease_sms_up_destination">Send to: %1$s</string>
     <string name="netease_sms_up_content">Message: %1$s</string>
     <string name="netease_sms_up_copy_number">Copy number</string>

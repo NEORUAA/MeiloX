@@ -4,12 +4,10 @@ import android.app.Activity
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ljyh.mei.source.netease.repository.MeloXRepository
-import com.ljyh.mei.source.netease.repository.PcQrLoginException
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceErrorCode
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.net.URI
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -69,8 +67,14 @@ internal data class PcQrLoginPayload(
 
 @HiltViewModel
 class PcQrLoginViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("pc-qr-login", savedStateHandle["providerId"])
+    private val _sourceSession = kotlinx.coroutines.flow.MutableStateFlow(com.ljyh.mei.source.shared.OnlineSessionState(savedStateHandle.get<String>("providerId").orEmpty(), false, com.ljyh.mei.source.shared.OnlineSessionKind.None))
+    val sourceSession = _sourceSession.asStateFlow()
+    private var sourceWatchJob: Job? = null
+
     private val _state = kotlinx.coroutines.flow.MutableStateFlow(
         PcQrLoginUiState(phase = PcQrLoginPhase.Preparing),
     )
@@ -78,7 +82,17 @@ class PcQrLoginViewModel @Inject constructor(
 
     private var actionJob: Job? = null
     private var generation = 0L
-    private var ignoredRawValue: String? = null
+    private var ignoredRawValues: Set<String> = emptySet()
+
+    init { observeSession() }
+
+    private fun observeSession() {
+        sourceWatchJob?.cancel()
+        sourceWatchJob = viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            _sourceSession.value = if (owner.isBlank()) com.ljyh.mei.source.shared.OnlineSessionState(_sourceSession.value.providerId, false, com.ljyh.mei.source.shared.OnlineSessionKind.None)
+            else repository.sessionState()
+        } }
+    }
 
     suspend fun loginWithMobilePassword(
         phone: String,
@@ -86,14 +100,17 @@ class PcQrLoginViewModel @Inject constructor(
         password: String,
     ) {
         repository.loginWithMobilePassword(phone, countryCode, password)
+        observeSession()
     }
 
     suspend fun requestMobileSmsCode(
         activity: Activity,
         phone: String,
         countryCode: String,
-    ) {
-        repository.requestMobileSmsCode(activity, phone, countryCode)
+    ): Boolean {
+        val authenticated = repository.requestMobileSmsCode(phone, countryCode)
+        if (authenticated) observeSession()
+        return authenticated
     }
 
     suspend fun loginWithMobileSms(
@@ -102,10 +119,7 @@ class PcQrLoginViewModel @Inject constructor(
         code: String,
     ) {
         repository.loginWithMobileSms(phone, countryCode, code)
-    }
-
-    suspend fun loginWithUpSms(challenge: com.ljyh.mei.data.network.NeteaseUrsUpSmsChallenge) {
-        repository.loginWithUpSms(challenge)
+        observeSession()
     }
 
     fun prepare() {
@@ -129,32 +143,29 @@ class PcQrLoginViewModel @Inject constructor(
         }
     }
 
-    fun onQrValue(rawValue: String) {
-        val current = _state.value
-        if (!current.isAnalyzing || rawValue == ignoredRawValue) {
-            return
-        }
-        Log.i(PC_QR_LOG_TAG, "QR value received length=${rawValue.length} phase=${current.phase}")
-        val payload = parseNeteasePcLoginQr(rawValue)
-        if (payload == null) {
-            Log.i(PC_QR_LOG_TAG, "QR value rejected as unsupported")
-            ignoredRawValue = rawValue
-            _state.value = _state.value.copy(
-                error = PcQrLoginError(PcQrLoginErrorKind.InvalidQr),
-            )
-            return
-        }
-        Log.i(
-            PC_QR_LOG_TAG,
-            "QR value accepted keyLength=${payload.key.length} trace=${!payload.clientTraceId.isNullOrBlank()}",
-        )
-
+    fun onQrValues(rawValues: List<String>) {
+        if (!_state.value.isAnalyzing) return
+        val candidates = decodedQrCandidates(rawValues).filterNot { it in ignoredRawValues }
+        if (candidates.isEmpty()) return
         startAction {
-            _state.value = PcQrLoginUiState(
-                phase = PcQrLoginPhase.MarkingScanned,
-                session = payload.toSession(),
-            )
+            _state.value = PcQrLoginUiState(phase = PcQrLoginPhase.MarkingScanned)
+            var accepted: PcQrLoginPayload? = null
             try {
+                for (rawValue in candidates) {
+                    val result = repository.invoke("login", "parsePcQr", com.google.gson.JsonObject().apply {
+                        addProperty("value", rawValue)
+                    })
+                    if (!isCurrent()) return@startAction
+                    accepted = sourcePcQrPayload(result, rawValue)
+                    if (accepted != null) break
+                }
+                val payload = accepted
+                if (payload == null) {
+                    ignore(candidates)
+                    _state.value = PcQrLoginUiState(error = PcQrLoginError(PcQrLoginErrorKind.InvalidQr))
+                    return@startAction
+                }
+                _state.value = PcQrLoginUiState(phase = PcQrLoginPhase.MarkingScanned, session = payload.toSession())
                 val platform = repository.markPcQrScanned(payload.key, payload.clientTraceId)
                 if (isCurrent()) {
                     _state.value = PcQrLoginUiState(
@@ -165,7 +176,10 @@ class PcQrLoginViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (isCurrent()) handleScanFailure(payload, error)
+                if (isCurrent()) {
+                    if (accepted != null) handleScanFailure(checkNotNull(accepted), error)
+                    else _state.value = PcQrLoginUiState(error = error.asPcQrLoginError())
+                }
             }
         }
     }
@@ -213,7 +227,7 @@ class PcQrLoginViewModel @Inject constructor(
                 error
             }
             if (isCurrent()) {
-                ignoredRawValue = session.rawValue
+                ignore(listOf(session.rawValue))
                 _state.value = PcQrLoginUiState(
                     error = error?.let {
                         PcQrLoginError(PcQrLoginErrorKind.CancelFailed, it.message)
@@ -255,7 +269,7 @@ class PcQrLoginViewModel @Inject constructor(
     }
 
     fun retry() {
-        ignoredRawValue = null
+        ignoredRawValues = emptySet()
         if (_state.value.phase == PcQrLoginPhase.Preparing) {
             prepare()
         } else {
@@ -283,14 +297,14 @@ class PcQrLoginViewModel @Inject constructor(
 
     private fun handleScanFailure(payload: PcQrLoginPayload, error: Exception) {
         Log.e(PC_QR_LOG_TAG, "Scan action failed", error)
-        ignoredRawValue = payload.rawValue
+        ignore(listOf(payload.rawValue))
         _state.value = PcQrLoginUiState(error = error.asPcQrLoginError())
     }
 
     private fun handleAuthorizationFailure(session: PcQrLoginSession, error: Exception) {
         Log.e(PC_QR_LOG_TAG, "Authorize action failed", error)
-        if (error is PcQrLoginException && error.code == 800) {
-            ignoredRawValue = session.rawValue
+        if (error is SourceException && error.code == SourceErrorCode.AUTH_EXPIRED) {
+            ignore(listOf(session.rawValue))
             _state.value = PcQrLoginUiState(
                 error = PcQrLoginError(PcQrLoginErrorKind.Expired, error.message),
             )
@@ -311,6 +325,10 @@ class PcQrLoginViewModel @Inject constructor(
         }
     }
 
+    private fun ignore(values: List<String>) {
+        ignoredRawValues = (ignoredRawValues + values).toList().takeLast(32).toSet()
+    }
+
     private inner class ActionScope(private val actionGeneration: Long) {
         fun isCurrent(): Boolean = actionGeneration == generation
     }
@@ -319,7 +337,7 @@ class PcQrLoginViewModel @Inject constructor(
 private const val PC_QR_LOG_TAG = "PcQrLogin"
 
 private fun Exception.asPcQrLoginError(): PcQrLoginError =
-    if (this is PcQrLoginException && code == 800) {
+    if (this is SourceException && code == SourceErrorCode.AUTH_EXPIRED) {
         PcQrLoginError(PcQrLoginErrorKind.Expired, message)
     } else {
         PcQrLoginError(PcQrLoginErrorKind.Request, message)
@@ -328,38 +346,22 @@ private fun Exception.asPcQrLoginError(): PcQrLoginError =
 private fun PcQrLoginPayload.toSession(platform: String = ""): PcQrLoginSession =
     PcQrLoginSession(key, clientTraceId, platform, rawValue)
 
-internal fun parseNeteasePcLoginQr(rawValue: String): PcQrLoginPayload? = runCatching {
-    val trimmed = rawValue.trim()
-    val uri = URI(trimmed)
-    val scheme = uri.scheme?.lowercase()
-    if (scheme !in setOf("http", "https")) return null
-    if (!uri.host.equals("music.163.com", ignoreCase = true)) return null
-    if (uri.userInfo != null) return null
-    if (uri.port !in setOf(-1, 80, 443)) return null
-    // The current website shares its H5 scan-login URL with the app and WeChat.
-    if (uri.path !in setOf("/login", "/login/", "/st/platform/scanlogin", "/st/platform/scanlogin/")) {
-        return null
-    }
+/** Decoder output is source-neutral. The selected source recognizes its own login formats. */
+internal fun decodedQrCandidates(rawValues: List<String>): List<String> = rawValues.asSequence()
+    .filter { it.length <= 8192 }.map(String::trim).filter(String::isNotEmpty).distinct().take(8).toList()
 
-    val parameters = uri.rawQuery.orEmpty()
-        .split('&')
-        .mapNotNull { entry ->
-            if (entry.isBlank()) return@mapNotNull null
-            val separator = entry.indexOf('=')
-            val rawName = if (separator >= 0) entry.substring(0, separator) else entry
-            val rawParameterValue = if (separator >= 0) entry.substring(separator + 1) else ""
-            decodeQueryPart(rawName) to decodeQueryPart(rawParameterValue)
+internal fun sourcePcQrPayload(result: com.google.gson.JsonElement, rawValue: String): PcQrLoginPayload? {
+    if (result.isJsonNull) return null
+    if (!result.isJsonObject) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    fun text(name: String, optional: Boolean = false): String? {
+        val value = result.asJsonObject[name]
+        if (value == null || value.isJsonNull) {
+            if (optional) return null
+            throw SourceException(SourceErrorCode.INVALID_RESPONSE)
         }
-        .groupBy({ it.first }, { it.second })
-    val key = parameters["codekey"]?.firstOrNull(String::isNotBlank) ?: return null
-    val clientTraceId = parameters["login_traceId"]?.firstOrNull(String::isNotBlank)
-    // chainId belongs to H5 analytics; only login_traceId is sent as clientTraceId.
-    PcQrLoginPayload(key, clientTraceId, trimmed)
-}.getOrNull()
-
-internal fun selectNeteaseLoginQr(rawValues: List<String>): String? =
-    rawValues.firstOrNull { parseNeteasePcLoginQr(it) != null }
-        ?: rawValues.firstOrNull(String::isNotBlank)
-
-private fun decodeQueryPart(value: String): String =
-    URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+        if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString || value.asString.isBlank() || value.asString.length > 2048)
+            throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        return value.asString
+    }
+    return PcQrLoginPayload(checkNotNull(text("key")), text("clientTraceId", true), rawValue)
+}

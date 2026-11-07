@@ -14,22 +14,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.NeteaseWebSessionNoticeDismissedKey
 import com.ljyh.mei.data.network.NeteaseSessionType
-import com.ljyh.mei.data.network.neteaseSessionType
-import com.ljyh.mei.data.network.shouldExplainLegacyWebSession
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonRole
 import io.github.neoruaa.glasmio.ui.GlasmioAlertButtonSpec
 import io.github.neoruaa.glasmio.ui.GlasmioAlertDialog
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.utils.dataStore
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable
-fun rememberNeteaseSessionType(): NeteaseSessionType {
-    val context = LocalContext.current
-    val flow = remember(context) { context.dataStore.data.map { it.neteaseSessionType() } }
-    return flow.collectAsStateWithLifecycle(initialValue = NeteaseSessionType.None).value
+fun rememberNeteaseSessionType(providerId: String? = null): NeteaseSessionType = when (rememberSourceSessionState(providerId).kind) {
+    com.ljyh.mei.source.shared.OnlineSessionKind.None -> NeteaseSessionType.None
+    com.ljyh.mei.source.shared.OnlineSessionKind.Mobile -> NeteaseSessionType.Mobile
+    else -> NeteaseSessionType.Web
 }
 
 @Composable
@@ -37,20 +34,26 @@ fun NeteaseLegacyWebSessionNotice() {
     val context = LocalContext.current
     val navController = LocalNavController.current
     val preferences by context.dataStore.data.collectAsStateWithLifecycle(initialValue = null)
+    val session = rememberSourceSessionState()
+    val sourceDismissedKey = remember(session.providerId) {
+        androidx.datastore.preferences.core.booleanPreferencesKey("source_session_notice_dismissed:" + session.providerId)
+    }
     var handledThisLaunch by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     NeteaseLegacyWebSessionDialog(
-        visible = !handledThisLaunch && preferences?.shouldExplainLegacyWebSession() == true,
+        visible = !handledThisLaunch && session.providerId == com.ljyh.mei.source.api.ProviderIds.NETEASE &&
+            session.kind == com.ljyh.mei.source.shared.OnlineSessionKind.Web &&
+            preferences?.get(sourceDismissedKey) != true && preferences?.get(NeteaseWebSessionNoticeDismissedKey) != true,
         onDismiss = { handledThisLaunch = true },
         onDoNotRemind = {
             handledThisLaunch = true
             scope.launch {
-                context.dataStore.edit { it[NeteaseWebSessionNoticeDismissedKey] = true }
+                context.dataStore.edit { it[sourceDismissedKey] = true }
             }
         },
         onSignInAgain = {
             handledThisLaunch = true
-            Screen.NeteaseLogin.navigate(navController)
+            Screen.NeteaseLogin.navigate(navController) { addQuery("providerId", session.providerId) }
         },
     )
 }

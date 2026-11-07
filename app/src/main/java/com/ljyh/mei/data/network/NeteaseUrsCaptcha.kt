@@ -24,10 +24,18 @@ import org.json.JSONObject
 /** Only the web-based behavior verification used by URS SMS login. */
 internal object NeteaseUrsCaptcha {
     @SuppressLint("SetJavaScriptEnabled")
-    suspend fun validate(activity: Activity, type: String): String = withContext(Dispatchers.Main) {
+    suspend fun validate(activity: Activity, type: String, sourceNamespace: String? = null): String = withContext(Dispatchers.Main) {
         check(!activity.isFinishing && !activity.isDestroyed) { "Sign-in screen closed" }
         suspendCancellableCoroutine { continuation ->
+            val profileName = sourceNamespace?.let { namespace ->
+                check(androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MULTI_PROFILE)) { "Isolated web profiles are unavailable" }
+                "meilox-captcha-" + java.security.MessageDigest.getInstance("SHA-256").digest(namespace.toByteArray()).joinToString("") { "%02x".format(it) }
+            }
             val web = WebView(activity)
+            if (profileName != null) {
+                androidx.webkit.ProfileStore.getInstance().getOrCreateProfile(profileName)
+                androidx.webkit.WebViewCompat.setProfile(web, profileName)
+            }
             val dialog = Dialog(activity)
             val handler = Handler(Looper.getMainLooper())
             var finished = false
@@ -40,6 +48,7 @@ internal object NeteaseUrsCaptcha {
                     web.stopLoading()
                     web.removeJavascriptInterface("JSInterface")
                     web.destroy()
+                    if (profileName != null) runCatching { androidx.webkit.ProfileStore.getInstance().deleteProfile(profileName) }
                     if (continuation.isActive) {
                         if (error != null) continuation.resumeWithException(error)
                         else continuation.resume(checkNotNull(value))

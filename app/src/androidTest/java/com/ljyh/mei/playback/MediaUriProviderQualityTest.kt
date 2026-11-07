@@ -27,10 +27,10 @@ import com.google.gson.JsonObject
 import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.SongUrl
 import com.ljyh.mei.data.model.Tracks
+import com.ljyh.mei.data.model.availableMusicQualities
 import com.ljyh.mei.data.model.api.GetSongUrlV1
 import com.ljyh.mei.data.model.room.Song
 import com.ljyh.mei.data.model.room.SourceType
-import com.ljyh.mei.data.network.api.ApiService
 import com.ljyh.mei.di.dao.SongDao
 import com.ljyh.mei.di.dao.DownloadDao
 import com.ljyh.mei.di.repository.DownloadRepository
@@ -38,7 +38,6 @@ import com.ljyh.mei.data.model.room.DownloadTask
 import com.ljyh.mei.di.repository.SongRepository
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.*
-import com.ljyh.mei.source.netease.NeteasePlaybackTransport
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
@@ -46,9 +45,6 @@ import java.nio.ByteOrder
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
-import kotlin.coroutines.startCoroutine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -146,7 +142,7 @@ class MediaUriProviderQualityTest {
             assertEquals(original.ref, resolution.originTrackRef)
             assertEquals(target.ref, resolution.resolvedTrackRef)
             assertEquals("fixture", resolution.actualAudioProviderId)
-            assertFalse(canReportNeteasePlayback(original.ref, resolution))
+            assertFalse(canReportProviderPlayback(original.ref, resolution))
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 assertEquals("1", player?.currentMediaItem?.mediaId)
                 assertEquals(original.ref, player?.currentMediaItem?.metadata?.trackRef)
@@ -730,7 +726,7 @@ class MediaUriProviderQualityTest {
             assertNotNull(source.localPlaybackInfo)
             assertEquals(actual, source.resolution?.resolvedTrackRef)
             assertEquals("standard", source.resolution?.resource?.quality)
-            assertFalse(canReportNeteasePlayback(origin, source.resolution))
+            assertFalse(canReportProviderPlayback(origin, source.resolution))
         }
     }
 
@@ -796,26 +792,6 @@ class MediaUriProviderQualityTest {
             """{"code":200,"songs":[$track],"privileges":[]}""",
             Tracks::class.java,
         )
-        val api = Proxy.newProxyInstance(
-            ApiService::class.java.classLoader,
-            arrayOf(ApiService::class.java),
-        ) { _, method, arguments ->
-            when (method.name) {
-                "getSongDetail" -> {
-                    onDetailRequested()
-                    detail
-                }
-                "getSongUrlV1" -> {
-                    val request = arguments!![0] as GetSongUrlV1
-                    @Suppress("UNCHECKED_CAST")
-                    val continuation = arguments.last() as Continuation<SongUrl>
-                    val operation: suspend () -> SongUrl = { response(request) }
-                    operation.startCoroutine(continuation)
-                    COROUTINE_SUSPENDED
-                }
-                else -> error("Unexpected API call: ${method.name}")
-            }
-        } as ApiService
         val songDao = Proxy.newProxyInstance(
             SongDao::class.java.classLoader,
             arrayOf(SongDao::class.java),
@@ -823,11 +799,25 @@ class MediaUriProviderQualityTest {
             check(method.name == "getSong") { "Unexpected database call: ${method.name}" }
             flowOf((listOfNotNull(localSong) + extraSongs).firstOrNull { it.id == arguments!![0] })
         } as SongDao
-        val native = object : MusicProvider {
+        val native = object : MusicProvider, PlaybackCapability, QualityCapability {
             override val id = ProviderIds.NETEASE
-            override val displayName = "Native test provider"
+            override val displayName = "Playback fixture"
             override val capabilities = setOf(SourceCapability.PLAYBACK)
             override val isBuiltIn = true
+            override suspend fun resolve(ref: TrackRef, requestedQuality: String): AudioResource {
+                val result = response(GetSongUrlV1("[${ref.trackId}]", requestedQuality))
+                if (result.code in setOf(301, 401, 403)) throw SourceException(SourceErrorCode.AUTH_REQUIRED)
+                if (result.code != 200) throw SourceException(SourceErrorCode.NETWORK)
+                val resource = result.fullSourceFor(ref.trackId) ?: throw SourceException(SourceErrorCode.UNAVAILABLE)
+                return AudioResource(resource.url!!, resource.level.orEmpty(),
+                    expiresAtMs = System.currentTimeMillis() + ((resource.expi?.toLong() ?: 300) * 1000 - 30_000).coerceAtLeast(1000),
+                    contentLength = resource.size.toLong().takeIf { it > 0 },
+                    contentId = playbackSourceIdentity(resource.md5, resource.size.toLong()))
+            }
+            override suspend fun availableQualities(ref: TrackRef): List<String> {
+                onDetailRequested()
+                return detail.songs.first().availableMusicQualities(detail.privileges.firstOrNull()).map { it.text }
+            }
         }
         val registry = ProviderRegistry(listOf(native) + additionalProviders)
         val downloads = if (downloadTasks.isEmpty()) null else DownloadRepository(
@@ -835,8 +825,7 @@ class MediaUriProviderQualityTest {
                 check(method.name == "getBySongId")
                 downloadTasks.firstOrNull { it.songId == args!![0] }
             } as DownloadDao, songDao)
-        return MediaUriProvider(NeteasePlaybackTransport(api),
-            PlaybackResolver(registry, { sourceSettings }), SourceRouter(registry),
+        return MediaUriProvider(PlaybackResolver(registry, { sourceSettings }), SourceRouter(registry),
             SongRepository(songDao), InstrumentationRegistry.getInstrumentation().targetContext, downloads)
     }
 

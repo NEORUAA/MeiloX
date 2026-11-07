@@ -101,7 +101,7 @@ fun SongInfoSheet(
                     metadata.tns?.let { add("译名" to it) }
                 })
             }
-            item("playback-source") {
+            if (resolution != null) item("playback-source") {
                 InfoSection("播放音源", buildList {
                     resolution?.let { actual ->
                         add("实际音源" to (providers.find { it.id == actual.actualAudioProviderId }?.displayName ?: actual.actualAudioProviderId))
@@ -109,6 +109,8 @@ fun SongInfoSheet(
                         if (actual.resolvedTrackRef != actual.originTrackRef) add("状态" to "已自动切换音源")
                     }
                 })
+            }
+            item("playback-controls") {
                 val key = TrackRefCodec.encode(metadata.trackRef)
                 GlasmioGroupedList {
                     GlasmioListRow(title = "允许此歌曲自动切换音源", showDisclosure = false, trailing = {
@@ -117,8 +119,7 @@ fun SongInfoSheet(
                         })
                     })
                     GlasmioListRow(title = "音源与歌曲匹配", onClick = {
-                        dismissal.requestDismiss()
-                        Screen.SourceManagement.navigate(nav)
+                        dismissal.requestDismiss { Screen.SourceManagement.navigate(nav) }
                     })
                 }
             }

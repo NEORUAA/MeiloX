@@ -23,6 +23,12 @@ import com.ljyh.mei.source.core.SourceSettings
 import com.ljyh.mei.ui.screen.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.shared.SharedOnlineSession
+import com.ljyh.mei.source.shared.OnlinePodcast
+import com.ljyh.mei.source.api.AccountRevisionCapability
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +49,7 @@ data class SourceSearchState(
     val error: SourceErrorCode? = null,
     val items: List<SourceItem> = emptyList(),
     val nextCursor: String? = null,
+    val podcasts: List<OnlinePodcast> = emptyList(),
 )
 
 internal fun searchableProviders(providers: List<MusicProvider>): List<MusicProvider> = providers.filter {
@@ -67,11 +74,13 @@ internal fun supportedSourceSearchType(requested: Int, supported: Set<SearchType
         ?: SearchType.entries.firstOrNull { it in supported }
 
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SourceSearchViewModel @Inject constructor(
     private val router: SourceRouter,
     private val preferences: SourcePreferences,
     registry: ProviderRegistry,
+    private val online: SharedOnlineRepository? = null,
 ) : ViewModel() {
     val providers = registry.providers
     val sourceChoices = combine(providers, registry.revision) { providers, _ -> searchableProviders(providers) }
@@ -92,13 +101,20 @@ class SourceSearchViewModel @Inject constructor(
     private var generation = 0L
     private var offset = 0
     private var contentType = ContentType.TRACK
+    private var podcastMode = false
+    private var podcastSession: SharedOnlineSession? = null
 
     init {
         viewModelScope.launch {
             combine(selectedProviderId, providers, registry.revision) { id, providers, revision -> Triple(id, providers, revision) }
-                .distinctUntilChanged().collect { search(mutableState.value.query, force = true, type = contentType) }
+                .flatMapLatest { (id, _, _) ->
+                    val owner = registry.provider(id)
+                    ((owner as? AccountRevisionCapability)?.accountRevision ?: flowOf(null)).map { Triple(id, owner, it) }
+                }.distinctUntilChanged().collect { search(mutableState.value.query, force = true, type = contentType, podcasts = podcastMode) }
         }
     }
+
+    fun useSearchPreference() { browseMode.value = false }
 
     fun useBrowsePreference() { browseMode.value = true }
 
@@ -115,7 +131,7 @@ class SourceSearchViewModel @Inject constructor(
                 ContentType.PLAYLIST -> SearchType.Playlist
             }
         }.toSet()
-        return types + if (SourceCapability.PODCAST in provider.capabilities && supportsFeatureRoute(providerId, Screen.PodcastDetail.route))
+        return types + if ("search" in (provider as? com.ljyh.mei.source.api.SourceFeatureCapability)?.features?.get("podcasts").orEmpty())
             setOf(SearchType.Podcast) else emptySet()
     }
 
@@ -130,13 +146,15 @@ class SourceSearchViewModel @Inject constructor(
         }
     }
 
-    fun search(query: String, force: Boolean = false, type: ContentType = ContentType.TRACK) {
+    fun search(query: String, force: Boolean = false, type: ContentType = ContentType.TRACK, podcasts: Boolean = false) {
         val query = query.trim()
-        if (!force && contentType == type && mutableState.value.query == query && (mutableState.value.loading || mutableState.value.tracks.isNotEmpty())) return
+        if (!force && contentType == type && podcastMode == podcasts && mutableState.value.query == query && (mutableState.value.loading || mutableState.value.items.isNotEmpty() || mutableState.value.podcasts.isNotEmpty())) return
         request?.cancel()
         generation++
         offset = 0
         contentType = type
+        podcastMode = podcasts
+        podcastSession = null
         mutableState.value = SourceSearchState(query = query)
         if (query.isNotEmpty() && currentProviderId().isNotEmpty()) loadPage(append = false)
     }
@@ -151,11 +169,23 @@ class SourceSearchViewModel @Inject constructor(
         val requestGeneration = generation
         val oldItems = if (append) mutableState.value.items else emptyList()
         val oldTracks = if (append) mutableState.value.tracks else emptyList()
+        val oldPodcasts = if (append) mutableState.value.podcasts else emptyList()
         val nextCursor = if (append) mutableState.value.nextCursor else null
         val requestedType = contentType
+        val requestedPodcasts = podcastMode
         mutableState.value = mutableState.value.copy(loading = true, error = null)
         request = viewModelScope.launch {
             try {
+                if (requestedPodcasts) {
+                    val session = podcastSession ?: online?.screen("podcast-search", providerId)?.also { podcastSession = it }
+                        ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
+                    val page = session.searchPodcasts(query, offset, 30)
+                    if (requestGeneration != generation || providerId != currentProviderId()) return@launch
+                    offset += page.fetchedCount
+                    val values = (oldPodcasts + page.podcasts).distinctBy { it.providerId to it.id }
+                    mutableState.value = SourceSearchState(query = query, podcasts = values, hasMore = page.hasMore && page.fetchedCount > 0 && (!append || values.size > oldPodcasts.size))
+                    return@launch
+                }
                 val page = router.search(providerId, query, requestedType, PageRequest(offset, 30, nextCursor))
                 if (requestGeneration != generation || providerId != currentProviderId()) return@launch
                 offset += page.items.size
@@ -168,7 +198,7 @@ class SourceSearchViewModel @Inject constructor(
                 throw cancelled
             } catch (error: Exception) {
                 if (requestGeneration != generation || providerId != currentProviderId()) return@launch
-                mutableState.value = SourceSearchState(query, tracks = oldTracks, items = oldItems, nextCursor = nextCursor,
+                mutableState.value = SourceSearchState(query, tracks = oldTracks, items = oldItems, nextCursor = nextCursor, podcasts = oldPodcasts,
                     error = (error as? SourceException)?.code ?: SourceErrorCode.NETWORK)
             }
         }

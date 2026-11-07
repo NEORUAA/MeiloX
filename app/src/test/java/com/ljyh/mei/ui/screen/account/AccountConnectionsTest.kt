@@ -1,8 +1,8 @@
 package com.ljyh.mei.ui.screen.account
 
-import com.ljyh.mei.data.model.melox.AccountConnectionPage
+import com.ljyh.mei.source.shared.OnlineAccountConnectionPage as AccountConnectionPage
 import com.ljyh.mei.data.model.melox.AccountConnectionType
-import com.ljyh.mei.data.model.melox.AccountProfile
+import com.ljyh.mei.source.shared.OnlineAccountProfile as AccountProfile
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -40,7 +40,7 @@ class AccountConnectionsTest {
     fun pagesDeduplicateUsersAndContinueFromRawOffsetsUntilProgressStops() = runTest(dispatcher) {
         val offsets = mutableListOf<Int>()
         val viewModel = AccountConnectionsViewModel { userId, type, offset ->
-            assertEquals(42L, userId)
+            assertEquals("42", userId)
             assertEquals(AccountConnectionType.Following, type)
             offsets += offset
             when (offset) {
@@ -49,12 +49,12 @@ class AccountConnectionsTest {
                 else -> page(emptyList(), more = true, nextOffset = 7)
             }
         }
-        viewModel.load(42, AccountConnectionType.Following)
+        viewModel.load("42", AccountConnectionType.Following)
         runCurrent()
         viewModel.loadMore()
         viewModel.loadMore()
         runCurrent()
-        assertEquals(listOf(1L, 2L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("1", "2"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertEquals(7, viewModel.state.value.page!!.nextOffset)
 
         viewModel.loadMore()
@@ -74,7 +74,7 @@ class AccountConnectionsTest {
             if (offset > 0) suspendCoroutine { append = it }
             else page(listOf(if (refreshed) 3 else 1), more = true, nextOffset = 4)
         }
-        viewModel.load(42, AccountConnectionType.Following)
+        viewModel.load("42", AccountConnectionType.Following)
         runCurrent()
         viewModel.loadMore()
         runCurrent()
@@ -84,7 +84,7 @@ class AccountConnectionsTest {
         append.resume(page(listOf(2), more = false, nextOffset = 8))
         runCurrent()
 
-        assertEquals(listOf(3L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("3"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertEquals(4, viewModel.state.value.page!!.nextOffset)
         assertFalse(viewModel.state.value.loading)
         assertFalse(viewModel.state.value.loadingMore)
@@ -100,12 +100,12 @@ class AccountConnectionsTest {
             if (fail) error("Page unavailable")
             page(listOf(if (offset == 0) 1 else 2), more = offset == 0, nextOffset = offset + 4)
         }
-        viewModel.load(42, AccountConnectionType.Following)
+        viewModel.load("42", AccountConnectionType.Following)
         runCurrent()
         fail = true
         viewModel.loadMore()
         runCurrent()
-        assertEquals(listOf(1L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("1"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertEquals(4, viewModel.state.value.page!!.nextOffset)
         assertNotNull(viewModel.state.value.loadMoreError)
 
@@ -113,18 +113,18 @@ class AccountConnectionsTest {
         viewModel.loadMore()
         runCurrent()
         assertEquals(listOf(0, 4, 4), offsets)
-        assertEquals(listOf(1L, 2L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("1", "2"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertNull(viewModel.state.value.loadMoreError)
 
         fail = true
         viewModel.refresh()
         runCurrent()
-        assertEquals(listOf(1L, 2L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("1", "2"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertNotNull(viewModel.state.value.error)
         fail = false
         viewModel.refresh()
         runCurrent()
-        assertEquals(listOf(1L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("1"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertNull(viewModel.state.value.error)
     }
 
@@ -140,20 +140,20 @@ class AccountConnectionsTest {
                 else -> suspendCoroutine { oldAppend = it }
             }
         }
-        viewModel.load(42, AccountConnectionType.Following)
+        viewModel.load("42", AccountConnectionType.Following)
         runCurrent()
         viewModel.loadMore()
         runCurrent()
-        viewModel.load(42, AccountConnectionType.Followers)
+        viewModel.load("42", AccountConnectionType.Followers)
         assertNull(viewModel.state.value.page)
         assertTrue(viewModel.state.value.loading)
         runCurrent()
         oldAppend.resume(page(listOf(2), more = false, nextOffset = 8))
         runCurrent()
-        viewModel.load(42, AccountConnectionType.Followers)
+        viewModel.load("42", AccountConnectionType.Followers)
         runCurrent()
 
-        assertEquals(listOf(3L), viewModel.state.value.page!!.users.map(AccountProfile::id))
+        assertEquals(listOf("3"), viewModel.state.value.page!!.users.map(AccountProfile::id))
         assertEquals(1, viewModel.state.value.page!!.nextOffset)
         assertEquals(listOf(
             AccountConnectionType.Following to 0,
@@ -166,7 +166,7 @@ class AccountConnectionsTest {
 
     private fun page(ids: List<Int>, more: Boolean, nextOffset: Int) = AccountConnectionPage(
         users = ids.map { id -> AccountProfile(
-            id = id.toLong(), nickname = "User $id", avatarUrl = null, backgroundUrl = null,
+            id = id.toString(), nickname = "User $id", avatarUrl = null, backgroundUrl = null,
             signature = null, follows = null, followers = null, eventCount = null,
             playlistCount = null, playlistSubscribedCount = null,
         ) },

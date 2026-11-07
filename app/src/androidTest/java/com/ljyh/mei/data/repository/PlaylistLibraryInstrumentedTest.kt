@@ -1,6 +1,5 @@
 package com.ljyh.mei.data.repository
 
-import com.ljyh.mei.source.netease.repository.*
 
 import androidx.room.Room
 import androidx.compose.material3.MaterialTheme
@@ -12,21 +11,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
-import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.di.AppDatabase
-import com.ljyh.mei.di.NeteaseInterceptor
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.DeviceIdKey
-import com.ljyh.mei.constants.SDeviceIdKey
 import com.ljyh.mei.R
-import com.ljyh.mei.data.model.PlaylistOrderChangedException
-import com.ljyh.mei.data.network.neteaseSessionFingerprint
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.EApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
 import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -35,15 +24,6 @@ import com.ljyh.mei.ui.screen.playlist.PlaylistOrderItem
 import com.ljyh.mei.ui.screen.playlist.PlaylistOrderSheet
 import com.ljyh.mei.ui.screen.playlist.PlaylistOrderState
 import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
-import okhttp3.FormBody
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Response
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.ResponseBody.Companion.toResponseBody
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.atomic.AtomicReference
 import org.junit.Rule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -81,56 +61,6 @@ class PlaylistLibraryInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         compose.onNodeWithText(context.getString(R.string.playlist_order_cancel)).performClick()
         compose.runOnIdle { assertFalse(visible.value); assertEquals(0, saves) }
-    }
-
-    @Test
-    fun orderTransportPreservesIdsAndRejectsConcurrentAndSessionChanges() = runBlocking<Unit>(Dispatchers.IO) {
-        val credential = "fixture-order-session"
-        val outgoingSession = AtomicReference(credential)
-        var serverIds = listOf(1L, 2L, 3L)
-        var switchSessionAfterRead = false
-        var writes = 0
-        val client = OkHttpClient.Builder()
-            .addInterceptor(NeteaseInterceptor {
-                mutablePreferencesOf(CookieKey to outgoingSession.get(), DeviceIdKey to "fixture-device", SDeviceIdKey to "fixture-device")
-            })
-            .addInterceptor { chain ->
-                val request = chain.request()
-                val json = if (request.url.encodedPath.endsWith("/playlist/manipulate/tracks")) {
-                    writes++
-                    val form = request.body as FormBody
-                    val fields = (0 until form.size).associate { form.name(it) to form.value(it) }
-                    assertEquals("update", fields["op"])
-                    assertEquals("42", fields["pid"])
-                    assertEquals("[\"3\",\"1\",\"2\"]", fields["trackIds"])
-                    assertFalse(request.headers.names().any { it.startsWith("X-Netease-", true) })
-                    """{"code":200}"""
-                } else {
-                    assertTrue(request.url.encodedPath.endsWith("/playlist/detail"))
-                    if (switchSessionAfterRead) outgoingSession.set("different-fixture-session")
-                    """{"code":200,"playlist":{"id":42,"creator":{"userId":7},"trackIds":[${serverIds.joinToString(",") { "{\"id\":$it}" }}],"tracks":[]}}"""
-                }
-                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("fixture")
-                    .body(json.toResponseBody("application/json".toMediaType())).build()
-            }.build()
-        val retrofit = Retrofit.Builder().baseUrl("https://interface.music.163.com/")
-            .addConverterFactory(GsonConverterFactory.create()).client(client).build()
-        val repository = PlaylistRepository(
-            retrofit.create(ApiService::class.java), retrofit.create(WeApiService::class.java),
-            retrofit.create(EApiService::class.java), freshCheckToken = { "unused" }, subscriptionAccount = { credential },
-        )
-        suspend fun save() = repository.updatePlaylistTrackOrder(
-            "42", listOf(1, 2, 3), listOf(3, 1, 2), 7, neteaseSessionFingerprint(credential), { true },
-        )
-        assertEquals(200, save().code)
-        assertEquals(1, writes)
-        serverIds = serverIds + 4L
-        assertTrue(runCatching { save() }.exceptionOrNull() is PlaylistOrderChangedException)
-        assertEquals(1, writes)
-        serverIds = listOf(1, 2, 3)
-        switchSessionAfterRead = true
-        assertNotNull(runCatching { save() }.exceptionOrNull())
-        assertEquals(1, writes)
     }
 
     @Test

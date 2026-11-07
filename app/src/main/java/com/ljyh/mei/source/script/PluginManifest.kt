@@ -9,7 +9,12 @@ import com.ljyh.mei.source.api.SourceException
 import com.ljyh.mei.source.api.ContentType
 
 @Keep
-data class PluginPermissions(val network: List<String> = emptyList(), val storage: Boolean = false)
+data class PluginPermissions(
+    val network: List<String> = emptyList(),
+    val storage: Boolean = false,
+    val nativeSdks: Set<String> = emptySet(),
+    val effects: Set<String> = emptySet(),
+)
 
 @Keep
 data class PluginConfigField(
@@ -34,6 +39,11 @@ data class PluginManifest(
     val description: String? = null,
     val searchTypes: Set<String> = setOf("track"),
     val collectionTypes: Set<String> = emptySet(),
+    val features: Map<String, Set<String>> = emptyMap(),
+    val featureRoutes: Set<String> = emptySet(),
+    val sessionKeys: Set<String> = emptySet(),
+    val sessionCookieNames: Map<String, Set<String>> = emptyMap(),
+    val linkHosts: Set<String> = emptySet(),
 ) {
     val supported: Boolean get() = apiVersion in 1..2
     val sourceCapabilities: Set<SourceCapability> get() = capabilities.mapNotNull(CAPABILITIES::get).toSet()
@@ -71,6 +81,9 @@ data class PluginManifest(
             "playlist.addTracks" to SourceCapability.PLAYLIST_EDIT,
             "playlist.removeTracks" to SourceCapability.PLAYLIST_EDIT,
             "playlist.reorderTracks" to SourceCapability.PLAYLIST_EDIT,
+            "feature.invoke" to SourceCapability.FEATURES,
+            "playback.qualities" to SourceCapability.PLAYBACK,
+            "links.resolve" to SourceCapability.LINKS,
         )
 
         fun parse(json: String): PluginManifest {
@@ -81,14 +94,22 @@ data class PluginManifest(
                 if (!raw.has("entry")) raw.addProperty("entry", "index.js")
                 if (!raw.has("permissions")) raw.add("permissions", com.google.gson.JsonObject())
                 val permissions = raw.getAsJsonObject("permissions")
-                require(permissions.keySet().all { it in setOf("network", "storage") })
+                require(permissions.keySet().all { it in setOf("network", "storage", "nativeSdks", "effects") })
                 if (!permissions.has("network")) permissions.add("network", com.google.gson.JsonArray())
+                if (!permissions.has("nativeSdks")) permissions.add("nativeSdks", com.google.gson.JsonArray())
+                if (!permissions.has("effects")) permissions.add("effects", com.google.gson.JsonArray())
                 if (!raw.has("config")) raw.add("config", com.google.gson.JsonArray())
                 if (!raw.has("searchTypes")) raw.add("searchTypes", com.google.gson.JsonArray().apply { add("track") })
                 if (!raw.has("collectionTypes")) raw.add("collectionTypes", com.google.gson.JsonArray())
+                if (!raw.has("features")) raw.add("features", com.google.gson.JsonObject())
+                if (!raw.has("featureRoutes")) raw.add("featureRoutes", com.google.gson.JsonArray())
+                if (!raw.has("sessionKeys")) raw.add("sessionKeys", com.google.gson.JsonArray())
+                if (!raw.has("sessionCookieNames")) raw.add("sessionCookieNames", com.google.gson.JsonObject())
+                if (!raw.has("linkHosts")) raw.add("linkHosts", com.google.gson.JsonArray())
                 val manifest = Gson().fromJson(raw, PluginManifest::class.java)
                 require(ID.matches(manifest.id) && ID.matches(manifest.providerId))
-                require(manifest.providerId !in setOf(ProviderIds.NETEASE, ProviderIds.LOCAL))
+                require(manifest.providerId != ProviderIds.LOCAL)
+                require(manifest.providerId != ProviderIds.NETEASE || manifest.id == "org.meilox.source.netease")
                 require(manifest.name.isNotBlank() && manifest.name.length <= 100)
                 require(manifest.author.isNotBlank() && manifest.author.length <= 100)
                 require(manifest.version.isNotBlank() && manifest.version.length <= 50)
@@ -98,12 +119,34 @@ data class PluginManifest(
                 if (manifest.apiVersion == 1) {
                     require(manifest.capabilities.all { it in setOf("catalog.search", "catalog.track", "playback.resolve", "lyrics.get") })
                     require(manifest.searchTypes == setOf("track") && manifest.collectionTypes.isEmpty())
+                    require(manifest.features.isEmpty() && manifest.featureRoutes.isEmpty() && manifest.permissions.nativeSdks.isEmpty() &&
+                        manifest.permissions.effects.isEmpty() && manifest.sessionKeys.isEmpty() && manifest.sessionCookieNames.isEmpty() && manifest.linkHosts.isEmpty())
                 }
+                require(manifest.features.size <= 32 && manifest.features.all { (feature, actions) ->
+                    KEY.matches(feature) && actions.isNotEmpty() && actions.size <= 100 && actions.all(KEY::matches)
+                })
+                require(manifest.featureRoutes.size <= 64 && manifest.featureRoutes.all {
+                    it.length in 1..100 && Regex("[a-z][a-z0-9_/-]*").matches(it)
+                })
+                require(manifest.features.isEmpty() && manifest.featureRoutes.isEmpty() || "feature.invoke" in manifest.capabilities)
+                require(manifest.sessionKeys.size <= 32 && manifest.sessionKeys.all(KEY::matches))
+                require(manifest.sessionKeys.isEmpty() || manifest.permissions.storage)
+                require(manifest.sessionCookieNames.size <= 16 && manifest.sessionCookieNames.all { (key, names) ->
+                    key in manifest.sessionKeys && names.isNotEmpty() && names.size <= 16 && names.all {
+                        Regex("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}").matches(it)
+                    }
+                })
+                require(manifest.permissions.nativeSdks.all { it in setOf("netease.transport", "netease.urs",
+                    "netease.securityHeaders", "netease.ursPuzzle", "netease.ursCaptcha", "netease.history") })
+                require(manifest.permissions.effects.all { it in com.ljyh.mei.source.api.SourceHostEffect.supportedTypes && it != "source.continue" })
+                require(manifest.linkHosts.size <= 20 && manifest.linkHosts.all { it in manifest.permissions.network })
+                manifest.linkHosts.forEach(ScriptNetworkPolicy::validateDomain)
+                require(manifest.linkHosts.isEmpty() || "links.resolve" in manifest.capabilities)
                 val types = ContentType.entries.map { it.wireName }.toSet()
                 require(manifest.searchTypes.isNotEmpty() && manifest.searchTypes.all { it in types })
                 require(manifest.collectionTypes.all { it in types && it != "track" })
                 if (manifest.capabilities.any { it.startsWith("collection.") }) require(manifest.collectionTypes.isNotEmpty())
-                require(manifest.permissions.network.size <= 20)
+                require(manifest.permissions.network.size <= 32)
                 manifest.permissions.network.forEach(ScriptNetworkPolicy::validateDomain)
                 require(manifest.config.size <= 32 && manifest.config.map { it.key }.distinct().size == manifest.config.size)
                 manifest.config.forEach { require(KEY.matches(it.key) && it.label.isNotBlank() && it.label.length <= 100) }

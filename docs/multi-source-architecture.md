@@ -1,180 +1,97 @@
-# Music sources
+# Multi-source architecture
 
-## Compatibility baseline (P0)
-
-The implementation starts at `5632235085006d01cc2ba589e6c9354033152802`, matching
-`origin/main` on 2026-11-06. Room is version 18. Existing song, playlist, download,
-lyric and history keys remain intact. `SourceType` continues to describe storage.
+The host owns playback, persistence, shared UI and the independent multi-source lyric system. Installed providers own online catalog, account and service behavior. The current registry permanently contains local music; the default NetEase provider is a bundled, removable script package maintained in the separate [MeiloX-Netease-Source](https://github.com/NEORUAA/MeiloX-Netease-Source) repository. QQ is maintained in [MeiloX-QQMusic-Source](https://github.com/NEORUAA/MeiloX-QQMusic-Source).
 
 ```text
-Compose -> ViewModels -> repositories -> Netease Retrofit / Room
-Media3 -> MediaUriProvider -> local files / URL quality ladder / Netease API
-AutoMix -> source resolver -> CacheMediaDataSource
-Downloads -> PlaylistRepository -> DownloadManager -> DownloadWorker -> Room
+Original Compose presenters
+  -> source-bound ViewModels / shared feature repositories
+  -> SourceRouter / SourceFeatureClient
+  -> installed provider capabilities
+  -> isolated JavaScript service protocol
+  -> restricted HTTP or explicit host SDK effects
+
+Media3 / AutoMix / downloads
+  -> typed content reference
+  -> PlaybackResolver
+  -> actual audio resource + opaque host handle
+
+Player lyric selection
+  -> host LyricRepository and lyric adapters
+  -> independent NetEase / QQ / extended lyric lookup
 ```
 
-The provider boundary is introduced inside `:app` before considering Gradle modules.
-Typed source references become authoritative; legacy numeric fields remain adapters.
-New provider keys use a reversible versioned codec. Existing positive numeric IDs
-remain Netease IDs. Local records require their storage/metadata context: negative
-podcast placeholders also exist and must not be classified as local files.
+## Identity and user data
 
-Migration risks and decisions:
+`TrackRef`, `AlbumRef`, `ArtistRef` and `PlaylistRef` carry provider ID plus an opaque string identity. Account identity additionally includes the installed provider instance. Package IDs, provider IDs, instance IDs, account IDs and track IDs are distinct concepts.
 
-- Add identity columns without rekeying existing rows or rewriting offline paths.
-- Read queue snapshots v1/v2 and write v3 with explicit content references.
-- Keep numeric Netease cache compatibility; external audio uses its actual source.
-- Preserve original metadata and action targets when audio falls back.
-- Separate platform history reporting from host playback statistics.
-- Never pass the account-bearing Netease HTTP client to plugins or generic audio.
-- Retain QQ lyric mappings as lyric data, without claiming QQ playback support.
-- Provider removal never removes library rows or downloaded files.
-- Preserve native account, FM, cloud, podcast, social and together-listening pages.
+Room is version 19. The additive 18→19 migration retains legacy primary keys, associations and offline paths while recording typed identity and audio provenance. Existing positive numeric NetEase IDs retain their storage/cache compatibility. External IDs use the reversible versioned codec; they are never hashed into numerical surrogates. Local files require their storage context. Historical negative podcast placeholders do not identify local music by themselves.
 
-Baseline command:
+Queue snapshot v3 reads the existing v1/v2 formats. Content identity and original metadata remain authoritative even when another source supplies audio. Persisted locators retain non-secret provider/account/version facts; opaque remote cursors remain in memory. Restoring a paged queue verifies its saved prefix before recovering pagination. Repeated playlist recordings retain their positions.
 
-```sh
-./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-```
+Disabling/removing a provider leaves host playlists, history, downloaded audio and independent lyric data intact. New remote work fails with a typed source error. Existing resources follow their playback/cache policy rather than rewriting a queue item's original identity.
 
-Result: 873 JVM tests passed; application and instrumentation APKs built. An existing
-HyperOS AVD (`emulator-5580`) is available. Its original app data was backed up locally
-before installation testing; backups contain credentials and are Git-ignored.
-The original package was updated with `adb install -r`. Existing quality and queue
-instrumentation passed all 23 tests on that AVD.
+## Provider boundary
 
-## Stage record
+`ProviderRegistry` discovers capability interfaces for catalog/search, album/artist/playlist, feeds, accounts/libraries, likes, collections, editing, playback/quality, lyrics, features and links. `SourceRouter` checks capability declarations and provider-scoped references. There is no implicit NetEase fallback for an unsupported action.
 
-- P0: dependency and compatibility audit, reproducible baseline.
-- P1: typed identity, additive migration and compatible queue persistence.
-- P2: native Netease provider and retained compatibility facades.
-- P3: routed playback and bounded, ordered cross-source resolution.
-- P4: imported script runtime, permission-limited host API and SDK.
-- P5: source management, source selection and playback source status.
-- P6: regression checks and user/developer documentation.
+`SourceFeatureClient` creates a screen-lifetime binding. It pins the provider object, installed instance/version and account revision. Changing the browse/search default cannot retarget a conversation, login, editor or upload already open on another source. `BoundSourceFeatures` validates calls and supports revocation watchers. Removing/replacing/disabling a source or changing its account cancels pending work and discards stale results.
 
-Stage validation and remaining limitations are recorded as the implementation proceeds.
+The shared domain/presentation layer is in `source/shared/`. Account, cloud, podcast, wiki, comment, messaging, recognition and together-listening identities remain strings. Service thread prefixes, authentication sequences, request bodies and response projections belong to the plugin. Native filenames and old route keys retained for compatibility do not grant a built-in online provider.
 
-### P1
+## Original UI and navigation
 
-Added versioned UTF-8 source identities and generic models, additive Room 18→19
-identity/provenance columns, and queue snapshot v3 with v1/v2 readers. Legacy primary
-keys and file paths are retained. Song upserts no longer replace parent rows and
-delete related playback history. External IDs never become hashed numeric IDs.
+Home uses the original recommendation and square playlist-card components, including cover captions, secondary titles, play-count details and snapping. Optional source-owned card metadata selects those existing presentation fields; service-specific tags, caption placement recipes and artwork processors remain in the plugin.
 
-The shared integration build passed 895 JVM tests and built both APKs. On AVD,
-`SourceCompatibilityInstrumentedTest` passed both tests: a complete SQLite v18 fixture
-upgraded through Room v19 validation while preserving all seeded associations and
-files; legacy and external snapshots restored through real Media3 items.
+Playlist/album screens use the shared `SongListDetailScreen` presentation extracted from the original page. Artist screens share the original hero, header/actions, featured release and song/album cards. Providers select existing capabilities and data; they do not provide executable Compose UI or surrogate numeric IDs.
 
-### P2
+Advanced features reuse the existing account/security, cloud, podcast, statistics/history, wiki, comments, private-message, recognition and listening-together screens. Menus and write actions reflect the owning source's declared capabilities. Account/status data comes from the selected source rather than global NetEase preferences. Explicit provider queries survive both supported navigation hosts and ViewModel saved-state creation.
 
-Netease catalog, playback and quality capabilities now have a native provider. Native
-repositories and their DI graph own account/security, home, playlists, library,
-podcasts, cloud, social and together-listening behavior. Old public repository names
-remain compatibility aliases. Native UI operations use native catalog adapters;
-generic catalogs route by explicit source through the registry. QQ lyrics are a
-separate extension and do not advertise QQ playback.
+Home/discovery/search/library source switching uses top-bar actions and dropdowns. Source ordering uses the shared Glasmio drag list. Source management lives in the General settings page. Legacy route names are compatibility keys; destinations use the same provider-bound shared UI.
 
-All five native-provider JVM tests passed in the shared build. Eleven AVD tests for
-playback identity, authentication isolation and playlist request transport passed.
-These synthetic transport regressions preserve the real account; they do not claim
-successful live login, cloud upload or social mutation.
+`SourceLinkRouter` extracts a bounded set of shared/pasted URLs. It dispatches only to ready providers declaring the exact host. When hosts overlap, the selected matching source owns the result. Content and feature targets retain the owner/account binding through navigation, and undeclared routes or foreign-provider references are rejected.
 
-### P3
+## Script runtime and host effects
 
-Playback now resolves original content and actual audio separately. Native URL
-refresh/quality ladders run before configured cross-source matching. Resolution has
-typed failures, bounded timeouts, cancellation/invalidation epochs, shared request
-gates, concurrency limits, positive/negative mapping caches and explicit manual
-bindings. Ambiguous recordings are not selected automatically.
+The API 1/2 contract and declarations are documented in [source-plugin-spec.md](source-plugin-spec.md). API 2 gains optional `feature.invoke`, links, session identity and host effects while preserving API 1 behavior.
 
-Media3, AutoMix and downloads preserve per-resource headers and cache permission.
-Version 4 audio cache keys contain actual provider/instance/ref/quality/content;
-legacy Netease v3 keys remain readable. Download tasks retain origin and actual
-provenance without persisting headers. Platform history excludes cross-source audio,
-including downloaded copies. Native-only UI actions and lyric cache keys now respect
-the content provider. Negative podcast transports cannot collide with local songs.
+Each isolated operation has enforced heap, result, evaluation and HTTP-hop limits. Source configuration/storage is encrypted per package instance. Revision gates protect reads, network hops, storage writes, artwork and audio publication. Generic source HTTP has no account-bearing shared cookie jar. Exact domain permissions, public-address DNS checks, HTTPS, redirect rejection and bounded bodies apply to both ordinary and SDK-coded requests.
 
-The final shared build passed 913 JVM tests. Thirty-one AVD migration, snapshot, real
-ExoPlayer, quality, native-before-external rejection, download-generation, live-native
-catalog and queue tests passed. Isolated service-recovery tests require a dedicated
-opt-in package and are not counted as successful recovery coverage.
+A feature returns a bounded `{hostEffect,continuation}` plan. `SourceFeatureExecutor` releases the isolate before invoking a host handler, then resumes the same action with a host-issued continuation token and structured outcome. The entire chain remains bound to provider/version/account/screen. In-flight handlers are cancelled on revocation. A final session transition is opt-in from named host login/logout/account-web flows, while pending effects remain pinned to the original account.
 
-### P4
+The host exposes closed file-picking/upload, WebView, QR/SMS and native SDK primitives. Unsupported handlers return `UNSUPPORTED`. Selected files become expiring, single-use opaque handles bound to the original execution context. No plugin receives a raw Android object, arbitrary native class invocation or unrestricted filesystem handle.
 
-Imported JavaScript runs in AndroidX's isolated V8 service, with fresh bounded
-isolates and no Android bridge or host account access. Host-mediated HTTPS validates
-declared hosts, DNS, redirects, headers and size limits. Audio uses opaque registered
-handles and the same restricted transport. Configuration and namespaced storage use
-Keystore encryption. Installation/update binds approval to inspected package bytes;
-disable/remove leaves library records and independent downloads intact.
+Web effects use AndroidX WebKit profiles, source-owned cookies and a fixed prompt bridge. Direct Chromium/service-worker networking is blocked; host-owned resource and fetch/XHR/form mediation applies the approved network boundary. The profile is destroyed when the effect ends. Missing multi-profile/document-start support does not fall back to the global CookieManager.
 
-The portable offline SDK fixture passed its Node runner. Both real-sandbox AVD tests
-passed: import/search/detail/fallback/audio/disable/reload, and runaway termination,
-network denial and healthy recovery. The example provides an authored test tone;
-no real QQ/Kugou playback service is claimed by this offline fixture. API 1 remains
-compatible; API 2 adds optional typed catalog, feeds, account, library and write
-capabilities. Native advanced Netease features retain their existing pages.
+The vendor security SDK has process-global state without a verified reset API. The host serializes its work and fails closed for a second source-instance owner during the same process. Provider-private SDK storage remains namespaced. Switching that SDK to another owner requires a process restart.
 
-### P5
+## Removable default and credential migration
 
-Settings provide package import/permission review, source status/configuration,
-enable/remove/update, independent browse/search defaults and persisted fallback
-ordering. Generic track search routes every source through the same catalog API;
-native extra search categories and the native home remain provider contributions.
-Song information displays the actual audio source/quality without changing content
-actions, and exposes per-song fallback permission and manual-match review.
+The default package uses canonical package ID `org.meilox.source.netease` and provider ID `netease`. That provider namespace is accepted only for the canonical package ID. The registry has no permanently registered built-in NetEase provider.
 
-The isolated real-DataStore search AVD test passed, including cancellation, paging,
-typed errors, independent defaults and failed-provider propagation. Main package
-startup, retained account/home/queue and the management settings entry were checked
-on the AVD. The native smoke passed actual search→detail→full audio
-resolution with the account unchanged, along with both migration/snapshot tests.
+`BundledSourceProvisioner` checks the bundled package's exact SHA-256 before its one-time installation. Only this pinned first-install path can copy the former built-in account/device/session fields into the source's encrypted namespace. A previously imported package, even with the canonical ID, does not receive legacy credentials. The original stored music keys remain valid.
 
-### P6
+The default marker records completed provisioning, an existing external package, or explicit removal. Bundled upgrades require the previously recorded package contents to match exactly, preserve enabled state and encrypted account storage, and recover interrupted directory/marker swaps from a bounded transaction journal. Imported or modified installations do not enter this upgrade path. Uninstall writes the removal marker, preventing automatic reinstallation on the next launch. Normal reviewed import can install a source again. A damaged or unavailable default reports a recoverable startup error while allowing other installed sources, including QQ, to load.
 
-Added revision-gated script configuration/storage commits so account replacement or
-uninstall cannot receive stale invocation state. Room schema 19 is exported under
-`app/schemas`; the v18 fixture remains alongside migration instrumentation. User
-instructions, SDK/security boundaries, third-party notices and the detailed
-[validation matrix](source-validation.md) are included.
+Updates and ordinary package imports use the inspected-byte approval path. Configuration changes, replacement and uninstall invalidate source revisions. The pinned package hash and actual migration implementation live in `BundledSourceProvisioner`; verification evidence belongs in [source-validation.md](source-validation.md).
 
-The final combined AVD suite passed 45 tests. The real v18→v19 database comparison
-preserved all existing primary keys/counts and offline file facts. Debug/test and
-optimized Release builds passed. Full debug lint retains 37 pre-existing errors;
-the validation report identifies their baseline comparison and practical hardware
-or live-account coverage limits.
+## Marketplace and lifecycle updates
 
-## Complete provider content (API 2)
+`SourceUpdateManager` reads the community GitHub registry after initialization, verifies immutable package URLs and ZIP digests, and keeps repository trust bound to the installed payload. Automatic replacement requires no expanded authority or changed session contracts, preserves enabled/configuration state, and never reinstalls removed packages. Permission changes and unknown origins use the existing import review. The transaction journal finishes a complete replacement or restores its previous payload after process interruption.
 
-`source/api/SourceContent.kt` defines optional typed search, home/discovery feeds,
-album/artist/playlist details, account, library, likes, collections and individual
-playlist editing operations. `SourceRouter` checks provider-scoped references,
-capabilities and account/session revisions. Successful writes invalidate content
-views without invalidating otherwise healthy playback resources.
+`SourceUpdatePlaybackGuard` coordinates installation reservations with queue restoration and resource resolution. Current original/actual audio providers remain protected even while paused; cancellation releases pending resolution leases. Deferred updates remain available for a later startup or explicit review without a polling loop. Existing HTTPS audio handles retain their validated transport.
 
-The built-in `NeteaseContentAdapter` maps these operations to existing native
-repositories. Native feature contributions retain their original screens. External
-providers use the same grouped rows, cards, top-bar dropdowns and player overlays;
-their account and library never read the native account preferences. Browse and
-search defaults remain independent. Unsupported optional actions are omitted.
+The host-owned marketplace transport permits system VPN/Fake-IP DNS routing for its fixed HTTPS raw GitHub endpoints. It retains hostname/TLS validation, redirect rejection and size/digest limits. This dedicated transport does not change the public-address DNS policy of untrusted plugins.
 
-`SourceContentQueue` starts from the loaded prefix and fetches more near the tail.
-Provider/account changes stop further fetches without deleting queued tracks.
-Snapshot v3 optionally stores a non-secret content locator and loaded-prefix facts.
-After restart, queued items restore immediately; bounded background replay recovers
-an in-memory cursor only when provider, account and prefix still match. Duplicate
-playlist entries retain their positions. No database change beyond Room 19 is needed.
+## Playback and independent lyrics
 
-The isolated SDK supplies fresh secure random bytes per evaluation and an explicitly
-requested bounded base64 response mode. This supports provider-owned binary/crypto
-protocols without exposing a JavaScript network or Android bridge. Revoked invocations
-are checked before each HTTP hop and at result/storage/audio boundaries. Optional
-artwork transport failures leave placeholders; permission and cancellation failures
-still propagate.
+`PlaybackResolver` separates original content from resolved audio. Ordered source fallback, conservative matching, manual bindings, negative/positive caches, cancellation and invalidation epochs limit remote work. Ambiguous recordings require user selection. Original metadata and action targets remain tied to the original content provider.
 
-The QQ adapter is maintained in the independent
-[MeiloX-QQMusic-Source repository](https://github.com/NEORUAA/MeiloX-QQMusic-Source).
-The host contains only a pinned instrumentation fixture, not QQ service code.
-Its declared capabilities and live acceptance are recorded in the validation report.
+Audio handles retain actual provider/instance/session provenance, expiry, headers and cache permission. Media3, AutoMix and downloads resolve through this boundary. Source-scoped cache identities prevent account/provider collisions. `NO_STORE` blocks persistent caching/download. Downloaded copies retain their recorded provenance without depending on a still-installed provider.
+
+The host lyric subsystem remains independent. `LyricRepository`, lyric selection, matching, word timing, extended lyrics, local/downloaded sidecars and caches remain available across playback sources. NetEase content-plugin removal and browse/search selection do not remove or retarget lyric choices. Cross-service matching uses recording metadata; a numeric QQ ID is never forwarded as a NetEase lyric ID.
+
+## Implementation and verification records
+
+Historical P0–P6 commits established additive identity migration, queue compatibility, source playback, isolated imports and source management. The current refactor moves the remaining online feature entry points to removable providers while retaining those compatibility contracts.
+
+Build, unit, sandbox, AVD, live-account and SDK checks have different scopes. Dated results and remaining acceptance work are maintained in [source-validation.md](source-validation.md); this architecture document tracks the current code boundaries.

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.media3.common.util.UnstableApi
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.constants.PlayerActionKey
 import com.ljyh.mei.constants.PlayerStyle
@@ -48,7 +49,7 @@ import com.ljyh.mei.playback.SleepTimerState
 import io.github.neoruaa.glasmio.icons.SfIcon
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.model.PlayerAction
-import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.ui.model.availableFor
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
 import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -71,6 +72,11 @@ fun PlayerActionToolbar(
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
     val currentMetadata by playerConnection.mediaMetadata.collectAsState()
+    val registry = playerConnection.service.sourceRouter.registry
+    val sourceRevision by registry.revision.collectAsStateWithLifecycle()
+    val owner = remember(registry, currentMetadata?.trackRef, sourceRevision) {
+        currentMetadata?.trackRef?.providerId?.let(registry::provider)
+    }
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val pressedAlpha = if (playerStyle == PlayerStyle.AppleMusic) 0.6f else 0.3f
 
@@ -104,7 +110,7 @@ fun PlayerActionToolbar(
             .then(if (playerStyle == PlayerStyle.AppleMusic) Modifier.alpha(0.5f) else Modifier)
     ) {
 
-        actions.filter { it != PlayerAction.ADD_TO_PLAYLIST || currentMetadata?.trackRef?.providerId == ProviderIds.NETEASE }.forEach { action ->
+        actions.filter { it.availableFor(currentMetadata, owner) }.forEach { action ->
             when (action) {
                 PlayerAction.PLAY_MODE -> {
                     PlayerPlayModeButton(

@@ -206,7 +206,7 @@
     <string name="general_clipboard">剪贴板</string>
     <string name="general_recognize_clipboard">识别网易云链接</string>
     <string name="general_recognize_clipboard_description">启动后读取一次剪贴板，发现网易云歌曲或一起听邀请时会先询问是否打开。</string>
-    <string name="general_export_music_u">导出 MUSIC_U Cookie</string>
+    <string name="general_export_music_u">复制登录会话</string>
     <string name="general_export_music_u_description">将当前登录账号的 MUSIC_U 值复制到剪贴板。</string>
     <string name="clipboard_song_title">发现网易云歌曲链接</string>
     <string name="clipboard_song_message">是否在 Mei 中打开剪贴板里的歌曲？</string>
@@ -577,7 +577,7 @@
     <string name="account_playlists">歌单 · %1$d</string>
     <string name="account_track_count">%1$d 首歌曲</string>
     <string name="account_level_listens">Lv.%1$d · 累计听歌 %2$d 首</string>
-    <string name="account_user_id">用户 ID %1$d</string>
+    <string name="account_user_id">用户 ID %1$s</string>
     <string name="account_follows">关注</string>
     <string name="account_followers">粉丝</string>
     <string name="account_no_follows">暂无关注</string>
@@ -716,7 +716,7 @@
     <string name="comment_sort_hot">热度</string>
     <string name="comment_sort_latest">时间</string>
     <string name="netease_sms_up_title">短信安全验证</string>
-    <string name="netease_sms_up_tip">网易要求使用登录手机号主动发送一条短信。模拟器中请用该号码所在的手机发送，然后回到这里继续登录。</string>
+    <string name="netease_sms_up_tip">登录需要使用当前手机号主动发送一条短信。请用该号码所在的手机发送，然后回到这里继续登录。</string>
     <string name="netease_sms_up_destination">接收号码：%1$s</string>
     <string name="netease_sms_up_content">短信内容：%1$s</string>
     <string name="netease_sms_up_copy_number">复制号码</string>

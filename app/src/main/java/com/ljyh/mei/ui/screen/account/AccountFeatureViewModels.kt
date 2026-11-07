@@ -1,9 +1,10 @@
 package com.ljyh.mei.ui.screen.account
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.melox.*
-import com.ljyh.mei.source.netease.repository.AccountFeatureRepository
+import com.ljyh.mei.source.shared.SharedOnlineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -16,7 +17,9 @@ import kotlinx.coroutines.launch
 data class AccountFeatureState<T>(val data: T? = null, val loading: Boolean = false, val error: String? = null)
 
 @HiltViewModel
-class AccountSecurityViewModel @Inject constructor(private val repository: AccountFeatureRepository) : ViewModel() {
+class AccountSecurityViewModel @Inject constructor(onlineRepository: SharedOnlineRepository, savedStateHandle: SavedStateHandle) : ViewModel() {
+    private val repository = onlineRepository.screen("account-security", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
     private val _state = MutableStateFlow(AccountFeatureState<AccountSecuritySummary>())
     val state = _state.asStateFlow()
     private var job: Job? = null
@@ -36,7 +39,9 @@ class AccountSecurityViewModel @Inject constructor(private val repository: Accou
 }
 
 @HiltViewModel
-class MusicianAccountViewModel @Inject constructor(private val repository: AccountFeatureRepository) : ViewModel() {
+class MusicianAccountViewModel @Inject constructor(onlineRepository: SharedOnlineRepository, savedStateHandle: SavedStateHandle) : ViewModel() {
+    private val repository = onlineRepository.screen("musician-account", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
     private val _state = MutableStateFlow(AccountFeatureState<MusicianAccount>())
     val state = _state.asStateFlow()
     private var job: Job? = null
@@ -67,7 +72,9 @@ data class AccountDevicesState(
 )
 
 @HiltViewModel
-class AccountDevicesViewModel @Inject constructor(private val repository: AccountFeatureRepository) : ViewModel() {
+class AccountDevicesViewModel @Inject constructor(onlineRepository: SharedOnlineRepository, savedStateHandle: SavedStateHandle) : ViewModel() {
+    private val repository = onlineRepository.screen("account-devices", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
     private val _state = MutableStateFlow(AccountDevicesState())
     val state = _state.asStateFlow()
     private var job: Job? = null

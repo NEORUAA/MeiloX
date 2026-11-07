@@ -24,6 +24,7 @@ import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
+import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.ui.component.globalProfileHeaderAction
 import io.github.neoruaa.glasmio.ui.GlasmioCard
@@ -111,7 +112,7 @@ fun HistoryScreen(
                             ListQueue(
                                 id = "history",
                                 title = navController.context.getString(R.string.listening_history),
-                                items = historyList.map { it.song.id.toString() to null },
+                                items = historyList.map { entry -> entry.song.toMediaItem().let { it.mediaId to it } },
                                 startIndex = index,
                                 position = 0,
                             ),

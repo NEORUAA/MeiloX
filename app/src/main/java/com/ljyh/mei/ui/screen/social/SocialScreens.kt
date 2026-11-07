@@ -59,11 +59,9 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.UserIdKey
-import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.melox.MessageContact
-import com.ljyh.mei.data.model.melox.PrivateConversation
-import com.ljyh.mei.data.model.melox.ShareResource
+import com.ljyh.mei.source.shared.SourceMessageContact as MessageContact
+import com.ljyh.mei.source.shared.SourcePrivateConversation as PrivateConversation
+import com.ljyh.mei.source.shared.SourceShareResource as ShareResource
 import com.ljyh.mei.data.model.melox.ShareResourceKind
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.playback.queue.ListQueue
@@ -93,8 +91,9 @@ import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
-import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.setClipboard
+import android.net.Uri
+import com.ljyh.mei.ui.screen.source.navigateSourceContent
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -104,14 +103,14 @@ import java.util.Locale
 fun ConversationsScreen(
     viewModel: ConversationsViewModel = hiltViewModel(),
     officialMessages: Boolean = false,
+    providerId: String? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
-    val currentUserId by rememberPreference(UserIdKey, "")
-    val currentUser = currentUserId.toLongOrNull() ?: 0L
+    val currentUser = state.currentUserId
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     LifecycleResumeEffect(officialMessages) {
-        viewModel.load(officialMessages)
+        viewModel.load(officialMessages, providerId)
         onPauseOrDispose {}
     }
 
@@ -122,7 +121,7 @@ fun ConversationsScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         actions = {
             val composeAction = if (!officialMessages) listOf(meiloxHeaderAction(
-                "compose", stringResource(R.string.message_start), { Screen.MessageContacts.navigate(navController) },
+                "compose", stringResource(R.string.message_start), { Screen.MessageContacts.navigate(navController) { state.providerId?.let { addQuery("providerId", Uri.encode(it)) } } },
             ) { SfIcon("person.crop.circle.badge.plus", null) }) else emptyList()
             composeAction + meiloxHeaderAction("refresh", stringResource(R.string.refresh), viewModel::refresh) {
                 SfIcon(SfSymbol.ArrowClockwise, null)
@@ -137,10 +136,11 @@ fun ConversationsScreen(
             conversations = state.conversations,
             currentUserId = currentUser,
             officialMessages = officialMessages,
-            onOfficialGroupClick = { Screen.OfficialMessages.navigate(navController) },
+            onOfficialGroupClick = { Screen.OfficialMessages.navigate(navController) { state.providerId?.let { addQuery("providerId", Uri.encode(it)) } } },
             onConversationClick = { userId ->
                 Screen.PrivateConversation.navigate(navController) {
-                    addPath(userId.toString())
+                    addPath(Uri.encode(userId))
+                    state.providerId?.let { addQuery("providerId", Uri.encode(it)) }
                 }
             },
         )
@@ -174,8 +174,8 @@ fun ConversationsScreen(
 
 internal fun LazyListScope.privateConversationItems(
     conversations: List<PrivateConversation>,
-    currentUserId: Long,
-    onConversationClick: (Long) -> Unit,
+    currentUserId: String,
+    onConversationClick: (String) -> Unit,
     onOfficialGroupClick: () -> Unit = {},
     officialMessages: Boolean = false,
 ) {
@@ -311,10 +311,11 @@ private fun formatConversationTime(timestamp: Long): String {
 }
 
 @Composable
-fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel()) {
+fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel(), providerId: String? = null) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+    LaunchedEffect(providerId) { viewModel.open(providerId) }
     var query by remember { mutableStateOf("") }
     val filtered = remember(query, state.contacts) {
         val value = query.trim()
@@ -390,7 +391,8 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
                 showTopSeparator = index > 0,
                 onClick = {
                     Screen.PrivateConversation.navigate(navController) {
-                        addPath(contact.id.toString())
+                        addPath(Uri.encode(contact.id))
+                        state.providerId?.let { addQuery("providerId", Uri.encode(it)) }
                     }
                 },
             )
@@ -399,13 +401,12 @@ fun MessageContactsScreen(viewModel: MessageContactsViewModel = hiltViewModel())
 }
 
 @Composable
-fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltViewModel()) {
+fun ConversationScreen(userId: String, viewModel: ConversationViewModel = hiltViewModel(), providerId: String? = null) {
     val state by viewModel.state.collectAsState()
     val navController = LocalNavController.current
     val playerConnection = LocalPlayerConnection.current
     val context = LocalContext.current
-    val currentUserId by rememberPreference(UserIdKey, "")
-    val currentUser = currentUserId.toLongOrNull() ?: 0L
+    val currentUser = state.currentUserId
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     var draft by remember { mutableStateOf("") }
     val defaultComposerHeight = LocalGlassDimensions.current.controlHeight
@@ -421,7 +422,7 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
             message to label
         }
     }
-    LaunchedEffect(userId) { viewModel.load(userId) }
+    LaunchedEffect(userId, providerId) { viewModel.load(userId, providerId) }
     val send = { viewModel.send(draft) { draft = "" } }
     val participantName = remember(state.messages, currentUser) {
         state.messages.asSequence()
@@ -505,17 +506,11 @@ fun ConversationScreen(userId: Long, viewModel: ConversationViewModel = hiltView
                             MessageResourceCard(resource, outgoing, onLongClick = openMenu) {
                                 when (resource.kind) {
                                     ShareResourceKind.Song -> {
-                                        val item = resource.toMediaMetadata().toMediaItem()
-                                        playerConnection?.playQueue(
-                                            ListQueue("private-message", resource.title, listOf(item.mediaId to item)),
-                                        )
+                                        viewModel.playResource(resource) { item ->
+                                            playerConnection?.playQueue(ListQueue("private-message:${resource.ref.providerId}", resource.title, listOf(item.mediaId to item)))
+                                        }
                                     }
-                                    ShareResourceKind.Playlist -> Screen.PlayList.navigate(navController) {
-                                        addPath(resource.id.toString())
-                                    }
-                                    ShareResourceKind.Album -> Screen.Album.navigate(navController) {
-                                        addPath(resource.id.toString())
-                                    }
+                                    ShareResourceKind.Playlist, ShareResourceKind.Album -> navigateSourceContent(navController, resource.ref)
                                 }
                             }
                         }
@@ -727,14 +722,3 @@ internal fun MessageResourceCard(
         )
     }
 }
-
-private fun ShareResource.toMediaMetadata() = MediaMetadata(
-    id = id,
-    title = title,
-    coverUrl = artworkUrl.orEmpty(),
-    artists = subtitle.orEmpty().split(" / ").filter(String::isNotBlank).map {
-        MediaMetadata.Artist(it.hashCode().toLong(), it)
-    },
-    duration = 0,
-    album = MediaMetadata.Album(0, ""),
-)

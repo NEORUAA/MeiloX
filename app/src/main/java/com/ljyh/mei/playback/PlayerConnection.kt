@@ -123,7 +123,7 @@ class PlayerConnection(
             context.dataStore.data.map { it[PrivateFmModeKey] to it[PrivateFmSceneKey] }
                 .distinctUntilChanged().collect { (savedCode, sceneValue) ->
                 val savedMode = PrivateFmMode.entries.firstOrNull {
-                    it.code == savedCode
+                    it.storageKey == savedCode
                 } ?: PrivateFmMode.DEFAULT
                 val scene = PrivateFmScene.decode(sceneValue)
                 service.queueManager.setPrivateFmMode(
@@ -170,12 +170,12 @@ class PlayerConnection(
         )
     }
 
-    fun fmStart(firstSongId: String? = null) {
+    fun fmStart(firstSongId: String? = null, providerId: String? = null) {
 
         service.scope.launch {
             service.queueTitle = "私人 FM"
             queueTitle.value = service.queueTitle
-            service.queueManager.startFmModeById(firstSongId)
+            service.queueManager.startFmModeById(firstSongId, providerId)
         }
     }
 
@@ -188,7 +188,7 @@ class PlayerConnection(
     private fun selectPrivateFmMode(mode: PrivateFmMode, scene: PrivateFmScene?) {
         service.queueManager.setPrivateFmMode(mode, scene)
         scope.launch { context.dataStore.edit {
-            it[PrivateFmModeKey] = mode.code
+            it[PrivateFmModeKey] = mode.storageKey
             if (scene != null) it[PrivateFmSceneKey] = scene.encode() else it.remove(PrivateFmSceneKey)
         } }
     }
@@ -198,8 +198,14 @@ class PlayerConnection(
     suspend fun similarFmStart(
         songIds: List<String>,
         shouldPlay: () -> Boolean = { true },
+    ): Boolean = similarFmStart(songIds, providerId = null, shouldPlay = shouldPlay)
+
+    suspend fun similarFmStart(
+        songIds: List<String>,
+        providerId: String?,
+        shouldPlay: () -> Boolean = { true },
     ): Boolean = service.scope.async(Dispatchers.Main.immediate) {
-        service.queueManager.startSimilarFmMode(songIds, shouldPlay).await().also { started ->
+        service.queueManager.startSimilarFmMode(songIds, providerId, shouldPlay).await().also { started ->
             if (started) {
                 service.queueTitle = SIMILAR_FM_TITLE
                 queueTitle.value = service.queueTitle

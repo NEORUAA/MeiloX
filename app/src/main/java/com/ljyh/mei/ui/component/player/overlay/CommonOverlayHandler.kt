@@ -125,7 +125,7 @@ fun CommonOverlayHandler(
                         }
                     },
                     onDismiss = overlayHandler::dismiss,
-                    canOpenSourceContent = { it.providerId != ProviderIds.NETEASE && sourceContentSupported(it, sourceProviders) },
+                    canOpenSourceContent = { sourceContentSupported(it, sourceProviders) },
                     onSourceContentClick = {
                         navigateSourceContent(navController, it)
                         sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
@@ -139,7 +139,7 @@ fun CommonOverlayHandler(
                     onAlbumClick = onAlbumClick,
                     onArtistClick = onArtistClick,
                     onDismissRequest = overlayHandler::dismiss,
-                    canOpenSourceContent = { it.providerId != ProviderIds.NETEASE && sourceContentSupported(it, sourceProviders) },
+                    canOpenSourceContent = { sourceContentSupported(it, sourceProviders) },
                     onSourceContentClick = {
                         navigateSourceContent(navController, it)
                         sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
@@ -206,19 +206,19 @@ fun CommonOverlayHandler(
             val actionMetadata = currentMetadata
             MoreActionsSheet(
                 metadata = actionMetadata,
-                additionalTrackActions = if (actionMetadata?.trackRef?.providerId != ProviderIds.NETEASE) {
-                    sourceTrackActionItems(actionMetadata?.toSourceTrack(), sourceViewModel, includeQueue = false)
-                } else emptyList(),
+                additionalTrackActions = sourceTrackActionItems(actionMetadata?.toSourceTrack(), sourceViewModel,
+                    includeQueue = false, includeAddToPlaylist = false),
                 onChoosePrivateFmScene = if (isPrivateFm) overlayHandler::showPrivateFmScenes else null,
                 onDismissRequest = {
                     overlayHandler.dismiss()
                 },
                 onActionClick = { action ->
-                    if ((action == MoreAction.COMMENT || action == MoreAction.SONG_WIKI) && action.availableFor(actionMetadata)) {
+                    if ((action == MoreAction.COMMENT || action == MoreAction.SONG_WIKI) && playerViewModel.isActionAvailable(action, actionMetadata)) {
                         actionMetadata?.let { v->
                             val destination = if (action == MoreAction.COMMENT) Screen.Comment else Screen.SongWiki
                             destination.navigate(navController) {
-                                addPath(v.id.toString())
+                                addPath(android.net.Uri.encode(v.trackRef.trackId))
+                                addQuery("providerId", v.trackRef.providerId)
                             }
                             overlayHandler.dismiss()
                             sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
@@ -261,23 +261,15 @@ fun CommonOverlayHandler(
         is OverlayState.MusicQualitySelection -> Unit
 
         is OverlayState.TrackActionMenu -> {
-            if (overlay.track.trackRef.providerId != ProviderIds.NETEASE) SourceTrackActions(
+            SourceTrackActions(
                 metadata = overlay.track,
                 anchorBounds = overlay.anchorBounds,
                 onDismiss = overlayHandler::dismiss,
                 viewModel = sourceViewModel,
                 playerViewModel = playerViewModel,
                 onSongInfo = { overlayHandler.showSongInfo(overlay.track) },
-                onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
-            ) else TrackActionMenu(
-                targetTrack = overlay.track,
-                anchorBounds = overlay.anchorBounds,
                 onShare = { overlayHandler.showShare(overlay.track) },
-                onDismiss = overlayHandler::dismiss,
-                onAddToPlaylist = { overlayHandler.showAddToPlaylist(overlay.track.id) },
                 onDownloadTrack = { quality -> playerViewModel.downloadSong(overlay.track, context, quality) },
-                onCopyId = { setClipboard(context, overlay.track.trackRef.trackId, "id") },
-                onCopyName = { setClipboard(context, overlay.track.title, "name") },
             )
         }
     }

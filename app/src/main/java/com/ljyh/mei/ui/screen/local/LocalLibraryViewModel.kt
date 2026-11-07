@@ -8,10 +8,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.api.toMediaData
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.room.Song
-import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.data.repository.SearchRepository
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.source.core.SourcePreferences
 import com.ljyh.mei.di.AppDatabase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -21,6 +22,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -37,7 +42,8 @@ data class LocalMatchState(
 class LocalLibraryViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase,
-    private val searchRepository: SearchRepository,
+    private val sources: SourceRouter,
+    private val sourcePreferences: SourcePreferences,
 ) : ViewModel() {
     val localSongs = database.songDao().getLocalSongs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -49,6 +55,8 @@ class LocalLibraryViewModel @Inject constructor(
     @Volatile private var scanRevision = 0L
     private var matchJob: Job? = null
     private var matchRevision = 0L
+    private var matchOwner: MusicProvider? = null
+    private var matchAccount: String? = null
 
     fun hasAudioPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
@@ -94,22 +102,29 @@ class LocalLibraryViewModel @Inject constructor(
         matchJob?.cancel()
         val revision = ++matchRevision
         val normalized = query.trim()
+        matchOwner = null
+        matchAccount = null
         _matchState.value = _matchState.value.copy(query = query, isSearching = normalized.isNotBlank(), candidates = emptyList(), error = null)
         if (normalized.isBlank()) return
         matchJob = viewModelScope.launch {
             try {
-                val result = searchRepository.search(normalized, type = 1, limit = 30)
+                sources.registry.awaitInitialized()
+                val providerId = sourcePreferences.snapshot().preferredSearchProvider
+                val owner = sources.registry.requireProvider(providerId)
+                val account = (owner as? AccountRevisionCapability)?.accountRevision?.first()
+                val result = sources.search(providerId, normalized, ContentType.TRACK, PageRequest(limit = 30))
+                currentCoroutineContext().ensureActive()
+                ensureMatchOwner(owner, account)
                 if (revision != matchRevision) return@launch
-                _matchState.value = when (result) {
-                    is Resource.Success -> _matchState.value.copy(
-                        isSearching = false,
-                        candidates = rankLocalMatches(song, result.data.result.songs.orEmpty().map { it.toMediaData() }),
-                        error = if (result.data.code == 200) null else "查询失败，请重试",
-                    )
-                    is Resource.Error -> _matchState.value.copy(isSearching = false, error = result.message)
-                    Resource.Loading -> _matchState.value.copy(isSearching = false)
-                }
+                matchOwner = owner
+                matchAccount = account
+                _matchState.value = _matchState.value.copy(isSearching = false,
+                    candidates = rankLocalMatches(song, result.items.map { (it as? SourceItem.TrackItem)?.track
+                        ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE) }.map { it.toMediaMetadata() }))
             } catch (error: CancellationException) {
+                if (currentCoroutineContext().isActive && revision == matchRevision) {
+                    _matchState.value = _matchState.value.copy(isSearching = false, candidates = emptyList(), error = "音源或账号已变更")
+                }
                 throw error
             } catch (error: Exception) {
                 if (revision == matchRevision) _matchState.value = _matchState.value.copy(isSearching = false, error = error.message ?: "查询失败，请重试")
@@ -120,16 +135,22 @@ class LocalLibraryViewModel @Inject constructor(
     fun applyMatch(candidate: MediaMetadata) {
         val state = _matchState.value
         val song = state.song ?: return
+        val owner = matchOwner ?: return
+        val account = matchAccount
         if (state.isApplying || candidate !in state.candidates) return
         matchJob?.cancel()
         val revision = ++matchRevision
         _matchState.value = state.copy(isSearching = false, isApplying = true, error = null)
         matchJob = viewModelScope.launch {
             try {
+                ensureMatchOwner(owner, account)
                 val matched = song.withMatchedMetadata(candidate)
                 database.songDao().updateLocalDisplayMetadata(song.id, matched.title, matched.artist, matched.album, matched.cover)
                 if (revision == matchRevision) dismissMatch()
             } catch (error: CancellationException) {
+                if (currentCoroutineContext().isActive && revision == matchRevision) {
+                    _matchState.value = _matchState.value.copy(isApplying = false, candidates = emptyList(), error = "音源或账号已变更")
+                }
                 throw error
             } catch (error: Exception) {
                 if (revision == matchRevision) _matchState.value = _matchState.value.copy(isApplying = false, error = error.message ?: "更新歌曲信息失败")
@@ -137,8 +158,17 @@ class LocalLibraryViewModel @Inject constructor(
         }
     }
 
+    private suspend fun ensureMatchOwner(owner: MusicProvider, account: String?) {
+        if (sources.registry.provider(owner.id) !== owner ||
+            (owner as? AccountRevisionCapability)?.accountRevision?.first() != account) {
+            throw CancellationException("Matching source changed")
+        }
+    }
+
     fun dismissMatch() {
         matchRevision++
+        matchOwner = null
+        matchAccount = null
         matchJob?.cancel()
         matchJob = null
         _matchState.value = LocalMatchState()

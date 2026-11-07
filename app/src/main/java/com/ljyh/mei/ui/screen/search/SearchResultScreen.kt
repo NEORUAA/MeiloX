@@ -29,7 +29,6 @@ import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
-import com.ljyh.mei.source.netease.ui.rememberNeteaseSearchResults
 import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -39,6 +38,12 @@ import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.source.*
+import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
+import android.net.Uri
+import coil3.compose.AsyncImage
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.utils.rememberPreference
 import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
@@ -50,8 +55,9 @@ import io.github.neoruaa.glasmio.ui.GlasmioListRow
 fun SearchResultScreen(
     query: String,
     type: Int,
-    viewModel: SourceSearchViewModel = hiltViewModel(),
+    viewModel: SourceSearchViewModel = hiltViewModel(key = "source-search-choice"),
 ) {
+    LaunchedEffect(viewModel) { viewModel.useSearchPreference() }
     val state by viewModel.state.collectAsState()
     val providerId by viewModel.selectedProviderId.collectAsState()
     val providers by viewModel.providers.collectAsState()
@@ -76,14 +82,6 @@ fun SearchResultScreen(
             startIndex = index, position = 0,
         ))
     }
-    val nativeRoute = when (selectedType) {
-        SearchType.Album -> Screen.Album.route
-        SearchType.Artist -> Screen.Artist.route
-        SearchType.Playlist -> Screen.PlayList.route
-        SearchType.Podcast -> Screen.PodcastDetail.route
-        else -> null
-    }
-    val usesNativeContent = nativeRoute != null && viewModel.supportsFeatureRoute(providerId, nativeRoute)
     val contentType = when (selectedType) {
         SearchType.Album -> ContentType.ALBUM
         SearchType.Artist -> ContentType.ARTIST
@@ -93,14 +91,9 @@ fun SearchResultScreen(
     val onTrackMore: (MediaMetadata, Rect) -> Unit = { metadata, anchor ->
         overlay = OverlayState.TrackActionMenu(metadata, anchor)
     }
-    val nativeContent = if (usesNativeContent && selectedType != null)
-        rememberNeteaseSearchResults(submittedQuery, selectedType,
-            onSongMore = { track, anchor -> overlay = OverlayState.TrackActionMenu(track, anchor) },
-            onSongClick = playTracks)
-        else null
 
     LaunchedEffect(submittedQuery, providerId, selectedType) {
-        if (!usesNativeContent && selectedType != null) viewModel.search(submittedQuery, type = contentType)
+        if (selectedType != null) viewModel.search(submittedQuery, type = contentType, podcasts = selectedType == SearchType.Podcast)
         else if (selectedType == null) viewModel.search("", force = true)
     }
     LaunchedEffect(submittedQuery) { context.recordSearchHistory(submittedQuery) }
@@ -144,7 +137,18 @@ fun SearchResultScreen(
                     GlasmioListRow("此音源不支持搜索", showTopSeparator = false, showDisclosure = false)
                 }
             }
-            else if (nativeContent != null) nativeContent()
+            else if (selectedType == SearchType.Podcast) {
+                groupedLazyItems(state.podcasts, key = { "search-podcast:${it.providerId}:${it.id}" }, contentType = "search-podcast", firstItemTopPadding = 10.dp) { podcast, index ->
+                    GlasmioListRow(title = podcast.name,
+                        subtitle = listOfNotNull(podcast.host?.nickname, podcast.category).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank),
+                        showTopSeparator = index > 0, leading = { AsyncImage(podcast.picUrl, null, Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)), contentScale = ContentScale.Crop) },
+                        onClick = { Screen.PodcastDetail.navigate(navController) { addPath(Uri.encode(podcast.id)); addQuery("providerId", Uri.encode(podcast.providerId)) } })
+                }
+                if (state.loading) item("search-podcast-loading") { LoadingView() }
+                state.error?.let { error -> item("search-podcast-error") { ErrorView(sourceSearchErrorText(error)) } }
+                if (!state.loading && state.error == null && state.podcasts.isEmpty()) item("search-podcast-empty") { EmptyView() }
+                if (!state.loading && state.hasMore) item("search-podcast-more") { GlasmioGroupedList { GlasmioListRow("加载更多", showTopSeparator = false, onClick = viewModel::loadMore) } }
+            }
             else if (selectedType == SearchType.Song) SourceTrackResults(state, providers,
                 onPlay = { tracks, index -> playTracks(tracks.map { it.toMediaMetadata() }, index) },
                 onLoadMore = viewModel::loadMore, onRetry = { viewModel.search(submittedQuery, force = true) },

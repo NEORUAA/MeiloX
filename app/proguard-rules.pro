@@ -90,12 +90,6 @@
 -keep class com.google.gson.stream.** { *; }
 -dontwarn com.google.gson.**
 
-# NeteaseHeader is serialized reflectively into the EAPI body and Cookie header.
-# Keep only its wire fields while allowing the class and the rest of the app to be optimized.
--keepclassmembers,allowoptimization class com.ljyh.mei.di.NeteaseHeader {
-    java.lang.String *;
-}
-
 # Playback snapshots are restored through Gson reflection. Keep the model fields and
 # their generic signatures so R8 cannot erase List element types in release builds.
 -keep class com.ljyh.mei.playback.PlaybackSnapshot { *; }
@@ -185,13 +179,26 @@
 # 奇怪的问题，ArtistDetail需要免去r8混淆，但是其他类正常s com.google.common.reflect.** { *; }
 -keep class com.ljyh.mei.data.model.api.** { *; }
 
+# Shared source results decode these presentation records through Gson.
+-keep class com.ljyh.mei.data.model.melox.AccountDevice { *; }
+-keep class com.ljyh.mei.data.model.melox.AccountAuthorization { *; }
+-keep class com.ljyh.mei.data.model.melox.AccountAuthorizationPage { *; }
+-keep class com.ljyh.mei.data.model.melox.AccountBinding { *; }
+-keep class com.ljyh.mei.data.model.melox.AccountSecuritySummary { *; }
+-keep class com.ljyh.mei.data.model.melox.MusicianAccount { *; }
+-keep class com.ljyh.mei.data.model.melox.ListeningStats* { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiMemoryKind { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiMemoryItem { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiTagGroup { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiAttribute { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiAssociationDetail { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiAssociationGroup { *; }
+-keep class com.ljyh.mei.data.model.melox.SongWikiReview { *; }
+
 # ONNX Runtime's JNI and reflective Java API are required by minimized builds.
 -keep class ai.onnxruntime.** { *; }
 -keep class com.aegis.sdk.AegisNative { *; }
 -keep class com.ljyh.mei.data.network.NeteaseNativeLogPolicy { *; }
--keepclassmembers class com.ljyh.mei.data.network.NeteaseAegisSecurity$AegisNetworkLayer {
-    public void requireKey(int, java.lang.String, long);
-}
 
 # zstd-jni resolves its native bindings by Java class and method name.
 -keep class com.github.luben.zstd.** { *; }

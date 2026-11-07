@@ -23,6 +23,7 @@ data class SourcePlaylist(
     val trackCount: Int = 0,
     val description: String? = null,
     val editableActions: Set<PlaylistEditAction> = emptySet(),
+    val playCount: Long? = null,
 )
 
 data class SourceAlbumInfo(
@@ -32,6 +33,7 @@ data class SourceAlbumInfo(
     val artists: List<SourceArtist> = emptyList(),
     val trackCount: Int = 0,
     val description: String? = null,
+    val publishedAtMs: Long? = null,
 )
 
 data class SourceArtistInfo(
@@ -39,7 +41,17 @@ data class SourceArtistInfo(
     val name: String,
     val artworkUrl: String = "",
     val description: String? = null,
+    val alternateNames: List<String> = emptyList(),
+    val trackCount: Int? = null,
+    val albumCount: Int? = null,
+    val musicVideoCount: Int? = null,
+    val identities: List<String> = emptyList(),
+    val expertise: List<SourceArtistExpertise> = emptyList(),
+    val translatedNames: List<String> = emptyList(),
+    val aliases: List<String> = emptyList(),
 )
+
+data class SourceArtistExpertise(val name: String, val count: Int? = null)
 
 sealed interface SourceItem {
     val ref: ContentRef
@@ -71,7 +83,28 @@ sealed interface SourceItem {
 enum class FeedKind(val operation: String) { HOME("feed.home"), DISCOVER("feed.discover") }
 enum class SourceFeedLayout { HERO, PLAYLISTS, TRACKS, ALBUMS, ARTISTS, GRID }
 data class SourceCategory(val id: String, val title: String)
-data class SourceFeedSection(val id: String, val title: String, val layout: SourceFeedLayout, val items: List<SourceItem>)
+/** Source-owned card actions use shared navigation and playback, never platform resource codes. */
+sealed interface SourceFeedTarget {
+    data class Content(val ref: ContentRef) : SourceFeedTarget
+    data class Route(val route: String, val parameters: Map<String, String> = emptyMap()) : SourceFeedTarget
+    data class Radio(val seedIds: List<String>, val similar: Boolean = false) : SourceFeedTarget
+    data class Queue(val feature: String, val action: String, val parameters: com.google.gson.JsonObject) : SourceFeedTarget
+}
+data class SourceFeedCard(
+    val id: String,
+    val title: String,
+    val artworkUrl: String,
+    val subtitle: String = "",
+    val iconUrl: String = "",
+    val target: SourceFeedTarget,
+    val coverCaptions: List<String> = emptyList(),
+    val detail: String? = null,
+    val titleMaxLines: Int = 2,
+)
+data class SourceFeedSection(
+    val id: String, val title: String, val layout: SourceFeedLayout, val items: List<SourceItem>,
+    val cards: List<SourceFeedCard> = emptyList(),
+)
 data class SourceFeedPage(
     val sections: List<SourceFeedSection>,
     val categories: List<SourceCategory> = emptyList(),
@@ -138,6 +171,13 @@ interface LikeCapability {
     suspend fun liked(ref: TrackRef): Boolean
     suspend fun setLiked(ref: TrackRef, liked: Boolean)
 }
+/** The expected account is checked under the same lock that starts a remote mutation. */
+interface AccountScopedLikeCapability {
+    suspend fun setLiked(ref: TrackRef, liked: Boolean, expectedAccountRevision: String?)
+}
+interface BatchLikeCapability {
+    suspend fun liked(refs: List<TrackRef>): Map<TrackRef, Boolean>
+}
 interface CollectionCapability {
     val collectionTypes: Set<ContentType>
     val canReadCollections: Boolean get() = true
@@ -148,6 +188,10 @@ interface CollectionCapability {
 interface PlaylistEditCapability {
     val playlistEditActions: Set<PlaylistEditAction>
     suspend fun createPlaylist(title: String, description: String? = null): SourcePlaylist = unsupportedSourceOperation()
+    suspend fun createPlaylist(title: String, description: String?, privacy: Boolean, type: String): SourcePlaylist {
+        if (privacy || type != "NORMAL") unsupportedSourceOperation()
+        return createPlaylist(title, description)
+    }
     suspend fun updatePlaylist(ref: PlaylistRef, title: String? = null, description: String? = null): Unit = unsupportedSourceOperation()
     suspend fun deletePlaylist(ref: PlaylistRef): Unit = unsupportedSourceOperation()
     suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>): Unit = unsupportedSourceOperation()
@@ -158,4 +202,4 @@ interface PlaylistEditCapability {
 private fun unsupportedSourceOperation(): Nothing = throw SourceException(SourceErrorCode.UNSUPPORTED)
 
 /** Opaque revisions let host pages cancel account-owned work without receiving credentials. */
-interface AccountRevisionCapability { val accountRevision: kotlinx.coroutines.flow.Flow<String> }
+interface AccountRevisionCapability { val accountRevision: kotlinx.coroutines.flow.Flow<String?> }

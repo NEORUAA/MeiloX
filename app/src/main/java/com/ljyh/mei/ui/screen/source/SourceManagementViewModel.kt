@@ -6,8 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.*
 import com.ljyh.mei.source.script.*
+import com.ljyh.mei.source.update.PreparedSourceUpdate
+import com.ljyh.mei.source.update.SourceUpdateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +19,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -25,11 +30,15 @@ class SourceManagementViewModel @Inject constructor(
     val preferences: SourcePreferences,
     private val manager: ScriptPluginManager,
     val resolver: PlaybackResolver,
+    private val updates: SourceUpdateManager,
 ) : ViewModel() {
     val settings = preferences.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SourceSettings())
     val providers = registry.providers
     val plugins = manager.installed
+    val startupError = manager.startupError
     val pending = MutableStateFlow<PreparedPlugin?>(null)
+    val pendingUpdate = MutableStateFlow<PreparedSourceUpdate?>(null)
+    val updateState = updates.state
     val message = MutableStateFlow<String?>(null)
     val busy = MutableStateFlow(false)
     val editing = MutableStateFlow<InstalledPlugin?>(null)
@@ -41,8 +50,13 @@ class SourceManagementViewModel @Inject constructor(
     private var pendingPersistedOrder: List<String>? = null
     private var fallbackOrderVersion = 0L
     private val fallbackOrderMutex = Mutex()
+    private val actionMutex = Mutex()
 
     init {
+        viewModelScope.launch {
+            try { awaitCancellation() }
+            finally { withContext(NonCancellable) { runCatching { discardPending() } } }
+        }
         viewModelScope.launch {
             combine(preferences.settings, registry.revision) { settings, _ -> settings.fallbackOrder }
                 .collect { order ->
@@ -57,24 +71,63 @@ class SourceManagementViewModel @Inject constructor(
         action { manager.loadInstalled() }
     }
     private fun action(block: suspend () -> Unit) { viewModelScope.launch {
-        busy.value = true
-        try { block() } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { message.value = sourceErrorMessage((error as? SourceException)?.code) }
-        finally { busy.value = false }
+        actionMutex.withLock {
+            busy.value = true
+            try { block() } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { message.value = sourceErrorMessage((error as? SourceException)?.code) }
+            finally { busy.value = false }
+        }
     } }
-    fun inspect(uri: Uri) = action { pending.value = manager.inspect(uri) }
-    fun cancelImport() { pending.value = null }
-    fun install() = action {
+    fun reload() { action { manager.loadInstalled() } }
+
+    fun inspect(uri: Uri) = action {
+        discardPending()
+        pending.value = manager.inspect(uri)
+    }
+    fun refreshMarket() = action {
+        updates.refreshMarket()
+        message.value = updates.state.value.message
+    }
+    fun checkUpdates() = action {
+        updates.checkNow()
+        message.value = updates.state.value.message
+    }
+    fun setAutoUpdates(enabled: Boolean) = action { updates.setAutoUpdates(enabled) }
+    fun prepareMarketInstall(packageId: String) = action {
+        discardPending()
+        val prepared = updates.prepareMarketInstall(packageId)
+        pendingUpdate.value = prepared
+        pending.value = prepared.plugin
+    }
+    fun prepareUpdate(packageId: String) = action {
+        discardPending()
+        val prepared = updates.prepareUpdate(packageId)
+        pendingUpdate.value = prepared
+        pending.value = prepared.plugin
+    }
+    fun cancelImport() { viewModelScope.launch { withContext(NonCancellable) { discardPending() } } }
+    private suspend fun discardPending() {
+        val prepared = pending.value
+        val update = pendingUpdate.value
+        pending.value = null
+        pendingUpdate.value = null
+        if (update != null) updates.discardPrepared(update)
+        else if (prepared != null) manager.discardPrepared(prepared)
+    }
+    fun install(onInstalled: (InstalledPlugin) -> Unit = {}) = action {
         val prepared = pending.value ?: return@action
-        manager.install(prepared, approved = true)
+        val installed = pendingUpdate.value?.let { updates.installReviewed(it) }
+            ?: manager.install(prepared, approved = true)
         preferences.update { settings ->
             settings.copy(fallbackOrder = (settings.fallbackOrder + registry.playable().map { it.instanceId.value }).distinct())
         }
         pending.value = null
+        pendingUpdate.value = null
         editing.value?.takeIf { it.manifest.id == prepared.manifest.id }?.let {
             editing.value = manager.installed.value.find { installed -> installed.manifest.id == it.manifest.id }
         }
         resolver.invalidate()
+        onInstalled(installed)
     }
     fun enabled(plugin: InstalledPlugin, enabled: Boolean) = action {
         manager.setEnabled(plugin.manifest.id, enabled)

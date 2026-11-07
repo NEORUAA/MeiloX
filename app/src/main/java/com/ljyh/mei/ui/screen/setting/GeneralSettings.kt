@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.AppAppearance
 import com.ljyh.mei.constants.AppAppearanceKey
-import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.RecognizeClipboardLinksKey
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.screen.Screen
@@ -55,8 +55,10 @@ fun GeneralSettings() {
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val (appearance, setAppearance) = rememberEnumPreference(AppAppearanceKey, AppAppearance.System)
     val (recognizeClipboard, setRecognizeClipboard) = rememberPreference(RecognizeClipboardLinksKey, false)
-    val (cookie) = rememberPreference(CookieKey, "")
-    val sessionType = rememberNeteaseSessionType()
+    val profileViewModel: com.ljyh.mei.ui.screen.source.SourceProfileViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+    val profile by profileViewModel.state.collectAsState()
+    val sessionType = rememberNeteaseSessionType(profile.providerId)
+    val canLogout = profile.account != null && "logout" in profile.features["login"].orEmpty()
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val logoutTitle = stringResource(
@@ -107,14 +109,19 @@ fun GeneralSettings() {
         }
         item {
             SettingsGroup(stringResource(R.string.settings_account)) {
-                GlasmioListRow(
+                if ("exportSession" in profile.features["login"].orEmpty()) GlasmioListRow(
                     title = stringResource(R.string.general_export_music_u),
-                    subtitle = stringResource(R.string.general_export_music_u_description),
                     systemName = "document.on.clipboard",
-                    enabled = cookie.isNotBlank(),
-                    onClick = { setClipboard(context, cookie, "MUSIC_U") },
+                    enabled = profile.account != null,
+                    onClick = { scope.launch {
+                        try {
+                            val (label, secret) = profileViewModel.exportSession(profile.providerId)
+                            setClipboard(context, secret, label)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (_: Exception) { android.widget.Toast.makeText(context, "获取登录会话失败", android.widget.Toast.LENGTH_SHORT).show() }
+                    } },
                 )
-                if (sessionType != NeteaseSessionType.None) {
+                if (canLogout) {
                     GlasmioListRow(
                         title = logoutTitle,
                         systemName = "rectangle.portrait.and.arrow.forward",
@@ -125,12 +132,12 @@ fun GeneralSettings() {
         }
     }
     NeteaseLogoutConfirmation(
-        visible = showLogoutConfirmation && sessionType != NeteaseSessionType.None,
+        visible = showLogoutConfirmation && canLogout,
         title = logoutTitle,
         onDismiss = { showLogoutConfirmation = false },
         onConfirm = {
             showLogoutConfirmation = false
-            scope.launch { logoutNetease(context) }
+            scope.launch { logoutNetease(context, profile.providerId) }
         },
     )
 }

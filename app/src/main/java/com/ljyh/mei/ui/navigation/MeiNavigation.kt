@@ -6,6 +6,15 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.enableSavedStateHandles
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.SavedStateRegistryController
+import androidx.lifecycle.DEFAULT_ARGS_KEY
+import androidx.lifecycle.SAVED_STATE_REGISTRY_OWNER_KEY
+import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.ljyh.mei.ui.screen.Screen
@@ -87,14 +96,36 @@ class MeiNavigator(
  */
 class MeiNavEntryViewModelStoreOwner(
     private val activity: androidx.activity.ComponentActivity,
-) : ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
+    route: String = "",
+) : ViewModelStoreOwner, HasDefaultViewModelProviderFactory, SavedStateRegistryOwner {
     override val viewModelStore = ViewModelStore()
+    private val entryLifecycle = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = entryLifecycle
+    private val controller = SavedStateRegistryController.create(this)
+    override val savedStateRegistry get() = controller.savedStateRegistry
+    private val arguments = android.os.Bundle().apply {
+        val uri = android.net.Uri.parse("meilox://navigation/$route")
+        uri.queryParameterNames.forEach { name ->
+            if (name.length <= 100) uri.getQueryParameter(name)?.takeIf { it.length <= 8192 }?.let { putString(name, it) }
+        }
+    }
+    init {
+        controller.performAttach()
+        enableSavedStateHandles()
+        controller.performRestore(null)
+        entryLifecycle.currentState = Lifecycle.State.CREATED
+    }
     override val defaultViewModelProviderFactory: ViewModelProvider.Factory
         get() = activity.defaultViewModelProviderFactory
     override val defaultViewModelCreationExtras
-        get() = activity.defaultViewModelCreationExtras
+        get() = MutableCreationExtras(activity.defaultViewModelCreationExtras).apply {
+            this[SAVED_STATE_REGISTRY_OWNER_KEY] = this@MeiNavEntryViewModelStoreOwner
+            this[VIEW_MODEL_STORE_OWNER_KEY] = this@MeiNavEntryViewModelStoreOwner
+            this[DEFAULT_ARGS_KEY] = arguments
+        }
 
     fun clear() {
+        entryLifecycle.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
     }
 }

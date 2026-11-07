@@ -3,14 +3,14 @@ package com.ljyh.mei.ui.screen.comment
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.ljyh.mei.data.model.api.CommentSortType
-import com.ljyh.mei.data.model.weapi.CommentX
+import com.ljyh.mei.source.shared.OnlineComment as CommentX
 import com.ljyh.mei.data.network.Resource
-import com.ljyh.mei.source.netease.repository.CommentRepository
+import com.ljyh.mei.source.shared.SharedOnlineSession
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 class CommentPagingSource(
-    private val repository: CommentRepository,
+    private val repository: SharedOnlineSession,
     private val songId: String,
     private val sortType: CommentSortType,
     private val onTotalReceived: (Int) -> Unit = {}
@@ -19,15 +19,7 @@ class CommentPagingSource(
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, CommentX> {
         val pageNo = params.key ?: 1
         return try {
-            val cursor = when (sortType) {
-                CommentSortType.TIME -> {
-                    if (pageNo > 1) lastCursor else "0"
-                }
-                CommentSortType.HOT -> "normalHot#${(pageNo - 1) * params.loadSize}"
-                CommentSortType.RECOMMEND -> "${(pageNo - 1) * params.loadSize}"
-            }
-            Timber.d(songId.toString())
-
+            val cursor = if (pageNo > 1) lastCursor else ""
             val result = repository.getComment(
                 id = songId,
                 sortType = sortType,
@@ -38,11 +30,11 @@ class CommentPagingSource(
 
             when (result) {
                 is Resource.Success -> {
-                    val data = checkNotNull(result.data.data) { "Comment data is missing" }
-                    val comments = checkNotNull(data.comments) { "Comment rows are missing" }
-                    val hasMore = checkNotNull(data.hasMore) { "Comment continuation is missing" }
+                    val data = result.data
+                    val comments = data.comments
+                    val hasMore = data.hasMore
                     if (pageNo == 1) onTotalReceived(data.totalCount)
-                    if (sortType == CommentSortType.TIME) {
+                    if (data.cursor != null || sortType == CommentSortType.TIME) {
                         lastCursor = data.cursor?.takeIf(String::isNotBlank)
                             ?: comments.lastOrNull()?.time?.toString() ?: lastCursor
                     }

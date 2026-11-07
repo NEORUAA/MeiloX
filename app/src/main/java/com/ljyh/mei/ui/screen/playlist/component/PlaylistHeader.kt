@@ -90,6 +90,7 @@ fun PlaylistHeader(
     metadata: String? = null,
     onShufflePlay: () -> Unit = onPlayAll,
     isSubscriptionPending: Boolean = false,
+    showSubscriptionAction: Boolean = true,
     detailAction: Boolean = false,
     horizontal: Boolean = false,
     isLoading: Boolean = false,
@@ -255,7 +256,7 @@ fun PlaylistHeader(
                                 )
                             }
                         }
-                        FlatDetailIconButton(
+                        if (showSubscriptionAction) FlatDetailIconButton(
                             systemName = if (isSubscribed) "checkmark" else "plus",
                             label = actionLabel,
                             onClick = { onSubscribed(isSubscribed) },
@@ -290,7 +291,7 @@ fun PlaylistHeader(
                                 style = if (horizontal) IosTypography.headline.copy(fontSize = 20.sp, lineHeight = 24.sp) else IosTypography.headline,
                             )
                         }
-                        GlasmioIconButton(
+                        if (showSubscriptionAction) GlasmioIconButton(
                             onClick = { onSubscribed(isSubscribed) },
                             enabled = !isSubscriptionPending,
                             style = GlassSurfaceStyle.Navigation,

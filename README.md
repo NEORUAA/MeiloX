@@ -4,7 +4,7 @@
 
 <img src="./screenshot/logo.png" width="120px" style="border-radius:12px"/>
 
-### 一个基于 Mei 改造的高仿 Apple Music 风格网易云音乐 Android 客户端
+### 一个基于 Mei 改造的高仿 Apple Music 风格多音源 Android 客户端
 
 ![Android](https://img.shields.io/badge/Platform-Android-green?logo=android)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-blue)
@@ -17,7 +17,7 @@
 
 ## 项目简介
 
-MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的第三方网易云音乐客户端，使用 **Jetpack Compose** 构建，尝试把 iOS 27 的层次感、液态玻璃和沉浸式播放器体验带到 Android 上。
+MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的多音源音乐客户端，默认安装可移除的网易云音源，使用 **Jetpack Compose** 构建，尝试把 iOS 27 的层次感、液态玻璃和沉浸式播放器体验带到 Android 上。
 
 项目重点放在三个方向：
 
@@ -37,7 +37,8 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的第三方�
 - 逐字歌词与多语言歌词展示；
 - Apple Music 风格全屏播放器、迷你播放器和歌词浮窗；
 - 浅色/深色主题、动态专辑背景和 Liquid Glass 交互效果。
-- 内置网易云音源、可导入的 JavaScript 音源，以及按用户顺序自动切换播放音源。
+- 默认安装且可移除的网易云音源、独立 QQ 音乐插件，以及按用户顺序自动切换播放音源。
+- [插件市场](https://github.com/NEORUAA/MeiloX-Source-Registry)、启动版本检查和自动更新，支持开发者提交 PR 上架。
 
 功能仍在持续调整中，实际可用范围会随版本和网易云音乐接口状态变化。
 

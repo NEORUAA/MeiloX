@@ -18,21 +18,16 @@ import com.google.gson.JsonParser
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ljyh.mei.data.model.Tracks
-import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.playback.queue.SourceContentQueue
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.ProviderRegistry
 import com.ljyh.mei.source.core.SourceRouter
-import com.ljyh.mei.source.netease.NeteaseQueueTransport
 import java.io.File
-import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
@@ -446,24 +441,18 @@ class PlaybackQueueIntegrationTest {
             }
         }
         val manager = onMain {
-            val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) { _, method, args ->
-                check(method.name == "getSongDetail") { "Unexpected API call: ${method.name}" }
-                val ids = JsonParser.parseString((args!![0] as GetSongDetails).c).asJsonArray
-                    .map { it.asJsonObject["id"].asString }
-                requests += ids
-                val songs = response.get()(ids).map { id ->
-                    mapOf("id" to id.toLong(), "name" to "Loaded $id", "dt" to 1_000,
-                        "al" to mapOf("id" to 1, "name" to "Album", "picUrl" to ""),
-                        "ar" to listOf(mapOf("id" to 1, "name" to "Artist")))
+            val sources = object : QueueSourceActions {
+                override suspend fun open(providerId: String?): QueueSourceSession = error("Unexpected recommendation request")
+                override suspend fun tracks(refs: List<TrackRef>): List<Track> {
+                    if (sourceRouter != null) return sourceRouter.getTracks(refs)
+                    val ids = refs.map { it.trackId }
+                    requests += ids
+                    return response.get()(ids).map { id -> Track(TrackRef(ProviderIds.NETEASE, id), "Loaded $id",
+                        listOf(SourceArtist("Artist", ArtistRef(ProviderIds.NETEASE, "1"))),
+                        SourceAlbum("Album", AlbumRef(ProviderIds.NETEASE, "1")), 1000) }
                 }
-                val gson = Gson()
-                gson.fromJson(gson.toJson(mapOf("code" to 200, "songs" to songs, "privileges" to emptyList<Any>())), Tracks::class.java)
-            } as ApiService
-            val weApi = Proxy.newProxyInstance(WeApiService::class.java.classLoader, arrayOf(WeApiService::class.java)) { _, method, _ ->
-                error("Unexpected WeAPI call: ${method.name}")
-            } as WeApiService
-            PlaybackQueueManager(player, NeteaseQueueTransport(api, weApi), scope,
-                sourceRouter = sourceRouter, serverShuffleAllowed = { false })
+            }
+            PlaybackQueueManager(player, sources, scope, sourceRouter = sourceRouter, serverShuffleAllowed = { false })
         }
 
         fun item(id: String): MediaItem = MediaItem.Builder().setMediaId(id).setUri(silence.toURI().toString()).build()

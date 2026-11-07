@@ -4,10 +4,10 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.PlaylistDetail
-import com.ljyh.mei.data.model.api.GetSongDetails
 import com.ljyh.mei.data.model.toMediaMetadata
-import com.ljyh.mei.source.netease.NeteaseCatalogTransport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class PlaylistTrackSource internal constructor(
     private val loadTracks: suspend (List<String>) -> List<PlaylistDetail.Playlist.Track>,
@@ -15,19 +15,6 @@ class PlaylistTrackSource internal constructor(
     private val ids: List<String>,
     private val onPageLoaded: (Int) -> Unit = {},
 ) : PagingSource<Int, MediaMetadata>() {
-    constructor(
-        apiService: NeteaseCatalogTransport,
-        firstData: List<PlaylistDetail.Playlist.Track>,
-        ids: List<String>,
-    ) : this(
-        loadTracks = { requested ->
-            val response = apiService.getSongDetail(GetSongDetails(requested.joinToString(",")))
-            check(response.code == 200) { "Song details request failed (${response.code})" }
-            response.songs
-        },
-        firstData = firstData,
-        ids = ids,
-    )
     private val cachedTracks = firstData.associateBy { it.id.toString() }
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaMetadata> {
@@ -58,4 +45,33 @@ class PlaylistTrackSource internal constructor(
     }
 
     override fun getRefreshKey(state: PagingState<Int, MediaMetadata>): Int? = null
+}
+
+/** Publish immutable ordered snapshots before waiting for the next song-detail batch. */
+internal suspend fun <T> collectPlaylistTracksIncrementally(
+    orderedIds: List<Long>,
+    initialTracks: List<T>,
+    retainedTracks: List<T> = emptyList(),
+    key: (T) -> Long,
+    loadBatch: suspend (List<Long>) -> List<T>,
+    onSnapshot: suspend (List<T>) -> Unit,
+): List<T> {
+    val ids = orderedIds.distinct()
+    // The refreshed ID list is authoritative; fresh details replace retained metadata.
+    val tracksById = (retainedTracks + initialTracks).associateBy(key).toMutableMap()
+    val missingBatches = ids.filterNot(tracksById::containsKey).chunked(200)
+    var snapshot = ids.mapNotNull(tracksById::get)
+    if (snapshot.isNotEmpty() || missingBatches.isEmpty()) {
+        currentCoroutineContext().ensureActive()
+        onSnapshot(snapshot)
+    }
+    missingBatches.forEachIndexed { index, batch ->
+        currentCoroutineContext().ensureActive()
+        val tracks = loadBatch(batch)
+        currentCoroutineContext().ensureActive()
+        tracks.forEach { tracksById[key(it)] = it }
+        snapshot = ids.mapNotNull(tracksById::get)
+        if (snapshot.isNotEmpty() || index == missingBatches.lastIndex) onSnapshot(snapshot)
+    }
+    return snapshot
 }

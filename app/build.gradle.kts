@@ -175,6 +175,7 @@ ksp {
 }
 
 dependencies {
+    implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.javascriptengine:javascriptengine:1.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")

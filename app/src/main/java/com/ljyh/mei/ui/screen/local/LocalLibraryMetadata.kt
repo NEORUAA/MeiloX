@@ -37,7 +37,7 @@ internal fun Song.withMatchedMetadata(candidate: MediaMetadata): Song = copy(
 internal fun rankLocalMatches(song: Song, candidates: List<MediaMetadata>): List<MediaMetadata> {
     val title = normalizeLocalMatchText(song.title)
     val artists = song.artist.map(::normalizeLocalMatchText).filter(String::isNotBlank)
-    return candidates.distinctBy(MediaMetadata::id).sortedByDescending { candidate ->
+    return candidates.distinctBy(MediaMetadata::trackRef).sortedByDescending { candidate ->
         val candidateTitle = normalizeLocalMatchText(candidate.title)
         val titleScore = when {
             candidateTitle == title -> 100

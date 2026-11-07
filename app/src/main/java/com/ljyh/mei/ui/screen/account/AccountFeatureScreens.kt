@@ -41,7 +41,8 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.melox.AccountAuthorization
 import com.ljyh.mei.data.model.melox.AccountDevice
 import com.ljyh.mei.data.network.NeteaseSessionType
-import com.ljyh.mei.source.netease.repository.AccountFeatureException
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.screen.Screen
@@ -97,6 +98,7 @@ fun AccountBindingsScreen(viewModel: AccountSecurityViewModel = hiltViewModel())
                         detail = if (bindings == null) null else if (binding?.bound == true) binding.displayName.takeIf(String::isNotBlank)
                             ?: stringResource(R.string.account_bound) else stringResource(R.string.account_not_bound),
                         onClick = { Screen.AccountWeb.navigate(nav) {
+                            viewModel.providerId?.let { addQuery("providerId", it) }
                             addPath(OfficialNeteasePage.ThirdPartyBinding.name)
                         } },
                     )
@@ -112,8 +114,8 @@ fun AccountBindingsScreen(viewModel: AccountSecurityViewModel = hiltViewModel())
 fun MusicianAccountScreen(viewModel: MusicianAccountViewModel = hiltViewModel()) {
     val nav = LocalNavController.current
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val session = rememberNeteaseSessionType()
-    fun open(page: OfficialNeteasePage) = Screen.AccountWeb.navigate(nav) { addPath(page.name) }
+    val session = rememberNeteaseSessionType(viewModel.providerId)
+    fun open(page: OfficialNeteasePage) = Screen.AccountWeb.navigate(nav) { addPath(page.name); viewModel.providerId?.let { addQuery("providerId", it) } }
     MeiloXPinnedListPage(
         title = stringResource(R.string.netease_musician),
         bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
@@ -127,7 +129,7 @@ fun MusicianAccountScreen(viewModel: MusicianAccountViewModel = hiltViewModel())
                 GlasmioGroupedList {
                     GlasmioListRow(
                         stringResource(R.string.netease_login),
-                        onClick = { Screen.NeteaseLogin.navigate(nav) },
+                        onClick = { Screen.NeteaseLogin.navigate(nav) { viewModel.providerId?.let { addQuery("providerId", it) } } },
                     )
                 }
             }
@@ -198,7 +200,7 @@ fun AccountDevicesScreen(
                 Toast.makeText(context, context.getString(R.string.account_action_complete), Toast.LENGTH_SHORT).show()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                if (device != null && failure is AccountFeatureException && failure.code == 401) showCaptcha = true
+                if (device != null && failure is SourceException && failure.code == SourceErrorCode.VERIFICATION_REQUIRED) showCaptcha = true
                 else { actionError = failure.message; Toast.makeText(context, failure.message, Toast.LENGTH_LONG).show() }
             } finally { busy = false }
         }

@@ -1,18 +1,15 @@
 package com.ljyh.mei.ui.screen.main.library
 
 import com.ljyh.mei.constants.LibraryStyle
-import com.ljyh.mei.source.netease.repository.LibraryAccount
-import com.ljyh.mei.source.netease.repository.LibraryCollectionPage
-import com.ljyh.mei.source.netease.repository.collectLibraryPages
-import com.ljyh.mei.source.netease.repository.collectPlaylistTracksIncrementally
+import com.ljyh.mei.ui.screen.playlist.collectPlaylistTracksIncrementally
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.di.repository.observeOwnedPlaylists
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -28,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LibraryCollectionsTest {
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun likedSongsPublishTheFirstPageBeforeWaitingForOrderedContinuation() = runTest {
@@ -166,16 +164,20 @@ class LibraryCollectionsTest {
     @Test
     fun playerPlaylistChoicesFollowLoginSwitchAndLogoutWithoutDatabaseChanges() = runTest {
         fun playlist(id: String, owner: String) = Playlist(id, id, "", owner, "", "", 1)
-        val rows = MutableStateFlow(listOf(playlist("a", "1"), playlist("b", "2")))
-        val accounts = MutableStateFlow<LibraryAccount?>(null)
+        val rows = MutableStateFlow(listOf(playlist("a", "1"), playlist("b", "2"),
+            playlist("other-source", "1").copy(providerId = "qq")))
+        fun account(id: String, revision: String) = com.ljyh.mei.source.api.SourceAccount(
+            com.ljyh.mei.source.api.SourceAccountRef(com.ljyh.mei.source.api.ProviderInstanceId("netease"),
+                com.ljyh.mei.source.api.ProviderAccountId(id)), id, sessionRevision = revision)
+        val accounts = MutableStateFlow<com.ljyh.mei.source.api.SourceAccount?>(null)
         var visible = emptyList<Playlist>()
-        backgroundScope.launch { observeOwnedPlaylists(rows, accounts).collect { visible = it } }
+        backgroundScope.launch { observeOwnedPlaylists(rows, accounts, providerId = "netease").collect { visible = it } }
         runCurrent()
         assertTrue(visible.isEmpty())
-        accounts.value = LibraryAccount("1", "session-1")
+        accounts.value = account("1", "session-1")
         runCurrent()
         assertEquals(listOf("a"), visible.map { it.id })
-        accounts.value = LibraryAccount("2", "session-2")
+        accounts.value = account("2", "session-2")
         runCurrent()
         assertEquals(listOf("b"), visible.map { it.id })
         rows.value += playlist("c", "2")
@@ -325,12 +327,5 @@ class LibraryCollectionsTest {
         assertFalse(result.hasMore)
     }
 
-    @Test
-    fun accountIdentityIncludesSessionWithoutExposingCredential() {
-        val account = LibraryAccount("123", "private-session-a")
-        assertEquals(account, LibraryAccount("123", "private-session-a"))
-        assertNotEquals(account, LibraryAccount("123", "private-session-b"))
-        assertNotEquals(account, LibraryAccount("456", "private-session-a"))
-        assertFalse(account.toString().contains("private-session"))
-    }
+
 }

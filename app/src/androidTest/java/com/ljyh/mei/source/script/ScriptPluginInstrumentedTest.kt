@@ -1,6 +1,9 @@
 package com.ljyh.mei.source.script
 
 import android.net.Uri
+import com.ljyh.mei.AppContext
+import com.ljyh.mei.utils.dataStore
+import kotlinx.coroutines.flow.first
 import androidx.javascriptengine.JavaScriptSandbox
 import androidx.media3.datasource.DataSpec
 import androidx.test.platform.app.InstrumentationRegistry
@@ -30,6 +33,8 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
@@ -37,6 +42,509 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
+    @Test
+    fun marketplaceUpdatesAuthenticateLegacyImportsAndPreserveTransactionalOwnership() = runBlocking {
+        val base = InstrumentationRegistry.getInstrumentation().targetContext
+        val fixture = File(base.cacheDir, "source-updates-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val suffix = java.util.UUID.randomUUID().toString().replace("-", "")
+        val context = object : android.content.ContextWrapper(base) {
+            override fun getFilesDir() = File(fixture, "files").apply { mkdirs() }
+            override fun getCacheDir() = File(fixture, "cache").apply { mkdirs() }
+            override fun getNoBackupFilesDir() = File(fixture, "private").apply { mkdirs() }
+            override fun getSharedPreferences(name: String, mode: Int) = base.getSharedPreferences("$suffix-$name", mode)
+        }
+        val id = "org.meilox.update-$suffix"
+        val providerId = "test.update-$suffix"
+        val repository = "https://github.com/Tests/Source"
+        fun archive(version: String, extraNetwork: Boolean = false, title: String = "Fixture"): ByteArray {
+            val output = java.io.ByteArrayOutputStream()
+            ZipOutputStream(output).use { zip ->
+                val manifest = """{"id":"$id","providerId":"$providerId","name":"Update fixture","author":"Tests",
+                    "version":"$version","apiVersion":2,"capabilities":["catalog.track"],
+                    "permissions":{"network":[${if (extraNetwork) "\"api.example.com\"" else ""}]},
+                    "config":[{"key":"cookie","label":"Cookie","secret":true}]}"""
+                for ((name, text) in mapOf("manifest.json" to manifest,
+                    "index.js" to "globalThis.sourcePlugin={'catalog.track':function(p){return {trackId:p.trackId,title:'$title'};}};")) {
+                    zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry()
+                }
+            }
+            return output.toByteArray()
+        }
+        fun entry(version: String, bytes: ByteArray) = com.ljyh.mei.source.update.SourceMarketEntry(id, providerId, "Update fixture", version,
+            repository, "https://raw.githubusercontent.com/Tests/Source/${"a".repeat(40)}/fixture.meisource",
+            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }, 2)
+        val first = archive("1.0.0")
+        val second = archive("1.1.0")
+        val expanded = archive("1.2.0", extraNetwork = true)
+        var marketEntry = entry("1.0.0", first)
+        var marketBytes = first
+        var downloads = 0
+        var offline = false
+        val transport = object : com.ljyh.mei.source.update.SourceUpdateTransport {
+            override suspend fun index(etag: String?): com.ljyh.mei.source.update.SourceIndexResponse {
+                if (offline) throw IOException("private-market-fixture-secret")
+                val json = com.google.gson.Gson().toJson(mapOf("schemaVersion" to 1, "sources" to listOf(marketEntry)))
+                return com.ljyh.mei.source.update.SourceIndexResponse(json, "fixture-etag")
+            }
+            override suspend fun download(entry: com.ljyh.mei.source.update.SourceMarketEntry, destination: File) {
+                downloads++
+                destination.writeBytes(marketBytes)
+            }
+        }
+        val registry = ProviderRegistry(emptyList())
+        val manager = ScriptPluginManager(context, registry, ScriptRuntime(context))
+        val work = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+        val updates = com.ljyh.mei.source.update.SourceUpdateManager(context, manager, registry, transport, work)
+        suspend fun inspect(bytes: ByteArray): PreparedPlugin {
+            val file = File.createTempFile("update-fixture-", ".meisource", context.cacheDir)
+            try { file.writeBytes(bytes); return manager.inspect(Uri.fromFile(file)) }
+            finally { file.delete() }
+        }
+        try {
+            if (InstrumentationRegistry.getArguments().getString("sourceMarketLive") == "true") {
+                val live = com.ljyh.mei.source.update.SourceMarketTransport()
+                val entries = com.ljyh.mei.source.update.SourceMarketIndex.parse(checkNotNull(live.index(null).json))
+                    .filter { it.providerId in setOf("netease", "qqmusic") }
+                assertEquals("The published market must include both maintained sources", 2, entries.size)
+                for (entry in entries) {
+                    val download = File.createTempFile("market-live-", ".meisource", context.cacheDir)
+                    var checked: PreparedPlugin? = null
+                    try {
+                        live.download(entry, download)
+                        checked = manager.inspect(Uri.fromFile(download))
+                        assertTrue(entry.matches(checked.manifest))
+                    } finally {
+                        checked?.let { manager.discardPrepared(it) }
+                        download.delete()
+                    }
+                }
+            }
+            manager.install(inspect(first), approved = true)
+            manager.configure(id, mapOf("cookie" to "fixture-local-only"))
+            manager.setEnabled(id, false)
+            // Same IDs and version alone must never transfer repository trust.
+            marketBytes = archive("1.0.0", title = "Different payload")
+            marketEntry = entry("1.0.0", marketBytes)
+            updates.checkNow()
+            assertNull(manager.updateSnapshot(id)!!.repository)
+            marketBytes = first
+            marketEntry = entry("1.0.0", first)
+            updates.checkNow()
+            assertEquals(repository, manager.updateSnapshot(id)!!.repository)
+            val adoptedDownloads = downloads
+            updates.checkNow()
+            assertEquals("An authenticated current payload needs no repeat download", adoptedDownloads, downloads)
+
+            marketEntry = entry("1.1.0", second); marketBytes = second
+            updates.refreshMarket()
+            assertEquals("Browsing the market cannot apply an update", "1.0.0", manager.updateSnapshot(id)!!.manifest.version)
+            val revoked = manager.inspect(Uri.fromFile(File(context.cacheDir, "revoked-update.meisource").apply { writeBytes(second) }))
+            try {
+                manager.installMarket(revoked, marketEntry, manager.updateSnapshot(id), automatic = true, authorized = { false })
+                fail("An authorization revoked while waiting must be checked inside the installation transaction")
+            } catch (_: com.ljyh.mei.source.update.SourceUpdateDeferred) { }
+            finally { manager.discardPrepared(revoked) }
+            assertEquals("1.0.0", manager.updateSnapshot(id)!!.manifest.version)
+            updates.checkNow()
+            assertEquals("1.1.0", manager.updateSnapshot(id)!!.manifest.version)
+            assertFalse(manager.updateSnapshot(id)!!.enabled)
+            assertEquals(mapOf("cookie" to "fixture-local-only"), manager.configuration(id))
+
+            marketEntry = entry("1.2.0", expanded); marketBytes = expanded
+            updates.checkNow()
+            assertEquals("1.1.0", manager.updateSnapshot(id)!!.manifest.version)
+            assertTrue(updates.state.value.items.single().requiresReview)
+            val review = updates.prepareUpdate(id)
+            assertEquals(listOf(com.ljyh.mei.source.update.SourceUpdateReviewReason.NETWORK), review.reviewReasons)
+            updates.installReviewed(review)
+            updates.discardPrepared(review)
+            assertEquals("1.2.0", manager.updateSnapshot(id)!!.manifest.version)
+            assertFalse(manager.updateSnapshot(id)!!.enabled)
+
+            val newer = archive("1.3.0", extraNetwork = true)
+            marketEntry = entry("1.3.0", newer); marketBytes = newer
+            updates.refreshMarket()
+            val staleReview = updates.prepareUpdate(id)
+            manager.install(inspect(newer), approved = true)
+            assertNull("File imports cannot retain a previous market origin", manager.updateSnapshot(id)!!.repository)
+            try { updates.installReviewed(staleReview); fail("A stale review must not replace the changed installation") }
+            catch (_: SourceException) { }
+            finally { updates.discardPrepared(staleReview) }
+
+            manager.uninstall(id)
+            val beforeRemovedCheck = downloads
+            updates.checkNow()
+            assertEquals(beforeRemovedCheck, downloads)
+            assertNull(manager.updateSnapshot(id))
+            marketBytes = first // Deliberately does not match the registry digest.
+            try { updates.prepareMarketInstall(id); fail("Transport bytes need independent hash validation") }
+            catch (_: SourceException) { }
+            assertNull(manager.updateSnapshot(id))
+            offline = true
+            updates.checkNow()
+            assertEquals("暂时无法连接音源市场", updates.state.value.message)
+            assertFalse(updates.state.value.message.orEmpty().contains("private-market"))
+            assertTrue(File(context.cacheDir, "source-import").listFiles().isNullOrEmpty())
+        } finally {
+            work.coroutineContext[kotlinx.coroutines.Job]?.cancelAndJoin()
+            if (manager.installed.value.any { it.manifest.id == id }) manager.uninstall(id)
+            base.deleteSharedPreferences("$suffix-source-update-settings")
+            fixture.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun rapidSandboxCancellationReconnectsAndOperationExceptionsKeepTheSourceAvailable() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.connection-retirement","name":"Runtime lifecycle fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track","playback.resolve"]}""")
+        val script = """globalThis.sourcePlugin={'catalog.track':function(p) {
+            if(p.trackId==='broken')throw new Error('private-evaluation-fixture');
+            if(p.trackId==='optional-artwork')return {trackId:p.trackId,title:'Valid catalog',artworkUrl:'https://undeclared.invalid/cover'};
+            return {trackId:p.trackId,title:'Healthy source'};
+        },'playback.resolve':function(){return {uri:'https://undeclared.invalid/audio.mp3',quality:'standard'};}};"""
+        val directory = File(context.cacheDir, "source-runtime-retirement-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        try {
+            File(directory, "index.js").writeText(script)
+            val parameters = JsonObject().apply { addProperty("trackId", "healthy") }
+            withTimeout(90_000) {
+                repeat(6) {
+                    val interrupted = launch(start = CoroutineStart.UNDISPATCHED) {
+                        runtime.invoke(script, manifest, "catalog.track", parameters, emptyMap(), emptyMap(), ScriptNetworkPolicy(emptyList()))
+                    }
+                    yield()
+                    interrupted.cancelAndJoin()
+                    val healthy = runtime.invoke(script, manifest, "catalog.track", parameters, emptyMap(), emptyMap(), ScriptNetworkPolicy(emptyList()))
+                    assertEquals("Healthy source", healthy.result.asJsonObject["title"].asString)
+                }
+                val provider = ScriptMusicProvider(manifest, directory, runtime, true, emptyMap(), { true },
+                    { emptyMap() }, { emptyMap() }, {}, { fail("An ordinary JS operation error must not fail the source") }, 0)
+                try { provider.getTrack(TrackRef(manifest.providerId, "broken")); fail("Expected the operation error") }
+                catch (error: SourceException) {
+                    assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code)
+                    assertFalse(error.message.orEmpty().contains("private-evaluation-fixture"))
+                    assertNull(error.cause)
+                }
+                assertFalse(provider.failed)
+                assertEquals(SourceStatus.READY, provider.status)
+                assertEquals("Healthy source", provider.getTrack(TrackRef(manifest.providerId, "healthy"))?.title)
+                val withoutArtwork = provider.getTrack(TrackRef(manifest.providerId, "optional-artwork"))
+                assertEquals("Valid catalog", withoutArtwork?.title)
+                assertEquals("", withoutArtwork?.artworkUrl)
+                assertEquals(SourceStatus.READY, provider.status)
+                try { provider.resolve(TrackRef(manifest.providerId, "denied-audio"), "standard"); fail("Undeclared audio must be rejected") }
+                catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+                assertEquals(SourceStatus.READY, provider.status)
+                assertEquals("Healthy source", provider.getTrack(TrackRef(manifest.providerId, "healthy"))?.title)
+                try {
+                    runtime.invoke("""globalThis.sourcePlugin={'catalog.track':function(){return {error:'UNAVAILABLE',outcomeUnknown:true};}};""",
+                        manifest, "catalog.track", parameters, emptyMap(), emptyMap(), ScriptNetworkPolicy(emptyList()))
+                    fail("Expected the explicit business failure")
+                } catch (error: SourceException) {
+                    assertEquals(SourceErrorCode.UNAVAILABLE, error.code)
+                    assertFalse("Scripts must not set host-only mutation ambiguity metadata", error.outcomeUnknown)
+                }
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun lazyArtworkSurvivesStoreRestartAndSourceUpgradeWithoutExposingItsDescriptor() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val id = "org.meilox.artwork-${java.util.UUID.randomUUID()}"
+        val neighbor = "$id-artwork-other"
+        val directory = File(context.cacheDir, id).apply { mkdirs() }
+        val artwork = File(context.cacheDir, "source-artwork/$id")
+        val registry = ProviderRegistry(emptyList())
+        val firstStore = SourceArtworkStore(context, registry)
+        fun provider(version: String, session: String, store: SourceArtworkStore): ScriptMusicProvider {
+            val manifest = PluginManifest.parse("""{"id":"$id","name":"Artwork fixture","author":"Tests",
+                "version":"$version","apiVersion":2,"capabilities":["catalog.track"],"sessionKeys":["session"],
+                "permissions":{"network":["cdn.example"],"storage":true}}""")
+            return ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+                { emptyMap() }, { mapOf("session" to session) }, {}, { fail("Artwork must not fail the source") }, 0,
+                artworkDirectory = artwork, artworkStore = store).also(registry::register)
+        }
+        try {
+            val first = provider("1", "account-a", firstStore)
+            val uri = first.featureArtwork("https://cdn.example/cover.jpg?token=fixture-private-token")
+            val file = File(java.net.URI(uri))
+            assertFalse(uri.contains("fixture-private-token"))
+            assertFalse("Catalog registration must not download its images", file.exists())
+            val restored = SourceArtworkStore(context, registry)
+            assertEquals(uri, restored.acceptOwned(first, uri))
+            val upgraded = provider("2", "account-a", restored)
+            assertEquals(uri, restored.acceptOwned(upgraded, uri))
+            val switched = provider("2", "account-b", restored)
+            try { restored.acceptOwned(switched, uri); fail("A missing cover cannot reuse another account's descriptor") }
+            catch (_: CancellationException) { }
+            file.parentFile.mkdirs(); file.writeBytes(byteArrayOf(1, 2, 3))
+            val secrets = PluginSecretStore(context)
+            val neighborRecord = mapOf("url" to "https://cdn.example/other.jpg", "account" to "another-owner")
+            secrets.write(neighbor, "artwork-${file.name}", neighborRecord)
+            secrets.delete(id)
+            assertEquals("Uninstall must not delete a package with a similar name", neighborRecord,
+                secrets.read(neighbor, "artwork-${file.name}"))
+            registry.unregister(switched.instanceId)
+            assertEquals("Downloaded covers remain available without the source or its descriptor", uri, restored.resolve(uri))
+            assertArrayEquals(byteArrayOf(1, 2, 3), file.readBytes())
+        } finally {
+            PluginSecretStore(context).delete(id)
+            PluginSecretStore(context).delete(neighbor)
+            artwork.deleteRecursively(); directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cancelledLoginPublishesTheAccountRevisionAfterDurableStorageCommit() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.login-commit","name":"Login commit fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["feature.invoke","track.like"],
+            "features":{"login":["complete"]},"sessionKeys":["session"],"permissions":{"storage":true}}""")
+        val directory = File(context.cacheDir, "source-login-commit-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val state = java.util.concurrent.atomic.AtomicReference(mapOf("session" to "first"))
+        val committed = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {
+                'feature.invoke':function() { return {result:true,storage:{session:'second'}}; },
+                'track.like':function() { return {result:true,storage:{session:'second',write:'unexpected'}}; }
+            };""")
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+                { emptyMap() }, { state.get() }, { values ->
+                    state.set(values.toMap()); committed.complete(Unit)
+                    check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                }, { fail("Cancelling login must not fail the source") }, 0)
+            val expected = provider.accountRevision.value
+            withTimeout(30_000) {
+                val login = async {
+                    provider.invokeFeature("login", "complete", JsonObject(), expected) {
+                        throw CancellationException("The caller left after its storage commit")
+                    }
+                }
+                try {
+                    committed.await()
+                    login.cancel()
+                    release.countDown()
+                    login.join()
+                    assertNotEquals(expected, provider.accountRevision.value)
+                    try { provider.setLiked(TrackRef(manifest.providerId, "song"), true, expected); fail("Old account must be rejected") }
+                    catch (_: CancellationException) { }
+                    assertEquals(mapOf("session" to "second"), state.get())
+                    assertEquals(SourceStatus.READY, provider.status)
+                } finally { release.countDown(); login.cancelAndJoin() }
+            }
+        } finally { release.countDown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun coreMutationsResumeFreshHostProofWithoutHoldingTheSourceOperationLock() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.core-proof","name":"Core proof fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track","collection.save","account.get"],"collectionTypes":["playlist"],
+            "permissions":{"effects":["sdk.call","web.page"],"nativeSdks":["netease.securityHeaders"]}}""")
+        val directory = File(context.cacheDir, "source-core-proof-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val registry = com.ljyh.mei.source.core.ProviderRegistry(emptyList())
+        val executor = com.ljyh.mei.source.core.SourceFeatureExecutor(com.ljyh.mei.source.core.SourceRouter(registry))
+        lateinit var provider: ScriptMusicProvider
+        var effects = 0
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {
+                'catalog.track':function(p) { return {trackId:p.trackId,title:'Concurrent catalog'}; },
+                'account.get':function() { return {hostEffect:{type:'web.page',parameters:{}},continuation:{}}; },
+                'collection.save':function(p) {
+                    if (!p['${'$'}continuation']) return {hostEffect:{type:'sdk.call',parameters:{name:'netease.securityHeaders'}},continuation:{saved:p.saved}};
+                    const reply=p['${'$'}continuation'];
+                    return reply.state.saved===true && reply.effect.ok===true && reply.effect.result.checkToken==='body-proof' && reply.effect.result.headerAntiCheatToken==='header-proof';
+                }
+            };""")
+            provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+                { emptyMap() }, { emptyMap() }, {}, { fail("Valid core proof must not fail the source") }, 0,
+                coreExecutor = executor, coreHandler = com.ljyh.mei.source.api.SourceHostEffectHandler { _, scope ->
+                    effects++
+                    assertEquals("core", scope.feature)
+                    assertEquals("collection.save", scope.action)
+                    assertEquals("Concurrent catalog", provider.getTrack(TrackRef(manifest.providerId, "other"))?.title)
+                    com.ljyh.mei.source.api.SourceHostEffectResult.Success(JsonObject().apply {
+                        addProperty("checkToken", "body-proof"); addProperty("headerAntiCheatToken", "header-proof")
+                    })
+                })
+            registry.register(provider)
+            withTimeout(30_000) { provider.setSaved(com.ljyh.mei.source.api.PlaylistRef(manifest.providerId, "list"), true) }
+            try { provider.accountWithoutEffects(provider.accountRevision.value); fail("Bridge metadata cannot recursively open a Web effect") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
+            assertEquals(1, effects)
+            assertEquals(SourceStatus.READY, provider.status)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun removableDefaultSourcePreservesHostDataAndDoesNotReinstallItself() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manager = (context.applicationContext as AppContext).sourcePlugins
+        manager.loadInstalled()
+        val id = BundledSourceProvisioner.NETEASE_ID
+        val original = manager.installed.value.firstOrNull { it.manifest.id == id }
+        assumeTrue("The reviewed default source must be installed", original != null)
+        val root = File(context.filesDir, "music-sources")
+        val marker = File(root, ".netease-default-v1")
+        val markerBefore = marker.takeIf { it.isFile }?.readBytes()
+        val configuration = manager.configuration(id)
+        val secrets = PluginSecretStore(context)
+        val storage = secrets.read(id, "storage")
+        val preferences = context.dataStore.data.first()
+        val hostBefore = sourceHostDataFingerprint(context)
+        val packageFile = File.createTempFile("default-source-restore-", ".meisource", context.cacheDir)
+        context.assets.open("music-sources/netease.meisource").use { input -> packageFile.outputStream().use { output -> input.copyTo(output) } }
+        assertTrue(BundledSourceProvisioner.matches(packageFile.readBytes()))
+        val reviewedEntry = java.util.zip.ZipInputStream(packageFile.inputStream()).use { zip ->
+            var script: ByteArray? = null
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (entry.name == "index.js") script = zip.readBytes()
+            }
+            script
+        }
+        assumeTrue("Preserve independently installed source versions", reviewedEntry != null &&
+            reviewedEntry.contentEquals(File(root, "$id/index.js").readBytes()))
+        var removed = false
+        try {
+            manager.uninstall(id)
+            removed = true
+            assertTrue("Default source must be removable", manager.installed.value.none { it.manifest.id == id })
+            manager.loadInstalled()
+            assertTrue("An explicit uninstall must survive initialization", manager.installed.value.none { it.manifest.id == id })
+            assertTrue("Host preferences and queue must survive source removal", preferences == context.dataStore.data.first())
+            assertTrue("Host database rows must survive source removal", hostBefore.contentEquals(sourceHostDataFingerprint(context)))
+        } finally {
+            if (removed) {
+                // Restore the exact private session without exposing it to assertion output.
+                secrets.write(id, "config", configuration)
+                secrets.write(id, "storage", storage)
+                val prepared = manager.inspect(Uri.fromFile(packageFile))
+                try { manager.install(prepared, approved = true) }
+                finally { prepared.directory.deleteRecursively() }
+                if (original?.enabled == false) manager.setEnabled(id, false)
+                if (markerBefore == null) marker.delete() else marker.writeBytes(markerBefore)
+                assertTrue("The private source configuration must be restored", configuration == manager.configuration(id))
+                assertTrue("The private source storage must be restored", storage == secrets.read(id, "storage"))
+            }
+            packageFile.delete()
+        }
+    }
+
+    private fun sourceHostDataFingerprint(context: android.content.Context): ByteArray {
+        val database = com.ljyh.mei.di.AppDatabase.getDatabase(context).openHelper.readableDatabase
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val tables = database.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        for (table in tables) {
+            digest.update(table.toByteArray())
+            database.query("""SELECT * FROM "$table" ORDER BY rowid""").use { cursor ->
+                while (cursor.moveToNext()) for (column in 0 until cursor.columnCount) {
+                    val kind = cursor.getType(column)
+                    val bytes = if (kind == android.database.Cursor.FIELD_TYPE_NULL) byteArrayOf()
+                        else if (kind == android.database.Cursor.FIELD_TYPE_BLOB) cursor.getBlob(column)
+                        else cursor.getString(column).toByteArray()
+                    digest.update(kind.toByte())
+                    digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.size).array())
+                    digest.update(bytes)
+                }
+            }
+        }
+        return digest.digest()
+    }
+
+    @Test
+    fun malformedFavoriteResponsesKeepOtherCapabilitiesButPermissionViolationsFailClosed() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.favorite-errors","name":"Favorite fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track","track.like"],"permissions":{"network":["api.example.com"]}}""")
+        val directory = File(context.cacheDir, "source-favorite-errors-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val failures = mutableListOf<SourceErrorCode>()
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {
+                'catalog.track':function(params) {
+                    if(params.trackId === 'denied') return {request:{url:'https://undeclared.example.com/private'}};
+                    return {trackId:params.trackId,title:'Healthy catalog'};
+                },
+                'track.like':function() { return {accepted:true}; }
+            };""".trimIndent())
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), enabled = true,
+                configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { emptyMap() },
+                saveStorage = {}, onFailure = { failures += it }, configurationVersion = 0)
+            try { provider.setLiked(TrackRef(manifest.providerId, "song"), true); fail("Expected a malformed operation result") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+            assertEquals(SourceStatus.READY, provider.status)
+            assertFalse(provider.failed)
+            assertEquals("Healthy catalog", provider.getTrack(TrackRef(manifest.providerId, "healthy"))?.title)
+            assertTrue(failures.isEmpty())
+            try { provider.getTrack(TrackRef(manifest.providerId, "denied")); fail("Expected a network permission rejection") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+            assertTrue(provider.failed)
+            assertEquals(listOf(SourceErrorCode.PLUGIN), failures)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun queuedMutationsCheckTheAccountAfterThePreviousStorageCommit() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.favorite-account","name":"Account fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track","track.like","feature.invoke"],
+            "features":{"login":["logout"]},"sessionKeys":["session"],"permissions":{"storage":true}}""")
+        val directory = File(context.cacheDir, "source-favorite-account-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val state = java.util.concurrent.atomic.AtomicReference<Map<String, String>>(mapOf("session" to "first"))
+        val entered = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin = {
+                'catalog.track':function(params) { return {result:{trackId:params.trackId,title:'Changed account'},storage:{session:'second'}}; },
+                'track.like':function(params,context) { return {result:true,storage:{session:context.storage.session,write:'unexpected'}}; },
+                'feature.invoke':function(params,context) { return {result:true,storage:{session:'',write:'unexpected'}}; }
+            };""".trimIndent())
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), enabled = true,
+                configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { state.get() },
+                saveStorage = { values ->
+                    entered.complete(Unit)
+                    check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    state.set(values.toMap())
+                }, onFailure = { fail("An account replacement must not fail the provider") }, configurationVersion = 0)
+            val expected = provider.accountRevision.value
+            withTimeout(30_000) {
+                val changingAccount = async { provider.getTrack(TrackRef(manifest.providerId, "seed")) }
+                try {
+                    entered.await()
+                    val mutation = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                        provider.setLiked(TrackRef(manifest.providerId, "song"), true, expected)
+                    }
+                    val feature = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                        provider.invokeFeature("login", "logout", JsonObject(), expected, null)
+                    }
+                    try {
+                        release.countDown()
+                        assertNotNull(changingAccount.await())
+                        try { mutation.await(); fail("Expected the queued mutation to cancel") }
+                        catch (_: CancellationException) { }
+                        try { feature.await(); fail("Expected the queued session mutation to cancel") }
+                        catch (_: CancellationException) { }
+                        assertNotEquals(expected, provider.accountRevision.value)
+                        assertEquals(mapOf("session" to "second"), state.get())
+                        assertEquals(SourceStatus.READY, provider.status)
+                    } finally { mutation.cancelAndJoin(); feature.cancelAndJoin() }
+                } finally { release.countDown(); changingAccount.cancelAndJoin() }
+            }
+        } finally { release.countDown(); directory.deleteRecursively() }
+    }
+
     @Test
     fun concurrentOperationsReadStorageOnlyAfterThePreviousCommit() = runBlocking {
         assumeTrue(JavaScriptSandbox.isSupported())

@@ -77,6 +77,7 @@ import com.ljyh.mei.utils.TimeUtils.formatDuration
 import com.ljyh.mei.ui.component.item.LandscapeMediaRow
 import com.ljyh.mei.R
 import com.ljyh.mei.constants.PodcastsEnabledKey
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.room.Playlist
 import com.ljyh.mei.data.model.toMediaItem
@@ -112,7 +113,6 @@ import com.ljyh.mei.ui.screen.cloud.CloudMusicUiState
 import com.ljyh.mei.ui.screen.cloud.CloudMusicPaginationFooter
 import com.ljyh.mei.ui.screen.history.HistoryViewModel
 import com.ljyh.mei.ui.screen.history.HistoryUiState
-import com.ljyh.mei.ui.screen.playlist.PlaylistViewModel
 import com.ljyh.mei.ui.screen.playlist.component.StandaloneTrackActionOverlay
 import com.ljyh.mei.ui.screen.podcast.PodcastViewModel
 import com.ljyh.mei.ui.screen.podcast.PodcastUiState
@@ -239,7 +239,6 @@ fun LibraryMobileLayout(
     val isLandscape = rememberDeviceInfo().isLandscape
     val landscapeSongs = isLandscape && selectedPage == LibraryPage.Songs
     val catalogRows = selectedPage == LibraryPage.Songs || selectedPage == LibraryPage.Playlists
-    val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val insets = LocalPlayerAwareWindowInsets.current.asPaddingValues()
     val showsAlbums = selectedPage == LibraryPage.Albums
@@ -639,7 +638,6 @@ fun LibraryMobileLayout(
         overlay = currentOverlay,
         onDismiss = { currentOverlay = OverlayState.None },
         onUpdateOverlay = { currentOverlay = it },
-        playlistViewModel = playlistViewModel,
         playerViewModel = playerViewModel,
     )
 
@@ -675,7 +673,7 @@ internal fun LibraryCollectionRefresh(
 }
 
 @Composable
-private fun LibraryCollectionHeading(title: String) {
+internal fun LibraryCollectionHeading(title: String) {
     Text(
         title,
         style = IosTypography.title2,
@@ -760,12 +758,13 @@ private fun LibraryPlaylistRow(playlist: Playlist, showDivider: Boolean, onClick
     )
 }
 
-private fun LazyListScope.libraryPodcastItems(
+internal fun LazyListScope.libraryPodcastItems(
     navController: com.ljyh.mei.ui.navigation.MeiNavigator,
     state: PodcastUiState,
     viewModel: PodcastViewModel,
     query: String,
     columns: Int,
+    rowSpacing: Dp = 0.dp,
 ) {
     val podcasts = state.subscribedPodcasts.filterIfSearching(query) { podcast ->
         podcast.name.containsQuery(query) ||
@@ -775,14 +774,17 @@ private fun LazyListScope.libraryPodcastItems(
             podcast.recommendation.containsQuery(query)
     }
     items(podcasts.chunked(columns), key = { "podcasts-${it.first().id}" }) { row ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = rowSpacing), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             row.forEach { podcast ->
                 LibraryGridItem(
                     title = podcast.name,
                     subtitle = podcast.host?.nickname ?: podcast.category.orEmpty(),
                     cover = podcast.picUrl.orEmpty(),
                     onClick = {
-                        Screen.PodcastDetail.navigate(navController) { addPath(podcast.id.toString()) }
+                        Screen.PodcastDetail.navigate(navController) {
+                            addPath(android.net.Uri.encode(podcast.id))
+                            addQuery("providerId", android.net.Uri.encode(podcast.providerId))
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 )
@@ -813,7 +815,7 @@ private fun LazyListScope.libraryPodcastItems(
     }
 }
 
-private fun LazyListScope.libraryCloudItems(
+internal fun LazyListScope.libraryCloudItems(
     state: CloudMusicUiState,
     playerConnection: PlayerConnection?,
     query: String,
@@ -858,14 +860,7 @@ private fun LazyListScope.libraryCloudItems(
                 },
                 onClick = {
                     val queue = songs.map { item ->
-                        val mediaItem = MediaMetadata(
-                            id = item.id,
-                            title = item.name,
-                            coverUrl = item.coverUrl.orEmpty(),
-                            artists = listOf(MediaMetadata.Artist(item.artist.hashCode().toLong(), item.artist)),
-                            duration = item.durationMs,
-                            album = MediaMetadata.Album(item.album.hashCode().toLong(), item.album),
-                        ).toMediaItem()
+                        val mediaItem = item.track.toMediaMetadata().toMediaItem()
                         mediaItem.mediaId to mediaItem
                     }
                     playerConnection?.playQueue(ListQueue("library-cloud", "Cloud", queue, index))
@@ -880,7 +875,7 @@ private fun LazyListScope.libraryCloudItems(
     }
 }
 
-private fun LazyListScope.libraryHistoryItems(
+internal fun LazyListScope.libraryHistoryItems(
     state: HistoryUiState,
     playerConnection: PlayerConnection?,
     query: String,
@@ -936,7 +931,7 @@ private fun LazyListScope.libraryHistoryItems(
                         ListQueue(
                             id = "library-history",
                             title = "History",
-                            items = visibleHistory.map { it.song.id.toString() to null },
+                            items = visibleHistory.map { entry -> entry.song.toMediaItem().let { it.mediaId to it } },
                             startIndex = index,
                         ),
                     )

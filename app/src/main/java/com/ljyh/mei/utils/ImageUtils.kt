@@ -4,11 +4,12 @@ package com.ljyh.mei.utils
 import android.content.Context
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import coil3.ImageLoader
+import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -66,7 +67,7 @@ class CoilImageLoader {
     companion object {
         suspend fun loadImageDrawable(context: Context, imageUrl: String): ImageBitmap? =
             withContext(Dispatchers.IO) {
-                val loader = ImageLoader(context)
+                val loader = context.imageLoader
                 val request = ImageRequest.Builder(context)
                     .data(imageUrl)
                     .allowHardware(false) // 避免返回硬件加速的 Bitmap
@@ -88,6 +89,24 @@ object ImageUtils {
 
     internal suspend fun downloadImageBytes(imageUrl: String, client: OkHttpClient): ByteArray? = withContext(Dispatchers.IO) {
         try {
+            if (com.ljyh.mei.source.script.SourceArtworkRegistry.owns(imageUrl)) {
+                val local = com.ljyh.mei.source.script.SourceArtworkRegistry.resolve(imageUrl)
+                val file = java.io.File(java.net.URI(local))
+                if (!file.isFile || file.length() > MAX_COVER_BYTES) return@withContext null
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                return@withContext file.inputStream().use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(65_536)
+                    while (true) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size().toLong() + count > MAX_COVER_BYTES) return@withContext null
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+            }
             val request = Request.Builder().url(imageUrl).build()
             readDownloadResponse(client, request) { response ->
                 if (response.isSuccessful) readCoverBytes(response.body) else null

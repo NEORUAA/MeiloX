@@ -3,25 +3,23 @@ package com.ljyh.mei.playback
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
-/** Recommendation and scene modes exposed by NetEase Cloud Music's private roaming player. */
-enum class PrivateFmMode(val code: String) {
-    DEFAULT("DEFAULT"),
-    EXPLORE("EXPLORE"),
-    FAMILIAR("FAMILIAR"),
-    SCENE("SCENE_RCMD");
+/** Shared recommendation choices. A source maps these semantics to its own service protocol. */
+enum class PrivateFmMode {
+    DEFAULT, EXPLORE, FAMILIAR, SCENE;
 
-    fun requestBody(unplayedIds: List<String> = emptyList(), scene: PrivateFmScene? = null): Map<String, String> {
+    // Preserve selection values written by earlier application versions.
+    val storageKey: String get() = if (this == SCENE) "SCENE_RCMD" else name
+
+    fun parameters(recentIds: List<String> = emptyList(), scene: PrivateFmScene? = null): Map<String, String> {
         require(this != SCENE || scene != null) { "请选择漫游场景" }
         return buildMap {
-            put("mode", code)
-            put("entranceType", "newframework_daily_recommend_mix")
-            put("limit", "3")
-            put("openAidj", "false")
-            put("unplaySongIds", unplayedIds.mapNotNull(String::toLongOrNull).filter { it > 0 }
-                .distinct().takeLast(200).joinToString(prefix = "[", postfix = "]", separator = ","))
+            put("mode", name.lowercase())
+            put("recentTrackIds", com.google.gson.JsonArray().apply {
+                recentIds.filter { it.isNotBlank() && it.length <= 2048 }.distinct().takeLast(200).forEach(::add)
+            }.toString())
             if (this@PrivateFmMode == SCENE) {
-                put("subMode", scene!!.code)
-                scene.cascadeMode.takeIf(String::isNotBlank)?.let { put("fmCascadeModeStr", it) }
+                put("sceneCode", scene!!.code)
+                scene.cascadeMode.takeIf(String::isNotBlank)?.let { put("cascadeMode", it) }
             }
         }
     }
@@ -40,23 +38,4 @@ data class PrivateFmScene(val code: String, val title: String, val cascadeMode: 
             if (code.isBlank() || title.isBlank()) null else PrivateFmScene(code, title, text("cascadeMode"))
         }.getOrNull()
     }
-}
-
-internal fun parsePrivateFmScenes(response: JsonObject): List<PrivateFmScene> {
-    val code = response.get("code")?.asInt ?: 200
-    check(code == 200) { response.get("message")?.takeIf { it.isJsonPrimitive }?.asString ?: "漫游场景加载失败 ($code)" }
-    val data = response.getAsJsonObject("data")?.getAsJsonObject("crossPlatformResource")
-        ?.getAsJsonObject("dslData") ?: return emptyList()
-    val scenes = data.getAsJsonArray("currentSceneList")
-        ?: data.entrySet().firstNotNullOfOrNull { (_, value) ->
-            value.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonArray("currentSceneList")
-        } ?: return emptyList()
-    return scenes.mapNotNull { value ->
-        val item = value.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-        fun text(key: String) = item.get(key)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-        val sceneCode = text("code")
-        val title = text("title")
-        if (sceneCode.isBlank() || title.isBlank()) null
-        else PrivateFmScene(sceneCode, title, text("fmCascadeModeStr"))
-    }.distinctBy(PrivateFmScene::code)
 }

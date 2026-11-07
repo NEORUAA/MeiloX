@@ -1,13 +1,14 @@
 package com.ljyh.mei.ui.screen.podcast
 
+import com.ljyh.mei.data.model.toSourceTrack
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ljyh.mei.data.model.melox.Podcast
-import com.ljyh.mei.data.model.melox.PodcastDetail
-import com.ljyh.mei.data.model.melox.PodcastHome
-import com.ljyh.mei.data.model.melox.PodcastPage
-import com.ljyh.mei.data.model.melox.PodcastProgramPage
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.OnlinePodcast as Podcast
+import com.ljyh.mei.source.shared.OnlinePodcastDetail as PodcastDetail
+import com.ljyh.mei.source.shared.OnlinePodcastHome as PodcastHome
+import com.ljyh.mei.source.shared.OnlinePodcastPage as PodcastPage
+import com.ljyh.mei.source.shared.OnlinePodcastProgramPage as PodcastProgramPage
+import com.ljyh.mei.source.shared.SharedOnlineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,9 +21,10 @@ enum class PodcastTab {
 }
 
 data class PodcastUiState(
+    val isSignedIn: Boolean = false,
     val isLoading: Boolean = true,
     val home: PodcastHome? = null,
-    val selectedCategoryId: Long? = null,
+    val selectedCategoryId: String? = null,
     val categoryPodcasts: List<Podcast> = emptyList(),
     val error: String? = null,
     val selectedTab: PodcastTab = PodcastTab.Discover,
@@ -47,14 +49,26 @@ data class PodcastDetailUiState(
 )
 
 @HiltViewModel
-class PodcastViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+class PodcastViewModel internal constructor(
+    private val repository: com.ljyh.mei.source.shared.SharedOnlineSession,
+    initialTab: PodcastTab = PodcastTab.Discover,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(PodcastUiState())
+    @Inject constructor(onlineRepository: SharedOnlineRepository, savedStateHandle: androidx.lifecycle.SavedStateHandle) :
+        this(onlineRepository.screen("podcast-home", savedStateHandle["providerId"]))
+    val providerId: String? get() = repository.providerId
+    private val _state = MutableStateFlow(PodcastUiState(selectedTab = initialTab))
     val state = _state.asStateFlow()
 
     init {
-        refresh()
+        viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            if (owner.isBlank()) _state.value = PodcastUiState(isLoading = false)
+            else {
+                refresh()
+                val profile = runCatching { repository.accountProfileRecord() }
+                repository.features().ensureCurrent()
+                _state.value = _state.value.copy(isSignedIn = profile.isSuccess)
+            }
+        } }
     }
 
     fun selectTab(tab: PodcastTab) {
@@ -88,7 +102,7 @@ class PodcastViewModel @Inject constructor(
         }
     }
 
-    fun selectCategory(id: Long?) {
+    fun selectCategory(id: String?) {
         if (id == null) {
             _state.value = _state.value.copy(
                 isLoading = false,
@@ -170,17 +184,36 @@ class PodcastViewModel @Inject constructor(
 
 @HiltViewModel
 class PodcastDetailViewModel @Inject constructor(
-    private val repository: MeloXRepository,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
+    private val mediaUriProvider: com.ljyh.mei.playback.MediaUriProvider,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("podcast-detail", savedStateHandle["providerId"])
+    val providerId: String? get() = repository.providerId
     private val _state = MutableStateFlow(PodcastDetailUiState())
     val state = _state.asStateFlow()
-    private var loadedId: Long? = null
+    private var loadedId: String? = null
     private val allProgramsMutex = kotlinx.coroutines.sync.Mutex()
-    private var allProgramsCache: List<com.ljyh.mei.data.model.melox.PodcastProgram>? = null
+    private var allProgramsCache: List<com.ljyh.mei.source.shared.OnlinePodcastProgram>? = null
     private var generation = 0
 
+    init { viewModelScope.launch { repository.sessionChanges.collect { owner ->
+        if (owner.isBlank()) {
+            generation++
+            allProgramsCache = null
+            _state.value = PodcastDetailUiState(isLoading = false)
+        }
+    } } }
+
+    suspend fun resolveDownload(metadata: com.ljyh.mei.data.model.MediaMetadata, quality: com.ljyh.mei.constants.MusicQuality): com.ljyh.mei.source.api.PlaybackResolution {
+        val owner = repository.features()
+        owner.ensureCurrent()
+        if (metadata.trackRef.providerId != owner.providerId) throw com.ljyh.mei.source.api.SourceException(com.ljyh.mei.source.api.SourceErrorCode.INVALID_RESPONSE)
+        return mediaUriProvider.resolveDownloadSource(metadata.toSourceTrack(), quality.text).also { owner.ensureCurrent() }
+    }
+
     /** Reads every page for search and bulk actions without disturbing scroll pagination. */
-    suspend fun allPrograms(id: Long): List<com.ljyh.mei.data.model.melox.PodcastProgram> {
+    suspend fun allPrograms(id: String): List<com.ljyh.mei.source.shared.OnlinePodcastProgram> {
         allProgramsMutex.lock()
         try {
             check(loadedId == id)
@@ -198,7 +231,7 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
 
-    fun load(id: Long, force: Boolean = false) {
+    fun load(id: String, force: Boolean = false) {
         if (!force && loadedId == id && _state.value.detail != null) return
         generation++
         val requestGeneration = generation
@@ -320,9 +353,9 @@ internal fun appendUniquePodcasts(existing: List<Podcast>, incoming: List<Podcas
 }
 
 internal fun appendUniquePrograms(
-    existing: List<com.ljyh.mei.data.model.melox.PodcastProgram>,
-    incoming: List<com.ljyh.mei.data.model.melox.PodcastProgram>,
-): List<com.ljyh.mei.data.model.melox.PodcastProgram> {
-    val ids = existing.mapTo(mutableSetOf(), com.ljyh.mei.data.model.melox.PodcastProgram::id)
+    existing: List<com.ljyh.mei.source.shared.OnlinePodcastProgram>,
+    incoming: List<com.ljyh.mei.source.shared.OnlinePodcastProgram>,
+): List<com.ljyh.mei.source.shared.OnlinePodcastProgram> {
+    val ids = existing.mapTo(mutableSetOf(), com.ljyh.mei.source.shared.OnlinePodcastProgram::id)
     return existing + incoming.filter { ids.add(it.id) }
 }

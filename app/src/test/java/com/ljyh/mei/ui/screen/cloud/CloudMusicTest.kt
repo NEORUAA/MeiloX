@@ -1,9 +1,11 @@
 package com.ljyh.mei.ui.screen.cloud
 
 import com.google.gson.JsonParser
-import com.ljyh.mei.data.model.melox.CloudMusicPage
-import com.ljyh.mei.data.model.melox.CloudSong
-import com.ljyh.mei.source.netease.repository.parseCloudMusicPage
+import com.ljyh.mei.source.shared.OnlineCloudPage as CloudMusicPage
+import com.ljyh.mei.source.shared.OnlineCloudSong as CloudSong
+import com.ljyh.mei.source.shared.SourceOnlineParser
+import com.ljyh.mei.source.api.ProviderInstanceId
+import com.ljyh.mei.source.api.SourceException
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -41,33 +43,32 @@ class CloudMusicTest {
 
     @Test
     fun cloudCursorCountsRawRowsBeforeFilteringAndDeduplication() {
-        val parsed = parseCloudMusicPage(
-            JsonParser.parseString(
-                """{"data":[{"songId":1},{"songId":1},{},null],"count":205,"size":42,"maxSize":99}""",
-            ).asJsonObject,
-            offset = 200,
-        )
-        assertEquals(204, parsed.nextOffset)
-        assertTrue(parsed.hasMore)
-        assertEquals(42L, parsed.usedSize)
-        assertEquals(99L, parsed.maxSize)
-        val merged = CloudMusicUiState(page = page(listOf(song(1)), true, 200)).withCloudPage(parsed)
-        assertEquals(listOf(1L), merged.page!!.songs.map(CloudSong::id))
+        val parser = SourceOnlineParser("qq", ProviderInstanceId("fixture:qq"))
+        val online = parser.cloudPage(JsonParser.parseString(
+            """{"songs":[{"id":"1","name":"Song"},{"id":"1","name":"Song"}],
+                "count":205,"usedSize":42,"maxSize":99,"hasMore":true,"nextOffset":204}""",
+        ), offset = 200)
+        assertEquals(204, online.nextOffset)
+        assertTrue(online.hasMore)
+        assertEquals(42L, online.usedSize)
+        assertEquals(99L, online.maxSize)
+        val merged = CloudMusicUiState(page = page(listOf(song(1)), true, 200)).withCloudPage(online)
+        assertEquals(listOf("1"), merged.page!!.songs.map(CloudSong::id))
         assertEquals(204, merged.page.nextOffset)
         assertTrue(merged.page.hasMore)
     }
 
     @Test
     fun invalidContinuationIsRejectedAndEmptyFinalPageIsAccepted() {
-        assertThrows(IllegalStateException::class.java) {
-            parseCloudMusicPage(JsonParser.parseString("""{"data":[],"hasMore":true}""").asJsonObject, 200)
+        val parser = SourceOnlineParser("qq", ProviderInstanceId("fixture:qq"))
+        assertThrows(SourceException::class.java) {
+            parser.cloudPage(JsonParser.parseString("""{"songs":[],"hasMore":true,"nextOffset":200}"""), 200)
         }
-        assertThrows(IllegalStateException::class.java) {
-            parseCloudMusicPage(JsonParser.parseString("""{"count":201}""").asJsonObject, 200)
+        assertThrows(SourceException::class.java) {
+            parser.cloudPage(JsonParser.parseString("""{"count":201,"nextOffset":201}"""), 200)
         }
-        val finalPage = parseCloudMusicPage(
-            JsonParser.parseString("""{"data":[],"hasMore":false,"count":200}""").asJsonObject,
-            200,
+        val finalPage = parser.cloudPage(
+            JsonParser.parseString("""{"songs":[],"hasMore":false,"count":200,"nextOffset":200}"""), 200,
         )
         assertFalse(finalPage.hasMore)
         assertEquals(200, finalPage.nextOffset)
@@ -97,7 +98,7 @@ class CloudMusicTest {
         runCurrent()
 
         assertEquals(listOf(0, 200), requests)
-        assertEquals((1L..201L).toList(), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals((1L..201L).map(Long::toString), viewModel.state.value.page!!.songs.map(CloudSong::id))
         assertEquals(202, viewModel.state.value.page!!.nextOffset)
         assertFalse(viewModel.state.value.isLoadingMore)
     }
@@ -115,14 +116,14 @@ class CloudMusicTest {
         runCurrent()
         viewModel.loadMore()
         runCurrent()
-        assertEquals(listOf(1L), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals(listOf("1"), viewModel.state.value.page!!.songs.map(CloudSong::id))
         assertEquals(4, viewModel.state.value.page!!.nextOffset)
         assertNotNull(viewModel.state.value.loadMoreError)
         fail = false
         viewModel.loadMore()
         runCurrent()
         assertEquals(listOf(0, 4, 4), requests)
-        assertEquals(listOf(1L, 2L), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals(listOf("1", "2"), viewModel.state.value.page!!.songs.map(CloudSong::id))
         assertNull(viewModel.state.value.loadMoreError)
     }
 
@@ -148,7 +149,7 @@ class CloudMusicTest {
             suspendCoroutine<Unit> { upload = it }
         }
         viewModel.upload { error("A second upload must not start") }
-        assertEquals(setOf(1L), viewModel.state.value.deletingIds)
+        assertEquals(setOf("1"), viewModel.state.value.deletingIds)
         assertTrue(viewModel.state.value.isUploading)
         runCurrent()
         assertEquals(1, deleteCalls)
@@ -159,7 +160,7 @@ class CloudMusicTest {
         assertFalse(viewModel.state.value.isLoading)
         assertTrue(viewModel.state.value.isUploading)
         assertEquals(0.4f, viewModel.state.value.uploadProgress)
-        assertEquals(setOf(1L), viewModel.state.value.deletingIds)
+        assertEquals(setOf("1"), viewModel.state.value.deletingIds)
         progress(70, 100)
         assertEquals(0.7f, viewModel.state.value.uploadProgress)
 
@@ -184,7 +185,7 @@ class CloudMusicTest {
         runCurrent()
         reads[0].resume(page(listOf(song(1)), false, 1))
         runCurrent()
-        assertEquals(listOf(2L), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals(listOf("2"), viewModel.state.value.page!!.songs.map(CloudSong::id))
 
         viewModel.refresh()
         runCurrent()
@@ -194,7 +195,7 @@ class CloudMusicTest {
         runCurrent()
         reads[2].resumeWithException(IllegalStateException("Retired refresh"))
         runCurrent()
-        assertEquals(listOf(3L), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals(listOf("3"), viewModel.state.value.page!!.songs.map(CloudSong::id))
         assertFalse(viewModel.state.value.isLoading)
         assertNull(viewModel.state.value.error)
     }
@@ -215,7 +216,7 @@ class CloudMusicTest {
         runCurrent()
         append.resume(page(listOf(song(2)), false, 8))
         runCurrent()
-        assertEquals(listOf(3L), viewModel.state.value.page!!.songs.map(CloudSong::id))
+        assertEquals(listOf("3"), viewModel.state.value.page!!.songs.map(CloudSong::id))
         assertEquals(4, viewModel.state.value.page!!.nextOffset)
         assertFalse(viewModel.state.value.isLoadingMore)
         assertNull(viewModel.state.value.loadMoreError)
@@ -231,5 +232,5 @@ class CloudMusicTest {
         songs, count = 205, usedSize = 42, maxSize = 99, hasMore = more, nextOffset = nextOffset,
     )
 
-    private fun song(id: Long) = CloudSong(id, "Song $id", "Artist", "Album", null, 1000, 42, 320, 0)
+    private fun song(id: Long) = CloudSong(id.toString(), "Song $id", "Artist", "Album", null, 1000, 42, 320, 0)
 }

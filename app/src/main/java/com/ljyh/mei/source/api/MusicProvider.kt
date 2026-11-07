@@ -2,12 +2,13 @@ package com.ljyh.mei.source.api
 
 import java.io.IOException
 
-enum class SourceCapability { SEARCH, TRACK, PLAYBACK, LYRICS, ALBUM, ARTIST, PLAYLIST, ACCOUNT, LIBRARY, RECOMMENDATIONS, PODCAST, SOCIAL, FEED, LIKE, COLLECTIONS, PLAYLIST_EDIT }
+enum class SourceCapability { SEARCH, TRACK, PLAYBACK, LYRICS, ALBUM, ARTIST, PLAYLIST, ACCOUNT, LIBRARY, RECOMMENDATIONS, PODCAST, SOCIAL, FEED, LIKE, COLLECTIONS, PLAYLIST_EDIT, FEATURES, LINKS }
 enum class SourceStatus { READY, DISABLED, NEEDS_CONFIGURATION, INCOMPATIBLE, FAILED }
-enum class SourceErrorCode { AUTH_REQUIRED, AUTH_EXPIRED, UNAVAILABLE, NOT_FOUND, NETWORK, TIMEOUT, INVALID_RESPONSE, PLUGIN, UNSUPPORTED, MISSING_PROVIDER, AMBIGUOUS_MATCH }
+enum class SourceErrorCode { AUTH_REQUIRED, AUTH_EXPIRED, UNAVAILABLE, NOT_FOUND, NETWORK, TIMEOUT, INVALID_RESPONSE, PLUGIN, UNSUPPORTED, MISSING_PROVIDER, AMBIGUOUS_MATCH, CANCELLED, PERMISSION_DENIED, VERIFICATION_REQUIRED }
 
 /** Messages contain host-owned descriptions, never remote response bodies or credentials. */
-open class SourceException(val code: SourceErrorCode, message: String = code.name) : IOException(message)
+open class SourceException(val code: SourceErrorCode, message: String = code.name,
+    val outcomeUnknown: Boolean = false) : IOException(message)
 
 data class SourceArtist(val name: String, val ref: ArtistRef? = null)
 data class SourceAlbum(val title: String, val ref: AlbumRef? = null)
@@ -22,7 +23,7 @@ data class Track(
     val version: String? = null,
     val explicit: Boolean = false,
 )
-data class PageRequest(val offset: Int = 0, val limit: Int = 30, val cursor: String? = null) {
+data class PageRequest(val offset: Int = 0, val limit: Int = 30, val cursor: String? = null, val refresh: Boolean = false) {
     init { require(offset >= 0 && limit in 1..100 && (cursor == null || cursor.length <= 4096)) }
 }
 data class SourcePage<T>(val items: List<T>, val hasMore: Boolean = false, val nextCursor: String? = null)

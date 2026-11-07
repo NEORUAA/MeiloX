@@ -28,19 +28,29 @@ import kotlinx.coroutines.withContext
 data class InstalledPlugin(val manifest: PluginManifest, val enabled: Boolean, val status: SourceStatus, val diagnostic: String? = null)
 class PreparedPlugin internal constructor(val manifest: PluginManifest, internal val directory: File, internal val fingerprint: String)
 
+internal data class PluginUpdateSnapshot(val manifest: PluginManifest, val fingerprint: String, val repository: String?, val enabled: Boolean)
+@Keep
+private data class PluginMarketOrigin(val repository: String, val fingerprint: String)
+
 @Keep
 private data class PluginInstallState(val enabled: Boolean = true, val revision: Long = 0)
 
-/** Local package installation is transactional; every update requires a new permission review. */
+/** Package replacement and its reviewed origin share one rollback boundary. */
 @Singleton
 class ScriptPluginManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val registry: ProviderRegistry,
     private val runtime: ScriptRuntime,
+    private val featureExecutor: com.ljyh.mei.source.core.SourceFeatureExecutor =
+        com.ljyh.mei.source.core.SourceFeatureExecutor(com.ljyh.mei.source.core.SourceRouter(registry)),
+    private val platformEffects: com.ljyh.mei.source.platform.SourcePlatformEffects =
+        com.ljyh.mei.source.platform.SourcePlatformEffects(context, registry),
+    private val artworkStore: SourceArtworkStore? = null,
+    private val playbackUpdates: com.ljyh.mei.source.update.SourceUpdatePlaybackGuard = com.ljyh.mei.source.update.SourceUpdatePlaybackGuard(),
 ) {
     private val root = File(context.filesDir, "music-sources").apply { mkdirs() }
     private val secrets = PluginSecretStore(context)
-    private val mutex = Mutex()
+    private val mutex get() = installationMutex
     private val revisions = java.util.concurrent.ConcurrentHashMap<String, PluginRevisionGate>()
     private val providers = java.util.concurrent.ConcurrentHashMap<String, ScriptMusicProvider>()
     private val configurations = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
@@ -48,10 +58,21 @@ class ScriptPluginManager @Inject constructor(
     private val diagnostics = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val mutableInstalled = MutableStateFlow<List<InstalledPlugin>>(emptyList())
     val installed: StateFlow<List<InstalledPlugin>> = mutableInstalled
+    private val mutableStartupError = MutableStateFlow<String?>(null)
+    val startupError: StateFlow<String?> = mutableStartupError
     val runtimeSupported: Boolean get() = runtime.supported
 
     suspend fun loadInstalled() = withContext(Dispatchers.IO) { mutex.withLock {
-        root.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith('.') }.forEach { directory ->
+        try {
+        val incomplete = PluginInstallJournal.recover(root) { fingerprint(it, installed = true) }
+        try {
+            BundledSourceProvisioner.ensure(context, root, secrets)
+            mutableStartupError.value = if (incomplete.isEmpty()) null else "部分音源安装未完成，可重新导入"
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            mutableStartupError.value = "默认音源恢复失败，可重试或从文件导入"
+        }
+        root.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith('.') && it.name !in incomplete }.forEach { directory ->
             if (providers.containsKey(directory.name)) return@forEach
             try {
                 val manifest = PluginManifest.parse(File(directory, "manifest.json").readText())
@@ -76,9 +97,21 @@ class ScriptPluginManager @Inject constructor(
             }
         }
         publish()
+        } finally { registry.completeInitialization() }
     } }
 
-    suspend fun inspect(uri: Uri): PreparedPlugin = withContext(Dispatchers.IO) {
+    suspend fun inspect(uri: Uri): PreparedPlugin {
+        var completed: PreparedPlugin? = null
+        try {
+            return withContext(Dispatchers.IO) { inspectPackage(uri).also { completed = it } }
+        } catch (error: Exception) {
+            // A cancelled return dispatcher can discard an already prepared result.
+            completed?.directory?.deleteRecursively()
+            throw error
+        }
+    }
+
+    private fun inspectPackage(uri: Uri): PreparedPlugin {
         val directory = File(context.cacheDir, "source-import/${UUID.randomUUID()}").apply { mkdirs() }
         try {
             val input = context.contentResolver.openInputStream(uri) ?: invalid("Unable to open source package")
@@ -115,7 +148,7 @@ class ScriptPluginManager @Inject constructor(
             val manifestFile = File(directory, "manifest.json")
             if (!manifestFile.isFile || !File(directory, "index.js").isFile) invalid("Source package needs manifest.json and index.js")
             val manifest = PluginManifest.parse(manifestFile.readText())
-            PreparedPlugin(manifest, directory, fingerprint(directory))
+            return PreparedPlugin(manifest, directory, fingerprint(directory))
         } catch (error: Exception) {
             directory.deleteRecursively()
             if (error is SourceException || error is kotlinx.coroutines.CancellationException) throw error
@@ -125,6 +158,71 @@ class ScriptPluginManager @Inject constructor(
 
     suspend fun install(prepared: PreparedPlugin, approved: Boolean): InstalledPlugin = withContext(Dispatchers.IO) { mutex.withLock {
         if (!approved) invalid("Source permissions were not approved")
+        installLocked(prepared, repository = null)
+    } }
+
+    internal suspend fun updateSnapshot(id: String): PluginUpdateSnapshot? = withContext(Dispatchers.IO) { mutex.withLock { snapshotLocked(id) } }
+
+    internal suspend fun adoptMarketOrigin(id: String, expected: PluginUpdateSnapshot, repository: String): Boolean =
+        withContext(Dispatchers.IO) { mutex.withLock {
+            val current = snapshotLocked(id) ?: return@withLock false
+            if (!samePayload(current, expected) || current.repository != null) return@withLock false
+            writeMarketOrigin(File(root, id), repository, current.fingerprint)
+            true
+        } }
+
+    internal suspend fun installMarket(
+        prepared: PreparedPlugin,
+        entry: com.ljyh.mei.source.update.SourceMarketEntry,
+        expected: PluginUpdateSnapshot?,
+        automatic: Boolean,
+        authorized: () -> Boolean = { true },
+    ): InstalledPlugin = withContext(Dispatchers.IO) { mutex.withLock {
+        com.ljyh.mei.source.update.SourceMarketIndex.validate(entry)
+        if (!entry.matches(prepared.manifest)) invalid("Market package metadata changed")
+        val current = snapshotLocked(entry.packageId)
+        if (current == null && expected != null || current != null && expected == null ||
+            current != null && expected != null && !samePayload(current, expected)) invalid("Source changed while preparing its update")
+        if (current != null) {
+            val oldVersion = com.ljyh.mei.source.update.SourceVersion.parse(current.manifest.version)
+            val nextVersion = com.ljyh.mei.source.update.SourceVersion.parse(entry.version)
+            if (oldVersion == null || nextVersion == null || nextVersion <= oldVersion) invalid("Source update is not newer")
+        }
+        if (automatic && (current == null || com.ljyh.mei.source.update.sourceUpdateReviewReasons(
+                current.manifest, prepared.manifest, current.repository, entry.repository).isNotEmpty())) invalid("Source update needs permission review")
+        if (automatic) playbackUpdates.installIfIdle(entry.providerId) {
+            if (!authorized()) throw com.ljyh.mei.source.update.SourceUpdateDeferred()
+            installLocked(prepared, entry.repository)
+        }
+        else installLocked(prepared, entry.repository)
+    } }
+
+    suspend fun discardPrepared(prepared: PreparedPlugin) = withContext(Dispatchers.IO) { mutex.withLock {
+        val parent = File(context.cacheDir, "source-import").canonicalFile
+        val directory = prepared.directory.canonicalFile
+        if (directory.parentFile == parent && runCatching { UUID.fromString(directory.name) }.isSuccess) directory.deleteRecursively()
+        Unit
+    } }
+
+    private fun samePayload(a: PluginUpdateSnapshot, b: PluginUpdateSnapshot): Boolean =
+        a.fingerprint == b.fingerprint && a.manifest.id == b.manifest.id && a.manifest.providerId == b.manifest.providerId && a.repository == b.repository
+
+    private fun snapshotLocked(id: String): PluginUpdateSnapshot? {
+        val provider = providers[id] ?: return null
+        val directory = File(root, id)
+        val fingerprint = fingerprint(directory, installed = true)
+        val origin = runCatching { Gson().fromJson(File(directory, ".market-origin.json").readText(), PluginMarketOrigin::class.java) }.getOrNull()
+        return PluginUpdateSnapshot(provider.manifest, fingerprint, origin?.takeIf { it.fingerprint == fingerprint }?.repository, provider.enabled)
+    }
+
+    private fun writeMarketOrigin(directory: File, repository: String, fingerprint: String) {
+        val temporary = File(directory, ".market-origin.tmp")
+        temporary.writeText(Gson().toJson(PluginMarketOrigin(repository, fingerprint)))
+        java.nio.file.Files.move(temporary.toPath(), File(directory, ".market-origin.json").toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private fun installLocked(prepared: PreparedPlugin, repository: String?): InstalledPlugin {
         if (!prepared.directory.isDirectory || prepared.fingerprint != fingerprint(prepared.directory)) invalid("Source package changed after review")
         val manifest = prepared.manifest
         if (providers.values.any { it.manifest.id != manifest.id && it.id == manifest.providerId }) invalid("Another source already uses this provider ID")
@@ -134,36 +232,50 @@ class ScriptPluginManager @Inject constructor(
         val previousState = if (destination.exists()) readState(destination) else PluginInstallState()
         val hadDestination = destination.exists()
         val backup = File(root, ".${manifest.id}-${UUID.randomUUID()}")
-        changeSource(manifest.id) { gate, revision ->
-            var movedPrevious = false
-            try {
-                if (hadDestination) {
-                    if (!destination.renameTo(backup)) invalid("Unable to update installed source")
-                    movedPrevious = true
-                }
-                if (!prepared.directory.renameTo(destination)) {
-                    prepared.directory.copyRecursively(destination, overwrite = false)
-                    prepared.directory.deleteRecursively()
-                }
-                val state = previousState.copy(revision = previousState.revision + 1)
-                writeState(destination, state)
-                configurations[manifest.id] = configurations[manifest.id] ?: secrets.read(manifest.id, "config")
-                stores[manifest.id] = stores[manifest.id] ?: secrets.read(manifest.id, "storage")
-                diagnostics.remove(manifest.id)
-                register(manifest, destination, state, gate, revision)
-                backup.deleteRecursively()
-                publish()
-                mutableInstalled.value.first { it.manifest.id == manifest.id }
-            } catch (error: Exception) {
-                if (!hadDestination || movedPrevious) destination.deleteRecursively()
-                if (movedPrevious) backup.renameTo(destination)
-                if (previous != null) register(previous.manifest, destination, previousState, gate, revision)
-                publish()
-                if (error is SourceException || error is kotlinx.coroutines.CancellationException) throw error
-                invalid("Unable to install source")
+        val stage = File(root, ".source-stage-${manifest.id}-${UUID.randomUUID()}")
+        val transaction = PluginInstallTransaction(manifest.id, stage.name, backup.name, prepared.fingerprint,
+            if (hadDestination) fingerprint(destination, installed = true) else null)
+        try {
+            // Complete every potentially partial copy before changing the visible installation.
+            if (!prepared.directory.renameTo(stage)) {
+                check(prepared.directory.copyRecursively(stage, overwrite = false))
+                prepared.directory.deleteRecursively()
             }
+            val state = previousState.copy(revision = previousState.revision + 1)
+            writeState(stage, state)
+            if (repository != null) writeMarketOrigin(stage, repository, prepared.fingerprint)
+            File(destination, "artwork").takeIf(File::isDirectory)?.let { check(it.copyRecursively(File(stage, "artwork"))) }
+            PluginInstallJournal.write(root, transaction)
+            return changeSource(manifest.id) { gate, revision ->
+                var movedPrevious = false
+                try {
+                    if (hadDestination) {
+                        if (!destination.renameTo(backup)) invalid("Unable to update installed source")
+                        movedPrevious = true
+                    }
+                    if (!stage.renameTo(destination)) invalid("Unable to activate source package")
+                    configurations[manifest.id] = configurations[manifest.id] ?: secrets.read(manifest.id, "config")
+                    stores[manifest.id] = stores[manifest.id] ?: secrets.read(manifest.id, "storage")
+                    diagnostics.remove(manifest.id)
+                    register(manifest, destination, state, gate, revision)
+                    backup.deleteRecursively()
+                    PluginInstallJournal.finish(root, manifest.id)
+                    publish()
+                    mutableInstalled.value.first { it.manifest.id == manifest.id }
+                } catch (error: Exception) {
+                    if (!hadDestination || movedPrevious) destination.deleteRecursively()
+                    if (movedPrevious) check(backup.renameTo(destination))
+                    if (previous != null) register(previous.manifest, destination, previousState, gate, revision)
+                    publish()
+                    PluginInstallJournal.finish(root, manifest.id)
+                    if (error is SourceException || error is kotlinx.coroutines.CancellationException) throw error
+                    invalid("Unable to install source")
+                }
+            }
+        } finally {
+            stage.deleteRecursively()
         }
-    } }
+    }
 
     suspend fun setEnabled(id: String, enabled: Boolean) = withContext(Dispatchers.IO) { mutex.withLock {
         val provider = providers[id] ?: invalid("Source is not installed")
@@ -210,11 +322,15 @@ class ScriptPluginManager @Inject constructor(
 
     suspend fun uninstall(id: String) = withContext(Dispatchers.IO) { mutex.withLock {
         val provider = providers[id] ?: invalid("Source is not installed")
+        if (id == BundledSourceProvisioner.NETEASE_ID) BundledSourceProvisioner.removed(root)
         changeSource(id) { _, _ ->
             try {
                 providers.remove(id)
                 registry.unregister(provider.instanceId)
-                File(root, id).deleteRecursively()
+                File(root, id).let { directory ->
+                    directory.listFiles().orEmpty().filter { it.name != "artwork" }.forEach { it.deleteRecursively() }
+                    if (directory.listFiles().isNullOrEmpty()) directory.delete()
+                }
                 configurations.remove(id)
                 stores.remove(id)
                 diagnostics.remove(id)
@@ -247,6 +363,10 @@ class ScriptPluginManager @Inject constructor(
                 }
             },
             configurationVersion = state.revision,
+            artworkDirectory = File(context.cacheDir, "source-artwork/${manifest.id}"),
+            coreExecutor = featureExecutor,
+            coreHandler = platformEffects,
+            artworkStore = artworkStore,
         )
         providers[manifest.id] = provider
         registry.register(provider)
@@ -270,11 +390,20 @@ class ScriptPluginManager @Inject constructor(
         check(temporary.renameTo(File(directory, "state.json")))
     }
 
-    private fun fingerprint(directory: File): String {
+    private fun fingerprint(directory: File, installed: Boolean = false): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        directory.walkTopDown().filter(File::isFile).sortedBy { it.relativeTo(directory).path }.forEach { file ->
-            digest.update(file.relativeTo(directory).path.toByteArray())
-            digest.update(file.readBytes())
+        directory.walkTopDown().filter(File::isFile).filter { file ->
+            val name = file.relativeTo(directory).invariantSeparatorsPath
+            !installed || name !in setOf("state.json", "state.tmp", ".market-origin.json", ".market-origin.tmp") && !name.startsWith("artwork/")
+        }.sortedBy { it.relativeTo(directory).path }.forEach { file ->
+            digest.update(file.relativeTo(directory).invariantSeparatorsPath.toByteArray(Charsets.UTF_8))
+            digest.update(0.toByte())
+            val fileDigest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                while (true) { val count = input.read(buffer); if (count < 0) break; fileDigest.update(buffer, 0, count) }
+            }
+            digest.update(fileDigest.digest())
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
@@ -282,6 +411,7 @@ class ScriptPluginManager @Inject constructor(
     private fun invalid(message: String): Nothing = throw SourceException(SourceErrorCode.PLUGIN, message)
 
     companion object {
+        private val installationMutex = Mutex()
         internal fun packageFileLimit(name: String): Int = when {
             name in setOf("manifest.json", "LICENSE", "NOTICE") -> 64 * 1024
             name == "index.js" -> 256 * 1024

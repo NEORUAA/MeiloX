@@ -47,11 +47,27 @@ fun SearchScreen(
     onSearch: (String, Int) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    sourceViewModel: SourceSearchViewModel = hiltViewModel(),
+    sourceViewModel: SourceSearchViewModel = hiltViewModel(key = "source-search-choice"),
+    viewModel: SearchDiscoveryViewModel = hiltViewModel(),
 ) {
     val providerId by sourceViewModel.selectedProviderId.collectAsState()
-    if (providerId == com.ljyh.mei.source.api.ProviderIds.NETEASE) {
-        com.ljyh.mei.source.netease.ui.NeteaseSearchSuggestions(query, onQueryChange, onSearch, onDismiss, modifier)
+    val suggestions by viewModel.suggestions.collectAsState()
+    LaunchedEffect(sourceViewModel) { sourceViewModel.useSearchPreference() }
+    LaunchedEffect(query, providerId) { viewModel.updateInputQuery(query, providerId) }
+    androidx.compose.runtime.DisposableEffect(viewModel) { onDispose { viewModel.cancelSuggestions() } }
+    val lazyListState = rememberLazyListState()
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { lazyListState.isScrollInProgress }.distinctUntilChanged().filter { it }.collect { keyboard?.hide() }
+    }
+    LazyColumn(modifier = modifier, state = lazyListState,
+        contentPadding = WindowInsets.systemBars.only(WindowInsetsSides.Bottom).asPaddingValues()) {
+        items(suggestions, key = { "${it.type.name}:${it.id}" }) { suggestion ->
+            SuggestionItem(query = suggestion.name, type = suggestion.type,
+                onClick = { onSearch(suggestion.name, suggestion.type.type); onDismiss() },
+                onFillTextField = { onQueryChange(TextFieldValue(suggestion.name, selection = TextRange(suggestion.name.length))) },
+                modifier = Modifier.animateItem())
+        }
     }
 }
 

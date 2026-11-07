@@ -4,22 +4,17 @@ internal const val SIMILAR_FM_TITLE = "相似歌曲 FM"
 
 @ConsistentCopyVisibility
 internal data class SimilarFmRequest private constructor(val sourceIds: List<String>) {
-    fun body(unplayedSongIds: List<String> = emptyList()): Map<String, String> = linkedMapOf(
-        "limit" to "3",
-        "sourceIds" to sourceIds.joinToString(prefix = "[", postfix = "]", separator = ","),
-        "sourceType" to "song",
-        "mode" to "SIMILAR",
-        // The official client excludes its in-memory queue from the database backlog.
-        // Mei has no separate FM backlog, so live requests use the empty array.
-        "unplaySonIds" to unplayedSongIds.mapNotNull { it.toLongOrNull()?.takeIf { id -> id > 0 } }
-            .joinToString(prefix = "[", postfix = "]", separator = ","),
+    fun body(recentTrackIds: List<String> = emptyList()): Map<String, String> = linkedMapOf(
+        "seedTrackIds" to com.google.gson.JsonArray().apply { sourceIds.forEach(::add) }.toString(),
+        "recentTrackIds" to com.google.gson.JsonArray().apply {
+            recentTrackIds.filter { it.isNotBlank() && it.length <= 2048 }.takeLast(200).forEach(::add)
+        }.toString(),
     )
 
     companion object {
         fun fromSongIds(songIds: List<String?>): SimilarFmRequest? {
-            if (songIds.isEmpty()) return null
-            val ids = songIds.map { it?.toLongOrNull()?.takeIf { id -> id > 0 } ?: return null }
-            return SimilarFmRequest(ids.map(Long::toString))
+            if (songIds.isEmpty() || songIds.size > 200 || songIds.any { it.isNullOrBlank() || it.length > 2048 }) return null
+            return SimilarFmRequest(songIds.filterNotNull())
         }
     }
 }

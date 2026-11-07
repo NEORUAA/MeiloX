@@ -11,9 +11,15 @@ import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.source.api.TrackRef
 import com.ljyh.mei.source.api.ProviderInstanceId
 import com.ljyh.mei.source.api.AudioResource
+import com.ljyh.mei.source.api.MusicProvider
 import com.ljyh.mei.source.core.audioResourceIdentity
 
 private const val PLAYBACK_CACHE_KEY_VERSION = "meilox-media-v3"
+
+/** Initial bindings and selecting another source do not revoke work for the newly selected track. */
+internal fun shouldInvalidatePlaybackOwner(
+    previous: MusicProvider?, previousRevision: String?, current: MusicProvider?, currentRevision: String?, sameSource: Boolean,
+): Boolean = sameSource && previous != null && (previous !== current || previousRevision != currentRevision)
 
 /** Normalizes quality values from preferences, API responses, and enum names. */
 internal fun normalizePlaybackQuality(quality: String): String =

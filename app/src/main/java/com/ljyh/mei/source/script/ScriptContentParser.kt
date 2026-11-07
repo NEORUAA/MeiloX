@@ -10,6 +10,8 @@ internal class ScriptContentParser(
     private val providerId: String,
     private val apiVersion: Int,
     private val playlistActions: Set<PlaylistEditAction>,
+    private val features: Map<String, Set<String>> = emptyMap(),
+    private val featureRoutes: Set<String> = emptySet(),
     private val resolveArtwork: suspend (String) -> String,
 ) {
     suspend fun track(value: JsonObject): Track {
@@ -52,11 +54,26 @@ internal class ScriptContentParser(
                 SourceArtist(text(artist, "name", 1000), optionalId(artist, "artistId")?.let { ArtistRef(providerId, it) })
             }
         }, count(value, "trackCount"), optionalText(value, "description", 10_000),
+        value.get("publishedAtMs")?.takeUnless { it.isJsonNull }?.asLong?.also { if (it < 0) invalid() },
     )
 
     suspend fun artist(value: JsonObject): SourceArtistInfo = SourceArtistInfo(
         ArtistRef(providerId, text(value, "artistId", 2048)), text(value, "name", 1000), artwork(value), optionalText(value, "description", 10_000),
+        optionalArray(value, "alternateNames", 20).map { string(it, 1000) },
+        optionalInt(value, "trackCount"), optionalInt(value, "albumCount"), optionalInt(value, "musicVideoCount"),
+        optionalArray(value, "identities", 50).map { string(it, 1000) },
+        optionalArray(value, "expertise", 50).map { element ->
+            val item = element.takeIf { it.isJsonObject }?.asJsonObject ?: invalid()
+            SourceArtistExpertise(text(item, "name", 1000), optionalInt(item, "count"))
+        },
+        optionalArray(value, "translatedNames", 20).map { string(it, 1000) },
+        optionalArray(value, "aliases", 50).map { string(it, 1000) },
     )
+
+    private fun optionalInt(value: JsonObject, key: String): Int? = optionalLong(value, key)?.let {
+        if (it > Int.MAX_VALUE) invalid()
+        it.toInt()
+    }
 
     suspend fun playlist(value: JsonObject): SourcePlaylist {
         val actions = optionalArray(value, "editableActions", PlaylistEditAction.entries.size).map { element ->
@@ -64,7 +81,8 @@ internal class ScriptContentParser(
         }.toSet()
         if (!playlistActions.containsAll(actions)) invalid()
         return SourcePlaylist(PlaylistRef(providerId, text(value, "playlistId", 2048)), text(value, "title", 1000), artwork(value),
-            optionalText(value, "creatorName", 1000).orEmpty(), count(value, "trackCount"), optionalText(value, "description", 10_000), actions)
+            optionalText(value, "creatorName", 1000).orEmpty(), count(value, "trackCount"), optionalText(value, "description", 10_000), actions,
+            optionalLong(value, "playCount"))
     }
 
     suspend fun item(value: JsonObject, expected: ContentType? = null): SourceItem {
@@ -91,7 +109,11 @@ internal class ScriptContentParser(
                 else -> null
             }
             SourceFeedSection(text(section, "id", 2048), text(section, "title", 1000, allowEmpty = true), layout,
-                array(section, "items", 100).map { item(it.asJsonObject, expected) })
+                array(section, "items", 100).map { item(it.asJsonObject, expected) },
+                optionalArray(section, "cards", if (layout == SourceFeedLayout.HERO) 30 else 100)
+                    .map { card(it.asJsonObject, layout, expected) }.also { cards ->
+                        if (cards.isNotEmpty() && layout == SourceFeedLayout.TRACKS || cards.map { it.id }.distinct().size != cards.size) invalid()
+                    })
         }
         if (sections.map { it.id }.distinct().size != sections.size) invalid()
         val categories = optionalArray(value, "categories", 100).map { element ->
@@ -101,9 +123,65 @@ internal class ScriptContentParser(
         if (categories.map { it.id }.distinct().size != categories.size) invalid()
         val hasMore = optionalBoolean(value, "hasMore") ?: false
         val cursor = cursor(value)
-        if (hasMore && (sections.isEmpty() || cursor != null && cursor == request.cursor)) invalid()
+        if (hasMore && (cursor == request.cursor || cursor == null && sections.isEmpty())) invalid()
         return SourceFeedPage(sections, categories, hasMore, cursor)
     }
+
+    private suspend fun card(value: JsonObject, layout: SourceFeedLayout, expected: ContentType?): SourceFeedCard {
+        val raw = value.get("target")?.takeIf { it.isJsonObject }?.asJsonObject ?: invalid()
+        val target = when (text(raw, "kind", 30)) {
+            "content" -> {
+                val ref = raw.get("contentRef")?.takeIf { it.isJsonObject }?.asJsonObject ?: invalid()
+                if (ref.has("providerId") && text(ref, "providerId", 2048) != providerId) invalid()
+                val type = ContentType.entries.firstOrNull { it.wireName == text(ref, "type", 30) } ?: invalid()
+                val key = text(ref, "contentId", 2048)
+                SourceFeedTarget.Content(when (type) {
+                    ContentType.TRACK -> TrackRef(providerId, key)
+                    ContentType.ALBUM -> AlbumRef(providerId, key)
+                    ContentType.ARTIST -> ArtistRef(providerId, key)
+                    ContentType.PLAYLIST -> PlaylistRef(providerId, key)
+                })
+            }
+            "route" -> {
+                val route = text(raw, "route", 200).also { if (it !in featureRoutes) invalid() }
+                val fields = parameters(raw)
+                if (fields.size() > 10) invalid()
+                SourceFeedTarget.Route(route, fields.entrySet().associate { (key, entry) ->
+                    if (!key.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,39}")) || key == "providerId") invalid()
+                    key to string(entry, 2048, allowEmpty = true)
+                })
+            }
+            "radio" -> {
+                if ("personalRadio" !in features["discovery"].orEmpty()) invalid()
+                val seeds = optionalArray(raw, "seedIds", 100).map { string(it, 2048) }
+                if (seeds.distinct().size != seeds.size) invalid()
+                val similar = optionalBoolean(raw, "similar") ?: false
+                if (similar && seeds.isEmpty()) invalid()
+                SourceFeedTarget.Radio(seeds, similar)
+            }
+            "queue" -> {
+                val feature = text(raw, "feature", 80)
+                val action = text(raw, "action", 80)
+                if (action !in features[feature].orEmpty()) invalid()
+                SourceFeedTarget.Queue(feature, action, parameters(raw))
+            }
+            else -> invalid()
+        }
+        if (layout != SourceFeedLayout.HERO) {
+            val ref = (target as? SourceFeedTarget.Content)?.ref ?: invalid()
+            if (expected != null && ref.type != expected) invalid()
+        }
+        val titleMaxLines = (optionalLong(value, "titleMaxLines") ?: 2L).also { if (it !in 1L..2L) invalid() }.toInt()
+        return SourceFeedCard(text(value, "id", 2048), text(value, "title", 1000, allowEmpty = layout != SourceFeedLayout.HERO), artwork(value),
+            optionalText(value, "subtitle", 1000).orEmpty(), artwork(value, "iconUrl"), target,
+            optionalArray(value, "coverCaptions", 10).map { string(it, 1000, allowEmpty = true) },
+            optionalText(value, "detail", 1000), titleMaxLines)
+    }
+
+    private fun parameters(value: JsonObject): JsonObject = value.get("parameters")?.takeUnless { it.isJsonNull }?.let {
+        if (!it.isJsonObject || it.toString().length > 32_768 || it.asJsonObject.has("$" + "continuation")) invalid()
+        it.asJsonObject.deepCopy()
+    } ?: JsonObject()
 
     suspend fun account(value: JsonObject, instanceId: ProviderInstanceId, version: String): SourceAccount {
         val accountId = text(value, "accountId", 2048)

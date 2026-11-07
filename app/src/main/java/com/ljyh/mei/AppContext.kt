@@ -28,11 +28,15 @@ import com.ljyh.mei.source.script.ScriptPluginManager
 @HiltAndroidApp
 class AppContext : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var sourcePlugins: ScriptPluginManager
+    @Inject lateinit var sourceArtwork: com.ljyh.mei.source.script.SourceArtworkStore
+    @Inject lateinit var sourceUpdates: com.ljyh.mei.source.update.SourceUpdateManager
     private val sourceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {
         instance = this
         super.onCreate()
+        com.ljyh.mei.source.script.SourceArtworkRegistry.attach(sourceArtwork)
         sourceScope.launch { sourcePlugins.loadInstalled() }
+        sourceUpdates.checkOnStartup()
     }
 
     companion object {
@@ -63,6 +67,7 @@ class AppContext : Application(), SingletonImageLoader.Factory {
                 newDiskCache()
             }
             .components {
+                add(com.ljyh.mei.source.script.SourceArtworkRegistry.interceptor)
                 add(OkHttpNetworkFetcherFactory(okHttpClient))
                 add(AnimatedImageDecoder.Factory())
             }

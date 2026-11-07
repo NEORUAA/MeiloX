@@ -41,6 +41,7 @@ internal fun sourceTrackActionItems(
     viewModel: SourceContentViewModel,
     playlist: SourcePlaylist? = null,
     includeQueue: Boolean = true,
+    includeAddToPlaylist: Boolean = true,
 ): List<GlasmioCascadingMenuItem> {
     val nav = LocalNavController.current
     val player = LocalPlayerConnection.current
@@ -72,7 +73,7 @@ internal fun sourceTrackActionItems(
                 enabled = !busy && liked != null,
                 onClick = { viewModel.setLiked(track.ref, nextLiked, provider, accountRevision) }))
         }
-        if (PlaylistEditAction.ADD_TRACKS in editor?.playlistEditActions.orEmpty()) {
+        if (includeAddToPlaylist && PlaylistEditAction.ADD_TRACKS in editor?.playlistEditActions.orEmpty()) {
             add(GlasmioCascadingMenuItem("添加到歌单", "text.badge.plus", onClick = {
                 Screen.SourcePlaylistPicker.navigate(nav) { addPath(Uri.encode(TrackRefCodec.encode(track.ref))) }
             }))
@@ -109,6 +110,7 @@ internal fun SourceTrackActions(
     val context = LocalContext.current
     val playerViewModel: PlayerViewModel = hiltViewModel()
     var information by remember { mutableStateOf<MediaMetadata?>(null) }
+    var share by remember { mutableStateOf<MediaMetadata?>(null) }
     LaunchedEffect(selection) { if (selection != null) information = null }
     selection?.let { selected ->
         val metadata = selected.first.toMediaMetadata()
@@ -116,6 +118,7 @@ internal fun SourceTrackActions(
             SourceTrackActions(metadata = metadata, onDismiss = onDismiss, viewModel = viewModel,
                 anchorBounds = selected.second, playerViewModel = playerViewModel, playlist = playlist,
                 onSongInfo = { information = metadata },
+                onShare = { onDismiss(); share = metadata },
                 onDownloadTrack = { quality -> playerViewModel.downloadSong(metadata, context, quality) })
         }
     }
@@ -125,6 +128,7 @@ internal fun SourceTrackActions(
         }
         SongInfoSheet(metadata, qqSongId, onDismissRequest = { information = null })
     }
+    share?.let { metadata -> com.ljyh.mei.ui.screen.social.NeteaseShareSheet(metadata, onDismiss = { share = null }) }
     SourceTrackActionMessage(viewModel)
 }
 
@@ -137,6 +141,7 @@ internal fun SourceTrackActions(
     anchorBounds: Rect? = null,
     playerViewModel: PlayerViewModel,
     onSongInfo: () -> Unit,
+    onShare: (() -> Unit)? = null,
     onDownloadTrack: ((MusicQuality) -> Unit)? = null,
     playlist: SourcePlaylist? = null,
 ) {
@@ -152,6 +157,8 @@ internal fun SourceTrackActions(
     val actions = sourceTrackActionItems(metadata.toSourceTrack(), viewModel, playlist)
     val items = buildList {
         addAll(actions)
+        if (onShare != null && !metadata.isLocal && !metadata.isPodcast) add(GlasmioCascadingMenuItem(
+            stringResource(R.string.track_action_share), "square.and.arrow.up", onClick = onShare))
         if (canDownload) {
             val download = onDownloadTrack!!
             val choices = qualities

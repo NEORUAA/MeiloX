@@ -1,18 +1,14 @@
 package com.ljyh.mei.ui.screen.account
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.melox.ListeningStatsPeriod
 import com.ljyh.mei.data.model.melox.ListeningStatsReport
 import com.ljyh.mei.data.model.melox.ListeningStatsSummary
 import com.ljyh.mei.data.model.melox.ListeningStatsYear
-import com.ljyh.mei.source.netease.repository.MeloXRepository
-import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.source.shared.SharedOnlineRepository
+import com.ljyh.mei.source.shared.SharedOnlineSession
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -52,15 +49,24 @@ class ListeningStatsViewModel internal constructor(
     sessionChanges: Flow<Unit> = flowOf(Unit),
 ) : ViewModel() {
     @Inject
-    constructor(repository: MeloXRepository, @ApplicationContext context: Context) : this(
+    constructor(repository: SharedOnlineRepository, savedStateHandle: androidx.lifecycle.SavedStateHandle) : this(
+        repository.screen("listening-stats", savedStateHandle["providerId"]),
+    )
+    private constructor(repository: SharedOnlineSession) : this(
         loadSummary = { repository.listeningStatsSummary() },
         loadReport = { period, endTimeMs -> repository.listeningStatsReport(period, endTimeMs) },
         loadYears = { repository.listeningStatsYears() },
-        sessionChanges = context.dataStore.data
-            .map { it[UserIdKey] to it[CookieKey] }
-            .distinctUntilChanged()
-            .map { Unit },
-    )
+        sessionChanges = repository.sessionChanges.filter { it.isNotBlank() }.map { Unit },
+    ) {
+        viewModelScope.launch { repository.sessionChanges.collect { owner ->
+            if (owner.isBlank()) {
+                revision++
+                loadJob?.cancel()
+                anchors.clear(); anchors += null
+                _state.value = ListeningStatsState(period = _state.value.period, loading = false)
+            }
+        } }
+    }
 
     private val _state = MutableStateFlow(ListeningStatsState())
     val state = _state.asStateFlow()

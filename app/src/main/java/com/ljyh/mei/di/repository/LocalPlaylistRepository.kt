@@ -1,8 +1,7 @@
 package com.ljyh.mei.di.repository
 
 import com.ljyh.mei.data.model.room.Playlist
-import com.ljyh.mei.data.model.UserPlaylist
-import com.ljyh.mei.source.netease.repository.LibraryAccount
+import com.ljyh.mei.source.api.SourceAccount
 import com.ljyh.mei.data.model.room.PlaylistSongCrossRef
 import com.ljyh.mei.di.dao.PlaylistDao
 import com.ljyh.mei.di.dao.PlaylistSongCrossRefDao
@@ -21,17 +20,12 @@ class LocalPlaylistRepository @Inject constructor(private val playlistDao: Playl
     suspend fun touchPlaylist(id: String, timestamp: Long) = playlistDao.touchPlaylist(id, timestamp)
 }
 
-internal fun UserPlaylist.Playlist.toLocalPlaylist() = Playlist(
-    id = id.toString(), title = name, cover = coverImgUrl,
-    author = creator.userId.toString(), authorName = creator.nickname,
-    authorAvatar = creator.avatarUrl, count = trackCount, playCount = playCount,
-)
-
 internal fun observeOwnedPlaylists(
     playlists: Flow<List<Playlist>>,
-    accounts: Flow<LibraryAccount?>,
+    accounts: Flow<SourceAccount?>,
+    providerId: String,
 ): Flow<List<Playlist>> = combine(playlists, accounts) { rows, account ->
-    if (account == null) emptyList() else rows.filter { it.author == account.userId }
+    if (account == null) emptyList() else rows.filter { it.providerId == providerId && it.author == account.ref.accountId.value }
 }
 
 class PlaylistSongCrossRefRepository @Inject constructor(private val dao: PlaylistSongCrossRefDao) {

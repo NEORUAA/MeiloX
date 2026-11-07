@@ -5,14 +5,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.weapi.Radio
-import com.ljyh.mei.data.network.api.ApiService
-import com.ljyh.mei.data.network.api.WeApiService
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
+import com.ljyh.mei.source.api.*
 import java.io.IOException
 import java.lang.reflect.Proxy
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
-import kotlin.coroutines.startCoroutine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,19 +50,28 @@ class SimilarFmPlaybackTest {
     }
 
     @Test
-    fun requestUsesTheOfficialSongModeAndNumericJsonArrays() {
-        val request = requireNotNull(SimilarFmRequest.fromSongIds(listOf("42", "19", "42")))
-        assertEquals(
-            mapOf(
-                "sourceIds" to "[42,19,42]", "sourceType" to "song", "mode" to "SIMILAR",
-                "limit" to "3", "unplaySonIds" to "[]",
-            ),
-            request.body(),
-        )
-        assertEquals("[101,102]", request.body(listOf("101", "102"))["unplaySonIds"])
-        listOf(emptyList(), listOf("0"), listOf("42", "invalid"), listOf("-2"), listOf(null)).forEach {
-            assertNull(SimilarFmRequest.fromSongIds(it))
-        }
+    fun recommendationSeedsAndRecentTracksPreserveOpaqueSourceIdentities() {
+        val request = requireNotNull(SimilarFmRequest.fromSongIds(listOf("42", "qq:opaque", "42")))
+        assertEquals(mapOf("seedTrackIds" to "[\"42\",\"qq:opaque\",\"42\"]", "recentTrackIds" to "[]"), request.body())
+        assertEquals("[\"101\",\"opaque\"]", request.body(listOf("101", "opaque"))["recentTrackIds"])
+        listOf(emptyList(), listOf(""), listOf(" "), listOf(null)).forEach { assertNull(SimilarFmRequest.fromSongIds(it)) }
+    }
+
+    @Test(timeout = 10_000)
+    fun browseActionsPinTheirOwnerInsteadOfUsingTheCurrentlyPlayingSource() = runTest(dispatcher) {
+        fixture.manager.startFmModeById(null, providerId = "browse-source")
+        runCurrent()
+        assertEquals(listOf("browse-source"), fixture.openedProviders)
+        fixture.requests.single().response.complete(radio(101))
+        runCurrent()
+        val similar = fixture.manager.startSimilarFmMode(listOf("42"), providerId = "other-source")
+        runCurrent()
+        assertEquals(listOf("browse-source", "other-source"), fixture.openedProviders)
+        assertEquals(listOf("101"), fixture.ids())
+        fixture.requests.last().response.complete(radio(201))
+        runCurrent()
+        assertTrue(similar.await())
+        assertEquals(listOf("201"), fixture.ids())
     }
 
     @Test(timeout = 10_000)
@@ -80,7 +85,8 @@ class SimilarFmPlaybackTest {
         fixture.manager.setPrivateFmMode(PrivateFmMode.EXPLORE)
         runCurrent()
         assertEquals(listOf("101", "102"), fixture.ids())
-        assertEquals("EXPLORE", fixture.requests.last().body["mode"])
+        assertEquals("explore", fixture.requests.last().body["mode"])
+        assertFalse(fixture.requests.last().similar)
         fixture.requests.last().response.complete(radio(201, 202))
         runCurrent()
         assertEquals(listOf("201", "202"), fixture.ids())
@@ -98,8 +104,8 @@ class SimilarFmPlaybackTest {
         fixture.manager.setPrivateFmMode(PrivateFmMode.SCENE, PrivateFmScene("COMMUTE", "Example commute"))
         runCurrent()
         val second = fixture.requests.last()
-        assertEquals("FOCUS", first.body["subMode"])
-        assertEquals("COMMUTE", second.body["subMode"])
+        assertEquals("FOCUS", first.body["sceneCode"])
+        assertEquals("COMMUTE", second.body["sceneCode"])
         second.response.complete(radio(301, 302))
         runCurrent()
         first.response.complete(radio(201, 202))
@@ -136,7 +142,7 @@ class SimilarFmPlaybackTest {
         runCurrent()
         assertEquals(listOf("old"), fixture.ids())
         assertFalse(start.isCompleted)
-        assertEquals("[42,19,7]", fixture.requests.single().body["sourceIds"])
+        assertEquals("[\"42\",\"19\",\"7\"]", fixture.requests.single().body["seedTrackIds"])
 
         fixture.requests.single().response.complete(radio(101, 102, 103))
         runCurrent()
@@ -233,9 +239,9 @@ class SimilarFmPlaybackTest {
         assertTrue(start.await())
         val refill = launch { fixture.manager.fetchAndAppendFmRecommendations() }
         runCurrent()
-        assertEquals("SIMILAR", fixture.requests.last().body["mode"])
-        assertEquals("[42,19]", fixture.requests.last().body["sourceIds"])
-        assertEquals("[]", fixture.requests.last().body["unplaySonIds"])
+        assertTrue(fixture.requests.last().similar)
+        assertEquals("[\"42\",\"19\"]", fixture.requests.last().body["seedTrackIds"])
+        assertEquals("[]", fixture.requests.last().body["recentTrackIds"])
         fixture.requests.last().response.complete(radio(102, 104, 104))
         runCurrent()
         refill.join()
@@ -247,11 +253,12 @@ class SimilarFmPlaybackTest {
         fixture.manager.restoreFmMode(true, listOf("42", "19"))
         val oldRefill = launch { fixture.manager.fetchAndAppendFmRecommendations() }
         runCurrent()
-        assertEquals("SIMILAR", fixture.requests.single().body["mode"])
+        assertTrue(fixture.requests.single().similar)
 
         fixture.manager.startFmModeById(null)
         runCurrent()
-        assertEquals("DEFAULT", fixture.requests.last().body["mode"])
+        assertEquals("default", fixture.requests.last().body["mode"])
+        assertFalse(fixture.requests.last().similar)
         assertNull(fixture.manager.similarFmSourceIds)
         fixture.requests.last().response.complete(radio(201))
         runCurrent()
@@ -261,8 +268,30 @@ class SimilarFmPlaybackTest {
         assertEquals(listOf("201"), fixture.ids())
 
         fixture.manager.restoreFmMode(true, listOf("broken"))
+        assertTrue(fixture.manager.isFmMode)
+        assertEquals(listOf("broken"), fixture.manager.similarFmSourceIds)
+        fixture.manager.restoreFmMode(true, listOf(""))
         assertFalse(fixture.manager.isFmMode)
         assertNull(fixture.manager.similarFmSourceIds)
+    }
+
+    @Test(timeout = 10_000)
+    fun queueAutoplayUsesTheOpaqueSeedAndKeepsItsOwnerWhileTheCurrentTrackChanges() = runTest(dispatcher) {
+        val seed = TrackRef("qq-source", "track/opaque:42")
+        fixture.items.clear()
+        fixture.items += item(TrackRefCodec.encode(seed))
+        assertTrue(fixture.manager.setQueueAutoplayEnabled(true))
+        val nextItem = item(TrackRefCodec.encode(TrackRef("other-source", "another-track")))
+        fixture.items[0] = nextItem
+        runCurrent()
+        assertEquals(listOf("qq-source"), fixture.openedProviders)
+        assertEquals("[\"track/opaque:42\"]", fixture.requests.single().body["seedTrackIds"])
+        assertTrue(fixture.requests.single().similar)
+        fixture.requests.single().response.complete(radio(101))
+        runCurrent()
+        assertEquals(listOf(nextItem.mediaId, "101"), fixture.ids())
+        assertEquals(listOf(seed.trackId), fixture.manager.similarFmSourceIds)
+        assertEquals(0, fixture.destructivePlaybackCalls)
     }
 
     @Test(timeout = 10_000)
@@ -279,7 +308,7 @@ class SimilarFmPlaybackTest {
         assertTrue(fixture.manager.setQueueAutoplayEnabled(true))
         runCurrent()
         assertEquals(listOf("11", "42", "19"), fixture.ids())
-        assertEquals("[42]", fixture.requests.single().body["sourceIds"])
+        assertEquals("[\"42\"]", fixture.requests.single().body["seedTrackIds"])
         fixture.requests.single().response.complete(radio(42, 101, 101, 102))
         runCurrent()
 
@@ -336,6 +365,11 @@ class SimilarFmPlaybackTest {
         assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
         fixture.items.clear()
         assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        fixture.items += item("local_42")
+        assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        fixture.items[0] = item(TrackRefCodec.encode(TrackRef(ProviderIds.LOCAL, "opaque-local")))
+        assertFalse(fixture.manager.setQueueAutoplayEnabled(true))
+        fixture.items.clear()
         fixture.items += item("42")
         fixture.manager.restoreFmMode(true)
         assertTrue(fixture.manager.setQueueAutoplayEnabled(false))
@@ -411,35 +445,35 @@ class SimilarFmPlaybackTest {
                 else -> error("Unexpected player call: ${method.name}")
             }
         } as Player
-        private val api = Proxy.newProxyInstance(
-            ApiService::class.java.classLoader,
-            arrayOf(ApiService::class.java),
-        ) { _, method, _ -> error("Unexpected API call: ${method.name}") } as ApiService
-        private val weapi = Proxy.newProxyInstance(
-            WeApiService::class.java.classLoader,
-            arrayOf(WeApiService::class.java),
-        ) { _, method, arguments ->
-            check(method.name == "getRadio" || method.name == "getPersonalRadio")
-            @Suppress("UNCHECKED_CAST")
-            val request = PendingRadio(arguments!![0] as Map<String, String>)
-            requests += request
-            val response: suspend () -> Radio = {
-                // Exercise generation checks even when a transport does not cancel promptly.
-                withContext(NonCancellable) { request.response.await() }
+        val openedProviders = mutableListOf<String?>()
+        private val sources = object : QueueSourceActions {
+            override suspend fun open(providerId: String?): QueueSourceSession {
+                openedProviders += providerId
+                val selected = providerId ?: ProviderIds.NETEASE
+                return object : QueueSourceSession {
+                    override val providerId = selected
+                    override suspend fun ensureCurrent() = Unit
+                    override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                    override suspend fun shuffle(playlistId: String, songId: String, algorithm: String): SourceShufflePage = error("Unexpected shuffle request")
+                    override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> {
+                        val request = PendingRadio(parameters, similar)
+                        requests += request
+                        // Exercise generation checks even when a transport does not cancel promptly.
+                        val response = withContext(NonCancellable) { request.response.await() }
+                        check(response.code == 200) { "漫游推荐加载失败 (${response.code})" }
+                        return response.data.map { Track(TrackRef(this.providerId, it.id.toString()), "Fixture", emptyList()) }
+                    }
+                }
             }
-            @Suppress("UNCHECKED_CAST")
-            response.startCoroutine(arguments.last() as Continuation<Radio>)
-            COROUTINE_SUSPENDED
-        } as WeApiService
-        val manager = PlaybackQueueManager(
-            player, api, weapi, scope,
-            radioItemFactory = { item(it.id.toString()) },
-        )
+            override suspend fun tracks(refs: List<TrackRef>): List<Track> = error("Unexpected catalog request")
+        }
+        val manager = PlaybackQueueManager(player, sources, scope,
+            radioItemFactory = { item(it.ref.trackId) })
 
         fun ids(): List<String> = items.map(MediaItem::mediaId)
     }
 
-    private class PendingRadio(val body: Map<String, String>) {
+    private class PendingRadio(val body: Map<String, String>, val similar: Boolean) {
         val response = CompletableDeferred<Radio>()
     }
 

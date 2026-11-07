@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.model
 
 import androidx.annotation.StringRes
 import com.ljyh.mei.R
+import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.source.api.MusicProvider
 
 enum class PlayerAction(
     val id: String,
@@ -28,3 +30,6 @@ enum class PlayerAction(
         val defaultActions = listOf(LYRICS, PLAY_MODE, QUEUE)
     }
 }
+
+internal fun PlayerAction.availableFor(metadata: MediaMetadata?, owner: MusicProvider? = null): Boolean =
+    this != PlayerAction.ADD_TO_PLAYLIST || MoreAction.ADD_TO_PLAYLIST.availableFor(metadata, owner)

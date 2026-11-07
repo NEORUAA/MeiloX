@@ -4,6 +4,9 @@ import com.ljyh.mei.source.api.SourceException
 import com.ljyh.mei.source.api.*
 import com.google.gson.JsonParser
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.runCurrent
 import java.net.InetAddress
 import java.util.Base64
 import java.io.IOException
@@ -20,10 +23,346 @@ import okio.buffer
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
 import org.junit.Test
+import com.ljyh.mei.data.network.NeteaseWireCodec
+import okhttp3.FormBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class ScriptPluginPolicyTest {
+    @Test fun cancelledBindingsRetireTheirLateSandboxBeforeAnotherConnectionStarts() = runTest {
+        for (completedBeforeCancellation in listOf(false, true)) {
+            val gate = ScriptConnectionGate()
+            val pending = com.google.common.util.concurrent.SettableFuture.create<java.io.Closeable>()
+            var created = 0
+            var retired = 0
+            val oldSandbox = java.io.Closeable { retired++ }
+            val currentSandbox = java.io.Closeable { }
+            val old = async { gate.connect { created++; pending } }
+            runCurrent()
+            if (completedBeforeCancellation) pending.set(oldSandbox)
+            old.cancelAndJoin()
+            assertFalse("Cancelling a waiter must not cancel AndroidX's binding future", pending.isCancelled)
+            val next = async { gate.connect { created++; com.google.common.util.concurrent.Futures.immediateFuture(currentSandbox) } }
+            runCurrent()
+            if (!completedBeforeCancellation) {
+                assertEquals(1, created)
+                assertFalse(next.isCompleted)
+                val abandoned = async { gate.connect<java.io.Closeable> { error("A cancelled successor must not open another binding") } }
+                runCurrent()
+                abandoned.cancelAndJoin()
+                pending.set(oldSandbox)
+            }
+            val lease = next.await()
+            assertSame(currentSandbox, lease.value)
+            assertEquals(1, retired)
+            assertEquals(2, created)
+            lease.close()
+        }
+    }
+
+    @Test fun failedLateAndNormalClosesKeepTheBindingRetiredAndSanitizeTheirFailures() = runTest {
+        val secret = "private-framework-close-message"
+        for (lateClose in listOf(false, true)) {
+            val gate = ScriptConnectionGate()
+            var closes = 0
+            var factories = 0
+            val sandbox = java.io.Closeable { closes++; throw IllegalStateException(secret) }
+            if (lateClose) {
+                val pending = com.google.common.util.concurrent.SettableFuture.create<java.io.Closeable>()
+                val waiting = async { gate.connect { factories++; pending } }
+                runCurrent()
+                waiting.cancelAndJoin()
+                pending.set(sandbox)
+                runCurrent()
+            } else {
+                val lease = gate.connect { factories++; com.google.common.util.concurrent.Futures.immediateFuture(sandbox) }
+                val failure = runCatching { lease.close() }.exceptionOrNull() ?: error("Expected the failed close")
+                val result = scriptRuntimeFailure(failure, ScriptRuntimePhase.REQUEST, requestSent = true)
+                assertEquals(SourceErrorCode.UNAVAILABLE, result.code)
+                assertTrue(result.outcomeUnknown)
+                assertFalse(result.message.orEmpty().contains(secret))
+                assertNull(result.cause)
+                lease.close()
+            }
+            repeat(2) {
+                try {
+                    gate.connect<java.io.Closeable> { factories++; error("A failed unbind must not be retried") }
+                    fail("Expected the retired connection failure")
+                } catch (failure: Exception) {
+                    val result = scriptRuntimeFailure(failure, ScriptRuntimePhase.CONNECTION)
+                    assertEquals(SourceErrorCode.UNAVAILABLE, result.code)
+                    assertFalse(result.outcomeUnknown)
+                    assertFalse(result.message.orEmpty().contains(secret))
+                    assertNull(result.cause)
+                }
+            }
+            assertEquals(1, factories)
+            assertEquals(1, closes)
+        }
+    }
+
+    @Test fun engineAvailabilityDoesNotRevokeSourcesAndResourceViolationsRemainFatal() {
+        val secret = "private-session-in-engine-message"
+        val failures = listOf(
+            androidx.javascriptengine.SandboxDeadException(secret) to SourceErrorCode.UNAVAILABLE,
+            androidx.javascriptengine.IsolateTerminatedException(secret) to SourceErrorCode.UNAVAILABLE,
+            androidx.javascriptengine.DataInputException(secret) to SourceErrorCode.UNAVAILABLE,
+            IllegalStateException(secret) to SourceErrorCode.UNAVAILABLE,
+            androidx.javascriptengine.SandboxUnsupportedException(secret) to SourceErrorCode.UNSUPPORTED,
+            androidx.javascriptengine.MemoryLimitExceededException(secret) to SourceErrorCode.PLUGIN,
+            androidx.javascriptengine.EvaluationResultSizeLimitExceededException(secret) to SourceErrorCode.PLUGIN,
+        )
+        for ((failure, code) in failures) {
+            val result = scriptRuntimeFailure(java.util.concurrent.ExecutionException(failure), ScriptRuntimePhase.CONNECTION)
+            assertEquals(code, result.code)
+            assertFalse(result.message.orEmpty().contains(secret))
+            assertNull(result.cause)
+            assertFalse(result.outcomeUnknown)
+        }
+        val evaluation = androidx.javascriptengine.EvaluationFailedException(secret)
+        assertEquals(SourceErrorCode.PLUGIN, scriptRuntimeFailure(evaluation, ScriptRuntimePhase.SCRIPT).code)
+        assertEquals(SourceErrorCode.INVALID_RESPONSE, scriptRuntimeFailure(evaluation, ScriptRuntimePhase.OPERATION).code)
+        assertEquals(SourceErrorCode.PLUGIN, scriptRuntimeFailure(
+            androidx.javascriptengine.SandboxDeadException(secret), ScriptRuntimePhase.OPERATION, memoryLimited = true).code)
+        assertTrue(scriptRuntimeFailure(androidx.javascriptengine.SandboxDeadException(secret),
+            ScriptRuntimePhase.OPERATION, requestSent = true).outcomeUnknown)
+        val explicitBusinessFailure = SourceException(SourceErrorCode.UNAVAILABLE)
+        assertSame(explicitBusinessFailure, scriptRuntimeFailure(explicitBusinessFailure, ScriptRuntimePhase.OPERATION, requestSent = true))
+        assertFalse(explicitBusinessFailure.outcomeUnknown)
+        val denied = SourceException(SourceErrorCode.PLUGIN)
+        assertSame(denied, scriptRuntimeFailure(denied, ScriptRuntimePhase.REQUEST))
+    }
+
+    @Test fun lazyArtworkUsesTheExistingDurableFileKeyWithoutExposingUrlCredentials() {
+        val root = java.nio.file.Files.createTempDirectory("source-artwork").toFile()
+        try {
+            val url = "https://cdn.example/cover.jpg?token=private-token"
+            val file = ScriptNetworkPolicy.artworkFile(url, java.io.File(root, "org.example.music"))
+            val uri = ScriptNetworkPolicy.artworkUri(file)
+            assertEquals("18d2af4d3b1377406286612d6b43c405f2d25102d16a1296588bb67f5df2eeff", file.name)
+            assertFalse(uri.contains("private-token"))
+            assertFalse(uri.contains("cdn.example"))
+            assertEquals("org.example.music" to file.canonicalFile, sourceArtworkLocation(root, uri))
+            assertFalse("Registration must not require an existing image", file.exists())
+            file.parentFile.mkdirs(); file.writeBytes(byteArrayOf(1, 2, 3))
+            assertEquals(file.canonicalFile, sourceArtworkLocation(root, uri)?.second)
+            for (invalid in listOf("file://attacker${file.absolutePath}", "$uri?token=secret", "$uri#fragment",
+                java.io.File(root.parentFile, "outside/artwork/${file.name}").toURI().toString(),
+                "https://cdn.example/${file.name}", "content://media/${file.name}")) {
+                assertNull(sourceArtworkLocation(root, invalid))
+            }
+            try { ScriptNetworkPolicy(listOf("other.example")).validateUrl(url); fail("Updates must use the current domain grant") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun artworkDescriptorsRetainOnlyBoundedSourceDataAndRedactTheirStringForm() {
+        val values = mapOf("url" to "https://cdn.example/cover?token=private-token", "account" to "opaque-account-digest")
+        val descriptor = SourceArtworkDescriptor.parse(values)
+        assertEquals(values, descriptor.values())
+        assertFalse(descriptor.toString().contains("private-token"))
+        for (invalid in listOf(values + ("cookie" to "secret"), values - "account", values + ("url" to "x".repeat(8193)))) {
+            assertThrows(IllegalArgumentException::class.java) { SourceArtworkDescriptor.parse(invalid) }
+        }
+    }
+
+    @Test fun sourceNetworkCancellationStillOwnsTheCallAfterHeadersWhileTheBodyIsReading() = runTest {
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val closed = java.util.concurrent.CountDownLatch(1)
+        val body = object : ResponseBody() {
+            private val data = Buffer().writeUtf8("{}")
+            private val input = object : Source {
+                override fun timeout() = Timeout.NONE
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    started.countDown()
+                    check(release.await(3, java.util.concurrent.TimeUnit.SECONDS))
+                    return data.read(sink, byteCount)
+                }
+                override fun close() { data.close(); closed.countDown() }
+            }.buffer()
+            override fun contentType(): MediaType? = null
+            override fun contentLength() = -1L
+            override fun source() = input
+        }
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("Fixture").body(body).build()
+        }.build()
+        val call = client.newCall(Request.Builder().url("https://source.example/fixture").build())
+        val policy = ScriptNetworkPolicy(listOf("source.example"))
+        val pending = async(kotlinx.coroutines.Dispatchers.IO) {
+            policy.exchange(call, {}) { response, _ -> policy.responsePayload(response, "utf8") }
+        }
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { assertTrue(started.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
+            pending.cancel()
+            pending.join()
+            assertTrue("Revocation must cancel the socket after its headers were delivered", call.isCanceled())
+            release.countDown()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { assertTrue(closed.await(3, java.util.concurrent.TimeUnit.SECONDS)) }
+        } finally {
+            release.countDown(); pending.cancel()
+            client.dispatcher.executorService.shutdown(); client.connectionPool.evictAll()
+        }
+    }
+
+    @Test fun wireTransportClosesBodiesAndBoundsKnownAndUnknownLengthResponses() {
+        val limit = ScriptNetworkPolicy.MAX_RESPONSE_BYTES
+        var closed = false
+        fun exchange(bytes: ByteArray, length: Long, failure: IOException? = null, status: Int = 200): Response {
+            closed = false
+            val body = object : ResponseBody() {
+                private val input = Buffer().write(bytes)
+                private val stream = object : Source {
+                    override fun timeout() = Timeout.NONE
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        if (failure != null) throw failure
+                        return input.read(sink, byteCount)
+                    }
+                    override fun close() { closed = true; input.close() }
+                }.buffer()
+                override fun contentType(): MediaType? = null
+                override fun contentLength() = length
+                override fun source() = stream
+                override fun close() { closed = true; stream.close() }
+            }
+            // A terminal application interceptor prevents DNS/network access.
+            val client = okhttp3.OkHttpClient.Builder()
+                .addInterceptor(NeteaseWireCodec.interceptor(mapOf("mode" to "api")))
+                .addInterceptor { chain -> Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(status).message("Fixture").body(body).build() }.build()
+            return client.newCall(Request.Builder().url("https://source.example/fixture").post("{}".toRequestBody()).build()).execute()
+        }
+        for (bytes in listOf(byteArrayOf(), "{\"code\":200}".toByteArray())) {
+            exchange(bytes, bytes.size.toLong(), status = 403).use { response ->
+                assertEquals(403, response.code)
+                assertArrayEquals(bytes, response.body!!.bytes())
+            }
+            assertTrue("The original streamed response must always close", closed)
+        }
+        for (length in listOf(-1L, limit + 1L)) {
+            try { exchange(ByteArray(limit + 1), length); fail("Expected the response limit") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+            assertTrue("Oversized bodies must close before rejecting the response", closed)
+        }
+        val failure = IOException("Synthetic body failure")
+        try { exchange(byteArrayOf(), -1, failure); fail("Expected the original read failure") }
+        catch (error: IOException) { assertSame(failure, error) }
+        assertTrue("Failed reads must also close the original body", closed)
+    }
+
+    @Test fun wireCodecsPreserveSourceOwnedRequestDataAndMatchIndependentCryptoVectors() {
+        val payload = """{"id":"42","header":{},"e_r":false}"""
+        val request = Request.Builder().url("https://source.example/unrelated/path?source=fixture")
+            .header("Cookie", "source-owned-session").header("User-Agent", "Source fixture")
+            .post(payload.toRequestBody()).build()
+        val eapi = NeteaseWireCodec.encodeRequest(request, mapOf("mode" to "eapi",
+            "signingPath" to "/arbitrary/signing/path", "formFields" to """{"proof":"source-owned-proof"}"""))
+        assertEquals(request.url, eapi.url)
+        assertEquals("source-owned-session", eapi.header("Cookie"))
+        assertEquals("Source fixture", eapi.header("User-Agent"))
+        assertNull(eapi.header("X-Music-U"))
+        assertNull(eapi.header("X-Real-IP"))
+        val eapiForm = eapi.body as FormBody
+        assertEquals("1b0d7853ce1121d858dec5e64d415d3e183dbd1f7d9dfc1c38578844a18a3443e0a2bf6edef312e67a3fe8d346b4c25059386fcc1f294cdfac9d5a862f20016dffbc6c60beec14874768be51267fb8aae4d5a752f76d80c97fe89a084a0aa50296bcd8e55f14b7a302e2ff984f935db8459027e5c2e362466457579c44a0b17c", eapiForm.value(0))
+        assertEquals("proof", eapiForm.name(1))
+        assertEquals("source-owned-proof", eapiForm.value(1))
+        val weapi = NeteaseWireCodec.encodeRequest(request, mapOf("mode" to "weapi", "weapiKey" to "0123456789abcdef")).body as FormBody
+        assertEquals("NCzEpdBW+9y5ivnuOSBe6W/NFq6NXUcxmHjcLjVldx96PAB/dCMbVdWATl2Q1GMurXWwRDgQ9Tp0Ec7GBrVC0zejcvw9srzD6POn5+RYohY=", weapi.value(0))
+        assertEquals("35701388baf89fed412e11269b9c76625d095ecaf17f03fa018abe19ea2d38b949debf242ee39a71ca1f6cda71b1b86a45aa909ee27f7e78e267d34e732f0de948206c3340a788d0003372183e2f753c1f78b66ac23d134ac1fc9b993156520ea826b8aa89a962d4491b4b8d7e08738e1da9b07aa39bf4a7ef0b1c210728cd52", weapi.value(1))
+        val api = NeteaseWireCodec.encodeRequest(request, mapOf("mode" to "api"))
+        assertEquals(request.url, api.url)
+        assertEquals(listOf("42", "{}", "false"), (api.body as FormBody).let { form -> (0 until form.size).map(form::value) })
+    }
+
+    @Test fun wireDecodeBoundsEncryptedAndCompressedResponsesWithoutServiceKnowledge() {
+        fun bytes(hex: String) = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val plain = """{"code":200,"message":"雪"}""".toByteArray()
+        val encrypted = bytes("4dc12a14eca8f30f33123e619c7b9c896947855aec4bbd3c709b194a0191abd6")
+        assertArrayEquals(plain, NeteaseWireCodec.decodeResponseBytes(encrypted, "eapi"))
+        assertArrayEquals(plain, NeteaseWireCodec.decodeResponseBytes(plain, "eapi"))
+        assertArrayEquals(plain, NeteaseWireCodec.decodeResponseBytes(bytes("3727608801dc00f6f0bcd388f24799d10d9c3ecfd24566aaf091083aa767e93105bd45f8ba4ec8d5805388e03e31eaf8"), "eapi"))
+        val malformed = "invalid encrypted response".toByteArray()
+        assertArrayEquals(malformed, NeteaseWireCodec.decodeResponseBytes(malformed, "eapi"))
+        try {
+            NeteaseWireCodec.decodeResponseBytes(bytes("fba5b125f70d46b164ed584a21ec3e7af7176b4ac933f1b36f5cbd8fc6278d8b8906943155b096aab0b9b60d1ec86980"), "eapi", limit = 1024)
+            fail("An inflated response must remain bounded")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        val request = Request.Builder().url("https://source.example/").post("{}".toRequestBody()).build()
+        for (arguments in listOf(mapOf("mode" to "eapi"), mapOf("mode" to "weapi"),
+            mapOf("mode" to "eapi", "signingPath" to "/path?query=forbidden"),
+            mapOf("mode" to "api", "sessionType" to "mobile"),
+            mapOf("mode" to "api", "formFields" to """{"params":"override"}"""))) {
+            try { NeteaseWireCodec.encodeRequest(request, arguments); fail("Expected invalid explicit codec arguments") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+    }
+
     private val minimal = """{"id":"example.source","name":"Example","author":"Author","version":"1",
         "apiVersion":1,"capabilities":["catalog.search","playback.resolve"]}"""
+
+    @Test fun trustedBundleMigrationPreservesLegacyMobileIdentityAndFallbackPosition() {
+        val values = androidx.datastore.preferences.core.mutablePreferencesOf(
+            com.ljyh.mei.constants.CookieKey to "fixture-token==",
+            com.ljyh.mei.constants.NeteaseMusicAKey to "fixture-anonymous",
+            com.ljyh.mei.constants.NeteaseCsrfKey to "fixture-csrf",
+            com.ljyh.mei.constants.NeteaseUrsAppIdKey to "fixture-urs",
+            com.ljyh.mei.constants.DeviceIdKey to "fixture-device",
+            com.ljyh.mei.constants.UserIdKey to "1234",
+        )
+        val migrated = BundledSourceProvisioner.legacyConfiguration(values)
+        assertEquals("mobile", migrated["sessionType"])
+        assertEquals("MUSIC_U=fixture-token==; MUSIC_A=fixture-anonymous; __csrf=fixture-csrf", migrated["cookie"])
+        assertEquals("fixture-device", migrated["deviceId"])
+        assertEquals("1234", migrated["userId"])
+        assertEquals(listOf("qq", "script:org.meilox.source.netease:default", "local", "missing"),
+            BundledSourceProvisioner.legacyOrder(listOf("qq", "netease", "local", "missing")))
+        val asset = java.io.File("src/main/assets/music-sources/netease.meisource").readBytes()
+        assertTrue(BundledSourceProvisioner.matches(asset))
+        asset[asset.lastIndex] = (asset.last().toInt() xor 1).toByte()
+        assertFalse(BundledSourceProvisioner.matches(asset))
+    }
+
+    @Test fun bundledUpdatesOnlyOwnUnmodifiedPackagesAndNeverRemovedOrExternalSources() {
+        val directory = java.nio.file.Files.createTempDirectory("source-provenance").toFile()
+        try {
+            listOf("manifest.json", "index.js", "LICENSE", "NOTICE").forEach { java.io.File(directory, it).writeText(it) }
+            val fingerprint = BundledSourceProvisioner.contentFingerprint(directory)
+            val provenance = "${"a".repeat(64)}:$fingerprint"
+            assertTrue(BundledSourceProvisioner.ownsBundledInstallation(directory, provenance))
+            java.io.File(directory, "state.json").writeText("{\"enabled\":false}")
+            assertTrue(BundledSourceProvisioner.ownsBundledInstallation(directory, provenance))
+            assertFalse(BundledSourceProvisioner.ownsBundledInstallation(directory, "removed"))
+            assertFalse(BundledSourceProvisioner.ownsBundledInstallation(directory, "external"))
+            java.io.File(directory, "index.js").appendText("updated separately")
+            assertFalse(BundledSourceProvisioner.ownsBundledInstallation(directory, provenance))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun interruptedBundledSwapsRecoverProvenanceWithoutOverwritingExternalPackages() {
+        val root = java.nio.file.Files.createTempDirectory("source-transaction").toFile()
+        try {
+            val destination = java.io.File(root, BundledSourceProvisioner.NETEASE_ID).apply { mkdirs() }
+            listOf("manifest.json", "index.js", "LICENSE", "NOTICE").forEach { java.io.File(destination, it).writeText(it) }
+            val next = "${"a".repeat(64)}:${BundledSourceProvisioner.contentFingerprint(destination)}"
+            val marker = java.io.File(root, ".netease-default-v1")
+            val journal = java.io.File(root, ".netease-bundle-transaction")
+            val backup = java.io.File(root, ".netease-bundle-backup")
+            for (previous in listOf("absent", "b".repeat(64))) {
+                if (previous == "absent") marker.delete() else marker.writeText(previous)
+                backup.mkdirs()
+                journal.writeText("$previous\n$next")
+                BundledSourceProvisioner.recover(root)
+                assertEquals(next, marker.readText())
+                assertFalse(backup.exists())
+                assertFalse(journal.exists())
+            }
+            marker.writeText("external")
+            journal.writeText("${"b".repeat(64)}\n$next")
+            BundledSourceProvisioner.recover(root)
+            assertEquals("external", marker.readText())
+            assertTrue(destination.isDirectory)
+        } finally { root.deleteRecursively() }
+    }
 
     @Test
     fun manifestsKeepStableIdentityAndExplicitCapabilities() {
@@ -35,6 +374,31 @@ class ScriptPluginPolicyTest {
         assertTrue(manifest.supported)
         assertTrue(PluginManifest.parse(minimal.replace("\"apiVersion\":1", "\"apiVersion\":2")).supported)
         assertFalse(PluginManifest.parse(minimal.replace("\"apiVersion\":1", "\"apiVersion\":3")).supported)
+    }
+
+    @Test fun sharedFeaturesAndNativeCodecsRequireExplicitIndependentPermissions() {
+        val value = """{"id":"example.source","name":"Example","author":"Author","version":"2","apiVersion":2,
+            "capabilities":["feature.invoke","playback.qualities"],"features":{"messages":["conversations","send"]},
+            "featureRoutes":["private_messages"],"permissions":{"nativeSdks":["netease.transport"]}}"""
+        val manifest = PluginManifest.parse(value)
+        assertEquals(setOf("conversations", "send"), manifest.features["messages"])
+        assertEquals(setOf("netease.transport"), manifest.permissions.nativeSdks)
+        assertTrue(manifest.permissions.network.isEmpty())
+        rejects { PluginManifest.parse(value.replace("netease.transport", "android.reflect")) }
+        rejects { PluginManifest.parse(value.replace("\"feature.invoke\",", "")) }
+        rejects { PluginManifest.parse(value.replace("\"apiVersion\":2", "\"apiVersion\":1")) }
+        rejects { PluginManifest.parse(value.replace("conversations", "../invoke")) }
+        rejects { PluginManifest.parse(value.replace("\"id\":\"example.source\"", "\"id\":\"example.source\",\"providerId\":\"netease\"")) }
+    }
+
+    @Test fun responseCookiesPreserveEveryHeaderWithoutASharedJar() {
+        val response = response(byteArrayOf()).newBuilder()
+            .addHeader("Set-Cookie", "first=one; HttpOnly")
+            .addHeader("Set-Cookie", "second=two; Secure").build()
+        response.use {
+            val payload = ScriptNetworkPolicy(emptyList()).responsePayload(it, "utf8")
+            assertEquals(listOf("first=one; HttpOnly", "second=two; Secure"), payload.getAsJsonArray("setCookies").map { value -> value.asString })
+        }
     }
 
     @Test fun apiTwoCapabilitiesRemainOptionalAndCannotExpandAnApiOneManifest() {
@@ -65,6 +429,11 @@ class ScriptPluginPolicyTest {
         val playlist = parser.playlist(json("""{"playlistId":"chart:26","title":"Chart","trackCount":100,"editableActions":["update"]}"""))
         assertEquals(PlaylistRef("example.source", "chart:26"), playlist.ref)
         assertEquals(setOf(PlaylistEditAction.UPDATE), playlist.editableActions)
+        assertNull(playlist.playCount)
+        assertNull(parser.playlist(json("""{"playlistId":"p","title":"P","playCount":null}""")).playCount)
+        for (count in listOf(0L, 4_500_000_000L)) {
+            assertEquals(count, parser.playlist(json("""{"playlistId":"p","title":"P","playCount":$count}""")).playCount)
+        }
         val feed = parser.feed(json("""{"sections":[{"id":"charts","title":"Charts","layout":"playlists",
             "items":[{"type":"playlist","playlist":{"playlistId":"chart:26","title":"Chart"}}]}],
             "categories":[{"id":"all","title":"All"}]}"""))
@@ -84,6 +453,9 @@ class ScriptPluginPolicyTest {
         rejected { parser.track(json("""{"trackId":"42","title":"Song","durationMs":1.5}""")) }
         rejected { parser.track(json("""{"trackId":42,"title":"Song"}""")) }
         rejected { parser.playlist(json("""{"playlistId":"p","title":"P","editableActions":["delete"]}""")) }
+        for (count in listOf("-1", "1.5", "\"1\"", "true", "9223372036854775808")) {
+            rejected { parser.playlist(json("""{"playlistId":"p","title":"P","playCount":$count}""")) }
+        }
         rejected { parser.item(json("""{"type":"playlist","playlist":{"playlistId":"p","title":"P"}}"""), ContentType.TRACK) }
         rejected { parser.page(json("""{"items":[],"hasMore":true}"""), PageRequest(), parser::track) }
         rejected { parser.page(json("""{"items":[{"trackId":"t","title":"T"}],"hasMore":true,"nextCursor":"same"}"""), PageRequest(cursor = "same"), parser::track) }
@@ -91,6 +463,70 @@ class ScriptPluginPolicyTest {
         rejected { parser.boolean(com.google.gson.JsonPrimitive("true")) }
         rejected { parser.feed(json("""{"sections":[{"id":"one","title":"One","layout":"tracks","items":[]},
             {"id":"one","title":"Again","layout":"tracks","items":[]}]}""")) }
+    }
+
+    @Test fun feedActionsKeepOpaqueIdsAndRequireOwnedDeclaredCapabilities() = runTest {
+        val parser = ScriptContentParser("example.source", 2, emptySet(),
+            mapOf("discovery" to setOf("homePlayback", "personalRadio")), setOf("everyday")) { "checked:$it" }
+        val feed = parser.feed(json("""{"sections":[{"id":"hero","title":"","layout":"HERO","items":[],"cards":[
+            {"id":"daily","title":"Daily","artworkUrl":"https://images.example/daily","iconUrl":"https://images.example/icon","target":{"kind":"route","route":"everyday","parameters":{"category":"daily/新"}}},
+            {"id":"queue","title":"Queue","target":{"kind":"queue","feature":"discovery","action":"homePlayback","parameters":{"episodeId":"episode:9223372036854775806"}}},
+            {"id":"radio","title":"Radio","target":{"kind":"radio","seedIds":["track:mid/新"],"similar":true}},
+            {"id":"playlist","title":"List","target":{"kind":"content","contentRef":{"type":"playlist","contentId":"chart:26"}}}
+        ]}]}"""))
+        val cards = feed.sections.single().cards
+        assertEquals(listOf("daily", "queue", "radio", "playlist"), cards.map { it.id })
+        assertEquals("checked:https://images.example/daily", cards[0].artworkUrl)
+        assertEquals("checked:https://images.example/icon", cards[0].iconUrl)
+        assertEquals(mapOf("category" to "daily/新"), (cards[0].target as SourceFeedTarget.Route).parameters)
+        assertEquals("episode:9223372036854775806", (cards[1].target as SourceFeedTarget.Queue).parameters.get("episodeId").asString)
+        assertEquals(listOf("track:mid/新"), (cards[2].target as SourceFeedTarget.Radio).seedIds)
+        assertEquals(PlaylistRef("example.source", "chart:26"), (cards[3].target as SourceFeedTarget.Content).ref)
+        suspend fun rejected(target: String, layout: String = "HERO") {
+            try {
+                parser.feed(json("""{"sections":[{"id":"hero","title":"","layout":"$layout","items":[],"cards":[{"id":"one","title":"One","target":$target}]}]}"""))
+                fail("Expected invalid feed action")
+            } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+        rejected("""{"kind":"content","contentRef":{"providerId":"other","type":"track","contentId":"42"}}""")
+        rejected("""{"kind":"route","route":"account/security","parameters":{}}""")
+        rejected("""{"kind":"route","route":"everyday","parameters":{"providerId":"other"}}""")
+        rejected("""{"kind":"queue","feature":"discovery","action":"arbitraryHttp","parameters":{}}""")
+        rejected("""{"kind":"radio","seedIds":[],"similar":true}""")
+        rejected("""{"kind":"radio","seedIds":[42]}""")
+        rejected("""{"kind":"radio","seedIds":["42"]}""", "TRACKS")
+    }
+
+    @Test fun squareFeedCardsPreserveOriginalCaptionsAndRejectUntrustedPresentation() = runTest {
+        val parser = ScriptContentParser("example.source", 2, emptySet(), emptyMap(), setOf("everyday")) { "checked:$it" }
+        fun section(card: String, layout: String = "PLAYLISTS") = json("""{"sections":[{
+            "id":"recommendations","title":"Cards","layout":"$layout","items":[],"cards":[$card]}]}""")
+        val card = """{"id":"radar","title":"","subtitle":"Original playlist title",
+            "artworkUrl":"https://images.example/processed","coverCaptions":["First caption","Second caption"],
+            "detail":"12.3万","titleMaxLines":1,
+            "target":{"kind":"content","contentRef":{"type":"playlist","contentId":"playlist/opaque:26"}}}"""
+        val parsed = parser.feed(section(card)).sections.single().cards.single()
+        assertEquals("", parsed.title)
+        assertEquals("Original playlist title", parsed.subtitle)
+        assertEquals(listOf("First caption", "Second caption"), parsed.coverCaptions)
+        assertEquals("12.3万", parsed.detail)
+        assertEquals(1, parsed.titleMaxLines)
+        assertEquals("checked:https://images.example/processed", parsed.artworkUrl)
+        assertEquals(PlaylistRef("example.source", "playlist/opaque:26"), (parsed.target as SourceFeedTarget.Content).ref)
+        val defaults = parser.feed(section("""{"id":"plain","title":"Plain",
+            "target":{"kind":"content","contentRef":{"type":"playlist","contentId":"26"}}}""")).sections.single().cards.single()
+        assertEquals(emptyList<String>(), defaults.coverCaptions)
+        assertNull(defaults.detail)
+        assertEquals(2, defaults.titleMaxLines)
+        suspend fun rejected(value: String, layout: String = "PLAYLISTS") {
+            try { parser.feed(section(value, layout)); fail("Expected invalid square-card presentation") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+        for (value in listOf("0", "3", "1.5", "\"1\"")) rejected(card.replace("\"titleMaxLines\":1", "\"titleMaxLines\":$value"))
+        rejected(card.replace("[\"First caption\",\"Second caption\"]", "[42]"))
+        rejected(card.replace("\"detail\":\"12.3万\"", "\"detail\":123"))
+        rejected(card, "ALBUMS")
+        rejected("""{"id":"route","title":"Route","target":{"kind":"route","route":"everyday"}}""")
     }
 
     @Test fun unavailableArtworkPreservesCatalogButPermissionErrorsAndCancellationStillStopIt() = runTest {
@@ -123,6 +559,10 @@ class ScriptPluginPolicyTest {
 
     @Test
     fun manifestsRejectReservedIdentityAndUnknownPrivileges() {
+        fun withHosts(count: Int) = minimal.dropLast(1) + ",\"permissions\":{\"network\":[" +
+            (1..count).joinToString(",") { "\"cdn$it.example.com\"" } + "]}}"
+        assertEquals(32, PluginManifest.parse(withHosts(32)).permissions.network.size)
+        rejects { PluginManifest.parse(withHosts(33)) }
         listOf(
             minimal.replace("\"example.source\"", "\"netease\""),
             minimal.replace("\"example.source\"", "\"local\""),

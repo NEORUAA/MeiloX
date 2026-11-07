@@ -1,9 +1,14 @@
 package com.ljyh.mei.data.repository
 
-import com.ljyh.mei.source.netease.repository.*
+import com.ljyh.mei.source.platform.prepareCloudUploadFile
+import com.ljyh.mei.source.platform.executeCloudUploadRequest
 
 import android.net.Uri
 import android.os.Bundle
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ProviderInfo
+import android.test.mock.MockContentResolver
 import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,8 +22,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import com.ljyh.mei.data.model.melox.CloudMusicPage
-import com.ljyh.mei.data.model.melox.CloudSong
+import com.ljyh.mei.source.shared.OnlineCloudPage as CloudMusicPage
+import com.ljyh.mei.source.shared.OnlineCloudSong as CloudSong
 import com.ljyh.mei.ui.screen.cloud.CloudMusicViewModel
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
@@ -52,8 +57,20 @@ import org.junit.runner.RunWith
 class CloudUploadInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val resolver = context.contentResolver
     private val authority = "${instrumentation.context.packageName}.cloud-upload-fixture"
+    // A real Android provider transport runs in the instrumentation process. Resolving an
+    // exported provider in the separate test APK can invoke an OEM autostart confirmation.
+    private val resolver by lazy {
+        val provider = CloudUploadFixtureProvider()
+        provider.attachInfo(context, ProviderInfo().apply { authority = this@CloudUploadInstrumentedTest.authority })
+        MockContentResolver(context).apply { addProvider(authority, provider) }
+    }
+    private val fixtureContext by lazy {
+        object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver() = resolver
+        }
+    }
 
     @Test
     fun refreshPreservesPendingCloudUploadAndDeletionWithoutAccountWrites() = runBlocking {
@@ -63,7 +80,7 @@ class CloudUploadInstrumentedTest {
         val uploadCalls = AtomicInteger()
         val reads = AtomicInteger()
         lateinit var progress: (Long, Long) -> Unit
-        val song = CloudSong(1, "Fixture song", "Artist", "Album", null, 1_000, 42, 320, 0)
+        val song = CloudSong("1", "Fixture song", "Artist", "Album", null, 1_000, 42, 320, 0)
         val model = withContext(Dispatchers.Main) {
             CloudMusicViewModel(
                 loadPage = {
@@ -97,7 +114,7 @@ class CloudUploadInstrumentedTest {
             assertTrue(reads.get() >= 2)
             assertTrue(refreshed.isUploading)
             assertEquals(0.4f, refreshed.uploadProgress)
-            assertEquals(setOf(1L), refreshed.deletingIds)
+            assertEquals(setOf("1"), refreshed.deletingIds)
 
             withContext(Dispatchers.IO) { progress(70, 100) }
             assertEquals(0.7f, model.state.value.uploadProgress)
@@ -123,7 +140,7 @@ class CloudUploadInstrumentedTest {
         for (mode in listOf("normal", "slice")) {
             fixture(mode).use { source ->
                 val before = snapshots()
-                val prepared = prepareCloudUploadFile(context, source.uri)
+                val prepared = prepareCloudUploadFile(fixtureContext, source.uri)
                 try {
                     assertEquals(source.created.getLong("size"), prepared.size)
                     assertEquals(source.created.getString("md5"), prepared.md5)
@@ -153,7 +170,7 @@ class CloudUploadInstrumentedTest {
             fixture(mode).use { source ->
                 val before = snapshots()
                 try {
-                    prepareCloudUploadFile(context, source.uri).close()
+                    prepareCloudUploadFile(fixtureContext, source.uri).close()
                     fail("Preparation must reject $mode")
                 } catch (_: Exception) {
                     // The fixture deliberately denies access or returns no bytes.
@@ -170,7 +187,7 @@ class CloudUploadInstrumentedTest {
             fixture(mode).use { source ->
                 val before = snapshots()
                 supervisorScope {
-                    val preparation = async(Dispatchers.IO) { prepareCloudUploadFile(context, source.uri) }
+                    val preparation = async(Dispatchers.IO) { prepareCloudUploadFile(fixtureContext, source.uri) }
                     try {
                         await {
                             val status = source.call("status")

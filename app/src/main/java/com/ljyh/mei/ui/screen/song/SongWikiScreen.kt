@@ -1,7 +1,6 @@
 package com.ljyh.mei.ui.screen.song
 
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,15 +34,14 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
-import com.ljyh.mei.constants.CookieKey
-import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.melox.SongWiki
+import com.ljyh.mei.source.shared.OnlineSongWiki as SongWiki
 import com.ljyh.mei.data.model.melox.SongWikiMemoryItem
 import com.ljyh.mei.data.model.melox.SongWikiMemoryKind
-import com.ljyh.mei.data.model.melox.SongWikiSongReference
+import com.ljyh.mei.source.shared.OnlineWikiSong as SongWikiSongReference
+import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.toMediaItem
-import com.ljyh.mei.source.netease.repository.MeloXRepository
+import com.ljyh.mei.source.shared.SharedOnlineRepository
 import com.ljyh.mei.playback.queue.ListQueue
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCard
@@ -56,9 +54,7 @@ import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
-import com.ljyh.mei.utils.dataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.NumberFormat
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -71,7 +67,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class SongWikiUiState(
-    val songId: Long? = null,
+    val songId: String? = null,
     val isLoading: Boolean = false,
     val wiki: SongWiki? = null,
     val error: String? = null,
@@ -79,34 +75,33 @@ data class SongWikiUiState(
 
 @HiltViewModel
 class SongWikiViewModel @Inject constructor(
-    private val repository: MeloXRepository,
-    @ApplicationContext private val context: Context,
+    onlineRepository: SharedOnlineRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
+    private val repository = onlineRepository.screen("song-wiki", savedStateHandle["providerId"])
     private val _state = MutableStateFlow(SongWikiUiState())
     val state = _state.asStateFlow()
     private var loadJob: Job? = null
 
     init {
         viewModelScope.launch {
-            context.dataStore.data
-                .map { it[UserIdKey] to it[CookieKey] }
-                .distinctUntilChanged()
-                .collect {
+            repository.sessionChanges.collect { owner ->
                     val songId = _state.value.songId
                     loadJob?.cancel()
                     _state.value = SongWikiUiState()
-                    if (songId != null) load(songId, force = true)
+                    if (songId != null && owner.isNotBlank()) load(songId, force = true)
                 }
         }
     }
 
-    fun load(songId: Long, force: Boolean = false) {
+    fun load(songId: String, force: Boolean = false) {
         if (!force && _state.value.songId == songId && _state.value.wiki != null) return
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _state.value = SongWikiUiState(songId = songId, isLoading = true)
             val result = runCatching { repository.songWiki(songId) }
             ensureActive()
+            repository.features().ensureCurrent()
             result
                 .onSuccess { _state.value = SongWikiUiState(songId = songId, wiki = it) }
                 .onFailure {
@@ -118,7 +113,7 @@ class SongWikiViewModel @Inject constructor(
 
 @Composable
 fun SongWikiScreen(
-    songId: Long,
+    songId: String,
     viewModel: SongWikiViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -277,7 +272,7 @@ fun SongWikiScreen(
                                 } else null,
                                 symbolName = "chevron.right",
                                 onClick = {
-                                    Screen.PlayList.navigate(navController) { addPath(playlist.id.toString()) }
+                                    com.ljyh.mei.ui.screen.source.navigateSourceContent(navController, playlist.ref)
                                 },
                             )
                         }
@@ -430,13 +425,4 @@ private fun WikiArtworkRow(
     }
 }
 
-private fun SongWikiSongReference.asMediaMetadata() = MediaMetadata(
-    id = id,
-    title = title,
-    coverUrl = artworkUrl.orEmpty(),
-    artists = artist.orEmpty().split(" / ").filter(String::isNotBlank).map {
-        MediaMetadata.Artist(it.hashCode().toLong(), it)
-    },
-    duration = 0,
-    album = MediaMetadata.Album(0, ""),
-)
+private fun SongWikiSongReference.asMediaMetadata() = track.toMediaMetadata()

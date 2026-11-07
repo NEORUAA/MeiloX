@@ -70,24 +70,19 @@ import androidx.paging.compose.LazyPagingItems
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
 import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.DetailPageHorizontalPadding
-import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
 import com.ljyh.mei.constants.PlaylistTrackTableHeaderKey
+import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.data.model.MediaMetadata
-import com.ljyh.mei.data.model.room.Like
-import com.ljyh.mei.ui.component.player.OverlayState
 import com.ljyh.mei.ui.component.playlist.rememberCoverBackground
-import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
 import com.ljyh.mei.ui.local.LocalPlayerConnection
-import com.ljyh.mei.ui.model.UiPlaylist
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
-import com.ljyh.mei.ui.screen.playlist.component.PlaylistActionOverlay
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
 import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
@@ -119,9 +114,33 @@ enum class SongListLandscapeLayout {
     AlbumHeader,
 }
 
+/** Original song-list presentation shared by every source; identity belongs to callbacks. */
+data class SongListDetailData(
+    val title: String,
+    val count: Int,
+    val subscriberCount: Long = 0,
+    val cover: String = "",
+    val coverList: List<String> = emptyList(),
+    val creatorName: String = "",
+    val tracks: List<MediaMetadata> = emptyList(),
+    val playCount: Long? = null,
+    val isSubscribed: Boolean = false,
+)
+
+@dagger.hilt.android.lifecycle.HiltViewModel
+class DetailArtworkViewModel @javax.inject.Inject constructor(
+    private val colors: com.ljyh.mei.di.repository.ColorRepository,
+) : androidx.lifecycle.ViewModel() {
+    fun getCachedColor(url: String) = colors.getFromMemory(url)
+    suspend fun getOrExtractColor(url: String) = colors.getColorOrExtract(com.ljyh.mei.AppContext.instance, url)
+    fun getCachedCoverIsDark(url: String) = colors.getCachedCoverIsDark(url)
+    suspend fun getCoverIsDarkOrExtract(url: String) = colors.getCoverIsDarkOrExtract(com.ljyh.mei.AppContext.instance, url)
+}
+
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun CommonSongListScreen(
-    uiData: UiPlaylist,
+fun SongListDetailScreen(
+    uiData: SongListDetailData,
     pagingItems: LazyPagingItems<MediaMetadata>? = null,
     isLoading: Boolean,
     onPlayAll: () -> Unit,
@@ -131,14 +150,13 @@ fun CommonSongListScreen(
     headerActionLabel: String,
     isSubscribed: Boolean = uiData.isSubscribed,
     headerActionPending: Boolean = false,
+    showHeaderAction: Boolean = true,
     onTrackClick: (MediaMetadata, Int) -> Unit,
-    onTrackDownload: ((MediaMetadata, MusicQuality) -> Unit)? = null,
     onBack: () -> Unit,
     playlistSearchQuery: String = "",
     isPlaylistSearchActive: Boolean = false,
     onPlaylistSearchQueryChange: ((String) -> Unit)? = null,
     onPlaylistSearchActiveChange: (Boolean) -> Unit = {},
-    viewModel: PlaylistViewModel = hiltViewModel(),
     onShufflePlay: () -> Unit = onPlayAll,
     detailMenu: List<io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem>? = null,
     selectionMode: Boolean = false,
@@ -154,26 +172,23 @@ fun CommonSongListScreen(
     usePlaylistTrackStyle: Boolean = useCoverBackground,
     showTrackArtwork: Boolean = true,
     hasLoadedContent: Boolean = true,
-    trackNumbers: Map<Long, Int> = emptyMap(),
+    trackNumber: (MediaMetadata, Int) -> Int = { _, index -> index + 1 },
     landscapeLayout: SongListLandscapeLayout = SongListLandscapeLayout.Stacked,
     usePlaylistPortraitHeader: Boolean = false,
+    favoriteTrackIds: Set<String> = emptySet(),
+    onTrackMore: (MediaMetadata, Rect) -> Unit,
+    overlayContent: @Composable () -> Unit = {},
+    artwork: DetailArtworkViewModel = hiltViewModel(),
 ) {
     val playerConnection = LocalPlayerConnection.current
-    val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.id?.toString()
+    val currentTrackId = playerConnection?.mediaMetadata?.collectAsState()?.value?.mediaId
     val isPlaying = playerConnection?.isPlaying?.collectAsState()?.value == true
-    val favoriteTrackIds =
-        rememberFavoriteTrackIds(
-            tracks = pagingItems?.itemSnapshotList?.items ?: uiData.tracks,
-            enabled = usePlaylistTrackStyle,
-        )
     var detailMenuOpen by remember { mutableStateOf(false) }
     val detailMenuAnchor = rememberGlasmioMenuAnchorState()
     val device = rememberDeviceInfo()
     val adaptiveLandscape = device.isLandscape && landscapeLayout != SongListLandscapeLayout.Stacked
     val bottomPadding =
         LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
-    val allMePlaylist by viewModel.playlist.collectAsState()
-    var currentOverlay by remember { mutableStateOf<OverlayState>(OverlayState.None) }
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
     val searchFocusRequester = remember { FocusRequester() }
     var doneActionTextWidthPx by remember { mutableIntStateOf(0) }
@@ -198,9 +213,9 @@ fun CommonSongListScreen(
     val coverBackground =
         rememberCoverBackground(
             coverUrl = backgroundCover,
-            getCachedColor = viewModel::getCachedColor,
-            getOrExtractColor = viewModel::getOrExtractColor,
-            ownerKey = viewModel,
+            getCachedColor = artwork::getCachedColor,
+            getOrExtractColor = artwork::getOrExtractColor,
+            ownerKey = artwork,
         )
     val headerBackdropBrush = rememberUpdatedState(coverBackground.brush)
     val headerBackdrop =
@@ -227,12 +242,6 @@ fun CommonSongListScreen(
                 snapshotFlow { searchTransition.value }.first { it >= 0.85f }
                 searchFocusRequester.requestFocus()
             }
-        }
-    }
-
-    LaunchedEffect(uiData.title, uiData.tracks) {
-        if (uiData.title.endsWith("喜欢的音乐")) {
-            viewModel.updateAllLike(uiData.tracks.map { Like(it.id.toString()) })
         }
     }
 
@@ -266,6 +275,7 @@ fun CommonSongListScreen(
                         subscribeCount = uiData.subscriberCount,
                         isSubscribed = isSubscribed,
                         isSubscriptionPending = headerActionPending,
+                        showSubscriptionAction = showHeaderAction,
                         onSubscribed = { onHeaderAction() },
                         detailAction = useCoverBackground,
                         horizontal =
@@ -393,10 +403,8 @@ fun CommonSongListScreen(
                         isPlaying = isPlaying,
                         favoriteTrackIds = favoriteTrackIds,
                         showLeadingDivider = useCoverBackground,
-                        trackNumbers = trackNumbers,
-                        onMoreClick = { track, anchor ->
-                            currentOverlay = OverlayState.TrackActionMenu(track, anchor)
-                        },
+                        trackNumber = trackNumber,
+                        onMoreClick = onTrackMore,
                         emptyMessage =
                             playlistSearchQuery.takeIf { it.isNotBlank() }?.let { "未找到匹配的歌曲" },
                     )
@@ -462,16 +470,8 @@ fun CommonSongListScreen(
                     onDismiss = { detailMenuOpen = false },
                 )
             }
-            PlaylistActionOverlay(
-                overlay = currentOverlay,
-                isCreator = uiData.isCreator,
-                playlistId = uiData.id,
-                allMePlaylist = allMePlaylist,
-                onDismiss = { currentOverlay = OverlayState.None },
-                onUpdateOverlay = { currentOverlay = it },
-                onDownloadTrack = onTrackDownload,
-                viewModel = viewModel,
-            )
+
+            overlayContent()
         }
     }
 }

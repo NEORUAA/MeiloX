@@ -1,4 +1,4 @@
 package com.ljyh.mei.data.repository
 
-// Compatibility names for existing native NetEase screens and integrations.
-internal typealias CloudUploadFile = com.ljyh.mei.source.netease.repository.CloudUploadFile
+// Compatibility name for host-owned file preparation.
+internal typealias CloudUploadFile = com.ljyh.mei.source.platform.CloudUploadFile
