@@ -41,7 +41,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.graphics.graphicsLayer
@@ -211,7 +210,11 @@ internal fun AppleMusicProgressSlider(
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxWidth().height(14.dp)
-                .onGloballyPositioned { trackCenterInRoot = it.boundsInRoot().center.y }
+                .onGloballyPositioned {
+                    // AnimatedVisibility can clip the entering rail completely. Its
+                    // visible bounds then collapse to zero, unlike its actual position.
+                    trackCenterInRoot = it.localToRoot(Offset(0f, it.size.height / 2f)).y
+                }
                 .graphicsLayer {
                 scaleX = scale.value
                 scaleY = scale.value

@@ -1,11 +1,14 @@
 package com.ljyh.mei.ui.component.player.component
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
@@ -35,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -77,8 +81,10 @@ import com.ljyh.mei.R
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.ui.component.player.state.rememberPlayerLikeState
+import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.component.player.component.classic.component.PlayerHeader
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicMarqueeText
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicProgressSlider
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicDimensions
 import com.ljyh.mei.ui.component.player.component.applemusic.Title
 import com.ljyh.mei.ui.component.player.component.applemusic.playerInfoMotion
@@ -106,6 +112,9 @@ import com.ljyh.mei.ui.component.player.component.applemusic.playerArtworkMotion
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.sheet.PlayerArtworkGeometry
 import io.github.neoruaa.glasmio.scaffold.expandedAnchor
+import io.github.neoruaa.glasmio.glass.LocalBlurBackdrop
+import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
+import io.github.neoruaa.glasmio.glass.render.backdrops.emptyBackdrop
 import com.ljyh.mei.ui.component.sheet.playerArtwork
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioBottomSheetState
 import com.ljyh.mei.ui.component.sheet.rememberPlayerSheetLayers
@@ -1399,6 +1408,73 @@ class AppleMusicTitleRenderingTest {
         compose.onNodeWithTag("empty_history_pull_host").performTouchInput { up() }
         repeat(45) { compose.mainClock.advanceTimeByFrame() }
         compose.runOnIdle { assertEquals(0f, drawnTop, 1f) }
+    }
+
+    @Test fun enteringControlsKeepTheLyricFadeAndQueueViewportAboveTheTrack() {
+        compose.mainClock.autoAdvance = false
+        val visible = mutableStateOf(true)
+        val trackTops = mutableListOf<Float>()
+        var viewportBounds = Rect.Zero
+        var headerHeight = 0f
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalPlayerConnection provides null,
+                LocalGlassBackdrop provides emptyBackdrop(),
+                LocalBlurBackdrop provides emptyBackdrop(),
+            ) {
+                MaterialTheme {
+                    headerHeight = with(LocalDensity.current) { 48.dp.toPx() }
+                    Box(
+                        Modifier.width(260.dp).height(320.dp).clipToBounds()
+                            .onGloballyPositioned { viewportBounds = it.boundsInRoot() },
+                    ) {
+                        AnimatedVisibility(
+                            visible = visible.value,
+                            enter = slideInVertically(tween(320)) { it },
+                            exit = slideOutVertically(tween(320)) { it },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        ) {
+                            AppleMusicProgressSlider(
+                                position = 5_000,
+                                duration = 200_000,
+                                onPositionChange = {},
+                                modifier = Modifier.fillMaxWidth(),
+                                onTrackTopChanged = { trackTops += it },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.runOnIdle { visible.value = false }
+        compose.mainClock.advanceTimeBy(400)
+        compose.runOnIdle {
+            trackTops.clear()
+            visible.value = true
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle {
+            assertTrue("The entering controls must publish their track position", trackTops.isNotEmpty())
+            assertTrue("The first entering rail must still be clipped below the viewport",
+                trackTops.any { it >= viewportBounds.bottom })
+        }
+        compose.mainClock.advanceTimeBy(400)
+        compose.runOnIdle {
+            for (trackTop in trackTops) {
+                val controlsTop = trackTop - viewportBounds.top - headerHeight
+                val queueHeight = controlsTop.coerceAtLeast(0f)
+                val fade = appleMusicLyricsControlsFadeRange(
+                    viewportHeight = viewportBounds.height - headerHeight,
+                    shift = 0f,
+                    translationY = 0f,
+                    controlsTop = controlsTop,
+                )
+                assertTrue("Clipping the rail must not collapse the queue viewport", queueHeight > 0f)
+                assertTrue("Clipping the rail must not erase every lyric", fade.endInclusive > 0f)
+            }
+            assertTrue("The settled track must return inside the viewport", trackTops.last() < viewportBounds.bottom)
+        }
     }
 
     @Test fun queueViewportClipsBeforeControlsUnderFullHeightParentConstraints() {
