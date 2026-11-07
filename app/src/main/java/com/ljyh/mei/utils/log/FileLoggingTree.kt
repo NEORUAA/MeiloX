@@ -13,7 +13,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class FileLoggingTree(private val context: Context) : Timber.Tree() {
+class FileLoggingTree(context: Context) : Timber.Tree() {
+
+    private val context = context.applicationContext
 
     private val logDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     // 使用 IO 线程写入文件，避免卡顿 UI

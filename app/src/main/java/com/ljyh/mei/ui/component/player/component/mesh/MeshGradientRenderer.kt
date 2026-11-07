@@ -125,6 +125,9 @@ internal class MeshGradientRenderer {
         // A returning album must reuse its fading state: its mutable shader may only
         // belong to one state, even when A -> B -> A happens before a fade completes.
         val returningState = meshStates.firstOrNull { it.album === album }
+        // Hidden players do not advance fades. Release superseded invisible states
+        // here while preserving the returning album and every visible crossfade.
+        meshStates.removeAll { it !== returningState && it.alpha <= 0f }
         meshStates.forEach { it.targetAlpha = -1f }
         if (returningState != null) {
             // Preserve compositing order so reversing a fade does not jump visually.

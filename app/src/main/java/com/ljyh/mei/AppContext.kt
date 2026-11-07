@@ -13,6 +13,7 @@ import coil3.request.crossfade
 import com.ljyh.mei.constants.DefaultImageCacheLimitMb
 import com.ljyh.mei.constants.ImageCacheLimitMbKey
 import com.ljyh.mei.utils.dataStore
+import com.ljyh.mei.utils.log.FileLoggingTree
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -24,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.ljyh.mei.source.script.ScriptPluginManager
+import timber.log.Timber
 
 @HiltAndroidApp
 class AppContext : Application(), SingletonImageLoader.Factory {
@@ -34,6 +36,9 @@ class AppContext : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         instance = this
         super.onCreate()
+        // Timber owns its trees for the lifetime of this process, across Activity recreation.
+        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        Timber.plant(FileLoggingTree(applicationContext))
         com.ljyh.mei.source.script.SourceArtworkRegistry.attach(sourceArtwork)
         sourceScope.launch { sourcePlugins.loadInstalled() }
         sourceUpdates.checkOnStartup()
