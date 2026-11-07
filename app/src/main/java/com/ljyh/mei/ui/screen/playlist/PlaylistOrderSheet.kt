@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -54,20 +55,26 @@ import kotlinx.coroutines.flow.collect
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+/** [trackKey] must return a unique, Bundle-saveable key for each typed track ID. */
 @Composable
-fun PlaylistOrderSheet(
-    state: PlaylistOrderState,
+fun <Id : Any> PlaylistOrderSheet(
+    state: PlaylistOrderState<Id>,
     onMove: (Int, Int) -> Unit,
-    onVisibleTracks: (List<Long>) -> Unit,
+    onVisibleTracks: (List<Id>) -> Unit,
     onSave: () -> Unit,
     onReload: () -> Unit,
     onDismiss: () -> Unit,
     visible: Boolean = true,
+    trackKey: (Id) -> Any = { it },
 ) {
     val current by rememberUpdatedState(state)
     val currentVisible by rememberUpdatedState(visible)
     val move by rememberUpdatedState(onMove)
     val loadVisible by rememberUpdatedState(onVisibleTracks)
+    val keyOf by rememberUpdatedState(trackKey)
+    val tracksByKey by rememberUpdatedState(remember(state.items, trackKey) {
+        state.items.associateBy { trackKey(it.id) }
+    })
     val haptics = LocalHapticFeedback.current
     val listState = rememberLazyListState()
     val dismissal = rememberMeiloXSheetDismissal(
@@ -77,8 +84,8 @@ fun PlaylistOrderSheet(
     )
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
         if (currentVisible && !current.saving) {
-            val fromIndex = current.items.indexOfFirst { it.id == from.key }
-            val toIndex = current.items.indexOfFirst { it.id == to.key }
+            val fromIndex = current.items.indexOfFirst { keyOf(it.id) == from.key }
+            val toIndex = current.items.indexOfFirst { keyOf(it.id) == to.key }
             if (fromIndex >= 0 && toIndex >= 0) {
                 move(fromIndex, toIndex)
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
@@ -86,7 +93,10 @@ fun PlaylistOrderSheet(
         }
     }
     LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
+        snapshotFlow {
+            if (currentVisible) listState.layoutInfo.visibleItemsInfo.mapNotNull { tracksByKey[it.key]?.id }
+            else emptyList()
+        }
             .collect { if (currentVisible) loadVisible(it) }
     }
     val topBarBlurProgress = rememberGlasmioHeaderScrollEdge(listState)
@@ -164,7 +174,7 @@ fun PlaylistOrderSheet(
                     }
                 }
             } else {
-                itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
+                itemsIndexed(state.items, key = { _, item -> trackKey(item.id) }) { index, item ->
                     val groupShape = ContinuousRoundedRectangle(
                         topStart = if (index == 0) 26.dp else 0.dp,
                         topEnd = if (index == 0) 26.dp else 0.dp,
@@ -172,7 +182,7 @@ fun PlaylistOrderSheet(
                         bottomEnd = if (index == state.items.lastIndex) 26.dp else 0.dp,
                     )
                     Column {
-                        ReorderableItem(reorderState, key = item.id) {
+                        ReorderableItem(reorderState, key = trackKey(item.id)) {
                             Row(
                                 Modifier.fillMaxWidth().glasmioGroupedListBackground(groupShape)
                                     .padding(horizontal = 20.dp, vertical = 8.dp).testTag("playlist-order-${item.id}")

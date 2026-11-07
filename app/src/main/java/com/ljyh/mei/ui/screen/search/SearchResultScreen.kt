@@ -146,8 +146,13 @@ fun SearchResultScreen(
                 }
                 if (state.loading) item("search-podcast-loading") { LoadingView() }
                 state.error?.let { error -> item("search-podcast-error") { ErrorView(sourceSearchErrorText(error)) } }
-                if (!state.loading && state.error == null && state.podcasts.isEmpty()) item("search-podcast-empty") { EmptyView() }
-                if (!state.loading && state.hasMore) item("search-podcast-more") { GlasmioGroupedList { GlasmioListRow("加载更多", showTopSeparator = false, onClick = viewModel::loadMore) } }
+                if (!state.loading && state.error == null && state.podcasts.isEmpty()) item("search-podcast-empty") {
+                    GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() }
+                }
+                if (!state.loading && state.hasMore && state.error == null) item("search-podcast-more") {
+                    LaunchedEffect(providerId, state.query, state.podcasts.size) { viewModel.loadMore() }
+                    LoadingView()
+                }
             }
             else if (selectedType == SearchType.Song) SourceTrackResults(state, providers,
                 onPlay = { tracks, index -> playTracks(tracks.map { it.toMediaMetadata() }, index) },
@@ -156,14 +161,31 @@ fun SearchResultScreen(
             else {
                 sourceContentItems(state.items, providers, { navigateSourceContent(navController, it) },
                     { tracks, index -> playTracks(tracks.map { it.toMediaMetadata() }, index) },
-                    { track, anchor -> overlay = OverlayState.TrackActionMenu(track.toMediaMetadata(), anchor) }, "typed-search")
-                sourceContentStatus(SourceContentState(providerId = providerId, items = state.items,
-                    loading = state.loading, hasMore = state.hasMore, nextCursor = state.nextCursor, error = state.error),
-                    { viewModel.search(submittedQuery, force = true, type = contentType) }, viewModel::loadMore)
+                    { track, anchor -> overlay = OverlayState.TrackActionMenu(track.toMediaMetadata(), anchor) }, "typed-search",
+                    subtitle = { sourceSearchSubtitle(it) })
+                if (!state.loading && !state.hasMore && state.error == null && state.items.isEmpty()) {
+                    item("typed-search-empty") { GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() } }
+                } else {
+                    sourceContentStatus(SourceContentState(providerId = providerId, items = state.items,
+                        loading = state.loading, hasMore = state.hasMore, nextOffset = state.items.size,
+                        nextCursor = state.nextCursor, error = state.error),
+                        { viewModel.search(submittedQuery, force = true, type = contentType) }, viewModel::loadMore)
+                }
             }
         }
         StandaloneTrackActionOverlay(overlay, onDismiss = { overlay = OverlayState.None }, onUpdateOverlay = { overlay = it })
     }
+}
+
+@Composable
+private fun sourceSearchSubtitle(item: SourceItem): String = when (item) {
+    is SourceItem.AlbumItem -> listOf(
+        item.album.artists.joinToString(" / ") { it.name },
+        stringResource(R.string.playlist_song_count, item.album.trackCount),
+    ).filter(String::isNotBlank).joinToString(" · ")
+    is SourceItem.PlaylistItem -> "${item.playlist.trackCount} • ${item.playlist.creatorName}"
+    is SourceItem.ArtistItem -> item.artist.aliases.ifEmpty { item.artist.alternateNames }.joinToString(" ")
+    is SourceItem.TrackItem -> sourceItemSubtitle(item)
 }
 
 @Composable

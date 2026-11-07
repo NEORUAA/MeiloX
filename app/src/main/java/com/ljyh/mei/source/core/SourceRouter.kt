@@ -229,16 +229,20 @@ class SourceRouter @Inject constructor(
     suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>, expectedAccountRevision: String? = null,
         expectedProvider: MusicProvider? = null) = editTracks(ref, tracks, PlaylistEditAction.REMOVE_TRACKS, expectedAccountRevision, expectedProvider)
     suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>, expectedAccountRevision: String? = null,
-        expectedProvider: MusicProvider? = null) = editTracks(ref, tracks, PlaylistEditAction.REORDER_TRACKS, expectedAccountRevision, expectedProvider)
+        expectedProvider: MusicProvider? = null, expectedContentRevision: Long? = null) =
+        editTracks(ref, tracks, PlaylistEditAction.REORDER_TRACKS, expectedAccountRevision, expectedProvider, expectedContentRevision)
 
     private suspend fun editTracks(ref: PlaylistRef, tracks: List<TrackRef>, action: PlaylistEditAction,
-        expectedAccountRevision: String?, expectedProvider: MusicProvider?) {
+        expectedAccountRevision: String?, expectedProvider: MusicProvider?, expectedContentRevision: Long? = null) {
         val selected = tracks.toList()
         validateTracksForPlaylist(ref, selected)
         val owner = mutations.capture(ref.providerId, expectedProvider, expectedAccountRevision)
         val editor = ownedEditor(owner, action)
         val affected = selected.map(::likeKey).toSet()
         write(owner, mutationKey(ref), uncertain = { it == mutationKey(ref) || it in affected }) {
+            if (expectedContentRevision != null && mutableContentRevision.value != expectedContentRevision) {
+                throw SourceException(SourceErrorCode.CANCELLED, "Playlist content changed before reorder")
+            }
             when (action) {
                 PlaylistEditAction.ADD_TRACKS -> editor.addTracks(ref, selected)
                 PlaylistEditAction.REMOVE_TRACKS -> editor.removeTracks(ref, selected)

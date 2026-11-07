@@ -184,6 +184,39 @@ class HomeRepositoryTest {
         assertNotNull(fixture.cache.read(fixture.owner, fixture.provider))
     }
 
+    @Test fun repeatedFeedContentStopsEvenWhenTheCursorChanges() = runTest(dispatcher) {
+        val fixture = Fixture()
+        fixture.provider.repeatAppend = true
+        val vm = fixture.model()
+        vm.open(SourceContentRequest.Feed(FeedKind.HOME, providerId = "qq"))
+        vm.state.first { !it.loading && it.error != null }
+        assertEquals(SourceErrorCode.INVALID_RESPONSE, vm.state.value.error)
+        assertFalse(vm.state.value.hasMore)
+        assertEquals(listOf(0, 30), fixture.provider.requests.map { it.offset })
+        assertEquals(1, vm.state.value.sections.size)
+    }
+
+    @Test fun categorySwitchKeepsItsControlsWhileAnAccountSwitchClearsThem() = runTest(dispatcher) {
+        val fixture = Fixture()
+        val categories = listOf(SourceCategory("all", "All"), SourceCategory("next", "Next"))
+        fixture.provider.categories = categories
+        val vm = fixture.model()
+        vm.open(SourceContentRequest.Feed(FeedKind.DISCOVER, providerId = "qq"))
+        vm.state.first { !it.loading && it.sections.isNotEmpty() }
+        val pending = CompletableDeferred<Unit>()
+        fixture.provider.pending = pending
+        vm.open(SourceContentRequest.Feed(FeedKind.DISCOVER, categoryId = "next", providerId = "qq"))
+        runCurrent()
+        assertTrue(vm.state.value.loading)
+        assertEquals(categories, vm.state.value.categories)
+        assertTrue(vm.state.value.sections.isEmpty())
+        fixture.provider.accountRevision.value = "another-account"
+        runCurrent()
+        assertTrue(vm.state.value.categories.isEmpty())
+        pending.complete(Unit)
+        advanceUntilIdle()
+    }
+
     private suspend fun awaitCache(fixture: Fixture, rejects: String? = null) = withContext(Dispatchers.IO) {
         withTimeout(3_000) {
             while (!fixture.cache.file(fixture.owner).isFile || rejects != null && fixture.cache.file(fixture.owner).readText() == rejects) delay(10)
@@ -203,7 +236,8 @@ class HomeRepositoryTest {
         fun richFeed(title: String = "Home"): SourceFeedPage {
             val artist = SourceArtistInfo(ArtistRef("qq", "artist/A"), "Artist", artwork, "Biography", listOf("Alias"), 12, 4, 0,
                 listOf("Composer"), listOf(SourceArtistExpertise("Piano", 9)), listOf("Translated"), listOf("Alias"))
-            val playlist = SourcePlaylist(PlaylistRef("qq", "playlist-007"), "Playlist", artwork, "Creator", 120, playCount = 12_345L)
+            val playlist = SourcePlaylist(PlaylistRef("qq", "playlist-007"), "Playlist", artwork, "Creator", 120,
+                playCount = 12_345L, subtitle = "Recommended for you")
             val album = SourceAlbumInfo(AlbumRef("qq", "album-2"), "Album", artwork, listOf(SourceArtist("Artist", artist.ref)), 120, publishedAtMs = 1234)
             val items = listOf(SourceItem.PlaylistItem(playlist), SourceItem.AlbumItem(album), SourceItem.ArtistItem(artist))
             val targets = listOf(SourceFeedTarget.Content(playlist.ref), SourceFeedTarget.Route("podcasts"),
@@ -229,17 +263,23 @@ class HomeRepositoryTest {
         override val instanceId = ProviderInstanceId("fixture:qq")
         override val capabilities = setOf(SourceCapability.FEED, SourceCapability.FEATURES)
         override val accountRevision = MutableStateFlow<String?>("private-account-revision")
-        override val feedKinds = setOf(FeedKind.HOME)
+        override val feedKinds = setOf(FeedKind.HOME, FeedKind.DISCOVER)
         override val features = mapOf("discovery" to setOf("dailySongs", "personalRadio"))
         override val featureRoutes = setOf("podcasts")
         val requests = mutableListOf<PageRequest>()
         var failAppend = false
+        var repeatAppend = false
+        var categories = emptyList<SourceCategory>()
+        var pending: CompletableDeferred<Unit>? = null
         override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest): SourceFeedPage {
             requests += page
+            pending?.await()
             if (page.offset > 0 && failAppend) throw SourceException(SourceErrorCode.NETWORK)
-            return SourceFeedPage(listOf(SourceFeedSection("page-${page.offset}", "Page", SourceFeedLayout.TRACKS,
-                listOf(SourceItem.TrackItem(Track(TrackRef("qq", "track-${page.offset}"), "Track", listOf(SourceArtist("Artist"))))))),
-                hasMore = page.offset == 0, nextCursor = if (page.offset == 0) "next" else null)
+            val contentOffset = if (repeatAppend) 0 else page.offset
+            return SourceFeedPage(listOf(SourceFeedSection("page-$contentOffset", "Page", SourceFeedLayout.TRACKS,
+                listOf(SourceItem.TrackItem(Track(TrackRef("qq", "track-$contentOffset"), "Track", listOf(SourceArtist("Artist"))))))),
+                categories = categories, hasMore = page.offset == 0 || repeatAppend,
+                nextCursor = if (page.offset == 0) "next" else if (repeatAppend) "next-${page.offset}" else null)
         }
         override suspend fun invokeFeature(feature: String, action: String, parameters: JsonObject): JsonElement = error("Cache lookup must not invoke a feature")
     }

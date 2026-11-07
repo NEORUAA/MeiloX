@@ -123,6 +123,33 @@ class ArtistCatalogTest {
         assertEquals(listOf("1"), albumIds(vm))
     }
 
+    @Test fun repeatedAlbumsStopEvenWhenTheCursorChanges() = runTest(dispatcher) {
+        val provider = ArtistProvider().apply { albums = { page ->
+            albumPage(true, "1").copy(nextCursor = "cursor-${page.offset}")
+        } }
+        val vm = model(provider)
+        vm.open(SourceContentRequest.Detail(ref)); advanceUntilIdle()
+        vm.loadMoreArtistAlbums(); advanceUntilIdle()
+        vm.loadMoreArtistAlbums(); advanceUntilIdle()
+        assertEquals(listOf(0, 1), provider.albumRequests.map { it.offset })
+        assertFalse(vm.state.value.albumsHasMore)
+        assertEquals(SourceErrorCode.INVALID_RESPONSE, vm.state.value.albumsError)
+        assertEquals(listOf("1"), albumIds(vm))
+    }
+
+    @Test fun pendingArtistSwitchCannotAppendThePreviousPage() = runTest(dispatcher) {
+        val provider = ArtistProvider().apply {
+            albums = { albumPage(true, "1") }
+            songs = { SourcePage(listOf(Track(TrackRef("qq", "song"), "Song", emptyList())), hasMore = true) }
+        }
+        val vm = model(provider)
+        vm.open(SourceContentRequest.Detail(ref)); advanceUntilIdle()
+        vm.open(SourceContentRequest.Detail(ref.copy(artistId = "other")))
+        vm.loadMore(); vm.loadMoreArtistAlbums(); advanceUntilIdle()
+        assertEquals(listOf(0, 0), provider.songRequests.map { it.offset })
+        assertEquals(listOf(0, 0), provider.albumRequests.map { it.offset })
+    }
+
     @Test fun albumSearchDebouncesAndContinuesInThreePageBudgets() = runTest(dispatcher) {
         val provider = ArtistProvider().apply { albums = { page -> albumPage(page.offset < 4, page.offset.toString()) } }
         val vm = model(provider)

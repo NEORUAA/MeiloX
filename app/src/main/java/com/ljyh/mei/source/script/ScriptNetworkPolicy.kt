@@ -75,38 +75,49 @@ class ScriptNetworkPolicy(
                 return@withContext artworkUri(file)
             }
             exchange(client.newCall(Request.Builder().url(checked).build()), ensureCurrent) { response, guard ->
-                if (response.code in 300..399) throw SourceException(SourceErrorCode.NETWORK)
-                if (!response.isSuccessful) throw SourceException(
-                    if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
-                )
-                val body = response.body ?: denied()
-                if (body.contentLength() > MAX_RESPONSE_BYTES) invalidResponse()
-                val source = body.source()
-                if (source.request(MAX_RESPONSE_BYTES + 1L)) invalidResponse()
-                val bytes = source.readByteArray()
-                guard()
-                check(file.parentFile?.isDirectory == true || file.parentFile?.mkdirs() == true)
-                val temporary = java.io.File.createTempFile(".artwork-", ".tmp", file.parentFile)
-                try {
-                    temporary.writeBytes(bytes)
-                    guard()
-                    java.nio.file.Files.move(temporary.toPath(), file.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-                } finally { temporary.delete() }
-                val cached = file.parentFile?.listFiles().orEmpty().filter { it.isFile && it.name.matches(Regex("[a-f0-9]{64}")) }
-                    .sortedBy { it.lastModified() }
-                var bytesRemaining = cached.sumOf { it.length() }
-                var countRemaining = cached.size
-                cached.filter { it != file }.forEach { old ->
-                    if (bytesRemaining > 16L * 1024 * 1024 || countRemaining > 256) {
-                        val size = old.length()
-                        if (old.delete()) { bytesRemaining -= size; countRemaining-- }
-                    }
-                }
-                guard()
-                artworkUri(file)
+                cacheArtwork(response, file, guard)
             }
         }
+    }
+
+    /** Artwork streams directly into the host cache and never enters the script response buffer. */
+    internal fun cacheArtwork(response: Response, file: java.io.File, ensureCurrent: () -> Unit): String {
+        if (response.code in 300..399) throw SourceException(SourceErrorCode.NETWORK)
+        if (!response.isSuccessful) throw SourceException(
+            if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
+        )
+        val body = response.body ?: invalidResponse()
+        ensureCurrent()
+        check(file.parentFile?.isDirectory == true || file.parentFile?.mkdirs() == true)
+        val temporary = java.io.File.createTempFile(".artwork-", ".tmp", file.parentFile)
+        try {
+            body.byteStream().use { input ->
+                temporary.outputStream().use { output ->
+                    val buffer = ByteArray(65_536)
+                    while (true) {
+                        ensureCurrent()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            ensureCurrent()
+            java.nio.file.Files.move(temporary.toPath(), file.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } finally { temporary.delete() }
+        val cached = file.parentFile?.listFiles().orEmpty().filter { it.isFile && it.name.matches(Regex("[a-f0-9]{64}")) }
+            .sortedBy { it.lastModified() }
+        var bytesRemaining = cached.sumOf { it.length() }
+        var countRemaining = cached.size
+        cached.filter { it != file }.forEach { old ->
+            if (bytesRemaining > 16L * 1024 * 1024 || countRemaining > 256) {
+                val size = old.length()
+                if (old.delete()) { bytesRemaining -= size; countRemaining-- }
+            }
+        }
+        ensureCurrent()
+        return artworkUri(file)
     }
 
     suspend fun request(request: JsonObject, ensureCurrent: () -> Unit = {}): JsonObject = concurrency.withPermit {
@@ -156,7 +167,7 @@ class ScriptNetworkPolicy(
         exchange(requestClient.newCall(builder.build()), ensureCurrent) { response, _ -> responsePayload(response, responseEncoding) }
     }
 
-    /** Cancellation owns the socket until the complete bounded body has been consumed. */
+    /** Cancellation owns the socket until the response body has been consumed. */
     internal suspend fun <T> exchange(call: Call, ensureCurrent: () -> Unit, consume: (Response, () -> Unit) -> T): T =
         suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation { call.cancel() }

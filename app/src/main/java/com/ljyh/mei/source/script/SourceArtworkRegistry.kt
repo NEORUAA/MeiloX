@@ -24,6 +24,10 @@ object SourceArtworkRegistry {
     }
 
     internal fun owns(value: String) = isLegacy(value) || durable?.owns(value) == true
+    internal suspend fun needsMetadataRefresh(value: String): Boolean {
+        if (isLegacy(value)) return synchronized(entries) { value !in entries }
+        return durable?.needsMetadataRefresh(value) == true
+    }
     internal suspend fun resolve(value: String): String {
         if (!isLegacy(value)) return durable?.resolve(value) ?: throw SourceException(SourceErrorCode.MISSING_PROVIDER)
         val loader = synchronized(entries) { entries[value] } ?: throw SourceException(SourceErrorCode.MISSING_PROVIDER)

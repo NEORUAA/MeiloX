@@ -93,6 +93,39 @@ import org.junit.runner.RunWith
 class SongListRenderingTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test
+    fun sharedOrderSheetKeepsOpaqueTrackKeysThroughMoveSaveAndCancel() {
+        val tracks = listOf(
+            com.ljyh.mei.source.api.Track(com.ljyh.mei.source.api.TrackRef("qqmusic", "00042"), "First source song", emptyList()),
+            com.ljyh.mei.source.api.Track(com.ljyh.mei.source.api.TrackRef("another", "name/海:77"), "Second source song", emptyList()),
+        )
+        val original = tracks.map { it.ref }
+        val state = mutableStateOf(PlaylistOrderState("playlist", tracks.map { PlaylistOrderItem(it.ref, it.toMediaMetadata()) }, original, loading = false))
+        var saved = emptyList<com.ljyh.mei.source.api.TrackRef>()
+        var visible = emptyList<com.ljyh.mei.source.api.TrackRef>()
+        var dismissed = false
+        compose.setContent {
+            GlasmioTheme {
+                GlasmioBackdropHost(sampledContent = {}, overlayContent = {
+                    PlaylistOrderSheet(state.value,
+                        trackKey = com.ljyh.mei.source.api.TrackRefCodec::encode,
+                        onMove = { from, to -> state.value = state.value.copy(items = state.value.items.toMutableList().apply { add(to, removeAt(from)) }) },
+                        onVisibleTracks = { visible = it }, onSave = { saved = state.value.items.map { it.id } },
+                        onReload = {}, onDismiss = { dismissed = true })
+                })
+            }
+        }
+        compose.onNodeWithText("First source song").assertIsDisplayed()
+        compose.waitUntil { visible.toSet() == original.toSet() }
+        val firstRow = compose.onNodeWithTag("playlist-order-${original.first()}").fetchSemanticsNode()
+        compose.runOnIdle { assertTrue(firstRow.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].single().action()) }
+        compose.onNodeWithTag("playlist-order-save").performClick()
+        compose.runOnIdle { assertEquals(original.reversed(), saved) }
+        val cancel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.playlist_order_cancel)
+        compose.onNodeWithText(cancel).performClick()
+        compose.waitUntil { dismissed }
+    }
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @Test
     fun filteredLibrarySongsKeepOnlyVisibleResultsAndTheirOpaquePlaybackIdentities() = runBlocking {

@@ -7,6 +7,7 @@ import com.ljyh.mei.source.api.LibraryCapability
 import com.ljyh.mei.source.api.FeedCapability
 import com.ljyh.mei.source.api.ContentType
 import com.ljyh.mei.source.api.SourceItem
+import com.ljyh.mei.source.api.SourcePage
 import com.ljyh.mei.source.api.CatalogCapability
 import com.ljyh.mei.source.api.MusicProvider
 import com.ljyh.mei.source.api.PageRequest
@@ -73,6 +74,14 @@ internal fun supportedSourceSearchType(requested: Int, supported: Set<SearchType
     SearchType.entries.firstOrNull { it.type == requested && it in supported }
         ?: SearchType.entries.firstOrNull { it in supported }
 
+internal fun sourceSearchHasMore(
+    page: SourcePage<SourceItem>,
+    previousItems: List<SourceItem>,
+    mergedItems: List<SourceItem>,
+    seenCursors: Set<String>,
+): Boolean = page.hasMore && mergedItems.size > previousItems.size &&
+    (page.nextCursor == null || page.nextCursor !in seenCursors)
+
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -103,6 +112,7 @@ class SourceSearchViewModel @Inject constructor(
     private var contentType = ContentType.TRACK
     private var podcastMode = false
     private var podcastSession: SharedOnlineSession? = null
+    private val seenCursors = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
@@ -155,6 +165,7 @@ class SourceSearchViewModel @Inject constructor(
         contentType = type
         podcastMode = podcasts
         podcastSession = null
+        seenCursors.clear()
         mutableState.value = SourceSearchState(query = query)
         if (query.isNotEmpty() && currentProviderId().isNotEmpty()) loadPage(append = false)
     }
@@ -190,10 +201,11 @@ class SourceSearchViewModel @Inject constructor(
                 if (requestGeneration != generation || providerId != currentProviderId()) return@launch
                 offset += page.items.size
                 val items = (oldItems + page.items).distinctBy { it.ref }
+                val hasMore = sourceSearchHasMore(page, oldItems, items, seenCursors)
+                page.nextCursor?.let(seenCursors::add)
                 mutableState.value = SourceSearchState(query,
                     tracks = items.filterIsInstance<SourceItem.TrackItem>().map { it.track }, items = items,
-                    nextCursor = page.nextCursor, hasMore = page.hasMore && page.items.isNotEmpty() &&
-                        (!append || items.size > oldItems.size || page.nextCursor != null && page.nextCursor != nextCursor))
+                    nextCursor = page.nextCursor, hasMore = hasMore)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

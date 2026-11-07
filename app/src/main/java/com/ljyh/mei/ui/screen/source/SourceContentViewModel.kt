@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.ljyh.mei.ui.screen.artist.ArtistCatalogSearchPageBudget
 import com.ljyh.mei.ui.screen.artist.ArtistCatalogSearchDebounceMillis
 
@@ -35,6 +37,19 @@ sealed interface SourceContentRequest {
     data class Account(val providerId: String) : SourceContentRequest
     data class Editor(val providerId: String) : SourceContentRequest
 }
+
+internal data class SourceDetailTracks(
+    val ref: ContentRef,
+    val title: String,
+    val tracks: List<Track>,
+    val provider: MusicProvider,
+    val providerVersion: String,
+    val accountRevision: String?,
+    val account: SourceAccount?,
+    val generation: Long,
+    val contentRevision: Long,
+    val editableActions: Set<PlaylistEditAction> = emptySet(),
+)
 
 data class SourceContentState(
     val providerId: String = "",
@@ -90,6 +105,7 @@ class SourceContentViewModel internal constructor(
     val message = mutableMessage.asStateFlow()
     private var generation = 0L
     private var displayedRequest: SourceContentRequest? = null
+    private var displayedProvider: MusicProvider? = null
     private var pagination: Job? = null
     private var albumPagination: Job? = null
     private var artistSearchJob: Job? = null
@@ -97,6 +113,8 @@ class SourceContentViewModel internal constructor(
     private var artistSearchSelection: Triple<ArtistRef, Boolean, String>? = null
     private val seenPages = mutableSetOf<List<ContentRef>>()
     private val seenCursors = mutableSetOf<String>()
+    private val detailTracksMutex = Mutex()
+    private var detailTracksCache: SourceDetailTracks? = null
 
     init {
         viewModelScope.launch {
@@ -121,14 +139,21 @@ class SourceContentViewModel internal constructor(
                         val refreshing = refreshPending
                         refreshPending = false
                         val previous = state.value
-                        val sameOwner = displayedRequest == requested && previous.providerId == id &&
-                            previous.providerVersion == provider?.version.orEmpty() && previous.accountRevision == accountRevision
+                        val sameSource = displayedProvider === provider && previous.providerId == id && previous.providerVersion == provider?.version.orEmpty() &&
+                            previous.accountRevision == accountRevision
+                        val sameOwner = displayedRequest == requested && sameSource
+                        val retainedCategories = previous.categories.takeIf {
+                            sameSource && requested is SourceContentRequest.Feed &&
+                                (displayedRequest as? SourceContentRequest.Feed)?.kind == requested.kind
+                        }.orEmpty()
                         if (!sameOwner) mutableMessage.value = null
                         mutableState.value = if (sameOwner) previous.copy(loading = true, refreshing = refreshing, error = null,
                             albumsLoading = false, albumsError = null) else SourceContentState(providerId = id,
-                            providerVersion = provider?.version.orEmpty(), accountRevision = accountRevision, loading = true,
+                            providerVersion = provider?.version.orEmpty(), accountRevision = accountRevision,
+                            categories = retainedCategories, loading = true,
                             refreshing = refreshing)
                         displayedRequest = requested
+                        displayedProvider = provider
                         val home = requested is SourceContentRequest.Feed && requested.kind == FeedKind.HOME
                         val owner = provider?.takeIf { home }?.let { SourceHomeCacheOwner(id, it.instanceId, it.version, accountRevision) }
                         val cacheGuard: suspend () -> Unit = {
@@ -171,6 +196,7 @@ class SourceContentViewModel internal constructor(
 
     private fun invalidatePage() {
         generation++
+        detailTracksCache = null
         pagination?.cancel()
         albumPagination?.cancel()
         artistSearchJob?.cancel()
@@ -189,7 +215,7 @@ class SourceContentViewModel internal constructor(
     fun loadMore() {
         val current = mutableState.value
         val requested = request.value ?: return
-        if (!current.hasMore || current.loading || pagination?.isActive == true) return
+        if (requested != displayedRequest || !current.hasMore || current.loading || current.refreshing || pagination?.isActive == true) return
         val token = generation
         mutableState.value = current.copy(loading = true, error = null)
         pagination = viewModelScope.launch { load(requested, current.providerId, token, append = true) }
@@ -276,7 +302,10 @@ class SourceContentViewModel internal constructor(
             currentCoroutineContext().ensureActive()
             if (token != generation || !sameOwner(boundProvider, previous)) return
             val progressed = if (requested is SourceContentRequest.Feed) {
-                if (result.hasMore && (result.nextCursor == null || result.nextCursor == page.cursor || result.nextCursor in seenCursors)) {
+                val grew = result.sections.sumOf { it.items.size + it.cards.size } >
+                    previous.sections.sumOf { it.items.size + it.cards.size }
+                if (result.hasMore && (result.nextCursor == null || result.nextCursor == page.cursor ||
+                        result.nextCursor in seenCursors || append && !grew)) {
                     throw SourceException(SourceErrorCode.INVALID_RESPONSE)
                 }
                 result
@@ -328,7 +357,7 @@ class SourceContentViewModel internal constructor(
     fun loadMoreArtistAlbums() {
         val ref = ((request.value as? SourceContentRequest.Detail)?.ref as? ArtistRef) ?: return
         val current = state.value
-        if (!current.albumsHasMore || current.albumsLoading || current.loading) return
+        if (request.value != displayedRequest || !current.albumsHasMore || current.albumsLoading || current.loading || current.refreshing) return
         val token = generation
         val boundProvider = provider(ref.providerId) ?: return
         mutableState.value = current.copy(albumsLoading = true, albumsError = null)
@@ -340,7 +369,7 @@ class SourceContentViewModel internal constructor(
                 if (token != generation || !sameOwner(boundProvider, current)) return@launch
                 val latest = state.value
                 val merged = mergeSections(latest.sections, albumSections(albums.items))
-                if (albums.hasMore && albums.nextCursor == page.cursor && merged == latest.sections) {
+                if (albums.hasMore && merged == latest.sections) {
                     throw SourceException(SourceErrorCode.INVALID_RESPONSE)
                 }
                 mutableState.value = latest.copy(sections = merged, albumsLoading = false, albumsError = null,
@@ -426,7 +455,7 @@ class SourceContentViewModel internal constructor(
         val current = state.value
         val tracks = current.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
         if (tracks.isEmpty() || startIndex !in tracks.indices || initialTracks.map { it.ref } != tracks.map { it.ref } ||
-            provider(current.providerId)?.version != current.providerVersion) return null
+            provider(current.providerId) !== displayedProvider || provider(current.providerId)?.version != current.providerVersion) return null
         val total = when (val detail = current.detail) {
             is SourceItem.PlaylistItem -> detail.playlist.trackCount
             is SourceItem.AlbumItem -> detail.album.trackCount
@@ -454,6 +483,97 @@ class SourceContentViewModel internal constructor(
             tracks.map { it.ref }.distinct().size == tracks.size &&
             PlaylistEditAction.REORDER_TRACKS in playlist.editableActions &&
             PlaylistEditAction.REORDER_TRACKS in editor?.playlistEditActions.orEmpty()
+    }
+
+    /** Bulk actions share the playback paginator while keeping the visible list and its scroll position. */
+    internal suspend fun detailTracks(ref: ContentRef, reload: Boolean = false): SourceDetailTracks = detailTracksMutex.withLock {
+        if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
+            ensureDetailCurrent(it)
+            return@withLock it
+        }
+        val displayed = state.value
+        val reloadDetail = reload || displayed.error != null
+        val owner = registry.requireProvider(ref.providerId)
+        val token = generation
+        val revision = router.contentRevision.value
+        val account = if (owner !is AccountRevisionCapability && SourceCapability.ACCOUNT in owner.capabilities)
+            router.account(ref.providerId) else displayed.account
+        val snapshot = SourceDetailTracks(ref, displayed.title, emptyList(), owner, displayed.providerVersion,
+            displayed.accountRevision, account, token, revision)
+        ensureDetailCurrent(snapshot)
+        val detail = if (reloadDetail) when (ref) {
+            is PlaylistRef -> SourceItem.PlaylistItem(router.playlist(ref))
+            is AlbumRef -> SourceItem.AlbumItem(router.album(ref))
+            is TrackRef -> SourceItem.TrackItem(router.getTrack(ref) ?: throw SourceException(SourceErrorCode.NOT_FOUND))
+            else -> displayed.detail
+        } else displayed.detail
+        ensureDetailCurrent(snapshot)
+        val initialTracks = if (reloadDetail) emptyList() else displayed.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
+        val total = when (detail) {
+            is SourceItem.PlaylistItem -> detail.playlist.trackCount
+            is SourceItem.AlbumItem -> detail.album.trackCount
+            else -> null
+        }?.takeIf { it > 0 }
+        val tracks = if (ref is TrackRef) listOf((detail as? SourceItem.TrackItem)?.track
+            ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)) else {
+            val queue = SourceContentQueue(router, ref, displayed.title, initialTracks,
+                hasMore = reloadDetail || displayed.hasMore,
+                nextCursor = if (reloadDetail) null else displayed.nextCursor,
+                nextOffset = if (reloadDetail) 0 else displayed.nextOffset,
+                knownTotalCount = total, account = account,
+                initialAccountRevision = displayed.accountRevision, mediaItemFactory = { null })
+            try {
+                while (queue.hasNextPage()) {
+                    ensureDetailCurrent(snapshot)
+                    when (val result = queue.nextPage()) {
+                        is Queue.Result.Error -> throw result.exception ?: SourceException(SourceErrorCode.INVALID_RESPONSE)
+                        is Queue.Result.Success -> Unit
+                    }
+                }
+                queue.loadedTracks()
+            } finally { queue.release() }
+        }
+        ensureDetailCurrent(snapshot)
+        if (total != null && tracks.size != total) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        snapshot.copy(title = detail?.title ?: displayed.title, tracks = tracks,
+            editableActions = (detail as? SourceItem.PlaylistItem)?.playlist?.editableActions.orEmpty()).also { detailTracksCache = it }
+    }
+
+    internal suspend fun ensureDetailCurrent(snapshot: SourceDetailTracks, includeContent: Boolean = true) {
+        currentCoroutineContext().ensureActive()
+        val revision = (snapshot.provider as? AccountRevisionCapability)?.accountRevision?.first()
+        val account = if (snapshot.provider !is AccountRevisionCapability && SourceCapability.ACCOUNT in snapshot.provider.capabilities)
+            router.account(snapshot.ref.providerId) else snapshot.account
+        if (request.value != SourceContentRequest.Detail(snapshot.ref) || state.value.detail?.ref != snapshot.ref ||
+            displayedProvider !== snapshot.provider || registry.provider(snapshot.ref.providerId) !== snapshot.provider || snapshot.provider.status != SourceStatus.READY ||
+            snapshot.provider.version != snapshot.providerVersion || revision != snapshot.accountRevision ||
+            account?.ref != snapshot.account?.ref || account?.sessionRevision != snapshot.account?.sessionRevision ||
+            includeContent && (generation != snapshot.generation || router.contentRevision.value != snapshot.contentRevision)) {
+            throw CancellationException("Detail source changed")
+        }
+    }
+
+    internal suspend fun saveTrackOrder(snapshot: SourceDetailTracks, orderedRefs: List<TrackRef>): Boolean {
+        ensureDetailCurrent(snapshot)
+        val ref = snapshot.ref as? PlaylistRef ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
+        val original = snapshot.tracks.map { it.ref }
+        if (orderedRefs.size != original.size || orderedRefs.toSet().size != orderedRefs.size || orderedRefs.toSet() != original.toSet()) {
+            throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        }
+        if (orderedRefs == original) return true
+        val latest = detailTracks(ref, reload = true)
+        if (latest.tracks.map { it.ref } != original) return false
+        if (PlaylistEditAction.REORDER_TRACKS !in latest.editableActions) throw SourceException(SourceErrorCode.UNSUPPORTED)
+        ensureDetailCurrent(snapshot)
+        try {
+            router.reorderTracks(ref, orderedRefs, snapshot.accountRevision, snapshot.provider,
+                expectedContentRevision = snapshot.contentRevision)
+        } catch (error: SourceException) {
+            if (error.code == SourceErrorCode.CANCELLED && router.contentRevision.value != snapshot.contentRevision) return false
+            throw error
+        }
+        ensureDetailCurrent(snapshot, includeContent = false)
+        return true
     }
 
     fun setLiked(track: TrackRef, liked: Boolean, expectedProvider: MusicProvider? = null, expectedAccountRevision: String? = null) =

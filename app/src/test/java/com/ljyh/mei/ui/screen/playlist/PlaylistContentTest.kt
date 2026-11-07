@@ -1,5 +1,9 @@
 package com.ljyh.mei.ui.screen.playlist
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -15,8 +19,18 @@ import com.ljyh.mei.data.model.PlaylistOrderChangedException
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.validatePlaylistTrackOrder
 import com.ljyh.mei.data.model.api.UpdatePlaylistTrackOrder
+import com.ljyh.mei.source.api.*
+import com.ljyh.mei.source.core.ProviderRegistry
+import com.ljyh.mei.source.core.SourceMutationCoordinator
+import com.ljyh.mei.source.core.SourcePreferences
+import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.ui.screen.source.SourceContentRequest
+import com.ljyh.mei.ui.screen.source.SourceContentViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flow
@@ -25,6 +39,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -184,6 +200,170 @@ class PlaylistContentTest {
     }
 
     @Test
+    fun sourceBulkTracksLoadEveryOpaqueIdAndReuseCacheWithoutChangingVisiblePages() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        try {
+            for (ref in listOf(PlaylistRef(provider.id, "playlist/opaque"), AlbumRef(provider.id, "album/opaque"))) {
+                model.open(SourceContentRequest.Detail(ref))
+                runCurrent()
+                val visible = model.state.value
+                assertEquals(30, visible.items.size)
+
+                val snapshot = model.detailTracks(ref)
+                assertEquals(provider.tracks, snapshot.tracks)
+                val match = com.ljyh.mei.ui.screen.source.sourceDetailMatches(snapshot.tracks, "Track 65").single()
+                assertEquals(64, match.index)
+                assertEquals(provider.tracks.last().ref, match.value.ref)
+                assertEquals(listOf(0, 30, 60), provider.pageRequests.takeLast(3).map { it.offset })
+                assertSame(visible, model.state.value)
+                val requests = provider.pageRequests.size
+                assertSame(snapshot, model.detailTracks(ref))
+                assertEquals(requests, provider.pageRequests.size)
+            }
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceBulkTracksRestartFailedUnknownLengthPaginationBeforeReturningAllTracks() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider().apply { reportedTrackCount = 0; invalidContinuation = true }
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            model.loadMore()
+            runCurrent()
+            val failedPage = model.state.value
+            assertEquals(SourceErrorCode.INVALID_RESPONSE, failedPage.error)
+            assertFalse(failedPage.hasMore)
+            assertEquals(30, failedPage.items.size)
+
+            val failedRead = runCatching { model.detailTracks(ref) }.exceptionOrNull()
+            assertEquals(SourceErrorCode.INVALID_RESPONSE, (failedRead as? SourceException)?.code)
+            provider.invalidContinuation = false
+            val complete = model.detailTracks(ref)
+            assertEquals(provider.tracks, complete.tracks)
+            assertEquals(listOf(0, 30, 60), provider.pageRequests.takeLast(3).map { it.offset })
+            assertSame(failedPage, model.state.value)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceDetailSnapshotsRejectChangedAccountsAndReplacedProviders() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val oldAccount = model.detailTracks(ref)
+            provider.accountRevision.value = "account-B"
+            assertTrue(runCatching { model.ensureDetailCurrent(oldAccount) }.exceptionOrNull() is CancellationException)
+
+            runCurrent()
+            val currentAccount = model.detailTracks(ref)
+            assertEquals("account-B", currentAccount.accountRevision)
+            registry.register(DetailProvider())
+            assertTrue(runCatching { model.ensureDetailCurrent(currentAccount) }.exceptionOrNull() is CancellationException)
+            assertTrue(provider.savedOrders.isEmpty())
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceDetailCannotAdoptAnUncachedPrefixFromAReplacedSameVersionProvider() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider().apply { tracks = tracks.take(3) }
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertFalse(model.state.value.hasMore)
+            val replacement = DetailProvider().apply { tracks = tracks.takeLast(3) }
+            registry.register(replacement)
+
+            assertTrue(runCatching { model.detailTracks(ref) }.exceptionOrNull() is CancellationException)
+            assertNull(model.pagedQueue(SourceContentRequest.Detail(ref), provider.tracks, 0, "Playlist"))
+            runCurrent()
+            val current = model.detailTracks(ref)
+            assertSame(replacement, current.provider)
+            assertEquals(replacement.tracks, current.tracks)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceOrderSaveReloadsTheFullPlaylistAndRejectsConcurrentChanges() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val snapshot = model.detailTracks(ref)
+            provider.tracks = provider.tracks.drop(1) + provider.tracks.first()
+
+            assertFalse(model.saveTrackOrder(snapshot, snapshot.tracks.map { it.ref }.reversed()))
+            assertEquals(listOf(0, 30, 60), provider.pageRequests.takeLast(3).map { it.offset })
+            assertTrue(provider.savedOrders.isEmpty())
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceOrderSaveWritesAllTypedIdsAndRejectsIncompleteOrders() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val snapshot = model.detailTracks(ref)
+            val reversed = snapshot.tracks.map { it.ref }.reversed()
+            val rejected = runCatching { model.saveTrackOrder(snapshot, reversed.dropLast(1)) }.exceptionOrNull()
+            assertEquals(SourceErrorCode.INVALID_RESPONSE, (rejected as? SourceException)?.code)
+            assertTrue(provider.savedOrders.isEmpty())
+
+            assertTrue(model.saveTrackOrder(snapshot, reversed))
+            assertEquals(listOf(reversed), provider.savedOrders)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
     fun cachedAndFetchedTracksFollowCanonicalIdsWithoutRefetchingCachedRows() = runBlocking {
         val requests = mutableListOf<List<String>>()
         val source = PlaylistTrackSource(
@@ -236,4 +416,41 @@ class PlaylistContentTest {
         """{"id":$id,"name":"Song $id","dt":180000,"ar":[],"al":{"id":1,"name":"Album","picUrl":""}}""",
         PlaylistDetail.Playlist.Track::class.java,
     )
+
+    private class MemoryPreferences : DataStore<Preferences> {
+        override val data = MutableStateFlow(emptyPreferences())
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+            transform(data.value).also { data.value = it }
+    }
+
+    private class DetailProvider : MusicProvider, PlaylistCapability, AlbumCapability,
+        PlaylistEditCapability, AccountRevisionCapability {
+        override val id = "detail-fixture"
+        override val displayName = "Detail fixture"
+        override val capabilities = setOf(SourceCapability.PLAYLIST, SourceCapability.ALBUM, SourceCapability.PLAYLIST_EDIT)
+        override val playlistEditActions = setOf(PlaylistEditAction.REORDER_TRACKS)
+        override val accountRevision = MutableStateFlow<String?>("account-A")
+        var tracks = (1..65).map { Track(TrackRef(id, "track/$it:opaque"), "Track $it", emptyList()) }
+        var reportedTrackCount: Int? = null
+        var invalidContinuation = false
+        val pageRequests = mutableListOf<PageRequest>()
+        val savedOrders = mutableListOf<List<TrackRef>>()
+
+        override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(
+            ref, "Playlist", trackCount = reportedTrackCount ?: tracks.size, editableActions = playlistEditActions,
+        )
+        override suspend fun album(ref: AlbumRef) = SourceAlbumInfo(ref, "Album", trackCount = tracks.size)
+        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest) = trackPage(page)
+        override suspend fun albumTracks(ref: AlbumRef, page: PageRequest) = trackPage(page)
+        override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) {
+            savedOrders += tracks.toList()
+        }
+
+        private fun trackPage(request: PageRequest): SourcePage<Track> {
+            pageRequests += request
+            if (invalidContinuation && request.offset > 0) return SourcePage(emptyList(), hasMore = true)
+            val rows = tracks.drop(request.offset).take(request.limit)
+            return SourcePage(rows, hasMore = request.offset + rows.size < tracks.size)
+        }
+    }
 }

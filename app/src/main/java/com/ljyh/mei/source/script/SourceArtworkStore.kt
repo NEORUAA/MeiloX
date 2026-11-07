@@ -24,27 +24,28 @@ class SourceArtworkStore @Inject constructor(
     private val secrets = PluginSecretStore(context)
     private val flights = mutableMapOf<String, Flight>()
     private val writes = java.util.concurrent.atomic.AtomicInteger()
-    private val records = object : LinkedHashMap<String, String>(128, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 4096
+    private val records = object : LinkedHashMap<String, Pair<String, String>>(128, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>?) = size > 4096
     }
 
     internal suspend fun register(source: ScriptMusicProvider, url: String): String = withContext(Dispatchers.IO) {
         source.validateArtworkUrl(url)
         val file = ScriptNetworkPolicy.artworkFile(url, File(root, source.manifest.id))
         val identity = source.artworkAccountIdentity()
-        val record = SourceArtworkDescriptor(url, identity)
+        val record = SourceArtworkDescriptor(url, identity, source.version)
+        val recordIdentity = identity to source.version
         val key = "${source.manifest.id}:${file.name}"
         singleFlight(key) {
             source.ensureArtworkCurrent(identity)
             val cachedIdentity = synchronized(records) { records[key] }
-            if (cachedIdentity != identity || !secrets.hasArtwork(source.manifest.id, file.name)) {
+            if (cachedIdentity != recordIdentity || !secrets.hasArtwork(source.manifest.id, file.name)) {
                 val kind = "artwork-${file.name}"
                 val stored = runCatching { secrets.read(source.manifest.id, kind) }.getOrDefault(emptyMap())
                 if (stored != record.values()) {
                     secrets.write(source.manifest.id, kind, record.values())
                     if (writes.getAndIncrement() % 64 == 0) secrets.pruneArtwork()
                 }
-                synchronized(records) { records[key] = identity }
+                synchronized(records) { records[key] = recordIdentity }
             }
             source.ensureArtworkCurrent(identity)
             ScriptNetworkPolicy.artworkUri(file)
@@ -52,6 +53,20 @@ class SourceArtworkStore @Inject constructor(
     }
 
     fun owns(value: String): Boolean = location(value) != null
+
+    suspend fun needsMetadataRefresh(value: String): Boolean = withContext(Dispatchers.IO) {
+        val (id, file) = location(value) ?: return@withContext false
+        if (file.isFile) return@withContext false
+        registry.awaitInitialized()
+        val source = registry.instance(ProviderInstanceId("script:$id:default")) as? ScriptMusicProvider
+            ?: return@withContext false
+        if (registry.provider(source.id) !== source) return@withContext false
+        val identity = source.artworkAccountIdentity()
+        val record = descriptor(id, file)
+        if (record != null && record.account != identity) return@withContext false
+        if (registry.provider(source.id) !== source || source.artworkAccountIdentity() != identity) return@withContext false
+        !file.isFile && record?.sourceVersion != source.version
+    }
 
     internal suspend fun acceptOwned(source: ScriptMusicProvider, value: String): String = withContext(Dispatchers.IO) {
         val (id, file) = location(value) ?: unavailable()
@@ -121,15 +136,20 @@ class SourceArtworkStore @Inject constructor(
     private fun denied(): Nothing = throw SourceException(SourceErrorCode.PERMISSION_DENIED)
 }
 
-internal class SourceArtworkDescriptor(val url: String, val account: String) {
-    fun values() = mapOf("url" to url, "account" to account)
+internal class SourceArtworkDescriptor(val url: String, val account: String, val sourceVersion: String? = null) {
+    fun values() = buildMap {
+        put("url", url)
+        put("account", account)
+        sourceVersion?.let { put("sourceVersion", it) }
+    }
     override fun toString() = "SourceArtworkDescriptor(<redacted>)"
     companion object {
         fun parse(values: Map<String, String>): SourceArtworkDescriptor {
-            require(values.keys == setOf("url", "account"))
+            require(values.keys == setOf("url", "account") || values.keys == setOf("url", "account", "sourceVersion"))
             val url = values.getValue("url").also { require(it.length in 1..8192) }
             val account = values.getValue("account").also { require(it.length in 1..256) }
-            return SourceArtworkDescriptor(url, account)
+            val sourceVersion = values["sourceVersion"]?.also { require(it.isNotBlank() && it.length <= 80) }
+            return SourceArtworkDescriptor(url, account, sourceVersion)
         }
     }
 }

@@ -159,10 +159,102 @@ class ScriptPluginPolicyTest {
         val values = mapOf("url" to "https://cdn.example/cover?token=private-token", "account" to "opaque-account-digest")
         val descriptor = SourceArtworkDescriptor.parse(values)
         assertEquals(values, descriptor.values())
+        assertNull(descriptor.sourceVersion)
         assertFalse(descriptor.toString().contains("private-token"))
-        for (invalid in listOf(values + ("cookie" to "secret"), values - "account", values + ("url" to "x".repeat(8193)))) {
+        val version = "1.2.3+42"
+        val current = SourceArtworkDescriptor.parse(values + ("sourceVersion" to version))
+        assertEquals(version, current.sourceVersion)
+        assertEquals(values + ("sourceVersion" to version), current.values())
+        assertEquals(current.values(), SourceArtworkDescriptor(descriptor.url, descriptor.account, version).values())
+        val longestProviderVersion = "v".repeat(50) + "+" + Long.MIN_VALUE
+        assertEquals(longestProviderVersion, SourceArtworkDescriptor.parse(values + ("sourceVersion" to longestProviderVersion)).sourceVersion)
+        assertFalse(current.toString().contains(version))
+        for (invalid in listOf(values + ("cookie" to "secret"), values - "account", values + ("url" to "x".repeat(8193)),
+            values + ("sourceVersion" to ""), values + ("sourceVersion" to " "), values + ("sourceVersion" to "v".repeat(81)),
+            current.values() + ("cookie" to "secret"))) {
             assertThrows(IllegalArgumentException::class.java) { SourceArtworkDescriptor.parse(invalid) }
         }
+    }
+
+    @Test fun largeArtworkStreamsWithoutTheScriptJsonLimit() {
+        val directory = java.nio.file.Files.createTempDirectory("source-artwork-stream").toFile()
+        val policy = ScriptNetworkPolicy(listOf("cdn.example"))
+        val url = "https://cdn.example/large-cover.jpg"
+        val file = ScriptNetworkPolicy.artworkFile(url, directory)
+        val bytes = ByteArray(1_128_119) { (it % 251).toByte() }
+        try {
+            for (length in listOf(bytes.size.toLong(), -1L)) {
+                var largestRead = 0L
+                var closed = false
+                val data = Buffer().write(bytes)
+                val source = object : Source {
+                    override fun timeout() = Timeout.NONE
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        largestRead = maxOf(largestRead, byteCount)
+                        return data.read(sink, byteCount)
+                    }
+                    override fun close() { closed = true; data.close() }
+                }.buffer()
+                val body = object : ResponseBody() {
+                    override fun contentType(): MediaType? = null
+                    override fun contentLength() = length
+                    override fun source() = source
+                }
+                val response = Response.Builder().request(Request.Builder().url(url).build())
+                    .protocol(Protocol.HTTP_1_1).code(200).message("Fixture").body(body).build()
+                response.use {
+                    assertEquals(ScriptNetworkPolicy.artworkUri(file), policy.cacheArtwork(it, file) {})
+                }
+                assertArrayEquals(bytes, file.readBytes())
+                assertTrue("Image reads must stay incremental", largestRead in 1..65_536)
+                assertTrue(closed)
+                assertEquals(listOf(file.name), file.parentFile!!.list()!!.toList())
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun interruptedArtworkKeepsThePreviousFileAndRemovesItsPartialWrite() {
+        val directory = java.nio.file.Files.createTempDirectory("source-artwork-interrupted").toFile()
+        val policy = ScriptNetworkPolicy(listOf("cdn.example"))
+        val url = "https://cdn.example/large-cover.jpg"
+        val file = ScriptNetworkPolicy.artworkFile(url, directory)
+        val previous = byteArrayOf(1, 2, 3)
+        file.parentFile!!.mkdirs()
+        try {
+            for (cancelled in listOf(false, true)) {
+                file.writeBytes(previous)
+                var reads = 0
+                var checks = 0
+                var closed = false
+                val data = Buffer().write(ByteArray(1_128_119))
+                val source = object : Source {
+                    override fun timeout() = Timeout.NONE
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        if (++reads > 1 && !cancelled) throw IOException("Interrupted artwork")
+                        return data.read(sink, byteCount)
+                    }
+                    override fun close() { closed = true; data.close() }
+                }.buffer()
+                val body = object : ResponseBody() {
+                    override fun contentType(): MediaType? = null
+                    override fun contentLength() = -1L
+                    override fun source() = source
+                }
+                val response = Response.Builder().request(Request.Builder().url(url).build())
+                    .protocol(Protocol.HTTP_1_1).code(200).message("Fixture").body(body).build()
+                val failure = runCatching {
+                    response.use {
+                        policy.cacheArtwork(it, file) {
+                            if (++checks > 2 && cancelled) throw CancellationException("Source retired")
+                        }
+                    }
+                }.exceptionOrNull()
+                if (cancelled) assertTrue(failure is CancellationException) else assertTrue(failure is IOException)
+                assertArrayEquals(previous, file.readBytes())
+                assertEquals(listOf(file.name), file.parentFile!!.list()!!.toList())
+                assertTrue(closed)
+            }
+        } finally { directory.deleteRecursively() }
     }
 
     @Test fun sourceNetworkCancellationStillOwnsTheCallAfterHeadersWhileTheBodyIsReading() = runTest {
@@ -430,6 +522,8 @@ class ScriptPluginPolicyTest {
         assertEquals(PlaylistRef("example.source", "chart:26"), playlist.ref)
         assertEquals(setOf(PlaylistEditAction.UPDATE), playlist.editableActions)
         assertNull(playlist.playCount)
+        assertNull(playlist.subtitle)
+        assertEquals("Recommended for you", parser.playlist(json("""{"playlistId":"p","title":"P","subtitle":"Recommended for you"}""")).subtitle)
         assertNull(parser.playlist(json("""{"playlistId":"p","title":"P","playCount":null}""")).playCount)
         for (count in listOf(0L, 4_500_000_000L)) {
             assertEquals(count, parser.playlist(json("""{"playlistId":"p","title":"P","playCount":$count}""")).playCount)

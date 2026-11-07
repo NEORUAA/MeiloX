@@ -207,7 +207,7 @@ class SourceHomeFeedCache internal constructor(
                     "artists" to artists(it.artists), "album" to obj("title" to it.album.title, "albumId" to it.album.ref?.albumId),
                     "durationMs" to it.durationMs, "artworkUrl" to it.artworkUrl, "isrc" to it.isrc, "version" to it.version, "explicit" to it.explicit) }
                 is SourceItem.PlaylistItem -> value.playlist.let { obj("playlistId" to it.ref.playlistId, "title" to it.title,
-                    "artworkUrl" to it.artworkUrl, "creatorName" to it.creatorName, "trackCount" to it.trackCount, "description" to it.description, "playCount" to it.playCount,
+                    "artworkUrl" to it.artworkUrl, "creatorName" to it.creatorName, "trackCount" to it.trackCount, "description" to it.description, "playCount" to it.playCount, "subtitle" to it.subtitle,
                     "editableActions" to strings(it.editableActions.map { action -> action.wireName })) }
                 is SourceItem.AlbumItem -> value.album.let { obj("albumId" to it.ref.albumId, "title" to it.title, "artworkUrl" to it.artworkUrl,
                     "artists" to artists(it.artists), "trackCount" to it.trackCount, "description" to it.description, "publishedAtMs" to it.publishedAtMs) }

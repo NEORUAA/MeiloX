@@ -43,6 +43,24 @@ import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
     @Test
+    fun explicitlyEnabledLargeArtworkDownloadsAndDecodesThroughTheHostImagePath() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("sourceArtworkLive") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "source-large-artwork-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val url = "https://p1.music.126.net/4kwTBUvkMC7VfWhbzy8DBw==/109951173516046564.jpg"
+        try {
+            val policy = ScriptNetworkPolicy(listOf("p1.music.126.net"))
+            val uri = policy.artwork(url, directory)
+            val file = File(java.net.URI(uri))
+            assertTrue("The reported cover exceeds the JSON response limit", file.length() > 1_048_576L)
+            val bitmap = android.graphics.BitmapFactory.decodeFile(file.path)
+            assertNotNull("The downloaded source artwork must decode on Android", bitmap)
+            checkNotNull(bitmap).recycle()
+            assertEquals("The second load must reuse the cached file", uri, policy.artwork(url, directory))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
     fun marketplaceUpdatesAuthenticateLegacyImportsAndPreserveTransactionalOwnership() = runBlocking {
         val base = InstrumentationRegistry.getInstrumentation().targetContext
         val fixture = File(base.cacheDir, "source-updates-${java.util.UUID.randomUUID()}").apply { mkdirs() }

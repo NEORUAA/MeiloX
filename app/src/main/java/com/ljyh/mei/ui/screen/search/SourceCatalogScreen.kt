@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -192,8 +193,11 @@ fun LazyListScope.SourceTrackResults(
     if (state.query.isNotEmpty() && !state.loading && state.error == null && state.tracks.isEmpty()) {
         item("source-empty") { GlasmioGroupedList(Modifier.padding(top = 10.dp)) { EmptyView() } }
     }
-    if (state.hasMore && !state.loading) item("source-next") {
-        GlasmioGroupedList(Modifier.padding(top = 10.dp)) { GlasmioListRow(title = "加载更多", onClick = onLoadMore) }
+    if (state.hasMore && !state.loading && state.error == null) item("source-next") {
+        LaunchedEffect(state.query, state.tracks.firstOrNull()?.ref?.providerId, state.tracks.size, state.nextCursor) {
+            onLoadMore()
+        }
+        LoadingView()
     }
 }
 

@@ -103,6 +103,8 @@ class SourceContentQueue private constructor(
     override val totalCount: Int get() = synchronized(lock) { maxOf(knownTotalCount ?: tracks.size, tracks.size) }
     override val loadedCount: Int get() = synchronized(lock) { tracks.size }
 
+    internal fun loadedTracks(): List<Track> = synchronized(lock) { tracks.toList() }
+
     init {
         require(contentRef is AlbumRef || contentRef is ArtistRef || contentRef is PlaylistRef ||
             contentRef == null && libraryCollection?.type == ContentType.TRACK)

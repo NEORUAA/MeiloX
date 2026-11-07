@@ -1,6 +1,7 @@
 package com.ljyh.mei.ui.screen.source
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -8,13 +9,20 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.ui.screen.playlist.SongListDetailData
 import com.ljyh.mei.ui.screen.playlist.SongListDetailScreen
 import com.ljyh.mei.ui.screen.playlist.SongListLandscapeLayout
+import com.ljyh.mei.ui.screen.playlist.DetailSelectionToolbar
+import com.ljyh.mei.ui.screen.playlist.PlaylistOrderError
+import com.ljyh.mei.ui.screen.playlist.PlaylistOrderItem
+import com.ljyh.mei.ui.screen.playlist.PlaylistOrderSheet
+import com.ljyh.mei.ui.screen.playlist.PlaylistOrderState
+import com.ljyh.mei.ui.screen.playlist.detailMenuItems
+import com.ljyh.mei.ui.screen.playlist.rememberDetailSelection
 import com.ljyh.mei.ui.screen.artist.*
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider
@@ -47,9 +55,14 @@ import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.ljyh.mei.R
+import com.ljyh.mei.constants.DownloadPathKey
+import com.ljyh.mei.constants.DownloadQuality
+import com.ljyh.mei.constants.DownloadQualityKey
+import com.ljyh.mei.constants.MusicQuality
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -60,6 +73,10 @@ import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.ui.screen.search.LoadingView
+import com.ljyh.mei.ui.component.DownloadConfirmDialog
+import com.ljyh.mei.utils.DownloadManager
+import com.ljyh.mei.utils.rememberEnumPreference
+import com.ljyh.mei.utils.rememberPreference
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
@@ -67,6 +84,9 @@ import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.ui.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal fun navigateSourceContent(nav: MeiNavigator, ref: ContentRef) {
     Screen.SourceContent.navigate(nav) {
@@ -87,9 +107,10 @@ internal fun rememberSourceQueuePlayer(
     viewModel: SourceContentViewModel? = null,
     queueRequest: SourceContentRequest? = null,
     shuffle: Boolean? = null,
+    preserveRepeatMode: Boolean = true,
 ): (List<Track>, Int) -> Unit {
     val player = LocalPlayerConnection.current
-    return remember(player, id, title, viewModel, queueRequest, shuffle) {
+    return remember(player, id, title, viewModel, queueRequest, shuffle, preserveRepeatMode) {
         { tracks, index ->
             if (tracks.isNotEmpty() && index in tracks.indices) {
                 val paged = queueRequest != null && !(queueRequest is SourceContentRequest.Detail && queueRequest.ref is TrackRef)
@@ -98,7 +119,10 @@ internal fun rememberSourceQueuePlayer(
                     items = tracks.map { track -> track.toMediaMetadata().toMediaItem().let { it.mediaId to it } },
                     startIndex = index, position = 0,
                 )
-                if (queue != null) player?.playQueue(queue, shuffle = shuffle)
+                if (queue != null && player != null) {
+                    if (preserveRepeatMode) player.playQueue(queue, shuffle = shuffle, repeatMode = player.player.repeatMode)
+                    else player.playQueue(queue, shuffle = shuffle)
+                }
             }
         }
     }
@@ -112,6 +136,7 @@ internal fun LazyListScope.sourceContentItems(
     onMore: (Track, Rect) -> Unit,
     keyPrefix: String = "source",
     firstItemTopPadding: Dp = 10.dp,
+    subtitle: @Composable (SourceItem) -> String = { sourceItemSubtitle(it) },
 ) {
     val tracks = items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
     var trackIndex = 0
@@ -122,7 +147,7 @@ internal fun LazyListScope.sourceContentItems(
         val item = indexed.value
         GlasmioListRow(
             title = item.title,
-            subtitle = sourceItemSubtitle(item).takeIf(String::isNotBlank),
+            subtitle = subtitle(item).takeIf(String::isNotBlank),
             showTopSeparator = index > 0,
             leading = {
                 AsyncImage(item.artworkUrl, null, contentScale = ContentScale.Crop,
@@ -181,23 +206,19 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
     val busy by viewModel.busy.collectAsState()
     val contentRevision by viewModel.contentRevision.collectAsState()
     val nav = LocalNavController.current
-    val player = LocalPlayerConnection.current
     var menu by remember(ref) { mutableStateOf<Pair<Track, Rect>?>(null) }
     var saved by remember(ref, state.providerVersion, state.accountRevision, contentRevision) { mutableStateOf<Boolean?>(null) }
     var savedLoading by remember(ref, state.providerVersion, state.accountRevision, contentRevision) { mutableStateOf(false) }
     var savedError by remember(ref, state.providerVersion, state.accountRevision, contentRevision) { mutableStateOf<SourceErrorCode?>(null) }
     var savedAttempt by remember(ref) { mutableIntStateOf(0) }
-    var deleting by remember(ref) { mutableStateOf(false) }
-    var information by remember(ref) { mutableStateOf(false) }
     var query by rememberSaveable(ref) { mutableStateOf("") }
     var searchActive by remember(ref) { mutableStateOf(false) }
-    var ordering by remember(ref, state.providerVersion, state.accountRevision) { mutableStateOf(false) }
-    var orderedRefs by remember(ref, state.providerVersion, state.accountRevision) { mutableStateOf(emptyList<TrackRef>()) }
-    var orderingTracks by remember(ref, state.providerVersion, state.accountRevision) { mutableStateOf(emptyList<Track>()) }
     val play = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
         viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref))
+    val playAll = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
+        viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), preserveRepeatMode = false)
     val shuffle = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
-        viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), shuffle = true)
+        viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), shuffle = true, preserveRepeatMode = false)
     LaunchedEffect(ref) { viewModel.open(SourceContentRequest.Detail(ref)) }
     val provider = providers.firstOrNull { it.id == ref.providerId && it.status == SourceStatus.READY }
     val collections = (provider as? CollectionCapability)?.takeIf {
@@ -224,97 +245,206 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
     val album = (state.detail as? SourceItem.AlbumItem)?.album
     val tracks = state.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
     val actions = playlist?.editableActions.orEmpty()
-    val canReorder = playlist?.let(viewModel::canReorder) == true
-    val favoriteIds = rememberFavoriteTrackIds(remember(tracks) { tracks.map { it.toMediaMetadata() } }, enabled = ref !is ArtistRef)
+    val canReorder = SourceCapability.PLAYLIST_EDIT in provider?.capabilities.orEmpty() &&
+        PlaylistEditAction.REORDER_TRACKS in actions &&
+        PlaylistEditAction.REORDER_TRACKS in (provider as? PlaylistEditCapability)?.playlistEditActions.orEmpty()
     val title = state.title.ifBlank { when (ref) {
         is PlaylistRef -> "歌单"; is AlbumRef -> "专辑"; is ArtistRef -> "歌手"; is TrackRef -> "歌曲"
     } }
-    if (ordering) {
-        MeiloXPinnedListPage(title, bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
-            onNavigateBack = { ordering = false }, actions = {
-                listOf(meiloxHeaderAction("save-source-order", "保存排序", enabled = !busy && canReorder,
-                    onClick = { (ref as? PlaylistRef)?.let { viewModel.reorderTracks(it, orderedRefs) { ordering = false } } }) {
-                    SfIcon("checkmark", null, size = 22.dp)
-                })
-            }) {
-            item("source-track-order") {
-                val byRef = orderingTracks.associateBy { it.ref }
-                GlasmioReorderableGroup(orderedRefs, { if (!busy) orderedRefs = it },
-                    dragHandleContentDescription = stringResource(R.string.reorder_drag_handle),
-                    moveUpLabel = stringResource(R.string.move_up), moveDownLabel = stringResource(R.string.move_down),
-                    modifier = Modifier.padding(top = 10.dp)) { trackRef ->
-                    val track = byRef[trackRef]
-                    AsyncImage(track?.artworkUrl, null, contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(44.dp).clip(ContinuousRoundedRectangle(10.dp)))
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text(track?.title.orEmpty(), maxLines = 1)
-                        Text(track?.artists.orEmpty().joinToString(" / ") { it.name }, maxLines = 1,
-                            color = LocalGlassColors.current.secondaryContent, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-        }
-    } else if (ref is ArtistRef) {
+    if (ref is ArtistRef) {
         SourceArtistDetail(ref, state, provider, busy || savedLoading, saved, viewModel,
             onFollow = toggleCollection, selection = menu, onDismissMenu = { menu = null },
             onInformation = { Screen.ArtistInfo.navigate(nav) { addPath(Uri.encode(ref.contentId)); addQuery("providerId", ref.providerId) } }, onPlay = play,
             onMore = { track, anchor -> menu = track to anchor })
     } else {
-        val displayed = remember(tracks, query) { sourceDetailMatches(tracks, query) }
-        val detailMenu = buildList {
-            add(GlasmioCascadingMenuItem("简介", "info.circle", enabled = state.detail != null,
-                onClick = { information = true }))
-            if (collections?.canWriteCollections == true) add(GlasmioCascadingMenuItem(
-                if (saved == true) "取消收藏" else "收藏", if (saved == true) "checkmark" else "plus",
-                enabled = !busy && !savedLoading, onClick = toggleCollection))
-            if (PlaylistEditAction.UPDATE in actions) add(GlasmioCascadingMenuItem("编辑歌单", "pencil",
-                enabled = !busy, onClick = { (ref as? PlaylistRef)?.let { navigateSourcePlaylistEditor(nav, it.providerId, it) } }))
-            if (canReorder) add(GlasmioCascadingMenuItem("排序", "arrow.up.arrow.down", enabled = !busy, onClick = {
-                orderingTracks = tracks; orderedRefs = tracks.map { it.ref }; ordering = true
-            }))
-            if (PlaylistEditAction.DELETE in actions) add(GlasmioCascadingMenuItem("删除歌单", "trash",
-                destructive = true, enabled = !busy, onClick = { deleting = true }))
-            if (player != null && tracks.isNotEmpty()) {
-                add(GlasmioCascadingMenuItem("播放下一首", "text.line.first.and.arrowtriangle.forward",
-                    onClick = { player.playNext(tracks.map { it.toMediaMetadata().toMediaItem() }) }))
-                add(GlasmioCascadingMenuItem("添加到队列", "text.line.last.and.arrowtriangle.forward",
-                    onClick = { player.addToQueue(tracks.map { it.toMediaMetadata().toMediaItem() }) }))
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val ownerKey = Triple(ref, provider, state.accountRevision)
+        val selection = rememberDetailSelection(ownerKey)
+        var pendingDownload by remember(ownerKey) { mutableStateOf<SourceDetailTracks?>(null) }
+        var bulkJob by remember(ownerKey) { mutableStateOf<Job?>(null) }
+        var orderJob by remember(ownerKey) { mutableStateOf<Job?>(null) }
+        var orderGeneration by remember(ownerKey) { mutableIntStateOf(0) }
+        var order by remember(ownerKey) { mutableStateOf<PlaylistOrderState<TrackRef>?>(null) }
+        var orderTracks by remember(ownerKey) { mutableStateOf<SourceDetailTracks?>(null) }
+        var searchTracks by remember(ownerKey) { mutableStateOf<SourceDetailTracks?>(null) }
+        var searching by remember(ownerKey) { mutableStateOf(false) }
+        var searchError by remember(ownerKey) { mutableStateOf<SourceErrorCode?>(null) }
+        var searchAttempt by remember(ownerKey) { mutableIntStateOf(0) }
+        val playSearch = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title)
+        LaunchedEffect(ownerKey, query, contentRevision, state.detail?.ref, state.loading, state.refreshing, searchAttempt) {
+            searchTracks = null
+            searchError = null
+            searching = false
+            if (query.isBlank() || state.detail?.ref != ref || state.loading || state.refreshing) return@LaunchedEffect
+            searching = true
+            try {
+                delay(200)
+                searchTracks = viewModel.detailTracks(ref)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { searchError = error.sourceCode()
+            } finally { searching = false }
+        }
+        val downloadPath by rememberPreference(DownloadPathKey, DownloadManager.getDefaultDownloadPath())
+        val downloadQuality by rememberEnumPreference(DownloadQualityKey, DownloadQuality.EXHIGH)
+        DisposableEffect(ownerKey) {
+            onDispose { bulkJob?.cancel(); orderJob?.cancel(); selection.finish() }
+        }
+        suspend fun download(snapshot: SourceDetailTracks, quality: MusicQuality) {
+            val songs = snapshot.tracks.distinctBy { it.ref }.map { track ->
+                SongDownloadInfo(songId = TrackRefCodec.storageKey(track.ref), url = null,
+                    songTitle = track.title, songArtist = track.artists.map { it.name }, songAlbum = track.album.title,
+                    songCover = track.artworkUrl, duration = track.durationMs, quality = quality.text,
+                    originTrackRef = track.ref)
+            }
+            viewModel.ensureDetailCurrent(snapshot)
+            DownloadManager.enqueue(context, songs, snapshot.title,
+                playlistId = "source:${Uri.encode(ref.providerId)}:${ref.type.wireName}:${Uri.encode(ref.contentId)}", downloadPath = downloadPath)
+            Toast.makeText(context, context.getString(R.string.detail_download_queued, songs.size), Toast.LENGTH_SHORT).show()
+        }
+        fun prepareDownload(quality: MusicQuality? = null, ids: Set<String>? = null, prepared: SourceDetailTracks? = null) {
+            if (bulkJob?.isActive == true) return
+            bulkJob = scope.launch {
+                try {
+                    val snapshot = prepared ?: viewModel.detailTracks(ref).let { all ->
+                        all.copy(tracks = all.tracks.filter { ids == null || TrackRefCodec.mediaId(it.ref) in ids })
+                    }
+                    viewModel.ensureDetailCurrent(snapshot)
+                    if (snapshot.tracks.isEmpty()) return@launch
+                    if (quality == null) pendingDownload = snapshot else download(snapshot, quality)
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
             }
         }
+        fun openOrder() {
+            selection.finish()
+            val token = ++orderGeneration
+            orderJob?.cancel()
+            orderTracks = null
+            order = PlaylistOrderState(ref.contentId)
+            orderJob = scope.launch {
+                try {
+                    val snapshot = viewModel.detailTracks(ref, reload = true)
+                    val refs = snapshot.tracks.map { it.ref }
+                    if (refs.distinct().size != refs.size) throw SourceException(SourceErrorCode.UNSUPPORTED)
+                    if (token != orderGeneration) return@launch
+                    orderTracks = snapshot
+                    order = PlaylistOrderState(ref.contentId,
+                        items = snapshot.tracks.map { PlaylistOrderItem(it.ref, it.toMediaMetadata()) },
+                        originalIds = refs, loading = false)
+                } catch (cancelled: CancellationException) {
+                    if (token == orderGeneration) order = null
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (token == orderGeneration) order = order?.copy(loading = false, error = PlaylistOrderError.LoadFailed)
+                }
+            }
+        }
+        fun saveOrder() {
+            val current = order ?: return
+            val snapshot = orderTracks ?: return
+            if (current.loading || current.saving) return
+            val token = orderGeneration
+            order = current.copy(saving = true, error = null)
+            orderJob = scope.launch {
+                try {
+                    val saved = viewModel.saveTrackOrder(snapshot, current.items.map { it.id })
+                    if (token == orderGeneration) order = if (saved) null else current.copy(error = PlaylistOrderError.PlaylistChanged)
+                } catch (cancelled: CancellationException) {
+                    if (token == orderGeneration) order = null
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (token == orderGeneration) order = current.copy(error = PlaylistOrderError.SaveFailed)
+                }
+            }
+        }
+        DetailSelectionToolbar(selection,
+            onSelectAll = { sourceDetailMatches(viewModel.detailTracks(ref).tracks, query).map { TrackRefCodec.mediaId(it.value.ref) }.toSet() },
+            onDownload = { prepareDownload(ids = selection.ids) })
+        val matchingTracks = if (query.isBlank()) tracks else searchTracks?.tracks.orEmpty()
+        val displayed = remember(matchingTracks, query) { sourceDetailMatches(matchingTracks, query) }
+        val displayedMetadata = remember(displayed) { displayed.map { it.value.toMediaMetadata() } }
+        val favoriteIds = rememberFavoriteTrackIds(displayedMetadata)
+        val count = maxOf(playlist?.trackCount ?: album?.trackCount ?: 0, tracks.size)
+        val detailMenu = detailMenuItems(
+            downloadTitle = stringResource(R.string.album_download_all, count),
+            subscriptionTitle = stringResource(if (ref is PlaylistRef) {
+                if (saved == true) R.string.detail_playlist_unsubscribe else R.string.detail_playlist_subscribe
+            } else if (saved == true) R.string.album_unsubscribe else R.string.album_subscribe),
+            subscribed = saved == true,
+            subscriptionEnabled = collections?.canWriteCollections == true && !busy && !savedLoading,
+            onDownload = { prepareDownload(it) }, onSelect = selection::start,
+            onSubscribe = toggleCollection,
+            onRefresh = { selection.finish(); viewModel.refresh() },
+        ).toMutableList().apply {
+            if (canReorder) add(2, GlasmioCascadingMenuItem(stringResource(R.string.playlist_order_title), "line.3.horizontal",
+                enabled = !busy && order == null, onClick = { openOrder() }))
+        }
         SongListDetailScreen(
-            uiData = SongListDetailData(title = title, count = maxOf(playlist?.trackCount ?: album?.trackCount ?: 0, tracks.size),
+            uiData = SongListDetailData(title = title, count = count,
                 cover = state.artworkUrl, creatorName = state.detail?.let(::sourceItemSubtitle).orEmpty(),
-                tracks = displayed.map { it.value.toMediaMetadata() }, isSubscribed = saved == true, playCount = playlist?.playCount),
-            isLoading = state.loading && state.detail == null,
-            onPlayAll = { if (tracks.isNotEmpty()) play(tracks, 0) },
+                tracks = displayedMetadata, isSubscribed = saved == true, playCount = playlist?.playCount),
+            isLoading = state.loading && (state.detail == null || query.isNotBlank()) || searching,
+            onPlayAll = { if (tracks.isNotEmpty()) playAll(tracks, 0) },
             onShufflePlay = { if (tracks.isNotEmpty()) shuffle(tracks, tracks.indices.random()) },
             onHeaderAction = toggleCollection,
             headerActionIcon = if (saved == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             headerActionLabel = if (savedError != null) "重试" else if (saved == true) "取消收藏" else "收藏",
             showHeaderAction = collections?.canWriteCollections == true && collections.canReadCollections,
             headerActionPending = busy || savedLoading, isSubscribed = saved == true,
-            onTrackClick = { _, index -> displayed.getOrNull(index)?.let { play(tracks, it.index) } },
+            onTrackClick = { metadata, index ->
+                if (selection.active) selection.toggle(metadata.mediaId)
+                else displayed.getOrNull(index)?.let { selected ->
+                    val snapshot = searchTracks.takeIf { query.isNotBlank() }
+                    if (snapshot == null) play(tracks, selected.index)
+                    else scope.launch {
+                        try {
+                            viewModel.ensureDetailCurrent(snapshot)
+                            playSearch(snapshot.tracks, selected.index)
+                        } catch (cancelled: CancellationException) { throw cancelled
+                        } catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
+                    }
+                }
+            },
             onTrackMore = { metadata, anchor ->
-                tracks.firstOrNull { it.ref == metadata.trackRef }?.let { menu = it to anchor }
+                matchingTracks.firstOrNull { it.ref == metadata.trackRef }?.let { menu = it to anchor }
             },
             onBack = nav::navigateUp, detailMenu = detailMenu,
+            selectionMode = selection.active, selectedTrackIds = selection.ids, onSelectionDone = selection::finish,
             detailMenuTitle = stringResource(if (ref is PlaylistRef) R.string.detail_playlist_menu else R.string.album_menu_title),
             playlistSearchQuery = query, isPlaylistSearchActive = searchActive,
-            onPlaylistSearchQueryChange = { query = it }, onPlaylistSearchActiveChange = { searchActive = it },
+            onPlaylistSearchQueryChange = { query = it }, onPlaylistSearchActiveChange = { searchActive = it; if (!it) query = "" },
             useCoverBackground = true, usePlaylistPortraitHeader = ref is PlaylistRef,
             landscapeLayout = if (ref is PlaylistRef) SongListLandscapeLayout.Split else SongListLandscapeLayout.AlbumHeader,
             showTrackArtwork = ref !is AlbumRef, hasLoadedContent = state.detail != null,
             favoriteTrackIds = favoriteIds,
             trackNumber = { _, index -> (displayed.getOrNull(index)?.index ?: index) + 1 },
-            footer = { sourceDetailPagingStatus(state, viewModel::refresh, viewModel::loadMore, automatic = query.isBlank()) },
+            footer = {
+                if (query.isBlank()) sourceDetailPagingStatus(state, viewModel::refresh, viewModel::loadMore)
+                else searchError?.let { error -> item("source-detail-search-error") {
+                    GlasmioListRow(sourceErrorMessage(error), trailing = { Text("重试") }, onClick = { searchAttempt++ })
+                } }
+            },
             overlayContent = { SourceTrackActions(menu, { menu = null }, viewModel, playlist = playlist) },
         )
+        var retainedOrder by remember(ownerKey) { mutableStateOf<PlaylistOrderState<TrackRef>?>(null) }
+        order?.let { current -> SideEffect { retainedOrder = current } }
+        (order ?: retainedOrder)?.let { current ->
+            PlaylistOrderSheet(current, visible = order != null, trackKey = TrackRefCodec::encode,
+                onMove = { from, to ->
+                    val active = order
+                    if (active != null && !active.loading && !active.saving && from in active.items.indices && to in active.items.indices) {
+                        order = active.copy(items = active.items.toMutableList().apply { add(to, removeAt(from)) })
+                    }
+                }, onVisibleTracks = {}, onSave = { saveOrder() }, onReload = { openOrder() },
+                onDismiss = { orderGeneration++; orderJob?.cancel(); order = null; orderTracks = null })
+        }
+        DownloadConfirmDialog(visible = pendingDownload != null, currentQuality = downloadQuality, downloadPath = downloadPath,
+            onDismiss = { pendingDownload = null },
+            onConfirm = { val selected = pendingDownload; pendingDownload = null; selected?.let { prepareDownload(downloadQuality.toMusicQuality(), prepared = it) } },
+            onGoToSettings = { pendingDownload = null; Screen.DownloadSettings.navigate(nav) },
+            onGoToDownloadManage = { pendingDownload = null; Screen.DownloadManage.navigate(nav) })
     }
-    GlasmioAlertDialog(visible = information, onDismissRequest = { information = false }, title = title,
-        message = state.description.orEmpty(), buttons = listOf(GlasmioAlertButtonSpec("好", onClick = { information = false })))
-    GlasmioAlertDialog(visible = deleting, onDismissRequest = { deleting = false }, title = "删除歌单？", message = playlist?.title.orEmpty(),
-        buttons = listOf(GlasmioAlertButtonSpec("取消", role = GlasmioAlertButtonRole.Cancel, onClick = { deleting = false }),
-            GlasmioAlertButtonSpec("删除", onClick = { deleting = false; (ref as? PlaylistRef)?.let { viewModel.deletePlaylist(it) { nav.navigateUp() } } })))
 }
 
 internal fun sourceDetailMatches(tracks: List<Track>, query: String): List<IndexedValue<Track>> {
@@ -330,7 +460,8 @@ private fun LazyListScope.sourceDetailPagingStatus(state: SourceContentState, on
         GlasmioListRow(sourceErrorMessage(state.error), trailing = { Text("重试") }, onClick = onRetry)
     }
     if (state.hasMore && state.error == null) item("source-detail-append:${state.nextOffset}") {
-        if (automatic) LaunchedEffect(state.nextOffset, state.loading) { if (!state.loading) onMore() }
+        if (automatic) LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision,
+            state.nextOffset, state.nextCursor, state.loading) { if (!state.loading) onMore() }
         else if (!state.loading) GlasmioListRow(stringResource(R.string.artist_catalog_search_continue), onClick = onMore)
         if (state.loading) LoadingView()
     }
@@ -569,7 +700,9 @@ fun SourceArtistCatalogScreen(ref: ArtistRef, albums: Boolean, viewModel: Source
             if (state.albumsHasMore && !state.albumsLoading && !state.loading && state.albumsError == null) {
                 item("catalog-albums-more:${state.albumsNextOffset}") {
                     if (query.text.isBlank()) {
-                        LaunchedEffect(state.albumsNextOffset) { viewModel.loadMoreArtistAlbums() }
+                        LaunchedEffect(ref, state.providerVersion, state.accountRevision, state.albumsNextOffset, state.albumsNextCursor) {
+                            viewModel.loadMoreArtistAlbums()
+                        }
                         LoadingView()
                     } else GlasmioListRow(stringResource(R.string.artist_catalog_search_continue), onClick = viewModel::continueArtistCatalogSearch)
                 }
@@ -611,9 +744,12 @@ internal fun LazyListScope.sourceContentStatus(state: SourceContentState, onRetr
     if (!state.loading && !state.hasMore && !state.albumsHasMore && state.error == null && state.items.isEmpty() && state.sections.isEmpty()) item("source-content-empty") {
         GlasmioGroupedList(Modifier.padding(top = 10.dp)) { GlasmioListRow("暂无内容", showTopSeparator = false, showDisclosure = false) }
     }
-    if (!state.loading && state.hasMore) item("source-content-more") { GlasmioGroupedList(Modifier.padding(top = 10.dp)) {
-        GlasmioListRow("加载更多", showTopSeparator = false, onClick = onMore)
-    } }
+    if (!state.loading && state.hasMore && state.error == null) item("source-content-more:${state.nextOffset}") {
+        LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision, state.nextOffset, state.nextCursor) {
+            onMore()
+        }
+        LoadingView()
+    }
 }
 
 @Composable

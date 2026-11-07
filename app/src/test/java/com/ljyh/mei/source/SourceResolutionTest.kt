@@ -13,6 +13,7 @@ import com.ljyh.mei.ui.screen.search.SearchType
 import com.ljyh.mei.ui.screen.search.browsableProviders
 import com.ljyh.mei.ui.screen.search.libraryProviders
 import com.ljyh.mei.ui.screen.search.searchableProviders
+import com.ljyh.mei.ui.screen.search.sourceSearchHasMore
 import com.ljyh.mei.ui.screen.search.supportedSourceSearchType
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
@@ -603,6 +604,22 @@ class SourceResolutionTest {
         assertNull(supportedSourceSearchType(SearchType.Song.type, emptySet()))
     }
 
+    @Test fun searchPaginationStopsRepeatedCursorsAndPagesWithoutNewResults() {
+        val first = SourceItem.TrackItem(Track(TrackRef("search", "first"), "First", emptyList()))
+        val second = SourceItem.TrackItem(Track(TrackRef("search", "second"), "Second", emptyList()))
+        val incoming = SourcePage<SourceItem>(listOf(second), hasMore = true, nextCursor = "next")
+        val previous = listOf<SourceItem>(first)
+        val merged = listOf<SourceItem>(first, second)
+
+        assertTrue(sourceSearchHasMore(incoming, previous, merged, setOf("earlier")))
+        assertTrue(sourceSearchHasMore(incoming.copy(nextCursor = null), previous, merged, emptySet()))
+        assertFalse(sourceSearchHasMore(incoming, previous, merged, setOf("earlier", "next")))
+        assertFalse(sourceSearchHasMore(incoming.copy(nextCursor = "earlier"), previous, merged, setOf("earlier", "next")))
+        assertFalse(sourceSearchHasMore(incoming.copy(items = previous), previous, previous, emptySet()))
+        assertFalse(sourceSearchHasMore(incoming.copy(items = emptyList()), previous, previous, emptySet()))
+        assertFalse(sourceSearchHasMore(incoming.copy(hasMore = false), previous, merged, emptySet()))
+    }
+
     private open class ContentProvider : MusicProvider, TypedSearchCapability, FeedCapability, LibraryCapability,
         PlaylistCapability, LikeCapability, CollectionCapability, PlaylistEditCapability, AccountRevisionCapability {
         override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -1019,6 +1036,40 @@ class SourceResolutionTest {
         try { router.addTracks(ref, listOf(TrackRef("foreign", "42"))); fail() } catch (error: SourceException) { assertEquals(SourceErrorCode.UNSUPPORTED, error.code) }
         assertEquals(8, provider.writes.size)
         assertEquals(8L, router.contentRevision.value)
+    }
+
+    @Test fun queuedTrackOrderRejectsAContentChangeBeforeItsSerializedWrite() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val provider = object : ContentProvider() {
+            override suspend fun addTracks(ref: PlaylistRef, tracks: List<TrackRef>) {
+                entered.complete(Unit)
+                release.await()
+                super.addTracks(ref, tracks)
+            }
+        }
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val ref = provider.playlist.ref
+        val tracks = listOf(provider.track.ref)
+        val expectedRevision = router.contentRevision.value
+        val adding = async { router.addTracks(ref, tracks) }
+        entered.await()
+        val ordering = async {
+            runCatching { router.reorderTracks(ref, tracks, expectedContentRevision = expectedRevision) }
+        }
+        runCurrent()
+        assertFalse(ordering.isCompleted)
+        release.complete(Unit)
+        adding.await()
+        val rejected = ordering.await().exceptionOrNull()
+        assertEquals(SourceErrorCode.CANCELLED, (rejected as? SourceException)?.code)
+        assertEquals(listOf("add"), provider.writes)
+        assertEquals(1L, router.contentRevision.value)
+
+        router.reorderTracks(ref, tracks)
+        assertEquals(listOf("add", "reorder"), provider.writes)
+        assertEquals(2L, router.contentRevision.value)
     }
 
     @Test fun reorderedFallbackListKeepsDisabledInstancesAndRestoresCompletePlayableOrder() {

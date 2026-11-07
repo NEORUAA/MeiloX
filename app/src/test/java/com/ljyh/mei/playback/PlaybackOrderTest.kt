@@ -5,6 +5,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.source.ShuffleOrder
 import com.google.gson.Gson
+import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.playback.queue.SourceContentQueue
@@ -32,6 +33,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackOrderTest {
+    @Test
+    fun queueArtworkRepairKeepsTheExistingTrackMetadata() {
+        val existing = MediaMetadata(1, "Queue title", "", listOf(MediaMetadata.Artist(2, "Artist")),
+            120_000, MediaMetadata.Album(3, "Queue album"), trackRef = TrackRef("qq", "song"), tns = "Alias")
+        val refreshed = existing.copy(title = "Catalog title", coverUrl = "file:///cache/new-cover", duration = 180_000,
+            album = MediaMetadata.Album(4, "Catalog album"), tns = null)
+        assertEquals(existing.copy(coverUrl = refreshed.coverUrl), repairQueueArtworkMetadata(existing, refreshed))
+        assertSame(existing, repairQueueArtworkMetadata(existing, refreshed.copy(coverUrl = "")))
+        assertSame(existing, repairQueueArtworkMetadata(existing, refreshed.copy(trackRef = TrackRef("qq", "other"))))
+        val local = existing.copy(isLocal = true)
+        val podcast = existing.copy(isPodcast = true)
+        assertSame(local, repairQueueArtworkMetadata(local, refreshed))
+        assertSame(podcast, repairQueueArtworkMetadata(podcast, refreshed))
+        assertSame(refreshed, repairQueueArtworkMetadata(refreshed, refreshed))
+    }
+
     @Test
     fun nextAutomaticEntryFollowsShuffleAndRepeatModes() {
         val timeline = OrderedTimeline(listOf(2, 0, 3, 1))

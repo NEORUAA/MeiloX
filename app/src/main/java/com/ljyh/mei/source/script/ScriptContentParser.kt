@@ -82,7 +82,7 @@ internal class ScriptContentParser(
         if (!playlistActions.containsAll(actions)) invalid()
         return SourcePlaylist(PlaylistRef(providerId, text(value, "playlistId", 2048)), text(value, "title", 1000), artwork(value),
             optionalText(value, "creatorName", 1000).orEmpty(), count(value, "trackCount"), optionalText(value, "description", 10_000), actions,
-            optionalLong(value, "playCount"))
+            optionalLong(value, "playCount"), optionalText(value, "subtitle", 1000))
     }
 
     suspend fun item(value: JsonObject, expected: ContentType? = null): SourceItem {

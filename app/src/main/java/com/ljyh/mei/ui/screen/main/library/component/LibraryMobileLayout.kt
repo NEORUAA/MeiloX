@@ -955,7 +955,7 @@ private fun Playlist.matchesQuery(query: String): Boolean =
         description.containsQuery(query)
 
 @Composable
-private fun EmptyState(text: String, symbol: SfSymbol, description: String? = null) {
+internal fun EmptyState(text: String, symbol: SfSymbol, description: String? = null) {
     Column(
         Modifier.fillMaxWidth().padding(vertical = 52.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

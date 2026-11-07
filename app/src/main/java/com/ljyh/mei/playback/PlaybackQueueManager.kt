@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.data.model.PLACEHOLDER_URI
+import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.data.model.createPlaceholder
 import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.toMediaItem
@@ -18,7 +19,11 @@ import com.ljyh.mei.source.api.Track
 import com.ljyh.mei.source.api.TrackRef
 import com.ljyh.mei.source.api.ProviderInstanceId
 import com.ljyh.mei.source.api.ProviderIds
+import com.ljyh.mei.source.api.AccountRevisionCapability
+import com.ljyh.mei.source.api.SourceCapability
+import com.ljyh.mei.source.api.SourceStatus
 import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.source.script.SourceArtworkRegistry
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
 import com.ljyh.mei.playback.queue.SourceContentQueue
@@ -52,6 +57,9 @@ class PlaybackQueueManager(
     private val TAG = "QueueManager"
     private val _queueState = MutableStateFlow<QueueState>(QueueState.Idle)
     private val loadingIds = mutableMapOf<String, Long>()
+    private val artworkRepairAttempts = object : LinkedHashMap<TrackRef, QueueArtworkRepairKey>(32, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<TrackRef, QueueArtworkRepairKey>?) = size > 256
+    }
     private var released = false
     private var activeQueueBuildJob: Job? = null
     private var pendingSimilarGeneration: Long? = null
@@ -990,19 +998,30 @@ class PlaybackQueueManager(
     private suspend fun loadMetadataForIndices(indices: Collection<Int>) {
         if (released) return
         val generation = queueBuildGeneration
-        val ids = indices.mapNotNull { index ->
-            if (index !in 0 until player.mediaItemCount) return@mapNotNull null
-            val item = player.getMediaItemAt(index)
-            item.mediaId.takeIf {
-                needsMetadataHydration(item) && loadingIds[it] != generation
-            }
-        }.distinct()
-        if (ids.isEmpty()) return
-        ids.forEach { loadingIds[it] = generation }
+        val ids = mutableListOf<String>()
+        val artworkRepairs = mutableMapOf<String, QueueArtworkRepairKey>()
+        var completedArtworkIds = emptySet<String>()
         try {
+            for (index in indices) {
+                if (index !in 0 until player.mediaItemCount) continue
+                val item = player.getMediaItemAt(index)
+                if (loadingIds[item.mediaId] == generation) continue
+                if (!needsMetadataHydration(item)) {
+                    val repair = artworkRepairKey(item) ?: continue
+                    if (artworkRepairAttempts[repair.ref] == repair) continue
+                    artworkRepairs[item.mediaId] = repair
+                    artworkRepairAttempts[repair.ref] = repair
+                }
+                if (released || generation != queueBuildGeneration) return
+                loadingIds[item.mediaId] = generation
+                ids += item.mediaId
+            }
+            if (ids.isEmpty()) return
             val loadedById = loadSongDetails(ids).associateBy(MediaItem::mediaId)
+            val currentArtworkRepairs = artworkRepairs.filterValues { artworkRepairOwnerIsCurrent(it) }
             currentCoroutineContext().ensureActive()
-            if (released || generation != queueBuildGeneration || loadedById.isEmpty()) return
+            if (released || generation != queueBuildGeneration) return
+            completedArtworkIds = currentArtworkRepairs.keys.filter { loadedById[it]?.metadata != null }.toSet()
 
             // Reordering can happen while the request runs. Match current IDs and resolve
             // duplicate occurrences together, preserving each entry's independent identity.
@@ -1012,13 +1031,45 @@ class PlaybackQueueManager(
                 if (needsMetadataHydration(currentItem)) {
                     val entryId = currentItem.queueEntryId
                     player.replaceMediaItem(index, if (entryId == null) loaded else loaded.withQueueEntryId(entryId))
+                } else {
+                    val repair = currentArtworkRepairs[currentItem.mediaId] ?: continue
+                    val metadata = currentItem.metadata ?: continue
+                    if (metadata.trackRef != repair.ref || metadata.coverUrl != repair.artwork) continue
+                    val updated = repairQueueArtworkMetadata(metadata, loaded.metadata ?: continue)
+                    if (updated === metadata) continue
+                    player.replaceMediaItem(index, currentItem.buildUpon().setTag(updated).setMediaMetadata(
+                        currentItem.mediaMetadata.buildUpon().setArtworkUri(loaded.mediaMetadata.artworkUri).build(),
+                    ).build())
                 }
             }
         } finally {
             // Partial responses must remain retryable. A stale request must not clear a
             // newer queue's in-flight request for the same song.
             ids.forEach { if (loadingIds[it] == generation) loadingIds.remove(it) }
+            artworkRepairs.forEach { (id, repair) ->
+                if (id !in completedArtworkIds && artworkRepairAttempts[repair.ref] == repair) artworkRepairAttempts.remove(repair.ref)
+            }
         }
+    }
+
+    private suspend fun artworkRepairKey(item: MediaItem): QueueArtworkRepairKey? {
+        val metadata = item.metadata ?: return null
+        if (metadata.isLocal || metadata.isPodcast || metadata.trackRef.providerId == ProviderIds.LOCAL) return null
+        val registry = sourceRouter?.registry ?: return null
+        registry.awaitInitialized()
+        val provider = registry.provider(metadata.trackRef.providerId) ?: return null
+        if (provider.status != SourceStatus.READY || SourceCapability.TRACK !in provider.capabilities) return null
+        val revision = (provider as? AccountRevisionCapability)?.accountRevision?.first()
+        val key = QueueArtworkRepairKey(metadata.trackRef, metadata.coverUrl, provider.instanceId, provider.version, revision)
+        if (artworkRepairAttempts[key.ref] == key) return null
+        if (metadata.coverUrl.isNotBlank() && !SourceArtworkRegistry.needsMetadataRefresh(metadata.coverUrl)) return null
+        return key.takeIf { artworkRepairOwnerIsCurrent(it) }
+    }
+
+    private suspend fun artworkRepairOwnerIsCurrent(key: QueueArtworkRepairKey): Boolean {
+        val provider = sourceRouter?.registry?.provider(key.ref.providerId) ?: return false
+        return provider.status == SourceStatus.READY && provider.instanceId == key.instanceId && provider.version == key.version &&
+            (provider as? AccountRevisionCapability)?.accountRevision?.first() == key.accountRevision
     }
 
     /**
@@ -1078,8 +1129,8 @@ class PlaybackQueueManager(
 
     /**
      * Resolve a queue entry used as the current item before the player is prepared.
-     * Non-placeholder items are already safe to use; unresolved entries reuse the same
-     * metadata request as the lazy-loading path below.
+     * Playable entries start immediately; the metadata window repairs missing artwork
+     * in the background. Unresolved entries reuse the same catalog request.
      */
     private suspend fun hydrateQueueItem(item: Pair<String, MediaItem?>): MediaItem? {
         val existing = item.second
@@ -1096,6 +1147,7 @@ class PlaybackQueueManager(
         (player as? StableDeckPlayer)?.onSeekRequested = null
         player.removeListener(this)
         loadingIds.clear()
+        artworkRepairAttempts.clear()
         // 不要 cancel scope，因为它是由外部 Service 传进来的
     }
 
@@ -1152,3 +1204,16 @@ internal fun isPlayableMediaItem(item: MediaItem): Boolean =
 
 private fun needsMetadataHydration(item: MediaItem): Boolean =
     !isPlayableMediaItem(item)
+
+private data class QueueArtworkRepairKey(
+    val ref: TrackRef,
+    val artwork: String,
+    val instanceId: ProviderInstanceId,
+    val version: String,
+    val accountRevision: String?,
+)
+
+internal fun repairQueueArtworkMetadata(existing: MediaMetadata, refreshed: MediaMetadata): MediaMetadata =
+    if (existing.isLocal || existing.isPodcast || existing.trackRef != refreshed.trackRef ||
+        refreshed.coverUrl.isBlank() || existing.coverUrl == refreshed.coverUrl) existing
+    else existing.copy(coverUrl = refreshed.coverUrl)

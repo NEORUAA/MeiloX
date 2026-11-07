@@ -24,6 +24,7 @@ data class SourcePlaylist(
     val description: String? = null,
     val editableActions: Set<PlaylistEditAction> = emptySet(),
     val playCount: Long? = null,
+    val subtitle: String? = null,
 )
 
 data class SourceAlbumInfo(
