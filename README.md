@@ -4,7 +4,7 @@
 
 <img src="./screenshot/logo.png" width="120px" style="border-radius:12px"/>
 
-### 一个基于 Mei 改造的高仿 Apple Music 风格多音源 Android 客户端
+### 一个基于 Mei 打造的精仿 Apple Music 风格的多音源 Android 音乐客户端
 
 ![Android](https://img.shields.io/badge/Platform-Android-green?logo=android)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-blue)
@@ -21,15 +21,15 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的多音源�
 
 项目重点放在三个方向：
 
-- 用 iOS 风格的页面结构重新组织网易云音乐内容；
+- 用 iOS 风格的页面结构重新组织音乐内容；
 - 用 Liquid Glass、动态背景和专辑封面让播放过程更有沉浸感；
-- 保留网易云音乐的搜索、歌单、歌词和个人资料等使用习惯。
+- 保留音源的搜索、歌单、歌词和个人资料等使用习惯。
 
 > MeiloX 是非官方的个人开源项目，不隶属于网易云音乐或 Apple；项目本身不提供音乐资源，音乐内容及相关版权归其权利人所有。
 
 ## 功能概览
 
-- 网易云音乐 Cookie 登录与账号信息展示；
+- 特定音源的 Cookie/Mobile 完整协议登录与账号信息展示；
 - 搜索歌曲、专辑、歌手和歌单；
 - 播放队列、随机播放、循环播放和定时停止；
 - 播放历史、喜欢的音乐、歌单管理和本地收藏；
@@ -40,7 +40,7 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的多音源�
 - 默认安装且可移除的网易云音源、独立 QQ 音乐插件，以及按用户顺序自动切换播放音源。
 - [插件市场](https://github.com/NEORUAA/MeiloX-Source-Registry)、启动版本检查和自动更新，支持开发者提交 PR 上架。
 
-功能仍在持续调整中，实际可用范围会随版本和网易云音乐接口状态变化。
+功能仍在持续调整中，实际可用范围会随版本和音乐源接口状态变化。
 
 音源的导入、配置和切换方式见 [音源使用](docs/music-sources.md)。开发者可参考 [插件规范与 SDK](docs/source-plugin-spec.md) 和 [架构与兼容迁移](docs/multi-source-architecture.md)。
 
@@ -142,7 +142,7 @@ MeiloX 主体代码以 [GNU General Public License v3](LICENSE) 发布。MeiloX 
 
 ## 免责声明
 
-本项目仅用于学习、研究和个人使用。使用本项目访问网易云音乐服务时，请遵守当地法律法规、网易云音乐服务条款及相关版权要求。项目维护者不对第三方服务的可用性、账号状态或音乐内容承担责任。
+本项目仅用于学习、研究和个人使用。使用本项目访问网易云音乐服务时，请遵守当地法律法规、音乐服务条款及相关版权要求。项目维护者不对第三方服务的可用性、账号状态或音乐内容承担责任。
 
 如果你发现侵权内容、许可证遗漏或不准确的第三方声明，欢迎通过 [Issues](https://github.com/NEORUAA/MeiloX/issues) 联系维护者。
 
