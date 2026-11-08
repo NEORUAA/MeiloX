@@ -504,25 +504,12 @@ private fun Modifier.sheetGestures(
 private fun Modifier.clipPlayerRecordingHost(
     layers: PlayerSheetLayers,
     expandedCornerRadius: Float,
-    miniHost: Boolean = false,
 ): Modifier {
     val origin = remember { mutableStateOf(Offset.Zero) }
     return onGloballyPositioned { origin.value = it.positionInRoot() }
         .graphicsLayer {
-            val transitioning = layers.state.isTransitioning
-            clip = transitioning || (miniHost && !layers.state.isExpanded && layers.miniBounds.isUsable())
-            if (clip && !transitioning) {
-                // The mini host spans the row for layout, but must not steal hits
-                // from compact navigation controls in its empty horizontal margins.
-                // Keep the full vertical extent and include live press enlargement.
-                val visual = layers.miniLayoutCoordinates.visualBounds()
-                val left = minOf(layers.miniBounds.left, visual?.left ?: layers.miniBounds.left) - origin.value.x
-                val right = maxOf(layers.miniBounds.right, visual?.right ?: layers.miniBounds.right) - origin.value.x
-                shape = object : Shape {
-                    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density) =
-                        Outline.Rectangle(Rect(left, 0f, right, size.height))
-                }
-            } else if (transitioning) {
+            clip = layers.state.isTransitioning
+            if (clip) {
                 val bounds = layers.containerBounds
                     .translate(-origin.value)
                 val radius = layers.containerCornerRadius(expandedCornerRadius)
@@ -602,7 +589,7 @@ fun BottomSheet(
     onDismiss: (() -> Unit)? = null,
     onHorizontalSwipe: ((HorizontalSwipeDirection) -> Unit)? = null,
     backgroundContent: @Composable BoxScope.() -> Unit = {},
-    collapsedContent: @Composable BoxScope.() -> Unit,
+    collapsedContent: @Composable BoxScope.(Modifier) -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val layers = checkNotNull(LocalPlayerSheet.current)
@@ -640,12 +627,14 @@ fun BottomSheet(
                     .offset {
                         IntOffset(0, (state.expandedBound - miniAnchor + collapsedDragOffset()).roundToPx())
                     }
-                    .clipPlayerRecordingHost(layers, expandedCornerRadius, miniHost = true)
-                    .sheetGestures(state, layers, onHorizontalSwipe)
+                    .clipPlayerRecordingHost(layers, expandedCornerRadius)
                     .then(if (active || expanded) Modifier.clearAndSetSemantics { } else Modifier)
                     .recordPlayerContent(layers, layers.miniHost) { !active && !expanded },
-                content = collapsedContent,
-            )
+            ) {
+                // Bind input to the glass itself so its empty margins stay transparent
+                // to navigation hits without clipping press deformation or shadows.
+                collapsedContent(Modifier.sheetGestures(state, layers, onHorizontalSwipe))
+            }
         }
         // Draw transition glass below the mesh background. The background's alpha reveals
         // this glass during motion without tinting the fully expanded player background.

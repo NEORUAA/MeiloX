@@ -127,13 +127,14 @@ fun ClassicPlayer(
                 backdrop = playerBackgroundBackdrop,
             )
         },
-        collapsedContent = {
+        collapsedContent = { gestures ->
             MiniPlayer(
                 // These parameters are unused by the mini player.
                 position = 0L,
                 duration = 0L,
                 backdrop = collapsedBackdrop,
                 compactProgress = compactMiniPlayerProgress,
+                gestureModifier = gestures,
                 onClick = state::expandSoft,
                 onMoreClick = overlayHandler::showMoreAction,
                 onLyricsClick = if (device.isLandscape) openLandscapeLyrics else state::expandSoft,

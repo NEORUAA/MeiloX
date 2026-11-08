@@ -160,13 +160,14 @@ fun MiniPlayer(
     onMoreClick: () -> Unit = {},
     onLyricsClick: () -> Unit = onClick,
     onQueueClick: () -> Unit = {},
+    gestureModifier: Modifier = Modifier,
 ) {
     val appearance = LocalMiniPlayerAppearance.current
     val contentModifier = modifier.glasmioAdaptiveContent()
     if (appearance == null) {
         MiniPlayerContent(
             contentModifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
-            onMoreClick, onLyricsClick, onQueueClick,
+            onMoreClick, onLyricsClick, onQueueClick, gestureModifier,
         )
     } else {
         MusicTheme(
@@ -178,7 +179,7 @@ fun MiniPlayer(
             ) {
                 MiniPlayerContent(
                     contentModifier, backdrop, compactProgress, onClick, onCoverBoundsChanged,
-                    onMoreClick, onLyricsClick, onQueueClick,
+                    onMoreClick, onLyricsClick, onQueueClick, gestureModifier,
                 )
             }
         }
@@ -196,11 +197,13 @@ private fun MiniPlayerContent(
     onMoreClick: () -> Unit,
     onLyricsClick: () -> Unit,
     onQueueClick: () -> Unit,
+    gestureModifier: Modifier,
 ) {
     if (com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape) {
         LandscapeMiniPlayer(
             modifier, backdrop, onClick, onMoreClick, onLyricsClick, onQueueClick,
             onCoverBoundsChanged,
+            gestureModifier,
         )
         return
     }
@@ -231,6 +234,7 @@ private fun MiniPlayerContent(
             .compactMiniPlayerHeight(verticalProgress)
             .compactMiniPlayerHorizontalPadding(horizontalProgress)
             .miniPlayerChromeHint(chromeHint)
+            .then(gestureModifier)
             .testTag("MeiloXMiniPlayerSurface")
             .onGloballyPositioned {
                 // This modifier is outside GlassSurface's press layer. Avoid boundsInRoot,

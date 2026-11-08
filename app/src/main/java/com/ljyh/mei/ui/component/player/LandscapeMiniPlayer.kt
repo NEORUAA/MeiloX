@@ -61,6 +61,7 @@ internal fun LandscapeMiniPlayer(
     onLyricsClick: () -> Unit,
     onQueueClick: () -> Unit,
     onCoverBoundsChanged: ((Rect) -> Unit)? = null,
+    gestureModifier: Modifier = Modifier,
 ) {
     val connection = LocalPlayerConnection.current ?: return
     val sheet = LocalPlayerSheet.current
@@ -101,6 +102,7 @@ internal fun LandscapeMiniPlayer(
     ) {
         GlassSurface(
             modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().height(LandscapeMiniPlayerHeight)
+                .then(gestureModifier)
                 .testTag("MeiloXLandscapeMiniPlayer")
                 .onGloballyPositioned {
                     sheet?.miniBounds = Rect(it.localToRoot(Offset.Zero),

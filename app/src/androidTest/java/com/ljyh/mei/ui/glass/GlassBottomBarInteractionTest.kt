@@ -43,6 +43,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,6 +83,7 @@ import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -2360,6 +2362,159 @@ class GlassBottomBarInteractionTest {
             layers.updateHost(Rect(8f, 12f, 328f, 412f))
             assertEquals("Host resizing stays observable", IntSize(320, 200), layoutSize.value)
         }
+    }
+
+    @Test
+    fun collapsedMiniPlayerPreservesPressedGlassOverflowAndNavigationMarginHits() {
+        var leftClicks = 0
+        var rightClicks = 0
+        var miniClicks = 0
+        var horizontalSwipes = 0
+        lateinit var activeSheet: GlasmioBottomSheetState
+        compose.setContent {
+            val sheet = rememberGlasmioBottomSheetState(
+                dismissedBound = 0.dp,
+                collapsedBound = 80.dp,
+                expandedBound = 400.dp,
+                initialAnchor = collapsedAnchor,
+            )
+            val layers = rememberPlayerSheetLayers(sheet)
+            activeSheet = sheet
+            CompositionLocalProvider(
+                LocalGlassColors provides defaultGlassColors(true),
+                LocalGlassAppearance provides GlassAppearance(reduceTransparency = true),
+                LocalPlayerSheet provides layers,
+            ) {
+                Box(Modifier.size(320.dp, 400.dp).background(Color.Black).testTag("miniOverflowRoot")) {
+                    Box(Modifier.offset(y = 320.dp).size(56.dp, 48.dp)
+                        .clickable { leftClicks++ }.testTag("miniUnderlayLeft"))
+                    Box(Modifier.offset(x = 264.dp, y = 320.dp).size(56.dp, 48.dp)
+                        .clickable { rightClicks++ }.testTag("miniUnderlayRight"))
+                    GlassSurface(
+                        modifier = Modifier.align(Alignment.TopCenter).offset(y = 160.dp)
+                            .size(160.dp, 48.dp).testTag("miniOverflowReference"),
+                        backdrop = emptyBackdrop(),
+                        navigationSurfaceColor = Color(0xFF888888),
+                        sampleBackdrop = false,
+                        shape = Capsule(),
+                        style = GlassSurfaceStyle.Navigation,
+                        onClick = {},
+                    ) {}
+                    BottomSheet(
+                        state = sheet,
+                        modifier = Modifier.size(320.dp, 400.dp),
+                        collapsedDragHeight = 48.dp,
+                        transitionBackdrop = emptyBackdrop(),
+                        onHorizontalSwipe = { horizontalSwipes++ },
+                        collapsedContent = { gestures ->
+                            Box(Modifier.size(320.dp, 48.dp)) {
+                                GlassSurface(
+                                    modifier = Modifier.align(Alignment.TopCenter).size(160.dp, 48.dp)
+                                        .then(gestures).testTag("miniOverflowActual")
+                                        .onGloballyPositioned {
+                                            layers.miniBounds = Rect(
+                                                it.positionInRoot(),
+                                                Size(it.size.width.toFloat(), it.size.height.toFloat()),
+                                            )
+                                        },
+                                    backdrop = emptyBackdrop(),
+                                    navigationSurfaceColor = Color(0xFF888888),
+                                    sampleBackdrop = false,
+                                    shape = Capsule(),
+                                    style = GlassSurfaceStyle.Navigation,
+                                    onVisualBoundsChanged = layers::updateMiniPressHighlight,
+                                    onClick = { miniClicks++ },
+                                ) {
+                                    Box(Modifier.size(160.dp, 48.dp).onGloballyPositioned {
+                                        layers.miniLayoutCoordinates = it
+                                    })
+                                }
+                            }
+                        },
+                    ) {}
+                }
+            }
+        }
+        compose.waitForIdle()
+        val root = compose.onNodeWithTag("miniOverflowRoot")
+        val actual = compose.onNodeWithTag("miniOverflowActual")
+        val reference = compose.onNodeWithTag("miniOverflowReference")
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val actualBounds = actual.fetchSemanticsNode().boundsInRoot.translate(-rootBounds.topLeft)
+        val referenceBounds = reference.fetchSemanticsNode().boundsInRoot.translate(-rootBounds.topLeft)
+        val resting = root.captureToImage().toPixelMap()
+        val margin = (resting.width / 320f * 12f).roundToInt()
+
+        fun assertMatchesReference(label: String, actualImage: PixelMap, referenceImage: PixelMap) {
+            val actualLeft = actualBounds.left.roundToInt()
+            val actualTop = actualBounds.top.roundToInt()
+            val referenceLeft = referenceBounds.left.roundToInt()
+            val referenceTop = referenceBounds.top.roundToInt()
+            var mismatchCount = 0
+            for (y in -margin until actualBounds.height.roundToInt() + margin) {
+                for (x in -margin until actualBounds.width.roundToInt() + margin) {
+                    val pixel = actualImage[actualLeft + x, actualTop + y]
+                    val expected = referenceImage[referenceLeft + x, referenceTop + y]
+                    if (maxOf(abs(pixel.red - expected.red), abs(pixel.green - expected.green),
+                            abs(pixel.blue - expected.blue), abs(pixel.alpha - expected.alpha)) > 2f / 255f) {
+                        mismatchCount++
+                    }
+                }
+            }
+            // Different screen positions can rasterize a few edge pixels differently.
+            assertTrue("$label matches standalone glass through its exterior: $mismatchCount pixels",
+                mismatchCount <= 4)
+        }
+
+        assertMatchesReference("Resting mini player", resting, resting)
+        compose.mainClock.autoAdvance = false
+        val actualPressed = try {
+            actual.performTouchInput { down(center) }
+            compose.mainClock.advanceTimeBy(800)
+            root.captureToImage().toPixelMap()
+        } finally {
+            actual.performTouchInput { up() }
+        }
+        compose.mainClock.advanceTimeBy(800)
+        val referencePressed = try {
+            reference.performTouchInput { down(center) }
+            compose.mainClock.advanceTimeBy(800)
+            root.captureToImage().toPixelMap()
+        } finally {
+            reference.performTouchInput { up() }
+        }
+        assertMatchesReference("Held mini player", actualPressed, referencePressed)
+        var expandedPixels = 0
+        val left = referenceBounds.left.roundToInt()
+        val top = referenceBounds.top.roundToInt()
+        val width = referenceBounds.width.roundToInt()
+        val height = referenceBounds.height.roundToInt()
+        for (y in -margin until height + margin) {
+            for (x in -margin until width + margin) {
+                if (x in 0 until width && y in 0 until height) continue
+                if (abs(referencePressed[left + x, top + y].red - resting[left + x, top + y].red) > 4f / 255f) {
+                    expandedPixels++
+                }
+            }
+        }
+        assertTrue("A held touch visibly enlarges the glass beyond its layout", expandedPixels > 10)
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("miniUnderlayLeft").performTouchInput { click() }
+        compose.onNodeWithTag("miniUnderlayRight").performTouchInput { click() }
+        compose.runOnIdle {
+            assertEquals("The glass remains clickable", 1, miniClicks)
+            assertEquals("The empty left margin reaches navigation", 1, leftClicks)
+            assertEquals("The empty right margin reaches navigation", 1, rightClicks)
+        }
+        actual.performTouchInput {
+            swipe(Offset(width * 0.8f, height / 2f), Offset(width * 0.2f, height / 2f), 150)
+        }
+        compose.runOnIdle { assertEquals("The glass still handles track swipes", 1, horizontalSwipes) }
+        actual.performTouchInput {
+            swipe(center, center - Offset(0f, height * 3f), 150)
+        }
+        compose.waitForIdle()
+        compose.runOnIdle { assertTrue("Dragging the glass still expands the player", activeSheet.isExpanded) }
     }
 
     @Test

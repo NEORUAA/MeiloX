@@ -407,7 +407,7 @@ fun AppleMusicPlayer(
                     backdrop = playerBackgroundBackdrop,
                 )
             },
-            collapsedContent = {
+            collapsedContent = { gestures ->
                 MiniPlayer(
                     // The mini player has no progress indicator, so it does not
                     // need to subscribe to the expanded player's position clock.
@@ -415,6 +415,7 @@ fun AppleMusicPlayer(
                     duration = 0L,
                     backdrop = collapsedBackdrop,
                     compactProgress = compactMiniPlayerProgress,
+                    gestureModifier = gestures,
                     onClick = state::expandSoft,
                 )
             }
