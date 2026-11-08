@@ -177,7 +177,7 @@ class PlaybackOrderTest {
         assertEquals(listOf("same", "other", "same"), initial.ids.map { TrackRefCodec.decode(it.first)?.trackId })
         assertEquals(0, provider.calls.size)
         assertEquals(PlaylistRef(provider.id, "playlist"), queue.contentRef)
-        assertNull(queue.playlistSource)
+        assertEquals(PlaylistQueueSource(0L, providerId = provider.id, sourcePlaylistId = "playlist"), queue.playlistSource)
 
         val result = queue.nextPage() as Queue.Result.Success<List<String>>
         assertEquals(listOf("four", "five"), result.data.map { TrackRefCodec.decode(it)?.trackId })
@@ -200,6 +200,10 @@ class PlaybackOrderTest {
         assertEquals(listOf("album:album", "artist:artist", "library:LIKED_TRACKS"), provider.calls.map { it.first })
         assertEquals(LibraryCollection.LIKED_TRACKS, library.libraryCollection)
         assertEquals(provider.id, library.providerId)
+        assertNull(album.playlistSource)
+        assertNull(artist.playlistSource)
+        assertEquals(PlaylistQueueSource(0L, providerId = provider.id,
+            libraryCollection = LibraryCollection.LIKED_TRACKS), library.playlistSource)
     }
 
     @Test
@@ -345,6 +349,7 @@ class PlaybackOrderTest {
             } }
             registry.register(restoredProvider)
             val restored = requireNotNull(SourceContentQueue.restore(router, saved, "Restored", initial, mediaItemFactory = { null }))
+            assertEquals(queue.playlistSource, restored.playlistSource)
             assertEquals(4, restored.getInitialStatus().ids.size)
             assertTrue(restoredProvider.calls.isEmpty())
             assertTrue(restored.nextPage() is Queue.Result.Success)
@@ -398,6 +403,115 @@ class PlaybackOrderTest {
         assertEquals(2, snapshot.nextOffset)
         assertTrue(snapshot.hasMore)
         assertNull(queue.snapshotContext(initial.reversed().map { it.ref }))
+    }
+
+    @Test
+    fun localShuffleLoadsEveryPageInLargerBatchesAndKeepsTheClickedIndex() = runBlocking {
+        val provider = ContentProvider().apply { load = { _, page ->
+            val end = minOf(245, page.offset + page.limit)
+            SourcePage((page.offset until end).map { track(it.toString()) }, end < 245,
+                if (end < 245) "$end" else null)
+        } }
+        val queue = SourceContentQueue(SourceRouter(ProviderRegistry(listOf(provider))),
+            PlaylistRef(provider.id, "playlist"), "Playlist", (0 until 30).map { track(it.toString()) },
+            startIndex = 4, nextCursor = "30", knownTotalCount = 245, mediaItemFactory = { null })
+        val status = queue.loadAll()
+        assertEquals((0 until 245).map(Int::toString), status.ids.map { TrackRefCodec.decode(it.first)!!.trackId })
+        assertEquals(4, status.mediaItemIndex)
+        assertEquals(listOf(PageRequest(30, 100, "30"), PageRequest(130, 100, "130"),
+            PageRequest(230, 100, "230")), provider.calls.map { it.second })
+        assertFalse(queue.hasNextPage())
+    }
+
+    @Test
+    fun localShuffleAcceptsDisplayEstimateMismatchAndRejectsFailuresAndChangedAccounts() = runBlocking {
+        for (failure in listOf("short", "network", "account", "larger")) {
+            val provider = ContentProvider().apply { load = { _, _ ->
+                if (failure == "network") throw SourceException(SourceErrorCode.NETWORK)
+                if (failure == "account") accountRevision.value = "account-b"
+                SourcePage(if (failure == "larger") listOf(track("third"), track("fourth"), track("fifth"))
+                    else listOf(track("third")))
+            } }
+            val queue = SourceContentQueue(SourceRouter(ProviderRegistry(listOf(provider))),
+                PlaylistRef(provider.id, "playlist"), "Playlist", listOf(track("one"), track("two")),
+                knownTotalCount = 4, mediaItemFactory = { null })
+            queue.getInitialStatus()
+            try {
+                val status = queue.loadAll()
+                if (failure == "short" || failure == "larger") {
+                    val expected = if (failure == "short") listOf("one", "two", "third")
+                        else listOf("one", "two", "third", "fourth", "fifth")
+                    assertEquals(expected, status.ids.map { TrackRefCodec.decode(it.first)!!.trackId })
+                    assertFalse(queue.hasNextPage())
+                    continue
+                }
+                org.junit.Assert.fail("Expected complete loading failure: $failure")
+            } catch (error: SourceException) {
+                if (failure == "short" || failure == "larger") throw error
+                assertEquals(when (failure) {
+                    "network" -> SourceErrorCode.NETWORK
+                    "account" -> SourceErrorCode.AUTH_EXPIRED
+                    else -> SourceErrorCode.INVALID_RESPONSE
+                }, error.code)
+            }
+        }
+    }
+
+    @Test
+    fun localShuffleFollowsAdvancingCursorsPastDisplayTotalsAndRestoresThatContinuation() = runBlocking {
+        for (displayTotal in listOf(2, 4)) for (restore in listOf(false, true)) {
+            val provider = ContentProvider().apply { load = { _, page ->
+                val end = if (page.offset < 4) 4 else 6
+                SourcePage((page.offset until end).map { track(it.toString()) }, end < 6,
+                    if (end < 6) "$end" else null)
+            } }
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val initial = (0 until 2).map { track(it.toString()) }
+            var queue = SourceContentQueue(router, PlaylistRef(provider.id, "playlist"), "Playlist", initial,
+                nextCursor = "2", knownTotalCount = displayTotal, mediaItemFactory = { null })
+            if (restore) {
+                assertTrue(queue.nextPage() is Queue.Result.Success)
+                val loaded = queue.loadedTracks()
+                val saved = requireNotNull(queue.snapshotContext(loaded.map { it.ref }))
+                assertTrue(saved.hasMore)
+                assertEquals(displayTotal, saved.knownTotalCount)
+                queue.release()
+                queue = requireNotNull(SourceContentQueue.restore(router, saved, "Restored", loaded, mediaItemFactory = { null }))
+            }
+            val status = queue.loadAll()
+            assertEquals((0 until 6).map(Int::toString), status.ids.map { TrackRefCodec.decode(it.first)!!.trackId })
+            assertFalse(queue.hasNextPage())
+            assertEquals(if (restore) listOf(2, 0, 4) else listOf(2, 4), provider.calls.map { it.second.offset })
+        }
+    }
+
+    @Test
+    fun completeAndCloudOrderedQueuesRestoreTheirAccountOwnerWithoutReplayingCanonicalPages() = runBlocking {
+        for ((library, cloudOrdered) in listOf(false to false, false to true, true to false, true to true)) {
+            val provider = ContentProvider()
+            val registry = ProviderRegistry(listOf(provider))
+            val router = SourceRouter(registry)
+            val initial = listOf(track("one"), track("two"))
+            val queue = if (library) SourceContentQueue.forLibrary(router, provider.id, initialTracks = initial,
+                hasMore = cloudOrdered, mediaItemFactory = { null }) else SourceContentQueue(router,
+                PlaylistRef(provider.id, "playlist"), null, initial, hasMore = cloudOrdered, mediaItemFactory = { null })
+            queue.getInitialStatus()
+            if (cloudOrdered) queue.freezePagination()
+            val expanded = if (cloudOrdered) listOf(track("outside-first-page")) + initial.reversed() else initial
+            val saved = requireNotNull(queue.snapshotContext(expanded.map { it.ref }))
+            assertFalse(saved.hasMore)
+            assertEquals(expanded.size, saved.loadedCount)
+            assertEquals(saved.loadedCount, saved.nextOffset)
+            assertEquals(64, saved.accountFingerprint.length)
+            val restored = requireNotNull(SourceContentQueue.restore(router, saved, "Cloud", expanded,
+                mediaItemFactory = { null }))
+            assertEquals(queue.playlistSource, restored.playlistSource)
+            assertTrue(restored.isSourceCurrent())
+            assertFalse(restored.hasNextPage())
+            assertTrue(provider.calls.isEmpty())
+            provider.accountRevision.value = "account-b"
+            assertFalse(restored.isSourceCurrent())
+        }
     }
 
     @Test

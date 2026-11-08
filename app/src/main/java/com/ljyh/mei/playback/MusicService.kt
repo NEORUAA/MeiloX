@@ -1134,7 +1134,7 @@ class MusicService : MediaLibraryService(),
     fun switchPlayMode() {
         val loopMode = if (dataStore[LoopPlaybackKey] ?: true) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
         when {
-            player.shuffleModeEnabled -> {
+            player.shuffleModeEnabled || queueManager.shuffleModeIntent.value -> {
                 setShuffleModeEnabled(false)
                 player.repeatMode = Player.REPEAT_MODE_ONE
             }

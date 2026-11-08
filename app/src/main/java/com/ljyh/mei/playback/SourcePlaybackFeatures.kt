@@ -19,7 +19,7 @@ interface QueueSourceSession {
     val providerId: String
     suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track>
     suspend fun scenes(): List<PrivateFmScene>
-    suspend fun shuffle(playlistId: String, songId: String, algorithm: String): SourceShufflePage
+    suspend fun shuffle(playlistId: String, songId: String, algorithm: String, collection: LibraryCollection? = null): SourceShufflePage
     suspend fun ensureCurrent()
 }
 data class SourceShufflePage(val order: List<TrackRef>, val tracks: List<Track>, val unavailable: Set<TrackRef>)
@@ -52,18 +52,33 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures) : Queu
             PrivateFmScene(row.requiredText("code", 1000), row.requiredText("title", 1000), row.optionalText("cascadeMode", 4000))
         }.distinctBy { it.code }
 
-    override suspend fun shuffle(playlistId: String, songId: String, algorithm: String): SourceShufflePage {
+    override suspend fun shuffle(playlistId: String, songId: String, algorithm: String, collection: LibraryCollection?): SourceShufflePage {
         val result = owner.invoke("discovery", "cloudShuffle", JsonObject().apply {
             addProperty("playlistId", playlistId); addProperty("songId", songId); addProperty("alg", algorithm)
+            collection?.let { addProperty("collection", it.name) }
         }).objectValue()
-        fun refs(key: String): List<TrackRef> = result.arrayValue(key, 2000).map { value ->
-            if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) invalid()
-            TrackRef(providerId, value.asString.also { if (it.isBlank() || it.length > 2048) invalid() })
-        }
-        return SourceShufflePage(refs("order").distinct(), result.arrayValue("tracks", 1000).map { owner.track(it.objectValue()) },
-            refs("unavailable").toSet()).also { owner.ensureCurrent() }
+        return parseSourceShufflePage(result, providerId, owner::track).also { owner.ensureCurrent() }
     }
 }
+
+internal suspend fun parseSourceShufflePage(
+    result: JsonObject,
+    providerId: String,
+    parseTrack: suspend (JsonObject) -> Track,
+): SourceShufflePage {
+    // The feature boundary bounds the payload; playlist length is not a page-size limit.
+    fun rows(key: String): JsonArray = result.get(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: invalid()
+    fun refs(key: String): List<TrackRef> = rows(key).map { value ->
+        if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) invalid()
+        TrackRef(providerId, value.asString.also { if (it.isBlank() || it.length > 2048) invalid() })
+    }
+    return SourceShufflePage(
+        refs("order").distinct(),
+        rows("tracks").map { parseTrack(it.objectValue()) },
+        refs("unavailable").toSet(),
+    )
+}
+
 private fun com.google.gson.JsonElement.objectValue(): JsonObject = takeIf { isJsonObject }?.asJsonObject ?: invalid()
 private fun JsonObject.arrayValue(key: String, maximum: Int): JsonArray = get(key)?.takeIf {
     it.isJsonArray && it.asJsonArray.size() <= maximum

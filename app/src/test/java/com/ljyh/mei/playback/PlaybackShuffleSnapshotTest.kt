@@ -7,6 +7,7 @@ import com.google.gson.JsonParser
 import com.ljyh.mei.constants.RestorePlaybackPositionKey
 import com.ljyh.mei.constants.RestorePlaybackStateKey
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
+import com.ljyh.mei.source.api.LibraryCollection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,6 +17,27 @@ import org.junit.Test
 
 class PlaybackShuffleSnapshotTest {
     private val gson = Gson()
+
+    @Test
+    fun sourceShuffleLocatorsRoundTripWithStableDiskFieldsAndLegacyAliases() {
+        listOf(
+            PlaylistQueueSource(0L, providerId = "external", sourcePlaylistId = "opaque:playlist"),
+            PlaylistQueueSource(0L, providerId = "external", libraryCollection = LibraryCollection.LIKED_TRACKS),
+        ).forEach { source ->
+            val original = PlaybackSnapshot(playlistSource = source)
+            val encoded = gson.toJson(original)
+            assertEquals(original, gson.fromJson(encoded, PlaybackSnapshot::class.java))
+            val stored = JsonParser.parseString(encoded).asJsonObject.getAsJsonObject("playlistSource")
+            assertEquals("external", stored.get("providerId").asString)
+            assertTrue(source.supportsShuffle)
+            if (source.libraryCollection != null) assertEquals("LIKED_TRACKS", stored.get("libraryCollection").asString)
+            else assertEquals("opaque:playlist", source.playlistIdentity)
+        }
+        assertEquals(PlaylistQueueSource(123L, "legacy"),
+            gson.fromJson("""{"a":123,"b":"legacy"}""", PlaylistQueueSource::class.java))
+        assertEquals("123", gson.fromJson("""{"playlistId":123,"alg":"legacy"}""",
+            PlaylistQueueSource::class.java).playlistIdentity)
+    }
 
     @Test
     fun versionTwoRoundTripKeepsOrderSourceCurrentIndexAndProgress() {

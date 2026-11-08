@@ -248,7 +248,7 @@ class ScriptNetworkPolicy(
         internal fun artworkUri(file: java.io.File): String = java.net.URI("file", "", file.absolutePath, null).toASCIIString()
 
         const val MAX_REQUEST_BYTES = 256 * 1024
-        const val MAX_RESPONSE_BYTES = 1024 * 1024
+        const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
         fun validateDomain(domain: String) {
             if (domain.length !in 4..253 || domain != domain.lowercase() || domain.endsWith('.') ||
                 !domain.contains('.') || domain.contains('*') || domain.contains(':') ||

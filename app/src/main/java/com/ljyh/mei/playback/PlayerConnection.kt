@@ -95,6 +95,9 @@ class PlayerConnection(
     val repeatMode = MutableStateFlow(PlayMode.SHUFFLE_MODE_ALL.mode)
     // 同时也暴露原始的 shuffle 状态
     val shuffleModeEnabled = MutableStateFlow(false)
+    private val shuffleModeJob = scope.launch {
+        service.queueManager.shuffleModeIntent.collect { updatePlayModeState() }
+    }
 
     val canSkipPrevious = MutableStateFlow(true)
     val canSkipNext = MutableStateFlow(true)
@@ -223,14 +226,15 @@ class PlayerConnection(
     }
 
 
-    fun playQueue(queue: Queue, shuffle: Boolean? = null, repeatMode: Int = REPEAT_MODE_ALL) {
+    fun playQueue(queue: Queue, shuffle: Boolean? = null, repeatMode: Int = REPEAT_MODE_ALL, randomStart: Boolean = false) {
         // 判断当前 UI 上的模式是否是随机模式
         val startInShuffle = shuffle ?: (this.repeatMode.value == PlayMode.SHUFFLE_MODE_ALL.mode)
         service.queueTitle = queue.title
         queueTitle.value = queue.title
         // 调用新的 playQueue 方法，传入随机意图
         service.scope.launch {
-            service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle, repeatMode = repeatMode)
+            service.queueManager.playQueue(queue, startInShuffleMode = startInShuffle, repeatMode = repeatMode,
+                randomStart = randomStart)
         }
     }
     fun playNext(item: MediaItem) = playNext(listOf(item))
@@ -375,7 +379,7 @@ class PlayerConnection(
      * 解决了之前两个 Listener 互相冲突或者覆盖状态的问题
      */
     private fun updatePlayModeState() {
-        val isShuffle = player.shuffleModeEnabled
+        val isShuffle = player.shuffleModeEnabled || service.queueManager.shuffleModeIntent.value
         val pRepeat = player.repeatMode
 
         shuffleModeEnabled.value = isShuffle
@@ -407,6 +411,7 @@ class PlayerConnection(
     }
 
     fun dispose() {
+        shuffleModeJob.cancel()
         previousPlaybackJob.cancel()
         qualityChangeJob?.cancel()
         qualityChangeJob = null

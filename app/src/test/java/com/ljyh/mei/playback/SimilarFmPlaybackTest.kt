@@ -454,7 +454,7 @@ class SimilarFmPlaybackTest {
                     override val providerId = selected
                     override suspend fun ensureCurrent() = Unit
                     override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
-                    override suspend fun shuffle(playlistId: String, songId: String, algorithm: String): SourceShufflePage = error("Unexpected shuffle request")
+                    override suspend fun shuffle(playlistId: String, songId: String, algorithm: String, collection: LibraryCollection?): SourceShufflePage = error("Unexpected shuffle request")
                     override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> {
                         val request = PendingRadio(parameters, similar)
                         requests += request

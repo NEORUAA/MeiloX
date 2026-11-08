@@ -375,6 +375,20 @@ class ScriptPluginPolicyTest {
             }
             assertTrue("The original streamed response must always close", closed)
         }
+        val prefix = "{\"code\":200,\"padding\":\""
+        val suffix = "\"}"
+        val largeJson = prefix + "x".repeat(limit - prefix.length - suffix.length) + suffix
+        val largeBytes = largeJson.toByteArray(Charsets.UTF_8)
+        assertTrue(largeBytes.size > 1024 * 1024)
+        assertArrayEquals(largeBytes, NeteaseWireCodec.decodeResponseBytes(largeBytes, "eapi"))
+        for (length in listOf(-1L, largeBytes.size.toLong())) {
+            exchange(largeBytes, length).use { response ->
+                val payload = ScriptNetworkPolicy(emptyList()).responsePayload(response, "utf8")
+                assertEquals(largeJson, payload["body"].asString)
+                assertEquals(200, JsonParser.parseString(payload["body"].asString).asJsonObject["code"].asInt)
+            }
+            assertTrue("Accepted large responses must close their original body", closed)
+        }
         for (length in listOf(-1L, limit + 1L)) {
             try { exchange(ByteArray(limit + 1), length); fail("Expected the response limit") }
             catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }

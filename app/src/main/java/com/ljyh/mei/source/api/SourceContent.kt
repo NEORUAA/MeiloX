@@ -122,6 +122,7 @@ data class SourceAccount(
 )
 
 enum class LibraryCollection(val operation: String, val type: ContentType) {
+    @com.google.gson.annotations.SerializedName("LIKED_TRACKS")
     LIKED_TRACKS("library.likedTracks", ContentType.TRACK),
     CREATED_PLAYLISTS("library.createdPlaylists", ContentType.PLAYLIST),
     SAVED_PLAYLISTS("library.savedPlaylists", ContentType.PLAYLIST),

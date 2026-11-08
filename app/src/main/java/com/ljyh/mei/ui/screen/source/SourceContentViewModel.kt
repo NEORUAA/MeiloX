@@ -322,6 +322,7 @@ class SourceContentViewModel internal constructor(
             if (token == generation) mutableState.value = state.value.copy(loading = false)
             throw cancelled
         } catch (error: Exception) {
+            timber.log.Timber.tag("SourceContent").w(error, "Source content unavailable")
             if (token == generation) mutableState.value = state.value.copy(loading = false, error = error.sourceCode(),
                 account = state.value.account.takeUnless { error.sourceCode() == SourceErrorCode.AUTH_REQUIRED || error.sourceCode() == SourceErrorCode.AUTH_EXPIRED },
                 hasMore = state.value.hasMore && error.sourceCode() != SourceErrorCode.INVALID_RESPONSE)

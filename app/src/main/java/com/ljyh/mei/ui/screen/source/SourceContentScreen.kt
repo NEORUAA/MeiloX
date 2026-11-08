@@ -108,9 +108,10 @@ internal fun rememberSourceQueuePlayer(
     queueRequest: SourceContentRequest? = null,
     shuffle: Boolean? = null,
     preserveRepeatMode: Boolean = true,
+    randomStart: Boolean = false,
 ): (List<Track>, Int) -> Unit {
     val player = LocalPlayerConnection.current
-    return remember(player, id, title, viewModel, queueRequest, shuffle, preserveRepeatMode) {
+    return remember(player, id, title, viewModel, queueRequest, shuffle, preserveRepeatMode, randomStart) {
         { tracks, index ->
             if (tracks.isNotEmpty() && index in tracks.indices) {
                 val paged = queueRequest != null && !(queueRequest is SourceContentRequest.Detail && queueRequest.ref is TrackRef)
@@ -120,8 +121,9 @@ internal fun rememberSourceQueuePlayer(
                     startIndex = index, position = 0,
                 )
                 if (queue != null && player != null) {
-                    if (preserveRepeatMode) player.playQueue(queue, shuffle = shuffle, repeatMode = player.player.repeatMode)
-                    else player.playQueue(queue, shuffle = shuffle)
+                    if (preserveRepeatMode) player.playQueue(queue, shuffle = shuffle,
+                        repeatMode = player.player.repeatMode, randomStart = randomStart)
+                    else player.playQueue(queue, shuffle = shuffle, randomStart = randomStart)
                 }
             }
         }
@@ -218,7 +220,8 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
     val playAll = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
         viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), preserveRepeatMode = false)
     val shuffle = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
-        viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), shuffle = true, preserveRepeatMode = false)
+        viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref), shuffle = true,
+        preserveRepeatMode = false, randomStart = true)
     LaunchedEffect(ref) { viewModel.open(SourceContentRequest.Detail(ref)) }
     val provider = providers.firstOrNull { it.id == ref.providerId && it.status == SourceStatus.READY }
     val collections = (provider as? CollectionCapability)?.takeIf {
@@ -272,6 +275,8 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
         var searchError by remember(ownerKey) { mutableStateOf<SourceErrorCode?>(null) }
         var searchAttempt by remember(ownerKey) { mutableIntStateOf(0) }
         val playSearch = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title)
+        val shuffleSearch = rememberSourceQueuePlayer("source-search-${ref.providerId}-${ref.type.wireName}-${ref.contentId}",
+            state.title, shuffle = true, preserveRepeatMode = false, randomStart = true)
         LaunchedEffect(ownerKey, query, contentRevision, state.detail?.ref, state.loading, state.refreshing, searchAttempt) {
             searchTracks = null
             searchError = null
@@ -386,7 +391,12 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
                 tracks = displayedMetadata, isSubscribed = saved == true, playCount = playlist?.playCount),
             isLoading = state.loading && (state.detail == null || query.isNotBlank()) || searching,
             onPlayAll = { if (tracks.isNotEmpty()) playAll(tracks, 0) },
-            onShufflePlay = { if (tracks.isNotEmpty()) shuffle(tracks, tracks.indices.random()) },
+            onShufflePlay = {
+                if (query.isNotBlank()) {
+                    val matches = displayed.map { it.value }
+                    if (matches.isNotEmpty()) shuffleSearch(matches, 0)
+                } else if (tracks.isNotEmpty()) shuffle(tracks, 0)
+            },
             onHeaderAction = toggleCollection,
             headerActionIcon = if (saved == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             headerActionLabel = if (savedError != null) "重试" else if (saved == true) "取消收藏" else "收藏",

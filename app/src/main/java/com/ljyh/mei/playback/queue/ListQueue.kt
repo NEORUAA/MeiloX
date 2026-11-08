@@ -1,10 +1,24 @@
 package com.ljyh.mei.playback.queue
 
 import androidx.media3.common.MediaItem
+import com.google.gson.annotations.SerializedName
+import com.ljyh.mei.source.api.LibraryCollection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-data class PlaylistQueueSource(val playlistId: Long, val alg: String = "")
+data class PlaylistQueueSource(
+    @field:SerializedName(value = "playlistId", alternate = ["a"]) val playlistId: Long,
+    @field:SerializedName(value = "alg", alternate = ["b"]) val alg: String = "",
+    @field:SerializedName("providerId") val providerId: String? = null,
+    @field:SerializedName("sourcePlaylistId") val sourcePlaylistId: String? = null,
+    @field:SerializedName("libraryCollection") val libraryCollection: LibraryCollection? = null,
+) {
+    val playlistIdentity: String?
+        get() = sourcePlaylistId?.takeIf { it.isNotBlank() } ?: playlistId.takeIf { it > 0 }?.toString()
+
+    val supportsShuffle: Boolean
+        get() = playlistIdentity != null || libraryCollection == LibraryCollection.LIKED_TRACKS
+}
 
 /**
  * 列表队列实现

@@ -21,7 +21,7 @@ import okio.Buffer
 /** Wire encoding only. Source scripts supply URLs, signing paths, headers and complete payloads. */
 internal object NeteaseWireCodec {
     private const val MAX_REQUEST_BYTES = 256 * 1024
-    private const val MAX_RESPONSE_BYTES = 1024 * 1024
+    private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
     private val argumentNames = setOf("mode", "signingPath", "formFields", "weapiKey")
 
     fun interceptor(arguments: Map<String, String>): Interceptor {

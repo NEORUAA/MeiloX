@@ -78,6 +78,14 @@ class SourceContentQueue private constructor(
     override val id: String = "source-content:${providerId.length}:$providerId:" +
         (contentRef?.let { "${it.type.wireName}:${it.contentId}" } ?: "library:${libraryCollection?.name}")
     override val preloadItem: String? = null
+    override val playlistSource: PlaylistQueueSource? = when (val ref = contentRef) {
+        is PlaylistRef -> PlaylistQueueSource(ref.playlistId.toLongOrNull() ?: 0L,
+            providerId = providerId, sourcePlaylistId = ref.playlistId)
+        null -> libraryCollection?.takeIf { it == LibraryCollection.LIKED_TRACKS }?.let {
+            PlaylistQueueSource(0L, providerId = providerId, libraryCollection = it)
+        }
+        else -> null
+    }
     private val lock = Any()
     private val tracks = initialTracks.toMutableList()
     private val boundProvider = router.registry.provider(providerId)
@@ -87,11 +95,14 @@ class SourceContentQueue private constructor(
         account?.sessionRevision?.takeIf { revisionProvider != null }
     private var accountBound = account != null
     private var boundAccount = account
-    private var more = hasMore && (knownTotalCount == null || tracks.size < knownTotalCount)
+    private var more = hasMore && (nextCursor != null || recoveryContext?.hasMore == true ||
+        knownTotalCount == null || tracks.size < knownTotalCount)
     private var cursor = nextCursor
     private var offset = nextOffset
     private var generation = 0L
     private var released = false
+    private var cloudOrdered = recoveryContext?.hasMore == false
+    private var terminalFailure: Throwable? = null
     private var recoveryPending = recoveryContext != null
     private var flight: PageFlight? = null
     private val seenCursors = mutableSetOf<String>().apply { nextCursor?.let(::add) }
@@ -104,6 +115,25 @@ class SourceContentQueue private constructor(
     override val loadedCount: Int get() = synchronized(lock) { tracks.size }
 
     internal fun loadedTracks(): List<Track> = synchronized(lock) { tracks.toList() }
+    internal val hasCloudOrder: Boolean get() = synchronized(lock) { cloudOrdered }
+    internal val playbackPageSize: Int get() = pageSize
+
+    /** Local shuffle needs the complete collection, while sequential playback stays paged. */
+    internal suspend fun loadAll(): Queue.Status {
+        synchronized(lock) { terminalFailure }?.let { throw it }
+        while (hasNextPage()) {
+            currentCoroutineContext().ensureActive()
+            when (val result = nextPage(100)) {
+                is Queue.Result.Error -> throw result.exception ?: SourceException(SourceErrorCode.UNAVAILABLE)
+                is Queue.Result.Success -> Unit
+            }
+        }
+        if (!isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+        synchronized(lock) {
+            terminalFailure?.let { throw it }
+        }
+        return getInitialStatus()
+    }
 
     init {
         require(contentRef is AlbumRef || contentRef is ArtistRef || contentRef is PlaylistRef ||
@@ -117,7 +147,7 @@ class SourceContentQueue private constructor(
 
     override suspend fun getInitialStatus(): Queue.Status {
         // Bind an account before playback, without reloading the already visible tracks.
-        if (hasNextPage()) {
+        if (hasNextPage() || playlistSource != null) {
             try {
                 withContext(Dispatchers.IO) { checkAccountAndProvider() }
             } catch (error: CancellationException) {
@@ -143,7 +173,9 @@ class SourceContentQueue private constructor(
     }
 
     /** Concurrent callers share one request and never advance two pages for one boundary. */
-    override suspend fun nextPage(): Queue.Result<List<String>> = coroutineScope {
+    override suspend fun nextPage(): Queue.Result<List<String>> = nextPage(pageSize)
+
+    private suspend fun nextPage(limit: Int): Queue.Result<List<String>> = coroutineScope {
         val (request, owner) = synchronized(lock) {
             flight?.let { return@synchronized it to false }
             if (released || !more || !providerMatches()) {
@@ -165,7 +197,10 @@ class SourceContentQueue private constructor(
             val result = Queue.Result.Error("音源队列加载失败", error)
             synchronized(lock) {
                 if (request.generation == generation && !released) {
-                    if (error is SourceException && error.code in terminalErrors) more = false
+                    if (error is SourceException && error.code in terminalErrors) {
+                        more = false
+                        terminalFailure = error
+                    }
                     mutableState.value = Queue.QueueState.Error(result.message)
                 }
             }
@@ -173,7 +208,7 @@ class SourceContentQueue private constructor(
             return result
         }
         try {
-            val result = withContext(Dispatchers.IO) { loadPage(request) }
+            val result = withContext(Dispatchers.IO) { loadPage(request, limit) }
             request.result.complete(result)
             result
         } catch (error: CancellationException) {
@@ -199,12 +234,12 @@ class SourceContentQueue private constructor(
         }
     }
 
-    private suspend fun loadPage(request: PageFlight): Queue.Result<List<String>> {
+    private suspend fun loadPage(request: PageFlight, limit: Int): Queue.Result<List<String>> {
         checkAccountAndProvider()
         recoverCursor(request)
         val pageRequest = synchronized(lock) {
             if (!more) return Queue.Result.Success(emptyList())
-            PageRequest(offset, pageSize, cursor)
+            PageRequest(offset, limit, cursor)
         }
         val page = fetchPage(pageRequest)
         currentCoroutineContext().ensureActive()
@@ -215,7 +250,7 @@ class SourceContentQueue private constructor(
                 more = false
                 return@synchronized Queue.Result.Success(emptyList())
             }
-            if (page.items.size > pageSize || page.items.any { it.ref.providerId != providerId }) invalidPage()
+            if (page.items.size > pageRequest.limit || page.items.any { it.ref.providerId != providerId }) invalidPage()
             val refs = page.items.map { it.ref }
             val repeatedOffsetPage = page.nextCursor == null && knownTotalCount == null && refs in seenPages
             if (page.hasMore && (refs.isEmpty() || repeatedOffsetPage ||
@@ -226,7 +261,7 @@ class SourceContentQueue private constructor(
             page.nextCursor?.let(seenCursors::add)
             if (refs.isNotEmpty()) seenPages.add(refs)
             more = page.hasMore && page.items.isNotEmpty() &&
-                (knownTotalCount == null || tracks.size < knownTotalCount)
+                (page.nextCursor != null || knownTotalCount == null || tracks.size < knownTotalCount)
             publishLoadedLocked(itemsLocked())
             Queue.Result.Success(items.map { it.first })
         }
@@ -347,9 +382,10 @@ class SourceContentQueue private constructor(
 
     /** The player may not have appended a just-fetched page yet; save its visible prefix only. */
     internal fun snapshotContext(visibleRefs: List<TrackRef>): SourceContentQueueSnapshot? = synchronized(lock) {
-        if (released || !providerMatches() || visibleRefs.isEmpty() || visibleRefs.size > tracks.size ||
-            tracks.take(visibleRefs.size).map { it.ref } != visibleRefs ||
-            !more && visibleRefs.size == tracks.size) return@synchronized null
+        if (released || !providerMatches() || visibleRefs.isEmpty() || visibleRefs.any { it.providerId != providerId }) return@synchronized null
+        if (!cloudOrdered && (visibleRefs.size > tracks.size || tracks.take(visibleRefs.size).map { it.ref } != visibleRefs ||
+            !more && visibleRefs.size == tracks.size && playlistSource == null)) return@synchronized null
+        val ownerOnly = cloudOrdered || !more && visibleRefs.size == tracks.size
         val fingerprint = accountFingerprintLocked() ?: recoveryContext?.accountFingerprint ?: return@synchronized null
         SourceContentQueueSnapshot(
             providerId = providerId,
@@ -359,10 +395,10 @@ class SourceContentQueue private constructor(
             contentId = contentRef?.contentId,
             libraryCollection = libraryCollection?.name,
             loadedCount = visibleRefs.size,
-            nextOffset = offset - (tracks.size - visibleRefs.size),
+            nextOffset = if (ownerOnly) visibleRefs.size else offset - (tracks.size - visibleRefs.size),
             pageSize = pageSize,
-            hasMore = true,
-            knownTotalCount = knownTotalCount,
+            hasMore = !ownerOnly,
+            knownTotalCount = if (ownerOnly) null else knownTotalCount,
             accountFingerprint = fingerprint,
         )
     }
@@ -402,6 +438,16 @@ class SourceContentQueue private constructor(
 
     private fun stopPagination() = synchronized(lock) { more = false }
 
+    /** Keep the account owner alive after the server replaces canonical paging with an order. */
+    internal fun freezePagination() = synchronized(lock) {
+        cloudOrdered = true
+        generation++
+        more = false
+        flight?.job?.cancel()
+        flight?.result?.cancel()
+        flight = null
+    }
+
     override fun clear() = synchronized(lock) {
         generation++
         more = false
@@ -440,9 +486,9 @@ class SourceContentQueue private constructor(
             require(context.instanceId.isNotBlank() && context.instanceId == provider.instanceId.value)
             require(context.providerVersion.isNotBlank() && context.providerVersion == provider.version)
             require(context.accountFingerprint.matches(Regex("[0-9a-f]{64}")))
-            require(context.hasMore && context.loadedCount > 0 && context.loadedCount == initialTracks.size)
+            require(context.loadedCount > 0 && context.loadedCount == initialTracks.size)
             require(context.nextOffset == context.loadedCount && context.pageSize in 1..100)
-            require(context.knownTotalCount == null || context.knownTotalCount > context.loadedCount)
+            require(context.knownTotalCount == null || context.knownTotalCount >= 0)
             val ref: ContentRef? = when (context.contentType) {
                 ContentType.PLAYLIST.wireName -> PlaylistRef(provider.id, requireNotNull(context.contentId))
                 ContentType.ALBUM.wireName -> AlbumRef(provider.id, requireNotNull(context.contentId))
@@ -453,7 +499,8 @@ class SourceContentQueue private constructor(
             val collection = context.libraryCollection?.let { LibraryCollection.valueOf(it) }
             require(ref != null && collection == null || ref == null && context.contentId == null &&
                 collection?.type == ContentType.TRACK)
-            SourceContentQueue(router, provider.id, ref, collection, title, initialTracks, 0, true,
+            require(context.hasMore || ref is PlaylistRef || collection == LibraryCollection.LIKED_TRACKS)
+            SourceContentQueue(router, provider.id, ref, collection, title, initialTracks, 0, context.hasMore,
                 null, context.nextOffset, context.pageSize, context.knownTotalCount, null, null,
                 mediaItemFactory, context)
         }.getOrNull()
