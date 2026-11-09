@@ -74,6 +74,92 @@ class SourceCompatibilityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
+    @Test fun installedNeteaseCloudAndPodcastsUseBoundedReadPaths(): Unit = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("neteaseCloudPodcastLive") == "true")
+        val baseline = args.getString("neteaseCloudPodcastBaseline") == "true"
+        androidx.test.core.app.ActivityScenario.launch(com.ljyh.mei.MainActivity::class.java).use {
+            fun phase(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", "$text\n") })
+            val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
+            withTimeout(20_000) { router.registry.awaitInitialized() }
+            val provider = router.registry.requireProvider(ProviderIds.NETEASE) as ScriptMusicProvider
+            withTimeout(30_000) { router.account(ProviderIds.NETEASE) }
+            val configuration = provider.platformConfiguration().toMap()
+            val revision = provider.accountRevision.value
+            val client = com.ljyh.mei.source.core.SourceFeatureClient(router, SourceFeatureExecutor(router),
+                com.ljyh.mei.source.core.SourcePreferences(context.dataStore),
+                com.ljyh.mei.source.platform.SourcePlatformEffects(context, router.registry))
+            val repository = com.ljyh.mei.source.shared.SharedOnlineRepository(client)
+            val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+            val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+            val original = field.get(policy) as OkHttpClient
+            val cloudReads = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Int>>()
+            val podcastPaths = java.util.concurrent.CopyOnWriteArrayList<String>()
+            try {
+                field.set(policy, original.newBuilder().addInterceptor { chain ->
+                    val request = chain.request()
+                    val path = request.url.encodedPath
+                    if (path.endsWith("/cloud/get")) {
+                        val buffer = okio.Buffer(); checkNotNull(request.body).writeTo(buffer)
+                        val params = JsonParser.parseString(buffer.readUtf8()).asJsonObject
+                        cloudReads += params.get("offset").asInt to params.get("limit").asInt
+                    }
+                    if (path.contains("/djradio/")) podcastPaths += path
+                    chain.proceed(request)
+                }.build())
+                val firstSession = repository.screen("cloud-first-page-live", ProviderIds.NETEASE)
+                phase("Physical foreground cloud first-page read starting")
+                val started = android.os.SystemClock.elapsedRealtime()
+                val first = withTimeout(60_000) {
+                    if (baseline) {
+                        val features = firstSession.features()
+                        val params = JsonObject().apply { addProperty("offset", 0); addProperty("limit", 200) }
+                        com.ljyh.mei.source.shared.SourceOnlineParser(features.providerId, features.instanceId)
+                            .cloudPage(features.invoke("cloud", "cloudSongs", params), 0)
+                    } else firstSession.cloudSongs(limit = 30)
+                }
+                val firstMs = android.os.SystemClock.elapsedRealtime() - started
+                phase("Cloud first page elapsedMs=$firstMs rows=${first.songs.size} nextOffset=${first.nextOffset}")
+                if (baseline) {
+                    instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                        "Cloud first page baseline=true elapsedMs=$firstMs rows=${first.songs.size} nextOffset=${first.nextOffset} reads=$cloudReads\n") })
+                } else {
+                    assertTrue(first.songs.size <= 30)
+                    assertTrue(cloudReads.isNotEmpty())
+                    assertTrue(cloudReads.all { it == (0 to 30) })
+                    val beforeWarm = cloudReads.size
+                    val warmStarted = android.os.SystemClock.elapsedRealtime()
+                    val warm = withTimeout(5_000) { repository.screen("cloud-reopen-live", ProviderIds.NETEASE).cloudSongs(limit = 30) }
+                    val warmMs = android.os.SystemClock.elapsedRealtime() - warmStarted
+                    assertTrue("Reopened cloud data must match the cached first page", first == warm)
+                    assertEquals("Reopened cloud page must reuse the bound host cache", beforeWarm, cloudReads.size)
+                    phase("Cloud cached reopen verified; explicit refresh starting")
+                    withTimeout(60_000) { firstSession.cloudSongs(limit = 30, refresh = true) }
+                    assertTrue("Explicit refresh must still read the service", cloudReads.size > beforeWarm)
+                    if (first.hasMore) {
+                        phase("Cloud explicit refresh verified; next page starting")
+                        val next = withTimeout(60_000) { firstSession.cloudSongs(offset = first.nextOffset, limit = 200) }
+                        assertTrue(next.nextOffset > first.nextOffset || !next.hasMore)
+                        assertEquals(first.nextOffset to 200, cloudReads.last())
+                    }
+                    phase("Cloud paging verified; podcast home starting")
+                    val podcastStarted = android.os.SystemClock.elapsedRealtime()
+                    val home = withTimeout(60_000) { repository.screen("podcast-live", ProviderIds.NETEASE).podcastHome() }
+                    val podcastMs = android.os.SystemClock.elapsedRealtime() - podcastStarted
+                    assertEquals("Podcast home must finish its three distinct read phases", 3, podcastPaths.size)
+                    assertEquals(3, podcastPaths.distinct().size)
+                    assertTrue(home.categories.isNotEmpty())
+                    instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                        "Cloud first page baseline=false elapsedMs=$firstMs rows=${first.songs.size} nextOffset=${first.nextOffset} warmMs=$warmMs warmHttp=0 reads=$cloudReads; podcastMs=$podcastMs categories=${home.categories.size} featured=${home.featured.size} personalized=${home.personalized.size} podcastHttp=${podcastPaths.size}\n") })
+                }
+            } finally {
+                field.set(policy, original)
+                assertTrue("Read-only cloud/podcast checks must preserve source configuration", configuration == provider.platformConfiguration())
+                assertTrue("Read-only cloud/podcast checks must preserve account revision", revision == provider.accountRevision.value)
+            }
+        }
+    }
+
     @Test fun installedNeteaseMetadataWindowUsesAtMostOneBatchRequest(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("neteaseBatchCatalogLive") == "true")
         val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()

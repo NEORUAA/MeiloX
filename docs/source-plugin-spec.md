@@ -178,6 +178,8 @@ Declare `feature.invoke` plus a `features` map of exact family/action names. Opt
 }
 ```
 
+Cloud list parameters retain their explicit `offset` and `limit`; the screen requests 30 rows initially and 200 when appending. `nextOffset` must advance from raw service rows even when projections omit invalid entries or the UI deduplicates IDs. First-page reuse is host-owned typed state, with refresh/mutation and immutable session identity guards; sources must not persist cloud pages in JavaScript storage.
+
 The host binds feature calls to one provider object, instance, version, account revision and screen scope. Changing the default browse source cannot retarget an open edit, conversation, upload or login form. Disabling, replacing, removing or changing that owner's account cancels in-flight work and closes pending host interactions. Host callers alone may opt named login/logout/account-web flows into a final same-provider session transition. Pending effects still require the original account.
 
 Shared presenters retain the app's original playlist/album/artist UI, grouped rows, menus and playback controls. Advanced shared schemas cover account/security/login, cloud, podcasts, listening statistics/history, song wiki, comments, private messages, recognition and listening together. IDs stay strings throughout these schemas. For example, `podcasts.search` returns `{podcasts,hasMore,totalCount,fetchedCount}`; account playlist pages return `{playlists,hasMore,nextOffset}`. Aggregation across larger libraries runs outside one isolated response.

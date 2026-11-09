@@ -62,6 +62,8 @@ A feature returns a bounded `{hostEffect,continuation}` plan. `SourceFeatureExec
 
 The host exposes closed file-picking/upload, WebView, QR/SMS and native SDK primitives. Unsupported handlers return `UNSUPPORTED`. Selected files become expiring, single-use opaque handles bound to the original execution context. No plugin receives a raw Android object, arbitrary native class invocation or unrestricted filesystem handle.
 
+The cloud screen requests 30 raw rows for its first page and 200 for subsequent pages, advancing from the service offset rather than the deduplicated display count. Its normalized first-page cache belongs to the host and is bound to an immutable provider/version/account identity. Explicit refresh and upload/delete operations invalidate it, and retired reads cannot repopulate a newer generation.
+
 Web effects use AndroidX WebKit profiles, source-owned cookies and a fixed prompt bridge. Direct Chromium/service-worker networking is blocked; host-owned resource and fetch/XHR/form mediation applies the approved network boundary. Page navigation may narrow exact or subtree network grants, while cookie import/export targets remain concrete hosts. The profile is destroyed when the effect ends. Missing multi-profile/document-start support does not fall back to the global CookieManager.
 
 The vendor security SDK has process-global state without a verified reset API. The host serializes its work and fails closed for a second source-instance owner during the same process. Provider-private SDK storage remains namespaced. Switching that SDK to another owner requires a process restart.

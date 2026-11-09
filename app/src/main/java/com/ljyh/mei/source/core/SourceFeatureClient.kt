@@ -38,6 +38,16 @@ class SourceFeatureClient @Inject constructor(
     }
 }
 
+/** An immutable account/version key for host-owned data caches, never the mutable screen binding. */
+internal class SourceFeatureSessionIdentity(
+    private val owner: MusicProvider,
+    private val version: String,
+    private val revision: String?,
+) {
+    fun sameSession(other: SourceFeatureSessionIdentity): Boolean =
+        owner === other.owner && version == other.version && revision == other.revision
+}
+
 class BoundSourceFeatures internal constructor(
     private val router: SourceRouter,
     private val executor: SourceFeatureExecutor,
@@ -50,6 +60,8 @@ class BoundSourceFeatures internal constructor(
     val providerId: String get() = owner.id
     val instanceId: ProviderInstanceId get() = owner.instanceId
     private val version = owner.version
+
+    internal fun sessionIdentity(): SourceFeatureSessionIdentity = SourceFeatureSessionIdentity(owner, version, revision)
 
     internal fun sameSession(other: BoundSourceFeatures): Boolean =
         owner === other.owner && version == other.version && revision == other.revision

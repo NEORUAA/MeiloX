@@ -82,16 +82,18 @@ class CloudMusicViewModel internal constructor(
     private val deleteSong: suspend (String) -> Unit,
     private val uploadSong: suspend (Uri, (Long, Long) -> Unit) -> Unit,
     private val pickAndUpload: suspend () -> Unit = { throw com.ljyh.mei.source.api.SourceException(com.ljyh.mei.source.api.SourceErrorCode.UNSUPPORTED) },
+    private val loadFreshPage: suspend (Int) -> CloudMusicPage = loadPage,
 ) : ViewModel() {
     @Inject
     constructor(repository: SharedOnlineRepository, savedStateHandle: androidx.lifecycle.SavedStateHandle) : this(
         repository.screen("cloud-music", savedStateHandle["providerId"]),
     )
     internal constructor(repository: SharedOnlineSession) : this(
-        { offset -> repository.cloudSongs(offset = offset) },
+        { offset -> repository.cloudSongs(offset = offset, limit = if (offset == 0) 30 else 200) },
         repository::deleteCloudSong,
         { _, _ -> repository.uploadCloudSong() },
         repository::uploadCloudSong,
+        { offset -> repository.cloudSongs(offset = offset, limit = if (offset == 0) 30 else 200, refresh = true) },
     ) {
         viewModelScope.launch { repository.sessionChanges.collect { owner ->
             if (owner.isBlank()) synchronized(lock) {
@@ -109,9 +111,11 @@ class CloudMusicViewModel internal constructor(
     private var readJob: Job? = null
     private var uploadRevision = 0L
 
-    init { refresh() }
+    init { startRead(refresh = false) }
 
-    fun refresh() {
+    fun refresh() = startRead(refresh = true)
+
+    private fun startRead(refresh: Boolean) {
         val job = synchronized(lock) {
             val expected = ++readRevision
             readJob?.cancel()
@@ -121,7 +125,7 @@ class CloudMusicViewModel internal constructor(
                 loadMoreError = null,
                 error = null,
             )
-            viewModelScope.launch(start = CoroutineStart.LAZY) { readPage(expected, 0, append = false) }
+            viewModelScope.launch(start = CoroutineStart.LAZY) { readPage(expected, 0, append = false, refresh = refresh) }
                 .also { readJob = it }
         }
         job.start()
@@ -141,9 +145,9 @@ class CloudMusicViewModel internal constructor(
         job.start()
     }
 
-    private suspend fun readPage(expected: Long, offset: Int, append: Boolean) {
+    private suspend fun readPage(expected: Long, offset: Int, append: Boolean, refresh: Boolean = false) {
         try {
-            val incoming = loadPage(offset)
+            val incoming = if (refresh) loadFreshPage(offset) else loadPage(offset)
             currentCoroutineContext().ensureActive()
             publishRead(expected) { current ->
                 if (append) current.withCloudPage(incoming)

@@ -11,6 +11,7 @@ import com.ljyh.mei.data.network.Resource
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.BoundSourceFeatures
 import com.ljyh.mei.source.core.SourceFeatureClient
+import com.ljyh.mei.source.core.SourceFeatureSessionIdentity
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,8 +26,9 @@ import kotlinx.coroutines.sync.withLock
 /** Source-neutral online operations. A screen captures its provider and account exactly once. */
 @Singleton
 class SharedOnlineRepository @Inject constructor(private val client: SourceFeatureClient) {
+    private val cloudPages = SourceCloudPageCache()
     fun screen(name: String, providerId: String? = null): SharedOnlineSession =
-        SharedOnlineSession(client, "$name:${UUID.randomUUID()}", providerId)
+        SharedOnlineSession(client, "$name:${UUID.randomUUID()}", providerId, cloudPages)
 }
 
 /** Presentation records preserve opaque identities for every provider. */
@@ -34,6 +36,7 @@ class SharedOnlineSession internal constructor(
     private val client: SourceFeatureClient,
     private val scopeId: String,
     private val requestedProviderId: String?,
+    private val cloudPages: SourceCloudPageCache = SourceCloudPageCache(),
 ) {
     private val mutex = Mutex()
     private var bound: BoundSourceFeatures? = null
@@ -55,8 +58,18 @@ class SharedOnlineSession internal constructor(
         } catch (_: Exception) { emit("") }
     }
 
-    suspend fun invoke(feature: String, action: String, parameters: JsonObject = JsonObject(), allowSessionChange: Boolean = false): JsonElement =
-        features().invoke(feature, action, parameters, allowSessionChange)
+    suspend fun invoke(feature: String, action: String, parameters: JsonObject = JsonObject(), allowSessionChange: Boolean = false): JsonElement {
+        val source = features()
+        if (allowSessionChange) cloudPages.invalidate(source)
+        try {
+            return source.invoke(feature, action, parameters, allowSessionChange)
+        } catch (error: SourceException) {
+            if (error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) cloudPages.invalidate(source)
+            throw error
+        } finally {
+            if (allowSessionChange) cloudPages.invalidate(source)
+        }
+    }
 
     private suspend fun parser(): SourceOnlineParser = features().let { SourceOnlineParser(it.providerId, it.instanceId) }
 
@@ -97,11 +110,27 @@ class SharedOnlineSession internal constructor(
     suspend fun revokeAuthorization(clientId: String) = requireTrue("security", "revokeAuthorization", params("clientId" to clientId))
     suspend fun sendDeviceVerificationCode(countryCode: String = "86") = requireTrue("security", "sendDeviceVerificationCode", params("countryCode" to countryCode))
 
-    suspend fun cloudSongs(offset: Int = 0, limit: Int = 200): OnlineCloudPage {
-        return parser().cloudPage(invoke("cloud", "cloudSongs", params("offset" to offset, "limit" to limit)), offset)
+    suspend fun cloudSongs(offset: Int = 0, limit: Int = 200, refresh: Boolean = false): OnlineCloudPage {
+        val source = features()
+        if (refresh) cloudPages.invalidate(source)
+        if (offset == 0) cloudPages.get(source, limit)?.let { return it }
+        val ticket = cloudPages.ticket(source)
+        val page = parser().cloudPage(invoke("cloud", "cloudSongs", params("offset" to offset, "limit" to limit)), offset)
+        if (offset == 0) cloudPages.put(source, ticket, limit, page)
+        return page
     }
-    suspend fun deleteCloudSong(id: String) = requireTrue("cloud", "deleteCloudSong", params("id" to id))
-    suspend fun uploadCloudSong() = features().requireStatus("cloud", "uploadCloudSong", "completed")
+    suspend fun deleteCloudSong(id: String) {
+        val source = features()
+        cloudPages.invalidate(source)
+        try { requireTrue("cloud", "deleteCloudSong", params("id" to id)) }
+        finally { cloudPages.invalidate(source) }
+    }
+    suspend fun uploadCloudSong() {
+        val source = features()
+        cloudPages.invalidate(source)
+        try { source.requireStatus("cloud", "uploadCloudSong", "completed") }
+        finally { cloudPages.invalidate(source) }
+    }
 
     suspend fun podcastHome(): OnlinePodcastHome {
         val parse = parser()
@@ -248,4 +277,65 @@ class SharedOnlineSession internal constructor(
     }
 
     override fun toString(): String = "SharedOnlineSession(<redacted>)"
+}
+
+/** A small typed first-page cache; raw service responses and credentials never enter it. */
+internal class SourceCloudPageCache(private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }) {
+    class Ticket internal constructor(internal val identity: SourceFeatureSessionIdentity, internal val generation: Long)
+    private data class Entry(val identity: SourceFeatureSessionIdentity, val instanceId: ProviderInstanceId,
+        val limit: Int, val page: OnlineCloudPage, val expiresAtMs: Long, val bytes: Long)
+    private val lock = Any()
+    private val entries = mutableListOf<Entry>()
+    private var generation = 0L
+
+    suspend fun ticket(source: BoundSourceFeatures): Ticket {
+        source.ensureCurrent()
+        return synchronized(lock) { Ticket(source.sessionIdentity(), generation) }
+    }
+
+    suspend fun get(source: BoundSourceFeatures, limit: Int): OnlineCloudPage? {
+        source.ensureCurrent()
+        val identity = source.sessionIdentity()
+        val (page, observedGeneration) = synchronized(lock) {
+            entries.removeAll { it.expiresAtMs <= nowMs() }
+            val entry = entries.firstOrNull { it.limit == limit && it.identity.sameSession(identity) }
+            if (entry != null) { entries.remove(entry); entries.add(entry) }
+            entry?.page?.let(::copyPage) to generation
+        }
+        ensureIdentity(source, identity)
+        return synchronized(lock) { page.takeIf { generation == observedGeneration } }
+    }
+
+    suspend fun put(source: BoundSourceFeatures, ticket: Ticket, limit: Int, page: OnlineCloudPage) {
+        ensureIdentity(source, ticket.identity)
+        if (limit !in 1..30 || page.songs.size > limit) return
+        val value = copyPage(page)
+        val bytes = 128L + value.songs.sumOf { row ->
+            128L + listOf(row.id, row.name, row.artist, row.album, row.coverUrl, row.providerId).sumOf { 40L + (it?.length ?: 0) * 2L }
+        }
+        synchronized(lock) {
+            if (generation != ticket.generation) return
+            entries.removeAll { it.identity.sameSession(ticket.identity) && it.limit == limit || it.expiresAtMs <= nowMs() }
+            if (bytes > MAX_BYTES) return
+            entries += Entry(ticket.identity, source.instanceId, limit, value, nowMs() + TTL_MS, bytes)
+            while (entries.size > MAX_PAGES || entries.sumOf { it.bytes } > MAX_BYTES) entries.removeAt(0)
+        }
+    }
+
+    fun invalidate(source: BoundSourceFeatures) = synchronized(lock) {
+        generation++
+        entries.removeAll { it.instanceId == source.instanceId }
+    }
+
+    private suspend fun ensureIdentity(source: BoundSourceFeatures, identity: SourceFeatureSessionIdentity) {
+        source.ensureCurrent()
+        if (!identity.sameSession(source.sessionIdentity())) throw CancellationException("Source cache session changed")
+    }
+
+    private fun copyPage(page: OnlineCloudPage) = page.copy(songs = page.songs.toList())
+    companion object {
+        const val TTL_MS = 60_000L
+        const val MAX_PAGES = 4
+        const val MAX_BYTES = 1024 * 1024
+    }
 }
