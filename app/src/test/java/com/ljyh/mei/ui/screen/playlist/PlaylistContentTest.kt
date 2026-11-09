@@ -24,6 +24,7 @@ import com.ljyh.mei.source.core.ProviderRegistry
 import com.ljyh.mei.source.core.SourceMutationCoordinator
 import com.ljyh.mei.source.core.SourcePreferences
 import com.ljyh.mei.source.core.SourceRouter
+import com.ljyh.mei.source.script.SourceCatalogInvalidatedException
 import com.ljyh.mei.ui.screen.source.SourceContentRequest
 import com.ljyh.mei.ui.screen.source.SourceContentViewModel
 import kotlinx.coroutines.CancellationException
@@ -40,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.resetMain
@@ -269,6 +271,167 @@ class PlaylistContentTest {
                     assertFalse(model.state.value.refreshing)
                     assertEquals(before.title + " refreshed", model.state.value.title)
                     assertEquals(provider.tracks.take(30).map { it.ref }, model.state.value.items.map { it.ref })
+                } finally { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun sourceCatalogCancellationRetriesWithoutRepeatingRefreshInvalidation() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            for (album in listOf(false, true)) {
+                val provider = DetailProvider()
+                val registry = ProviderRegistry(listOf(provider))
+                val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+                val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+                val ref = if (album) AlbumRef(provider.id, "album") else PlaylistRef(provider.id, "playlist")
+                try {
+                    model.open(SourceContentRequest.Detail(ref))
+                    runCurrent()
+                    val original = model.state.value.items
+                    provider.pageRequests.clear()
+                    provider.tracks = provider.tracks.drop(1)
+                    var first = true
+                    provider.beforeTracks = {
+                        if (first) { first = false; throw SourceCatalogInvalidatedException() }
+                    }
+                    model.refresh()
+                    runCurrent()
+                    assertTrue(model.state.value.loading)
+                    assertTrue(model.state.value.refreshing)
+                    assertEquals(original, model.state.value.items)
+                    advanceTimeBy(50)
+                    runCurrent()
+                    assertEquals(listOf(true, false), provider.pageRequests.map { it.refresh })
+                    assertFalse(model.state.value.loading)
+                    assertFalse(model.state.value.refreshing)
+                    assertNull(model.state.value.error)
+                    assertEquals(provider.tracks.take(30).map { it.ref }, model.state.value.items.map { it.ref })
+                } finally { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun repeatedCatalogCancellationSettlesRefreshAndPaginationAndAllowsRecovery() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val original = model.state.value.items
+            provider.pageRequests.clear()
+            provider.beforeTracks = { throw SourceCatalogInvalidatedException() }
+            model.refresh()
+            runCurrent()
+            advanceTimeBy(50)
+            runCurrent()
+            assertEquals(2, provider.pageRequests.size)
+            assertEquals(listOf(true, false), provider.pageRequests.map { it.refresh })
+            assertFalse(model.state.value.loading)
+            assertFalse(model.state.value.refreshing)
+            assertEquals(SourceErrorCode.UNAVAILABLE, model.state.value.error)
+            assertEquals(original, model.state.value.items)
+
+            provider.beforeTracks = {}
+            model.refresh()
+            runCurrent()
+            assertNull(model.state.value.error)
+            provider.pageRequests.clear()
+            provider.beforeTracks = { throw SourceCatalogInvalidatedException() }
+            model.loadMore()
+            runCurrent()
+            advanceTimeBy(50)
+            runCurrent()
+            assertEquals(listOf(30, 30), provider.pageRequests.map { it.offset })
+            assertEquals(SourceErrorCode.UNAVAILABLE, model.state.value.error)
+            assertFalse(model.state.value.loading)
+            assertFalse(model.state.value.refreshing)
+            assertEquals(original, model.state.value.items)
+            assertEquals(30, model.state.value.nextOffset)
+            provider.beforeTracks = {}
+            model.loadMore()
+            runCurrent()
+            assertNull(model.state.value.error)
+            assertEquals(60, model.state.value.items.size)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun activeUnknownCancellationSettlesThePageWithoutRetryingAnUnknownOwner() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        try {
+            model.open(SourceContentRequest.Detail(PlaylistRef(provider.id, "playlist")))
+            runCurrent()
+            val original = model.state.value.items
+            provider.pageRequests.clear()
+            provider.beforeTracks = { throw CancellationException("An untracked owner changed") }
+            model.refresh()
+            runCurrent()
+            advanceTimeBy(100)
+            runCurrent()
+            assertEquals(1, provider.pageRequests.size)
+            assertEquals(SourceErrorCode.UNAVAILABLE, model.state.value.error)
+            assertEquals(original, model.state.value.items)
+            assertFalse(model.state.value.loading)
+            assertFalse(model.state.value.refreshing)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun cancelledCatalogRetryCannotRefillANavigatedReplacedOrChangedAccountPage() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            for (change in listOf("navigation", "provider", "account", "dispose")) {
+                val provider = DetailProvider().apply {
+                    beforeTracks = { throw SourceCatalogInvalidatedException() }
+                }
+                val registry = ProviderRegistry(listOf(provider))
+                val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+                val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+                val ref = PlaylistRef(provider.id, "old")
+                try {
+                    model.open(SourceContentRequest.Detail(ref))
+                    runCurrent()
+                    assertEquals(1, provider.pageRequests.size)
+                    val cancelledState = model.state.value
+                    provider.beforeTracks = {}
+                    when (change) {
+                        "navigation" -> model.open(SourceContentRequest.Detail(PlaylistRef(provider.id, "new")))
+                        "provider" -> registry.register(DetailProvider().apply { titleSuffix = " new" })
+                        "account" -> provider.accountRevision.value = "account-B"
+                        "dispose" -> model.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+                    }
+                    runCurrent()
+                    advanceTimeBy(50)
+                    runCurrent()
+                    when (change) {
+                        "navigation" -> assertEquals("new", model.state.value.detail?.ref?.contentId)
+                        "provider" -> assertEquals("Playlist new", model.state.value.title)
+                        "account" -> assertEquals("account-B", model.state.value.accountRevision)
+                        "dispose" -> assertSame(cancelledState, model.state.value)
+                    }
+                    assertEquals(if (change in listOf("navigation", "account")) 2 else 1, provider.pageRequests.size)
+                    if (change != "dispose") {
+                        assertFalse(model.state.value.loading)
+                        assertFalse(model.state.value.refreshing)
+                        assertNull(model.state.value.error)
+                    }
                 } finally { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
             }
         } finally { Dispatchers.resetMain() }

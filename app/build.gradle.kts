@@ -139,6 +139,7 @@ android {
 
     }
     buildFeatures {
+        aidl = true
         buildConfig = true
         compose = true
         prefab = true
@@ -185,7 +186,7 @@ ksp {
 
 dependencies {
     implementation("androidx.webkit:webkit:1.14.0")
-    implementation("androidx.javascriptengine:javascriptengine:1.1.1")
+    implementation("io.github.dokar3:quickjs-kt:1.0.18")
     implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
 

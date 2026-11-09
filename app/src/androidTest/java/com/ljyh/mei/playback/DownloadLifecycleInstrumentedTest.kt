@@ -14,8 +14,8 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.javascriptengine.JavaScriptSandbox
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.data.model.room.DownloadStatus
 import com.ljyh.mei.data.model.room.DownloadTask
@@ -24,6 +24,12 @@ import com.ljyh.mei.data.model.room.SourceType
 import com.ljyh.mei.di.AppDatabase
 import com.ljyh.mei.source.api.TrackRef
 import com.ljyh.mei.source.api.TrackRefCodec
+import com.ljyh.mei.source.api.AudioResource
+import com.ljyh.mei.source.api.SourceErrorCode
+import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.script.ScriptAudioDataSource
+import com.ljyh.mei.source.script.ScriptAudioResources
+import com.ljyh.mei.source.script.ScriptNetworkPolicy
 import com.ljyh.mei.utils.DownloadManager
 import com.ljyh.mei.utils.DownloadLyrics
 import com.ljyh.mei.utils.ImageUtils
@@ -48,6 +54,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import okhttp3.Dns
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.junit.Assert.*
@@ -149,8 +156,65 @@ class DownloadLifecycleInstrumentedTest {
         }
     }
 
+    @Test fun scriptDownloadCancellationClosesHeadersAndBodyWithoutWaitingForTimeout() = runBlocking {
+        for (sendHeaders in listOf(false, true)) {
+            StalledAudio(sendHeaders).use { server ->
+                val pluginId = "org.meilox.download-cancel-${UUID.randomUUID()}"
+                val file = File.createTempFile("script-download-cancel-", ".wav", context.cacheDir)
+                val policy = scriptAudioPolicy(server.url)
+                val resource = ScriptAudioResources.register(pluginId,
+                    AudioResource("https://api.example.com/audio", "standard"), policy, context.cacheDir)
+                val job = async(Dispatchers.IO) { downloadScriptAudio(context, resource.uri, file) {} }
+                try {
+                    assertTrue(server.entered.await(5, TimeUnit.SECONDS))
+                    if (sendHeaders) withTimeout(3_000) { while (file.length() == 0L) delay(10) }
+                    withTimeout(3_000) { job.cancelAndJoin() }
+                    assertTrue(server.closed.await(3, TimeUnit.SECONDS))
+                    assertFalse(file.exists())
+                } finally {
+                    job.cancelAndJoin()
+                    ScriptAudioResources.remove(pluginId)
+                    file.delete()
+                }
+            }
+        }
+    }
+
+    @Test fun closingAQueuedScriptAudioOpenDoesNotWaitForOrCancelItsPeer() = runBlocking {
+        StalledAudio(sendHeaders = false).use { server ->
+            val pluginId = "org.meilox.queued-audio-${UUID.randomUUID()}"
+            val policy = scriptAudioPolicy(server.url)
+            policy.audioClient.dispatcher.maxRequests = 1
+            policy.audioClient.dispatcher.maxRequestsPerHost = 1
+            val resource = ScriptAudioResources.register(pluginId,
+                AudioResource("https://api.example.com/audio", "standard"), policy, context.cacheDir)
+            val first = ScriptAudioDataSource()
+            val second = ScriptAudioDataSource()
+            val spec = DataSpec.Builder().setUri(resource.uri).build()
+            val peer = async(Dispatchers.IO) { runCatching { first.open(spec) } }
+            var queued: kotlinx.coroutines.Deferred<Result<Long>>? = null
+            try {
+                assertTrue(server.entered.await(5, TimeUnit.SECONDS))
+                val waiting = async(Dispatchers.IO) { runCatching { second.open(spec) } }
+                queued = waiting
+                withTimeout(3_000) { while (policy.audioClient.dispatcher.queuedCallsCount() != 1) delay(10) }
+                second.close()
+                val error = withTimeout(3_000) { waiting.await().exceptionOrNull() }
+                assertTrue(error is SourceException && error.code == SourceErrorCode.CANCELLED)
+                assertFalse(peer.isCompleted)
+                assertEquals(1L, server.closed.count)
+            } finally {
+                second.close()
+                first.close()
+                queued?.cancelAndJoin()
+                peer.cancelAndJoin()
+                ScriptAudioResources.remove(pluginId)
+            }
+        }
+    }
+
     @Test fun resumedSourceDownloadLoadsItsInstalledPluginBeforeResolving(): Unit = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         assumeNoOtherDownloads()
         val sources = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java)
         val plugins = sources.sourcePlugins()
@@ -503,6 +567,17 @@ class DownloadLifecycleInstrumentedTest {
         assumeTrue("Download notification fixtures need an idle download queue", pending.none { !it.state.isFinished })
     }
 
+    private fun scriptAudioPolicy(url: String): ScriptNetworkPolicy {
+        val policy = ScriptNetworkPolicy(listOf("api.example.com"))
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val base = field.get(policy) as OkHttpClient
+        field.set(policy, base.newBuilder().dns(Dns.SYSTEM).addInterceptor { chain ->
+            // The fixture alone routes an already-approved host to its loopback server.
+            chain.proceed(chain.request().newBuilder().url(url).build())
+        }.build())
+        return policy
+    }
+
     private suspend fun awaitWorkFinished(requestId: String) {
         val manager = androidx.work.WorkManager.getInstance(context)
         withTimeout(20_000) {
@@ -551,7 +626,7 @@ class DownloadLifecycleInstrumentedTest {
         override fun close() { socket?.close(); listener.close(); thread.join(1_000) }
     }
 
-    private class StalledAudio : AutoCloseable {
+    private class StalledAudio(private val sendHeaders: Boolean = true) : AutoCloseable {
         private val listener = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
         private var socket: Socket? = null
         val entered = CountDownLatch(1)
@@ -568,7 +643,7 @@ class DownloadLifecycleInstrumentedTest {
                         val b = input.read(); if (b < 0) return@Thread
                         tail = (tail + b.toChar()).takeLast(4)
                     }
-                    client.getOutputStream().apply {
+                    if (sendHeaders) client.getOutputStream().apply {
                         write("HTTP/1.1 200 OK\r\nContent-Length: 65536\r\nContent-Type: audio/wav\r\n\r\n".toByteArray())
                         write(ByteArray(1024)); flush()
                     }

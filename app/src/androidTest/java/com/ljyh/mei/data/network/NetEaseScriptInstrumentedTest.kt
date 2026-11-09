@@ -1,7 +1,6 @@
 package com.ljyh.mei.data.network
 
 import android.net.Uri
-import androidx.javascriptengine.JavaScriptSandbox
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.luben.zstd.Zstd
@@ -49,7 +48,7 @@ class NetEaseScriptInstrumentedTest {
     private val context get() = instrumentation.targetContext
 
     @Test fun largeSourceResponsesPreserveIdentifiersWithinTheSandboxMemoryBudget() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val (manifest, script) = bundledSource()
         val text = "x".repeat(700_000)
         val payload = """{"code":200,"songs":[{"id":9223372036854775807,"name":"12345678901234567890","padding":"$text","ar":[],"al":{},"dt":1500}]}"""
@@ -115,7 +114,7 @@ class NetEaseScriptInstrumentedTest {
     }
 
     @Test fun bundledSourceRunsCatalogAndAccountReadsThroughTheRealSandboxAndWireCodec() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val (manifest, script) = bundledSource()
         assertEquals("netease", manifest.providerId)
         assertEquals(2, manifest.apiVersion)
@@ -226,7 +225,7 @@ class NetEaseScriptInstrumentedTest {
         val current = image("web-scanlogin-test.png").single()
         assertEquals(listOf("https://example.com"), image("unsupported-qr-test.png"))
         assertTrue(image("no-qr-test.png").isEmpty())
-        if (JavaScriptSandbox.isSupported()) {
+        if (com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported) {
             val (manifest, script) = bundledSource()
             suspend fun parse(value: String) = ScriptRuntime(context).invoke(script, manifest, "feature.invoke", JsonObject().apply {
                 addProperty("feature", "login"); addProperty("action", "parsePcQr")
@@ -243,7 +242,7 @@ class NetEaseScriptInstrumentedTest {
     @Test fun explicitlyEnabledInstalledSourceSupportsReadOnlyCatalogAndLibrary() = runBlocking {
         assumeTrue("Enable installed-source requests explicitly with neteaseSourceLive=true",
             InstrumentationRegistry.getArguments().getString("neteaseSourceLive") == "true")
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val app = context.applicationContext as AppContext
         val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
         router.registry.awaitInitialized()

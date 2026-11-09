@@ -1,6 +1,6 @@
 # Source plugin APIs 1 and 2
 
-A source is an imported `.meisource` package. Its JavaScript runs through AndroidX JavaScriptEngine in a bounded isolated V8 process. The host owns navigation, Compose UI, playback, files and Android SDK access. Source code owns service endpoints, authentication protocols and response projections.
+A source is an imported `.meisource` package. Its JavaScript runs in an application-bundled QuickJS engine inside a bounded Android isolated process. The host owns navigation, Compose UI, playback, files and Android SDK access. Source code owns service endpoints, authentication protocols and response projections.
 
 API 1 remains compatible with its original four operations. API 2 includes typed content and optional online features, effects and links. These additions use `apiVersion: 2`; there is no API 3 contract. The executable declarations are in [source-plugin.d.ts](../samples/music-source-plugin/source-plugin.d.ts).
 
@@ -26,6 +26,8 @@ The host accepts only these root files and supported audio files directly inside
   "apiVersion": 2,
   "entry": "index.js",
   "capabilities": ["catalog.search", "catalog.track", "playback.resolve", "feature.invoke"],
+  "concurrentReadOperations": ["catalog.search", "catalog.track", "playback.resolve"],
+  "concurrentReadFeatures": {"login": ["sessionState"]},
   "permissions": {
     "network": ["api.example.com", "*.audio.example.com"],
     "storage": true,
@@ -70,7 +72,7 @@ Updates preserve private configuration and enabled state. Removed sources are no
 | `track.liked`, `collection.saved` | Boolean status |
 | `track.like`, `collection.save` | Confirmed explicit boolean change |
 | `playlist.create`, `playlist.update`, `playlist.delete`, `playlist.addTracks`, `playlist.removeTracks`, `playlist.reorderTracks` | Individually declared editing capabilities |
-| `playback.resolve`, `playback.qualities` | Audio resource, verified qualities, or bounded quality continuation |
+| `playback.resolve`, `playback.qualities` | Audio resource, candidate qualities, or bounded quality continuation |
 | `lyrics.get` | Optional source lyrics; host lyric selection remains independent |
 
 A tagged item is `{type:'track', track:{...}}`, or its `album`, `artist` or `playlist` equivalent. Pages contain `{items, hasMore, nextCursor?}`. Search and library types must match manifest `searchTypes`/`collectionTypes`. The host validates identities, collection/edit capabilities, counts and advancing cursors. Playlist positions retain duplicate recordings.
@@ -89,7 +91,7 @@ Hero sections may also contain up to 30 source-owned cards with typed content, d
 
 Audio resources report the **actual** quality and may include per-resource headers, expiry, size, content identity, MIME type and `cachePolicy: 'ALLOW' | 'NO_STORE'`. The host converts the URL/headers to an opaque audio handle before player/cache/download persistence. `asset://tone.wav` resolves only inside the owning package. `NO_STORE` resources cannot be downloaded or cached.
 
-`playback.qualities` may return a string array or `{items, nextCursor?}`. `playback.resolve` may return `{nextCursor}` while continuing a bounded quality ladder. The host accepts at most three quality segments, rejects repeated/oversized cursors, and limits the combined quality list to 32 entries. These cursors are separate from host-effect continuations.
+`playback.qualities` may return a string array or `{items, nextCursor?}` of catalog candidates. It need not resolve every candidate URL: the host verifies full resources for the current account when a quality menu is opened. The currently playing quality comes from its resolved resource independently. `playback.resolve` may return `{nextCursor}` while continuing a bounded quality ladder. The host accepts at most three quality segments, rejects repeated/oversized cursors, and limits the combined quality list to 32 entries. These cursors are separate from host-effect continuations.
 
 ### API 2 catalog example
 
@@ -124,7 +126,9 @@ The host retains the complete index (including repeated positions), reuses metad
 
 ## JavaScript and network requests
 
-Operations are synchronous functions on `globalThis.sourcePlugin`. Promises, direct `fetch`, timers, module loading, raw files, Room and Android objects are unavailable. Every operation gets `(parameters, context)`; `onResponse` runs in that operation's isolate.
+Operations are synchronous functions on `globalThis.sourcePlugin`. Promise return values are unsupported. Direct `fetch`, timers, module loading, raw files, Room and Android objects are unavailable. Every operation gets `(parameters, context)`; `onResponse` runs in that operation's isolate.
+
+Core reads from plugins without storage permission already run concurrently. API 2 plugins with state may opt independent reads into concurrent execution with `concurrentReadOperations` and `concurrentReadFeatures`. Core entries must be declared catalog/feed/library/playback/lyric/link reads from the host allowlist; account bootstrap and mutations remain serialized. Feature entries must name declared feature actions and must be reads. These calls receive `context.readOnlyStorage: true`: returned storage must be omitted or exactly match the supplied snapshot. A differing map returns `INVALID_RESPONSE` without saving it. Stateful operations remain serialized with each other within the same twenty-second admission/execution budget, while immutable reads may overlap them; account/provider revision checks reject stale results. Older hosts ignore the optional declarations and retain serialized behavior. Plugins must keep read continuation state in the returned host-owned continuation, rather than writing a persistent pending plan.
 
 ```javascript
 globalThis.sourcePlugin = {
@@ -153,11 +157,13 @@ A host request contains `url`, optional method/headers/body and JSON `state`. At
 - `errorResponse: true` converts transport `NETWORK`/`TIMEOUT` and oversized transport bodies (`RESPONSE_TOO_LARGE`) into `{status:0,body:'',error:<code>}`. That response has no required header/cookie fields. Cancellation, permission failure and other failures stop the operation. Recovery must not blindly replay writes.
 - `sdk` and bounded `sdkConfig` select an explicitly permitted host codec. They do not bypass hostname, DNS, redirect or byte limits. `netease.transport` accepts `mode` (`api`, `eapi`, `weapi`), `signingPath`, a fresh `weapiKey`, and JSON-encoded `formFields`. The source supplies the complete URL, headers, cookies, client profile and plaintext body; the host only encodes/decodes bytes.
 
-Network grants are exact hostnames or subtree patterns with a single leading `*.`, with at most 32 per manifest. A subtree grant matches one or more labels at any depth and excludes its apex: `*.music.126.net` permits `m803.music.126.net` and `deep.m803.music.126.net`, but not `music.126.net` or a lookalike suffix. Wildcards cannot target public suffixes such as `*.com`, `*.co.uk` or `*.github.io`. Actual request URLs must contain concrete hosts. HTTPS on port 443 is required. Userinfo, fragments, IP literals and local names are rejected. The restricted client checks system DNS at connection time, permits public addresses and the system proxy's synthetic `198.18.0.0/15` Fake-IP range, disables explicit HTTP proxies and rejects redirects. Normal TLS hostname verification remains required; scripts cannot supply DNS answers or connect to literal Fake-IP addresses. Other non-public addresses remain blocked. Requests are capped at 256 KiB raw and API responses at 4 MiB raw; callback envelopes remain subject to the result limit, including Base64 overhead. Artwork uses its separate host resource policy. Forbidden headers and CR/LF injection are rejected. The client limits concurrency to two, connection timeout to eight seconds, read/write to ten seconds and a call to fifteen seconds.
+Network grants are exact hostnames or subtree patterns with a single leading `*.`, with at most 32 per manifest. A subtree grant matches one or more labels at any depth and excludes its apex: `*.music.126.net` permits `m803.music.126.net` and `deep.m803.music.126.net`, but not `music.126.net` or a lookalike suffix. Wildcards cannot target public suffixes such as `*.com`, `*.co.uk` or `*.github.io`. Actual request URLs must contain concrete hosts. HTTPS on port 443 is required. Userinfo, fragments, IP literals and local names are rejected. The restricted client checks system DNS at connection time, permits public addresses and the system proxy's synthetic `198.18.0.0/15` Fake-IP range, disables explicit HTTP proxies and rejects redirects. Normal TLS hostname verification remains required; scripts cannot supply DNS answers or connect to literal Fake-IP addresses. Other non-public addresses remain blocked. Requests are capped at 256 KiB raw and API responses at 4 MiB raw; callback envelopes remain subject to the result limit, including Base64 overhead. Artwork streams separately, with a 16 MiB limit per image and partial-file cleanup. Forbidden headers and CR/LF injection are rejected.
+
+API, artwork and audio use independent dispatchers with limits of four, two and two asynchronous calls, sharing the source's connection pool. SDK wrappers are reused, while credentials, codec arguments and revocation checks belong to each request. Cached artwork is checked before download admission. API/artwork deadlines cover admission, dispatch, SDK work and consuming the body, with a fifteen-second total, eight-second connection and ten-second read/write limits. Progressive audio keeps connection/read stall limits without a whole-song fifteen-second cutoff. Caller cancellation owns queued calls and sockets through body consumption. Transport failures do not cause implicit retries of remote writes.
 
 Optional artwork outside those grants is omitted without opening a connection. A rejected audio resource produces an operation-level `INVALID_RESPONSE` and leaves other source capabilities available. An actual script network request outside its grants remains a plugin permission violation.
 
-Each operation creates a fresh sandbox/isolate. Limits are 32 MiB heap, normally 256 KiB returned JSON, three seconds per evaluation and twenty seconds for an isolated operation. Declared batch catalog and complete playlist/album metadata results have a bounded 2 MiB result budget; continuation state and storage keep their smaller limits. Runtime calls are serialized. Required WebView/V8 resource-limit support is feature-gated; unavailable support returns `UNSUPPORTED`.
+Each operation gets a fresh QuickJS runtime and globals. Up to four independent sessions share an isolated worker connection, with fifteen seconds of idle connection reuse; network waiting holds no global execution mutex. Each runtime has a 32 MiB heap and 1 MiB stack, normally 256 KiB returned JSON, three seconds per evaluation and twenty seconds including operation admission. Declared batch catalog and complete playlist/album metadata results have a bounded 2 MiB result budget; continuation state and storage keep their smaller limits. Runtime availability depends on the application's bundled native engine, not the system WebView version. Code and result streams use bounded file descriptors rather than oversized Binder transactions. The worker has no host account, file, network or Android-object bindings. Cancellation interrupts its own evaluation and HTTP. If native execution does not acknowledge interruption, the watchdog terminates the worker; affected calls fail without replaying requests already sent.
 
 DNS rejection and server redirects produce `NETWORK`; oversized remote bodies, returned JSON or permitted storage updates produce `INVALID_RESPONSE`. These bounded operation failures leave the source available for later requests. Undeclared permissions and isolate memory exhaustion remain `PLUGIN` failures. Large JSON parsers should retain original string ranges instead of allocating one intermediate string per character. Audio bytes stream directly through the host's Media3 data source and decoder; the JavaScript heap and metadata-response limits do not cap audio size or quality.
 

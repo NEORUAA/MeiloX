@@ -666,7 +666,6 @@ class MusicService : MediaLibraryService(),
         } finally {
             isRefreshingPlaybackSource = false
         }
-        refreshAvailableMusicQualities()
     }
 
     fun resetRejectedPlaybackSources() {
@@ -676,7 +675,7 @@ class MusicService : MediaLibraryService(),
         rangeRecoveryAttempts = 0
         stallRecoveryAttempts = 0
         mediaUriProvider.resetRejectedSources()
-        resetCurrentQualityState(player.currentMediaItem?.mediaId, refresh = false)
+        resetCurrentQualityState(player.currentMediaItem?.mediaId)
     }
 
     private fun protectedUpdateSources(): Set<String> = buildSet {
@@ -706,7 +705,7 @@ class MusicService : MediaLibraryService(),
         }
     }
 
-    private fun resetCurrentQualityState(mediaId: String?, refresh: Boolean = true) {
+    private fun resetCurrentQualityState(mediaId: String?) {
         availableQualitiesJob?.cancel()
         availableQualitiesJob = null
         qualityGeneration++
@@ -719,15 +718,14 @@ class MusicService : MediaLibraryService(),
         isLoadingMusicQualities.value = false
         if (mediaId != null) {
             mediaUriProvider.resolvedMediaSource(mediaId)?.let(::publishResolvedQuality)
-            if (refresh) refreshAvailableMusicQualities()
         }
     }
 
+    /** Enumerate alternative qualities only when a quality menu requests them. */
     fun refreshAvailableMusicQualities() {
         val mediaId = player.currentMediaItem?.mediaId ?: return
         if (qualityMediaId != mediaId) {
             resetCurrentQualityState(mediaId)
-            return
         }
         if (availableQualitiesJob?.isActive == true) return
         val generation = qualityGeneration

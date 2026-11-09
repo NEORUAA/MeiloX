@@ -34,6 +34,9 @@ class AppContext : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var sourceUpdates: com.ljyh.mei.source.update.SourceUpdateManager
     private val sourceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {
+        // The isolated JavaScript worker must not initialize Hilt, accounts or app storage.
+        // Hilt injects from its Application.onCreate(), so this guard precedes super.
+        if (android.os.Process.isIsolated()) return
         instance = this
         super.onCreate()
         // Timber owns its trees for the lifetime of this process, across Activity recreation.

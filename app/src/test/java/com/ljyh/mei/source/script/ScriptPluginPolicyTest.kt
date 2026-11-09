@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.TimeoutCancellationException
@@ -33,6 +34,134 @@ import okhttp3.FormBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class ScriptPluginPolicyTest {
+    @Test fun concurrentReadDeclarationsCannotIncludeWritesOrUndeclaredCapabilities() {
+        val base = json("""{"id":"org.meilox.concurrent","name":"Fixture","author":"Tests","version":"1","apiVersion":2,
+            "capabilities":["catalog.track","track.like","feature.invoke"],
+            "features":{"cloud":["cloudSongs","deleteCloudSong"]},"permissions":{"storage":true}}""")
+        val valid = base.deepCopy().apply {
+            add("concurrentReadOperations", JsonParser.parseString("[\"catalog.track\"]"))
+            add("concurrentReadFeatures", json("{\"cloud\":[\"cloudSongs\"]}"))
+        }
+        val manifest = PluginManifest.parse(valid.toString())
+        assertEquals(setOf("catalog.track"), manifest.concurrentReadOperations)
+        assertEquals(mapOf("cloud" to setOf("cloudSongs")), manifest.concurrentReadFeatures)
+        for (operation in listOf("track.like", "account.get", "catalog.search", "unknown.read")) {
+            rejects { PluginManifest.parse(valid.deepCopy().apply {
+                add("concurrentReadOperations", com.google.gson.JsonArray().apply { add(operation) })
+            }.toString()) }
+        }
+        rejects { PluginManifest.parse(valid.deepCopy().apply {
+            add("concurrentReadFeatures", json("{\"cloud\":[\"undeclared\"]}"))
+        }.toString()) }
+        assertTrue(PluginManifest.parse(base.toString()).concurrentReadOperations.isEmpty())
+    }
+
+    @Test fun sandboxPoolSharesOnlyTheBindingAndRetiresAfterTheLastIdleLease() = runTest {
+        var created = 0
+        var closed = 0
+        val pool = ScriptSandboxPool<java.io.Closeable>(ScriptConnectionGate(), this, idleTimeoutMs = 100)
+        val factory = {
+            created++
+            com.google.common.util.concurrent.Futures.immediateFuture(java.io.Closeable { closed++ })
+        }
+        val first = pool.acquire(factory)
+        val second = pool.acquire(factory)
+        assertSame(first.value, second.value)
+        assertEquals(1, created)
+        pool.release(first)
+        advanceTimeBy(200)
+        assertEquals("An active invocation must retain the binding", 0, closed)
+        pool.release(second)
+        advanceTimeBy(50)
+        val warm = pool.acquire(factory)
+        assertSame(second.value, warm.value)
+        advanceTimeBy(100)
+        assertFalse(warm.retired.isCompleted)
+        pool.release(warm)
+        advanceUntilIdle()
+        assertTrue(warm.retired.isCompleted)
+        assertEquals(1, closed)
+        val replacement = pool.acquire(factory)
+        assertNotSame(warm.value, replacement.value)
+        assertEquals(2, created)
+        pool.invalidate(replacement)
+        pool.release(replacement)
+        advanceUntilIdle()
+        assertEquals(2, closed)
+    }
+
+    @Test fun retiredSandboxLeasesReleaseWhileAReplacementConnectionIsStillPending() = runTest {
+        val pool = ScriptSandboxPool<java.io.Closeable>(ScriptConnectionGate(), this, idleTimeoutMs = 10)
+        var closes = 0
+        val old = pool.acquire { com.google.common.util.concurrent.Futures.immediateFuture(java.io.Closeable { closes++ }) }
+        pool.invalidate(old)
+        runCurrent()
+        val future = com.google.common.util.concurrent.SettableFuture.create<java.io.Closeable>()
+        val pending = async { pool.acquire { future } }
+        runCurrent()
+        val released = async { pool.release(old) }
+        runCurrent()
+        assertTrue("Retired callers must not wait for an unrelated replacement bind", released.isCompleted)
+        future.set(java.io.Closeable { closes++ })
+        val next = pending.await()
+        assertFalse(next.retired.isCompleted)
+        pool.release(next)
+        advanceUntilIdle()
+        assertEquals(2, closes)
+    }
+
+    @Test fun apiAdmissionHasAnEndToEndDeadlineAndCallerCancellationDoesNotConsumeASlot() = runTest {
+        val policy = ScriptNetworkPolicy(listOf("api.example.com"))
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("apiConcurrency").apply { isAccessible = true }
+        val permits = field.get(policy) as kotlinx.coroutines.sync.Semaphore
+        repeat(ScriptNetworkPolicy.API_CONCURRENCY) { permits.acquire() }
+        try {
+            val expired = async { runCatching { policy.request(json("{\"url\":\"https://api.example.com/feed\"}")) } }
+            runCurrent()
+            advanceTimeBy(ScriptNetworkPolicy.REQUEST_TIMEOUT_MS + 1)
+            runCurrent()
+            assertEquals(SourceErrorCode.TIMEOUT, (expired.await().exceptionOrNull() as SourceException).code)
+            val cancelled = async { policy.request(json("{\"url\":\"https://api.example.com/feed\"}")) }
+            runCurrent()
+            cancelled.cancelAndJoin()
+            assertTrue(cancelled.isCancelled)
+            assertEquals(0, permits.availablePermits)
+        } finally { repeat(ScriptNetworkPolicy.API_CONCURRENCY) { permits.release() } }
+        assertEquals(ScriptNetworkPolicy.API_CONCURRENCY, permits.availablePermits)
+    }
+
+    @Test fun cachedArtworkBypassesOccupiedDownloadSlotsAndStillChecksItsOwner() = kotlinx.coroutines.runBlocking {
+        val policy = ScriptNetworkPolicy(listOf("images.example.com"))
+        val directory = java.nio.file.Files.createTempDirectory("cached-artwork").toFile()
+        val url = "https://images.example.com/cover"
+        val file = ScriptNetworkPolicy.artworkFile(url, directory).apply { parentFile.mkdirs(); writeBytes(byteArrayOf(1, 2, 3)) }
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("artworkConcurrency").apply { isAccessible = true }
+        val permits = field.get(policy) as kotlinx.coroutines.sync.Semaphore
+        repeat(ScriptNetworkPolicy.ARTWORK_CONCURRENCY) { permits.acquire() }
+        try {
+            assertEquals(ScriptNetworkPolicy.artworkUri(file), policy.artwork(url, directory))
+            try {
+                policy.artwork(url, directory) { throw CancellationException("Owner changed") }
+                fail("A cached image still belongs to its original account")
+            } catch (_: CancellationException) { }
+        } finally {
+            repeat(ScriptNetworkPolicy.ARTWORK_CONCURRENCY) { permits.release() }
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun progressiveAudioSharesConnectionsWithoutTheMetadataTransferDeadline() {
+        val policy = ScriptNetworkPolicy(listOf("api.example.com"))
+        assertEquals(15_000, policy.client.callTimeoutMillis)
+        assertEquals(0, policy.audioClient.callTimeoutMillis)
+        assertEquals(policy.client.connectTimeoutMillis, policy.audioClient.connectTimeoutMillis)
+        assertEquals(policy.client.readTimeoutMillis, policy.audioClient.readTimeoutMillis)
+        assertSame(policy.client.connectionPool, policy.audioClient.connectionPool)
+        assertNotSame(policy.client.dispatcher, policy.audioClient.dispatcher)
+        assertSame(policy.audioClient, policy.audioClient)
+        assertFalse(policy.audioClient.followRedirects)
+    }
+
     @Test fun typedCatalogCacheSeparatesOwnersAndRejectsRetiredWritesAndAccountRebinds() {
         val cache = SourceCatalogCache()
         val first = cache.bind("source-a", "1+7", "account-a")
@@ -75,6 +204,79 @@ class ScriptPluginPolicyTest {
         cache.release(nextAccount)
         try { cache.account(nextAccount); fail("Released scopes must not serve account or catalog data") }
         catch (_: CancellationException) { }
+    }
+
+    @Test fun catalogMutationsRetireInterleavedIndexesOnSuccessAndFailureWithoutLosingAccountOrTrackReuse() {
+        for (fail in listOf(false, true)) {
+            val cache = SourceCatalogCache()
+            val owner = cache.bind("source", "1", "account")
+            val track = Track(TrackRef("source", "track"), "Retained metadata", emptyList())
+            val ref = PlaylistRef("source", "liked")
+            val snapshot = SourceCatalogCache.Snapshot(SourcePlaylist(ref, "Likes", trackCount = 1), listOf(track.ref))
+            val account = SourceAccount(SourceAccountRef(ProviderInstanceId("source"), ProviderAccountId("account")), "Account")
+            cache.putTracks(owner, listOf(track))
+            cache.putAccount(owner, account)
+            cache.putSnapshot(owner, snapshot)
+            val before = cache.generation(owner)
+            val failure = runCatching {
+                cache.beginMutation(owner).use { mutation ->
+                    assertEquals(before + 1, mutation.generation)
+                    assertNull(cache.snapshot(owner, ref.playlistId))
+                    // An overlapping read may observe the server before its mutation commits.
+                    cache.putSnapshot(owner, snapshot)
+                    cache.putLikedPlaylist(owner, ref.playlistId)
+                    if (fail) throw java.io.IOException("The server outcome is unknown")
+                }
+            }.exceptionOrNull()
+            assertEquals(fail, failure is java.io.IOException)
+            assertEquals(before + 2, cache.generation(owner))
+            assertNull(cache.snapshot(owner, ref.playlistId))
+            assertNull(cache.likedPlaylist(owner))
+            assertEquals(track, cache.tracks(owner, listOf(track.ref))[track.ref])
+            assertEquals(true to account, cache.account(owner))
+        }
+    }
+
+    @Test fun finishingAnOldCatalogMutationCannotClearAReplacementAccount() {
+        val cache = SourceCatalogCache()
+        val old = cache.bind("source", "1", "old")
+        val mutation = cache.beginMutation(old)
+        val replacement = cache.rebind(old, "new")
+        val ref = PlaylistRef("source", "playlist")
+        val snapshot = SourceCatalogCache.Snapshot(SourcePlaylist(ref, "New account"), emptyList())
+        cache.putSnapshot(replacement, snapshot)
+        mutation.close()
+        mutation.close()
+        assertNull(mutation.completedGeneration)
+        assertEquals(snapshot, cache.snapshot(replacement, ref.playlistId))
+        assertEquals(0L, cache.generation(replacement))
+    }
+
+    @Test fun invalidationEpochAndEntryRemovalStayInsideTheCachePublicationLock() {
+        val cache = SourceCatalogCache()
+        val owner = cache.bind("source", "1", "account")
+        val ref = PlaylistRef("source", "playlist")
+        val snapshot = SourceCatalogCache.Snapshot(SourcePlaylist(ref, "Old index"), emptyList())
+        val oldGeneration = cache.generation(owner)
+        val checked = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val publisher = executor.submit {
+                cache.putSnapshot(owner, snapshot) {
+                    assertEquals(oldGeneration, cache.generation(owner))
+                    checked.countDown()
+                    assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                }
+            }
+            assertTrue(checked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val invalidator = executor.submit<Long> { cache.invalidateCatalog(owner) }
+            release.countDown()
+            publisher.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(oldGeneration + 1, invalidator.get(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertNull(cache.snapshot(owner, ref.playlistId))
+            assertEquals(oldGeneration + 1, cache.generation(owner))
+        } finally { release.countDown(); executor.shutdownNow() }
     }
 
     @Test fun typedCatalogCacheBoundsMemoryAndEvictsLeastRecentlyUsedTracksWithoutATtl() {
@@ -248,23 +450,23 @@ class ScriptPluginPolicyTest {
         }
     }
 
-    @Test fun queuedScriptOperationsKeepTheirExecutionBudgetAndCanBeCancelledWhileWaiting() = runTest {
+    @Test fun queuedScriptOperationsHaveBoundedAdmissionAndNeverRunAfterCancellation() = runTest {
         val operations = Mutex()
-        var cancelledOperationStarted = false
+        var expiredStarted = false
+        var cancelledStarted = false
         val first = async { operations.withScriptOperationTimeout(200) { delay(150); "first" } }
-        val second = async { operations.withScriptOperationTimeout(100) { delay(75); "second" } }
-        val cancelled = async {
-            operations.withScriptOperationTimeout(100) { cancelledOperationStarted = true }
-        }
+        val expired = async { runCatching { operations.withScriptOperationTimeout(100) { expiredStarted = true } } }
+        val cancelled = async { operations.withScriptOperationTimeout(200) { cancelledStarted = true } }
         runCurrent()
         assertFalse(first.isCompleted)
-        assertFalse(second.isCompleted)
+        assertFalse(expired.isCompleted)
         cancelled.cancelAndJoin()
         advanceUntilIdle()
         assertEquals("first", first.await())
-        assertEquals("second", second.await())
-        assertEquals(225L, testScheduler.currentTime)
-        assertFalse(cancelledOperationStarted)
+        assertTrue(expired.await().exceptionOrNull() is TimeoutCancellationException)
+        assertFalse(expiredStarted)
+        assertFalse(cancelledStarted)
+        assertEquals("recovered", operations.withScriptOperationTimeout(100) { "recovered" })
     }
 
     @Test fun scriptExecutionTimeoutAndCallerCancellationReleaseTheOperationLock() = runTest {
@@ -362,13 +564,13 @@ class ScriptPluginPolicyTest {
     @Test fun engineAvailabilityDoesNotRevokeSourcesAndResourceViolationsRemainFatal() {
         val secret = "private-session-in-engine-message"
         val failures = listOf(
-            androidx.javascriptengine.SandboxDeadException(secret) to SourceErrorCode.UNAVAILABLE,
-            androidx.javascriptengine.IsolateTerminatedException(secret) to SourceErrorCode.UNAVAILABLE,
-            androidx.javascriptengine.DataInputException(secret) to SourceErrorCode.UNAVAILABLE,
+            QuickJsSandboxDeadException(secret) to SourceErrorCode.UNAVAILABLE,
+            QuickJsIsolateTerminatedException(secret) to SourceErrorCode.UNAVAILABLE,
+            QuickJsDataInputException(secret) to SourceErrorCode.UNAVAILABLE,
             IllegalStateException(secret) to SourceErrorCode.UNAVAILABLE,
-            androidx.javascriptengine.SandboxUnsupportedException(secret) to SourceErrorCode.UNSUPPORTED,
-            androidx.javascriptengine.MemoryLimitExceededException(secret) to SourceErrorCode.PLUGIN,
-            androidx.javascriptengine.EvaluationResultSizeLimitExceededException(secret) to SourceErrorCode.INVALID_RESPONSE,
+            QuickJsSandboxUnsupportedException(secret) to SourceErrorCode.UNSUPPORTED,
+            QuickJsMemoryLimitExceededException(secret) to SourceErrorCode.PLUGIN,
+            QuickJsEvaluationResultSizeLimitExceededException(secret) to SourceErrorCode.INVALID_RESPONSE,
         )
         for ((failure, code) in failures) {
             val result = scriptRuntimeFailure(java.util.concurrent.ExecutionException(failure), ScriptRuntimePhase.CONNECTION)
@@ -377,12 +579,12 @@ class ScriptPluginPolicyTest {
             assertNull(result.cause)
             assertFalse(result.outcomeUnknown)
         }
-        val evaluation = androidx.javascriptengine.EvaluationFailedException(secret)
+        val evaluation = QuickJsEvaluationFailedException(secret)
         assertEquals(SourceErrorCode.PLUGIN, scriptRuntimeFailure(evaluation, ScriptRuntimePhase.SCRIPT).code)
         assertEquals(SourceErrorCode.INVALID_RESPONSE, scriptRuntimeFailure(evaluation, ScriptRuntimePhase.OPERATION).code)
         assertEquals(SourceErrorCode.PLUGIN, scriptRuntimeFailure(
-            androidx.javascriptengine.SandboxDeadException(secret), ScriptRuntimePhase.OPERATION, memoryLimited = true).code)
-        assertTrue(scriptRuntimeFailure(androidx.javascriptengine.SandboxDeadException(secret),
+            QuickJsSandboxDeadException(secret), ScriptRuntimePhase.OPERATION, memoryLimited = true).code)
+        assertTrue(scriptRuntimeFailure(QuickJsSandboxDeadException(secret),
             ScriptRuntimePhase.OPERATION, requestSent = true).outcomeUnknown)
         val explicitBusinessFailure = SourceException(SourceErrorCode.UNAVAILABLE)
         assertSame(explicitBusinessFailure, scriptRuntimeFailure(explicitBusinessFailure, ScriptRuntimePhase.OPERATION, requestSent = true))

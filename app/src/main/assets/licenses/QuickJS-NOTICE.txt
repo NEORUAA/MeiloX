@@ -1,0 +1,12 @@
+MeiloX embeds QuickJS through quickjs-kt 1.0.18.
+
+QuickJS: https://bellard.org/quickjs/
+Core revision: 04be246001599f5995fa2f2d8c91a0f198d3f34c
+Copyright Fabrice Bellard and Charlie Gordon; MIT license in QuickJS-MIT.txt.
+
+quickjs-kt: https://github.com/dokar3/quickjs-kt/tree/v1.0.18
+Apache License 2.0 in quickjs-kt-Apache-2.0.txt.
+
+c-vector: https://github.com/eteran/c-vector
+Revision: 774773d4cb1e66dd736e90e7f482d4f22af464c6
+Copyright (c) 2015 Evan Teran; MIT license in c-vector-MIT.txt.

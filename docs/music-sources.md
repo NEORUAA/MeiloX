@@ -10,7 +10,7 @@ QQ 音乐插件在独立仓库 [MeiloX-QQMusic-Source](https://github.com/NEORUA
 
 打开「设置 → 通用 → 音源管理 → 从文件导入」，选择 `.meisource` 文件，核对插件名称、作者、版本和网络权限后安装。点开已安装音源可填写配置、启用或禁用、从文件更新，也可移除。移除音源会保留歌单项和已下载的音频。
 
-脚本需要支持隔离 JavaScript 引擎的 Android System WebView。设备不支持时会显示版本不兼容，可更新系统 WebView 后重试。
+脚本使用应用内置的 QuickJS 引擎，在独立隔离进程运行，不依赖系统 WebView 版本。引擎随应用更新，网络请求、账号存储和缓存由宿主负责。
 
 仓库提供 [离线示例](../samples/music-source-plugin/offline-mock.meisource)，搜索 `Mock Recording` 可播放一秒测试音。这个示例用于验证插件接口，不提供 QQ 音乐或酷狗的实际在线服务。
 

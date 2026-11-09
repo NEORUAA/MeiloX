@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+
+/** Cache refreshes can be retried while retaining the original private account owner. */
+internal class SourceCatalogInvalidatedException(
+    val retryContext: CoroutineContext = EmptyCoroutineContext,
+) : CancellationException("Source catalog changed")
 
 /** Only capability adapters and JSON values cross the isolated runtime boundary. */
 internal class ScriptMusicProvider(
@@ -52,7 +58,6 @@ internal class ScriptMusicProvider(
     private val sessionRevision = MutableStateFlow(sessionFingerprint(storage()))
     private val catalog = runtime.catalogCache
     @Volatile private var catalogOwner = catalog.bind(instanceId.value, version, sessionRevision.value)
-    private val catalogGeneration = java.util.concurrent.atomic.AtomicLong()
     override val accountRevision = sessionRevision.asStateFlow()
     override val feedKinds = FeedKind.entries.filter { it.operation in manifest.capabilities }.toSet()
     override val searchTypes = ContentType.entries.filter { it.wireName in manifest.searchTypes }.toSet()
@@ -98,8 +103,11 @@ internal class ScriptMusicProvider(
     private fun ensureCatalog(read: CatalogRead) {
         ensureCurrent()
         catalog.ensureOwner(read.owner) {
-            if (catalogOwner !== read.owner || sessionRevision.value != read.owner.account || catalogGeneration.get() != read.generation) {
+            if (catalogOwner !== read.owner || sessionRevision.value != read.owner.account) {
                 throw CancellationException("Source catalog owner changed")
+            }
+            if (catalog.generation(read.owner) != read.generation) {
+                throw SourceCatalogInvalidatedException(InvocationOwner(this, read.owner))
             }
         }
     }
@@ -110,15 +118,15 @@ internal class ScriptMusicProvider(
             ensureCatalog(inherited)
             return block(inherited).also { ensureCatalog(inherited) }
         }
-        val read = CatalogRead(this, catalogOwner, catalogGeneration.get())
+        val owner = catalogOwner
+        val read = CatalogRead(this, owner, catalog.generation(owner))
         return withContext(read) { ensureCatalog(read); block(read).also { ensureCatalog(read) } }
     }
 
     private fun invalidateCatalog(read: CatalogRead? = null) {
         read?.let(::ensureCatalog)
         val owner = read?.owner ?: catalogOwner
-        catalog.invalidateCatalog(owner) { ensureCurrent(); read?.let(::ensureCatalog) }
-        val generation = catalogGeneration.incrementAndGet()
+        val generation = catalog.invalidateCatalog(owner) { ensureCurrent(); read?.let(::ensureCatalog) }
         if (read?.owner === owner) read.generation = generation
     }
 
@@ -151,6 +159,10 @@ internal class ScriptMusicProvider(
 
     override suspend fun parseFeatureTrack(value: JsonObject): Track = validated { parser.track(value) }
     override suspend fun featureArtwork(url: String): String = validated {
+        val artworkIdentity = artworkAccountIdentity()
+        currentCoroutineContext()[InvocationOwner]?.takeIf { it.provider === this }?.let {
+            catalog.ensureOwner(it.owner)
+        }
         if (url.isNotBlank() && !SourceArtworkRegistry.isLegacy(url) && artworkStore?.owns(url) != true) {
             try { network.validateUrl(url) }
             catch (error: SourceException) {
@@ -164,8 +176,8 @@ internal class ScriptMusicProvider(
             url.isBlank() -> ""
             SourceArtworkRegistry.isLegacy(url) -> SourceArtworkRegistry.resolve(url)
             artworkStore?.owns(url) == true -> artworkStore.acceptOwned(this, url)
-            artworkStore != null -> artworkStore.register(this, url)
-            else -> network.artwork(url, artworkDirectory, ::ensureCurrent)
+            artworkStore != null -> artworkStore.register(this, url, artworkIdentity)
+            else -> network.artwork(url, artworkDirectory) { ensureArtworkCurrent(artworkIdentity) }
         }
     }
 
@@ -184,11 +196,12 @@ internal class ScriptMusicProvider(
     override suspend fun invokeFeature(feature: String, action: String, parameters: JsonObject,
         expectedAccountRevision: String?, onSessionCommitted: ((String?) -> Unit)?): com.google.gson.JsonElement = validated {
         if (action !in features[feature].orEmpty()) throw SourceException(SourceErrorCode.UNSUPPORTED)
-        val result = serialized {
+        val readOnlyStorage = onSessionCommitted == null && action in manifest.concurrentReadFeatures[feature].orEmpty()
+        val result = serialized(readOnlyStorage) {
             if (sessionRevision.value != expectedAccountRevision) throw CancellationException("Source account changed before feature operation")
             invokeLocked("feature.invoke", JsonObject().apply {
                 addProperty("feature", feature); addProperty("action", action); add("parameters", parameters.deepCopy())
-            }, onSessionCommitted)
+            }, onSessionCommitted, readOnlyStorage)
         }
         if (result.isJsonObject && result.asJsonObject.has("hostEffect")) result else sanitizeFeatureArtwork(result)
 
@@ -690,7 +703,8 @@ internal class ScriptMusicProvider(
             ?: return withContext(InvocationOwner(this, catalogOwner)) { validated(block) }
         return try {
             ensureCurrent()
-            block().also { ensureCurrent() }
+            catalog.ensureOwner(owner.owner)
+            block().also { ensureCurrent(); catalog.ensureOwner(owner.owner) }
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (error: SourceException) {
             ensureCurrent()
@@ -717,22 +731,29 @@ internal class ScriptMusicProvider(
         val pin = kotlinx.coroutines.currentCoroutineContext()[com.ljyh.mei.source.core.SourceMutationContext]?.owner
         if (pin != null && (pin.provider !== this || pin.version != version)) throw CancellationException("Source mutation owner changed")
         val revision = if (pin != null) pin.revision else read?.owner?.account ?: sessionRevision.value
-        return coreExecutor?.executeCore(this, operation, params, coreHandler, revision) ?: serialized {
+        val readOnlyStorage = isConcurrentRead(operation)
+        return coreExecutor?.executeCore(this, operation, params, coreHandler, revision) ?: serialized(readOnlyStorage) {
             read?.let(::ensureCatalog)
             if (sessionRevision.value != revision) throw CancellationException("Source account changed before core operation")
-            invokeLocked(operation, params)
+            invokeLocked(operation, params, readOnlyStorage = readOnlyStorage)
         }
     }
 
     override suspend fun invokeCoreOperation(operation: String, parameters: JsonObject,
-        expectedAccountRevision: String?): com.google.gson.JsonElement = serialized {
+        expectedAccountRevision: String?): com.google.gson.JsonElement = serialized(isConcurrentRead(operation)) {
         if (operation == "feature.invoke") throw SourceException(SourceErrorCode.UNSUPPORTED)
         if (sessionRevision.value != expectedAccountRevision) throw CancellationException("Source account changed before core operation")
-        invokeLocked(operation, parameters)
+        invokeLocked(operation, parameters, readOnlyStorage = isConcurrentRead(operation))
     }
 
-    private suspend fun <T> serialized(block: suspend () -> T): T = withContext(Dispatchers.IO) {
-        try { operations.withScriptOperationTimeout(20_000, block) }
+    private fun isConcurrentRead(operation: String): Boolean = operation in manifest.concurrentReadOperations ||
+        !manifest.permissions.storage && operation in PluginManifest.CONCURRENT_READ_OPERATIONS
+
+    private suspend fun <T> serialized(readOnlyStorage: Boolean = false, block: suspend () -> T): T = withContext(Dispatchers.IO) {
+        try {
+            if (readOnlyStorage) withTimeout(20_000) { block() }
+            else operations.withScriptOperationTimeout(20_000, block)
+        }
         catch (_: TimeoutCancellationException) {
             currentCoroutineContext().ensureActive()
             ensureCurrent()
@@ -741,7 +762,7 @@ internal class ScriptMusicProvider(
     }
 
     private suspend fun invokeLocked(operation: String, params: JsonObject,
-        onSessionCommitted: ((String?) -> Unit)? = null): com.google.gson.JsonElement {
+        onSessionCommitted: ((String?) -> Unit)? = null, readOnlyStorage: Boolean = false): com.google.gson.JsonElement {
         ensureCurrent()
         val read = currentCoroutineContext()[CatalogRead]?.takeIf { it.provider === this }
         read?.let(::ensureCatalog)
@@ -756,23 +777,34 @@ internal class ScriptMusicProvider(
             SourceStatus.INCOMPATIBLE -> SourceErrorCode.UNSUPPORTED
             else -> SourceErrorCode.MISSING_PROVIDER
         })
-        if (operation in CATALOG_MUTATIONS) invalidateCatalog(read)
+        val mutationOwner = read?.owner ?: catalogOwner
+        val mutation = if (operation in CATALOG_MUTATIONS) {
+            catalog.beginMutation(mutationOwner) { ensureCurrent(); read?.let(::ensureCatalog) }.also {
+                if (read?.owner === mutationOwner) read.generation = it.generation
+            }
+        } else null
+        val readOwner = catalogOwner.takeIf { readOnlyStorage }
         try {
             var parameters = params
             repeat(9) { segment ->
                 val callOwner = catalogOwner
-                val originalStorage = storage()
+                if (readOwner != null && callOwner !== readOwner) throw CancellationException("Source account changed during a read")
+                val originalStorage = storage().toMap()
                 val inputStorage = originalStorage.filterKeys { it !in manifest.discardStorageKeys }
-                if (inputStorage != originalStorage) saveStorage(inputStorage)
+                if (!readOnlyStorage && inputStorage != originalStorage) saveStorage(inputStorage)
                 val verifiedUserId = catalog.account(callOwner, ::ensureCurrent).second?.ref?.accountId?.value
                 val call = runtime.invoke(File(directory, manifest.entry).readText(), manifest, operation, parameters, config(), inputStorage, network,
-                    verifiedUserId = verifiedUserId, ensureCurrent = {
+                    verifiedUserId = verifiedUserId, readOnlyStorage = readOnlyStorage, ensureCurrent = {
                         ensureCurrent()
                         catalog.ensureOwner(callOwner)
                         read?.let(::ensureCatalog)
                     })
                 ensureCurrent()
                 call.storage?.let { values ->
+                    if (readOnlyStorage) {
+                        if (values != inputStorage) invalid()
+                        return@let
+                    }
                     val nextStorage = values.filterKeys { it !in manifest.discardStorageKeys }
                     saveStorage(nextStorage)
                     val next = sessionFingerprint(nextStorage)
@@ -784,7 +816,7 @@ internal class ScriptMusicProvider(
                         if (next != callOwner.account || unknownAccountChanged) {
                             val rebound = catalog.rebind(callOwner, next)
                             catalogOwner = rebound
-                            val generation = catalogGeneration.incrementAndGet()
+                            val generation = 0L // A newly rebound cache owner starts at generation zero.
                             if (read?.owner === callOwner) {
                                 read.owner = rebound
                                 read.generation = generation
@@ -795,6 +827,7 @@ internal class ScriptMusicProvider(
                     }
                 }
                 ensureCurrent()
+                readOwner?.let { catalog.ensureOwner(it) }
                 val value = call.result.takeIf { it.isJsonObject }?.asJsonObject
                 val control = value?.get("hostEffect")?.takeIf { it.isJsonObject }?.asJsonObject
                 if (operation == "feature.invoke" || control?.get("type")?.asString != "source.continue") return call.result
@@ -823,6 +856,11 @@ internal class ScriptMusicProvider(
             failed = true
             onFailure(SourceErrorCode.PLUGIN)
             throw SourceException(SourceErrorCode.PLUGIN, "Source execution failed")
+        } finally {
+            mutation?.close()
+            mutation?.completedGeneration?.let { generation ->
+                if (read?.owner === mutationOwner) read.generation = generation
+            }
         }
     }
 
@@ -902,6 +940,6 @@ internal class ScriptMusicProvider(
     }
 }
 
-/** Waiting for a preceding source request does not consume this operation's execution time. */
+/** Queue admission and execution share one bounded operation deadline. */
 internal suspend fun <T> Mutex.withScriptOperationTimeout(timeoutMillis: Long, block: suspend () -> T): T =
-    withLock { withTimeout(timeoutMillis) { block() } }
+    withTimeout(timeoutMillis) { withLock { block() } }

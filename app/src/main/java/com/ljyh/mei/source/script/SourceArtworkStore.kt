@@ -28,10 +28,9 @@ class SourceArtworkStore @Inject constructor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>?) = size > 4096
     }
 
-    internal suspend fun register(source: ScriptMusicProvider, url: String): String = withContext(Dispatchers.IO) {
+    internal suspend fun register(source: ScriptMusicProvider, url: String, identity: String): String = withContext(Dispatchers.IO) {
         source.validateArtworkUrl(url)
         val file = ScriptNetworkPolicy.artworkFile(url, File(root, source.manifest.id))
-        val identity = source.artworkAccountIdentity()
         val record = SourceArtworkDescriptor(url, identity, source.version)
         val recordIdentity = identity to source.version
         val key = "${source.manifest.id}:${file.name}"

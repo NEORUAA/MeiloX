@@ -78,6 +78,12 @@
         </activity>
 
         <service
+            android:name=".source.script.QuickJsEngineService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":source_sandbox" />
+
+        <service
             android:name=".playback.MusicService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"

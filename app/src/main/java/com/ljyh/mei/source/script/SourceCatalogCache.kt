@@ -5,7 +5,17 @@ import kotlinx.coroutines.CancellationException
 
 /** Typed process-local data belongs to the host, scoped to one live provider session. */
 internal class SourceCatalogCache(private val nowMs: () -> Long = System::currentTimeMillis) {
-    class Owner(val instance: String, val version: String, val account: String?)
+    class Owner(val instance: String, val version: String, val account: String?) {
+        internal var generation = 0L
+    }
+    class Mutation internal constructor(val generation: Long, private val finish: () -> Long?) : AutoCloseable {
+        private val closed = java.util.concurrent.atomic.AtomicBoolean()
+        var completedGeneration: Long? = null
+            private set
+        override fun close() {
+            if (closed.compareAndSet(false, true)) completedGeneration = finish()
+        }
+    }
     data class Snapshot(val playlist: SourcePlaylist, val ids: List<TrackRef>?, val metadataLimit: Int = 1)
     data class AlbumSnapshot(val album: SourceAlbumInfo, val ids: List<TrackRef>?)
     data class PageKey(val operation: String, val identity: String, val page: PageRequest)
@@ -117,9 +127,25 @@ internal class SourceCatalogCache(private val nowMs: () -> Long = System::curren
         verifiedAccounts[owner] = value
     }
 
-    @Synchronized fun invalidateCatalog(owner: Owner, validate: () -> Unit = {}) {
+    @Synchronized fun generation(owner: Owner): Long {
+        ensureOwner(owner)
+        return owner.generation
+    }
+
+    @Synchronized fun invalidateCatalog(owner: Owner, validate: () -> Unit = {}): Long {
         ensureOwner(owner, validate)
-        removeEntries { it.owner === owner && it.kind in setOf(Kind.SNAPSHOT, Kind.ALBUM_SNAPSHOT, Kind.PAGE, Kind.LIKED_PLAYLIST) }
+        owner.generation++
+        removeEntries { it.owner === owner && it.kind != Kind.TRACK }
+        return owner.generation
+    }
+
+    @Synchronized fun beginMutation(owner: Owner, validate: () -> Unit = {}): Mutation {
+        val generation = invalidateCatalog(owner, validate)
+        return Mutation(generation) {
+            synchronized(this) {
+                if (owners[owner.instance] === owner) invalidateCatalog(owner) else null
+            }
+        }
     }
 
     private fun get(key: Key): Any? {

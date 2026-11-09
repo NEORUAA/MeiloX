@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import com.ljyh.mei.ui.component.utils.rememberLifecycleStarted
@@ -71,6 +72,8 @@ fun PlayerProgressSlider(
     onTrackTopChanged: ((Float) -> Unit)? = null,
 ) {
     val playerConnection = LocalPlayerConnection.current
+    val qualityMediaId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.trackRef
+        ?.let(TrackRefCodec::mediaId)
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
     val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
@@ -271,6 +274,7 @@ fun PlayerProgressSlider(
 
             PlayerQualityDropdown(
                 quality = musicQuality,
+                mediaId = qualityMediaId,
                 availableQualities = availableQualities,
                 isLoading = isLoadingQualities,
                 localPlaybackInfo = localPlaybackInfo,

@@ -4,7 +4,6 @@ import android.net.Uri
 import com.ljyh.mei.AppContext
 import com.ljyh.mei.utils.dataStore
 import kotlinx.coroutines.flow.first
-import androidx.javascriptengine.JavaScriptSandbox
 import androidx.media3.datasource.DataSpec
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ljyh.mei.source.api.*
@@ -43,8 +42,457 @@ import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
     @Test
+    fun overlappingReadIndexesAreDiscardedAfterSuccessfulOrUncertainCatalogMutations() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        for (uncertain in listOf(false, true)) {
+            val directory = File(context.cacheDir, "catalog-mutation-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+            val manifest = PluginManifest.parse("""{"id":"org.meilox.catalog-mutation-fixture","name":"Mutation fixture","author":"Tests",
+                "version":"1","apiVersion":2,"capabilities":["library.likedTracks","track.like"],
+                "permissions":{"network":["api.example.com"]}}""")
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin={
+                'library.likedTracks':function(){return {request:{url:'https://api.example.com/library'}};},
+                'track.like':function(){return {request:{url:'https://api.example.com/like',method:'POST'}};},
+                onResponse:function(op,r){return JSON.parse(r.body);}
+            };""")
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+                { emptyMap() }, { emptyMap() }, {}, { fail("A network failure must not disable the source") }, 0)
+            val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+            val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+            val original = field.get(policy) as okhttp3.OkHttpClient
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            val committed = java.util.concurrent.atomic.AtomicBoolean()
+            val libraryReads = java.util.concurrent.atomic.AtomicInteger()
+            var mutation: kotlinx.coroutines.Deferred<Throwable?>? = null
+            try {
+                field.set(policy, original.newBuilder().addInterceptor { chain ->
+                    val request = chain.request()
+                    val result: Any = if (request.url.encodedPath == "/like") {
+                        entered.complete(Unit)
+                        check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                        committed.set(true)
+                        if (uncertain) mapOf("error" to "NETWORK") else true
+                    } else {
+                        libraryReads.incrementAndGet()
+                        val id = if (committed.get()) "after" else "before"
+                        mapOf("playlistId" to "liked", "title" to "Likes", "trackCount" to 1, "trackIds" to listOf(id),
+                            "tracks" to listOf(mapOf("trackId" to id, "title" to "Track $id", "artists" to listOf("Fixture"), "durationMs" to 1000)))
+                    }
+                    Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                        .body(com.google.gson.Gson().toJson(result).toResponseBody()).build()
+                }.build())
+                withTimeout(30_000) {
+                    suspend fun index() = provider.library(LibraryCollection.LIKED_TRACKS, PageRequest(limit = 30))
+                        .items.map { it.ref.contentId }
+                    assertEquals(listOf("before"), index())
+                    mutation = async { runCatching { provider.setLiked(TrackRef(provider.id, "song"), true) }.exceptionOrNull() }
+                    entered.await()
+                    assertEquals("Independent reads must progress while the mutation waits", listOf("before"), index())
+                    assertEquals(2, libraryReads.get())
+                    release.countDown()
+                    val failure = mutation!!.await()
+                    if (uncertain) assertEquals(SourceErrorCode.NETWORK, (failure as? SourceException)?.code)
+                    else assertNull(failure)
+                    assertEquals("The next read must not reuse an index fetched before commit", listOf("after"), index())
+                    assertEquals(3, libraryReads.get())
+                }
+            } finally {
+                release.countDown()
+                mutation?.cancelAndJoin()
+                field.set(policy, original)
+                directory.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun coldWorkerCreatesFourIndependentRuntimesConcurrently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        QuickJsSandbox.createConnectedInstanceAsync(context).get(10, java.util.concurrent.TimeUnit.SECONDS).use { sandbox ->
+            val runtimes = List(4) { sandbox.createIsolate(QuickJsIsolateParameters()) }
+            try {
+                val values = runtimes.mapIndexed { index, runtime ->
+                    async(Dispatchers.IO) {
+                        runtime.evaluateJavaScriptAsync("var own='$index'; own").get(10, java.util.concurrent.TimeUnit.SECONDS)
+                    }
+                }
+                values.forEachIndexed { index, value -> assertEquals("$index", value.await()) }
+                val invalid = runtimes.mapIndexed { index, runtime ->
+                    async(Dispatchers.IO) {
+                        val source = listOf("new Uint8Array([1])", "new Map([[true, 1]])", "[1, {}]", "null")[index]
+                        val failure = runCatching {
+                            runtime.evaluateJavaScriptAsync(source).get(10, java.util.concurrent.TimeUnit.SECONDS)
+                        }.exceptionOrNull()
+                        assertTrue("Non-string results must fail only their evaluation",
+                            (failure as? java.util.concurrent.ExecutionException)?.cause is QuickJsEvaluationFailedException)
+                        repeat(12) {
+                            assertEquals("$index", runtime.evaluateJavaScriptAsync("own")
+                                .get(10, java.util.concurrent.TimeUnit.SECONDS))
+                        }
+                    }
+                }
+                invalid.forEach { it.await() }
+            } finally { runtimes.forEach { it.close() } }
+        }
+    }
+
+    @Test
+    fun legacyStatelessCoreReadsAutomaticallyOverlapWithoutNewDeclarations() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "stateless-reads-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.stateless","name":"Fixture","author":"Tests",
+            "version":"1","apiVersion":1,"capabilities":["catalog.track"],"permissions":{"network":["api.example.com"]}}""")
+        val entered = java.util.concurrent.CountDownLatch(3)
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin={
+                'catalog.track':function(p,c){if(!c.readOnlyStorage)throw new Error('Missing immutable context');
+                    return {request:{url:'https://api.example.com/'+encodeURIComponent(p.trackId)}};},
+                onResponse:function(op,r){return JSON.parse(r.body);}};""")
+            val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+                { emptyMap() }, { emptyMap() }, { fail("Stateless sources cannot save storage") },
+                { fail("Concurrent stateless reads must remain usable") }, 0)
+            val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+            val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+            val base = field.get(policy) as okhttp3.OkHttpClient
+            field.set(policy, base.newBuilder().addInterceptor { chain ->
+                entered.countDown()
+                check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                val id = chain.request().url.pathSegments.last()
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                    .body("""{"trackId":"$id","title":"Fixture","artists":[],"durationMs":1000}""".toResponseBody()).build()
+            }.build())
+            val values = List(3) { index -> async(Dispatchers.IO) { provider.getTrack(TrackRef(provider.id, "$index")) } }
+            try {
+                assertTrue("Legacy stateless reads must reach HTTP together", entered.await(3, java.util.concurrent.TimeUnit.SECONDS))
+                release.countDown()
+                values.forEachIndexed { index, result -> assertEquals("$index", result.await()?.ref?.trackId) }
+            } finally { release.countDown(); values.forEach { it.cancelAndJoin() } }
+        } finally { release.countDown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun bundledWorkerUsesAnIsolatedProcessAndStreamsUnicodeBeyondBinderLimits() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val first = QuickJsSandbox.createConnectedInstanceAsync(context).get(10, java.util.concurrent.TimeUnit.SECONDS)
+        val firstPid = first.processId
+        try {
+            assertNotEquals("Plugin code must execute outside the application process", android.os.Process.myPid(), firstPid)
+            val settings = QuickJsIsolateParameters(maxEvaluationReturnSizeBytes = ScriptRuntime.MAX_CATALOG_RESULT_BYTES)
+            first.createIsolate(settings).use { isolate ->
+                val unicode = "歌曲🌙🎶𠮷/9223372036854775807"
+                val literal = com.google.gson.Gson().toJson(unicode)
+                assertEquals(unicode, isolate.evaluateJavaScriptAsync(literal).get(10, java.util.concurrent.TimeUnit.SECONDS))
+                val code = "/*" + "x".repeat(1_100_000) + "*/ 'large input';"
+                assertEquals("large input", isolate.evaluateJavaScriptAsync(code).get(10, java.util.concurrent.TimeUnit.SECONDS))
+                val large = isolate.evaluateJavaScriptAsync("'🌙'.repeat(300000)").get(10, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals(1_200_000, large.toByteArray(Charsets.UTF_8).size)
+                assertTrue(large.startsWith("🌙") && large.endsWith("🌙"))
+                isolate.evaluateJavaScriptAsync("var privateGlobal='first';'ready'").get(10, java.util.concurrent.TimeUnit.SECONDS)
+            }
+            first.createIsolate(settings).use { second ->
+                val raw = second.evaluateJavaScriptAsync("JSON.stringify([typeof privateGlobal,typeof Android,typeof Java,typeof require,typeof std,typeof os,typeof fetch])")
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS)
+                val values = com.google.gson.JsonParser.parseString(raw).asJsonArray
+                assertTrue("Fresh runtimes must not expose host APIs or another call's globals", values.all { it.asString == "undefined" })
+            }
+        } finally { first.close() }
+        QuickJsSandbox.createConnectedInstanceAsync(context).get(10, java.util.concurrent.TimeUnit.SECONDS).use { replacement ->
+            assertNotEquals(firstPid, replacement.processId)
+            replacement.createIsolate(QuickJsIsolateParameters()).use {
+                assertEquals("recovered", it.evaluateJavaScriptAsync("'recovered'").get(10, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        }
+    }
+
+    @Test
+    fun runtimeMemoryFailureLeavesOtherHttpAliveWithoutReplayingAndThenRecovers() = runBlocking {
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest("org.meilox.memory-recovery", name = "Fixture", author = "Tests", version = "1",
+            apiVersion = 2, capabilities = setOf("catalog.track"))
+        val script = """globalThis.sourcePlugin={
+            'catalog.track':function(p){return p.fast?true:{request:{url:'https://api.example.com/fixture'},state:p};},
+            onResponse:function(op,r,s){if(s.oom){var a=[];while(true)a.push(new Array(32768).fill('memory'));}return true;}};"""
+        runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("fast", true) },
+            emptyMap(), emptyMap(), request = { error("Warm-up has no HTTP") })
+        assertTrue("The bundled engine must support independent calls", runtime.concurrentExecutionSupported == true)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val sibling = async(Dispatchers.IO) {
+            runCatching { runtime.invoke(script, manifest, "catalog.track", JsonObject(), emptyMap(), emptyMap(), request = {
+                requests.incrementAndGet(); entered.complete(Unit)
+                release.await(); JsonObject()
+            }) }
+        }
+        try {
+            withTimeout(10_000) { entered.await() }
+            val failure = runCatching {
+                runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("oom", true) },
+                    emptyMap(), emptyMap(), request = { requests.incrementAndGet(); JsonObject() })
+            }.exceptionOrNull() as SourceException
+            assertEquals(SourceErrorCode.PLUGIN, failure.code)
+            assertTrue("An HTTP result must remain uncertain after engine memory loss", failure.outcomeUnknown)
+            assertFalse("A memory-limited runtime must not terminate another runtime", sibling.isCompleted)
+            release.complete(Unit)
+            assertTrue(withTimeout(5_000) { sibling.await() }.getOrThrow().result.asBoolean)
+            assertEquals("Sent requests must not be replayed", 2, requests.get())
+            val recovered = withTimeout(10_000) {
+                runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("fast", true) },
+                    emptyMap(), emptyMap(), request = { error("Recovery has no HTTP") })
+            }
+            assertTrue(recovered.result.asBoolean)
+        } finally { release.complete(Unit); sibling.cancelAndJoin() }
+    }
+
+    @Test
+    fun saturatedApiAdmissionCannotBlockArtworkOrAudioConnections() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val policy = ScriptNetworkPolicy(listOf("api.example.com"))
+        val directory = File(context.cacheDir, "transport-lanes-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val entered = java.util.concurrent.CountDownLatch(ScriptNetworkPolicy.API_CONCURRENCY)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val base = field.get(policy) as okhttp3.OkHttpClient
+        field.set(policy, base.newBuilder().addInterceptor { chain ->
+            if (chain.request().url.encodedPath.startsWith("/api/")) {
+                entered.countDown()
+                check(release.await(15, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                .body("fixture".toResponseBody()).build()
+        }.build())
+        val calls = List(ScriptNetworkPolicy.API_CONCURRENCY) { index ->
+            async(Dispatchers.IO) { policy.request(JsonObject().apply { addProperty("url", "https://api.example.com/api/$index") }) }
+        }
+        val pluginId = "org.meilox.transport-lanes"
+        try {
+            assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            withTimeout(3_000) {
+                val image = async(Dispatchers.IO) { policy.artwork("https://api.example.com/cover", directory) }
+                val audio = async(Dispatchers.IO) {
+                    val handle = ScriptAudioResources.register(pluginId,
+                        AudioResource("https://api.example.com/audio", quality = "standard"), policy, directory)
+                    val source = ScriptAudioDataSource()
+                    try {
+                        source.open(DataSpec(Uri.parse(handle.uri)))
+                        val bytes = ByteArray(7)
+                        assertEquals(7, source.read(bytes, 0, bytes.size))
+                        assertEquals("fixture", bytes.toString(Charsets.UTF_8))
+                    } finally { source.close() }
+                }
+                assertTrue(image.await().startsWith("file:"))
+                audio.await()
+            }
+        } finally {
+            release.countDown()
+            calls.forEach { it.cancelAndJoin() }
+            ScriptAudioResources.remove(pluginId)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun independentInvocationsOverlapHttpAndCancelWithoutSharingGlobals() = runBlocking {
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.parallel-runtime","name":"Fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{}}""")
+        val script = """var counter=0;globalThis.sourcePlugin={
+            'catalog.track':function(p){counter++;if(p.id==='cpu')while(true){};
+                return p.id==='fast'?{id:p.id,counter:counter}:{request:{url:'https://api.example.com/'+p.id},state:p};},
+            onResponse:function(op,r,s){return {id:s.id,counter:counter};}};"""
+        runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("id", "fast") },
+            emptyMap(), emptyMap(), request = { error("The warm-up must not use HTTP") })
+        assertTrue("The bundled engine must support independent calls", runtime.concurrentExecutionSupported == true)
+        val entered = List(3) { CompletableDeferred<Unit>() }
+        val release = CompletableDeferred<Unit>()
+        val cancelledHttp = CompletableDeferred<Unit>()
+        val calls = List(3) { index ->
+            async(Dispatchers.IO) {
+                runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("id", "$index") },
+                    emptyMap(), emptyMap(), request = {
+                        entered[index].complete(Unit)
+                        try { release.await(); JsonObject() }
+                        finally { if (index == 0) cancelledHttp.complete(Unit) }
+                    })
+            }
+        }
+        try {
+            withTimeout(10_000) { entered.forEach { it.await() } }
+            val quick = withTimeout(3_000) {
+                runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("id", "fast") },
+                    emptyMap(), emptyMap(), request = { error("An independent immediate call must not use HTTP") })
+            }.result.asJsonObject
+            assertEquals(1, quick["counter"].asInt)
+            calls[0].cancelAndJoin()
+            withTimeout(1_000) { cancelledHttp.await() }
+            val cpu = async(Dispatchers.IO) {
+                runCatching { runtime.invoke(script, manifest, "catalog.track", JsonObject().apply { addProperty("id", "cpu") },
+                    emptyMap(), emptyMap(), request = { error("A CPU loop has no HTTP") }) }
+            }
+            val failure = withTimeout(5_000) { cpu.await() }.exceptionOrNull()
+            assertEquals(SourceErrorCode.TIMEOUT, (failure as SourceException).code)
+            assertFalse("One runaway isolate must not cancel another HTTP request", calls[1].isCompleted)
+            release.complete(Unit)
+            for (index in 1..2) {
+                val result = calls[index].await().result.asJsonObject
+                assertEquals("$index", result["id"].asString)
+                assertEquals("Each invocation must have fresh globals", 1, result["counter"].asInt)
+            }
+        } finally {
+            release.complete(Unit)
+            calls.forEach { it.cancelAndJoin() }
+        }
+    }
+
+    @Test
+    fun immutableReadsOverlapAStorageWriterAndRejectTheirOwnStorageChanges() = runBlocking {
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = ScriptRuntime(context)
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.parallel-provider","name":"Fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["catalog.track","track.like","feature.invoke"],"features":{"login":["rotate"]},
+            "concurrentReadOperations":["catalog.track"],"sessionKeys":["session"],
+            "permissions":{"network":["api.example.com"],"storage":true}}""")
+        val directory = File(context.cacheDir, "parallel-provider-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val state = java.util.concurrent.atomic.AtomicReference<Map<String, String>>(mapOf("session" to "initial"))
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val commits = java.util.concurrent.atomic.AtomicInteger()
+        val lateEntered = java.util.concurrent.CountDownLatch(1)
+        val lateRelease = java.util.concurrent.CountDownLatch(1)
+        try {
+            File(directory, "index.js").writeText("""globalThis.sourcePlugin={
+                'track.like':function(){return {request:{url:'https://api.example.com/write'}};},
+                'feature.invoke':function(){return {result:true,storage:{session:'next'}};},
+                onResponse:function(op,r,s,c){return op==='catalog.track'?{result:{trackId:'late',title:'Old account'},storage:c.storage}:{result:true,storage:{session:'initial',counter:'committed'}};},
+                'catalog.track':function(p,c){if(p.trackId==='late')return {request:{url:'https://api.example.com/read'}};if(!c.readOnlyStorage)throw new Error('Missing immutable context');
+                    var r={trackId:p.trackId,title:'Read while writing'};
+                    return p.trackId==='invalid'?{result:r,storage:{session:'changed'}}:{result:r,storage:c.storage};}};""")
+            val provider = ScriptMusicProvider(manifest, directory, runtime, true, emptyMap(), { true },
+                { emptyMap() }, { state.get() }, { state.set(it.toMap()); commits.incrementAndGet() },
+                { fail("A rejected immutable result must not disable its provider") }, 0)
+            val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+            val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+            val base = field.get(policy) as okhttp3.OkHttpClient
+            field.set(policy, base.newBuilder().addInterceptor { chain ->
+                if(chain.request().url.encodedPath=="/read") {
+                    lateEntered.countDown();check(lateRelease.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                } else { entered.countDown();check(release.await(15, java.util.concurrent.TimeUnit.SECONDS)) }
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                    .body("{}".toResponseBody()).build()
+            }.build())
+            val warm = provider.getTrack(TrackRef(provider.id, "warm"))
+            assertNotNull(warm)
+            assertTrue("The bundled engine must support independent calls", runtime.concurrentExecutionSupported == true)
+            val writer = async(Dispatchers.IO) { provider.setLiked(TrackRef(provider.id, "song"), true) }
+            try {
+                assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                val read = withTimeout(3_000) { provider.getTrack(TrackRef(provider.id, "overlap")) }
+                assertEquals("overlap", read?.ref?.trackId)
+                assertEquals(0, commits.get())
+                try { provider.getTrack(TrackRef(provider.id, "invalid")); fail("A read must not change storage") }
+                catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+                assertEquals(mapOf("session" to "initial"), state.get())
+                release.countDown()
+                writer.await()
+                assertEquals(mapOf("session" to "initial", "counter" to "committed"), state.get())
+                assertEquals(1, commits.get())
+                assertEquals(SourceStatus.READY, provider.status)
+                val late = async(Dispatchers.IO) { provider.getTrack(TrackRef(provider.id, "late")) }
+                try {
+                    assertTrue(lateEntered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    val revision = provider.accountRevision.value
+                    provider.invokeFeature("login", "rotate", JsonObject(), revision, null)
+                    assertNotEquals(revision, provider.accountRevision.value)
+                    lateRelease.countDown()
+                    try { late.await(); fail("A response from the previous account must not be published") }
+                    catch (_: CancellationException) { }
+                    assertEquals(mapOf("session" to "next"), state.get())
+                    assertEquals(2, commits.get())
+                } finally { lateRelease.countDown(); late.cancelAndJoin() }
+            } finally { release.countDown(); writer.cancelAndJoin() }
+        } finally { release.countDown(); lateRelease.countDown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun installedEngineBenchmarkUsesTheSameTrustedPluginAndPayloads(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("sourceEngineBenchmark") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "engine-bench")
+        val plugin = File(directory, "plugin.js").readText()
+        val fixture = File(directory, "fixture.js").readText()
+        val connectionStart = android.os.SystemClock.elapsedRealtimeNanos()
+        QuickJsSandbox.createConnectedInstanceAsync(context).get(10, java.util.concurrent.TimeUnit.SECONDS).use { sandbox ->
+            val bindingMs = (android.os.SystemClock.elapsedRealtimeNanos() - connectionStart) / 1_000_000.0
+            repeat(3) { sample ->
+                val setupStart = android.os.SystemClock.elapsedRealtimeNanos()
+                val settings = QuickJsIsolateParameters().apply {
+                    maxHeapSizeBytes = ScriptRuntime.MAX_HEAP_BYTES
+                    maxEvaluationReturnSizeBytes = ScriptRuntime.MAX_RESULT_BYTES
+                }
+                sandbox.createIsolate(settings).use { isolate ->
+                    val setupMs = (android.os.SystemClock.elapsedRealtimeNanos() - setupStart) / 1_000_000.0
+                    val loadStart = android.os.SystemClock.elapsedRealtimeNanos()
+                    isolate.evaluateJavaScriptAsync(plugin + "\n;'loaded';").get(10, java.util.concurrent.TimeUnit.SECONDS)
+                    val loadMs = (android.os.SystemClock.elapsedRealtimeNanos() - loadStart) / 1_000_000.0
+                    val result = isolate.evaluateJavaScriptAsync(fixture).get(20, java.util.concurrent.TimeUnit.SECONDS)
+                    InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+                        putString("stream", "Engine benchmark sample=$sample bindingMs=$bindingMs isolateMs=$setupMs pluginLoadMs=$loadMs result=$result\n")
+                    })
+                }
+            }
+        }
+    }
+
+    @Test
+    fun slowArtworkCannotBlockSourceApiRequests() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "source-network-lanes-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val policy = ScriptNetworkPolicy(listOf("api.example.com", "images.example.com"))
+        val entered = java.util.concurrent.CountDownLatch(2)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = field.get(policy) as okhttp3.OkHttpClient
+        field.set(policy, original.newBuilder().addInterceptor { chain ->
+            val request = chain.request()
+            if (request.url.host == "images.example.com") {
+                entered.countDown()
+                check(release.await(15, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                .body("fixture".toResponseBody()).build()
+        }.build())
+        val artwork = (1..4).map { index ->
+            async(Dispatchers.IO) { policy.artwork("https://images.example.com/$index", directory) }
+        }
+        try {
+            assertTrue("Both slow artwork requests must be in flight", entered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            val start = android.os.SystemClock.elapsedRealtime()
+            val response = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                policy.request(JsonObject().apply { addProperty("url", "https://api.example.com/feed") })
+            }
+            val elapsed = android.os.SystemClock.elapsedRealtime() - start
+            InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "Source API with two stalled covers elapsedMs=$elapsed completed=${response != null}\n")
+            })
+            assertNotNull("Slow covers must not occupy source API admission", response)
+            assertEquals("fixture", response!!.get("body").asString)
+        } finally {
+            release.countDown()
+            artwork.forEach { it.cancelAndJoin() }
+            field.set(policy, original)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun catalogFirstPagesReuseCompleteIndexesWithoutWholeCollectionWarmup() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val directory = File(context.cacheDir, "catalog-first-page-${java.util.UUID.randomUUID()}").apply { mkdirs() }
         val manifest = PluginManifest.parse("""{"id":"org.meilox.first-page-fixture","name":"Catalog fixture","author":"Tests",
@@ -308,7 +756,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun rapidSandboxCancellationReconnectsAndOperationExceptionsKeepTheSourceAvailable() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.connection-retirement","name":"Runtime lifecycle fixture","author":"Tests",
@@ -365,7 +813,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun lazyArtworkSurvivesStoreRestartAndSourceUpgradeWithoutExposingItsDescriptor() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = "org.meilox.artwork-${java.util.UUID.randomUUID()}"
         val neighbor = "$id-artwork-other"
@@ -413,7 +861,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun cancelledLoginPublishesTheAccountRevisionAfterDurableStorageCommit() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manifest = PluginManifest.parse("""{"id":"org.meilox.login-commit","name":"Login commit fixture","author":"Tests",
             "version":"1","apiVersion":2,"capabilities":["feature.invoke","track.like"],
@@ -457,7 +905,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun coreMutationsResumeFreshHostProofWithoutHoldingTheSourceOperationLock() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manifest = PluginManifest.parse("""{"id":"org.meilox.core-proof","name":"Core proof fixture","author":"Tests",
             "version":"1","apiVersion":2,"capabilities":["catalog.track","collection.save","account.get"],"collectionTypes":["playlist"],
@@ -499,7 +947,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun removableDefaultSourcePreservesHostDataAndDoesNotReinstallItself() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manager = (context.applicationContext as AppContext).sourcePlugins
         manager.loadInstalled()
@@ -578,7 +1026,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun malformedFavoriteResponsesKeepOtherCapabilitiesButPermissionViolationsFailClosed() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manifest = PluginManifest.parse("""{"id":"org.meilox.favorite-errors","name":"Favorite fixture","author":"Tests",
             "version":"1","apiVersion":2,"capabilities":["catalog.track","track.like"],"permissions":{"network":["api.example.com"]}}""")
@@ -610,7 +1058,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun queuedMutationsCheckTheAccountAfterThePreviousStorageCommit() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manifest = PluginManifest.parse("""{"id":"org.meilox.favorite-account","name":"Account fixture","author":"Tests",
             "version":"1","apiVersion":2,"capabilities":["catalog.track","track.like","feature.invoke"],
@@ -688,7 +1136,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun concurrentOperationsReadStorageOnlyAfterThePreviousCommit() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manifest = PluginManifest.parse("""{"id":"org.meilox.storage-test","name":"Storage fixture","author":"Tests",
             "version":"1","apiVersion":2,"capabilities":["catalog.track"],"permissions":{"storage":true}}""")
@@ -736,7 +1184,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun revokedInvocationsCannotSendAnotherRequestOrStartAfterWaitingForTheSandbox() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.revision-test","name":"Revision fixture","author":"Tests",
@@ -761,19 +1209,19 @@ class ScriptPluginInstrumentedTest {
         assertEquals(listOf("GET"), sentMethods)
 
         withTimeout(30_000) {
-            val entered = CompletableDeferred<Unit>()
+            val entered = List(if (runtime.concurrentExecutionSupported == true) ScriptRuntime.MAX_CONCURRENT_INVOCATIONS else 1) { CompletableDeferred<Unit>() }
             val release = CompletableDeferred<Unit>()
-            val holder = async {
+            val holders = entered.map { signal -> async {
                 runtime.invoke(script.replace("return {request:{url:'https://api.example.com/like',method:'POST',body:'liked=true'}};", "return true;"),
                     manifest, "track.like", JsonObject(), emptyMap(), emptyMap(), request = { request ->
                         network.validateUrl(request["url"].asString)
-                        entered.complete(Unit)
+                        signal.complete(Unit)
                         release.await()
                         JsonObject().apply { addProperty("status", 200); addProperty("body", "ready") }
                     })
-            }
+            } }
             try {
-                entered.await()
+                entered.forEach { it.await() }
                 val queuedRevision = gate.change { it }
                 var queuedRequests = 0
                 val queued = async(start = CoroutineStart.UNDISPATCHED) {
@@ -785,20 +1233,20 @@ class ScriptPluginInstrumentedTest {
                 }
                 gate.change { }
                 release.complete(Unit)
-                assertTrue(holder.await().result.asBoolean)
+                holders.forEach { assertTrue(it.await().result.asBoolean) }
                 try { queued.await(); fail("Expected the queued operation to cancel") }
                 catch (_: CancellationException) { }
                 assertEquals(0, queuedRequests)
             } finally {
                 release.complete(Unit)
-                holder.cancelAndJoin()
+                holders.forEach { it.cancelAndJoin() }
             }
         }
     }
 
     @Test
     fun transportBodyErrorsKeepTheirTypeAndTheProviderCanImmediatelyRecover() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.transport-test","name":"Transport fixture","author":"Tests",
@@ -859,7 +1307,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun isolatedEvaluationsReceiveFreshEntropyAndBinaryResponsesWithoutAnObjectBridge() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.entropy-test","name":"Entropy fixture","author":"Tests",
@@ -931,7 +1379,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun runawayCodeAndUndeclaredNetworkCannotEscapeTheSandbox() = runBlocking {
-        assumeTrue(JavaScriptSandbox.isSupported())
+        assumeTrue(com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = ScriptRuntime(context)
         val manifest = PluginManifest.parse("""{"id":"org.meilox.runtime-test","name":"Runtime fixture","author":"Tests",
@@ -955,7 +1403,7 @@ class ScriptPluginInstrumentedTest {
 
     @Test
     fun importedScriptSearchDetailsFallbackAndAudioUseTheRealSandbox() = runBlocking {
-        assumeTrue("JavaScript sandbox requires a compatible Android System WebView", JavaScriptSandbox.isSupported())
+        assumeTrue("The bundled QuickJS engine must be available", com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val origin = object : MusicProvider, PlaybackCapability {

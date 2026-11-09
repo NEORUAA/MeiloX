@@ -46,6 +46,8 @@ data class PluginManifest(
     val linkHosts: Set<String> = emptySet(),
     val catalogBatchSize: Int = 30,
     val discardStorageKeys: Set<String> = emptySet(),
+    val concurrentReadOperations: Set<String> = emptySet(),
+    val concurrentReadFeatures: Map<String, Set<String>> = emptyMap(),
 ) {
     val supported: Boolean get() = apiVersion in 1..2
     val sourceCapabilities: Set<SourceCapability> get() = capabilities.mapNotNull(CAPABILITIES::get).toSet()
@@ -53,6 +55,12 @@ data class PluginManifest(
     companion object {
         private val ID = Regex("[a-z][a-z0-9._-]{2,79}")
         private val KEY = Regex("[A-Za-z][A-Za-z0-9._-]{0,63}")
+        internal val CONCURRENT_READ_OPERATIONS = setOf(
+            "links.resolve", "catalog.search", "catalog.track", "catalog.tracks", "album.get", "album.tracks",
+            "artist.get", "artist.tracks", "artist.albums", "playlist.get", "playlist.tracks", "feed.home", "feed.discover",
+            "library.likedTracks", "library.createdPlaylists", "library.savedPlaylists", "library.savedAlbums", "library.followedArtists",
+            "track.liked", "collection.saved", "playback.resolve", "playback.qualities", "lyrics.get",
+        )
         val CAPABILITIES = mapOf(
             "catalog.search" to SourceCapability.SEARCH,
             "catalog.track" to SourceCapability.TRACK,
@@ -109,6 +117,8 @@ data class PluginManifest(
                 if (!raw.has("sessionKeys")) raw.add("sessionKeys", com.google.gson.JsonArray())
                 if (!raw.has("catalogBatchSize")) raw.addProperty("catalogBatchSize", 30)
                 if (!raw.has("discardStorageKeys")) raw.add("discardStorageKeys", com.google.gson.JsonArray())
+                if (!raw.has("concurrentReadOperations")) raw.add("concurrentReadOperations", com.google.gson.JsonArray())
+                if (!raw.has("concurrentReadFeatures")) raw.add("concurrentReadFeatures", com.google.gson.JsonObject())
                 if (!raw.has("sessionCookieNames")) raw.add("sessionCookieNames", com.google.gson.JsonObject())
                 if (!raw.has("linkHosts")) raw.add("linkHosts", com.google.gson.JsonArray())
                 val manifest = Gson().fromJson(raw, PluginManifest::class.java)
@@ -127,6 +137,7 @@ data class PluginManifest(
                     require(manifest.searchTypes == setOf("track") && manifest.collectionTypes.isEmpty())
                     require(manifest.features.isEmpty() && manifest.featureRoutes.isEmpty() && manifest.permissions.nativeSdks.isEmpty() &&
                         manifest.permissions.effects.isEmpty() && manifest.sessionKeys.isEmpty() && manifest.sessionCookieNames.isEmpty() && manifest.linkHosts.isEmpty())
+                    require(manifest.concurrentReadOperations.isEmpty() && manifest.concurrentReadFeatures.isEmpty())
                 }
                 require(manifest.features.size <= 32 && manifest.features.all { (feature, actions) ->
                     KEY.matches(feature) && actions.isNotEmpty() && actions.size <= 100 && actions.all(KEY::matches)
@@ -135,6 +146,12 @@ data class PluginManifest(
                     it.length in 1..100 && Regex("[a-z][a-z0-9_/-]*").matches(it)
                 })
                 require(manifest.features.isEmpty() && manifest.featureRoutes.isEmpty() || "feature.invoke" in manifest.capabilities)
+                require(manifest.concurrentReadOperations.size <= CONCURRENT_READ_OPERATIONS.size && manifest.concurrentReadOperations.all {
+                    it in CONCURRENT_READ_OPERATIONS && it in manifest.capabilities
+                })
+                require(manifest.concurrentReadFeatures.size <= 32 && manifest.concurrentReadFeatures.all { (feature, actions) ->
+                    actions.isNotEmpty() && actions.size <= 100 && actions.all { it in manifest.features[feature].orEmpty() }
+                })
                 require(manifest.sessionKeys.size <= 32 && manifest.sessionKeys.all(KEY::matches))
                 require(manifest.sessionKeys.isEmpty() || manifest.permissions.storage)
                 require(manifest.catalogBatchSize in 1..1000 && (manifest.catalogBatchSize == 30 ||

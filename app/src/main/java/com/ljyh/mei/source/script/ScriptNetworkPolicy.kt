@@ -11,15 +11,21 @@ import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Dns
+import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -36,8 +42,22 @@ class ScriptNetworkPolicy(
 ) {
     init { domains.forEach(::validateGrant) }
 
-    private val concurrency = Semaphore(2)
+    // Slow cover downloads must not consume the API slots used by browsing and playback.
+    private val apiConcurrency = Semaphore(API_CONCURRENCY)
+    private val artworkConcurrency = Semaphore(ARTWORK_CONCURRENCY)
+    private val artworkDispatcher = Dispatcher().apply {
+        maxRequests = ARTWORK_CONCURRENCY
+        maxRequestsPerHost = ARTWORK_CONCURRENCY
+    }
+    private val audioDispatcher = Dispatcher().apply {
+        maxRequests = AUDIO_CONCURRENCY
+        maxRequestsPerHost = AUDIO_CONCURRENCY
+    }
     val client: OkHttpClient = OkHttpClient.Builder()
+        .dispatcher(Dispatcher().apply {
+            maxRequests = API_CONCURRENCY
+            maxRequestsPerHost = API_CONCURRENCY
+        })
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS).callTimeout(15, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
@@ -50,6 +70,51 @@ class ScriptNetworkPolicy(
             validateUrl(chain.request().url.toString())
             chain.proceed(chain.request())
         }.build()
+
+    // Wrappers share the owning policy's connection pool, but contain no account or request state.
+    // Keeping the base identity also makes replacement clients take effect immediately.
+    private var derivedClients: DerivedClients? = null
+    private data class DerivedClients(val base: OkHttpClient, val artwork: OkHttpClient,
+        val audio: OkHttpClient, val sdk: OkHttpClient)
+    private class SdkCall(val interceptor: Interceptor, val ensureCurrent: () -> Unit)
+    private class NetworkCancellation(val cancellation: CancellationException) : IOException("Source request cancelled")
+
+    private fun transports(): DerivedClients = synchronized(this) {
+        val base = client
+        derivedClients?.takeIf { it.base === base } ?: DerivedClients(
+            base = base,
+            artwork = base.newBuilder().dispatcher(artworkDispatcher).build(),
+            // Progressive audio has no whole-transfer deadline; read/connect stalls remain bounded.
+            audio = base.newBuilder().dispatcher(audioDispatcher).callTimeout(0, TimeUnit.MILLISECONDS).build(),
+            sdk = base.newBuilder().addInterceptor { chain ->
+                val request = chain.request().tag(SdkCall::class.java) ?: denied()
+                sdkGuard {
+                    request.ensureCurrent()
+                    request.interceptor.intercept(chain)
+                }
+            }.addInterceptor { chain ->
+                val request = chain.request().tag(SdkCall::class.java) ?: denied()
+                sdkGuard {
+                    request.ensureCurrent()
+                    validateUrl(chain.request().url.toString())
+                    if ((chain.request().body?.contentLength() ?: 0) > MAX_REQUEST_BYTES) denied()
+                    val response = chain.proceed(chain.request())
+                    try {
+                        response.body?.let { payload ->
+                            val source = payload.source()
+                            if (source.request(MAX_RESPONSE_BYTES + 1L)) throw SourceResponseSizeException()
+                        }
+                        response
+                    } catch (error: Throwable) {
+                        response.close()
+                        throw error
+                    }
+                }
+            }.build(),
+        ).also { derivedClients = it }
+    }
+
+    internal val audioClient: OkHttpClient get() = transports().audio
 
     fun validateUrl(value: String): HttpUrl {
         if (value.length > 8192) denied()
@@ -67,18 +132,24 @@ class ScriptNetworkPolicy(
         }
     }
 
-    suspend fun artwork(url: String, directory: java.io.File, ensureCurrent: () -> Unit = {}): String = concurrency.withPermit {
+    suspend fun artwork(url: String, directory: java.io.File, ensureCurrent: () -> Unit = {}): String = networkDeadline(ensureCurrent) {
         ensureCurrent()
         val checked = validateUrl(url)
         val file = artworkFile(url, directory)
         withContext(Dispatchers.IO) {
-            ensureCurrent()
-            if (file.isFile) {
+            fun cached(): String? {
+                ensureCurrent()
+                if (!file.isFile) return null
                 file.setLastModified(System.currentTimeMillis())
-                return@withContext artworkUri(file)
+                ensureCurrent()
+                return artworkUri(file)
             }
-            exchange(client.newCall(Request.Builder().url(checked).build()), ensureCurrent) { response, guard ->
-                cacheArtwork(response, file, guard)
+            cached()?.let { return@withContext it }
+            artworkConcurrency.withPermit {
+                cached()?.let { return@withPermit it }
+                exchange(transports().artwork.newCall(Request.Builder().url(checked).build()), ensureCurrent) { response, guard ->
+                    cacheArtwork(response, file, guard)
+                }
             }
         }
     }
@@ -90,17 +161,22 @@ class ScriptNetworkPolicy(
             if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
         )
         val body = response.body ?: invalidResponse()
+        if (body.contentLength() > MAX_ARTWORK_BYTES) throw SourceResponseSizeException()
         ensureCurrent()
-        check(file.parentFile?.isDirectory == true || file.parentFile?.mkdirs() == true)
+        val parent = file.parentFile ?: invalidResponse()
+        java.nio.file.Files.createDirectories(parent.toPath())
         val temporary = java.io.File.createTempFile(".artwork-", ".tmp", file.parentFile)
         try {
             body.byteStream().use { input ->
                 temporary.outputStream().use { output ->
                     val buffer = ByteArray(65_536)
+                    var written = 0L
                     while (true) {
                         ensureCurrent()
                         val count = input.read(buffer)
                         if (count < 0) break
+                        written += count
+                        if (written > MAX_ARTWORK_BYTES) throw SourceResponseSizeException()
                         output.write(buffer, 0, count)
                     }
                 }
@@ -114,7 +190,7 @@ class ScriptNetworkPolicy(
         var bytesRemaining = cached.sumOf { it.length() }
         var countRemaining = cached.size
         cached.filter { it != file }.forEach { old ->
-            if (bytesRemaining > 16L * 1024 * 1024 || countRemaining > 256) {
+            if (bytesRemaining > MAX_ARTWORK_BYTES || countRemaining > 256) {
                 val size = old.length()
                 if (old.delete()) { bytesRemaining -= size; countRemaining-- }
             }
@@ -123,7 +199,11 @@ class ScriptNetworkPolicy(
         return artworkUri(file)
     }
 
-    suspend fun request(request: JsonObject, ensureCurrent: () -> Unit = {}): JsonObject = concurrency.withPermit {
+    suspend fun request(request: JsonObject, ensureCurrent: () -> Unit = {}): JsonObject = networkDeadline(ensureCurrent) {
+        apiConcurrency.withPermit { performRequest(request, ensureCurrent) }
+    }
+
+    private suspend fun performRequest(request: JsonObject, ensureCurrent: () -> Unit): JsonObject {
         ensureCurrent()
         val responseEncoding = responseEncoding(request)
         val url = validateUrl(request.get("url")?.asString ?: denied())
@@ -152,22 +232,20 @@ class ScriptNetworkPolicy(
             }.orEmpty()
             if (arguments.size > 16 || arguments.values.sumOf { it.length } > 65_536 ||
                 arguments.values.any { '\u0000' in it }) denied()
-            client.newBuilder()
-                .addInterceptor(ScriptPlatformSdk.interceptor(sdkName, configuration(), arguments))
-                .addInterceptor { chain ->
-                    ensureCurrent()
-                    validateUrl(chain.request().url.toString())
-                    if ((chain.request().body?.contentLength() ?: 0) > MAX_REQUEST_BYTES) denied()
-                    chain.proceed(chain.request()).let { response ->
-                        response.body?.let { payload ->
-                            val source = payload.source()
-                            if (source.request(MAX_RESPONSE_BYTES + 1L)) { response.close(); throw SourceResponseSizeException() }
-                        }
-                        response
-                    }
-                }.build()
+            val codec = ScriptPlatformSdk.interceptor(sdkName, configuration().toMap(), arguments.toMap())
+            builder.tag(SdkCall::class.java, SdkCall(codec, ensureCurrent))
+            transports().sdk
         }
-        exchange(requestClient.newCall(builder.build()), ensureCurrent) { response, _ -> responsePayload(response, responseEncoding) }
+        return exchange(requestClient.newCall(builder.build()), ensureCurrent) { response, _ -> responsePayload(response, responseEncoding) }
+    }
+
+    /** The deadline includes admission, OkHttp dispatch, SDK work and consuming the body. */
+    private suspend fun <T> networkDeadline(ensureCurrent: () -> Unit, block: suspend () -> T): T = try {
+        withTimeout(REQUEST_TIMEOUT_MS) { block() }
+    } catch (_: TimeoutCancellationException) {
+        currentCoroutineContext().ensureActive()
+        ensureCurrent()
+        throw SourceException(SourceErrorCode.TIMEOUT)
     }
 
     /** Cancellation owns the socket until the response body has been consumed. */
@@ -224,8 +302,17 @@ class ScriptNetworkPolicy(
     } catch (error: SourceException) { throw error
     } catch (error: IOException) { throw networkFailure(error) }
 
-    private fun networkFailure(error: IOException) = if (error is SourceException) error else
-        SourceException(if (error is InterruptedIOException) SourceErrorCode.TIMEOUT else SourceErrorCode.NETWORK)
+    private fun networkFailure(error: IOException): Throwable = when (error) {
+        is NetworkCancellation -> error.cancellation
+        is SourceException -> error
+        else -> SourceException(if (error is InterruptedIOException) SourceErrorCode.TIMEOUT else SourceErrorCode.NETWORK)
+    }
+
+    /** OkHttp dispatchers accept IO failures; unchecked codec/guard failures must return to the caller. */
+    private inline fun <T> sdkGuard(block: () -> T): T = try { block()
+    } catch (cancelled: CancellationException) { throw NetworkCancellation(cancelled)
+    } catch (error: IOException) { throw error
+    } catch (_: Exception) { throw SourceException(SourceErrorCode.INVALID_RESPONSE) }
 
     private fun validateHost(host: String) {
         if (!isHostAllowed(host, domains)) denied()
@@ -251,6 +338,11 @@ class ScriptNetworkPolicy(
 
         const val MAX_REQUEST_BYTES = 256 * 1024
         const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+        internal const val MAX_ARTWORK_BYTES = 16L * 1024 * 1024
+        internal const val API_CONCURRENCY = 4
+        internal const val ARTWORK_CONCURRENCY = 2
+        internal const val AUDIO_CONCURRENCY = 2
+        internal const val REQUEST_TIMEOUT_MS = 15_000L
 
         /** A wildcard grants subdomains only and cannot target a public suffix. */
         fun validateGrant(grant: String) {

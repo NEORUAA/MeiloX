@@ -155,6 +155,8 @@ class PlayerLyricsRenderingTest {
     @Test
     fun qualityMenuPausesLyricsAutoHideThroughCollapseAndRestartsTheIdleTimer() {
         val quality = mutableStateOf(MusicQuality.EXHIGH)
+        val mediaId = mutableStateOf("fixture:first")
+        var qualityRequests = 0
         val menuVisible = mutableStateOf(false)
         val controlsVisible = mutableStateOf(true)
         val showBadge = mutableStateOf(true)
@@ -175,11 +177,12 @@ class PlayerLyricsRenderingTest {
                     )
                     if (showBadge.value) PlayerQualityDropdown(
                         quality = quality.value,
+                        mediaId = mediaId.value,
                         availableQualities = listOf(MusicQuality.EXHIGH, MusicQuality.LOSSLESS),
                         isLoading = false,
                         localPlaybackInfo = null,
                         isPlayingLocalSource = false,
-                        onMenuOpened = {},
+                        onMenuOpened = { qualityRequests++ },
                         onQualitySelected = { quality.value = it },
                         onLocalSourceSelected = {},
                         style = MaterialTheme.typography.labelSmall,
@@ -195,6 +198,12 @@ class PlayerLyricsRenderingTest {
         compose.runOnIdle {
             assertTrue(menuVisible.value)
             assertTrue("The quality menu must keep playback controls visible", controlsVisible.value)
+            assertEquals("Opening the menu requests qualities once", 1, qualityRequests)
+            mediaId.value = "fixture:second"
+        }
+        compose.runOnIdle {
+            assertEquals("An open menu must refresh when its source track changes", 2, qualityRequests)
+            assertTrue(menuVisible.value)
         }
         try {
             compose.mainClock.autoAdvance = false

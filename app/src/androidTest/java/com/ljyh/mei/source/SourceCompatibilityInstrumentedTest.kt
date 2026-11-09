@@ -108,7 +108,7 @@ class SourceCompatibilityInstrumentedTest {
                     chain.proceed(request)
                 }.build())
                 val firstSession = repository.screen("cloud-first-page-live", ProviderIds.NETEASE)
-                phase("Physical foreground cloud first-page read starting")
+                phase("Foreground cloud first-page read starting")
                 val started = android.os.SystemClock.elapsedRealtime()
                 val first = withTimeout(60_000) {
                     if (baseline) {

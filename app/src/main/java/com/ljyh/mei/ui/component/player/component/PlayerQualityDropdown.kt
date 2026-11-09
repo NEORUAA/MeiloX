@@ -74,6 +74,7 @@ internal fun localPlaybackQualityTitle(
 @Composable
 fun PlayerQualityDropdown(
     quality: MusicQuality?,
+    mediaId: String?,
     availableQualities: List<MusicQuality>,
     isLoading: Boolean,
     localPlaybackInfo: LocalPlaybackInfo?,
@@ -90,6 +91,10 @@ fun PlayerQualityDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val menuVisibilityChanged by rememberUpdatedState(onMenuVisibilityChanged)
+    val requestQualities by rememberUpdatedState(onMenuOpened)
+    LaunchedEffect(mediaId) {
+        if (expanded) requestQualities()
+    }
     DisposableEffect(Unit) {
         onDispose { menuVisibilityChanged(false) }
     }

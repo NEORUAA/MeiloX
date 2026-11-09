@@ -6,6 +6,8 @@ export interface Context {
   readonly config: Readonly<Record<string, string>>;
   /** Protocol sessions/continuations only; application data and caches belong to the host. */
   readonly storage: Readonly<Record<string, string>>;
+  /** Opted-in concurrent reads must omit returned storage or return this exact snapshot. */
+  readonly readOnlyStorage?: true;
   /** Verified identity for this source session; absent until the host verifies the account. */
   readonly account?: Readonly<{ userId?: string }>;
   /** Fresh standard Base64 of 256 CSPRNG bytes per evaluation, including onResponse.
@@ -167,7 +169,16 @@ export type Operation = 'catalog.search' | 'catalog.track' | 'catalog.tracks' | 
   | 'library.savedPlaylists' | 'library.savedAlbums' | 'library.followedArtists' | 'track.liked' | 'track.like'
   | 'collection.saved' | 'collection.save' | 'playlist.create' | 'playlist.update' | 'playlist.delete'
   | 'playlist.addTracks' | 'playlist.removeTracks' | 'playlist.reorderTracks' | 'feature.invoke' | 'links.resolve';
+/** API 2 immutable reads; account bootstrap and mutations keep transaction serialization. */
+export type ConcurrentReadOperation = Extract<Operation, 'catalog.search' | 'catalog.track' | 'catalog.tracks'
+  | 'playback.resolve' | 'playback.qualities' | 'lyrics.get' | 'feed.home' | 'feed.discover'
+  | 'album.get' | 'album.tracks' | 'artist.get' | 'artist.tracks' | 'artist.albums' | 'playlist.get' | 'playlist.tracks'
+  | 'library.likedTracks' | 'library.createdPlaylists' | 'library.savedPlaylists' | 'library.savedAlbums'
+  | 'library.followedArtists' | 'track.liked' | 'collection.saved' | 'links.resolve'>;
 export interface Manifest {
+  /** Optional API 2 scheduling declarations; implementations must keep storage immutable. */
+  concurrentReadOperations?: ConcurrentReadOperation[];
+  concurrentReadFeatures?: Record<string, string[]>;
   id: string; providerId?: string; name: string; author: string; version: string; apiVersion: 1 | 2;
   entry?: 'index.js'; capabilities: Operation[]; description?: string;
   /** Up to 32 lowercase exact hosts or leading *. subtrees; excludes apex/public suffixes.

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ljyh.mei.constants.PlayerStyle
 import com.ljyh.mei.constants.PlayerStyleKey
+import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicProgressSlider
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.utils.TimeUtils.makeTimeString
@@ -63,6 +64,8 @@ fun FluidProgressSlider(
         return
     }
     val playerConnection = LocalPlayerConnection.current
+    val qualityMediaId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.trackRef
+        ?.let(TrackRefCodec::mediaId)
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
     val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
@@ -227,6 +230,7 @@ fun FluidProgressSlider(
             // 中间：音质 (复用你原本的逻辑)
             PlayerQualityDropdown(
                 quality = musicQuality,
+                mediaId = qualityMediaId,
                 availableQualities = availableQualities,
                 isLoading = isLoadingQualities,
                 localPlaybackInfo = localPlaybackInfo,

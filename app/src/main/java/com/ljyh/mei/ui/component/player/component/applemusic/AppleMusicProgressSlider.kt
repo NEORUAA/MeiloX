@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.component.player.component.PlayerQualityDropdown
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.theme.LocalInterfaceLetterSpacing
@@ -78,7 +79,9 @@ internal fun AppleMusicProgressSlider(
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val playerConnection = LocalPlayerConnection.current
-    val mediaId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.id
+    val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
+    val mediaId = mediaMetadata?.id
+    val qualityMediaId = mediaMetadata?.trackRef?.let(TrackRefCodec::mediaId)
     val musicQuality = playerConnection?.currentMusicQuality?.collectAsStateWithLifecycle()?.value
     val availableQualities = playerConnection?.availableMusicQualities?.collectAsStateWithLifecycle()?.value.orEmpty()
     val isLoadingQualities = playerConnection?.isLoadingMusicQualities?.collectAsStateWithLifecycle()?.value ?: false
@@ -277,6 +280,7 @@ internal fun AppleMusicProgressSlider(
             }
             PlayerQualityDropdown(
                 quality = musicQuality,
+                mediaId = qualityMediaId,
                 availableQualities = availableQualities,
                 isLoading = isLoadingQualities,
                 localPlaybackInfo = localPlaybackInfo,

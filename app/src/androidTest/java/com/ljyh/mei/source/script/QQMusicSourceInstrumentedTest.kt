@@ -1,7 +1,6 @@
 package com.ljyh.mei.source.script
 
 import android.net.Uri
-import androidx.javascriptengine.JavaScriptSandbox
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -51,7 +50,7 @@ class QQMusicSourceInstrumentedTest {
 
     @Test
     fun shippedAdapterParsesCapturedResponsesInsideTheIsolatedRuntime(): Unit = runBlocking {
-        assumeTrue("JavaScript sandbox requires a compatible Android System WebView", JavaScriptSandbox.isSupported())
+        assumeTrue("The bundled QuickJS engine must be available", com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val packageFile = File.createTempFile("qq-music-captured-", ".meisource", context.cacheDir)
         var prepared: PreparedPlugin? = null
         try {
@@ -193,7 +192,7 @@ class QQMusicSourceInstrumentedTest {
     @Test
     fun installedQQSourceSupportsDeclaredReadOnlyCapabilities(): Unit = runBlocking {
         assumeTrue("Enable real QQ requests explicitly with qqMusicLive=true", arguments.getString("qqMusicLive") == "true")
-        assumeTrue("JavaScript sandbox requires a compatible Android System WebView", JavaScriptSandbox.isSupported())
+        assumeTrue("The bundled QuickJS engine must be available", com.ljyh.mei.source.script.ScriptRuntime(InstrumentationRegistry.getInstrumentation().targetContext).supported)
         val manager = app.sourcePlugins
         manager.loadInstalled()
         val existing = manager.installed.value.firstOrNull { it.manifest.id == PLUGIN_ID }
@@ -605,7 +604,7 @@ class QQMusicSourceInstrumentedTest {
         ).sortedBy { it.key }, manifest.config.sortedBy { it.key })
     }
 
-    /** Shipped callbacks process captured payloads inside V8 without granting host network access. */
+    /** Shipped callbacks process captured payloads inside QuickJS without granting host network access. */
     private fun capturedResponseWrapper(fixtures: JsonObject): String = """
         ;(function () {
             const original = globalThis.sourcePlugin;

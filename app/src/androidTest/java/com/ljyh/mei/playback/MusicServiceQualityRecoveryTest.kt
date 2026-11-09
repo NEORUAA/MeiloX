@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,6 +41,124 @@ import org.junit.runner.RunWith
 @OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class MusicServiceQualityRecoveryTest {
+    @Test
+    fun playingMusicKeepsBrowseReadsResponsiveWithoutEnumeratingAlternativeQualities() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assumeTrue(InstrumentationRegistry.getArguments().getString("issue108Live") == "true")
+        val context = instrumentation.targetContext
+        androidx.test.core.app.ActivityScenario.launch(com.ljyh.mei.MainActivity::class.java).use {
+            val connected = CountDownLatch(1)
+            val reference = AtomicReference<MusicService?>()
+            val connection = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                    reference.set((binder as? MusicService.MusicBinder)?.service)
+                    connected.countDown()
+                }
+                override fun onServiceDisconnected(name: ComponentName?) = Unit
+            }
+            assertTrue(context.bindService(Intent(context, MusicService::class.java), connection, Context.BIND_AUTO_CREATE))
+            var saved: QueueSnapshot? = null
+            var originalConfiguration: Map<String, String>? = null
+            var originalRevision: String? = null
+            var provider: com.ljyh.mei.source.script.ScriptMusicProvider? = null
+            val qualityLoadingStarted = AtomicBoolean(false)
+            var qualityObserver: kotlinx.coroutines.Job? = null
+            var qualityRequest: kotlinx.coroutines.Job? = null
+            try {
+                assertTrue("The playback service must bind", connected.await(10, TimeUnit.SECONDS))
+                val service = checkNotNull(reference.get())
+                val router = dagger.hilt.android.EntryPointAccessors.fromApplication(context,
+                    DownloadSourceEntryPoint::class.java).sourceRouter()
+                kotlinx.coroutines.withTimeout(20_000) { router.registry.awaitInitialized() }
+                val source = router.registry.requireProvider(com.ljyh.mei.source.api.ProviderIds.NETEASE)
+                    as com.ljyh.mei.source.script.ScriptMusicProvider
+                provider = source
+                kotlinx.coroutines.withTimeout(30_000) { router.account(source.id) }
+                originalConfiguration = source.platformConfiguration().toMap()
+                originalRevision = source.accountRevision.value
+                instrumentation.runOnMainSync {
+                    assertFalse("Run the live check with the saved queue paused", service.player.playWhenReady)
+                    assertTrue("An existing music queue is required", service.player.mediaItemCount > 0)
+                    saved = QueueSnapshot.capture(service.player)
+                }
+                qualityObserver = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    service.isLoadingMusicQualities.collect { if (it) qualityLoadingStarted.set(true) }
+                }
+                instrumentation.runOnMainSync {
+                    val before = checkNotNull(saved)
+                    service.refreshPlaybackSource(before.index, before.positionMs, resumePlayback = true)
+                }
+                suspend fun awaitPlaying() = kotlinx.coroutines.withTimeout(20_000) {
+                    while (true) {
+                        var playing = false
+                        instrumentation.runOnMainSync { playing = service.player.isPlaying }
+                        if (playing) break
+                        kotlinx.coroutines.delay(50)
+                    }
+                }
+                awaitPlaying()
+                repeat(2) { round ->
+                    suspend fun timed(name: String, read: suspend () -> Unit) {
+                        val start = android.os.SystemClock.elapsedRealtime()
+                        kotlinx.coroutines.withTimeout(20_000) { read() }
+                        instrumentation.sendStatus(0, android.os.Bundle().apply {
+                            putString("stream", "Playing browse round=$round page=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - start}\n")
+                        })
+                        awaitPlaying()
+                    }
+                    timed("home") {
+                        val page = router.getFeed(source.id, com.ljyh.mei.source.api.FeedKind.HOME,
+                            page = com.ljyh.mei.source.api.PageRequest(limit = 30, refresh = true))
+                        assertTrue("Home must contain sections", page.sections.isNotEmpty())
+                    }
+                    timed("discover") {
+                        val page = router.getFeed(source.id, com.ljyh.mei.source.api.FeedKind.DISCOVER,
+                            page = com.ljyh.mei.source.api.PageRequest(limit = 30, refresh = true))
+                        assertTrue("Discovery must contain sections", page.sections.isNotEmpty())
+                    }
+                    timed("library") {
+                        router.library(source.id, com.ljyh.mei.source.api.LibraryCollection.CREATED_PLAYLISTS,
+                            com.ljyh.mei.source.api.PageRequest(limit = 30, refresh = true))
+                    }
+                }
+                assertFalse("Playing and browsing must not enumerate every alternative quality", qualityLoadingStarted.get())
+                instrumentation.runOnMainSync {
+                    service.refreshAvailableMusicQualities()
+                    qualityRequest = MusicService::class.java.getDeclaredField("availableQualitiesJob")
+                        .apply { isAccessible = true }.get(service) as? kotlinx.coroutines.Job
+                }
+                kotlinx.coroutines.withTimeout(30_000) { service.isLoadingMusicQualities.first { !it } }
+                assertTrue("Opening the quality menu must still enumerate qualities", qualityLoadingStarted.get())
+                assertTrue("The quality menu must retain playable choices", service.availableMusicQualities.value.isNotEmpty())
+                assertNotNull("Actual playback quality must remain available", service.currentMusicQuality.value)
+            } finally {
+                qualityObserver?.cancel()
+                qualityRequest?.cancelAndJoin()
+                try {
+                    reference.get()?.let { service ->
+                        instrumentation.runOnMainSync {
+                            saved?.let { before ->
+                                service.player.pause()
+                                service.player.seekTo(before.index, before.positionMs)
+                                val after = QueueSnapshot.capture(service.player)
+                                assertTrue("Playback validation must preserve queue entries and order",
+                                    before.mediaIds == after.mediaIds && before.entryIds == after.entryIds &&
+                                        before.shuffleOrder == after.shuffleOrder && before.shuffleEnabled == after.shuffleEnabled &&
+                                        before.repeatMode == after.repeatMode && before.index == after.index)
+                                assertTrue("Playback validation must restore the paused position", abs(before.positionMs - after.positionMs) <= 500L)
+                                assertFalse(service.player.playWhenReady)
+                            }
+                        }
+                    }
+                    provider?.let {
+                        originalConfiguration?.let { config -> assertTrue("Playback validation must preserve source configuration", config == it.platformConfiguration()) }
+                        originalConfiguration?.let { _ -> assertTrue("Playback validation must preserve source revision", originalRevision == it.accountRevision.value) }
+                    }
+                } finally { context.unbindService(connection) }
+            }
+        }
+    }
+
     @Test
     fun installedSourcesRestoreTheSavedPausedQueueWithoutOpeningAnActivity() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("sourcePausedRestore") == "true")

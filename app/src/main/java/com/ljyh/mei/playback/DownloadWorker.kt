@@ -585,22 +585,32 @@ internal suspend fun downloadScriptAudio(
     onProgress: (Int) -> Unit,
 ) = withContext(Dispatchers.IO) {
     val source = ScriptAudioDataSource.Factory(context).createDataSource()
+    val owner = currentCoroutineContext()
     try {
-        val total = source.open(DataSpec.Builder().setUri(resource).build())
-        var received = 0L
-        file.outputStream().use { output ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val count = source.read(buffer, 0, buffer.size)
-                if (count == C.RESULT_END_OF_INPUT) break
-                if (count == 0) continue
-                output.write(buffer, 0, count)
-                received += count
-                if (total > 0) onProgress((received * 100 / total).coerceAtMost(99).toInt())
+        suspendCancellableCoroutine<Unit> { continuation ->
+            continuation.invokeOnCancellation { runCatching { source.cancel() } }
+            try {
+                owner.ensureActive()
+                val total = source.open(DataSpec.Builder().setUri(resource).build())
+                var received = 0L
+                file.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        owner.ensureActive()
+                        val count = source.read(buffer, 0, buffer.size)
+                        if (count == C.RESULT_END_OF_INPUT) break
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        received += count
+                        if (total > 0) onProgress((received * 100 / total).coerceAtMost(99).toInt())
+                    }
+                }
+                check(received > 0 && (total < 0 || received == total)) { "Incomplete audio download" }
+                continuation.resume(Unit)
+            } catch (error: Throwable) {
+                continuation.resumeWithException(error)
             }
         }
-        check(received > 0 && (total < 0 || received == total)) { "Incomplete audio download" }
     } catch (error: Throwable) { file.delete(); throw error
     } finally { source.close() }
 }

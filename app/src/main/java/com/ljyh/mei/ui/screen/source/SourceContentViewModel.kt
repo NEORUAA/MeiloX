@@ -14,12 +14,14 @@ import com.ljyh.mei.source.core.SourceHomeCacheOwner
 import com.ljyh.mei.source.shared.whileCurrent
 import com.ljyh.mei.source.script.ScriptPluginManager
 import com.ljyh.mei.source.script.InstalledPlugin
+import com.ljyh.mei.source.script.SourceCatalogInvalidatedException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -222,13 +224,21 @@ class SourceContentViewModel internal constructor(
     }
 
     private suspend fun load(requested: SourceContentRequest, id: String, token: Long, append: Boolean, refresh: Boolean = false,
-        forceAccountRefresh: Boolean = false) {
+        forceAccountRefresh: Boolean = false, retryCancellation: Boolean = true) {
         val previous = mutableState.value
         val page = PageRequest(if (append) previous.nextOffset else 0, 30, if (append) previous.nextCursor else null, refresh = refresh && !append)
         var received = 0
         var incomingRefs = emptyList<ContentRef>()
+        var loadingProvider: MusicProvider? = null
+        suspend fun ownsActivePage(): Boolean {
+            currentCoroutineContext().ensureActive()
+            val owner = loadingProvider ?: return false
+            return token == generation && request.value == requested && displayedRequest == requested &&
+                displayedProvider === owner && sameOwner(owner, previous)
+        }
         try {
             val boundProvider = registry.requireProvider(id)
+            loadingProvider = boundProvider
             if (boundProvider.version != previous.providerVersion) throw CancellationException("Source changed before loading")
             val result = when (requested) {
                 is SourceContentRequest.Feed -> {
@@ -333,8 +343,19 @@ class SourceContentViewModel internal constructor(
             ) else progressed
             mutableState.value = updated.copy(providerId = id, loading = false, error = null, nextOffset = page.offset + received)
         } catch (cancelled: CancellationException) {
-            if (token == generation) mutableState.value = state.value.copy(loading = false)
-            throw cancelled
+            if (!ownsActivePage()) throw cancelled
+            if (retryCancellation && cancelled is SourceCatalogInvalidatedException) {
+                delay(50)
+                if (!ownsActivePage()) throw cancelled
+                // Catalog cancellation follows an invalidation. Reuse that invalidation on
+                // retry rather than making concurrent refreshes invalidate one another again.
+                withContext(cancelled.retryContext) {
+                    load(requested, id, token, append, refresh = refresh && requested is SourceContentRequest.Feed,
+                        forceAccountRefresh = forceAccountRefresh, retryCancellation = false)
+                }
+            } else {
+                mutableState.value = state.value.copy(loading = false, refreshing = false, error = SourceErrorCode.UNAVAILABLE)
+            }
         } catch (error: Exception) {
             timber.log.Timber.tag("SourceContent").w(error, "Source content unavailable")
             if (token == generation) mutableState.value = state.value.copy(loading = false, error = error.sourceCode(),
