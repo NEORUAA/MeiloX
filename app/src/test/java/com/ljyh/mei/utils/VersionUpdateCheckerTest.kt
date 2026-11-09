@@ -163,6 +163,18 @@ class VersionUpdateCheckerTest {
     }
 
     @Test
+    fun renamedCanonicalRepositoryRunsRemainEligibleForBetaUpdates() = runBlocking {
+        val result = checkBeta(
+            number = 34,
+            runs = runs(run(35, repository = "MeiloX/MeiloX", headRepository = "MeiloX/MeiloX")),
+            artifacts = mapOf(35L to artifacts(artifact(35))),
+        )
+
+        assertTrue(result is VersionUpdateResult.UpdateAvailable)
+        assertEquals("beta #35.1", (result as VersionUpdateResult.UpdateAvailable).latestTag)
+    }
+
+    @Test
     fun expiredDeletedAndUnrelatedArtifactsFallBackToTheLatestDownloadableBuild() = runBlocking {
         val result = checkBeta(
             number = 30,
@@ -471,12 +483,13 @@ class VersionUpdateCheckerTest {
         conclusion: String = "success",
         path: String = ".github/workflows/main.yml",
         headRepository: String = "NEORUAA/MeiloX",
+        repository: String = "NEORUAA/MeiloX",
         event: String = "push",
     ): String = """{
         "id":${1000 + number}, "run_number":$number, "run_attempt":$attempt,
         "head_branch":"$branch", "head_sha":"${commitSha(number)}", "path":"$path",
         "status":"$status", "conclusion":"$conclusion", "event":"$event",
-        "repository":{"id":123,"full_name":"NEORUAA/MeiloX"},
+        "repository":{"id":123,"full_name":"$repository"},
         "head_repository":{"id":123,"full_name":"$headRepository"}
     }"""
 

@@ -35,6 +35,7 @@ sealed interface VersionUpdateResult {
 /** Checks GitHub tags or downloadable main-branch CI builds off the Compose thread. */
 object VersionUpdateChecker {
     private const val Repository = "NEORUAA/MeiloX"
+    private val AcceptedRepositories = setOf(Repository, "MeiloX/MeiloX")
     private const val RepositoryUrl = "https://github.com/$Repository"
     private const val ApiUrl = "https://api.github.com/repos/$Repository"
     private const val TagsEndpoint = "$ApiUrl/tags?per_page=100"
@@ -253,8 +254,8 @@ object VersionUpdateChecker {
         ) return null
         val repository = get("repository")?.objectOrNull() ?: return null
         val headRepository = get("head_repository")?.objectOrNull() ?: return null
-        if (repository.string("full_name") != Repository ||
-            headRepository.string("full_name") != Repository
+        if (repository.string("full_name") !in AcceptedRepositories ||
+            headRepository.string("full_name") !in AcceptedRepositories
         ) return null
         val repositoryId = repository.long("id")?.takeIf { it > 0 } ?: return null
         if (headRepository.long("id") != repositoryId) return null
